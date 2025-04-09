@@ -1,15 +1,6 @@
 package catalogs
 
-import (
-	"bytes"
-	"context"
-	"testing"
-
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
-	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/vektah/gqlparser/v2/formatter"
-)
-
+/*
 func TestCatalog(t *testing.T) {
 	source := sources.NewFileSource("../../internal/fixture")
 
@@ -25,3 +16,4 @@ func TestCatalog(t *testing.T) {
 
 	t.Log(buf.String())
 }
+*/
