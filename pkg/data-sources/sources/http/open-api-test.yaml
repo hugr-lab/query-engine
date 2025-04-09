@@ -1,0 +1,196 @@
+openapi: 3.1.0
+info:
+  title: Test Server
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local server
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      description: Basic authentication
+      scheme: basic
+    apiKey:
+      type: apiKey
+      description: API key authentication
+      in: header
+      name: X-API-Key
+    oauth2_custom:
+      type: oauth2
+      description: OAuth 2.0
+      flows:
+        password:
+          tokenUrl: /custom_login
+          x-hugr-token-transform:
+            method: POST
+            request_body: "{login: $username, password: $password}"
+            response_body: "{access_token: .accessToken, refresh_token: .refreshToken, token_type: \"bearer\", expires_in: 3600}"
+          refreshUrl: /custom_refresh
+          x-hugr-refresh-transform:
+            method: POST
+            request_body: "{refreshToken: .refresh_token}"
+            response_body: "{access_token: .accessToken, refresh_token: .refreshToken, token_type: \"bearer\", expires_in: 3600}"
+          scopes:
+            read: Read access
+            write: Write access
+    oauth2:
+      type: oauth2
+      description: OAuth 2.0
+      flows:
+        password:
+          tokenUrl: /token_with_refresh
+          scopes:
+            read: Read access
+            write: Write access
+        clientCredentials:
+          tokenUrl: /token_with_refresh
+          scopes:
+            read: Read access
+            write: Write access
+  schemas:
+    DataObject:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+    DataArray:
+      type: array
+      items:
+        $ref: "#/components/schemas/DataObject"
+paths:
+  /get_data_object:
+    get:
+      description: Get data object
+      operationId: getDataObject
+      parameters:
+        - name: id
+          description: ID of the object
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataObject"
+  /get_data_array:
+    get:
+      description: Get data array
+      operationId: getDataArray
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataArray"
+  /post_data:
+    post:
+      description: Post data
+      operationId: postData
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataObject"
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataObject"
+  /put_data:
+    put:
+      description: Put data
+      operationId: putData
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataObject"
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  id:
+                    type: integer
+  /patch_data:
+    patch:
+      description: Patch data
+      operationId: patchData
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataObject"
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  id:
+                    type: integer
+  /delete_data:
+    delete:
+      description: Delete data
+      operationId: deleteData
+      parameters:
+        - name: id
+          description: ID of the object
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  id:
+                    type: integer
+  /delete_data_path/{id}:
+    delete:
+      description: Delete data by path id
+      operationId: deleteDataById
+      parameters:
+        - name: id
+          description: ID of the object
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  id:
+                    type: integer

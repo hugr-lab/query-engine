@@ -1,0 +1,30 @@
+extend type MutationFunction {
+    register_s3(
+        name: String!
+        key: String!
+        secret: String!
+        region: String!
+        endpoint: String!
+        use_ssl: Boolean!
+        url_style: String!
+        scope: String! 
+    ): OperationResult @module(name: "core.s3")
+        @function(name: "register_s3")
+
+    unregister_s3(
+        name: String!
+    ): OperationResult @module(name: "core.s3")
+        @function(name: "unregister_s3")
+}
+
+type registered_s3 @module(name: "core.s3") @view(name: "core_registered_s3") {
+    name: String! @pk
+    type: String!
+    key: String
+    region: String
+    endpoint: String
+    use_ssl: Boolean
+    url_style: String
+    scope: [String]
+}
+

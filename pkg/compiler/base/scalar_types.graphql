@@ -1,0 +1,514 @@
+scalar any 
+scalar BigInt 
+scalar Timestamp 
+scalar Date 
+scalar Time 
+scalar Interval 
+scalar Geometry 
+scalar JSON 
+scalar IntRange 
+scalar TimestampRange
+scalar BigIntRange
+
+directive @base(name: String!) on INPUT_FIELD_DEFINITION | FIELD_DEFINITION | OBJECT | INPUT_OBJECT | ENUM
+
+enum FilterOperator @system {
+  eq
+  ne
+  gt
+  gte
+  lt
+  lte
+  in
+  between
+  like
+  ilike
+  regex
+  is_null
+  contains
+  intersects
+  includes
+  excludes
+  upper
+  lower
+  upper_inclusive
+  lower_inclusive
+  upper_inf
+  lower_inf
+  within
+  has
+  has_all
+}
+
+"""
+The time bucket for the time series data
+Defines the time interval for the time series data
+"""
+enum TimeBucket @system {
+  minute
+  hour
+  day
+  week
+  month
+  quarter
+  year
+}
+
+enum TimeExtract @system {
+  epoch
+  minute
+  hour
+  day
+  doy
+  dow
+  iso_dow
+  week
+  month
+  year
+  iso_year
+  quarter
+}
+
+enum GeometryTransform @system {
+  Transform
+  Centroid
+  Buffer
+  Simplify
+  SimplifyTopology
+  StartPoint
+  EndPoint
+  Reverse
+  FlipCoordinates
+  ConvexHull
+}
+
+enum GeometryMeasurementTypes @system {
+  Area
+  AreaSpheroid
+  Length
+  LengthSpheroid
+  Perimeter
+  PerimeterSpheroid
+}
+
+input IntFilter @system {
+  eq: Int
+  gt: Int
+  gte: Int
+  lt: Int
+  lte: Int
+  in: [Int!]
+  is_null: Boolean
+}
+
+input IntListFilter @system {
+  eq: [Int!]
+  contains: [Int!]
+  intersects: [Int!]
+  is_null: Boolean
+}
+
+input BigIntFilter @system {
+  eq: BigInt
+  gt: BigInt
+  gte: BigInt
+  lt: BigInt
+  lte: BigInt
+  in: [BigInt!]
+  is_null: Boolean
+}
+
+input BigIntListFilter @system {
+  eq: [BigInt!]
+  contains: [BigInt!]
+  intersects: [BigInt!]
+  is_null: Boolean
+}
+
+input StringFilter @system {
+  eq: String
+  in: [String!]
+  like: String
+  ilike: String
+  regex: String
+  is_null: Boolean
+}
+
+input StringListFilter @system {
+  eq: [String!]
+  contains: [String!]
+  intersects: [String!]
+  is_null: Boolean
+}
+
+input FloatFilter @system {
+  eq: Float
+  ne: Float
+  gt: Float
+  gte: Float
+  lt: Float
+  lte: Float
+  in: [Float!]
+  is_null: Boolean
+}
+
+input FloatListFilter @system {
+  eq: [Float!]
+  contains: [Float!]
+  intersects: [Float!]
+  is_null: Boolean
+}
+
+input TimestampFilter @system {
+  eq: Timestamp
+  gt: Timestamp
+  gte: Timestamp
+  lt: Timestamp
+  lte: Timestamp
+  is_null: Boolean
+}
+
+input TimestampListFilter @system {
+  eq: [Timestamp!]
+  contains: [Timestamp!]
+  intersects: [Timestamp!]
+  is_null: Boolean
+}
+
+input DateFilter @system {
+  eq: Date
+  gt: Date
+  gte: Date
+  lt: Date
+  lte: Date
+  in: [Date!]
+  is_null: Boolean
+}
+
+input DateListFilter @system {
+  eq: [Date!]
+  contains: [Date!]
+  intersects: [Date!]
+  is_null: Boolean
+}
+
+input TimeFilter @system {
+  eq: Time
+  gt: Time
+  gte: Time
+  lt: Time
+  lte: Time
+  in: [Time!]
+  is_null: Boolean
+}
+
+input TimeListFilter @system {
+  eq: [Time!]
+  contains: [Time!]
+  intersects: [Time!]
+  is_null: Boolean
+}
+
+input IntervalFilter @system {
+  eq: Interval
+  gt: Interval
+  gte: Interval
+  lt: Interval
+  lte: Interval
+  is_null: Boolean
+}
+
+input IntervalListFilter @system {
+  eq: [Interval!]
+  contains: [Interval!]
+  intersects: [Interval!]
+  is_null: Boolean
+}
+
+input JSONFilter @system {
+  eq: JSON
+  has: String
+  has_all: [String!]
+  contains: JSON
+  is_null: Boolean
+}
+
+input IntRangeFilter @system {
+  eq: IntRange
+  contains: Int
+  intersects: IntRange
+  includes: IntRange
+  is_null: Boolean
+  upper: Int
+  lower: Int
+  upper_inclusive: Boolean
+  lower_inclusive: Boolean
+  upper_inf: Boolean
+  lower_inf: Boolean
+}
+
+input TimestampRangeFilter @system {
+  eq: TimestampRange
+  contains: Timestamp
+  intersects: TimestampRange
+  includes: TimestampRange
+  excludes: TimestampRange
+  is_null: Boolean
+  upper: Timestamp
+  lower: Timestamp
+  upper_inclusive: Boolean
+  lower_inclusive: Boolean
+  upper_inf: Boolean
+  lower_inf: Boolean
+}
+
+input BigIntRangeFilter @system {
+  eq: BigIntRange
+  contains: BigInt
+  intersects: BigIntRange
+  includes: BigIntRange
+  excludes: BigIntRange
+  is_null: Boolean
+  upper: BigInt
+  lower: BigInt
+  upper_inclusive: Boolean
+  lower_inclusive: Boolean
+  upper_inf: Boolean
+  lower_inf: Boolean
+}
+
+input GeometryFilter @system {
+  eq: Geometry
+  intersects: Geometry
+  contains: Geometry
+  is_null: Boolean
+}
+
+input BooleanFilter @system {
+  eq: Boolean
+  is_null: Boolean
+}
+
+type IntAggregation @system {
+  count: BigInt
+  sum: Int
+  avg: Float
+  min: Int
+  max: Int
+  list(distinct: Boolean = false): [Int!]
+  any: Int
+  last: Int
+}
+
+type IntSubAggregation @system {
+  count: BigIntAggregation
+  sum: IntAggregation
+  avg: IntAggregation
+  min: IntAggregation
+  max: IntAggregation
+}
+
+enum IntMeasurementAggregation @system {
+  SUM
+  AVG
+  MIN
+  MAX
+  ANY
+}
+
+type BigIntAggregation @system {
+  count: BigInt
+  sum: BigInt
+  avg: Float
+  min: BigInt
+  max: BigInt
+  list(distinct: Boolean = false): [BigInt!]
+  any: BigInt
+  last: BigInt
+}
+
+type BigIntSubAggregation @system {
+  count: BigIntAggregation
+  sum: BigIntAggregation
+  avg: BigIntAggregation
+  min: BigIntAggregation
+  max: BigIntAggregation
+}
+
+enum BigIntMeasurementAggregation @system {
+  SUM
+  AVG
+  MIN
+  MAX
+  ANY
+}
+
+type FloatAggregation @system {
+  count: BigInt
+  sum: Float
+  avg: Float
+  min: Float
+  max: Float
+  list(distinct: Boolean = false): [Float!]
+  any: Float
+  last: Float
+}
+
+type FloatSubAggregation @system {
+  count: BigIntAggregation
+  sum: FloatAggregation
+  avg: FloatAggregation
+  min: FloatAggregation
+  max: FloatAggregation
+}
+
+enum FloatMeasurementAggregation @system {
+  SUM
+  AVG
+  MIN
+  MAX
+  ANY
+}
+
+type StringAggregation @system {
+  count: BigInt
+  string_agg(sep: String!, distinct: Boolean = false): String
+  list(distinct: Boolean = false): [String!]
+  any: String
+  last: String
+}
+
+type StringSubAggregation @system {
+  count: BigIntAggregation
+  string_agg: StringAggregation
+}
+
+enum StringMeasurementAggregation @system {
+  ANY
+}
+
+type BooleanAggregation @system {
+  count: BigInt
+  bool_and: Boolean
+  bool_or: Boolean
+  list(distinct: Boolean = false): [Boolean!]
+  any: Boolean
+  last: Boolean
+}
+
+type BooleanSubAggregation @system {
+  count: BigIntAggregation
+  bool_and: BooleanAggregation
+  bool_or: BooleanAggregation
+}
+
+enum BooleanMeasurementAggregation @system {
+  ANY
+  OR
+  AND
+}
+
+type DateAggregation @system {
+  count: BigInt
+  min: Date
+  max: Date
+  list(distinct: Boolean = false): [Date!]
+  any: Date
+  last: Date
+}
+
+type DateSubAggregation @system {
+  count: BigIntAggregation
+  min: DateAggregation
+  max: DateAggregation
+}
+
+enum DateMeasurementAggregation @system {
+  MIN
+  MAX
+  ANY
+}
+
+type TimestampAggregation @system {
+  count: BigInt
+  min: Timestamp
+  max: Timestamp
+  list(distinct: Boolean = false): [Timestamp!]
+  any: Timestamp
+  last: Timestamp
+}
+
+type TimestampSubAggregation @system {
+  count: BigIntAggregation
+  min: TimestampAggregation
+  max: TimestampAggregation
+}
+
+enum TimestampMeasurementAggregation @system {
+  MIN
+  MAX
+  ANY
+}
+
+type TimeAggregation @system {
+  count: BigInt
+  min: Time
+  max: Time
+  list(distinct: Boolean = false): [Time!]
+  any: Time
+  last: Time
+}
+
+type TimeSubAggregation @system {
+  count: BigIntAggregation
+  min: TimeAggregation
+  max: TimeAggregation
+}
+
+enum TimeMeasurementAggregation @system {
+  MIN
+  MAX
+  ANY
+}
+
+type JSONAggregation @system {
+  count(path: String): BigInt
+  list(path: String, distinct: Boolean = false): [JSON!]
+  any(path: String): JSON
+  last(path: String): JSON
+  sum(path: String!): Float
+  avg(path: String!): Float
+  min(path: String!): Float
+  max(path: String!): Float
+  string_agg(path: String!, sep: String!, distinct: Boolean = false): String
+  bool_and(path: String!): Boolean
+  bool_or(path: String!): Boolean
+}
+
+type JSONSubAggregation @system {
+  count(path: String): BigIntAggregation
+  sum(path: String!): FloatAggregation
+  avg(path: String!): FloatAggregation
+  min(path: String!): FloatAggregation
+  max(path: String!): FloatAggregation
+  string_agg(path: String!, sep: String!, distinct: Boolean = false): StringAggregation
+  bool_and(path: String!): BooleanAggregation
+  bool_or(path: String!): BooleanAggregation
+}
+
+type GeometryAggregation @system {
+  count: BigInt
+  list(distinct: Boolean = false): [Geometry!]
+  any: Geometry
+  last: Geometry
+  intersection: Geometry
+  union: Geometry
+  envelope: Geometry
+}
+
+type GeometrySubAggregation @system {
+  count: BigIntAggregation
+  intersection: GeometryAggregation
+  union: GeometryAggregation
+  envelope: GeometryAggregation
+}

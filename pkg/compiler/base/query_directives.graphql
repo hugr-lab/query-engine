@@ -1,0 +1,25 @@
+"""
+Calculate execution statistics for the query
+Execution statistics are calculated for the query and returned in the extensions field
+"""
+directive @stats on FIELD | QUERY
+directive @with_deleted on FIELD
+
+enum GeometrySpatialQueryType @system {
+    """
+    checks if the geometries intersect
+    """
+    INTERSECTS
+    """
+    checks if the geometries are completely inside reference geometry
+    """
+    WITHIN
+    """
+    checks if the references geometry are completely inside query geometry
+    """
+    CONTAINS
+    """
+    checks if the geometries don't intersect
+    """
+    DISJOIN
+}

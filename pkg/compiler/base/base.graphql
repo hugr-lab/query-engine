@@ -1,0 +1,150 @@
+directive @module(name: String!) on OBJECT | FIELD_DEFINITION
+directive @original_name(name: String!) on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR | FIELD_DEFINITION
+
+directive @table(
+	name: String!, 
+	is_m2m: Boolean = false, 
+	"""
+	Apply soft delete to table
+	"""
+	soft_delete: Boolean = false, 
+	"""
+	Soft delete condition to check if record is deleted
+	"""
+	soft_delete_cond: String, 
+	"""
+	Soft delete update condition to update record as deleted
+	"""
+	soft_delete_set: String
+) on OBJECT
+directive @view(name: String!, sql: String) on OBJECT
+directive @unique(fields: [String]!, query_suffix: String, skip_query: Boolean) repeatable on OBJECT
+
+directive @pk on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+directive @calc(formula: String!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT 
+directive @sql(exp: String!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION  # calculate field value from sql expression, can be only in data object (table or view)
+
+directive @unique_rule(rule: UniqueRuleType) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION 
+directive @default(value: any, sequence: String) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+directive @field_source(field: String!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+directive @geometry_info(
+	type: GeometryType
+	srid: String
+) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+directive @exclude_filter(
+	operations: [FilterOperator!]
+) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @filter_required on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""
+Mark data object (table, view, cube) as PostgreSQL TimescaleDB Hypertable
+"""
+directive @hypertable on OBJECT
+"""
+Mark timestamp field as a postgres timescale key in hypertable or continues aggregation view
+"""
+directive @timescale_key on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""
+Mark data object as cube, data will be pre aggregated before selected base on selection set
+"""
+directive @cube on OBJECT
+
+"""
+Mark field as measurement in cube.
+If field is marked as measurement and object is marked as cube, aggregation func parameter will be added to the field.
+Aggregation func should be return the same type as field type.
+"""
+directive @measurement on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+"""
+Mark do not aggregate subquery result
+"""
+directive @unnest on FIELD
+
+# define FK
+directive @references(
+	name: String
+	references_name: String!
+	source_fields: [String!]!
+	references_fields: [String!]!
+	description: String
+	query: String
+	references_query: String
+	references_description: String
+	is_m2m: Boolean
+	m2m_name: String
+) repeatable on OBJECT
+
+directive @field_references(
+	name: String
+	references_name: String!
+	field: String
+	query: String # query field name in object
+	description: String
+	references_query: String # query field name in reference object
+	references_description: String
+) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+
+
+# define subquery for FK or function call
+
+# automatically generated query to references data object if references is defined
+directive @references_query(
+	references_name: String!
+	name: String
+	is_m2m: Boolean
+	m2m_name: String
+) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @join(
+	references_name: String
+	source_fields: [String!]
+	references_fields: [String!]
+	sql: String # sql for join to indicate tables use source and dest names in field path, all fields path should in [source.field] or [dest.field] format
+) on FIELD_DEFINITION | FIELD | INPUT_FIELD_DEFINITION
+
+
+# function call
+directive @function(
+	name: String!, 
+	sql: String, 
+	skip_null_arg: Boolean, # skip null argument if there is only one argument
+	is_table: Boolean, 
+	json_cast: Boolean
+) on FIELD_DEFINITION
+
+directive @function_call(
+	references_name: String!
+	args: JSON # argument map from field to function argument
+) on FIELD_DEFINITION
+
+directive @table_function_call_join(
+	references_name: String!
+	args: JSON # argument map from field to function argument
+	source_fields: [String!]
+	references_fields: [String!]
+	sql: String # sql for join to indicate tables use source and dest names in field path, all fields path should in [source.field] or [dest.field] format
+) on FIELD_DEFINITION
+
+enum UniqueRuleType @system {
+    EQUALS
+    INTERSECTS # for geometry and range types
+}
+
+directive @cache(
+	ttl: Int
+	"""
+	Cache key for the query
+	"""
+	key: String
+	"""
+	Cache key for the query
+	"""
+	tags: [String!]
+) on FIELD | OBJECT | FIELD_DEFINITION
+
+directive @no_cache on FIELD
+directive @invalidate_cache on FIELD

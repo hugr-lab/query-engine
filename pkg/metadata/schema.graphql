@@ -1,0 +1,73 @@
+type catalog_sources @module(name: "core")
+  @table(name: "core.catalog_sources") {
+  name: String!
+  type: String!
+  description: String
+  path: String!
+}
+
+type data_sources @module(name: "core") 
+  @table(name: "core.data_sources") {
+  name: String!
+  type: String!
+  prefix: String!
+  description: String
+  path: String!
+
+  status: String @function_call(references_name: "data_source_status", args: {name: "name"})
+}
+
+type catalogs @module(name: "core") 
+  @table(name: "core.data_source_catalogs" is_m2m: true) {
+  catalog_name: String! @pk @field_references(references_name: "catalog_sources", field: "name", references_query: "data_sources")
+  data_source_name: String! @pk @field_references(references_name: "data_sources", field: "name", references_query: "catalogs")
+}
+
+
+extend type MutationFunction {
+  """
+    Register new data source and load catalog
+  """
+  register_data_source(
+    name: String!
+    type: String!
+    prefix: String!
+    description: String!
+    params: JSON!
+    schema_sources: [String!]!
+    persist: Boolean = true
+  ): OperationResult @module(name: "core")
+    @function(name: "register_data_source")
+
+  """
+    Load/Reload data source catalog
+  """
+  load_data_source(
+    name: String!
+  ): OperationResult @module(name: "core")
+    @function(name: "load_data_source")
+
+  """
+    Unload data source catalog without deleting
+  """
+  unload_data_source(
+    name: String!
+  ): OperationResult @module(name: "core")
+    @function(name: "unload_data_source")
+
+  """
+    Delete data source
+  """
+  delete_data_source(
+    name: String!
+  ): OperationResult @module(name: "core")
+    @function(name: "delete_data_source")
+}
+
+
+extend type Function {
+  data_source_status(
+    name: String!
+  ): String @module(name: "Core")
+    @function(name: "data_source_status")
+}

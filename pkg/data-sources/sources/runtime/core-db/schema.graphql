@@ -1,0 +1,80 @@
+"""
+  Catalog sources are the sources to data schemas, that can be provided by data sources
+  Currently supported types are (localFS, uri):
+  - localFS - accepts path to the directory with graphql schema files on the local filesystem
+  - uri - load data by uri, including local file storage, s3, http, aws, gcs, r2 (all file source should be set up in the system)
+"""
+type catalog_sources @module(name: "core")
+  @table(name: "catalog_sources") {
+  name: String! @pk
+  type: String!
+  description: String
+  path: String!
+}
+
+"""
+  Data sources are the sources to the data that are defined in catalogs
+  Currently supported types (duckdb, postgres):
+  - duckdb - accepts path to the duckdb database file
+  - postgres - accepts connection string to the postgres database
+  - http - accepts uri to the open-api specification of the http web service
+"""
+type data_sources @module(name: "core") 
+  @table(name: "data_sources") {
+  name: String! @pk
+  type: String!
+  prefix: String!
+  description: String
+  path: String!
+  self_defined: Boolean @default(value: false)
+  read_only: Boolean @default(value: false)
+}
+
+"""
+  Data source catalogs are the mapping between data sources and catalog sources
+"""
+type catalogs @module(name: "core") 
+  @table(name: "data_source_catalogs" is_m2m: true) {
+  catalog_name: String! @pk @field_references(references_name: "catalog_sources", field: "name", references_query: "data_sources")
+  data_source_name: String! @pk @field_references(references_name: "data_sources", field: "name", references_query: "catalogs")
+}
+
+"""
+  Roles are the permissions that can be assigned to users
+"""
+type roles @module(name: "core") 
+  @table(name: "roles") {
+  """
+    Role name
+  """
+  name: String! @pk
+  """
+    Role description
+  """
+  description: String!
+  """
+    Role disabled flag
+  """
+  disabled: Boolean @default(value: false)
+}
+
+"""
+  Role permissions to visible and allowed types and theirs field that can be assigned to roles
+"""
+type role_permissions @module(name: "core") 
+  @table(name: "permissions") {
+  "Role name"
+  role: String! @pk @field_references(references_name: "roles", field: "name", query: "role_info" references_query: "permissions")
+  "Type name, can be * for all types"
+  type_name: String! @pk
+  "Field name, can be * for all fields"
+  field_name: String! @pk
+  "Hidden flag"
+  hidden: Boolean @default(value: false)
+  "Disabled flag"
+  disabled: Boolean @default(value: false)
+  "Required filter values for the field"
+  filter: JSON
+  "Required field values for the data mutation"
+  data: JSON
+}
