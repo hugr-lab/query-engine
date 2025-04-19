@@ -645,10 +645,6 @@ func IsScalarAggregationType(typeName string) bool {
 	return ok
 }
 
-func IsAttributeValuesType(typeName string) bool {
-	return typeName == "AttributeValues"
-}
-
 func IsJSONType(typeName string) bool {
 	return typeName == JSONTypeName
 }

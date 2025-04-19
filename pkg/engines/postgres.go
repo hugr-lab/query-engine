@@ -121,6 +121,25 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 	return "", fmt.Errorf("unsupported value type: %T", v)
 }
 
+func (e *Postgres) FunctionCall(name string, positional []any, named map[string]any) (string, error) {
+	var args []string
+	for _, v := range positional {
+		s, err := e.SQLValue(v)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, s)
+	}
+	for k, v := range named {
+		s, err := e.SQLValue(v)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, fmt.Sprintf("%s=>%s", k, s))
+	}
+	return name + "(" + strings.Join(args, ",") + ")", nil
+}
+
 var jsonPathOpMap = map[string]string{
 	"eq":              "==",
 	"gt":              ">",

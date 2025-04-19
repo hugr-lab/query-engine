@@ -49,6 +49,11 @@ func addObjectPrefix(defs Definitions, def *ast.Definition, prefix string, addOr
 			a.Value.Raw = prefix + a.Value.Raw
 		}
 	}
+	if d := def.Directives.ForName(base.ViewArgsDirectiveName); d != nil {
+		if a := d.Arguments.ForName("name"); a != nil {
+			a.Value.Raw = prefix + a.Value.Raw
+		}
+	}
 
 	for _, field := range def.Fields {
 		for _, d := range field.Directives {
@@ -107,6 +112,37 @@ func validateObject(defs Definitions, def *ast.Definition) error {
 			}
 			if err := validateObjectUnique(defs, def, d); err != nil {
 				return err
+			}
+		case base.ViewArgsDirectiveName:
+			if objectType != objectViewDirectiveName {
+				return ErrorPosf(d.Position, "object %s should have @%s directive before @%s", def.Name, objectViewDirectiveName, d.Name)
+			}
+			argName := directiveArgValue(d, "name")
+			it := defs.ForName(argName)
+			if it == nil {
+				return ErrorPosf(d.Position, "object %s have @%s directive. Input object %s definition not found", def.Name, objectViewDirectiveName, argName)
+			}
+			required := false
+			for _, field := range it.Fields {
+				if field.Type.NonNull {
+					required = true
+					break
+				}
+			}
+			a := d.Arguments.ForName("required")
+			if a == nil {
+				d.Arguments = append(d.Arguments, &ast.Argument{
+					Name:     "required",
+					Value:    &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: d.Position},
+					Position: d.Position,
+				})
+				a = d.Arguments.ForName("required")
+			}
+			if a.Value == nil {
+				a.Value = &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: d.Position}
+			}
+			if a.Value.Raw == "true" || required {
+				a.Value.Raw = "true"
 			}
 		case base.CatalogDirectiveName, base.OriginalNameDirectiveName:
 		default:
@@ -424,9 +460,12 @@ type Object struct {
 	softDeleteSet       string
 	IsCube              bool
 
-	inputFilterName       string
-	inputFilterListName   string
-	inputFilterFieldsName string
+	inputFilterName     string
+	inputFilterListName string
+
+	inputArgsName string
+	requiredArgs  bool
+	functionCall  bool
 
 	def *ast.Definition
 }
@@ -462,8 +501,9 @@ func DataObjectInfo(def *ast.Definition) *Object {
 
 	info.inputFilterName = objectDirectiveArgValue(def, filterInputDirectiveName, "name")
 	info.inputFilterListName = objectDirectiveArgValue(def, filterListInputDirectiveName, "name")
-	info.inputFilterFieldsName = objectDirectiveArgValue(def, filterFieldsInputDirectiveName, "name")
 	info.IsCube = def.Directives.ForName(objectCubeDirectiveName) != nil
+	info.inputArgsName = objectDirectiveArgValue(def, base.ViewArgsDirectiveName, "name")
+	info.requiredArgs = objectDirectiveArgValue(def, base.ViewArgsDirectiveName, "required") == "true"
 
 	return &info
 }
@@ -490,53 +530,130 @@ func (info *Object) SoftDeleteSet(prefix string) string {
 	return sql
 }
 
+func (info *Object) HasArguments() bool {
+	return info.inputArgsName != ""
+}
+
 func (info *Object) subQueryArguments() ast.ArgumentDefinitionList {
-	return ast.ArgumentDefinitionList{
-		{
+	var args ast.ArgumentDefinitionList
+	if info.inputArgsName != "" {
+		if !info.requiredArgs {
+			args = append(args, &ast.ArgumentDefinition{
+				Name:        "args",
+				Description: "Arguments",
+				Type:        ast.NamedType(info.inputArgsName, compiledPos()),
+				Position:    compiledPos(),
+			})
+		}
+		if info.requiredArgs {
+			args = append(args, &ast.ArgumentDefinition{
+				Name:        "args",
+				Description: "Arguments",
+				Type:        ast.NonNullNamedType(info.inputArgsName, compiledPos()),
+				Position:    compiledPos(),
+			})
+		}
+	}
+	return append(args,
+		&ast.ArgumentDefinition{
 			Name:        "filter",
 			Description: "Filter",
 			Type:        ast.NamedType(info.inputFilterName, compiledPos()),
 			Position:    compiledPos(),
 		},
-		{
+		&ast.ArgumentDefinition{
 			Name:        "order_by",
 			Description: "Sort options for the result set",
 			Type:        ast.ListType(ast.NamedType("OrderByField", compiledPos()), compiledPos()),
 		},
-		{
+		&ast.ArgumentDefinition{
 			Name:         "limit",
 			Description:  "Limit the number of returned objects",
 			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue},
 			Type:         ast.NamedType("Int", compiledPos()),
 			Position:     compiledPos(),
 		},
-		{
+		&ast.ArgumentDefinition{
 			Name:         "offset",
 			Description:  "Skip the first n objects",
 			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue},
 			Type:         ast.NamedType("Int", compiledPos()),
 			Position:     compiledPos(),
 		},
-		{
+		&ast.ArgumentDefinition{
 			Name:        "distinct_on",
 			Description: "Distinct on the given fields",
 			Type:        ast.ListType(ast.NamedType("String", compiledPos()), compiledPos()),
 			Position:    compiledPos(),
 		},
-		{
-			Name:        "field_filters",
-			Description: "Field filters",
-			Type:        ast.ListType(ast.NamedType(info.inputFilterFieldsName, compiledPos()), compiledPos()),
-			Position:    compiledPos(),
+		&ast.ArgumentDefinition{
+			Name:        "nested_order_by",
+			Description: "Sort options for the result set",
+			Type:        ast.ListType(ast.NamedType("OrderByField", compiledPos()), compiledPos()),
 		},
-		{
-			Name:         "inner",
-			Description:  "Apply inner join to the result set",
-			Type:         ast.NamedType("Boolean", compiledPos()),
-			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue},
+		&ast.ArgumentDefinition{
+			Name:         "nested_limit",
+			Description:  "Limit the number of returned objects",
+			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue},
+			Type:         ast.NamedType("Int", compiledPos()),
 			Position:     compiledPos(),
 		},
+		&ast.ArgumentDefinition{
+			Name:         "nested_offset",
+			Description:  "Skip the first n objects",
+			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue},
+			Type:         ast.NamedType("Int", compiledPos()),
+			Position:     compiledPos(),
+		},
+	)
+}
+
+type sqlBuilder interface {
+	SQLValue(any) (string, error)
+	FunctionCall(name string, positional []any, named map[string]any) (string, error)
+}
+
+func (info *Object) ApplyArguments(defs Definitions, args map[string]any, builder sqlBuilder) (err error) {
+	if !info.HasArguments() || len(args) == 0 {
+		return nil
 	}
+	it := defs.ForName(info.inputArgsName)
+	if it == nil {
+		return ErrorPosf(info.def.Position, "input object %s not found", info.inputArgsName)
+	}
+
+	var posArgs []any
+	namedArgs := make(map[string]any)
+
+	for _, field := range it.Fields {
+		val := args[field.Name]
+		if val == nil && field.Type.NonNull {
+			return ErrorPosf(field.Position, "argument %s is required", field.Name)
+		}
+		if info.sql != "" {
+			sv, err := builder.SQLValue(val)
+			if err != nil {
+				return ErrorPosf(field.Position, "wrong argument %s value: %s", field.Name, err.Error())
+			}
+			info.sql = strings.ReplaceAll(info.sql, "[$"+field.Name+"]", sv)
+			continue
+		}
+		if d := field.Directives.ForName(inputFieldNamedArgDirectiveName); d != nil {
+			name := field.Name
+			if fn := directiveArgValue(d, "name"); fn != "" {
+				name = fn
+			}
+			namedArgs[name] = val
+			continue
+		}
+		posArgs = append(posArgs, val)
+	}
+	if info.sql != "" {
+		return nil
+	}
+	info.sql, err = builder.FunctionCall(info.Name, posArgs, namedArgs)
+	info.functionCall = true
+	return err
 }
 
 func (info *Object) SQL(ctx context.Context, prefix string) string {
@@ -545,6 +662,9 @@ func (info *Object) SQL(ctx context.Context, prefix string) string {
 	}
 
 	if info.sql != "" {
+		if info.functionCall {
+			return info.sql
+		}
 		sql := info.sql
 		if !strings.HasPrefix(sql, "(") || !strings.HasSuffix(sql, ")") {
 			sql = "(" + sql + ")"

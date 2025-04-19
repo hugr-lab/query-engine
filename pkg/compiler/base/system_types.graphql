@@ -62,7 +62,6 @@ type MutationFunction @system {
 # generated directives
 directive @filter_input(name: String!) on OBJECT | INPUT_OBJECT
 directive @filter_list_input(name: String!) on OBJECT | INPUT_OBJECT
-directive @filter_fields_input(name: String!) on OBJECT | INPUT_OBJECT
 directive @data_input(name: String!) on OBJECT | INPUT_OBJECT
 
 directive @query(name: String, type: QueryType) on OBJECT | FIELD_DEFINITION

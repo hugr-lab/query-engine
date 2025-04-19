@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	filterInputDirectiveName       = "filter_input"
-	filterListInputDirectiveName   = "filter_list_input"
-	filterFieldsInputDirectiveName = "filter_fields_input"
+	filterInputDirectiveName        = "filter_input"
+	filterListInputDirectiveName    = "filter_list_input"
+	inputFieldNamedArgDirectiveName = "named"
 )
 
 func addInputPrefix(def *ast.Definition, prefix string, addOriginal bool) {
@@ -49,16 +49,12 @@ func validateInputObject(def *ast.Definition) error {
 		// check shouldn't any field have any directive
 		for _, d := range field.Directives {
 			switch d.Name {
-			case base.DeprecatedDirectiveName:
+			case base.DeprecatedDirectiveName,
+				fieldFieldSourceDirectiveName,
+				inputFieldNamedArgDirectiveName:
 			default:
 				errs = append(errs, ErrorPosf(d.Position, "input object field %s shouldn't have directive %s", field.Name, d.Name))
 			}
-		}
-		if len(errs) > 0 {
-			continue
-		}
-		if IsAttributeValuesType(field.Type.Name()) {
-			errs = append(errs, ErrorPosf(field.Position, "input object field %s shouldn't have a type %s", field.Name, field.Type.Name()))
 		}
 	}
 	if len(errs) != 0 {
@@ -72,48 +68,67 @@ func inputObjectQueryArgs(schema *ast.SchemaDocument, def *ast.Definition, forSu
 	if !IsDataObject(def) {
 		return nil
 	}
-	args := ast.ArgumentDefinitionList{
-		{
+	var args ast.ArgumentDefinitionList
+	if d := def.Directives.ForName(base.ViewArgsDirectiveName); d != nil {
+		argInput := directiveArgValue(d, "name")
+		required := directiveArgValue(d, "required") == "true"
+		var argType *ast.Type
+		if required {
+			argType = ast.NonNullNamedType(argInput, compiledPos())
+		} else {
+			argType = ast.NamedType(argInput, compiledPos())
+		}
+		args = append(args,
+			&ast.ArgumentDefinition{
+				Name:        "args",
+				Description: "Arguments for the view",
+				Type:        argType,
+				Position:    compiledPos(),
+			},
+		)
+	}
+	args = append(args,
+		&ast.ArgumentDefinition{
 			Name:        "filter",
 			Description: "Filter",
 			Type:        ast.NamedType(inputObjectFilterName(schema, def, false), compiledPos()),
 			Position:    compiledPos(),
 		},
-		{
+		&ast.ArgumentDefinition{
 			Name:        "order_by",
 			Description: "Sort options for the result set",
 			Type:        ast.ListType(ast.NamedType("OrderByField", compiledPos()), compiledPos()),
 		},
-		{
+		&ast.ArgumentDefinition{
 			Name:         "limit",
 			Description:  "Limit the number of returned objects",
 			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue},
 			Type:         ast.NamedType("Int", compiledPos()),
 			Position:     compiledPos(),
 		},
-		{
+		&ast.ArgumentDefinition{
 			Name:         "offset",
 			Description:  "Skip the first n objects",
 			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue},
 			Type:         ast.NamedType("Int", compiledPos()),
 			Position:     compiledPos(),
 		},
-		{
+		&ast.ArgumentDefinition{
 			Name:        "distinct_on",
 			Description: "Distinct on the given fields",
 			Type:        ast.ListType(ast.NamedType("String", compiledPos()), compiledPos()),
 			Position:    compiledPos(),
 		},
-	}
+	)
 	if forSubQuery {
-		args = append(args, &ast.ArgumentDefinition{
-			Name:         "inner",
-			Description:  "Apply inner join to the result set",
-			Type:         ast.NamedType("Boolean", compiledPos()),
-			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue},
-			Position:     compiledPos(),
-		})
 		args = append(args,
+			&ast.ArgumentDefinition{
+				Name:         "inner",
+				Description:  "Apply inner join to the result set",
+				Type:         ast.NamedType("Boolean", compiledPos()),
+				DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue},
+				Position:     compiledPos(),
+			},
 			&ast.ArgumentDefinition{
 				Name:        "nested_order_by",
 				Description: "Sort options for the result set",
@@ -196,6 +211,11 @@ func inputObjectFilterName(schema *ast.SchemaDocument, def *ast.Definition, isLi
 		}
 		switch {
 		case t.Kind == ast.Object:
+			// skip parametrized views
+			if t.Directives.ForName(objectViewDirectiveName) != nil &&
+				t.Directives.ForName(base.ViewArgsDirectiveName) != nil {
+				continue
+			}
 			if !IsDataObject(t) && field.Type.NamedType == "" {
 				// skip non-data objects list types for filtering
 				// only data objects lists are allowed to filter
@@ -252,6 +272,12 @@ func inputObjectFilterName(schema *ast.SchemaDocument, def *ast.Definition, isLi
 }
 
 func appendFilterInputObject(schema *ast.SchemaDocument, def *ast.Definition, field *ast.FieldDefinition) {
+	// skip parametrized views
+	t := schema.Definitions.ForName(field.Type.Name())
+	if t.Directives.ForName(objectViewDirectiveName) != nil &&
+		t.Directives.ForName(base.ViewArgsDirectiveName) != nil {
+		return
+	}
 	inputName := inputObjectFilterName(schema, def, false)
 	input := schema.Definitions.ForName(inputName)
 	if input == nil {
@@ -316,6 +342,9 @@ func inputObjectMutationInsertName(schema *ast.SchemaDocument, def *ast.Definiti
 			td := schema.Definitions.ForName(t.Name())
 			if td == nil {
 				log.Printf("warn: type %s not found for field %s", t.Name(), field.Name)
+				continue
+			}
+			if td.Directives.ForName(objectViewDirectiveName) != nil {
 				continue
 			}
 			tn := inputObjectMutationInsertName(schema, td)

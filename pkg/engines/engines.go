@@ -21,6 +21,7 @@ const (
 type Engine interface {
 	Type() Type
 	SQLValue(any) (string, error)
+	FunctionCall(name string, positional []any, named map[string]any) (string, error)
 	RepackObject(sqlName string, field *ast.Field) string
 	UnpackObjectToFieldList(sqlName string, field *ast.Field) string
 	FilterOperationSQLValue(sqlName, path, op string, value any, params []any) (string, []any, error)

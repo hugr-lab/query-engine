@@ -237,6 +237,18 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			}
 		}
 	}
+	queryArg, err := compiler.ArgumentValues(defs, query, vars, true)
+	if err != nil {
+		return nil, false, err
+	}
+	if info.HasArguments() {
+		arg := queryArg.ForName("args")
+		am, _ := arg.Value.(map[string]any)
+		err = info.ApplyArguments(defs, am, e)
+		if err != nil {
+			return nil, false, err
+		}
+	}
 
 	fieldNodes := fieldsNodes(e, info, "_objects",
 		append(qp.fields, qp.extraSourceFields...), // add selected fields and extra fields that are required for joins
@@ -258,11 +270,6 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		if node != nil {
 			nodes = append(nodes, node)
 		}
-	}
-
-	queryArg, err := compiler.ArgumentValues(defs, query, vars, true)
-	if err != nil {
-		return nil, false, err
 	}
 
 	var paramNodes QueryPlanNodes

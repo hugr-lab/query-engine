@@ -36,6 +36,10 @@ const (
 )
 
 const (
+	ViewArgsDirectiveName = "args"
+)
+
+const (
 	FieldGeometryInfoDirectiveName = "geometry_info"
 	FieldSqlDirectiveName          = "sql"
 	FieldExtraFieldDirectiveName   = "extra_field"
