@@ -148,17 +148,10 @@ type Field struct {
 
 	geometrySRID string
 	geometryType string
-
-	IsQueryTimeCalc bool
 }
 
 func FieldInfo(field *ast.Field) *Field {
 	info := fieldInfo(field.Definition, field.ObjectDefinition)
-	fcd := field.Directives.ForName(base.FieldSqlDirectiveName)
-	if fcd != nil {
-		info.sql = directiveArgValue(fcd, "formula")
-		info.IsQueryTimeCalc = true
-	}
 	info.field = field
 
 	return info
@@ -190,7 +183,7 @@ func (f *Field) IsReferencesSubquery() bool {
 }
 
 func (f *Field) IsNotDBField() bool {
-	return f.IsQueryTimeCalc || f.IsCalcField() || f.IsReferencesSubquery() ||
+	return f.IsCalcField() || f.IsReferencesSubquery() ||
 		f.def.Directives.ForName(functionCallDirectiveName) != nil ||
 		f.def.Directives.ForName(functionCallTableJoinDirectiveName) != nil ||
 		f.def.Directives.ForName(JoinDirectiveName) != nil ||

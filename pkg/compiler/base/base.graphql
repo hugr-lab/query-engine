@@ -1,6 +1,17 @@
+# Define module for data objects and functions
 directive @module(name: String!) on OBJECT | FIELD_DEFINITION
-directive @original_name(name: String!) on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR | FIELD_DEFINITION
 
+# define function info (apply to the extended Function or MutationFunction type)
+directive @function(
+	name: String!, 
+	sql: String, 
+	skip_null_arg: Boolean, # skip null argument if there is only one argument
+	is_table: Boolean, 
+	json_cast: Boolean
+) on FIELD_DEFINITION
+
+
+# Mark object as table in the datasource
 directive @table(
 	name: String!, 
 	is_m2m: Boolean = false, 
@@ -17,29 +28,45 @@ directive @table(
 	"""
 	soft_delete_set: String
 ) on OBJECT
+
+# Mark object as view in the datasource
 directive @view(name: String!, sql: String) on OBJECT
 """ The arguments for the view directive defines input name to request data """
 directive @args(name: String!, required: Boolean = false) on OBJECT
 """ The argument is named """
 directive @named(name: String) on INPUT_FIELD_DEFINITION 
 
+# Add unique constraint to the object
 directive @unique(fields: [String]!, query_suffix: String, skip_query: Boolean) repeatable on OBJECT
 
+# Fields directives
+
+# Include field to primary key
 directive @pk on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
-directive @calc(formula: String!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT 
+
+# sql for calculate field value, expression should be in sql format, all fields should placed in the []
 directive @sql(exp: String!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION  # calculate field value from sql expression, can be only in data object (table or view)
 
 directive @unique_rule(rule: UniqueRuleType) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION 
+
+# default value for field, if field is not nullable, define sequences for the field
 directive @default(value: any, sequence: String) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+
+# field name in the database
 directive @field_source(field: String!) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+# define additional info for the geometry field
 directive @geometry_info(
 	type: GeometryType
 	srid: String
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+
+# exclude operators for the filter
 directive @exclude_filter(
 	operations: [FilterOperator!]
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
+# define that the by filter is required
 directive @filter_required on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
 """
@@ -68,7 +95,7 @@ Mark do not aggregate subquery result
 """
 directive @unnest on FIELD
 
-# define FK
+# define FK on the data object (view or table)
 directive @references(
 	name: String
 	references_name: String!
@@ -82,6 +109,7 @@ directive @references(
 	m2m_name: String
 ) repeatable on OBJECT
 
+# define FK on the data object field (view or table)
 directive @field_references(
 	name: String
 	references_name: String!
@@ -92,9 +120,15 @@ directive @field_references(
 	references_description: String
 ) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
-
-
 # define subquery for FK or function call
+
+# define field as join result from the other data object
+directive @join(
+	references_name: String
+	source_fields: [String!]
+	references_fields: [String!]
+	sql: String # sql for join to indicate tables use source and dest names in field path, all fields path should in [source.field] or [dest.field] format
+) on FIELD_DEFINITION | FIELD | INPUT_FIELD_DEFINITION
 
 # automatically generated query to references data object if references is defined
 directive @references_query(
@@ -104,23 +138,7 @@ directive @references_query(
 	m2m_name: String
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
-directive @join(
-	references_name: String
-	source_fields: [String!]
-	references_fields: [String!]
-	sql: String # sql for join to indicate tables use source and dest names in field path, all fields path should in [source.field] or [dest.field] format
-) on FIELD_DEFINITION | FIELD | INPUT_FIELD_DEFINITION
-
-
 # function call
-directive @function(
-	name: String!, 
-	sql: String, 
-	skip_null_arg: Boolean, # skip null argument if there is only one argument
-	is_table: Boolean, 
-	json_cast: Boolean
-) on FIELD_DEFINITION
-
 directive @function_call(
 	references_name: String!
 	args: JSON # argument map from field to function argument
@@ -133,6 +151,8 @@ directive @table_function_call_join(
 	references_fields: [String!]
 	sql: String # sql for join to indicate tables use source and dest names in field path, all fields path should in [source.field] or [dest.field] format
 ) on FIELD_DEFINITION
+
+
 
 enum UniqueRuleType @system {
     EQUALS
