@@ -9,7 +9,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func finalResultNode(_ context.Context, schema *ast.Schema, planner Catalog, field *ast.Field, node *QueryPlanNode, transformTypes bool) *QueryPlanNode {
+func finalResultNode(ctx context.Context, schema *ast.Schema, planner Catalog, field *ast.Field, node *QueryPlanNode, transformTypes bool) *QueryPlanNode {
 	node = applyAllParametersNode(node)
 	node.engines = planner
 	node.schema = schema
@@ -32,7 +32,7 @@ func finalResultNode(_ context.Context, schema *ast.Schema, planner Catalog, fie
 				return "", nil, err
 			}
 			params = params[:n]
-			if !transformTypes {
+			if !transformTypes || IsRawResultsQuery(ctx, field) {
 				return sql, params, nil
 			}
 

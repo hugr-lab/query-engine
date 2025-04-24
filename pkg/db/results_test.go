@@ -94,7 +94,7 @@ func TestDBJsonTable_EncodeMsgpack(t *testing.T) {
 		t.Fatalf("EncodeMsgpack() error = %v", err)
 	}
 
-	decodedTable := new(DBJsonTable)
+	decodedTable := new(ArrowTable)
 	dec := msgpack.NewDecoder(&buf)
 
 	err = decodedTable.DecodeMsgpack(dec)

@@ -35,7 +35,7 @@ func NewCacheItem(data any) (*CacheItem, error) {
 			Type: ItemDataTypeMap,
 			Data: v,
 		}, nil
-	case *db.DBJsonTable:
+	case *db.ArrowTable:
 		return &CacheItem{
 			Type: ItemDataTypeDBJsonTable,
 			Data: v,
@@ -71,7 +71,7 @@ func (item *CacheItem) DecodeMsgpack(dec *msgpack.Decoder) (err error) {
 	case ItemDataTypeMap:
 		item.Data, err = dec.DecodeMap()
 	case ItemDataTypeDBJsonTable:
-		data := new(db.DBJsonTable)
+		data := new(db.ArrowTable)
 		err = dec.Decode(data)
 		item.Data = data
 	case ItemDataTypeJsonValue:

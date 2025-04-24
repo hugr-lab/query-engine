@@ -473,23 +473,26 @@ func (e *Postgres) ToIntermediateType(f *ast.Field) (string, error) {
 	return Ident(f.Alias), nil
 }
 
-func (e *Postgres) CastFromIntermediateType(f *ast.Field, toOutput bool) (string, error) {
+func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, error) {
 	// only for geometry and non scalar objects types, other types are converted automatically
 	// interval type will be converted to TEXT representation
 	if f.Definition.Type.NamedType == compiler.GeometryTypeName {
 		out := "ST_GeomFromHEXWKB(%s)"
-		if toOutput {
+		if toJSON {
 			out = "ST_AsGeoJson(" + out + ")::JSON"
 		}
 		return fmt.Sprintf(out, Ident(f.Alias)), nil
 	}
 
 	if !compiler.IsScalarType(f.Definition.Type.Name()) {
-		if toOutput {
+		if toJSON {
 			if f.Definition.Type.NamedType == "" {
 				return Ident(f.Alias) + "::JSON[]", nil
 			}
 			return Ident(f.Alias) + "::JSON", nil
+		}
+		if f.Definition.Type.NamedType == "" {
+			return "list_transform(" + Ident(f.Alias) + "," + Ident(f.Alias) + "->" + JsonToStruct(f, "", false) + ")", nil
 		}
 		return JsonToStruct(f, "", false), nil
 	}

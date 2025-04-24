@@ -11,7 +11,7 @@ import (
 // create cast result node to translate query result from TypeCaster QueryEngine to the original duckdb types.
 // Objects casts to JSON and scalars casts to natural duckdb types trough intermediate representation.
 // receive node that should generate a valid SQL query and a TypeCaster QueryEngine.
-func castResultsNode(_ context.Context, caster engines.EngineTypeCaster, node *QueryPlanNode, toOutput, withRowNum bool) (*QueryPlanNode, error) {
+func castResultsNode(_ context.Context, caster engines.EngineTypeCaster, node *QueryPlanNode, toJSON, withRowNum bool) (*QueryPlanNode, error) {
 	return &QueryPlanNode{
 		Name:    node.Name,
 		Query:   node.Query,
@@ -59,7 +59,7 @@ func castResultsNode(_ context.Context, caster engines.EngineTypeCaster, node *Q
 				if v != f.Field.Alias {
 					intermediateSelection = append(intermediateSelection, v+" AS "+engines.Ident(f.Field.Alias))
 				}
-				c, err := caster.CastFromIntermediateType(f.Field, toOutput)
+				c, err := caster.CastFromIntermediateType(f.Field, toJSON)
 				if err != nil {
 					return "", nil, err
 				}
@@ -92,7 +92,7 @@ func castResultsNode(_ context.Context, caster engines.EngineTypeCaster, node *Q
 }
 
 // accept a node that should generate a valid SQL as scalar value (if array it will be unnested and aggregate after if needed) and a TypeCaster QueryEngine.
-func castScalarResultsNode(_ context.Context, caster engines.EngineTypeCaster, node *QueryPlanNode, aggArray, toOutput bool) (*QueryPlanNode, error) {
+func castScalarResultsNode(_ context.Context, caster engines.EngineTypeCaster, node *QueryPlanNode, aggArray, toJSON bool) (*QueryPlanNode, error) {
 	return &QueryPlanNode{
 		Name:    node.Name,
 		Query:   node.Query,
@@ -130,7 +130,7 @@ func castScalarResultsNode(_ context.Context, caster engines.EngineTypeCaster, n
 				)
 			}
 
-			c, err := caster.CastFromIntermediateType(node.Query, toOutput)
+			c, err := caster.CastFromIntermediateType(node.Query, toJSON)
 			if err != nil {
 				return "", nil, err
 			}
