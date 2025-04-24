@@ -5,10 +5,12 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/types"
 
 	cs "github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 )
@@ -26,6 +28,9 @@ var (
 //go:embed schema.sql
 var dbSchema string
 
+//go:embed pg-schema.sql
+var pgSchema string
+
 //go:embed schema.graphql
 var schema string
 
@@ -40,11 +45,16 @@ type Config struct {
 }
 
 type Source struct {
-	c Config
+	c      Config
+	dbType types.DataSourceType
+	e      engines.Engine
 }
 
 func New(c Config) *Source {
-	return &Source{c: c}
+	if strings.HasPrefix(c.Path, "postgres://") {
+		return &Source{c: c, dbType: sources.Postgres, e: engines.NewPostgres()}
+	}
+	return &Source{c: c, dbType: sources.DuckDB, e: engines.NewDuckDB()}
 }
 
 func (s *Source) Name() string {
@@ -52,7 +62,7 @@ func (s *Source) Name() string {
 }
 
 func (s *Source) Engine() engines.Engine {
-	return engines.NewDuckDB()
+	return s.e
 }
 
 func (s *Source) IsReadonly() bool {
@@ -61,7 +71,7 @@ func (s *Source) IsReadonly() bool {
 
 func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 	// check if db is attached
-	err := sources.CheckDBExists(ctx, db, s.Name(), sources.DuckDB)
+	err := sources.CheckDBExists(ctx, db, s.Name(), s.dbType)
 	if err != nil {
 		return err
 	}
@@ -72,8 +82,13 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 	}
 
 	sql := "ATTACH DATABASE '" + s.c.Path + "' AS " + dbName
-	if s.IsReadonly() {
+	switch {
+	case s.dbType == sources.DuckDB && s.IsReadonly():
 		sql += " (READ_ONLY)"
+	case s.dbType == sources.Postgres && !s.IsReadonly():
+		sql += " (TYPE POSTGRES)"
+	case s.dbType == sources.Postgres && s.IsReadonly():
+		sql += " (TYPE POSTGRES, READ_ONLY)"
 	}
 
 	_, err = db.Exec(ctx, sql)
@@ -84,11 +99,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 	// check if db is not initialized apply schema
 	err = checkDBVersion(ctx, db)
 	if errors.Is(err, ErrDBIsNotInitialized) && !s.IsReadonly() {
-		_, err = db.Exec(ctx, dbSchema)
-		if err != nil {
-			return fmt.Errorf("core db initialization: %w", err)
-		}
-		return nil
+		return s.applySchema(ctx, db)
 	}
 
 	return err
@@ -107,7 +118,7 @@ func checkDBVersion(ctx context.Context, db *db.Pool) error {
 	defer conn.Close()
 	var isExists bool
 	err = conn.QueryRow(ctx,
-		"SELECT EXISTS(FROM duckdb_tables() WHERE database_name = '"+dbName+"');",
+		"SELECT EXISTS(FROM duckdb_tables() WHERE database_name = '"+dbName+"' AND table_name = 'version');",
 	).Scan(&isExists)
 	if err != nil {
 		return fmt.Errorf("core db check version: %w", err)
@@ -126,6 +137,18 @@ func checkDBVersion(ctx context.Context, db *db.Pool) error {
 	}
 	if *version != dbVersion {
 		return ErrDBIsDifferentVersion
+	}
+	return nil
+}
+
+func (s *Source) applySchema(ctx context.Context, db *db.Pool) error {
+	sql := dbSchema
+	if s.dbType == sources.Postgres {
+		sql = "FROM " + s.e.(engines.EngineQueryScanner).WrapExec(s.Name(), pgSchema)
+	}
+	_, err := db.Exec(ctx, sql)
+	if err != nil {
+		return fmt.Errorf("core db initialization: %w", err)
 	}
 	return nil
 }

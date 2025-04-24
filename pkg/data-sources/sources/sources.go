@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	Core     types.DataSourceType = "coredb"
 	Postgres types.DataSourceType = "postgres"
 	DuckDB   types.DataSourceType = "duckdb"
 	Http     types.DataSourceType = "http"
