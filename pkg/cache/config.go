@@ -11,7 +11,6 @@ import (
 	"github.com/eko/gocache/lib/v4/store"
 	bs "github.com/eko/gocache/store/bigcache/v4"
 	mc "github.com/eko/gocache/store/memcache/v4"
-	ps "github.com/eko/gocache/store/pegasus/v4"
 	rs "github.com/eko/gocache/store/redis/v4"
 	rrs "github.com/eko/gocache/store/rediscluster/v4"
 	"github.com/redis/go-redis/v9"
@@ -22,7 +21,6 @@ type BackendType string
 const (
 	L2RedisBackend     BackendType = "redis"
 	L2MemcachedBackend BackendType = "memcached"
-	L2PegasusBackend   BackendType = "pegasus"
 )
 
 var (
@@ -134,10 +132,6 @@ func (c L2Config) Init(ctx context.Context) (store.StoreInterface, error) {
 			return nil, err
 		}
 		return mc.NewMemcache(client), nil
-	case L2PegasusBackend:
-		return ps.NewPegasus(ctx, &ps.OptionsPegasus{
-			MetaServers: c.Addresses,
-		})
 	default:
 		return nil, errors.New("unsupported l2 backend type")
 	}
