@@ -55,7 +55,7 @@ type EngineQueryScanner interface {
 type EngineTypeCaster interface {
 	Engine
 	ToIntermediateType(*ast.Field) (string, error)
-	CastFromIntermediateType(field *ast.Field, toOutput bool) (string, error)
+	CastFromIntermediateType(field *ast.Field, toJSON bool) (string, error)
 }
 
 type EngineKeyWordExtender interface {

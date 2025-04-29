@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
@@ -9,7 +10,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func finalResultNode(_ context.Context, schema *ast.Schema, planner Catalog, field *ast.Field, node *QueryPlanNode, transformTypes bool) *QueryPlanNode {
+func finalResultNode(ctx context.Context, schema *ast.Schema, planner Catalog, field *ast.Field, node *QueryPlanNode, transformTypes bool) *QueryPlanNode {
 	node = applyAllParametersNode(node)
 	node.engines = planner
 	node.schema = schema
@@ -32,25 +33,29 @@ func finalResultNode(_ context.Context, schema *ast.Schema, planner Catalog, fie
 				return "", nil, err
 			}
 			params = params[:n]
-			if !transformTypes {
+			if !transformTypes && !IsRawResultsQuery(ctx, field) {
 				return sql, params, nil
 			}
-
+			geomTransformFunc := "ST_AsGeoJSON"
+			if IsRawResultsQuery(ctx, field) {
+				geomTransformFunc = "ST_AsWKB"
+			}
 			if compiler.IsScalarType(node.Query.Definition.Type.Name()) {
 				if node.Query.Definition.Type.Name() != compiler.GeometryTypeName {
 					return sql, params, nil
 				}
 				if node.Query.Definition.Type.NamedType != "" {
-					return "SELECT ST_AsGeoJSON(" + sql + ") AS " + engines.Ident(node.Query.Alias), params, nil
+					return fmt.Sprintf("SELECT %s(%s) AS %s", geomTransformFunc, sql, engines.Ident(node.Query.Alias)), params, nil
 				}
-				return "SELECT ST_AsGeoJSON(_geom) AS " + engines.Ident(node.Query.Alias) +
-					" FROM (" + sql + ") AS _geom", params, nil
+				return fmt.Sprintf("SELECT %s(_geom) AS %s FROM (%s) AS _geom",
+					geomTransformFunc, engines.Ident(node.Query.Alias), sql,
+				), params, nil
 			}
 			// transform fields to output format
 			var fields []string
 			for _, f := range engines.SelectedFields(node.Query.SelectionSet) {
 				if f.Field.Definition.Type.Name() == compiler.GeometryTypeName {
-					fields = append(fields, "ST_AsGeoJSON("+engines.Ident(f.Field.Alias)+") AS "+engines.Ident(f.Field.Alias))
+					fields = append(fields, geomTransformFunc+"("+engines.Ident(f.Field.Alias)+") AS "+engines.Ident(f.Field.Alias))
 					continue
 				}
 				fields = append(fields, engines.Ident(f.Field.Alias))

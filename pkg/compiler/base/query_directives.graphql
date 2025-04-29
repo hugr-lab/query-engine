@@ -4,6 +4,7 @@ Execution statistics are calculated for the query and returned in the extensions
 """
 directive @stats on FIELD | QUERY
 directive @with_deleted on FIELD
+directive @raw on FIELD
 
 enum GeometrySpatialQueryType @system {
     """

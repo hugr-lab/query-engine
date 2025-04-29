@@ -13,31 +13,31 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-type DBJsonTable struct {
+type ArrowTable struct {
 	chunks              []arrow.Record
 	wrapped             bool
 	asArray             bool
 	releaseAfterMarshal bool
 }
 
-func NewDBJsonTable(releaseAfterMarshal bool) *DBJsonTable {
-	return &DBJsonTable{
+func NewDBJsonTable(releaseAfterMarshal bool) *ArrowTable {
+	return &ArrowTable{
 		releaseAfterMarshal: releaseAfterMarshal,
 	}
 }
 
-func (t *DBJsonTable) Append(rec arrow.Record) {
+func (t *ArrowTable) Append(rec arrow.Record) {
 	rec.Retain()
 	t.chunks = append(t.chunks, rec)
 }
 
-func (t *DBJsonTable) Release() {
+func (t *ArrowTable) Release() {
 	for _, rec := range t.chunks {
 		rec.Release()
 	}
 }
 
-func (t *DBJsonTable) RowData(i int) (map[string]any, bool) {
+func (t *ArrowTable) RowData(i int) (map[string]any, bool) {
 	if i < 0 || i >= t.NumRows() {
 		return nil, false
 	}
@@ -56,15 +56,15 @@ func (t *DBJsonTable) RowData(i int) (map[string]any, bool) {
 	return nil, false
 }
 
-func (t *DBJsonTable) NumChunks() int {
+func (t *ArrowTable) NumChunks() int {
 	return len(t.chunks)
 }
 
-func (t *DBJsonTable) Chunk(i int) arrow.Record {
+func (t *ArrowTable) Chunk(i int) arrow.Record {
 	return t.chunks[i]
 }
 
-func (t *DBJsonTable) NumRows() int {
+func (t *ArrowTable) NumRows() int {
 	var numRows int64
 	for _, rec := range t.chunks {
 		numRows += rec.NumRows()
@@ -72,14 +72,18 @@ func (t *DBJsonTable) NumRows() int {
 	return int(numRows)
 }
 
-func (t *DBJsonTable) NumCols() int {
+func (t *ArrowTable) NumCols() int {
 	if len(t.chunks) == 0 {
 		return 0
 	}
 	return int(t.chunks[0].NumCols())
 }
 
-func (t *DBJsonTable) MarshalJSON() ([]byte, error) {
+func (t *ArrowTable) SetAutoRelease(release bool) {
+	t.releaseAfterMarshal = release
+}
+
+func (t *ArrowTable) MarshalJSON() ([]byte, error) {
 	if t.releaseAfterMarshal {
 		defer t.Release()
 	}
@@ -316,9 +320,9 @@ func ColumnValue(a arrow.Array, i int) any {
 }
 
 // msgpack custom decoder
-var _ msgpack.CustomDecoder = (*DBJsonTable)(nil)
+var _ msgpack.CustomDecoder = (*ArrowTable)(nil)
 
-func (t *DBJsonTable) DecodeMsgpack(dec *msgpack.Decoder) error {
+func (t *ArrowTable) DecodeMsgpack(dec *msgpack.Decoder) error {
 	err := dec.DecodeMulti(&t.releaseAfterMarshal, &t.wrapped, &t.asArray)
 	if err != nil {
 		return err
@@ -363,9 +367,9 @@ func decodeRecordFromIPC(b []byte) ([]arrow.Record, error) {
 }
 
 // msgpack custom encoder
-var _ msgpack.CustomEncoder = (*DBJsonTable)(nil)
+var _ msgpack.CustomEncoder = (*ArrowTable)(nil)
 
-func (t *DBJsonTable) EncodeMsgpack(enc *msgpack.Encoder) error {
+func (t *ArrowTable) EncodeMsgpack(enc *msgpack.Encoder) error {
 	if t == nil {
 		enc.EncodeNil()
 	}

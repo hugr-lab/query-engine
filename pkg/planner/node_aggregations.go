@@ -24,7 +24,7 @@ func aggregateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog,
 		return nil, err
 	}
 	if caster, ok := e.(engines.EngineTypeCaster); ok && !inGeneral {
-		node, err = castResultsNode(ctx, caster, node, true, false)
+		node, err = castResultsNode(ctx, caster, node, !IsRawResultsQuery(ctx, query), false)
 		if err != nil {
 			return nil, err
 		}

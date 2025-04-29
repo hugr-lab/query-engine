@@ -45,7 +45,7 @@ func (p *QueryPlan) Execute(ctx context.Context, db *db.Pool) (data interface{},
 		p.Query.Definition.Type.NamedType == "":
 		return db.QueryJsonScalarArray(ctx, p.CompiledQuery, p.Params...)
 	case p.Query.Definition.Type.NamedType == "":
-		return db.QueryJsonTable(ctx, p.CompiledQuery, true, p.Params...)
+		return db.QueryArrowTable(ctx, p.CompiledQuery, !IsRawResultsQuery(ctx, p.Query), p.Params...)
 	default:
 		return db.QueryJsonRow(ctx, p.CompiledQuery, p.Params...)
 	}

@@ -34,7 +34,7 @@ func functionCallRootNode(ctx context.Context, schema *ast.Schema, planer Catalo
 		), nil
 	}
 	if isTypeCaster {
-		node, err = castFunctionResultsNode(ctx, defs, tc, node, true)
+		node, err = castFunctionResultsNode(ctx, defs, tc, node, !IsRawResultsQuery(ctx, query))
 		if err != nil {
 			return nil, err
 		}
@@ -158,7 +158,7 @@ func selectFromFunctionCallNode(_ context.Context, defs compiler.DefinitionsSour
 	}
 }
 
-func castFunctionResultsNode(ctx context.Context, defs compiler.DefinitionsSource, caster engines.EngineTypeCaster, child *QueryPlanNode, toOutput bool) (*QueryPlanNode, error) {
+func castFunctionResultsNode(ctx context.Context, defs compiler.DefinitionsSource, caster engines.EngineTypeCaster, child *QueryPlanNode, toJSON bool) (*QueryPlanNode, error) {
 	call := compiler.FunctionCallInfo(child.Query)
 	if call == nil {
 		return nil, ErrInternalPlanner
@@ -168,10 +168,10 @@ func castFunctionResultsNode(ctx context.Context, defs compiler.DefinitionsSourc
 		return nil, err
 	}
 	if info.ReturnsTable {
-		return castResultsNode(ctx, caster, child, toOutput, false)
+		return castResultsNode(ctx, caster, child, toJSON, false)
 	}
 
-	return castScalarResultsNode(ctx, caster, child, true, toOutput)
+	return castScalarResultsNode(ctx, caster, child, true, toJSON)
 }
 
 func repackObjectNode(e engines.Engine, query *ast.Field, sqlName string) *QueryPlanNode {

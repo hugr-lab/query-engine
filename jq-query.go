@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,9 +58,8 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 		return json.Marshal(transformed)
 	}
 
-	w.Header().Add("Content-Type", "application/json")
-	cached := r.Header.Get("X-Hugr-Cache")
-	if cached == "" {
+	info := requestCacheInfo(r)
+	if !info.Use {
 		data, err := dataFunc()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -71,18 +71,10 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-
-	ttl, _ := time.ParseDuration(cached)
-	info := cache.Info{
-		Use:        true,
-		Key:        r.Header.Get("X-Hugr-Cache-Key"),
-		TTL:        time.Duration(ttl) * time.Second,
-		Tags:       strings.Split(r.Header.Get("X-Hugr-Cache-Tags"), ","),
-		Invalidate: r.Header.Get("X-Hugr-Cache-Invalidate") == "true",
-	}
 	if info.Key == "" {
 		info.Key, err = cache.QueryKey(string(b), nil)
 	}
+
 	data, err := s.cache.Load(r.Context(), info.Key, dataFunc, info.Options()...)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -95,8 +87,31 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	w.Header().Add("Content-Type", "application/json")
 	_, err = w.Write(data.([]byte))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func requestCacheInfo(r *http.Request) cache.Info {
+	cached := r.Header.Get("X-Hugr-Cache")
+	if cached == "" {
+		return cache.Info{Use: false}
+	}
+	var ttl time.Duration
+	d, err := strconv.Atoi(cached)
+	if err == nil {
+		ttl = time.Duration(d) * time.Second
+	} else {
+		ttl, _ = time.ParseDuration(cached)
+	}
+
+	return cache.Info{
+		Use:        true,
+		Key:        r.Header.Get("X-Hugr-Cache-Key"),
+		TTL:        ttl,
+		Tags:       strings.Split(r.Header.Get("X-Hugr-Cache-Tags"), ","),
+		Invalidate: r.Header.Get("X-Hugr-Cache-Invalidate") == "true",
 	}
 }

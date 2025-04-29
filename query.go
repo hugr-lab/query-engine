@@ -3,7 +3,6 @@ package hugr
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"log"
 	"sync"
@@ -13,6 +12,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/metadata"
 	"github.com/hugr-lab/query-engine/pkg/perm"
@@ -29,7 +29,26 @@ type result struct {
 	path       []string
 }
 
-func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (any, map[string]any, error) {
+// sets the auto release arrow table flag after json marshaling
+func setReleaseArrow(data any, release bool) {
+	switch v := data.(type) {
+	case map[string]any:
+		for _, vv := range v {
+			setReleaseArrow(vv, release)
+		}
+	case []any:
+		for _, vv := range v {
+			setReleaseArrow(vv, release)
+		}
+	case *db.ArrowTable:
+		if v == nil {
+			return
+		}
+		v.SetAutoRelease(release)
+	}
+}
+
+func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (map[string]any, map[string]any, error) {
 	// find all requested queries (top level query fields)
 	queries, qtt := compiler.QueryRequestInfo(op.SelectionSet)
 	// authorize queries
@@ -415,19 +434,14 @@ func (s *Service) processJQTransformation(ctx context.Context, schema *ast.Schem
 		}
 
 		if includeResults {
-			b, err := json.Marshal(data)
-			if err != nil {
-				return nil, compiler.ErrorPosf(query.Field.Position, "jq: json marshal error: %v", err)
-			}
-			err = json.Unmarshal(b, &data)
-			if err != nil {
-				return nil, compiler.ErrorPosf(query.Field.Position, "jq: json unmarshal results error: %v", err)
-			}
+			setReleaseArrow(data, false)
 		}
-
 		transformed, err := t.Transform(ctx, data, map[string]any{"$vars": vars})
 		if err != nil {
 			return nil, compiler.ErrorPosf(query.Field.Position, "jq query execution error: %v", err)
+		}
+		if includeResults {
+			setReleaseArrow(data, true)
 		}
 		extension := map[string]any{}
 		if ext != nil {

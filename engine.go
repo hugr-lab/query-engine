@@ -165,6 +165,7 @@ func (s *Service) endpoints() {
 
 	s.router.Handle("/query", mw(http.HandlerFunc(s.queryHandler)))
 	s.router.Handle("/jq-query", mw(http.HandlerFunc(s.jqHandler)))
+	s.router.Handle("/ipc", mw(http.HandlerFunc(s.ipcHandler)))
 	s.router.Handle("/{catalog}/query", mw(http.HandlerFunc(s.queryHandler)))
 
 	if s.config.AdminUI {
@@ -178,9 +179,8 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
-	// handle http request
-	var req Request
-	err := json.NewDecoder(r.Body).Decode(&req)
+
+	req, err := s.parseRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -194,6 +194,30 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (s *Service) parseRequest(r *http.Request) (req Request, err error) {
+	switch r.Method {
+	case http.MethodGet:
+		query := r.URL.Query()
+		req = Request{
+			Query:         query.Get("query"),
+			Variables:     make(map[string]any),
+			OperationName: query.Get("operationName"),
+		}
+		vars := query.Get("variables")
+		if vars != "" {
+			err = json.Unmarshal([]byte(vars), &req.Variables)
+			if err != nil {
+				return Request{}, fmt.Errorf("unmarshal variables: %w", err)
+			}
+		}
+	case http.MethodPost:
+		err = json.NewDecoder(r.Body).Decode(&req)
+	default:
+		err = fmt.Errorf("unsupported method: %s", r.Method)
+	}
+	return req, err
 }
 
 func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request) types.Response {
@@ -216,12 +240,12 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request)
 		return types.Response{Errors: gqlerror.List{gqlerror.Errorf("no operations found")}}
 	}
 
+	var res types.Response
 	if len(qd.Operations) == 1 {
 		data, ext, err := s.processOperation(ctx, schema, qd.Operations[0], req.Variables)
 		if err != nil {
 			return types.ErrResponse(err)
 		}
-		res := types.Response{}
 		if data != nil {
 			res.Data = data
 		}
@@ -232,10 +256,11 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request)
 	}
 
 	data := make(map[string]any, len(qd.Operations))
+	extensions := make(map[string]any)
 	for _, op := range qd.Operations {
 		data[op.Name] = nil
+		extensions[op.Name] = nil
 	}
-	extensions := make(map[string]any)
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, op := range qd.Operations {
 		op := op
@@ -251,15 +276,16 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request)
 			return nil
 		})
 	}
-
 	err = eg.Wait()
 	if err != nil {
 		return types.ErrResponse(err)
 	}
-	return types.Response{Data: data}
+	res.Data = data
+	res.Extensions = extensions
+	return res
 }
 
-func (s *Service) processOperation(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (any, map[string]any, error) {
+func (s *Service) processOperation(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (map[string]any, map[string]any, error) {
 	switch op.Operation {
 	case ast.Query, ast.Mutation:
 		return s.processQuery(ctx, schema, op, vars)

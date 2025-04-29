@@ -169,21 +169,21 @@ type Connection struct {
 	release func()
 }
 
-func (c *Connection) Query(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (c *Connection) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	if c.tx != nil {
 		return c.tx.QueryContext(ctx, query, args...)
 	}
 	return c.conn.QueryContext(ctx, query, args...)
 }
 
-func (c *Connection) QueryRow(ctx context.Context, query string, args ...interface{}) *sql.Row {
+func (c *Connection) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
 	if c.tx != nil {
 		return c.tx.QueryRowContext(ctx, query, args...)
 	}
 	return c.conn.QueryRowContext(ctx, query, args...)
 }
 
-func (c *Connection) Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (c *Connection) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	if c.tx != nil {
 		return c.tx.ExecContext(ctx, query, args...)
 	}

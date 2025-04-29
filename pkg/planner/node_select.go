@@ -33,12 +33,11 @@ func selectDataObjectRootNode(ctx context.Context, schema *ast.Schema, planner C
 	}
 	caster, isTypeCast := e.(engines.EngineTypeCaster)
 	if isTypeCast && !inGeneral {
-		node, err = castResultsNode(ctx, caster, node, true, false)
+		node, err = castResultsNode(ctx, caster, node, !IsRawResultsQuery(ctx, query), false)
 		if err != nil {
 			return nil, err
 		}
 	}
-
 	return finalResultNode(ctx, schema, planner, query, node, inGeneral || !isTypeCast), nil
 }
 
@@ -163,13 +162,13 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			})
 		}
 	}
-
+	qJoinNodeNames := map[string]struct{}{}
 	for _, qj := range qp.queryTimeJoins {
 		catalogFields := map[string]string{}
 		generalFields := map[string]string{}
 		for _, selected := range engines.SelectedFields(qj.SelectionSet) {
 			sq := selected.Field
-			rAlias := "_" + sq.Alias + "_join_sub_node"
+			rAlias := "_" + qj.Alias + "_" + sq.Alias + "_join_sub_node"
 			isInner := sq.Arguments.ForName("inner")
 			node, isGeneral, err := subDataQueryNode(ctx, defs, planer, info, !catQuery, sq, rAlias, vars)
 			if err != nil {
@@ -202,6 +201,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 					innerGeneral = append(innerGeneral, joinNode.Name+"._selection IS NOT NULL")
 				}
 				generalFields[sq.Alias] = joinNode.Name + "._selection"
+				qJoinNodeNames[joinNode.Name] = struct{}{}
 			}
 			if !isGeneral || !isCaster {
 				if node != nil {
@@ -212,6 +212,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 					innerCatalog = append(innerCatalog, joinNode.Name+"._selection IS NOT NULL")
 				}
 				catalogFields[sq.Alias] = joinNode.Name + "._selection"
+				qJoinNodeNames[joinNode.Name] = struct{}{}
 			}
 		}
 		if len(catalogFields) != 0 {
@@ -372,6 +373,9 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 
 	ff = fieldsNodes(e, info, "_objects", qp.fields, vars, true)
 	for _, j := range joinCatalogNodes {
+		if _, ok := qJoinNodeNames[j.Name]; ok {
+			continue
+		}
 		ff = append(ff, &QueryPlanNode{
 			Name:  j.Query.Alias,
 			Query: j.Query,
@@ -381,11 +385,26 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		})
 	}
 	for _, j := range joinGeneralNodes {
+		if _, ok := qJoinNodeNames[j.Name]; ok {
+			continue
+		}
 		ff = append(ff, &QueryPlanNode{
 			Name:  j.Query.Alias,
 			Query: j.Query,
 			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 				return j.Name + "._selection AS " + engines.Ident(node.Query.Alias), params, nil
+			},
+		})
+	}
+	for fn := range qJoinsCatalogFields {
+		if _, ok := qJoinsGeneralFields[fn]; ok {
+			continue
+		}
+		ff = append(ff, &QueryPlanNode{
+			Name:  fn,
+			Query: query,
+			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+				return "_objects." + fn, params, nil
 			},
 		})
 	}
@@ -1024,6 +1043,13 @@ func fieldsNode(query *ast.Field, fields QueryPlanNodes) *QueryPlanNode {
 func fieldsNodes(e engines.Engine, info *compiler.Object, prefix string, fields []*ast.Field, vars map[string]any, aliases bool) QueryPlanNodes {
 	var nodes QueryPlanNodes
 	for _, field := range fields {
+		if fn := nodes.ForName(field.Alias); fn != nil {
+			if fn.Query.Name == field.Name {
+				// skip duplicate fields
+				// TODO FIXME: here can be a problem if user give the same alias to the additional field
+				continue
+			}
+		}
 		nodes = append(nodes, &QueryPlanNode{
 			Name:    field.Alias,
 			Query:   field,

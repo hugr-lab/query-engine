@@ -7,7 +7,7 @@ import (
 )
 
 func (db *Pool) QueryTableToSlice(ctx context.Context, data any, q string, params ...any) error {
-	res, err := db.QueryJsonTable(ctx, q, true, params...)
+	res, err := db.QueryArrowTable(ctx, q, true, params...)
 	if err != nil {
 		return err
 	}
@@ -19,14 +19,14 @@ func (db *Pool) QueryTableToSlice(ctx context.Context, data any, q string, param
 	return json.NewDecoder(buf).Decode(data)
 }
 
-func (db *Pool) QueryJsonTable(ctx context.Context, q string, wrap bool, params ...any) (any, error) {
+func (db *Pool) QueryArrowTable(ctx context.Context, q string, wrap bool, params ...any) (any, error) {
 	if db.IsTxContext(ctx) {
 		return db.queryJsonTableTx(ctx, q, wrap, params...)
 	}
 	return db.QueryJsonTableArrow(ctx, q, wrap, params...)
 }
 
-func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, params ...any) (*DBJsonTable, error) {
+func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, params ...any) (*ArrowTable, error) {
 	ar, err := db.Arrow(ctx)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func (db *Pool) QueryJsonScalarArray(ctx context.Context, q string, params ...an
 	return db.QueryJsonScalarArrayArrow(ctx, q, params...)
 }
 
-func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params ...any) (*DBJsonTable, error) {
+func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params ...any) (*ArrowTable, error) {
 	ar, err := db.Arrow(ctx)
 	if err != nil {
 		return nil, err

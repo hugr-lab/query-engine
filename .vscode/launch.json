@@ -41,6 +41,18 @@
             "buildFlags": ["-tags=duckdb_arrow"]
         },
         {
+            "name": "Launch server with pg core db and auth",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "env": {
+                "CGO_CFLAGS":"-O1 -g"
+            },
+            "envFile": "${workspaceFolder}/.local/.pg.env",
+            "program": "${workspaceFolder}/cmd/dev-server",
+            "buildFlags": ["-tags=duckdb_arrow"]
+        },
+        {
             "name": "Launch Package",
             "type": "go",
             "request": "launch",

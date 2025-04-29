@@ -26,6 +26,7 @@ var Schema *ast.Schema
 const (
 	WithDeletedDirective = "with_deleted"
 	StatsDirective       = "stats"
+	RawResultsDirective  = "raw"
 )
 
 const (
@@ -67,6 +68,7 @@ func QuerySideDirectives() []string {
 		InvalidateCacheDirectiveName,
 		StatsDirective,
 		WithDeletedDirective,
+		RawResultsDirective,
 	}
 }
 
