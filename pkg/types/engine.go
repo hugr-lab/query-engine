@@ -14,7 +14,7 @@ type Querier interface {
 }
 
 type Response struct {
-	Data       any            `json:"data,omitempty"`
+	Data       map[string]any `json:"data,omitempty"`
 	Extensions map[string]any `json:"extensions,omitempty"`
 	Errors     gqlerror.List  `json:"errors,omitempty"`
 }

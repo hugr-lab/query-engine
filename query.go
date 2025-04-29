@@ -48,7 +48,7 @@ func setReleaseArrow(data any, release bool) {
 	}
 }
 
-func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (any, map[string]any, error) {
+func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (map[string]any, map[string]any, error) {
 	// find all requested queries (top level query fields)
 	queries, qtt := compiler.QueryRequestInfo(op.SelectionSet)
 	// authorize queries
