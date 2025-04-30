@@ -17,7 +17,7 @@ import (
 var testSchemaData string
 
 func Test_processQuery(t *testing.T) {
-	cat, err := catalogs.NewCatalog(context.Background(), "test", "", engines.NewDuckDB(), sources.NewStringSource(testSchemaData), false)
+	cat, err := catalogs.NewCatalog(context.Background(), "test", "", engines.NewDuckDB(), sources.NewStringSource(testSchemaData), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

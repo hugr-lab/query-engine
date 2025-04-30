@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	dbVersion = "0.0.5"
+	dbVersion = "0.0.6"
 	dbName    = "core"
 )
 
@@ -38,23 +38,36 @@ type Config struct {
 	Path     string
 	ReadOnly bool
 
-	S3Bucket string
-	S3Region string
-	S3Key    string
-	S3Secret string
+	// S3 for now only supports s3://
+	S3Region   string
+	S3Key      string
+	S3Secret   string
+	S3UseSSL   bool
+	S3Endpoint string
 }
 
 type Source struct {
-	c      Config
-	dbType types.DataSourceType
-	e      engines.Engine
+	c        Config
+	dbType   types.DataSourceType
+	s3Source bool
+	e        engines.Engine
 }
 
 func New(c Config) *Source {
 	if strings.HasPrefix(c.Path, "postgres://") {
-		return &Source{c: c, dbType: sources.Postgres, e: engines.NewPostgres()}
+		return &Source{
+			c:        c,
+			dbType:   sources.Postgres,
+			s3Source: strings.HasPrefix(c.Path, "s3://"),
+			e:        engines.NewPostgres(),
+		}
 	}
-	return &Source{c: c, dbType: sources.DuckDB, e: engines.NewDuckDB()}
+	return &Source{
+		c:        c,
+		dbType:   sources.DuckDB,
+		s3Source: strings.HasPrefix(c.Path, "s3://"),
+		e:        engines.NewDuckDB(),
+	}
 }
 
 func (s *Source) Name() string {
@@ -66,7 +79,7 @@ func (s *Source) Engine() engines.Engine {
 }
 
 func (s *Source) IsReadonly() bool {
-	return s.c.ReadOnly
+	return s.c.ReadOnly || s.s3Source
 }
 
 func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
@@ -81,7 +94,15 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 		s.c.Path = ":memory:"
 	}
 
-	sql := "ATTACH DATABASE '" + s.c.Path + "' AS " + dbName
+	// check if db is on s3
+	if s.s3Source {
+		err = s.registerS3Secret(ctx, db)
+		if err != nil {
+			return fmt.Errorf("register core-db s3 secret: %w", err)
+		}
+	}
+
+	sql := "ATTACH DATABASE '" + s.c.Path + "' AS " + s.Name()
 	switch {
 	case s.dbType == sources.DuckDB && s.IsReadonly():
 		sql += " (READ_ONLY)"
@@ -102,6 +123,25 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 		return s.applySchema(ctx, db)
 	}
 
+	return err
+}
+
+func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
+	_, err := db.Exec(ctx, fmt.Sprintf(`
+		CREATE OR REPLACE PERSISTENT SECRET coredb_s3 (
+			TYPE s3,
+			KEY_ID '%s',
+			SECRET '%s',
+			REGION '%s',
+			ENDPOINT '%s',
+			USE_SSL %v,
+			URL_STYLE 'path',
+			SCOPE '%s'
+		);
+	`, s.c.S3Key, s.c.S3Secret, s.c.S3Region, s.c.S3Endpoint, s.c.S3UseSSL, s.c.Path))
+	if err != nil {
+		return err
+	}
 	return err
 }
 

@@ -64,6 +64,7 @@ func (s *Service) registerUDFCatalog(ctx context.Context) error {
 		&engines.DuckDB{},
 		sources.NewStringSource(schema),
 		false,
+		false,
 	)
 	if err != nil {
 		return err
@@ -191,7 +192,7 @@ func (f *loadDataSourceUDF) Executor() duckdb.ScalarFuncExecutor {
 				return nil, &duckdb.Error{Type: duckdb.ErrorTypeParameterNotResolved, Msg: "invalid number of arguments"}
 			}
 			name := args[0].(string)
-			return f.s.loadDataSource(f.ctx, name).ToDuckdb(), nil
+			return f.s.LoadDataSource(f.ctx, name).ToDuckdb(), nil
 		},
 	}
 }
@@ -218,7 +219,7 @@ func (f *unloadDataSourceUDF) Executor() duckdb.ScalarFuncExecutor {
 				return nil, &duckdb.Error{Type: duckdb.ErrorTypeParameterNotResolved, Msg: "invalid number of arguments"}
 			}
 			name := args[0].(string)
-			return f.s.unloadDataSource(f.ctx, name).ToDuckdb(), nil
+			return f.s.UnloadDataSource(f.ctx, name).ToDuckdb(), nil
 		},
 	}
 }

@@ -12,10 +12,22 @@ import (
 	_ "embed"
 )
 
+type Options struct {
+	Name       string
+	ReadOnly   bool
+	Prefix     string
+	EngineType string
+	AsModule   bool
+
+	catalog *ast.Directive
+}
+
 // Compile compiles the source schema document with the given prefix.
-func Compile(catalog *ast.Directive, source *ast.SchemaDocument, prefix string, readOnly bool) (*ast.Schema, error) {
-	if prefix != "" {
-		source = addPrefix(source, prefix+"_")
+func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
+	opt.catalog = base.CatalogDirective(opt.Name, opt.EngineType)
+
+	if opt.Prefix != "" {
+		source = addPrefix(source, &opt)
 	}
 
 	err := validateSource(source)
@@ -34,20 +46,20 @@ func Compile(catalog *ast.Directive, source *ast.SchemaDocument, prefix string, 
 
 	source.Merge(doc)
 
-	err = validateSourceSchema(catalog, source, readOnly)
+	err = validateSourceSchema(source, &opt)
 	if err != nil {
 		return nil, err
 	}
 
-	addReferencesQuery(catalog, source)
+	addReferencesQuery(source, &opt)
 
-	addQueries(catalog, source, readOnly)
+	addQueries(source, &opt)
 
 	addQueryFields(source)
 
-	addAggregationQueries(catalog, source)
+	addAggregationQueries(source, &opt)
 
-	if readOnly {
+	if opt.ReadOnly {
 		source.Definitions = slices.DeleteFunc(source.Definitions, func(def *ast.Definition) bool {
 			return def.Name == mutationBaseName || def.Name == base.FunctionMutationTypeName
 		})
@@ -176,7 +188,7 @@ func AddExtensions(schema *ast.Schema, extension *ast.SchemaDocument) error {
 		if def.Kind != ast.Object && def.Kind != ast.InputObject {
 			return ErrorPosf(def.Position, "definition %s should be object or input object", def.Name)
 		}
-		err := validateDefinition(SchemaDefs(schema), def)
+		err := validateDefinition(SchemaDefs(schema), def, &Options{})
 		if err != nil {
 			return err
 		}
@@ -206,24 +218,24 @@ func AddExtensions(schema *ast.Schema, extension *ast.SchemaDocument) error {
 	return nil
 }
 
-func addPrefix(schema *ast.SchemaDocument, prefix string) *ast.SchemaDocument {
+func addPrefix(schema *ast.SchemaDocument, opt *Options) *ast.SchemaDocument {
 	newSchema := &ast.SchemaDocument{
 		Definitions: []*ast.Definition{},
 		Extensions:  []*ast.Definition{},
 	}
 	for _, def := range schema.Definitions {
-		addDefinitionPrefix(schema.Definitions, def, prefix, true)
+		addDefinitionPrefix(schema.Definitions, def, opt, true)
 		newSchema.Definitions = append(newSchema.Definitions, def)
 	}
 	for _, def := range schema.Extensions {
-		addDefinitionPrefix(schema.Definitions, def, prefix, false)
+		addDefinitionPrefix(schema.Definitions, def, opt, false)
 		newSchema.Extensions = append(newSchema.Extensions, def)
 	}
 
 	return newSchema
 }
 
-func addReferencesQuery(catalog *ast.Directive, schema *ast.SchemaDocument) {
+func addReferencesQuery(schema *ast.SchemaDocument, opt *Options) {
 	for _, def := range schema.Definitions {
 		if !isM2MTable(def) {
 			continue
@@ -235,7 +247,7 @@ func addReferencesQuery(catalog *ast.Directive, schema *ast.SchemaDocument) {
 		if !IsDataObject(def) {
 			continue
 		}
-		addObjectReferencesQuery(catalog, schema, def)
+		addObjectReferencesQuery(schema, def, opt)
 		addJoinsFilter(schema, def)
 	}
 }
@@ -249,17 +261,16 @@ func addQueryFields(schema *ast.SchemaDocument) {
 	}
 }
 
-func addQueries(catalog *ast.Directive, schema *ast.SchemaDocument, readOnly bool) {
+func addQueries(schema *ast.SchemaDocument, opt *Options) {
 	for _, def := range schema.Definitions {
 		if !IsDataObject(def) {
 			continue
 		}
-		addObjectQuery(catalog, schema, def, readOnly)
+		addObjectQuery(schema, def, opt)
 	}
-	assignFunctionByModules(schema)
 }
 
-func addAggregationQueries(catalog *ast.Directive, schema *ast.SchemaDocument) {
+func addAggregationQueries(schema *ast.SchemaDocument, opt *Options) {
 	for _, def := range schema.Definitions {
 		mInfo := ModuleRootInfo(def)
 		if !IsDataObject(def) && mInfo == nil &&
@@ -270,6 +281,6 @@ func addAggregationQueries(catalog *ast.Directive, schema *ast.SchemaDocument) {
 		if mInfo != nil && mInfo.Type != ModuleQuery && mInfo.Type != ModuleFunction {
 			continue
 		}
-		addAggregationQuery(catalog, schema, def)
+		addAggregationQuery(schema, def, opt)
 	}
 }

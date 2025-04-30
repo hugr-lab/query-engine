@@ -106,7 +106,7 @@ var (
 
 func TestMain(m *testing.M) {
 	cs := catalogs.New()
-	c, err := catalogs.NewCatalog(context.Background(), "test", "", &engines.DuckDB{}, sources.NewStringSource(testSchemaData), false)
+	c, err := catalogs.NewCatalog(context.Background(), "test", "", &engines.DuckDB{}, sources.NewStringSource(testSchemaData), false, false)
 	if err != nil {
 		fmt.Printf("Failed to create catalog: %v", err)
 		os.Exit(1)
@@ -116,7 +116,7 @@ func TestMain(m *testing.M) {
 		fmt.Printf("Failed to create catalog: %v", err)
 		os.Exit(1)
 	}
-	c, err = catalogs.NewCatalog(context.Background(), "pg_test", "pg", &engines.Postgres{}, sources.NewStringSource(testPGSchemaData), false)
+	c, err = catalogs.NewCatalog(context.Background(), "pg_test", "pg", &engines.Postgres{}, sources.NewStringSource(testPGSchemaData), false, false)
 	if err != nil {
 		fmt.Printf("Failed to create catalog: %v", err)
 		os.Exit(1)

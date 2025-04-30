@@ -14,9 +14,10 @@ The client sends an HTTP POST request with the following structure:
     - `variables`: (Optional) A JSON object with variables for the query.
 
 Example:
+
 ```json
 {
-  "query": "query { users { id name } }",
+  "query": "query($limit: BigInt) { users(limit: $limit) { id name } }",
   "variables": { "limit": 10 }
 }
 ```
@@ -48,7 +49,7 @@ Each part in the response has its own MIME headers and content. The parts includ
 
 ### Example Response
 
-```
+```text
 --HUGR
 Content-Type: application/vnd.apache.arrow.stream
 X-Hugr-Part-Type: data

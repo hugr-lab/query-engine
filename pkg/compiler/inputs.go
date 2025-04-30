@@ -14,25 +14,21 @@ const (
 	inputFieldNamedArgDirectiveName = "named"
 )
 
-func addInputPrefix(def *ast.Definition, prefix string, addOriginal bool) {
+func addInputPrefix(defs Definitions, def *ast.Definition, opt *Options, addOriginal bool) {
 	if def.Kind != ast.InputObject {
 		return
 	}
 	if addOriginal {
 		def.Directives = append(def.Directives, base.OriginalNameDirective(def.Name))
 	}
-	def.Name = prefix + def.Name
+	def.Name = opt.Prefix + "_" + def.Name
 
 	for _, field := range def.Fields {
 		typeName := field.Type.Name()
 		if IsScalarType(typeName) {
 			continue
 		}
-		if field.Type.NamedType != "" {
-			field.Type.NamedType = prefix + field.Type.NamedType
-		} else {
-			field.Type.Elem.NamedType = prefix + field.Type.Elem.NamedType
-		}
+		field.Type = typeWithPrefix(defs, field.Type, opt.Prefix+"_")
 	}
 }
 
