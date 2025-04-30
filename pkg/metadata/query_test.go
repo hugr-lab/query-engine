@@ -18,7 +18,7 @@ var testSchemaData string
 
 func TestProcessQuery(t *testing.T) {
 	cat, err := catalogs.NewCatalog(context.Background(),
-		"test", "", &engines.DuckDB{}, sources.NewStringSource(testSchemaData), false)
+		"test", "", &engines.DuckDB{}, sources.NewStringSource(testSchemaData), false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

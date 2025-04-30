@@ -21,12 +21,44 @@ type catalog_sources @module(name: "core")
 """
 type data_sources @module(name: "core") 
   @table(name: "data_sources") {
+  """
+    Data source name
+  """
   name: String! @pk
+  """
+    Data source type
+  """
   type: String!
+  """
+    Prefix for the data source that will added to the all types in the data source.
+    Is as module than all queries will be passed to the separate module and added to the root query
+    Functions will be passed as well in the separate module
+  """
   prefix: String!
+  as_module: Boolean! @default(value: false)
+  """
+    Data source description
+  """
   description: String
+  """
+    Data source path, depends on the type of the data source
+    - duckdb - path to the duckdb database file
+    - postgres - connection string to the postgres database
+    - http - http source url and uri to the open-api specification of the http web service in the parameter
+  """
   path: String!
+  """
+    Data source disabled flag
+  """
+  disabled: Boolean @default(value: false)
+  """
+    Data source self defined flag, if true, the data source should return schema definition for itself.
+    This is used for the http and duckdb data sources, that can be used to define the schema for the data source
+  """
   self_defined: Boolean @default(value: false)
+  """
+    Data source read only flag
+  """
   read_only: Boolean @default(value: false)
 }
 

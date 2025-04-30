@@ -10,8 +10,10 @@ type DataSource struct {
 	Type        DataSourceType  `json:"type"`
 	Prefix      string          `json:"prefix"`
 	Path        string          `json:"path"`
+	AsModule    bool            `json:"as_module"`
 	SelfDefined bool            `json:"self_defined"`
 	ReadOnly    bool            `json:"read_only"`
+	Disabled    bool            `json:"disabled"`
 	Sources     []CatalogSource `json:"catalogs"`
 }
 

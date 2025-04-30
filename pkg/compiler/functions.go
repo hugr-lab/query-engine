@@ -14,22 +14,24 @@ const (
 	functionCallTableJoinDirectiveName = "table_function_call_join"
 )
 
-func addFunctionsPrefix(defs Definitions, def *ast.Definition, prefix string) {
+func addFunctionsPrefix(defs Definitions, def *ast.Definition, opt *Options) {
 	for _, field := range def.Fields {
 		if checkSystemDirective(field.Directives) {
 			continue
 		}
 
 		field.Directives = append(field.Directives, base.OriginalNameDirective(field.Name))
-		field.Name = prefix + field.Name
+		if !opt.AsModule {
+			field.Name = opt.Prefix + "_" + field.Name
+		}
 
 		// rename arguments types
 		for _, arg := range field.Arguments {
-			arg.Type = typeWithPrefix(defs, arg.Type, prefix)
+			arg.Type = typeWithPrefix(defs, arg.Type, opt.Prefix+"_")
 		}
 
 		// rename output type
-		field.Type = typeWithPrefix(defs, field.Type, prefix)
+		field.Type = typeWithPrefix(defs, field.Type, opt.Prefix+"_")
 	}
 }
 
@@ -56,7 +58,7 @@ func typeWithPrefix(defs Definitions, t *ast.Type, prefix string) *ast.Type {
 	}
 }
 
-func validateFunctions(catalog *ast.Directive, defs Definitions, def *ast.Definition) error {
+func validateFunctions(defs Definitions, def *ast.Definition, opt *Options) error {
 	if def.Name != base.FunctionTypeName && def.Name != base.FunctionMutationTypeName {
 		return nil
 	}
@@ -65,7 +67,7 @@ func validateFunctions(catalog *ast.Directive, defs Definitions, def *ast.Defini
 		if err != nil {
 			return err
 		}
-		err = info.validate(catalog, defs)
+		err = info.validate(defs, opt)
 		if err != nil {
 			return err
 		}
@@ -98,8 +100,18 @@ func assignFunctionByModules(schema *ast.SchemaDocument) {
 			}
 			moduleObject := moduleType(schema, module, ModuleFunction)
 			moduleObject.Fields = append(moduleObject.Fields, field)
+			addModuleToFunctionCalls(schema, field)
 		}
-
+		// remove function from the root query
+		var fields []*ast.FieldDefinition
+		for _, field := range function.Fields {
+			if field.Directives.ForName(moduleRootDirectiveName) != nil ||
+				functionModule(field) != "" {
+				continue
+			}
+			fields = append(fields, field)
+		}
+		function.Fields = fields
 	}
 
 	mutation := schema.Definitions.ForName(base.FunctionMutationTypeName)
@@ -112,6 +124,55 @@ func assignFunctionByModules(schema *ast.SchemaDocument) {
 			moduleObject := moduleType(schema, module, ModuleMutationFunction)
 			moduleObject.Fields = append(moduleObject.Fields, field)
 		}
+		var fields []*ast.FieldDefinition
+		for _, field := range mutation.Fields {
+			if field.Directives.ForName(moduleRootDirectiveName) != nil ||
+				functionModule(field) != "" {
+				continue
+			}
+			fields = append(fields, field)
+		}
+		mutation.Fields = fields
+	}
+}
+
+func addModuleToFunctionCalls(schema *ast.SchemaDocument, function *ast.FieldDefinition) {
+	module := functionModule(function)
+	if module == "" {
+		return
+	}
+	for _, def := range schema.Definitions {
+		if def.Kind != ast.Object || !IsDataObject(def) {
+			continue
+		}
+		for _, field := range def.Fields {
+			if !IsFunctionCall(field) {
+				continue
+			}
+			d := field.Directives.ForName(functionCallDirectiveName)
+			if d == nil {
+				d = field.Directives.ForName(functionCallTableJoinDirectiveName)
+			}
+			if d == nil {
+				continue
+			}
+			if directiveArgValue(d, "references_name") != function.Name {
+				continue
+			}
+			if a := d.Arguments.ForName("module"); a != nil {
+				a.Value = &ast.Value{
+					Kind:     ast.StringValue,
+					Raw:      module,
+					Position: d.Position,
+				}
+			} else {
+				d.Arguments = append(d.Arguments, &ast.Argument{
+					Name:     "module",
+					Value:    &ast.Value{Kind: ast.StringValue, Raw: module, Position: d.Position},
+					Position: d.Position,
+				})
+			}
+		}
 	}
 }
 
@@ -122,8 +183,10 @@ type FunctionCall struct {
 	sourceFields     []string
 	referencesFields []string
 	sql              string
+	module           string
 
-	query *ast.Field
+	query     *ast.Field
+	directive *ast.Directive
 }
 
 func FunctionCallInfo(field *ast.Field) *FunctionCall {
@@ -131,6 +194,7 @@ func FunctionCallInfo(field *ast.Field) *FunctionCall {
 		return &FunctionCall{
 			referencesName: field.Name,
 			query:          field,
+			module:         functionModule(field.Definition),
 		}
 	}
 	var directive *ast.Directive
@@ -164,6 +228,8 @@ func functionCallInfo(def *ast.Directive) *FunctionCall {
 		sql:              directiveArgValue(def, "sql"),
 		sourceFields:     directiveArgChildValues(def, "source_fields"),
 		referencesFields: directiveArgChildValues(def, "references_fields"),
+		module:           directiveArgValue(def, "module"),
+		directive:        def,
 	}
 	if a := def.Arguments.ForName("args"); a != nil {
 		for _, f := range a.Value.Children {
@@ -175,15 +241,17 @@ func functionCallInfo(def *ast.Directive) *FunctionCall {
 }
 
 func (f *FunctionCall) FunctionInfo(defs Definitions) (*Function, error) {
-	for _, dn := range []string{base.FunctionTypeName, base.FunctionMutationTypeName} {
-		functions := defs.ForName(dn)
-		if functions == nil {
-			return nil, ErrorPosf(nil, "%s is not defined", dn)
-		}
-		function := functions.Fields.ForName(f.referencesName)
-		if function != nil {
-			return FunctionInfo(function)
-		}
+	if f.query != nil && f.query.Definition.Directives.ForName(functionDirectiveName) != nil {
+		return FunctionInfo(f.query.Definition)
+	}
+	module := defs.ForName(moduleTypeName(f.module, ModuleFunction))
+	if module == nil {
+		return nil, ErrorPosf(f.directive.Position, "module root object %s for function is not defined", f.module)
+	}
+
+	function := module.Fields.ForName(f.referencesName)
+	if function != nil {
+		return FunctionInfo(function)
 	}
 
 	return nil, ErrorPosf(nil, "unknown function %s", f.referencesName)
@@ -199,27 +267,22 @@ func (f *FunctionCall) ArgumentMap() map[string]string {
 
 func (f *FunctionCall) validate(defs Definitions, def *ast.Definition, field *ast.FieldDefinition, checkArgsMap bool) error {
 	// check arguments
-	funcObject := defs.ForName(base.FunctionTypeName)
-	if funcObject == nil {
-		return ErrorPosf(field.Position, "functions is not defined: %s ", field.Name)
-	}
-
-	function := funcObject.Fields.ForName(f.referencesName)
-	if function == nil {
-		return ErrorPosf(field.Position, "unknown function %s ", f.referencesName)
+	function, err := f.FunctionInfo(defs)
+	if err != nil {
+		return err
 	}
 
 	// check types
-	if !f.IsTableFuncJoin && !IsEqualTypes(function.Type, field.Type) {
+	if !f.IsTableFuncJoin && !IsEqualTypes(function.field.Type, field.Type) {
 		return ErrorPosf(field.Position, "function %s return type should be %s the same as in the function definition", f.referencesName, field.Type.Name())
 	}
-	if f.IsTableFuncJoin && (function.Type.Name() != field.Type.Name() || function.Type.NamedType != "") {
+	if f.IsTableFuncJoin && (function.field.Type.Name() != field.Type.Name() || function.field.Type.NamedType != "") {
 		return ErrorPosf(field.Position, "function %s return type should be %s the same as in the function definition", f.referencesName, field.Type.Name())
 	}
 
 	// check catalog
 	fieldCatalog := base.FieldCatalogName(field)
-	funcCatalog := function.Directives.ForName(base.CatalogDirectiveName)
+	funcCatalog := function.field.Directives.ForName(base.CatalogDirectiveName)
 
 	if fieldCatalog == "" && funcCatalog != nil { // add catalog directive to function call field
 		field.Directives = append(field.Directives, funcCatalog)
@@ -228,7 +291,7 @@ func (f *FunctionCall) validate(defs Definitions, def *ast.Definition, field *as
 	// check arguments
 	usedArgs := map[string]struct{}{}
 	for _, arg := range field.Arguments {
-		a := function.Arguments.ForName(arg.Name)
+		a := function.field.Arguments.ForName(arg.Name)
 		if a == nil {
 			return ErrorPosf(field.Position, "function %s doesn't have argument %s", f.referencesName, arg.Name)
 		}
@@ -242,7 +305,7 @@ func (f *FunctionCall) validate(defs Definitions, def *ast.Definition, field *as
 		usedArgs[arg.Name] = struct{}{}
 	}
 	for an, fn := range f.argumentMap {
-		if function.Arguments.ForName(an) == nil {
+		if function.field.Arguments.ForName(an) == nil {
 			return ErrorPosf(field.Position, "function %s doesn't have argument %s", f.referencesName, an)
 		}
 		if checkArgsMap {
@@ -250,7 +313,7 @@ func (f *FunctionCall) validate(defs Definitions, def *ast.Definition, field *as
 			if fv == nil {
 				return ErrorPosf(field.Position, "function %s argument %s is not used", f.referencesName, an)
 			}
-			if !IsEqualTypes(fv.Type, function.Arguments.ForName(an).Type) {
+			if !IsEqualTypes(fv.Type, function.field.Arguments.ForName(an).Type) {
 				return ErrorPosf(field.Position, "function %s argument %s type should be %s the same as in the function definition", f.referencesName, an, fv.Type.Name())
 			}
 		}
@@ -258,7 +321,7 @@ func (f *FunctionCall) validate(defs Definitions, def *ast.Definition, field *as
 	}
 
 	// check that all required function arguments are used
-	for _, arg := range function.Arguments {
+	for _, arg := range function.field.Arguments {
 		if _, ok := usedArgs[arg.Name]; !ok && arg.DefaultValue == nil {
 			return ErrorPosf(field.Position, "function %s argument %s is not used", f.referencesName, arg.Name)
 		}
@@ -477,7 +540,7 @@ func (f *Function) ArgumentByName(name string) *ast.ArgumentDefinition {
 	return f.field.Arguments.ForName(name)
 }
 
-func (f *Function) validate(catalog *ast.Directive, defs Definitions) error {
+func (f *Function) validate(defs Definitions, opt *Options) error {
 	if f.Name == "" {
 		return ErrorPosf(nil, "function name is required")
 	}
@@ -498,7 +561,23 @@ func (f *Function) validate(catalog *ast.Directive, defs Definitions) error {
 		}
 	}
 
-	f.field.Directives = append(f.field.Directives, catalog)
+	f.field.Directives = append(f.field.Directives, opt.catalog)
+
+	// if catalog is compiled as module, add module directive
+	if opt.AsModule {
+		if d := f.field.Directives.ForName(base.ModuleDirectiveName); d != nil {
+			if a := d.Arguments.ForName("name"); a != nil {
+				if a.Value.Raw == "" {
+					a.Value.Raw = opt.Name
+				} else {
+					a.Value.Raw = opt.Name + "." + a.Value.Raw
+				}
+				f.Module = a.Value.Raw
+			}
+			f.Module = opt.Name
+			f.field.Directives = append(f.field.Directives, base.ModuleDirective(opt.Name, f.field.Position))
+		}
+	}
 
 	return nil
 }

@@ -19,16 +19,13 @@ const (
 	BucketAggregationSuffix            = "_bucket_aggregation"
 )
 
-func addAggregationQuery(catalog *ast.Directive, schema *ast.SchemaDocument, def *ast.Definition) {
-	/*if def.Name == QueryTimeJoinObjectName || def.Name == QueryTimeSpatialObject {
-		return
-	}*/
+func addAggregationQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Options) {
 	for _, field := range def.Fields {
-		addAggregationQueryField(catalog, schema, def, field)
+		addAggregationQueryField(schema, def, field, opt)
 	}
 }
 
-func addAggregationQueryField(catalog *ast.Directive, schema *ast.SchemaDocument, def *ast.Definition, field *ast.FieldDefinition) {
+func addAggregationQueryField(schema *ast.SchemaDocument, def *ast.Definition, field *ast.FieldDefinition, opt *Options) {
 	if IsScalarType(field.Type.Name()) {
 		return
 	}
@@ -52,22 +49,22 @@ func addAggregationQueryField(catalog *ast.Directive, schema *ast.SchemaDocument
 		}
 	}
 
-	typeName := objectAggregationTypeName(schema, catalog, ft, false)
+	typeName := objectAggregationTypeName(schema, opt, ft, false)
 	def.Fields = append(def.Fields, &ast.FieldDefinition{
 		Name:        field.Name + AggregationSuffix,
 		Type:        ast.NamedType(typeName, CompiledPosName("add_aggs")),
 		Arguments:   field.Arguments,
 		Description: "The aggregation for " + field.Name,
-		Directives:  ast.DirectiveList{aggQueryDirective(field, false), catalog},
+		Directives:  ast.DirectiveList{aggQueryDirective(field, false), opt.catalog},
 		Position:    compiledPos(),
 	})
-	typeName = objectAggregationTypeName(schema, catalog, ft, true)
+	typeName = objectAggregationTypeName(schema, opt, ft, true)
 	def.Fields = append(def.Fields, &ast.FieldDefinition{
 		Name:        field.Name + BucketAggregationSuffix,
 		Type:        ast.ListType(ast.NamedType(typeName, CompiledPosName("add_aggs")), CompiledPosName("add_aggs")),
 		Arguments:   field.Arguments,
 		Description: "The aggregation for " + field.Name,
-		Directives:  ast.DirectiveList{aggQueryDirective(field, true), catalog},
+		Directives:  ast.DirectiveList{aggQueryDirective(field, true), opt.catalog},
 		Position:    compiledPos(),
 	})
 }
@@ -192,7 +189,7 @@ func AggregatedObjectDef(defs Definitions, def *ast.Definition) *ast.Definition 
 	return defs.ForName(refName)
 }
 
-func objectAggregationTypeName(schema *ast.SchemaDocument, catalog *ast.Directive, def *ast.Definition, isBucket bool) string {
+func objectAggregationTypeName(schema *ast.SchemaDocument, opt *Options, def *ast.Definition, isBucket bool) string {
 	typeName := "_" + def.Name + AggregationSuffix
 	level := 1
 	if def.Directives.ForName(objectAggregationDirectiveName) != nil {
@@ -225,7 +222,7 @@ func objectAggregationTypeName(schema *ast.SchemaDocument, catalog *ast.Directiv
 	schema.Definitions = append(schema.Definitions, aggType)
 
 	if isBucket {
-		aggName := objectAggregationTypeName(schema, catalog, def, false)
+		aggName := objectAggregationTypeName(schema, opt, def, false)
 		aggType.Fields = append(aggType.Fields, &ast.FieldDefinition{
 			Name:        AggregateKeyFieldName,
 			Type:        ast.NamedType(def.Name, CompiledPosName("add_aggs")),
@@ -282,7 +279,7 @@ func objectAggregationTypeName(schema *ast.SchemaDocument, catalog *ast.Directiv
 		}
 		aggFieldDirectives := ast.DirectiveList{aggObjectFieldAggregationDirective(field)}
 		if def.Name == QueryTimeJoinObjectName || def.Name != QueryTimeSpatialObject {
-			aggFieldDirectives = append(aggFieldDirectives, aggQueryDirective(field, false), catalog)
+			aggFieldDirectives = append(aggFieldDirectives, aggQueryDirective(field, false), opt.catalog)
 		}
 		fieldName := field.Name
 		aggTypeName, ok := subAggregationTypes[ft.Name]
@@ -290,7 +287,7 @@ func objectAggregationTypeName(schema *ast.SchemaDocument, catalog *ast.Directiv
 			continue
 		}
 		if !ok {
-			aggTypeName = objectAggregationTypeName(schema, catalog, ft, false)
+			aggTypeName = objectAggregationTypeName(schema, opt, ft, false)
 		}
 		if aggTypeName == "" {
 			continue
@@ -328,7 +325,7 @@ func objectAggregationTypeName(schema *ast.SchemaDocument, catalog *ast.Directiv
 			if ft == nil {
 				continue
 			}
-			aggTypeName = objectAggregationTypeName(schema, catalog, ft, false)
+			aggTypeName = objectAggregationTypeName(schema, opt, ft, false)
 			fieldName = field.Name + "_aggregation"
 			// add arguments to subquery aggregations
 			aggType.Fields = append(aggType.Fields, &ast.FieldDefinition{

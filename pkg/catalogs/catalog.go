@@ -5,7 +5,6 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -18,15 +17,17 @@ type Catalog struct {
 	schema   *ast.Schema
 	source   sources.Source
 	readOnly bool
+	asModule bool
 }
 
-func NewCatalog(ctx context.Context, name, prefix string, engine engines.Engine, source sources.Source, readOnly bool) (*Catalog, error) {
+func NewCatalog(ctx context.Context, name, prefix string, engine engines.Engine, source sources.Source, asModule, readOnly bool) (*Catalog, error) {
 	c := &Catalog{
 		name:     name,
 		prefix:   prefix,
 		source:   source,
 		engine:   engine,
 		readOnly: readOnly,
+		asModule: asModule,
 	}
 
 	err := c.Reload(ctx)
@@ -65,7 +66,13 @@ func (c *Catalog) baseSchema(ctx context.Context) (*ast.Schema, error) {
 		return nil, err
 	}
 
-	return compiler.Compile(base.CatalogDirective(c.name, string(c.engine.Type())), sd, c.prefix, c.readOnly)
+	return compiler.Compile(sd, compiler.Options{
+		Name:       c.name,
+		ReadOnly:   c.readOnly,
+		Prefix:     c.prefix,
+		EngineType: string(c.engine.Type()),
+		AsModule:   c.asModule,
+	})
 }
 
 func (c *Catalog) Name() string {

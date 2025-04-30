@@ -16,13 +16,15 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 	res, err := s.Query(auth.ContextWithFullAccess(ctx), `
 		query{
 			core {
-				data_sources{
+				data_sources(filter:{disabled:{eq: false}}){
 					name
 					type
 					prefix
 					path
+					as_module
 					self_defined
 					read_only
+					disabled
 					catalogs{
 						name
 						type
@@ -44,7 +46,7 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 	}
 
 	for _, ds := range data {
-		err := s.loadDataSource(ctx, ds)
+		err := s.RegisterDataSource(ctx, ds)
 		if err != nil {
 			log.Printf("ERR: failed to load datasource %s: %v", ds.Name, err)
 		}
@@ -52,7 +54,7 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) loadDataSource(ctx context.Context, ds types.DataSource) error {
+func (s *Service) RegisterDataSource(ctx context.Context, ds types.DataSource) error {
 	d, err := datasources.NewDataSource(ctx, ds, false)
 	if err != nil {
 		return fmt.Errorf("failed to create datasource: %w", err)
@@ -62,4 +64,20 @@ func (s *Service) loadDataSource(ctx context.Context, ds types.DataSource) error
 		return fmt.Errorf("failed to register datasource: %w", err)
 	}
 	return s.ds.Attach(ctx, ds.Name)
+}
+
+func (s *Service) LoadDataSource(ctx context.Context, name string) error {
+	res := s.ds.LoadDataSource(ctx, name)
+	if res.Succeed {
+		return nil
+	}
+	return errors.New(res.Msg)
+}
+
+func (s *Service) UnloadDataSource(ctx context.Context, name string) error {
+	res := s.ds.UnloadDataSource(ctx, name)
+	if res.Succeed {
+		return nil
+	}
+	return errors.New(res.Msg)
 }

@@ -5,26 +5,26 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func addDefinitionPrefix(defs Definitions, def *ast.Definition, prefix string, addOriginal bool) {
+func addDefinitionPrefix(defs Definitions, def *ast.Definition, opt *Options, addOriginal bool) {
 	switch def.Kind {
 	case ast.Object:
-		addObjectPrefix(defs, def, prefix, addOriginal)
+		addObjectPrefix(defs, def, opt, addOriginal)
 	case ast.InputObject:
-		addInputPrefix(def, prefix, addOriginal)
+		addInputPrefix(defs, def, opt, addOriginal)
 	case ast.Interface:
-		addInterfacePrefix(def, prefix, addOriginal)
+		addInterfacePrefix(defs, def, opt, addOriginal)
 	case ast.Union:
-		addUnionPrefix(def, prefix, addOriginal)
+		addUnionPrefix(def, opt, addOriginal)
 	// TODO: add other types
 	default:
-		def.Name = prefix + def.Name
+		def.Name = opt.Prefix + "_" + def.Name
 	}
 }
 
-func validateDefinition(defs Definitions, def *ast.Definition) error {
+func validateDefinition(defs Definitions, def *ast.Definition, opt *Options) error {
 	switch def.Kind {
 	case ast.Object:
-		return validateObject(defs, def)
+		return validateObject(defs, def, opt)
 	case ast.InputObject:
 		return validateInputObject(def)
 	default:
@@ -57,40 +57,36 @@ func SchemaDefs(schema *ast.Schema) DefinitionsSource {
 	return schemaDefs{schema}
 }
 
-func addInterfacePrefix(def *ast.Definition, prefix string, addOriginal bool) {
+func addInterfacePrefix(defs Definitions, def *ast.Definition, opt *Options, addOriginal bool) {
 	if def.Kind != ast.Interface {
 		return
 	}
 	if addOriginal {
 		def.Directives = append(def.Directives, base.OriginalNameDirective(def.Name))
 	}
-	def.Name = prefix + def.Name
+	def.Name = opt.Prefix + "_" + def.Name
 
 	for _, field := range def.Fields {
 		typeName := field.Type.Name()
 		if IsScalarType(typeName) {
 			continue
 		}
-		if field.Type.NamedType != "" {
-			field.Type.NamedType = prefix + field.Type.NamedType
-		} else {
-			field.Type.Elem.NamedType = prefix + field.Type.Elem.NamedType
-		}
+		field.Type = typeWithPrefix(defs, field.Type, opt.Prefix+"_")
 	}
 }
 
-func addUnionPrefix(def *ast.Definition, prefix string, addOriginal bool) {
+func addUnionPrefix(def *ast.Definition, opt *Options, addOriginal bool) {
 	if def.Kind != ast.Union {
 		return
 	}
 	if addOriginal {
 		def.Directives = append(def.Directives, base.OriginalNameDirective(def.Name))
 	}
-	def.Name = prefix + def.Name
+	def.Name = opt.Prefix + "_" + def.Name
 
 	types := make([]string, len(def.Types))
 	for i, typeName := range def.Types {
-		types[i] = prefix + typeName
+		types[i] = opt.Prefix + "_" + typeName
 	}
 	def.Types = types
 }

@@ -27,10 +27,11 @@ type Service struct {
 	dataSources map[string]Source
 
 	db       *db.Pool
+	qe       types.Querier
 	catalogs *catalogs.Service
 }
 
-func New(db *db.Pool, cs *catalogs.Service) *Service {
+func New(qe types.Querier, db *db.Pool, cs *catalogs.Service) *Service {
 	return &Service{
 		dataSources: make(map[string]Source),
 		catalogs:    cs,
@@ -44,7 +45,7 @@ func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource)
 		return err
 	}
 
-	c, err := catalogs.NewCatalog(ctx, source.Name(), "", source.Engine(), source.Catalog(ctx), source.IsReadonly())
+	c, err := catalogs.NewCatalog(ctx, source.Name(), "", source.Engine(), source.Catalog(ctx), false, source.IsReadonly())
 	if err != nil {
 		return err
 	}
@@ -229,7 +230,7 @@ func (s *Service) dataSourceCatalog(ctx context.Context, name string) (*catalogs
 	if len(ss) > 1 {
 		source = sources.MergeSource(ss...)
 	}
-	return catalogs.NewCatalog(ctx, def.Name, def.Prefix, ds.Engine(), source, ds.ReadOnly())
+	return catalogs.NewCatalog(ctx, def.Name, def.Prefix, ds.Engine(), source, def.AsModule, ds.ReadOnly())
 }
 
 func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers, params, body, jqq string) (any, error) {

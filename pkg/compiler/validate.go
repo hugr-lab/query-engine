@@ -24,34 +24,39 @@ func validateSource(source *ast.SchemaDocument) error {
 	return nil
 }
 
-func validateSourceSchema(catalog *ast.Directive, source *ast.SchemaDocument, readOnly bool) error {
-	errs := applyExtension(source, catalog)
+func validateSourceSchema(source *ast.SchemaDocument, opt *Options) error {
+	errs := applyExtension(source, opt)
 	// validate functions
 	if def := source.Definitions.ForName(base.FunctionTypeName); def != nil {
-		err := validateFunctions(catalog, source.Definitions, def)
+		err := validateFunctions(source.Definitions, def, opt)
 		if err != nil {
 			errs = append(errs, gqlerror.WrapIfUnwrapped(err))
 		}
 	}
 	if def := source.Definitions.ForName(base.FunctionMutationTypeName); def != nil {
-		if !readOnly {
-			err := validateFunctions(catalog, source.Definitions, def)
+		if !opt.ReadOnly {
+			err := validateFunctions(source.Definitions, def, opt)
 			if err != nil {
 				errs = append(errs, gqlerror.WrapIfUnwrapped(err))
 			}
 		}
-		if readOnly {
+		if opt.ReadOnly {
 			source.Definitions = slices.DeleteFunc(source.Definitions, func(def *ast.Definition) bool {
 				return def.Name == base.FunctionMutationTypeName
 			})
 		}
 	}
+	// assign function by modules
+	assignFunctionByModules(source)
 
 	for _, def := range source.Definitions {
 		if IsSystemType(def) {
 			continue
 		}
-		err := validateDefinition(source.Definitions, def)
+		if def.Directives.ForName(moduleRootDirectiveName) != nil {
+			continue
+		}
+		err := validateDefinition(source.Definitions, def, opt)
 		if err != nil {
 			errs = append(errs, gqlerror.WrapIfUnwrapped(err))
 		}
@@ -62,11 +67,14 @@ func validateSourceSchema(catalog *ast.Directive, source *ast.SchemaDocument, re
 	return nil
 }
 
-func applyExtension(source *ast.SchemaDocument, catalog *ast.Directive) gqlerror.List {
+func applyExtension(source *ast.SchemaDocument, opt *Options) gqlerror.List {
 	var errs gqlerror.List
 	for _, def := range source.Definitions {
-		if IsDataObject(def) && catalog != nil {
-			def.Directives = append(def.Directives, catalog)
+		if IsDataObject(def) && !opt.AsModule {
+			def.Directives = append(def.Directives, opt.catalog)
+		}
+		if IsDataObject(def) && opt.AsModule {
+			def.Directives = append(def.Directives, opt.catalog)
 		}
 	}
 	for _, def := range source.Extensions {

@@ -27,12 +27,12 @@ const (
 	ObjectQueryByPKSuffix = "_by_pk"
 )
 
-func addObjectPrefix(defs Definitions, def *ast.Definition, prefix string, addOriginal bool) {
+func addObjectPrefix(defs Definitions, def *ast.Definition, opt *Options, addOriginal bool) {
 	if def.Kind != ast.Object {
 		return
 	}
 	if def.Name == base.FunctionTypeName || def.Name == base.FunctionMutationTypeName {
-		addFunctionsPrefix(defs, def, prefix)
+		addFunctionsPrefix(defs, def, opt)
 		return
 	}
 
@@ -42,6 +42,8 @@ func addObjectPrefix(defs Definitions, def *ast.Definition, prefix string, addOr
 	if addOriginal {
 		def.Directives = append(def.Directives, base.OriginalNameDirective(def.Name))
 	}
+	prefix := opt.Prefix + "_"
+
 	def.Name = prefix + def.Name
 
 	for _, d := range def.Directives.ForNames(referencesDirectiveName) {
@@ -58,9 +60,16 @@ func addObjectPrefix(defs Definitions, def *ast.Definition, prefix string, addOr
 	for _, field := range def.Fields {
 		for _, d := range field.Directives {
 			switch d.Name {
-			case fieldReferencesDirectiveName, JoinDirectiveName,
-				functionCallDirectiveName, functionCallTableJoinDirectiveName:
+			case fieldReferencesDirectiveName, JoinDirectiveName:
 				if a := d.Arguments.ForName("references_name"); a != nil {
+					a.Value.Raw = prefix + a.Value.Raw
+				}
+			case functionCallDirectiveName, functionCallTableJoinDirectiveName:
+				a := d.Arguments.ForName("references_name")
+				if a == nil { // this is a schema error, but it will be reported on the validation stage
+					continue
+				}
+				if !opt.AsModule {
 					a.Value.Raw = prefix + a.Value.Raw
 				}
 			}
@@ -73,7 +82,7 @@ func addObjectPrefix(defs Definitions, def *ast.Definition, prefix string, addOr
 	}
 }
 
-func validateObject(defs Definitions, def *ast.Definition) error {
+func validateObject(defs Definitions, def *ast.Definition, opt *Options) error {
 	if IsSystemType(def) {
 		return nil
 	}
@@ -157,6 +166,20 @@ func validateObject(defs Definitions, def *ast.Definition) error {
 		}
 	}
 
+	if opt.AsModule && IsDataObject(def) {
+		if d := def.Directives.ForName(base.ModuleDirectiveName); d != nil {
+			if a := d.Arguments.ForName("name"); a != nil {
+				if a.Value.Raw == "" {
+					a.Value.Raw = opt.Name
+				} else {
+					a.Value.Raw = opt.Name + "." + a.Value.Raw
+				}
+			}
+		} else {
+			def.Directives = append(def.Directives, base.ModuleDirective(opt.Name, compiledPos()))
+		}
+	}
+
 	if isM2MTable(def) {
 		// check only 2 references
 		if len(def.Directives.ForNames(referencesDirectiveName)) > 2 {
@@ -182,7 +205,7 @@ func validateObject(defs Definitions, def *ast.Definition) error {
 	return nil
 }
 
-func addObjectReferencesQuery(catalog *ast.Directive, schema *ast.SchemaDocument, def *ast.Definition) {
+func addObjectReferencesQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Options) {
 	if isM2MTable(def) { // skip m2m table
 		return
 	}
@@ -207,7 +230,7 @@ func addObjectReferencesQuery(catalog *ast.Directive, schema *ast.SchemaDocument
 			Type:        t,
 			Directives: ast.DirectiveList{
 				referenceQueryDirective(info.ReferencesName, info.Name, info.IsM2M, info.M2MName),
-				catalog,
+				opt.catalog,
 			},
 			Position: CompiledPosName("add-ref-" + def.Name),
 		})
@@ -222,7 +245,7 @@ func addObjectReferencesQuery(catalog *ast.Directive, schema *ast.SchemaDocument
 			Type:        ast.ListType(ast.NamedType(def.Name, compiledPos()), compiledPos()),
 			Directives: ast.DirectiveList{
 				referenceQueryDirective(def.Name, info.Name, info.IsM2M, info.M2MName),
-				catalog,
+				opt.catalog,
 			},
 			Position: CompiledPosName("add-ref-" + def.Name),
 		})
@@ -232,7 +255,7 @@ func addObjectReferencesQuery(catalog *ast.Directive, schema *ast.SchemaDocument
 	}
 }
 
-func addObjectQuery(catalog *ast.Directive, schema *ast.SchemaDocument, def *ast.Definition, readOnly bool) {
+func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Options) {
 	if !IsDataObject(def) {
 		return
 	}
@@ -243,50 +266,54 @@ func addObjectQuery(catalog *ast.Directive, schema *ast.SchemaDocument, def *ast
 	// add query
 	dd := ast.DirectiveList{
 		objectQueryDirective(def.Name, QueryTypeSelect),
-		catalog,
+		opt.catalog,
 	}
 	if cacheDirective != nil {
 		dd = append(dd, cacheDirective)
 	}
 	// module directive
 	moduleObject := moduleType(schema, objectModule(def), ModuleQuery)
+	name := def.Name
+	if opt.AsModule {
+		name = objectDirectiveArgValue(def, base.OriginalNameDirectiveName, "name")
+	}
 	moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
-		Name:        def.Name,
+		Name:        name,
 		Description: def.Description,
 		Arguments:   inputObjectQueryArgs(schema, def, false),
 		Type:        ast.ListType(ast.NamedType(def.Name, compiledPos()), compiledPos()),
 		Directives:  dd,
 		Position:    compiledPos(),
 	})
-	def.Directives = append(def.Directives, objectQueryDirective(def.Name, QueryTypeSelect))
+	def.Directives = append(def.Directives, objectQueryDirective(name, QueryTypeSelect))
 	if !isM2M {
 		// add to join object
-		addObjectQueryToJoinsObject(catalog, schema, def)
+		addObjectQueryToJoinsObject(opt.catalog, schema, def)
 
 		uniqueArgs := inputObjectUniquesArgs(def)
 		for suffix, arg := range uniqueArgs {
 			moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
-				Name:        def.Name + suffix,
+				Name:        name + suffix,
 				Description: def.Description,
 				Arguments:   arg,
 				Type:        ast.NamedType(def.Name, compiledPos()),
 				Directives: ast.DirectiveList{
 					objectQueryDirective(def.Name, QueryTypeSelectOne),
-					catalog,
+					opt.catalog,
 				},
 				Position: compiledPos(),
 			})
-			def.Directives = append(def.Directives, objectQueryDirective(def.Name+suffix, QueryTypeSelectOne))
+			def.Directives = append(def.Directives, objectQueryDirective(name+suffix, QueryTypeSelectOne))
 		}
 	}
 
-	if readOnly || def.Directives.ForName(objectTableDirectiveName) == nil {
+	if opt.ReadOnly || def.Directives.ForName(objectTableDirectiveName) == nil {
 		return
 	}
 	// add insert mutation
 	dd = ast.DirectiveList{
 		objectMutationDirective(def.Name, MutationTypeInsert),
-		catalog,
+		opt.catalog,
 	}
 	if cacheDirective != nil {
 		dd = append(dd, cacheDirective)
@@ -298,25 +325,25 @@ func addObjectQuery(catalog *ast.Directive, schema *ast.SchemaDocument, def *ast
 
 	moduleObject = moduleType(schema, objectModule(def), ModuleMutation)
 	moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
-		Name:        mutationInsertPrefix + def.Name,
+		Name:        mutationInsertPrefix + name,
 		Description: def.Description,
 		Arguments:   inputObjectMutationInsertArgs(schema, def),
 		Type:        outType,
 		Directives:  dd,
 		Position:    compiledPos(),
 	})
-	def.Directives = append(def.Directives, objectMutationDirective(mutationInsertPrefix+def.Name, MutationTypeInsert))
+	def.Directives = append(def.Directives, objectMutationDirective(mutationInsertPrefix+name, MutationTypeInsert))
 
 	// add update mutation
 	dd = ast.DirectiveList{
 		objectMutationDirective(def.Name, MutationTypeUpdate),
-		catalog,
+		opt.catalog,
 	}
 	if cacheDirective != nil {
 		dd = append(dd, cacheDirective)
 	}
 	moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
-		Name:        mutationUpdatePrefix + def.Name,
+		Name:        mutationUpdatePrefix + name,
 		Description: def.Description,
 		Arguments: ast.ArgumentDefinitionList{
 			{
@@ -334,17 +361,17 @@ func addObjectQuery(catalog *ast.Directive, schema *ast.SchemaDocument, def *ast
 		Directives: dd,
 		Position:   compiledPos(),
 	})
-	def.Directives = append(def.Directives, objectMutationDirective(mutationUpdatePrefix+def.Name, MutationTypeUpdate))
+	def.Directives = append(def.Directives, objectMutationDirective(mutationUpdatePrefix+name, MutationTypeUpdate))
 	// add delete mutation
 	dd = ast.DirectiveList{
 		objectMutationDirective(def.Name, MutationTypeDelete),
-		catalog,
+		opt.catalog,
 	}
 	if cacheDirective != nil {
 		dd = append(dd, cacheDirective)
 	}
 	moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
-		Name:        mutationDeletePrefix + def.Name,
+		Name:        mutationDeletePrefix + name,
 		Description: def.Description,
 		Arguments: ast.ArgumentDefinitionList{
 			{
@@ -357,7 +384,7 @@ func addObjectQuery(catalog *ast.Directive, schema *ast.SchemaDocument, def *ast
 		Directives: dd,
 		Position:   compiledPos(),
 	})
-	def.Directives = append(def.Directives, objectMutationDirective(mutationDeletePrefix+def.Name, MutationTypeDelete))
+	def.Directives = append(def.Directives, objectMutationDirective(mutationDeletePrefix+name, MutationTypeDelete))
 }
 
 func objectPrimaryKeys(def *ast.Definition) []string {

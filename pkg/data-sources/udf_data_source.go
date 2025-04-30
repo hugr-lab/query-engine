@@ -43,30 +43,36 @@ func (s *Service) registerDataSource(ctx context.Context,
 }
 
 func (s *Service) dataSource(ctx context.Context, name string) (types.DataSource, error) {
-	var ds types.DataSource
-	err := s.db.QueryRowToData(ctx, &ds, `
-		SELECT ds.name, ds.type, ds.description, ds.prefix, ds.path, ds.self_defined, dsc.catalog_sources AS catalogs
-		FROM core.data_sources AS ds
-			, LATERAL (
-				SELECT array_agg({
-					name: cs.name, 
-					type: cs.type, 
-					path: cs.path
-				}) AS catalog_sources
-				FROM core.data_source_catalogs AS dcs
-						INNER JOIN core.catalog_sources AS cs ON dcs.catalog_name = cs.name
-				WHERE ds.name = dcs.data_source_name
-			) AS dsc
-		WHERE ds.name = $1
-	`, name)
+	res, err := s.qe.Query(ctx, `query($name: String!){
+		core {
+			data_sources_by_pk(name: $name){
+				name
+				type
+				prefix
+				path
+				as_module
+				self_defined
+				read_only
+				disabled
+				catalogs{
+					name
+					type
+					path
+				}
+			}
+		}
+	}`, map[string]any{
+		"name": name,
+	})
 	if err != nil {
-		return ds, err
+		return types.DataSource{}, err
 	}
-
+	var ds types.DataSource
+	err = res.ScanData("core.data_sources_by_pk", &ds)
 	return ds, err
 }
 
-func (s *Service) loadDataSource(ctx context.Context, name string) *types.OperationResult {
+func (s *Service) LoadDataSource(ctx context.Context, name string) *types.OperationResult {
 	// read from db and if not found only source reload
 	item, err := s.dataSource(ctx, name)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -79,7 +85,7 @@ func (s *Service) loadDataSource(ctx context.Context, name string) *types.Operat
 		return types.ErrResult(err)
 	}
 
-	res := s.unloadDataSource(ctx, name)
+	res := s.UnloadDataSource(ctx, name)
 	if !res.Succeed {
 		return res
 	}
@@ -91,7 +97,7 @@ func (s *Service) loadDataSource(ctx context.Context, name string) *types.Operat
 	return types.Result("data source loaded", 1, 0)
 }
 
-func (s *Service) unloadDataSource(ctx context.Context, name string) *types.OperationResult {
+func (s *Service) UnloadDataSource(ctx context.Context, name string) *types.OperationResult {
 	if !s.IsAttached(name) {
 		s.Unregister(ctx, name)
 		return types.Result("already unloaded", 0, 0)

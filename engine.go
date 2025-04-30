@@ -82,7 +82,7 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	if err != nil {
 		return fmt.Errorf("connect db: %w", err)
 	}
-	s.ds = datasources.New(s.db, s.catalog)
+	s.ds = datasources.New(s, s.db, s.catalog)
 	err = s.ds.RegisterUDF(ctx)
 	if err != nil {
 		return fmt.Errorf("register udf: %w", err)
