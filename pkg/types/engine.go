@@ -11,6 +11,10 @@ import (
 
 type Querier interface {
 	Query(ctx context.Context, query string, vars map[string]any) (*Response, error)
+	RegisterDataSource(ctx context.Context, ds DataSource) error
+	LoadDataSource(ctx context.Context, name string) error
+	UnloadDataSource(ctx context.Context, name string) error
+	DataSourceStatus(ctx context.Context, name string) (string, error)
 }
 
 type Response struct {
@@ -20,13 +24,17 @@ type Response struct {
 }
 
 func ErrResponse(err error) Response {
+	return Response{
+		Errors: WarpGraphQLError(err),
+	}
+}
+
+func WarpGraphQLError(err error) gqlerror.List {
 	var l gqlerror.List
 	if errors.As(err, &l) {
-		return Response{Errors: l}
+		return l
 	}
-	return Response{
-		Errors: gqlerror.List{gqlerror.WrapIfUnwrapped(err)},
-	}
+	return gqlerror.List{gqlerror.WrapIfUnwrapped(err)}
 }
 
 func (r *Response) Err() error {

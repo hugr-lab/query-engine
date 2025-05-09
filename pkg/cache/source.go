@@ -3,10 +3,10 @@ package cache
 import (
 	"context"
 	"database/sql/driver"
-	"strings"
 
 	_ "embed"
 
+	"github.com/hugr-lab/query-engine/pkg/auth"
 	cs "github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -34,103 +34,77 @@ func (s *Service) IsReadonly() bool {
 	return false
 }
 
-func (s *Service) Attach(ctx context.Context, db *db.Pool) error {
-	c, err := db.Conn(ctx)
+func (s *Service) AsModule() bool {
+	return false
+}
+
+func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
+	t, err := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
 	if err != nil {
 		return err
 	}
-	defer c.Close()
-
-	err = duckdb.RegisterScalarUDFSet(c.DBConn(), "invalidate_cache", &invalidateCacheUDF{s: s, ctx: ctx}, &invalidateCacheTagsUDF{s: s, ctx: ctx})
+	t, err = duckdb.NewListInfo(t)
 	if err != nil {
 		return err
 	}
-
-	return nil
+	return db.RegisterScalarFunctionSet(auth.ContextWithFullAccess(ctx), pool, db.ScalarFunctionSet[string]{
+		Name:        "invalidate_cache",
+		Module:      "cache",
+		Description: "Invalidate the cache for the given tags.",
+		OutputType:  types.DuckDBOperationResult(),
+		ConvertOutput: func(out string) (any, error) {
+			return types.Result(out, 1, 0).ToDuckdb(), nil
+		},
+		Funcs: []db.ScalarFunctionCaster[string]{
+			&db.ScalarFunctionSetItemNoArgs[string]{
+				Execute: func(ctx context.Context) (string, error) {
+					err := s.Invalidate(ctx)
+					if err != nil {
+						return "", err
+					}
+					return "cache invalidated", nil
+				},
+			},
+			&db.ScalarFunctionSetItem[[]string, string]{
+				InputTypes: []duckdb.TypeInfo{t},
+				Execute: func(ctx context.Context, tags []string) (string, error) {
+					err := s.Invalidate(ctx, tags...)
+					if err != nil {
+						return "", err
+					}
+					return "cache invalidated", nil
+				},
+				ConvertInput: func(args []driver.Value) ([]string, error) {
+					if len(args) != 1 {
+						return nil, &duckdb.Error{
+							Type: duckdb.ErrorTypeParameterNotResolved,
+							Msg:  "invalid number of arguments",
+						}
+					}
+					vv, ok := args[0].([]any)
+					if !ok {
+						return nil, &duckdb.Error{
+							Type: duckdb.ErrorTypeInvalidInput,
+							Msg:  "invalid argument type for cache invalidation",
+						}
+					}
+					tags := make([]string, len(vv))
+					for i, v := range vv {
+						tags[i], ok = v.(string)
+						if !ok {
+							return nil, &duckdb.Error{
+								Type: duckdb.ErrorTypeInvalidInput,
+								Msg:  "invalid argument type for cache invalidation",
+							}
+						}
+					}
+					return tags, nil
+				},
+			},
+		},
+	})
 }
 
 func (s *Service) Catalog(ctx context.Context) cs.Source {
 	return cs.NewStringSource("cache/schema.graphql", schema)
-}
-
-type invalidateCacheTagsUDF struct {
-	s   *Service
-	ctx context.Context
-}
-
-func (f *invalidateCacheTagsUDF) Config() duckdb.ScalarFuncConfig {
-	t, _ := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	t, _ = duckdb.NewListInfo(t)
-	return duckdb.ScalarFuncConfig{
-		InputTypeInfos: []duckdb.TypeInfo{t},
-		ResultTypeInfo: types.DuckDBOperationResult(),
-		Volatile:       true,
-	}
-}
-
-func (f *invalidateCacheTagsUDF) Executor() duckdb.ScalarFuncExecutor {
-	return duckdb.ScalarFuncExecutor{
-		RowExecutor: func(values []driver.Value) (any, error) {
-			vv, ok := values[0].([]any)
-			if !ok {
-				return nil, &duckdb.Error{
-					Type: duckdb.ErrorTypeInvalidInput,
-					Msg:  "invalid argument type for cache invalidation",
-				}
-			}
-			if len(vv) == 0 {
-				err := f.s.Invalidate(f.ctx)
-				if err != nil {
-					return nil, err
-				}
-				return types.Result("cache invalidated", 1, 0).ToDuckdb(), nil
-			}
-			tags := make([]string, len(vv))
-			for i, v := range vv {
-				tags[i], ok = v.(string)
-				if !ok {
-					return nil, &duckdb.Error{
-						Type: duckdb.ErrorTypeInvalidInput,
-						Msg:  "invalid argument type for cache invalidation",
-					}
-				}
-			}
-			err := f.s.Invalidate(f.ctx, tags...)
-			if err != nil {
-				return nil, err
-			}
-
-			return types.Result("cache invalidated for tags: "+strings.Join(tags, ","), 1, 0).ToDuckdb(), nil
-		},
-	}
-}
-
-type invalidateCacheUDF struct {
-	s   *Service
-	ctx context.Context
-}
-
-func (f *invalidateCacheUDF) Config() duckdb.ScalarFuncConfig {
-	return duckdb.ScalarFuncConfig{
-		ResultTypeInfo: types.DuckDBOperationResult(),
-		Volatile:       true,
-	}
-}
-
-func (f *invalidateCacheUDF) Executor() duckdb.ScalarFuncExecutor {
-	return duckdb.ScalarFuncExecutor{
-		RowExecutor: func(values []driver.Value) (any, error) {
-			if len(values) != 0 {
-				return nil, &duckdb.Error{
-					Type: duckdb.ErrorTypeInvalidInput,
-					Msg:  "invalid argument type for cache invalidation",
-				}
-			}
-			err := f.s.Invalidate(f.ctx)
-			if err != nil {
-				return nil, err
-			}
-			return types.Result("cache invalidated", 1, 0).ToDuckdb(), nil
-		},
-	}
 }

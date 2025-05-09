@@ -9,6 +9,33 @@ import (
 	"time"
 )
 
+type Interval time.Duration
+
+func (i Interval) MarshalJSON() ([]byte, error) {
+	return []byte("\"" + time.Duration(i).String() + "\""), nil
+}
+
+func (i *Interval) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	s := string(data)
+	if s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1 : len(s)-1]
+		d, err := ParseIntervalValue(s)
+		if err != nil {
+			return err
+		}
+		*i = Interval(d)
+	}
+	d, err := strconv.Atoi(s)
+	if err != nil {
+		return err
+	}
+	*i = Interval(time.Duration(d))
+	return nil
+}
+
 func ParseIntervalValue(v any) (time.Duration, error) {
 	if v == nil {
 		return 0, nil
@@ -24,6 +51,8 @@ func ParseIntervalValue(v any) (time.Duration, error) {
 		return time.Duration(v) * time.Second, nil
 	case time.Duration:
 		return v, nil
+	case Interval:
+		return time.Duration(v), nil
 	default:
 		return 0, fmt.Errorf("unexpected type %T for interval", v)
 	}

@@ -48,9 +48,9 @@ func (s *Source) IsAttached() bool {
 	return s.isAttached
 }
 
-func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
+func (s *Source) Attach(ctx context.Context, db *db.Pool) (err error) {
 	if s.ds.Path != "" {
-		err := sources.CheckDBExists(ctx, db, s.ds.Prefix, sources.DuckDB)
+		err = sources.CheckDBExists(ctx, db, s.ds.Prefix, sources.DuckDB)
 		if err != nil {
 			return err
 		}
@@ -60,8 +60,12 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 		// attach as in-memory
 		s.ds.Path = ":memory:"
 	}
+	s.ds.Path, err = sources.ApplyEnvVars(s.ds.Path)
+	if err != nil {
+		return err
+	}
 
-	_, err := db.Exec(ctx, "ATTACH DATABASE '"+s.ds.Path+"' AS "+s.ds.Name)
+	_, err = db.Exec(ctx, "ATTACH DATABASE '"+s.ds.Path+"' AS "+s.ds.Name)
 	if err != nil {
 		return err
 	}

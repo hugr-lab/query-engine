@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -20,10 +21,26 @@ type ArrowTable struct {
 	releaseAfterMarshal bool
 }
 
-func NewDBJsonTable(releaseAfterMarshal bool) *ArrowTable {
+func NewArrowTable(releaseAfterMarshal bool) *ArrowTable {
 	return &ArrowTable{
 		releaseAfterMarshal: releaseAfterMarshal,
 	}
+}
+
+func (t *ArrowTable) SetInfo(info string) {
+	t.wrapped = strings.Contains(info, "wrapped")
+	t.asArray = strings.Contains(info, "asArray")
+}
+
+func (t *ArrowTable) Info() string {
+	var info []string
+	if t.wrapped {
+		info = append(info, "wrapped")
+	}
+	if t.asArray {
+		info = append(info, "asArray")
+	}
+	return strings.Join(info, ",")
 }
 
 func (t *ArrowTable) Append(rec arrow.Record) {

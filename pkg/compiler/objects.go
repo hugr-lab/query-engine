@@ -255,9 +255,9 @@ func addObjectReferencesQuery(schema *ast.SchemaDocument, def *ast.Definition, o
 	}
 }
 
-func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Options) {
+func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Options) error {
 	if !IsDataObject(def) {
-		return
+		return nil
 	}
 	isM2M := isM2MTable(def)
 
@@ -272,10 +272,15 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 		dd = append(dd, cacheDirective)
 	}
 	// module directive
-	moduleObject := moduleType(schema, objectModule(def), ModuleQuery)
+	moduleObject, err := moduleType(schema, objectModule(def), ModuleQuery)
+	if err != nil {
+		return err
+	}
 	name := def.Name
 	if opt.AsModule {
-		name = objectDirectiveArgValue(def, base.OriginalNameDirectiveName, "name")
+		if on := objectDirectiveArgValue(def, base.OriginalNameDirectiveName, "name"); on != "" {
+			name = on
+		}
 	}
 	moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
 		Name:        name,
@@ -308,7 +313,7 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 	}
 
 	if opt.ReadOnly || def.Directives.ForName(objectTableDirectiveName) == nil {
-		return
+		return nil
 	}
 	// add insert mutation
 	dd = ast.DirectiveList{
@@ -323,7 +328,10 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 		outType = ast.NamedType(OperationResultTypeName, compiledPos())
 	}
 
-	moduleObject = moduleType(schema, objectModule(def), ModuleMutation)
+	moduleObject, err = moduleType(schema, objectModule(def), ModuleMutation)
+	if err != nil {
+		return err
+	}
 	moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
 		Name:        mutationInsertPrefix + name,
 		Description: def.Description,
@@ -385,6 +393,7 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 		Position:   compiledPos(),
 	})
 	def.Directives = append(def.Directives, objectMutationDirective(mutationDeletePrefix+name, MutationTypeDelete))
+	return nil
 }
 
 func objectPrimaryKeys(def *ast.Definition) []string {

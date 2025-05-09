@@ -17,6 +17,14 @@ func NewAnonymous(config AnonymousConfig) *AnonymousProvider {
 	}
 }
 
+func (p *AnonymousProvider) Name() string {
+	return "anonymous"
+}
+
+func (p *AnonymousProvider) Type() string {
+	return "anonymous"
+}
+
 func (p *AnonymousProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 	if !p.Config.Allowed {
 		return nil, nil

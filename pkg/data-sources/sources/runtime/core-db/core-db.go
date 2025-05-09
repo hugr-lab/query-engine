@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	dbVersion = "0.0.6"
-	dbName    = "core"
+	Version = "0.0.6"
+	dbName  = "core"
 )
 
 var (
@@ -70,6 +70,18 @@ func New(c Config) *Source {
 	}
 }
 
+type Info struct {
+	Version string               `json:"version"`
+	Type    types.DataSourceType `json:"type"`
+}
+
+func (s *Source) Info() Info {
+	return Info{
+		Version: Version,
+		Type:    s.dbType,
+	}
+}
+
 func (s *Source) Name() string {
 	return dbName
 }
@@ -80,6 +92,10 @@ func (s *Source) Engine() engines.Engine {
 
 func (s *Source) IsReadonly() bool {
 	return s.c.ReadOnly || s.s3Source
+}
+
+func (s *Source) AsModule() bool {
+	return false
 }
 
 func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
@@ -175,7 +191,7 @@ func checkDBVersion(ctx context.Context, db *db.Pool) error {
 	if version == nil {
 		return ErrDBIsNotInitialized
 	}
-	if *version != dbVersion {
+	if *version != Version {
 		return ErrDBIsDifferentVersion
 	}
 	return nil

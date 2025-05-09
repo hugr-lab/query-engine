@@ -13,6 +13,7 @@ import (
 	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
+	dssource "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/storage"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	permissions "github.com/hugr-lab/query-engine/pkg/perm"
@@ -67,6 +68,20 @@ type Config struct {
 	Cache  cache.Config
 }
 
+type Info struct {
+	AdminUI bool `json:"admin_ui"`
+	Debug   bool `json:"debug"`
+
+	AllowParallel      bool `json:"allow_parallel"`
+	MaxParallelQueries int  `json:"max_parallel_queries"`
+	MaxDepth           int  `json:"max_depth"`
+
+	DuckDB db.Config           `json:"duckdb"`
+	CoreDB coredb.Info         `json:"coredb"`
+	Auth   []auth.ProviderInfo `json:"auth"`
+	Cache  cache.Config        `json:"cache"`
+}
+
 func New(config Config) *Service {
 	return &Service{
 		config:  config,
@@ -90,11 +105,10 @@ func (s *Service) Init(ctx context.Context) (err error) {
 
 	// load core-db runtime data sources
 	// if core-db is not provided, it will be created with default config (in-memory)
-	cdb := s.config.CoreDB
-	if cdb == nil {
-		cdb = coredb.New(coredb.Config{})
+	if s.config.CoreDB == nil {
+		s.config.CoreDB = coredb.New(coredb.Config{})
 	}
-	err = s.ds.AttachRuntimeSource(ctx, cdb)
+	err = s.ds.AttachRuntimeSource(ctx, s.config.CoreDB)
 	if err != nil {
 		return fmt.Errorf("attach runtime source: %w", err)
 	}
@@ -109,6 +123,10 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		return fmt.Errorf("attach cache source: %w", err)
 	}
 	err = s.ds.AttachRuntimeSource(ctx, s.s3)
+	if err != nil {
+		return fmt.Errorf("attach s3 source: %w", err)
+	}
+	err = s.ds.AttachRuntimeSource(ctx, dssource.New(s))
 	if err != nil {
 		return fmt.Errorf("attach s3 source: %w", err)
 	}
@@ -141,6 +159,29 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	}
 
 	return s.loadDataSources(ctx)
+}
+
+func (s *Service) Info() Info {
+	return Info{
+		AdminUI:            s.config.AdminUI,
+		Debug:              s.config.Debug,
+		AllowParallel:      s.config.AllowParallel,
+		MaxParallelQueries: s.config.MaxParallelQueries,
+		MaxDepth:           s.config.MaxDepth,
+		DuckDB:             s.config.DB,
+		CoreDB:             s.CoreDBVersion(),
+		Auth:               s.config.Auth.Info(),
+		Cache:              s.config.Cache,
+	}
+}
+
+func (s *Service) CoreDBVersion() coredb.Info {
+	if s.config.CoreDB == nil {
+		return coredb.Info{
+			Version: coredb.Version,
+		}
+	}
+	return s.config.CoreDB.Info()
 }
 
 func (s *Service) AttachRuntimeSource(ctx context.Context, source sources.RuntimeSource) error {
@@ -281,7 +322,16 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request)
 		return types.ErrResponse(err)
 	}
 	res.Data = data
-	res.Extensions = extensions
+	exists := false
+	for _, v := range extensions {
+		if v != nil {
+			exists = true
+			break
+		}
+	}
+	if exists {
+		res.Extensions = extensions
+	}
 	return res
 }
 

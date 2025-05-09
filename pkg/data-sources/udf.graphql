@@ -1,43 +1,4 @@
-
-extend type MutationFunction {
-  """
-    Register new data source and load catalog
-  """
-  register_data_source(
-    name: String!
-    type: String!
-    prefix: String!
-    description: String!
-    path: String!
-    sources: [String!]!
-    persist: Boolean = true
-  ): OperationResult @module(name: "core")
-    @function(name: "register_data_source")
-
-  """
-    Load/Reload data source catalog
-  """
-  load_data_source(
-    name: String!
-  ): OperationResult @module(name: "core")
-    @function(name: "load_data_source")
-
-  """
-    Unload data source catalog without deleting
-  """
-  unload_data_source(
-    name: String!
-  ): OperationResult @module(name: "core")
-    @function(name: "unload_data_source")
-}
-
-
 extend type Function {
-  data_source_status(
-    name: String!
-  ): String @module(name: "core")
-    @function(name: "data_source_status")
-
   http_data_source_request(
     source: String!
     path: String!

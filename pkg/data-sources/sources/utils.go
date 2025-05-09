@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/url"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -53,6 +56,10 @@ type ParsedDSN struct {
 }
 
 func ParseDSN(dsn string) (ParsedDSN, error) {
+	dsn, err := ApplyEnvVars(dsn)
+	if err != nil {
+		return ParsedDSN{}, err
+	}
 	u, err := url.Parse(dsn)
 	if err != nil {
 		return ParsedDSN{}, err
@@ -78,4 +85,26 @@ func ParseDSN(dsn string) (ParsedDSN, error) {
 		parsed.Params[key] = values[0] // Get first value
 	}
 	return parsed, nil
+}
+
+var reSQLField = regexp.MustCompile(`\[\$?[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\]`)
+
+func ApplyEnvVars(dsn string) (string, error) {
+	matches := reSQLField.FindAllString(dsn, -1)
+	if len(matches) == 0 {
+		return dsn, nil
+	}
+	for _, match := range matches {
+		envVar := strings.TrimSuffix(strings.TrimPrefix(match, "["), "]")
+		if !strings.HasPrefix(envVar, "$") {
+			continue
+		}
+		envVar = strings.TrimPrefix(envVar, "$")
+		envValue := os.Getenv(envVar)
+		if envValue == "" {
+			return "", fmt.Errorf("environment variable %s is not set", envVar)
+		}
+		dsn = strings.ReplaceAll(dsn, match, envValue)
+	}
+	return dsn, nil
 }

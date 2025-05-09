@@ -10,11 +10,11 @@ import (
 )
 
 type Config struct {
-	Path         string
-	MaxOpenConns int
-	MaxIdleConns int
+	Path         string `json:"path"`
+	MaxOpenConns int    `json:"max_open_conns"`
+	MaxIdleConns int    `json:"max_idle_conns"`
 
-	Settings Settings
+	Settings Settings `json:"settings"`
 }
 
 func Connect(ctx context.Context, config Config) (*Pool, error) {
@@ -30,6 +30,7 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 	_, err = pool.Exec(ctx, `
 		INSTALL postgres; LOAD postgres;
 		INSTALL spatial; LOAD spatial;
+		INSTALL httpfs; LOAD httpfs;
 	`)
 	if err != nil {
 		return nil, err

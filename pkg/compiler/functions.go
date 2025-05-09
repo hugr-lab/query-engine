@@ -90,7 +90,7 @@ func validateFunctionCall(defs Definitions, def *ast.Definition, field *ast.Fiel
 	return info.validate(defs, def, field, checkArgsMap)
 }
 
-func assignFunctionByModules(schema *ast.SchemaDocument) {
+func assignFunctionByModules(schema *ast.SchemaDocument) error {
 	function := schema.Definitions.ForName(base.FunctionTypeName)
 	if function != nil {
 		for _, field := range function.Fields {
@@ -98,7 +98,10 @@ func assignFunctionByModules(schema *ast.SchemaDocument) {
 			if module == "" {
 				continue
 			}
-			moduleObject := moduleType(schema, module, ModuleFunction)
+			moduleObject, err := moduleType(schema, module, ModuleFunction)
+			if err != nil {
+				return err
+			}
 			moduleObject.Fields = append(moduleObject.Fields, field)
 			addModuleToFunctionCalls(schema, field)
 		}
@@ -121,7 +124,10 @@ func assignFunctionByModules(schema *ast.SchemaDocument) {
 			if module == "" {
 				continue
 			}
-			moduleObject := moduleType(schema, module, ModuleMutationFunction)
+			moduleObject, err := moduleType(schema, module, ModuleMutationFunction)
+			if err != nil {
+				return err
+			}
 			moduleObject.Fields = append(moduleObject.Fields, field)
 		}
 		var fields []*ast.FieldDefinition
@@ -134,6 +140,7 @@ func assignFunctionByModules(schema *ast.SchemaDocument) {
 		}
 		mutation.Fields = fields
 	}
+	return nil
 }
 
 func addModuleToFunctionCalls(schema *ast.SchemaDocument, function *ast.FieldDefinition) {
@@ -574,8 +581,9 @@ func (f *Function) validate(defs Definitions, opt *Options) error {
 				}
 				f.Module = a.Value.Raw
 			}
-			f.Module = opt.Name
+		} else {
 			f.field.Directives = append(f.field.Directives, base.ModuleDirective(opt.Name, f.field.Position))
+			f.Module = opt.Name
 		}
 	}
 

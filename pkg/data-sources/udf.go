@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"log"
 	"slices"
-	"time"
 
+	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/marcboeker/go-duckdb/v2"
 
 	_ "embed"
@@ -28,24 +27,7 @@ func (s *Service) RegisterUDF(ctx context.Context) error {
 		return err
 	}
 	defer c.Close()
-
-	err = duckdb.RegisterScalarUDF(c.DBConn(), "register_data_source", &registerDataSourceUDF{s: s, ctx: ctx})
-	if err != nil {
-		return err
-	}
-	err = duckdb.RegisterScalarUDF(c.DBConn(), "data_source_status", &dataSourceStatusUDF{s: s})
-	if err != nil {
-		return err
-	}
-	err = duckdb.RegisterScalarUDF(c.DBConn(), "load_data_source", &loadDataSourceUDF{s: s, ctx: ctx})
-	if err != nil {
-		return err
-	}
-	err = duckdb.RegisterScalarUDF(c.DBConn(), "unload_data_source", &unloadDataSourceUDF{s: s, ctx: ctx})
-	if err != nil {
-		return err
-	}
-
+	ctx = auth.ContextWithFullAccess(ctx)
 	err = duckdb.RegisterTableUDF(c.DBConn(), "http_data_source_request", s.httpRequestTableUDF())
 	if err != nil {
 		return err
@@ -74,154 +56,6 @@ func (s *Service) registerUDFCatalog(ctx context.Context) error {
 		return fmt.Errorf("register data_sources catalog: %w", err)
 	}
 	return s.catalogs.RebuildSchema(ctx)
-}
-
-type registerDataSourceUDF struct {
-	s   *Service
-	ctx context.Context
-}
-
-func (f *registerDataSourceUDF) Config() duckdb.ScalarFuncConfig {
-	t, _ := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	l, err := duckdb.NewListInfo(t)
-	if err != nil {
-		panic(err)
-	}
-	tb, _ := duckdb.NewTypeInfo(duckdb.TYPE_BOOLEAN)
-	return duckdb.ScalarFuncConfig{
-		InputTypeInfos: []duckdb.TypeInfo{
-			t,  // source name
-			t,  // type
-			t,  // prefix
-			t,  // path
-			l,  // catalog sources
-			tb, // persist
-		},
-		ResultTypeInfo: types.DuckDBOperationResult(),
-		Volatile:       true,
-	}
-}
-
-func (f *registerDataSourceUDF) Executor() duckdb.ScalarFuncExecutor {
-	return duckdb.ScalarFuncExecutor{
-		RowExecutor: func(args []driver.Value) (any, error) {
-			if len(args) != 6 {
-				return nil, &duckdb.Error{Type: duckdb.ErrorTypeParameterNotResolved, Msg: "invalid number of arguments"}
-			}
-
-			ds := types.DataSource{
-				Name:   args[0].(string),
-				Type:   types.DataSourceType(args[1].(string)),
-				Prefix: args[2].(string),
-				Path:   args[3].(string),
-			}
-			ss := args[4].([]any)
-			persistent := args[5].(bool)
-
-			for _, s := range ss {
-				ds.Sources = append(ds.Sources, types.CatalogSource{
-					Path: s.(string),
-					Type: sources.URISourceType,
-				})
-			}
-			res := f.s.registerDataSource(f.ctx, ds, persistent)
-			return res.ToDuckdb(), nil
-		},
-	}
-}
-
-func typeSlice[T ~string | ~bool | ~int | ~float64 | ~float32 | time.Time](in []any) []T {
-	out := make([]T, len(in))
-	for i, v := range in {
-
-		if v, ok := v.(T); ok {
-			out[i] = v
-		}
-	}
-	return out
-}
-
-type dataSourceStatusUDF struct {
-	s *Service
-}
-
-func (f *dataSourceStatusUDF) Config() duckdb.ScalarFuncConfig {
-	t, _ := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	return duckdb.ScalarFuncConfig{
-		InputTypeInfos: []duckdb.TypeInfo{
-			t, // source name
-		},
-		ResultTypeInfo: t,
-	}
-}
-
-func (f *dataSourceStatusUDF) Executor() duckdb.ScalarFuncExecutor {
-	return duckdb.ScalarFuncExecutor{
-		RowExecutor: func(args []driver.Value) (any, error) {
-			if len(args) != 1 {
-				return nil, &duckdb.Error{Type: duckdb.ErrorTypeParameterNotResolved, Msg: "invalid number of arguments"}
-			}
-			name := args[0].(string)
-			if f.s.IsAttached(name) {
-				return "attached", nil
-			}
-			return "detached", nil
-		},
-	}
-}
-
-type loadDataSourceUDF struct {
-	s   *Service
-	ctx context.Context
-}
-
-func (f *loadDataSourceUDF) Config() duckdb.ScalarFuncConfig {
-	t, _ := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	return duckdb.ScalarFuncConfig{
-		InputTypeInfos: []duckdb.TypeInfo{
-			t, // source name
-		},
-		ResultTypeInfo: types.DuckDBOperationResult(),
-	}
-}
-
-func (f *loadDataSourceUDF) Executor() duckdb.ScalarFuncExecutor {
-	return duckdb.ScalarFuncExecutor{
-		RowExecutor: func(args []driver.Value) (any, error) {
-			if len(args) != 1 {
-				return nil, &duckdb.Error{Type: duckdb.ErrorTypeParameterNotResolved, Msg: "invalid number of arguments"}
-			}
-			name := args[0].(string)
-			return f.s.LoadDataSource(f.ctx, name).ToDuckdb(), nil
-		},
-	}
-}
-
-type unloadDataSourceUDF struct {
-	s   *Service
-	ctx context.Context
-}
-
-func (f *unloadDataSourceUDF) Config() duckdb.ScalarFuncConfig {
-	t, _ := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	return duckdb.ScalarFuncConfig{
-		InputTypeInfos: []duckdb.TypeInfo{
-			t, // source name
-		},
-		ResultTypeInfo: types.DuckDBOperationResult(),
-	}
-}
-
-func (f *unloadDataSourceUDF) Executor() duckdb.ScalarFuncExecutor {
-	return duckdb.ScalarFuncExecutor{
-		RowExecutor: func(args []driver.Value) (any, error) {
-			if len(args) != 1 {
-				return nil, &duckdb.Error{Type: duckdb.ErrorTypeParameterNotResolved, Msg: "invalid number of arguments"}
-			}
-			name := args[0].(string)
-			return f.s.UnloadDataSource(f.ctx, name).ToDuckdb(), nil
-		},
-	}
 }
 
 func (s *Service) httpRequestScalarUDF() duckdb.ScalarFunc {

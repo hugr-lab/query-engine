@@ -111,11 +111,11 @@ func printAuthSummary(c *auth.Config) {
 	for i, p := range c.Providers {
 		switch v := p.(type) {
 		case *auth.ApiKeyProvider:
-			if v.Name == "x-hugr-secret" {
+			if v.Name() == "x-hugr-secret" {
 				log.Printf("Provider %d: Type: Secret", i)
 				continue
 			}
-			log.Printf("Auth: Provider %d: Type: APIKey, Name: %s", i, v.Name)
+			log.Printf("Auth: Provider %d: Type: APIKey, Name: %s", i, v.Name())
 		case *auth.JwtProvider:
 			log.Printf("Auth: Provider %d: Type: JWT, Issuer: %s", i, v.Issuer)
 		case *auth.AnonymousProvider:

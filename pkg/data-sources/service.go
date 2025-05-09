@@ -36,6 +36,7 @@ func New(qe types.Querier, db *db.Pool, cs *catalogs.Service) *Service {
 		dataSources: make(map[string]Source),
 		catalogs:    cs,
 		db:          db,
+		qe:          qe,
 	}
 }
 
@@ -45,7 +46,7 @@ func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource)
 		return err
 	}
 
-	c, err := catalogs.NewCatalog(ctx, source.Name(), "", source.Engine(), source.Catalog(ctx), false, source.IsReadonly())
+	c, err := catalogs.NewCatalog(ctx, source.Name(), "", source.Engine(), source.Catalog(ctx), source.AsModule(), source.IsReadonly())
 	if err != nil {
 		return err
 	}

@@ -3,33 +3,20 @@ package hugr
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"log"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/types"
 )
 
 func (s *Service) loadDataSources(ctx context.Context) error {
-	res, err := s.Query(auth.ContextWithFullAccess(ctx), `
+	ctx = auth.ContextWithFullAccess(ctx)
+	res, err := s.Query(ctx, `
 		query{
 			core {
 				data_sources(filter:{disabled:{eq: false}}){
 					name
-					type
-					prefix
-					path
-					as_module
-					self_defined
-					read_only
-					disabled
-					catalogs{
-						name
-						type
-						path
-					}
 				}
 			}
 		}`, nil)
@@ -46,7 +33,7 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 	}
 
 	for _, ds := range data {
-		err := s.RegisterDataSource(ctx, ds)
+		err := s.LoadDataSource(ctx, ds.Name)
 		if err != nil {
 			log.Printf("ERR: failed to load datasource %s: %v", ds.Name, err)
 		}
@@ -55,29 +42,36 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 }
 
 func (s *Service) RegisterDataSource(ctx context.Context, ds types.DataSource) error {
-	d, err := datasources.NewDataSource(ctx, ds, false)
+	_, err := s.Query(ctx, `mutation($data: data_sources_mut_input_data!){
+		core{
+			insert_data_sources(data:$data){
+				name
+			}
+		}
+	}`, map[string]any{
+		"data": ds,
+	})
 	if err != nil {
-		return fmt.Errorf("failed to create datasource: %w", err)
+		return err
 	}
-	err = s.ds.Register(ctx, ds.Name, d)
-	if err != nil {
-		return fmt.Errorf("failed to register datasource: %w", err)
-	}
-	return s.ds.Attach(ctx, ds.Name)
+	return s.LoadDataSource(ctx, ds.Name)
 }
 
 func (s *Service) LoadDataSource(ctx context.Context, name string) error {
-	res := s.ds.LoadDataSource(ctx, name)
-	if res.Succeed {
-		return nil
-	}
-	return errors.New(res.Msg)
+	return s.ds.LoadDataSource(ctx, name)
 }
 
 func (s *Service) UnloadDataSource(ctx context.Context, name string) error {
-	res := s.ds.UnloadDataSource(ctx, name)
-	if res.Succeed {
-		return nil
+	return s.ds.UnloadDataSource(ctx, name)
+}
+
+func (s *Service) DataSourceStatus(ctx context.Context, name string) (string, error) {
+	ds, err := s.ds.DataSource(name)
+	if err != nil {
+		return "", err
 	}
-	return errors.New(res.Msg)
+	if ds.IsAttached() {
+		return "attached", nil
+	}
+	return "detached", nil
 }

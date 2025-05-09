@@ -50,7 +50,10 @@ func TestModuleObject(t *testing.T) {
 				},
 			}
 
-			def := moduleType(schema, tt.module, tt.objectType)
+			def, err := moduleType(schema, tt.module, tt.objectType)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if def.Name != tt.expected {
 				t.Errorf("expected %s, got %s", tt.expected, def.Name)
 			}

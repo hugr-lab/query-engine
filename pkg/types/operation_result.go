@@ -21,10 +21,10 @@ func DuckDBOperationResult() duckdb.TypeInfo {
 }
 
 type OperationResult struct {
-	Succeed bool
-	Msg     string
-	Rows    int
-	LastId  int
+	Succeed bool   `json:"success"`
+	Msg     string `json:"message"`
+	Rows    int    `json:"affected_rows"`
+	LastId  int    `json:"last_id"`
 }
 
 func Result(msg string, rows, lastId int) *OperationResult {

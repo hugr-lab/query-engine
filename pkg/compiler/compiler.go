@@ -53,7 +53,10 @@ func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
 
 	addReferencesQuery(source, &opt)
 
-	addQueries(source, &opt)
+	err = addQueries(source, &opt)
+	if err != nil {
+		return nil, err
+	}
 
 	addQueryFields(source)
 
@@ -68,6 +71,48 @@ func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
 				return op.Type == mutationBaseName
 			})
 		}
+	}
+
+	for i, s := range source.Schema {
+		if i == 0 && s.OperationTypes.ForType(queryBaseName) == nil &&
+			doc.Definitions.ForName(queryBaseName) != nil {
+			doc.Schema[0].OperationTypes = append(doc.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
+				Operation: ast.Query,
+				Type:      queryBaseName,
+				Position:  compiledPos(),
+			})
+		}
+
+		if i == 0 && s.OperationTypes.ForType(mutationBaseName) == nil &&
+			doc.Definitions.ForName(mutationBaseName) != nil {
+			doc.Schema[0].OperationTypes = append(doc.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
+				Operation: ast.Mutation,
+				Type:      mutationBaseName,
+				Position:  compiledPos(),
+			})
+		}
+	}
+
+	if def := source.Definitions.ForName(queryBaseName); def != nil &&
+		doc.Definitions.ForName(base.FunctionTypeName) != nil &&
+		def.Fields.ForName("function") == nil {
+		def.Fields = append(def.Fields, &ast.FieldDefinition{
+			Name:        "function",
+			Description: "Functions",
+			Type:        ast.NamedType(base.FunctionMutationTypeName, compiledPos()),
+			Position:    compiledPos(),
+		})
+	}
+
+	if def := source.Definitions.ForName(mutationBaseName); def != nil &&
+		doc.Definitions.ForName(base.FunctionMutationTypeName) != nil &&
+		def.Fields.ForName("function") == nil {
+		def.Fields = append(def.Fields, &ast.FieldDefinition{
+			Name:        "function",
+			Description: "Functions",
+			Type:        ast.NamedType(base.FunctionMutationTypeName, compiledPos()),
+			Position:    compiledPos(),
+		})
 	}
 
 	return validator.ValidateSchemaDocument(source)
@@ -113,7 +158,10 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.Schema, error) {
 				continue
 			}
 			if info := ModuleRootInfo(def); info != nil {
-				moduleRoot := moduleType(doc, info.Name, info.Type)
+				moduleRoot, err := moduleType(doc, info.Name, info.Type)
+				if err != nil {
+					return nil, err
+				}
 				for _, field := range def.Fields {
 					if strings.HasPrefix(field.Name, "__") {
 						continue
@@ -166,7 +214,50 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.Schema, error) {
 			return 1
 
 		})
+	}
 
+	if len(doc.Schema) != 1 {
+		return nil, ErrorPosf(compiledPos(), "only one schema definition is allowed")
+	}
+
+	if doc.Schema[0].OperationTypes.ForType(queryBaseName) == nil &&
+		doc.Definitions.ForName(queryBaseName) != nil {
+		doc.Schema[0].OperationTypes = append(doc.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
+			Operation: ast.Query,
+			Type:      queryBaseName,
+			Position:  compiledPos(),
+		})
+	}
+
+	if doc.Schema[0].OperationTypes.ForType(mutationBaseName) == nil &&
+		doc.Definitions.ForName(mutationBaseName) != nil {
+		doc.Schema[0].OperationTypes = append(doc.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
+			Operation: ast.Mutation,
+			Type:      mutationBaseName,
+			Position:  compiledPos(),
+		})
+	}
+
+	if def := doc.Definitions.ForName(queryBaseName); def != nil &&
+		doc.Definitions.ForName(base.FunctionTypeName) != nil &&
+		def.Fields.ForName("function") == nil {
+		def.Fields = append(def.Fields, &ast.FieldDefinition{
+			Name:        "function",
+			Description: "Functions",
+			Type:        ast.NamedType(base.FunctionTypeName, compiledPos()),
+			Position:    compiledPos(),
+		})
+	}
+
+	if def := doc.Definitions.ForName(mutationBaseName); def != nil &&
+		doc.Definitions.ForName(base.FunctionMutationTypeName) != nil &&
+		def.Fields.ForName("function") == nil {
+		def.Fields = append(def.Fields, &ast.FieldDefinition{
+			Name:        "function",
+			Description: "Functions",
+			Type:        ast.NamedType(base.FunctionMutationTypeName, compiledPos()),
+			Position:    compiledPos(),
+		})
 	}
 
 	return validator.ValidateSchemaDocument(doc)
@@ -261,13 +352,17 @@ func addQueryFields(schema *ast.SchemaDocument) {
 	}
 }
 
-func addQueries(schema *ast.SchemaDocument, opt *Options) {
+func addQueries(schema *ast.SchemaDocument, opt *Options) error {
 	for _, def := range schema.Definitions {
 		if !IsDataObject(def) {
 			continue
 		}
-		addObjectQuery(schema, def, opt)
+		err := addObjectQuery(schema, def, opt)
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func addAggregationQueries(schema *ast.SchemaDocument, opt *Options) {
@@ -283,4 +378,70 @@ func addAggregationQueries(schema *ast.SchemaDocument, opt *Options) {
 		}
 		addAggregationQuery(schema, def, opt)
 	}
+}
+
+func rootType(schema *ast.SchemaDocument, objectType ModuleObjectType) (*ast.Definition, error) {
+	name := ""
+	description := "The root query object of the module"
+	switch objectType {
+	case ModuleQuery:
+		name = queryBaseName
+		description = "The root query object of the module"
+	case ModuleMutation:
+		name = mutationBaseName
+		description = "The root mutation object of the module"
+		if len(schema.Schema) != 1 {
+			return nil, ErrorPosf(compiledPos(), "only one schema definition is allowed")
+		}
+		if schema.Schema[0].OperationTypes.ForType(name) == nil {
+			schema.Schema[0].OperationTypes = append(schema.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
+				Operation: ast.Mutation,
+				Type:      mutationBaseName,
+				Position:  compiledPos(),
+			})
+		}
+	case ModuleFunction:
+		name = base.FunctionTypeName
+		description = "The root function object of the module"
+		qr, err := rootType(schema, ModuleQuery)
+		if err != nil {
+			return nil, err
+		}
+		if qr.Fields.ForName(queryBaseFunctionFieldName) == nil {
+			qr.Fields = append(qr.Fields, &ast.FieldDefinition{
+				Name:        queryBaseFunctionFieldName,
+				Description: "The root function object of the module",
+				Type:        ast.NamedType(name, nil),
+				Position:    compiledPos(),
+			})
+		}
+	case ModuleMutationFunction:
+		name = base.FunctionMutationTypeName
+		description = "The root function mutation object of the module"
+		mr, err := rootType(schema, ModuleMutation)
+		if err != nil {
+			return nil, err
+		}
+		if mr.Fields.ForName(queryBaseFunctionFieldName) == nil {
+			mr.Fields = append(mr.Fields, &ast.FieldDefinition{
+				Name:        queryBaseFunctionFieldName,
+				Description: "The root function mutation object of the module",
+				Type:        ast.NamedType(name, nil),
+				Position:    compiledPos(),
+			})
+		}
+	}
+	if def := schema.Definitions.ForName(name); def != nil {
+		return def, nil
+	}
+
+	def := &ast.Definition{
+		Kind:        ast.Object,
+		Name:        name,
+		Description: description,
+		Directives:  ast.DirectiveList{systemDirective},
+		Position:    compiledPos(),
+	}
+	schema.Definitions = append(schema.Definitions, def)
+	return def, nil
 }

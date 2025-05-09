@@ -16,6 +16,22 @@ type Config struct {
 	RedirectUrl        string
 }
 
+type ProviderInfo struct {
+	Name string `json:"name" yaml:"name"`
+	Type string `json:"type" yaml:"type"`
+}
+
+func (c *Config) Info() []ProviderInfo {
+	providers := make([]ProviderInfo, len(c.Providers))
+	for i, p := range c.Providers {
+		providers[i] = ProviderInfo{
+			Name: p.Name(),
+			Type: p.Type(),
+		}
+	}
+	return providers
+}
+
 type UserAuthInfoConfig struct {
 	Role     string `json:"role" yaml:"role"`
 	UserId   string `json:"user_id" yaml:"user-id"`
@@ -24,6 +40,8 @@ type UserAuthInfoConfig struct {
 
 type AuthProvider interface {
 	Authenticate(r *http.Request) (*AuthInfo, error)
+	Name() string
+	Type() string
 }
 
 var ErrForbidden = errors.New("forbidden")

@@ -206,15 +206,18 @@ func (f *Field) IsCalcField() bool {
 	return f.sql != ""
 }
 
-func (f *Field) FieldSourceName(prefix string) string {
+func (f *Field) FieldSourceName(prefix string, ident bool) string {
 	fs := f.dbName
 	if fs == "" {
 		fs = f.Name
 	}
+	if ident {
+		fs = base.Ident(fs)
+	}
 	if prefix != "" {
 		prefix += "."
 	}
-	return prefix + base.Ident(fs)
+	return prefix + fs
 }
 
 func (f *Field) SQL(prefix string) string {

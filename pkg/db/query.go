@@ -42,7 +42,7 @@ func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, pa
 	}
 	defer reader.Release()
 
-	table := NewDBJsonTable(true)
+	table := NewArrowTable(true)
 	table.wrapped = wrap
 	for reader.Next() {
 		rec := reader.Record()
@@ -104,7 +104,7 @@ func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params 
 	}
 	defer reader.Release()
 
-	table := NewDBJsonTable(true)
+	table := NewArrowTable(true)
 	table.asArray = true
 	for reader.Next() {
 		rec := reader.Record()
