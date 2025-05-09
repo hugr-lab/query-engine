@@ -45,12 +45,7 @@ func (s *Source) AsModule() bool {
 }
 
 func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
-	s.db = pool
-	t, err := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	if err != nil {
-		return err
-	}
-	err = db.RegisterScalarFunction(ctx, pool, &db.ScalarFunctionWithArgs[S3Info, *types.OperationResult]{
+	err := db.RegisterScalarFunction(ctx, pool, &db.ScalarFunctionWithArgs[S3Info, *types.OperationResult]{
 		Name: "register_s3",
 		Execute: func(ctx context.Context, info S3Info) (*types.OperationResult, error) {
 			err := s.RegisterS3(ctx, info)
@@ -113,7 +108,7 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 		ConvertOutput: func(out *types.OperationResult) (any, error) {
 			return out.ToDuckdb(), nil
 		},
-		InputTypes: []duckdb.TypeInfo{t},
+		InputTypes: []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
 		OutputType: types.DuckDBOperationResult(),
 	})
 	if err != nil {
@@ -185,6 +180,9 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 			return nil
 		},
 	})
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

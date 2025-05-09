@@ -9,6 +9,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	cs "github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -39,14 +40,6 @@ func (s *Service) AsModule() bool {
 }
 
 func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
-	t, err := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	if err != nil {
-		return err
-	}
-	t, err = duckdb.NewListInfo(t)
-	if err != nil {
-		return err
-	}
 	return db.RegisterScalarFunctionSet(auth.ContextWithFullAccess(ctx), pool, db.ScalarFunctionSet[string]{
 		Name:        "invalidate_cache",
 		Module:      "cache",
@@ -66,7 +59,7 @@ func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
 				},
 			},
 			&db.ScalarFunctionSetItem[[]string, string]{
-				InputTypes: []duckdb.TypeInfo{t},
+				InputTypes: []duckdb.TypeInfo{runtime.DuckDBListInfoByNameMust("VARCHAR")},
 				Execute: func(ctx context.Context, tags []string) (string, error) {
 					err := s.Invalidate(ctx, tags...)
 					if err != nil {

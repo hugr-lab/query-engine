@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/marcboeker/go-duckdb/v2"
@@ -14,12 +15,8 @@ import (
 )
 
 func (s *Source) registerUDF(ctx context.Context) error {
-	t, err := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	if err != nil {
-		return err
-	}
 	ctx = auth.ContextWithFullAccess(ctx)
-	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[string, string]{
+	err := db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[string, string]{
 		Name:        "data_source_status",
 		Description: "Get the status of a data source",
 		Module:      "core",
@@ -36,8 +33,8 @@ func (s *Source) registerUDF(ctx context.Context) error {
 		ConvertOutput: func(out string) (any, error) {
 			return out, nil
 		},
-		InputTypes: []duckdb.TypeInfo{t},
-		OutputType: t,
+		InputTypes: []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
+		OutputType: runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 	})
 	if err != nil {
 		return err
@@ -64,7 +61,7 @@ func (s *Source) registerUDF(ctx context.Context) error {
 		ConvertOutput: func(out *types.OperationResult) (any, error) {
 			return out.ToDuckdb(), nil
 		},
-		InputTypes: []duckdb.TypeInfo{t},
+		InputTypes: []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
 		OutputType: types.DuckDBOperationResult(),
 	})
 	if err != nil {
@@ -92,7 +89,7 @@ func (s *Source) registerUDF(ctx context.Context) error {
 		ConvertOutput: func(out *types.OperationResult) (any, error) {
 			return out.ToDuckdb(), nil
 		},
-		InputTypes: []duckdb.TypeInfo{t},
+		InputTypes: []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
 		OutputType: types.DuckDBOperationResult(),
 	})
 	if err != nil {
