@@ -1,6 +1,9 @@
 package auth
 
 import (
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -62,11 +65,19 @@ func NewJwt(config *JwtConfig) (*JwtProvider, error) {
 	if config.CookieName != "" {
 		p.extractor = request.MultiExtractor{
 			request.OAuth2Extractor,
-			cookieExtractor(config.CookieName),
+			CookieExtractor(config.CookieName),
 		}
 	}
 
 	return p, nil
+}
+
+func (p *JwtProvider) Name() string {
+	return p.Issuer
+}
+
+func (p *JwtProvider) Type() string {
+	return "jwt"
 }
 
 func (p *JwtProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
@@ -112,9 +123,9 @@ func (p *JwtProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 	}, nil
 }
 
-type cookieExtractor string
+type CookieExtractor string
 
-func (c cookieExtractor) ExtractToken(r *http.Request) (string, error) {
+func (c CookieExtractor) ExtractToken(r *http.Request) (string, error) {
 	cookie, err := r.Cookie(string(c))
 	if err != nil {
 		return "", err
@@ -147,4 +158,42 @@ func parsePublicKey(key []byte) (interface{}, error) {
 		return pubKey, nil
 	}
 	return x509.ParsePKCS1PublicKey(block.Bytes)
+}
+
+func ParsePrivateKey(key []byte) (interface{}, error) {
+	privKey, err := ssh.ParseRawPrivateKey(key)
+	if err == nil {
+		return privKey, nil
+	}
+
+	block, _ := pem.Decode(key)
+	if block == nil {
+		return nil, fmt.Errorf("failed to parse PEM block")
+	}
+	if privKey, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		return privKey, nil
+	}
+	return x509.ParsePKCS1PrivateKey(block.Bytes)
+}
+
+func GenerateToken(privateKey []byte, claims jwt.MapClaims) (string, error) {
+	key, err := ParsePrivateKey(privateKey)
+	if err != nil {
+		return "", err
+	}
+
+	var method jwt.SigningMethod
+	switch key := key.(type) {
+	case *rsa.PrivateKey:
+		method = jwt.SigningMethodRS256
+	case *ecdsa.PrivateKey:
+		method = jwt.SigningMethodES256
+	case *ed25519.PrivateKey:
+		method = jwt.SigningMethodEdDSA
+	default:
+		return "", fmt.Errorf("unsupported key type: %T", key)
+	}
+
+	token := jwt.NewWithClaims(method, claims)
+	return token.SignedString(key)
 }

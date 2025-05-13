@@ -4,6 +4,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
@@ -89,20 +90,21 @@ func loadConfig() Config {
 			CorsAllowedMethods: viper.GetStringSlice("CORS_ALLOWED_METHODS"),
 		},
 		Auth: AuthConfig{
+			AllowedDBKeys:    viper.GetBool("ALLOWED_DB_API_KEYS"),
 			AllowedAnonymous: viper.GetBool("ALLOWED_ANONYMOUS"),
 			AnonymousRole:    viper.GetString("ANONYMOUS_ROLE"),
 			SecretKey:        viper.GetString("SECRET_KEY"),
 			ConfigFile:       viper.GetString("AUTH_CONFIG_FILE"),
 		},
 		Cache: cache.Config{
-			TTL: viper.GetDuration("CACHE_TTL"),
+			TTL: types.Interval(viper.GetDuration("CACHE_TTL")),
 			L1: cache.L1Config{
 				Enabled:      viper.GetBool("CACHE_L1_ENABLED"),
 				MaxSize:      viper.GetInt("CACHE_L1_MAX_SIZE"),
 				MaxItemSize:  viper.GetInt("CACHE_L1_MAX_ITEM_SIZE"),
 				Shards:       viper.GetInt("CACHE_L1_SHARDS"),
-				CleanTime:    viper.GetDuration("CACHE_L1_CLEAN_TIME"),
-				EvictionTime: viper.GetDuration("CACHE_L1_EVICTION_TIME"),
+				CleanTime:    types.Interval(viper.GetDuration("CACHE_L1_CLEAN_TIME")),
+				EvictionTime: types.Interval(viper.GetDuration("CACHE_L1_EVICTION_TIME")),
 			},
 			L2: cache.L2Config{
 				Enabled:   viper.GetBool("CACHE_L2_ENABLED"),

@@ -34,11 +34,9 @@ type OperationResult @system {
 
 schema {
 	query: Query
-	mutation: Mutation
 }
 
 type Query @system {
-	function: Function @system
 	"""
 	Performs jq query on result set
 	Results will be placed in 'extension' field by field or alias name
@@ -46,25 +44,6 @@ type Query @system {
 	jq(query: String!, include_origin: Boolean = false): Query @system
 }
 
-type Mutation @system {
-	function: MutationFunction @system
-
-	"""
-	Performs bulk insert, update or delete
-	As data source uses extension by name 'ext_name'
-	"""
-	bulk_from(data: String!, extension: Boolean = false): Mutation @system
-}
-
-type Function @system {
-	db_version: String @function(name: "version") @system
-	sequence_currval(name: String): BigInt @function(name: "currval") @system
-	
-}
-
-type MutationFunction @system {
-	sequence_nextval(name: String): BigInt @function(name: "nextval") @system
-}
 
 # generated directives
 directive @filter_input(name: String!) on OBJECT | INPUT_OBJECT

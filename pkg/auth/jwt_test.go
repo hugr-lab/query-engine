@@ -1,20 +1,13 @@
 package auth
 
 import (
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/rsa"
-	"crypto/x509"
 	_ "embed"
-	"encoding/pem"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/ssh"
 )
 
 var (
@@ -31,44 +24,6 @@ var (
 	//go:embed internal/fixture/ecdsa.pub
 	ecdsaPubKey []byte
 )
-
-func parsePrivateKey(key []byte) (interface{}, error) {
-	privKey, err := ssh.ParseRawPrivateKey(key)
-	if err == nil {
-		return privKey, nil
-	}
-
-	block, _ := pem.Decode(key)
-	if block == nil {
-		return nil, fmt.Errorf("failed to parse PEM block")
-	}
-	if privKey, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
-		return privKey, nil
-	}
-	return x509.ParsePKCS1PrivateKey(block.Bytes)
-}
-
-func testGenerateToken(privateKey []byte, claims jwt.MapClaims) (string, error) {
-	key, err := parsePrivateKey(privateKey)
-	if err != nil {
-		return "", err
-	}
-
-	var method jwt.SigningMethod
-	switch key := key.(type) {
-	case *rsa.PrivateKey:
-		method = jwt.SigningMethodRS256
-	case *ecdsa.PrivateKey:
-		method = jwt.SigningMethodES256
-	case *ed25519.PrivateKey:
-		method = jwt.SigningMethodEdDSA
-	default:
-		return "", fmt.Errorf("unsupported key type: %T", key)
-	}
-
-	token := jwt.NewWithClaims(method, claims)
-	return token.SignedString(key)
-}
 
 func TestJwtProvider_Authenticate(t *testing.T) {
 	tests := []struct {
@@ -168,7 +123,7 @@ func TestJwtProvider_Authenticate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			token, err := testGenerateToken(tt.privateKey, tt.claims)
+			token, err := GenerateToken(tt.privateKey, tt.claims)
 			if err != nil {
 				t.Fatalf("failed to generate token: %v", err)
 			}

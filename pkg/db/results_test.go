@@ -27,7 +27,8 @@ func TestDBJsonTable_MarshalJSON(t *testing.T) {
 	rec := b.NewRecord()
 	defer rec.Release()
 
-	table := NewDBJsonTable(true)
+	table := NewArrowTable()
+	defer table.Release()
 	table.Append(rec)
 
 	data, err := json.Marshal(table)
@@ -54,7 +55,8 @@ func TestDBJsonTableOne_MarshalJSON(t *testing.T) {
 	rec := b.NewRecord()
 	defer rec.Release()
 
-	table := NewDBJsonTable(true)
+	table := NewArrowTable()
+	defer table.Release()
 	table.wrapped = true
 	table.Append(rec)
 
@@ -83,7 +85,8 @@ func TestDBJsonTable_EncodeMsgpack(t *testing.T) {
 	rec := b.NewRecord()
 	defer rec.Release()
 
-	table := NewDBJsonTable(false)
+	table := NewArrowTable()
+	defer table.Release()
 	table.Append(rec)
 
 	var buf bytes.Buffer
@@ -127,13 +130,14 @@ func TestDBJsonTable_DecodeMsgpack_Empty(t *testing.T) {
 	var buf bytes.Buffer
 	enc := msgpack.NewEncoder(&buf)
 
-	table := NewDBJsonTable(false)
+	table := NewArrowTable()
+	defer table.Release()
 	err := table.EncodeMsgpack(enc)
 	if err != nil {
 		t.Fatalf("EncodeMsgpack() error = %v", err)
 	}
 
-	decodedTable := NewDBJsonTable(false)
+	decodedTable := NewArrowTable()
 	dec := msgpack.NewDecoder(&buf)
 
 	err = decodedTable.DecodeMsgpack(dec)

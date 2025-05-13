@@ -6,16 +6,16 @@ import (
 )
 
 type Settings struct {
-	AllowedDirectories   []string
-	AllowedPaths         []string
-	EnableLogging        bool
-	MaxMemory            int
-	MaxTempDirectorySize int
-	TempDirectory        string
-	WorkerThreads        int
+	AllowedDirectories   []string `json:"allowed_directories"`
+	AllowedPaths         []string `json:"allowed_paths"`
+	EnableLogging        bool     `json:"enable_logging"`
+	MaxMemory            int      `json:"max_memory"`
+	MaxTempDirectorySize int      `json:"max_temp_directory_size"`
+	TempDirectory        string   `json:"temp_directory"`
+	WorkerThreads        int      `json:"worker_threads"`
 	// POSTGRESQL
-	PGConnectionLimit int
-	PGPagesPerTask    int
+	PGConnectionLimit int `json:"pg_connection_limit"`
+	PGPagesPerTask    int `json:"pg_pages_per_task"`
 }
 
 func (s Settings) applySQL() string {

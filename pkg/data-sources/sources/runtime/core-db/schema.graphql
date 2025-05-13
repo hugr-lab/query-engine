@@ -110,3 +110,47 @@ type role_permissions @module(name: "core")
   "Required field values for the data mutation"
   data: JSON
 }
+
+type api_keys @module(name: "core") 
+  @table(name: "api_keys") @unique(fields: ["key"], query_suffix: "by_key") {
+  """
+    API key name
+  """
+  name: String! @pk
+  """
+    API key description
+  """
+  description: String!
+  """
+    API key value
+  """
+  key: String!
+  """
+    Default role for the API key  
+  """
+  default_role: String @field_references(references_name: "roles", field: "name", references_query: "api_keys")
+  """
+    API key disabled flag
+  """
+  disabled: Boolean @default(value: false)
+  """
+    API key temporal flag (expires_at is required)
+  """
+  is_temporal: Boolean @default(value: false)
+  """
+    API key expiration date
+  """
+  expires_at: Timestamp
+  """
+    headers for get user info  from request with the api key
+    JSON with following structure:
+    {"role": "x-role", "user_id": "x-user-id", "user_name":"x-user-name"}
+  """
+  headers: JSON
+  """
+    claims for the api key
+    JSON with following structure:
+    {"role": "role", "user_id": "user-id", "user_name":"user-name"}
+  """
+  claims: JSON
+}

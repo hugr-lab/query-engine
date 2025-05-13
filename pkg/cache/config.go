@@ -13,6 +13,7 @@ import (
 	mc "github.com/eko/gocache/store/memcache/v4"
 	rs "github.com/eko/gocache/store/redis/v4"
 	rrs "github.com/eko/gocache/store/rediscluster/v4"
+	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -28,9 +29,9 @@ var (
 )
 
 type Config struct {
-	TTL time.Duration // default time to live for the cache
-	L1  L1Config
-	L2  L2Config
+	TTL types.Interval `json:"ttl"` // default time to live for the cache
+	L1  L1Config       `json:"l1"`  // L1 cache configuration
+	L2  L2Config       `json:"l2"`  // L2 cache configuration
 }
 
 func (c Config) Init(ctx context.Context) (cache.CacheInterface[any], error) {
@@ -62,27 +63,27 @@ func (c Config) Init(ctx context.Context) (cache.CacheInterface[any], error) {
 }
 
 type L1Config struct {
-	Enabled      bool
-	MaxSize      int // Maximum size of the cache Megabytes
-	MaxItemSize  int // Maximum size of an item in the cache
-	Shards       int // Number of shards in the cache
-	CleanTime    time.Duration
-	EvictionTime time.Duration
+	Enabled      bool           `json:"enabled"`
+	MaxSize      int            `json:"max_size"`      // Maximum size of the cache Megabytes
+	MaxItemSize  int            `json:"max_item_size"` // Maximum size of an item in the cache
+	Shards       int            `json:"shards"`        // Number of shards in the cache
+	CleanTime    types.Interval `json:"clean_time"`    // Time to clean the cache
+	EvictionTime types.Interval `json:"eviction_time"` // Time to evict items from the cache
 }
 type L2Config struct {
-	Enabled bool
-	Backend BackendType
+	Enabled bool        `json:"enabled"`
+	Backend BackendType `json:"backend"` // Backend type for the L2 cache
 
-	Addresses []string // Addresses for the L2 cache
-	Database  int      // Database for the L2 cache (for Redis)
-	Username  string   // Username for the L2 cache (for Redis)
-	Password  string   // Password for the L2 cache (for Redis)
+	Addresses []string `json:"addresses"` // Addresses for the L2 cache
+	Database  int      `json:"database"`  // Database for the L2 cache (for Redis)
+	Username  string   `json:"username"`  // Username for the L2 cache (for Redis)
+	Password  string   `json:"password"`  // Password for the L2 cache (for Redis)
 }
 
 func (c L1Config) Init(ctx context.Context) (store.StoreInterface, error) {
-	conf := bigcache.DefaultConfig(c.EvictionTime)
+	conf := bigcache.DefaultConfig(time.Duration(c.EvictionTime))
 	conf.HardMaxCacheSize = c.MaxSize
-	conf.CleanWindow = c.CleanTime
+	conf.CleanWindow = time.Duration(c.CleanTime)
 	conf.MaxEntrySize = c.MaxItemSize
 	if c.Shards == 0 {
 		conf.Shards = 64

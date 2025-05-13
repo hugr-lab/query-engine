@@ -7,11 +7,11 @@ type ApiKeyConfig struct {
 	Header      string `json:"header" yaml:"header"`
 	DefaultRole string `json:"default_role" yaml:"default-role"`
 
-	Headers UserAuthInfoConfig
+	Headers UserAuthInfoConfig `json:"headers" yaml:"headers"`
 }
 
 type ApiKeyProvider struct {
-	Name string
+	name string
 	c    ApiKeyConfig
 }
 
@@ -33,8 +33,16 @@ func NewApiKey(name string, config ApiKeyConfig) *ApiKeyProvider {
 	}
 	return &ApiKeyProvider{
 		c:    config,
-		Name: name,
+		name: name,
 	}
+}
+
+func (p *ApiKeyProvider) Name() string {
+	return p.name
+}
+
+func (p *ApiKeyProvider) Type() string {
+	return "apiKey"
 }
 
 func (p *ApiKeyProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
@@ -66,6 +74,6 @@ func (p *ApiKeyProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 		UserId:       userId,
 		UserName:     userName,
 		AuthType:     "apiKey",
-		AuthProvider: p.Name,
+		AuthProvider: p.name,
 	}, nil
 }

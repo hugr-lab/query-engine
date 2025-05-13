@@ -751,20 +751,16 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 			continue
 		}
 		fi := compiler.FieldInfo(f.Field)
-		extractValue := fi.FieldSourceName("")
-		if extractValue != f.Field.Name { // need to full repack this level
+		fieldName := fi.FieldSourceName("", false)
+		if fieldName != f.Field.Name { // need to full repack this level
 			check[f.Field.ObjectDefinition.Name]++
 		}
 		if path != "" {
-			extractValue = path + "." + f.Field.Name
+			fieldName = path + "." + fieldName
 		}
-		extractValue = sql + extractStructFieldByPath(extractValue)
+		extractValue := sql + extractStructFieldByPath(fieldName)
 		if fi.IsTransformed() {
 			extractValue = fi.TransformSQL(extractValue)
-		}
-		newPath := f.Field.Name
-		if path != "" {
-			newPath = path + "." + f.Field.Name
 		}
 		if f.Field.Definition.Type.NamedType == compiler.GeometryTypeName {
 			extractValue = "ST_AsGeoJSON(" + extractValue + ")"
@@ -776,7 +772,7 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 				check[f.Field.ObjectDefinition.Name]--
 			}
 		case f.Field.Definition.Type.NamedType != "" || f.Field.Directives.ForName("unnest") != nil:
-			children := repackStructRecursive(sql, f.Field, newPath)
+			children := repackStructRecursive(sql, f.Field, fieldName)
 			fields = append(fields, Ident(f.Field.Alias)+": "+children)
 			if f.Field.Name == f.Field.Alias && children == sql {
 				check[f.Field.ObjectDefinition.Name]--

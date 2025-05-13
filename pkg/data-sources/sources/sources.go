@@ -35,6 +35,7 @@ type RuntimeSource interface {
 	Name() string
 	Engine() engines.Engine
 	IsReadonly() bool
+	AsModule() bool
 	Attach(ctx context.Context, db *db.Pool) error
 	Catalog(ctx context.Context) sources.Source
 }

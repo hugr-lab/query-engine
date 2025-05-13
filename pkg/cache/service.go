@@ -154,7 +154,7 @@ func (s *Service) Invalidate(ctx context.Context, tags ...string) error {
 
 func (s *Service) defaultOptions() *Options {
 	return &Options{
-		ttl: s.config.TTL,
+		ttl: time.Duration(s.config.TTL),
 	}
 }
 

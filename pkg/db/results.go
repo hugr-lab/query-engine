@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -14,16 +15,29 @@ import (
 )
 
 type ArrowTable struct {
-	chunks              []arrow.Record
-	wrapped             bool
-	asArray             bool
-	releaseAfterMarshal bool
+	chunks  []arrow.Record
+	wrapped bool
+	asArray bool
 }
 
-func NewDBJsonTable(releaseAfterMarshal bool) *ArrowTable {
-	return &ArrowTable{
-		releaseAfterMarshal: releaseAfterMarshal,
+func NewArrowTable() *ArrowTable {
+	return &ArrowTable{}
+}
+
+func (t *ArrowTable) SetInfo(info string) {
+	t.wrapped = strings.Contains(info, "wrapped")
+	t.asArray = strings.Contains(info, "asArray")
+}
+
+func (t *ArrowTable) Info() string {
+	var info []string
+	if t.wrapped {
+		info = append(info, "wrapped")
 	}
+	if t.asArray {
+		info = append(info, "asArray")
+	}
+	return strings.Join(info, ",")
 }
 
 func (t *ArrowTable) Append(rec arrow.Record) {
@@ -79,14 +93,7 @@ func (t *ArrowTable) NumCols() int {
 	return int(t.chunks[0].NumCols())
 }
 
-func (t *ArrowTable) SetAutoRelease(release bool) {
-	t.releaseAfterMarshal = release
-}
-
 func (t *ArrowTable) MarshalJSON() ([]byte, error) {
-	if t.releaseAfterMarshal {
-		defer t.Release()
-	}
 	if t == nil {
 		return []byte("null"), nil
 	}
@@ -323,7 +330,7 @@ func ColumnValue(a arrow.Array, i int) any {
 var _ msgpack.CustomDecoder = (*ArrowTable)(nil)
 
 func (t *ArrowTable) DecodeMsgpack(dec *msgpack.Decoder) error {
-	err := dec.DecodeMulti(&t.releaseAfterMarshal, &t.wrapped, &t.asArray)
+	err := dec.DecodeMulti(&t.wrapped, &t.asArray)
 	if err != nil {
 		return err
 	}
@@ -374,7 +381,7 @@ func (t *ArrowTable) EncodeMsgpack(enc *msgpack.Encoder) error {
 		enc.EncodeNil()
 	}
 
-	err := enc.EncodeMulti(t.releaseAfterMarshal, t.wrapped, t.asArray)
+	err := enc.EncodeMulti(t.wrapped, t.asArray)
 	if err != nil {
 		return err
 	}

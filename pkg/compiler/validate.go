@@ -47,7 +47,10 @@ func validateSourceSchema(source *ast.SchemaDocument, opt *Options) error {
 		}
 	}
 	// assign function by modules
-	assignFunctionByModules(source)
+	err := assignFunctionByModules(source)
+	if err != nil {
+		errs = append(errs, gqlerror.WrapIfUnwrapped(err))
+	}
 
 	for _, def := range source.Definitions {
 		if IsSystemType(def) {
@@ -67,18 +70,29 @@ func validateSourceSchema(source *ast.SchemaDocument, opt *Options) error {
 	return nil
 }
 
-func applyExtension(source *ast.SchemaDocument, opt *Options) gqlerror.List {
-	var errs gqlerror.List
+func applyExtension(source *ast.SchemaDocument, opt *Options) (errs gqlerror.List) {
 	for _, def := range source.Definitions {
-		if IsDataObject(def) && !opt.AsModule {
-			def.Directives = append(def.Directives, opt.catalog)
-		}
-		if IsDataObject(def) && opt.AsModule {
+		if IsDataObject(def) {
 			def.Directives = append(def.Directives, opt.catalog)
 		}
 	}
+	var err error
 	for _, def := range source.Extensions {
 		origin := source.Definitions.ForName(def.Name)
+		if origin == nil && def.Name == base.FunctionTypeName {
+			origin, err = rootType(source, ModuleFunction)
+			if err != nil {
+				errs = append(errs, ErrorPosf(def.Position, "extended definition %s not found", def.Name))
+				continue
+			}
+		}
+		if origin == nil && def.Name == base.FunctionMutationTypeName {
+			origin, err = rootType(source, ModuleMutationFunction)
+			if err != nil {
+				errs = append(errs, ErrorPosf(def.Position, "extended definition %s not found", def.Name))
+				continue
+			}
+		}
 		if origin == nil {
 			errs = append(errs, ErrorPosf(def.Position, "extended definition %s not found", def.Name))
 			continue

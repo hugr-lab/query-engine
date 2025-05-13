@@ -12,10 +12,10 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/metadata"
 	"github.com/hugr-lab/query-engine/pkg/perm"
+	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
 )
@@ -27,25 +27,6 @@ type result struct {
 	extensions map[string]any
 	name       string
 	path       []string
-}
-
-// sets the auto release arrow table flag after json marshaling
-func setReleaseArrow(data any, release bool) {
-	switch v := data.(type) {
-	case map[string]any:
-		for _, vv := range v {
-			setReleaseArrow(vv, release)
-		}
-	case []any:
-		for _, vv := range v {
-			setReleaseArrow(vv, release)
-		}
-	case *db.ArrowTable:
-		if v == nil {
-			return
-		}
-		v.SetAutoRelease(release)
-	}
 }
 
 func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (map[string]any, map[string]any, error) {
@@ -432,16 +413,12 @@ func (s *Service) processJQTransformation(ctx context.Context, schema *ast.Schem
 		if err != nil {
 			return nil, err
 		}
-
-		if includeResults {
-			setReleaseArrow(data, false)
+		if !includeResults {
+			defer types.DataClose(data)
 		}
 		transformed, err := t.Transform(ctx, data, map[string]any{"$vars": vars})
 		if err != nil {
 			return nil, compiler.ErrorPosf(query.Field.Position, "jq query execution error: %v", err)
-		}
-		if includeResults {
-			setReleaseArrow(data, true)
 		}
 		extension := map[string]any{}
 		if ext != nil {

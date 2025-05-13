@@ -60,12 +60,18 @@ func (s *Source) IsAttached() bool {
 	return s.isAttached
 }
 
-func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
+func (s *Source) Attach(ctx context.Context, db *db.Pool) (err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.isAttached {
 		return sources.ErrDataSourceAttached
 	}
+
+	s.ds.Path, err = sources.ApplyEnvVars(s.ds.Path)
+	if err != nil {
+		return err
+	}
+
 	params, err := sourceParamsFromPath(s.ds.Path)
 	if err != nil {
 		return err

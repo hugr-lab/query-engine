@@ -58,15 +58,28 @@ func functionModule(def *ast.FieldDefinition) string {
 	return ""
 }
 
-func moduleType(schema *ast.SchemaDocument, module string, objectType ModuleObjectType) *ast.Definition {
+func moduleType(schema *ast.SchemaDocument, module string, objectType ModuleObjectType) (*ast.Definition, error) {
 	moduleHierarchy := strings.Split(module, ".")
 	moduleObjectName := moduleTypeName(module, objectType)
 	m := schema.Definitions.ForName(moduleObjectName)
 	if m != nil {
-		return m
+		return m, nil
+	}
+	switch moduleObjectName {
+	case queryBaseName:
+		return rootType(schema, ModuleQuery)
+	case mutationBaseName:
+		return rootType(schema, ModuleMutation)
+	case base.FunctionTypeName:
+		return rootType(schema, ModuleFunction)
+	case base.FunctionMutationTypeName:
+		return rootType(schema, ModuleMutationFunction)
 	}
 
-	parent := moduleType(schema, strings.Join(moduleHierarchy[:len(moduleHierarchy)-1], "."), objectType)
+	parent, err := moduleType(schema, strings.Join(moduleHierarchy[:len(moduleHierarchy)-1], "."), objectType)
+	if err != nil {
+		return nil, err
+	}
 
 	m = &ast.Definition{
 		Kind:        ast.Object,
@@ -83,7 +96,7 @@ func moduleType(schema *ast.SchemaDocument, module string, objectType ModuleObje
 		Position:    compiledPos(),
 	})
 
-	return m
+	return m, err
 }
 
 func moduleTypeName(module string, objectType ModuleObjectType) string {

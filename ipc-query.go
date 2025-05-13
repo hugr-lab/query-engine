@@ -18,6 +18,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/planner"
+	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -59,7 +60,8 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req Reques
 	schema := s.catalog.Schema()
 	query, errs := gqlparser.LoadQuery(schema, req.Query)
 	if len(errs) != 0 {
-		return errs
+		// write errors to IPC
+		return writeErrorsToIPC(mw, memory.DefaultAllocator, "", errs)
 	}
 	if len(query.Operations) == 0 {
 		return gqlerror.Errorf("no operations found")
@@ -76,7 +78,7 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req Reques
 		}
 		data, ext, err := s.processOperation(ctx, schema, op, req.Variables)
 		if err != nil {
-			return err
+			return writeErrorsToIPC(mw, aloc, op.Name, types.WarpGraphQLError(err))
 		}
 		for path, q := range qm {
 			qd := extractData(path, data)
@@ -85,9 +87,11 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req Reques
 			}
 			err = writeDataIPC(mw, aloc, "data."+path, q, qd)
 			if err != nil {
+				types.DataClose(data)
 				return err
 			}
 		}
+		types.DataClose(data)
 		// write extensions to IPC
 		if len(ext) != 0 {
 			path := "extensions"
@@ -160,6 +164,7 @@ func writeArrowTableToIPC(w *multipart.Writer, aloc memory.Allocator, path strin
 	hdr.Set("X-Hugr-Path", path)
 	hdr.Set("X-Hugr-Format", "table")
 	hdr.Set("X-Hugr-Chunk", strconv.Itoa(data.NumChunks()))
+	hdr.Set("X-Hugr-Table-Info", data.Info())
 	meta := map[string]string{
 		"chunks": strconv.Itoa(data.NumChunks()),
 	}
@@ -280,6 +285,21 @@ func writeExtensionsToIPC(w *multipart.Writer, aloc memory.Allocator, path strin
 		return err
 	}
 	return json.NewEncoder(pw).Encode(ext)
+}
+
+func writeErrorsToIPC(w *multipart.Writer, aloc memory.Allocator, path string, errs gqlerror.List) error {
+	hdr := textproto.MIMEHeader{}
+	hdr.Set("Content-Type", "application/json")
+	hdr.Set("X-Hugr-Part-Type", "errors")
+	if path != "" {
+		hdr.Set("X-Hugr-Path", path)
+	}
+	hdr.Set("X-Hugr-Format", "object")
+	pw, err := w.CreatePart(hdr)
+	if err != nil {
+		return err
+	}
+	return json.NewEncoder(pw).Encode(errs)
 }
 
 func addMeta(schema *arrow.Schema, meta map[string]string) *arrow.Schema {

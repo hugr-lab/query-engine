@@ -11,6 +11,14 @@ type mockAuthProvider struct {
 	err      error
 }
 
+func (m *mockAuthProvider) Name() string {
+	return "mock"
+}
+
+func (m *mockAuthProvider) Type() string {
+	return "mock"
+}
+
 func (m *mockAuthProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 	return m.authInfo, m.err
 }

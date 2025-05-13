@@ -36,7 +36,7 @@ Each part in the response has its own MIME headers and content. The parts includ
 
 1. **Data Part**:
    - `Content-Type`: `application/vnd.apache.arrow.stream` (for Arrow tables) or `application/json` (for JSON objects).
-   - `X-Hugr-Part-Type`: `data`
+   - `X-Hugr-Part-Type`: `data`, `extensions`, or `error`.
    - `X-Hugr-Path`: The path of the data in the query.
    - `X-Hugr-Format`: `table` (for Arrow tables) or `object` (for JSON objects).
    - `X-Hugr-Chunk`: (Optional) The chunk number for streaming data.

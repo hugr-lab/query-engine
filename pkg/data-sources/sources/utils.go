@@ -4,7 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/url"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -43,6 +46,7 @@ func CheckDBExists(ctx context.Context, db *db.Pool, name string, dsType types.D
 }
 
 type ParsedDSN struct {
+	Proto    string
 	Host     string
 	Port     string
 	User     string
@@ -52,7 +56,31 @@ type ParsedDSN struct {
 	Params map[string]string
 }
 
+func (p ParsedDSN) String() string {
+	u := &url.URL{
+		Scheme: p.Proto,
+		Host:   p.Host,
+		User:   url.UserPassword(p.User, p.Password),
+		Path:   "/" + p.DBName,
+	}
+	if p.Port != "" {
+		u.Host = fmt.Sprintf("%s:%s", p.Host, p.Port)
+	}
+	if len(p.Params) != 0 {
+		vv := url.Values{}
+		for key, value := range p.Params {
+			vv.Add(key, value)
+		}
+		u.RawQuery = vv.Encode()
+	}
+	return u.String()
+}
+
 func ParseDSN(dsn string) (ParsedDSN, error) {
+	dsn, err := ApplyEnvVars(dsn)
+	if err != nil {
+		return ParsedDSN{}, err
+	}
 	u, err := url.Parse(dsn)
 	if err != nil {
 		return ParsedDSN{}, err
@@ -60,6 +88,7 @@ func ParseDSN(dsn string) (ParsedDSN, error) {
 
 	path := strings.TrimPrefix(u.Path, "/")
 	parsed := ParsedDSN{
+		Proto:    u.Scheme,
 		Host:     u.Hostname(),
 		Port:     u.Port(),
 		User:     u.User.Username(),
@@ -78,4 +107,26 @@ func ParseDSN(dsn string) (ParsedDSN, error) {
 		parsed.Params[key] = values[0] // Get first value
 	}
 	return parsed, nil
+}
+
+var reSQLField = regexp.MustCompile(`\[\$?[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\]`)
+
+func ApplyEnvVars(dsn string) (string, error) {
+	matches := reSQLField.FindAllString(dsn, -1)
+	if len(matches) == 0 {
+		return dsn, nil
+	}
+	for _, match := range matches {
+		envVar := strings.TrimSuffix(strings.TrimPrefix(match, "["), "]")
+		if !strings.HasPrefix(envVar, "$") {
+			continue
+		}
+		envVar = strings.TrimPrefix(envVar, "$")
+		envValue := os.Getenv(envVar)
+		if envValue == "" {
+			return "", fmt.Errorf("environment variable %s is not set", envVar)
+		}
+		dsn = strings.ReplaceAll(dsn, match, envValue)
+	}
+	return dsn, nil
 }
