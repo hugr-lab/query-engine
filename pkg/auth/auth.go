@@ -14,6 +14,7 @@ type Config struct {
 	RedirectLoginPaths []string
 	LoginUrl           string
 	RedirectUrl        string
+	DBApiKeysEnabled   bool
 }
 
 type ProviderInfo struct {

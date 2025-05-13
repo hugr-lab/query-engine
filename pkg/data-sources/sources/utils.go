@@ -46,6 +46,7 @@ func CheckDBExists(ctx context.Context, db *db.Pool, name string, dsType types.D
 }
 
 type ParsedDSN struct {
+	Proto    string
 	Host     string
 	Port     string
 	User     string
@@ -53,6 +54,26 @@ type ParsedDSN struct {
 	DBName   string
 
 	Params map[string]string
+}
+
+func (p ParsedDSN) String() string {
+	u := &url.URL{
+		Scheme: p.Proto,
+		Host:   p.Host,
+		User:   url.UserPassword(p.User, p.Password),
+		Path:   "/" + p.DBName,
+	}
+	if p.Port != "" {
+		u.Host = fmt.Sprintf("%s:%s", p.Host, p.Port)
+	}
+	if len(p.Params) != 0 {
+		vv := url.Values{}
+		for key, value := range p.Params {
+			vv.Add(key, value)
+		}
+		u.RawQuery = vv.Encode()
+	}
+	return u.String()
 }
 
 func ParseDSN(dsn string) (ParsedDSN, error) {
@@ -67,6 +88,7 @@ func ParseDSN(dsn string) (ParsedDSN, error) {
 
 	path := strings.TrimPrefix(u.Path, "/")
 	parsed := ParsedDSN{
+		Proto:    u.Scheme,
 		Host:     u.Hostname(),
 		Port:     u.Port(),
 		User:     u.User.Username(),

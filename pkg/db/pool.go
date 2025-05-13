@@ -119,6 +119,7 @@ func (p *Pool) release() {
 
 func (p *Pool) Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
 	conn, err := p.Conn(ctx)
+	defer conn.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +163,18 @@ func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
 		drv:     conn,
 		release: p.release,
 	}, nil
+}
+
+func (p *Pool) RegisterScalarFunction(ctx context.Context, function ScalarFunction) error {
+	return RegisterScalarFunction(ctx, p, function)
+}
+
+func (p *Pool) RegisterScalarFunctionSet(ctx context.Context, set ScalarFunctionSet) error {
+	return RegisterScalarFunctionSet(ctx, p, set)
+}
+
+func (p *Pool) RegisterTableRowFunction(ctx context.Context, function TableRowFunction) error {
+	return RegisterTableRowFunction(ctx, p, function)
 }
 
 type Connection struct {

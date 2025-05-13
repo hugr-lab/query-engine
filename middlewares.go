@@ -12,7 +12,13 @@ import (
 
 func (s *Service) middlewares() func(next http.Handler) http.Handler {
 	var mm []func(next http.Handler) http.Handler
+	var pp []auth.AuthProvider
 	// auth
+	if s.config.Auth.DBApiKeysEnabled {
+		pp = append(pp,
+			auth.NewDBApiKey(s, "managed-api-keys", "x-hugr-api-key"),
+		)
+	}
 	if s.config.Auth == nil {
 		s.config.Auth = &auth.Config{
 			Providers: []auth.AuthProvider{
@@ -23,6 +29,8 @@ func (s *Service) middlewares() func(next http.Handler) http.Handler {
 			},
 		}
 	}
+	pp = append(pp, s.config.Auth.Providers...)
+	s.config.Auth.Providers = pp
 	authMiddleware := auth.AuthMiddleware(*s.config.Auth)
 	mm = append(mm, authMiddleware)
 

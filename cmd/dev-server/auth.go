@@ -14,6 +14,7 @@ import (
 type AuthConfig struct {
 	AllowedAnonymous bool
 	AnonymousRole    string
+	AllowedDBKeys    bool
 
 	// API Key with default admin role should be provided in the header x-hugr-secret-key
 	SecretKey string
@@ -47,6 +48,7 @@ func (c *AuthConfig) Configure() (*auth.Config, error) {
 		if pc.SecretKey != "" {
 			c.SecretKey = pc.SecretKey
 		}
+		c.AllowedDBKeys = pc.DBKeysEnabled
 	}
 
 	if c.SecretKey != "" {
@@ -80,9 +82,10 @@ func (c *AuthConfig) Configure() (*auth.Config, error) {
 }
 
 type providersConfig struct {
-	Anonymous auth.AnonymousConfig         `json:"anonymous" yaml:"anonymous"`
-	APIKeys   map[string]auth.ApiKeyConfig `json:"api_keys" yaml:"api-keys"`
-	JWT       map[string]auth.JwtConfig    `json:"jwt" yaml:"jwt"`
+	DBKeysEnabled bool                         `json:"db_api_keys_enabled" yaml:"db-api-keys-enabled"`
+	Anonymous     auth.AnonymousConfig         `json:"anonymous" yaml:"anonymous"`
+	APIKeys       map[string]auth.ApiKeyConfig `json:"api_keys" yaml:"api-keys"`
+	JWT           map[string]auth.JwtConfig    `json:"jwt" yaml:"jwt"`
 
 	RedirectLoginPaths []string `json:"redirect_login_paths" yaml:"redirect-login-paths"`
 	LoginUrl           string   `json:"login_url" yaml:"login-url"`

@@ -13,6 +13,11 @@ type ScalarFunction interface {
 	Config() duckdb.ScalarFuncConfig
 }
 
+type ScalarFunctionSet interface {
+	FuncName() string
+	Functions(ctx context.Context) []duckdb.ScalarFunc
+}
+
 func RegisterScalarFunction(ctx context.Context, db *Pool, function ScalarFunction) error {
 	c, err := db.Conn(ctx)
 	if err != nil {
@@ -25,22 +30,20 @@ func RegisterScalarFunction(ctx context.Context, db *Pool, function ScalarFuncti
 	})
 }
 
-func RegisterScalarFunctionSet[O any](ctx context.Context, db *Pool, set ScalarFunctionSet[O]) error {
+func RegisterScalarFunctionSet(ctx context.Context, db *Pool, set ScalarFunctionSet) error {
 	c, err := db.Conn(ctx)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	return duckdb.RegisterScalarUDFSet(c.DBConn(), set.Name, set.Functions(ctx)...)
+	return duckdb.RegisterScalarUDFSet(c.DBConn(), set.FuncName(), set.Functions(ctx)...)
 }
 
 var _ ScalarFunction = (*ScalarFunctionWithArgs[any, any])(nil)
 
 type ScalarFunctionWithArgs[I any, O any] struct {
 	Name                  string
-	Description           string
-	Module                string
 	Execute               func(ctx context.Context, input I) (O, error)
 	ConvertInput          func(args []driver.Value) (I, error)
 	ConvertOutput         func(out O) (any, error)
@@ -95,14 +98,11 @@ func (f *ScalarFunctionWithArgs[I, O]) Config() duckdb.ScalarFuncConfig {
 var _ ScalarFunction = (*ScalarFunctionNoArgs[any])(nil)
 
 type ScalarFunctionNoArgs[O any] struct {
-	Name                  string
-	Description           string
-	Module                string
-	Execute               func(ctx context.Context) (O, error)
-	ConvertOutput         func(out O) (any, error)
-	OutputType            duckdb.TypeInfo
-	IsVolatile            bool
-	IsSpecialNullHandling bool
+	Name          string
+	Execute       func(ctx context.Context) (O, error)
+	ConvertOutput func(out O) (any, error)
+	OutputType    duckdb.TypeInfo
+	IsVolatile    bool
 }
 
 func (f *ScalarFunctionNoArgs[O]) FuncName() string {
@@ -135,21 +135,18 @@ func (f *ScalarFunctionNoArgs[O]) Executor() func(ctx context.Context, args []dr
 
 func (f *ScalarFunctionNoArgs[O]) Config() duckdb.ScalarFuncConfig {
 	return duckdb.ScalarFuncConfig{
-		InputTypeInfos:      []duckdb.TypeInfo{},
-		ResultTypeInfo:      f.OutputType,
-		Volatile:            f.IsVolatile,
-		SpecialNullHandling: f.IsSpecialNullHandling,
+		InputTypeInfos: []duckdb.TypeInfo{},
+		ResultTypeInfo: f.OutputType,
+		Volatile:       f.IsVolatile,
 	}
 }
 
 type ScalarFunctionCaster[O any] interface {
-	ScalarUDF(set *ScalarFunctionSet[O]) ScalarFunction
+	ScalarUDF(set *ScalarFunctionTypedSet[O]) ScalarFunction
 }
 
-type ScalarFunctionSet[O any] struct {
+type ScalarFunctionTypedSet[O any] struct {
 	Name                  string
-	Description           string
-	Module                string
 	Funcs                 []ScalarFunctionCaster[O]
 	ConvertOutput         func(out O) (any, error)
 	OutputType            duckdb.TypeInfo
@@ -157,7 +154,11 @@ type ScalarFunctionSet[O any] struct {
 	IsSpecialNullHandling bool
 }
 
-func (s *ScalarFunctionSet[O]) Functions(ctx context.Context) []duckdb.ScalarFunc {
+func (s *ScalarFunctionTypedSet[O]) FuncName() string {
+	return s.Name
+}
+
+func (s *ScalarFunctionTypedSet[O]) Functions(ctx context.Context) []duckdb.ScalarFunc {
 	var funcs []duckdb.ScalarFunc
 	for _, f := range s.Funcs {
 		funcs = append(funcs, &scalarUDF{
@@ -174,7 +175,7 @@ type ScalarFunctionSetItem[I any, O any] struct {
 	InputTypes   []duckdb.TypeInfo
 }
 
-func (f *ScalarFunctionSetItem[I, O]) ScalarUDF(set *ScalarFunctionSet[O]) ScalarFunction {
+func (f *ScalarFunctionSetItem[I, O]) ScalarUDF(set *ScalarFunctionTypedSet[O]) ScalarFunction {
 	return &ScalarFunctionWithArgs[I, O]{
 		Name:                  set.Name,
 		Execute:               f.Execute,
@@ -191,16 +192,13 @@ type ScalarFunctionSetItemNoArgs[O any] struct {
 	Execute func(ctx context.Context) (O, error)
 }
 
-func (f *ScalarFunctionSetItemNoArgs[O]) ScalarUDF(set *ScalarFunctionSet[O]) ScalarFunction {
+func (f *ScalarFunctionSetItemNoArgs[O]) ScalarUDF(set *ScalarFunctionTypedSet[O]) ScalarFunction {
 	return &ScalarFunctionNoArgs[O]{
-		Name:                  set.Name,
-		Description:           set.Description,
-		Module:                set.Module,
-		Execute:               func(ctx context.Context) (O, error) { return f.Execute(ctx) },
-		ConvertOutput:         set.ConvertOutput,
-		OutputType:            set.OutputType,
-		IsVolatile:            set.IsVolatile,
-		IsSpecialNullHandling: set.IsSpecialNullHandling,
+		Name:          set.Name,
+		Execute:       func(ctx context.Context) (O, error) { return f.Execute(ctx) },
+		ConvertOutput: set.ConvertOutput,
+		OutputType:    set.OutputType,
+		IsVolatile:    set.IsVolatile,
 	}
 }
 

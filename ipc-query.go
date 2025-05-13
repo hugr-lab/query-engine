@@ -87,9 +87,11 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req Reques
 			}
 			err = writeDataIPC(mw, aloc, "data."+path, q, qd)
 			if err != nil {
+				types.DataClose(data)
 				return err
 			}
 		}
+		types.DataClose(data)
 		// write extensions to IPC
 		if len(ext) != 0 {
 			path := "extensions"

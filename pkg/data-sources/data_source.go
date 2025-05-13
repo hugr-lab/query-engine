@@ -2,10 +2,11 @@ package datasources
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 
 	"github.com/hugr-lab/query-engine/pkg/types"
+	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
+	. "github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 )
 
 func (s *Service) dataSource(ctx context.Context, name string) (types.DataSource, error) {
@@ -33,6 +34,7 @@ func (s *Service) dataSource(ctx context.Context, name string) (types.DataSource
 	if err != nil {
 		return types.DataSource{}, err
 	}
+	defer res.Close()
 	var ds types.DataSource
 	err = res.ScanData("core.data_sources_by_pk", &ds)
 	return ds, err
@@ -41,11 +43,8 @@ func (s *Service) dataSource(ctx context.Context, name string) (types.DataSource
 func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 	// read from db and if not found only source reload
 	item, err := s.dataSource(ctx, name)
-	if errors.Is(err, sql.ErrNoRows) {
-		err = s.catalogs.Reload(ctx, name)
-		if err != nil {
-			return err
-		}
+	if errors.Is(err, types.ErrNoData) {
+		return ErrDataSourceNotFound
 	}
 	if err != nil {
 		return err

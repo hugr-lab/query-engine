@@ -7,7 +7,7 @@ type ApiKeyConfig struct {
 	Header      string `json:"header" yaml:"header"`
 	DefaultRole string `json:"default_role" yaml:"default-role"`
 
-	Headers UserAuthInfoConfig
+	Headers UserAuthInfoConfig `json:"headers" yaml:"headers"`
 }
 
 type ApiKeyProvider struct {

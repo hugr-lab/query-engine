@@ -45,7 +45,9 @@ func (s *Source) AsModule() bool {
 }
 
 func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
-	err := db.RegisterScalarFunction(ctx, pool, &db.ScalarFunctionWithArgs[S3Info, *types.OperationResult]{
+	s.db = pool
+
+	err := pool.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[S3Info, *types.OperationResult]{
 		Name: "register_s3",
 		Execute: func(ctx context.Context, info S3Info) (*types.OperationResult, error) {
 			err := s.RegisterS3(ctx, info)
@@ -89,7 +91,7 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 		return err
 	}
 
-	err = db.RegisterScalarFunction(ctx, pool, &db.ScalarFunctionWithArgs[string, *types.OperationResult]{
+	err = pool.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[string, *types.OperationResult]{
 		Name: "unregister_s3",
 		Execute: func(ctx context.Context, name string) (*types.OperationResult, error) {
 			err := s.UnregisterS3(ctx, name)
@@ -124,7 +126,7 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 		return "s3_secrets", nil, nil
 	})
 
-	err = db.RegisterTableRowFunction(ctx, pool, &db.TableRowFunctionNoArgs[secrets]{
+	err = pool.RegisterTableRowFunction(ctx, &db.TableRowFunctionNoArgs[secrets]{
 		Name: "s3_secrets",
 		ColumnInfos: []duckdb.ColumnInfo{
 			{Name: "name", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},

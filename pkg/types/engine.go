@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
@@ -21,6 +22,44 @@ type Response struct {
 	Data       map[string]any `json:"data,omitempty"`
 	Extensions map[string]any `json:"extensions,omitempty"`
 	Errors     gqlerror.List  `json:"errors,omitempty"`
+}
+
+func (r *Response) Close() {
+	if r == nil {
+		return
+	}
+	if r.Data != nil {
+		DataClose(r.Data)
+	}
+	if r.Extensions != nil {
+		DataClose(r.Extensions)
+	}
+	r.Data = nil
+	r.Extensions = nil
+	r.Errors = nil
+}
+
+func DataClose(data any) {
+	if data == nil {
+		return
+	}
+	switch v := data.(type) {
+	case *db.JsonValue:
+	case *db.ArrowTable:
+		v.Release()
+	case map[string]any:
+		for _, val := range v {
+			DataClose(val)
+		}
+	case []any:
+		for _, val := range v {
+			DataClose(val)
+		}
+	case *Response:
+		v.Close()
+	default:
+		return
+	}
 }
 
 func ErrResponse(err error) Response {
@@ -72,7 +111,7 @@ func scanRecursive(path string, data any, dest interface{}) error {
 	case map[string]any:
 		val, ok := v[pp[0]]
 		if !ok {
-			return ErrNoData
+			return ErrWrongDataPath
 		}
 		p := ""
 		if len(pp) > 1 {

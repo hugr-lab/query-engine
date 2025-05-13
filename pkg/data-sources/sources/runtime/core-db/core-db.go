@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	Version = "0.0.6"
+	Version = "0.0.8"
 	dbName  = "core"
 )
 
@@ -26,24 +26,21 @@ var (
 )
 
 //go:embed schema.sql
-var dbSchema string
-
-//go:embed pg-schema.sql
-var pgSchema string
+var InitSchema string
 
 //go:embed schema.graphql
 var schema string
 
 type Config struct {
-	Path     string
-	ReadOnly bool
+	Path     string `json:"path"`
+	ReadOnly bool   `json:"read_only"`
 
 	// S3 for now only supports s3://
-	S3Region   string
-	S3Key      string
-	S3Secret   string
-	S3UseSSL   bool
-	S3Endpoint string
+	S3Region   string `json:"s3_region"`
+	S3Key      string `json:"s3_key"`
+	S3Secret   string `json:"s3_secret"`
+	S3UseSSL   bool   `json:"s3_use_ssl"`
+	S3Endpoint string `json:"s3_endpoint"`
 }
 
 type Source struct {
@@ -197,12 +194,19 @@ func checkDBVersion(ctx context.Context, db *db.Pool) error {
 	return nil
 }
 
-func (s *Source) applySchema(ctx context.Context, db *db.Pool) error {
-	sql := dbSchema
+func (s *Source) applySchema(ctx context.Context, pool *db.Pool) error {
+	dbType := db.SDBAttachedDuckDB
 	if s.dbType == sources.Postgres {
-		sql = "FROM " + s.e.(engines.EngineQueryScanner).WrapExec(s.Name(), pgSchema)
+		dbType = db.SDBAttachedPostgres
 	}
-	_, err := db.Exec(ctx, sql)
+	sql, err := db.ParseSQLScriptTemplate(dbType, InitSchema)
+	if err != nil {
+		return fmt.Errorf("core db initialization: %w", err)
+	}
+	if s.dbType == sources.Postgres {
+		sql = "FROM " + s.e.(engines.EngineQueryScanner).WrapExec(s.Name(), sql)
+	}
+	_, err = pool.Exec(ctx, sql)
 	if err != nil {
 		return fmt.Errorf("core db initialization: %w", err)
 	}

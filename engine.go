@@ -230,6 +230,7 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 	catalog := r.URL.Query().Get("catalog")
 
 	res := s.ProcessQuery(r.Context(), catalog, req)
+	defer res.Close()
 
 	err = json.NewEncoder(w).Encode(res)
 	if err != nil {
@@ -282,8 +283,21 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request)
 	}
 
 	var res types.Response
-	if len(qd.Operations) == 1 {
-		data, ext, err := s.processOperation(ctx, schema, qd.Operations[0], req.Variables)
+	if len(qd.Operations) == 1 ||
+		len(qd.Operations) != 0 && req.OperationName != "" {
+		op := qd.Operations[0]
+		if req.OperationName != "" {
+			for _, o := range qd.Operations {
+				if o.Name == req.OperationName {
+					op = o
+					break
+				}
+			}
+			if op.Name != req.OperationName {
+				return types.ErrResponse(gqlerror.Errorf("operation %s not found", req.OperationName))
+			}
+		}
+		data, ext, err := s.processOperation(ctx, schema, op, req.Variables)
 		if err != nil {
 			return types.ErrResponse(err)
 		}

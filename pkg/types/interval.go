@@ -12,7 +12,12 @@ import (
 type Interval time.Duration
 
 func (i Interval) MarshalJSON() ([]byte, error) {
-	return []byte("\"" + time.Duration(i).String() + "\""), nil
+	str, err := IntervalToSQLValue(time.Duration(i))
+	if err != nil {
+		return nil, err
+	}
+	str = strings.TrimPrefix(strings.TrimSuffix(str, "'"), "'")
+	return []byte("\"" + str + "\""), nil
 }
 
 func (i *Interval) UnmarshalJSON(data []byte) error {
@@ -27,6 +32,7 @@ func (i *Interval) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		*i = Interval(d)
+		return nil
 	}
 	d, err := strconv.Atoi(s)
 	if err != nil {

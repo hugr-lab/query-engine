@@ -42,6 +42,7 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		res := s.ProcessQuery(r.Context(), "", req.Query)
+		defer res.Close()
 
 		if res.Err() != nil {
 			return nil, res.Err()

@@ -146,13 +146,15 @@ func (c *Client) Ping(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer res.Close()
 	if res.Err() != nil {
 		return "", res.Err()
 	}
-
-	var nv string
-	err = res.ScanData("function.core.info.version", &nv)
-	return nv, err
+	var nv struct {
+		Version string `json:"version"`
+	}
+	err = res.ScanData("function.core.info", &nv)
+	return nv.Version, err
 }
 
 func (c *Client) RegisterDataSource(ctx context.Context, ds types.DataSource) error {
@@ -168,8 +170,9 @@ func (c *Client) RegisterDataSource(ctx context.Context, ds types.DataSource) er
 	if err != nil {
 		return err
 	}
-	if len(res.Errors) > 0 {
-		return res.Errors
+	defer res.Close()
+	if res.Err() != nil {
+		return res.Err()
 	}
 	return nil
 }
@@ -190,8 +193,12 @@ func (c *Client) LoadDataSource(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	defer res.Close()
+	if res.Err() != nil {
+		return res.Err()
+	}
 	var or types.OperationResult
-	err = res.ScanData("data.function.core.load_data_source", &or)
+	err = res.ScanData("function.core.load_data_source", &or)
 	if err != nil {
 		return err
 	}
@@ -217,8 +224,12 @@ func (c *Client) UnloadDataSource(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	defer res.Close()
+	if res.Err() != nil {
+		return res.Err()
+	}
 	var or types.OperationResult
-	err = res.ScanData("data.function.core.unload_data_source", &or)
+	err = res.ScanData("function.core.unload_data_source", &or)
 	if err != nil {
 		return err
 	}
@@ -232,7 +243,8 @@ func (c *Client) DataSourceStatus(ctx context.Context, name string) (string, err
 	res, err := c.Query(ctx, `query($name: String!){
 		function {
 			core{
-				data_source_status(name:$name)
+				data_source_status(name: $name)
+			}
 		}
 	}`, map[string]any{
 		"name": name,
@@ -240,8 +252,12 @@ func (c *Client) DataSourceStatus(ctx context.Context, name string) (string, err
 	if err != nil {
 		return "", err
 	}
+	defer res.Close()
+	if res.Err() != nil {
+		return "", res.Err()
+	}
 	var status string
-	err = res.ScanData("data.function.core.data_source_status", &status)
+	err = res.ScanData("function.core.data_source_status", &status)
 
 	return status, err
 }
@@ -249,8 +265,8 @@ func (c *Client) DataSourceStatus(ctx context.Context, name string) (string, err
 func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error) {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(map[string]any{
-		"query": query,
-		"vars":  vars,
+		"query":     query,
+		"variables": vars,
 	})
 	if err != nil {
 		return nil, err
@@ -301,7 +317,7 @@ func (c *Client) parseMultipartResponse(resp *http.Response) (*types.Response, e
 		path := p.Header.Get("X-Hugr-Path")
 		cp := p.Header.Get("Content-Type")
 		format := p.Header.Get("X-Hugr-Format")
-		part := p.Header.Get("X-Hugr-Type")
+		part := p.Header.Get("X-Hugr-Part-Type")
 		switch {
 		case part == "errors":
 			var errs gqlerror.List
@@ -322,7 +338,7 @@ func (c *Client) parseMultipartResponse(resp *http.Response) (*types.Response, e
 				return nil, fmt.Errorf("adding json value: %w", err)
 			}
 		case strings.HasPrefix(cp, "application/vnd.apache.arrow.stream") && format == "table":
-			t := db.NewArrowTable(true)
+			t := db.NewArrowTable()
 			t.SetInfo(p.Header.Get("X-Hugr-Table-Info"))
 			reader, err := ipc.NewReader(p, ipc.WithAllocator(pool))
 			if err != nil {

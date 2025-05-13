@@ -16,10 +16,8 @@ import (
 
 func (s *Source) registerUDF(ctx context.Context) error {
 	ctx = auth.ContextWithFullAccess(ctx)
-	err := db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[string, string]{
-		Name:        "data_source_status",
-		Description: "Get the status of a data source",
-		Module:      "core",
+	err := s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[string, string]{
+		Name: "data_source_status",
 		Execute: func(ctx context.Context, name string) (string, error) {
 			return s.qe.DataSourceStatus(ctx, name)
 		},
@@ -40,10 +38,8 @@ func (s *Source) registerUDF(ctx context.Context) error {
 		return err
 	}
 
-	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[string, *types.OperationResult]{
-		Name:        "load_data_source",
-		Description: "Load/Reload data source",
-		Module:      "core",
+	err = s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[string, *types.OperationResult]{
+		Name: "load_data_source",
 		Execute: func(ctx context.Context, name string) (*types.OperationResult, error) {
 			err := s.qe.LoadDataSource(ctx, name)
 			if err != nil {
@@ -68,10 +64,8 @@ func (s *Source) registerUDF(ctx context.Context) error {
 		return err
 	}
 
-	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[string, *types.OperationResult]{
-		Name:        "unload_data_source",
-		Description: "Unload data source",
-		Module:      "core",
+	err = s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[string, *types.OperationResult]{
+		Name: "unload_data_source",
 		Execute: func(ctx context.Context, name string) (*types.OperationResult, error) {
 			err := s.qe.UnloadDataSource(ctx, name)
 			if err != nil {

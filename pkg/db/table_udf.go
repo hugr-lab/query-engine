@@ -22,8 +22,6 @@ type TableRowFunction interface {
 
 type TableRowFunctionWithArgs[I any, O any] struct {
 	Name           string
-	Description    string
-	Module         string
 	Execute        func(ctx context.Context, input I) ([]O, error)
 	Arguments      []duckdb.TypeInfo
 	NamedArguments map[string]duckdb.TypeInfo
@@ -111,8 +109,6 @@ func (s *tableRowUDFSource[I, O]) FillRow(row duckdb.Row) (bool, error) {
 
 type TableRowFunctionNoArgs[O any] struct {
 	Name        string
-	Description string
-	Module      string
 	Execute     func(ctx context.Context) ([]O, error)
 	ColumnInfos []duckdb.ColumnInfo
 	FillRow     func(out O, row duckdb.Row) error

@@ -40,11 +40,9 @@ func (s *Service) AsModule() bool {
 }
 
 func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
-	return db.RegisterScalarFunctionSet(auth.ContextWithFullAccess(ctx), pool, db.ScalarFunctionSet[string]{
-		Name:        "invalidate_cache",
-		Module:      "cache",
-		Description: "Invalidate the cache for the given tags.",
-		OutputType:  types.DuckDBOperationResult(),
+	return pool.RegisterScalarFunctionSet(auth.ContextWithFullAccess(ctx), &db.ScalarFunctionTypedSet[string]{
+		Name:       "invalidate_cache",
+		OutputType: types.DuckDBOperationResult(),
 		ConvertOutput: func(out string) (any, error) {
 			return types.Result(out, 1, 0).ToDuckdb(), nil
 		},

@@ -66,6 +66,7 @@ func (s *Service) RolePermissions(ctx context.Context) (RolePermissions, error) 
 	if err != nil {
 		return RolePermissions{}, err
 	}
+	defer res.Close()
 	var role RolePermissions
 	err = res.ScanData("core.info", &role)
 

@@ -23,6 +23,7 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer res.Close()
 	var data []types.DataSource
 	err = res.ScanData("core.data_sources", &data)
 	if errors.Is(err, types.ErrNoData) {
@@ -42,7 +43,7 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 }
 
 func (s *Service) RegisterDataSource(ctx context.Context, ds types.DataSource) error {
-	_, err := s.Query(ctx, `mutation($data: data_sources_mut_input_data!){
+	res, err := s.Query(ctx, `mutation($data: data_sources_mut_input_data!){
 		core{
 			insert_data_sources(data:$data){
 				name
@@ -54,6 +55,8 @@ func (s *Service) RegisterDataSource(ctx context.Context, ds types.DataSource) e
 	if err != nil {
 		return err
 	}
+	defer res.Close()
+
 	return s.LoadDataSource(ctx, ds.Name)
 }
 

@@ -65,7 +65,7 @@ func NewJwt(config *JwtConfig) (*JwtProvider, error) {
 	if config.CookieName != "" {
 		p.extractor = request.MultiExtractor{
 			request.OAuth2Extractor,
-			cookieExtractor(config.CookieName),
+			CookieExtractor(config.CookieName),
 		}
 	}
 
@@ -123,9 +123,9 @@ func (p *JwtProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 	}, nil
 }
 
-type cookieExtractor string
+type CookieExtractor string
 
-func (c cookieExtractor) ExtractToken(r *http.Request) (string, error) {
+func (c CookieExtractor) ExtractToken(r *http.Request) (string, error) {
 	cookie, err := r.Cookie(string(c))
 	if err != nil {
 		return "", err

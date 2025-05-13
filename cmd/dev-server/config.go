@@ -90,6 +90,7 @@ func loadConfig() Config {
 			CorsAllowedMethods: viper.GetStringSlice("CORS_ALLOWED_METHODS"),
 		},
 		Auth: AuthConfig{
+			AllowedDBKeys:    viper.GetBool("ALLOWED_DB_API_KEYS"),
 			AllowedAnonymous: viper.GetBool("ALLOWED_ANONYMOUS"),
 			AnonymousRole:    viper.GetString("ANONYMOUS_ROLE"),
 			SecretKey:        viper.GetString("SECRET_KEY"),

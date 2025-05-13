@@ -42,7 +42,7 @@ func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, pa
 	}
 	defer reader.Release()
 
-	table := NewArrowTable(true)
+	table := NewArrowTable()
 	table.wrapped = wrap
 	for reader.Next() {
 		rec := reader.Record()
@@ -104,7 +104,7 @@ func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params 
 	}
 	defer reader.Release()
 
-	table := NewArrowTable(true)
+	table := NewArrowTable()
 	table.asArray = true
 	for reader.Next() {
 		rec := reader.Record()
@@ -149,6 +149,21 @@ func (db *Pool) QueryJsonRow(ctx context.Context, q string, params ...any) (*Jso
 	defer conn.Close()
 	var val JsonValue
 	err = conn.QueryRow(ctx, wrapJSON(q), params...).Scan(&val)
+	if err != nil {
+		return nil, err
+	}
+
+	return &val, nil
+}
+
+func (db *Pool) QueryScalarValue(ctx context.Context, q string, params ...any) (any, error) {
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	var val any
+	err = conn.QueryRow(ctx, q, params...).Scan(&val)
 	if err != nil {
 		return nil, err
 	}
