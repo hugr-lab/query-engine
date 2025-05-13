@@ -441,7 +441,7 @@ func TestDuckDBUnpackObject(t *testing.T) {
 								ObjectDefinition: &ast.Definition{Name: "test",
 									Fields: []*ast.FieldDefinition{
 										{Name: "subsubfield1", Type: &ast.Type{NamedType: "String"}},
-										{Name: "subsubfield1", Type: &ast.Type{NamedType: "String"}},
+										{Name: "subsubfield2", Type: &ast.Type{NamedType: "String"}},
 									},
 								},
 								Definition: &ast.FieldDefinition{
@@ -478,7 +478,7 @@ func TestDuckDBUnpackObject(t *testing.T) {
 								ObjectDefinition: &ast.Definition{Name: "test",
 									Fields: []*ast.FieldDefinition{
 										{Name: "subsubfield1", Type: &ast.Type{NamedType: "String"}},
-										{Name: "subsubfield1", Type: &ast.Type{NamedType: "String"}},
+										{Name: "subsubfield2", Type: &ast.Type{NamedType: "String"}},
 									},
 								},
 								Definition: &ast.FieldDefinition{
@@ -509,7 +509,7 @@ func TestDuckDBUnpackObject(t *testing.T) {
 									},
 								},
 								Definition: &ast.FieldDefinition{
-									Name: "subsubfield1", Type: &ast.Type{NamedType: "String"},
+									Name: "subsubfield2", Type: &ast.Type{NamedType: "String"},
 								},
 							},
 							&ast.Field{
@@ -518,10 +518,11 @@ func TestDuckDBUnpackObject(t *testing.T) {
 									Fields: []*ast.FieldDefinition{
 										{Name: "subsubfield1", Type: &ast.Type{NamedType: "String"}},
 										{Name: "subsubfield2", Type: &ast.Type{NamedType: "String"}},
+										{Name: "subsubfield3", Type: &ast.Type{NamedType: "String"}},
 									},
 								},
 								Definition: &ast.FieldDefinition{
-									Name: "subsubfield1", Type: &ast.Type{NamedType: "String"},
+									Name: "subsubfield3", Type: &ast.Type{NamedType: "String"},
 								},
 							},
 						},
