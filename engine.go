@@ -283,8 +283,7 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request)
 	}
 
 	var res types.Response
-	if len(qd.Operations) == 1 ||
-		len(qd.Operations) != 0 && req.OperationName != "" {
+	if len(qd.Operations) == 1 || req.OperationName != "" {
 		op := qd.Operations[0]
 		if req.OperationName != "" {
 			for _, o := range qd.Operations {

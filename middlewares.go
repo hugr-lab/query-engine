@@ -87,9 +87,22 @@ func compressMW(next http.Handler) http.Handler {
 type compressResponseWriter struct {
 	http.ResponseWriter
 	compressWriter io.Writer
+	wroteHeader    bool
+}
+
+func (c *compressResponseWriter) WriteHeader(statusCode int) {
+	if c.wroteHeader {
+		return
+	}
+	c.wroteHeader = true
+	c.Header().Del("Content-Length")
+	c.ResponseWriter.WriteHeader(statusCode)
 }
 
 func (c *compressResponseWriter) Write(b []byte) (int, error) {
+	if !c.wroteHeader {
+		c.WriteHeader(http.StatusOK)
+	}
 	return c.compressWriter.Write(b)
 }
 

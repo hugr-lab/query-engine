@@ -75,8 +75,8 @@ func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
 
 	for i, s := range source.Schema {
 		if i == 0 && s.OperationTypes.ForType(queryBaseName) == nil &&
-			doc.Definitions.ForName(queryBaseName) != nil {
-			doc.Schema[0].OperationTypes = append(doc.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
+			source.Definitions.ForName(queryBaseName) != nil {
+			source.Schema[0].OperationTypes = append(source.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
 				Operation: ast.Query,
 				Type:      queryBaseName,
 				Position:  compiledPos(),
@@ -84,8 +84,8 @@ func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
 		}
 
 		if i == 0 && s.OperationTypes.ForType(mutationBaseName) == nil &&
-			doc.Definitions.ForName(mutationBaseName) != nil {
-			doc.Schema[0].OperationTypes = append(doc.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
+			source.Definitions.ForName(mutationBaseName) != nil {
+			source.Schema[0].OperationTypes = append(source.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
 				Operation: ast.Mutation,
 				Type:      mutationBaseName,
 				Position:  compiledPos(),
