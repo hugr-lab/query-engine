@@ -40,6 +40,7 @@ Each part in the response has its own MIME headers and content. The parts includ
    - `X-Hugr-Path`: The path of the data in the query.
    - `X-Hugr-Format`: `table` (for Arrow tables) or `object` (for JSON objects).
    - `X-Hugr-Chunk`: (Optional) The chunk number for streaming data.
+   - `X-Hugr-Empty`: `true` if the table part is empty.
 
 2. **Extensions Part**:
    - `Content-Type`: `application/json`

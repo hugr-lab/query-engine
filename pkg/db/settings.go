@@ -13,6 +13,7 @@ type Settings struct {
 	MaxTempDirectorySize int      `json:"max_temp_directory_size"`
 	TempDirectory        string   `json:"temp_directory"`
 	WorkerThreads        int      `json:"worker_threads"`
+	HomeDirectory        string   `json:"home_directory"`
 	// POSTGRESQL
 	PGConnectionLimit int `json:"pg_connection_limit"`
 	PGPagesPerTask    int `json:"pg_pages_per_task"`
@@ -53,6 +54,10 @@ func (s Settings) applySQL() string {
 	}
 	if s.PGPagesPerTask != 0 {
 		sql = append(sql, fmt.Sprintf("SET pg_pages_per_task = %d;", s.PGPagesPerTask))
+	}
+	if s.HomeDirectory != "" {
+		sql = append(sql, fmt.Sprintf("SET home_directory = '%s';", s.HomeDirectory))
+		sql = append(sql, fmt.Sprintf("SET secret_directory = '%s/.stored_secrets';", s.HomeDirectory))
 	}
 	sql = append(sql, "PRAGMA enable_checkpoint_on_shutdown; PRAGMA force_checkpoint;")
 

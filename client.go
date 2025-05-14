@@ -340,16 +340,18 @@ func (c *Client) parseMultipartResponse(resp *http.Response) (*types.Response, e
 		case strings.HasPrefix(cp, "application/vnd.apache.arrow.stream") && format == "table":
 			t := db.NewArrowTable()
 			t.SetInfo(p.Header.Get("X-Hugr-Table-Info"))
-			reader, err := ipc.NewReader(p, ipc.WithAllocator(pool))
-			if err != nil {
-				return nil, fmt.Errorf("creating arrow reader: %w", err)
-			}
-			for reader.Next() {
-				rec := reader.Record()
-				if rec == nil {
-					continue
+			if p.Header.Get("X-Hugr-Empty") != "true" {
+				reader, err := ipc.NewReader(p, ipc.WithAllocator(pool))
+				if err != nil {
+					return nil, fmt.Errorf("creating arrow reader: %w", err)
 				}
-				t.Append(rec)
+				for reader.Next() {
+					rec := reader.Record()
+					if rec == nil {
+						continue
+					}
+					t.Append(rec)
+				}
 			}
 			err = addResponseData(r, part, path, t)
 			if err != nil {

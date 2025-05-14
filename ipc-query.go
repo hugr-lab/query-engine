@@ -163,18 +163,30 @@ func writeArrowTableToIPC(w *multipart.Writer, aloc memory.Allocator, path strin
 	hdr.Set("X-Hugr-Part-Type", "data")
 	hdr.Set("X-Hugr-Path", path)
 	hdr.Set("X-Hugr-Format", "table")
-	hdr.Set("X-Hugr-Chunk", strconv.Itoa(data.NumChunks()))
-	hdr.Set("X-Hugr-Table-Info", data.Info())
-	meta := map[string]string{
-		"chunks": strconv.Itoa(data.NumChunks()),
+	if data == nil || data.NumChunks() == 0 {
+		hdr.Set("X-Hugr-Empty", "true")
+		hdr.Set("X-Hugr-Chunk", "0")
+		hdr.Set("X-Hugr-Table-Info", "{}")
 	}
-	if gi, ok := geometryInfo(query.Field); ok {
-		hdr.Set("X-Hugr-Geometry-Fields", gi)
-		hdr.Set("X-Hugr-Geometry", "true")
+	var meta map[string]string
+	if data != nil && data.NumChunks() > 0 {
+		hdr.Set("X-Hugr-Chunk", strconv.Itoa(data.NumChunks()))
+		hdr.Set("X-Hugr-Table-Info", data.Info())
+		meta = map[string]string{
+			"chunks": strconv.Itoa(data.NumChunks()),
+		}
+		if gi, ok := geometryInfo(query.Field); ok {
+			hdr.Set("X-Hugr-Geometry-Fields", gi)
+			hdr.Set("X-Hugr-Geometry", "true")
+		}
 	}
 	pw, err := w.CreatePart(hdr)
 	if err != nil {
 		return err
+	}
+
+	if data == nil || data.NumChunks() == 0 {
+		return nil
 	}
 
 	iw := ipc.NewWriter(pw)
