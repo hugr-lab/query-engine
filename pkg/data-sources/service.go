@@ -10,6 +10,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/extension"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/http"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/postgres"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -124,6 +125,15 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 		return ErrDataSourceExists
 	}
 
+	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {
+		// add extension
+		source, err := s.extensionCatalog(ctx, name)
+		if err != nil {
+			return err
+		}
+		return s.catalogs.AddExtension(ctx, source)
+	}
+
 	// create data source catalog
 	c, err := s.dataSourceCatalog(ctx, name)
 	if err != nil {
@@ -131,17 +141,7 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 	}
 
 	// add catalog
-	err = s.catalogs.AddCatalog(ctx, name, c)
-	if err != nil {
-		return err
-	}
-
-	err = s.catalogs.RebuildSchema(ctx)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return s.catalogs.AddCatalog(ctx, name, c)
 }
 
 func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
@@ -158,6 +158,13 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 	}
 
 	// remove catalog
+	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {
+		err := s.catalogs.RemoveExtension(ctx, name)
+		if err != nil {
+			return err
+		}
+		return ds.Detach(ctx, db)
+	}
 	err := s.catalogs.RemoveCatalog(ctx, name)
 	if !errors.Is(err, catalogs.ErrCatalogNotFound) && err != nil {
 		return err
@@ -198,6 +205,8 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 		return duckdb.New(ds, attached)
 	case Http:
 		return http.New(ds, attached)
+	case Extension:
+		return extension.New(ds, attached)
 	default:
 		return nil, ErrUnknownDataSourceType
 	}
@@ -205,6 +214,25 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 
 func (s *Service) dataSourceCatalog(ctx context.Context, name string) (*catalogs.Catalog, error) {
 	ds := s.dataSources[name]
+	source, err := s.catalogSource(ctx, ds)
+	if err != nil {
+		return nil, err
+	}
+	def := ds.Definition()
+	return catalogs.NewCatalog(ctx, def.Name, def.Prefix, ds.Engine(), source, def.AsModule, ds.ReadOnly())
+}
+
+func (s *Service) extensionCatalog(ctx context.Context, name string) (*catalogs.Extension, error) {
+	ds := s.dataSources[name]
+	source, err := s.catalogSource(ctx, ds)
+	if err != nil {
+		return nil, err
+	}
+	def := ds.Definition()
+	return s.catalogs.NewExtension(ctx, def, source)
+}
+
+func (s *Service) catalogSource(ctx context.Context, ds Source) (sources.Source, error) {
 	var ss []sources.Source
 	def := ds.Definition()
 	for _, cs := range def.Sources {
@@ -231,7 +259,7 @@ func (s *Service) dataSourceCatalog(ctx context.Context, name string) (*catalogs
 	if len(ss) > 1 {
 		source = sources.MergeSource(ss...)
 	}
-	return catalogs.NewCatalog(ctx, def.Name, def.Prefix, ds.Engine(), source, def.AsModule, ds.ReadOnly())
+	return source, nil
 }
 
 func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers, params, body, jqq string) (any, error) {

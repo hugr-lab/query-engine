@@ -8,8 +8,8 @@ import (
 	_ "embed"
 )
 
-//go:embed assets/graphiql.html
-var graphiqlHTML string
+//go:embed assets/template.html
+var adminUISource string
 
 type Config struct {
 	Path string
@@ -18,7 +18,7 @@ type Config struct {
 func AdminUIHandler(config Config) (func(w http.ResponseWriter, r *http.Request), error) {
 	page, err := fromTemplate(map[string]any{
 		"graphQLPath": config.Path,
-	}, graphiqlHTML)
+	}, adminUISource)
 	if err != nil {
 		return nil, err
 	}

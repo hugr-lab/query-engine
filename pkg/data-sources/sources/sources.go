@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	Postgres types.DataSourceType = "postgres"
-	DuckDB   types.DataSourceType = "duckdb"
-	Http     types.DataSourceType = "http"
-	Runtime  types.DataSourceType = "runtime"
+	Postgres  types.DataSourceType = "postgres"
+	DuckDB    types.DataSourceType = "duckdb"
+	Http      types.DataSourceType = "http"
+	Runtime   types.DataSourceType = "runtime"
+	Extension types.DataSourceType = "extension"
 )
 
 type Source interface {
@@ -24,6 +25,11 @@ type Source interface {
 	ReadOnly() bool
 	Attach(ctx context.Context, db *db.Pool) error
 	Detach(ctx context.Context, db *db.Pool) error
+}
+
+// The data source is a catalog extension.
+type ExtensionSource interface {
+	IsExtension() bool
 }
 
 type SelfDescriber interface {

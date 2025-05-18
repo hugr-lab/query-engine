@@ -263,10 +263,80 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.Schema, error) {
 	return validator.ValidateSchemaDocument(doc)
 }
 
+// CompileExtension validates the given extension schema document against the base schema.
+// It checks for duplicate definitions, directive usage, and type compatibility.
+// It returns the validated extension schema document, a list of depended catalogs, and an error if any validation fails.
+func CompileExtension(schema *ast.Schema, extension *ast.SchemaDocument, opt Options) (*ast.Schema, *ast.SchemaDocument, []string, error) {
+	opt.catalog = base.CatalogDirective(opt.Name, opt.EngineType)
+
+	extSource := &ast.SchemaDocument{}
+	dependencies := make([]string, 0)
+
+	// rules:
+	// - extension definitions can't contain data objects except views
+	// - extension definitions can't contains modules, and functions
+	// - extension definitions can't contains system types
+	for _, def := range extension.Definitions {
+		if def.Kind == ast.Object {
+			if IsDataObject(def) {
+				info := DataObjectInfo(def)
+				if info.Type != ViewDataObject {
+					return nil, nil, nil, ErrorPosf(def.Position, "extension definition %s can't contain data objects", def.Name)
+				}
+				for _, d := range def.Directives.ForNames(base.DependencyDirectiveName) {
+					dn := directiveArgValue(d, "name")
+					if !slices.Contains(dependencies, dn) {
+						dependencies = append(dependencies, dn)
+					}
+				}
+			}
+			if ModuleRootInfo(def) != nil {
+				return nil, nil, nil, ErrorPosf(def.Position, "extension definition %s can't contain modules", def.Name)
+			}
+			// shouldn't refer to the base schema types
+		}
+		if IsScalarType(def.Name) {
+			return nil, nil, nil, ErrorPosf(def.Position, "extension definition %s can't contain system types", def.Name)
+		}
+		if IsSystemType(def) {
+			return nil, nil, nil, ErrorPosf(def.Position, "extension definition %s can't contain system types", def.Name)
+		}
+	}
+
+	//split to the schema extensions and extension data source schema
+	var ee ast.DefinitionList
+	for _, ext := range extension.Extensions {
+		if len(ext.Directives.ForNames(base.DependencyDirectiveName)) != 0 {
+			extSource.Extensions = append(extSource.Extensions, ext)
+			for _, d := range ext.Directives.ForNames(base.DependencyDirectiveName) {
+				dn := directiveArgValue(d, "name")
+				if !slices.Contains(dependencies, dn) {
+					dependencies = append(dependencies, dn)
+				}
+			}
+			continue
+		}
+		ee = append(ee, ext)
+	}
+	// remove duplicate dependency
+
+	extension.Extensions = ee
+	if len(extension.Definitions) == 0 {
+		return nil, extSource, dependencies, nil
+	}
+	schema, err := Compile(extension, opt)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(extSource.Extensions) != 0 {
+		return schema, extSource, nil, nil
+	}
+	return schema, nil, nil, nil
+}
+
 // graphql extensions can contains new types and fields
 // it can't add new directives to the existing types
 // fields can have only additional join/function_call/table_function_call_join directives
-// in the future can be added role based access control directives to the fields or types
 func AddExtensions(schema *ast.Schema, extension *ast.SchemaDocument) error {
 	// copy definitions
 	for _, def := range extension.Definitions {
@@ -287,7 +357,7 @@ func AddExtensions(schema *ast.Schema, extension *ast.SchemaDocument) error {
 		schema.PossibleTypes[def.Name] = append(schema.PossibleTypes[def.Name], def)
 	}
 
-	// copy extensions
+	// make a copy of definition, before change
 	for _, def := range extension.Extensions {
 		origin := schema.Types[def.Name]
 		if origin == nil {
@@ -299,7 +369,6 @@ func AddExtensions(schema *ast.Schema, extension *ast.SchemaDocument) error {
 		if origin.Kind != def.Kind {
 			return ErrorPosf(def.Position, "extended definition %s kind mismatch", def.Name)
 		}
-
 		err := extendObjectDefinition(SchemaDefs(schema), origin, def)
 		if err != nil {
 			return err

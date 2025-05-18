@@ -153,6 +153,11 @@ func validateObject(defs Definitions, def *ast.Definition, opt *Options) error {
 			if a.Value.Raw == "true" || required {
 				a.Value.Raw = "true"
 			}
+		case base.DependencyDirectiveName:
+			// extension object that has dependencies can be only a view
+			if objectType != objectViewDirectiveName {
+				return ErrorPosf(d.Position, "object %s should have @%s directive before @%s", def.Name, objectViewDirectiveName, d.Name)
+			}
 		case base.CatalogDirectiveName, base.OriginalNameDirectiveName:
 		default:
 			return ErrorPosf(d.Position, "object %s has unknown directive %s", def.Name, d.Name)
@@ -451,8 +456,10 @@ func extendObjectDefinition(defs Definitions, origin, from *ast.Definition) erro
 	if len(from.Interfaces) > 0 {
 		return ErrorPosf(from.Position, "can't extend object %s with interfaces", from.Name)
 	}
-	if len(from.Directives) > 0 {
-		return ErrorPosf(from.Position, "can't extend object %s with directives", from.Name)
+	for _, d := range from.Directives {
+		if d.Name != base.DependencyDirectiveName {
+			return ErrorPosf(from.Position, "can't extend object %s with directive %s", from.Name, d.Name)
+		}
 	}
 	for _, field := range from.Fields {
 		var err error
@@ -481,7 +488,67 @@ func extendObjectDefinition(defs Definitions, origin, from *ast.Definition) erro
 			return ErrorPosf(field.Position, "as a field %s only function calls or joins allowed", field.Name)
 		}
 		origin.Fields = append(origin.Fields, field)
+		sourceType := defs.ForName(field.Type.Name())
+		catalog := sourceType.Directives.ForName(base.CatalogDirectiveName)
+		if catalog == nil {
+			return ErrorPosf(field.Position, "object %s should have @%s directive", origin.Name, base.CatalogDirectiveName)
+		}
+		catalog = base.CatalogDirective(
+			directiveArgValue(catalog, "name"),
+			directiveArgValue(catalog, "engine"),
+		)
 		// add aggregation fields for object
+		if at := defs.ForName("_" + field.Type.Name() + AggregationSuffix); at != nil {
+			origin.Fields = append(origin.Fields, &ast.FieldDefinition{
+				Name:        field.Name + AggregationSuffix,
+				Type:        ast.NamedType(at.Name, CompiledPosName("extension")),
+				Arguments:   field.Arguments,
+				Description: "The aggregation for " + field.Name,
+				Directives:  ast.DirectiveList{aggQueryDirective(field, false), catalog},
+				Position:    CompiledPosName("extension"),
+			})
+			// add aggregation fields aggregation
+			if originAT := defs.ForName("_" + origin.Name + AggregationSuffix); originAT != nil {
+				originAT.Fields = append(originAT.Fields, &ast.FieldDefinition{
+					Name:        field.Name,
+					Type:        ast.NamedType(at.Name, CompiledPosName("extension")),
+					Arguments:   field.Arguments,
+					Description: "The aggregation for " + field.Name,
+					Directives: ast.DirectiveList{
+						aggObjectFieldAggregationDirective(origin.Fields[len(origin.Fields)-2]),
+						catalog},
+					Position: CompiledPosName("extension"),
+				})
+				// add sub aggregation
+				if at := defs.ForName("_" + sourceType.Name + AggregationSuffix + "_sub_aggregation"); at != nil && field.Type.NamedType == "" {
+					originAT.Fields = append(originAT.Fields, &ast.FieldDefinition{
+						Name:        field.Name + AggregationSuffix,
+						Type:        ast.NamedType(at.Name, CompiledPosName("extension")),
+						Arguments:   field.Arguments,
+						Description: "The aggregation for " + field.Name,
+						Directives: ast.DirectiveList{
+							aggObjectFieldAggregationDirective(origin.Fields[len(origin.Fields)-1]),
+							catalog,
+						},
+						Position: CompiledPosName("extension"),
+					})
+				}
+			}
+		}
+		// add bucket aggregation fields for object
+		if at := defs.ForName("_" + field.Type.Name() + AggregationSuffix + "_bucket"); at != nil {
+			origin.Fields = append(origin.Fields, &ast.FieldDefinition{
+				Name: field.Name + BucketAggregationSuffix,
+				Type: ast.ListType(
+					ast.NamedType(at.Name, CompiledPosName("extension")),
+					CompiledPosName("extension"),
+				),
+				Arguments:   field.Arguments,
+				Description: "The bucket aggregation for " + field.Name,
+				Directives:  ast.DirectiveList{aggQueryDirective(field, true), catalog},
+				Position:    compiledPos(),
+			})
+		}
 	}
 	return nil
 }

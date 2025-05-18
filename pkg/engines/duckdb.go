@@ -450,7 +450,7 @@ func (e DuckDB) ExtractNestedTypedValue(sql, path, t string) string {
 	case "timestamp":
 		return "try_cast(" + val + " AS TIMESTAMP)"
 	case "":
-		return sql
+		return val
 	}
 	return fmt.Sprintf("try_cast(%s AS %s)", val, t)
 }

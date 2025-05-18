@@ -201,14 +201,15 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 		}
 		_, ok := e.(engines.EngineAggregator)
 		// cast to general if needed
-		if (inGeneral || queryInGeneral || !ok || !isInCatalog) && isCaster {
+		// query not casted (!queryInGeneral), inCatalog or query run in general or engine is not aggregation and engine is caseter
+		if !queryInGeneral && (!ok || inGeneral) && isCaster {
 			queryInGeneral = true
 			node, err = castResultsNode(ctx, caster, node, false, false)
 			if err != nil {
 				return nil, false, err
 			}
 		}
-		if isInCatalog && queryInGeneral {
+		if queryInGeneral {
 			isInCatalog = false
 		}
 		queryNodes["aggregation"] = node
@@ -282,7 +283,7 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 			}
 			_, ok := e.(engines.EngineAggregator)
 			// cast to general if needed
-			if (inGeneral || queryInGeneral || !ok || !isInCatalog) && isCaster {
+			if !queryInGeneral && (inGeneral || !ok || !isInCatalog) && isCaster {
 				queryInGeneral = true
 				node, err = castResultsNode(ctx, caster, node, false, false)
 				if err != nil {
@@ -459,7 +460,7 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 		}
 		node = selectStatementNode(query, nodes, "_"+alias, false)
 		if !compiler.IsBucketAggregateQuery(query) {
-			return node, inGeneral, nil
+			return node, !isInCatalog, nil
 		}
 		unions.Add(node)
 	}
