@@ -1,0 +1,40 @@
+extend type Function {
+  test_get(name: String!, value: Int): test_result @module(name: "test")
+    @function(
+      name: "test_get", 
+      sql: """ 
+        http_data_source_request_scalar(
+                [$catalog], 
+                '/test_get', 'GET', '{}'::JSON, 
+                {
+                  name: [name],
+                  val: [value]
+                }::JSON, 
+                '{}'::JSON, 
+                '')::JSON
+      """,
+      json_cast: true
+    ) @library_function
+
+  test_post(name: String!, value: Int): test_result @module(name: "test")
+    @function(
+      name: "test_post", 
+      sql: """ 
+        http_data_source_request_scalar(
+                [$catalog], 
+                '/test_post', 'POST', '{}'::JSON, 
+                '{}'::JSON, 
+                {
+                  name: [name],
+                  val: [value]
+                }::JSON, 
+                '')::JSON
+      """,
+      json_cast: true
+    ) @library_function
+}
+
+type test_result {
+  name: String
+  value: Int @field_source(field: "val")
+}

@@ -492,9 +492,9 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 			return Ident(f.Alias) + "::JSON", nil
 		}
 		if f.Definition.Type.NamedType == "" && f.Directives.ForName("unnest") == nil {
-			return "list_transform(" + Ident(f.Alias) + "," + Ident(f.Alias) + "->" + JsonToStruct(f, "", false) + ")", nil
+			return "list_transform(" + Ident(f.Alias) + "," + Ident(f.Alias) + "->" + JsonToStruct(f, "", false, false) + ")", nil
 		}
-		return JsonToStruct(f, "", false), nil
+		return JsonToStruct(f, "", false, false), nil
 	}
 
 	if f.Definition.Type.Name() == compiler.JSONTypeName {
