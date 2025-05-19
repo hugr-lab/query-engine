@@ -14,7 +14,7 @@ extend type Function {
                 '')::JSON
       """,
       json_cast: true
-    ) @library_function
+    ) 
 
   test_post(name: String!, value: Int): test_result @module(name: "test")
     @function(
@@ -31,7 +31,7 @@ extend type Function {
                 '')::JSON
       """,
       json_cast: true
-    ) @library_function
+    )
 }
 
 type test_result {

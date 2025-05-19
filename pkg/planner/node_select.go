@@ -559,6 +559,9 @@ func subDataQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 		if len(fInfo.ArgumentMap()) != 0 && qCatalog == info.Catalog {
 			return nil, false, nil
 		}
+		if len(fInfo.ArgumentMap()) != 0 && qCatalog != info.Catalog {
+			return nil, true, nil
+		}
 		_, ok := e.(engines.EngineQueryScanner)
 		if ok && len(fInfo.ArgumentMap()) != 0 {
 			return nil, false, errors.New("pass arguments to function call (arguments mapping) is not supported by query engine")

@@ -120,7 +120,7 @@ func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
 
 // MergeSchema merges the given schemas to one common schema.
 // Not system type names should be unique, except module query/mutation root objects.
-func MergeSchema(schemas ...*ast.Schema) (*ast.Schema, error) {
+func MergeSchema(schemas ...*ast.Schema) (*ast.SchemaDocument, error) {
 	doc := &ast.SchemaDocument{}
 	for _, source := range base.Sources() {
 		sd, err := parser.ParseSchema(source)
@@ -260,7 +260,7 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.Schema, error) {
 		})
 	}
 
-	return validator.ValidateSchemaDocument(doc)
+	return doc, nil
 }
 
 // CompileExtension validates the given extension schema document against the base schema.
@@ -337,45 +337,44 @@ func CompileExtension(schema *ast.Schema, extension *ast.SchemaDocument, opt Opt
 // graphql extensions can contains new types and fields
 // it can't add new directives to the existing types
 // fields can have only additional join/function_call/table_function_call_join directives
-func AddExtensions(schema *ast.Schema, extension *ast.SchemaDocument) error {
+func AddExtensions(origin *ast.SchemaDocument, extension *ast.SchemaDocument) (*ast.Schema, error) {
 	// copy definitions
 	for _, def := range extension.Definitions {
-		if _, ok := schema.Types[def.Name]; ok {
-			return ErrorPosf(def.Position, "definition %s already exists", def.Name)
+		if origin.Definitions.ForName(def.Name) != nil {
+			return nil, ErrorPosf(def.Position, "definition %s already exists", def.Name)
 		}
 		if len(def.Directives) != 0 {
-			return ErrorPosf(def.Position, "definition %s shouldn't have any directive", def.Name)
+			return nil, ErrorPosf(def.Position, "definition %s shouldn't have any directive", def.Name)
 		}
 		if def.Kind != ast.Object && def.Kind != ast.InputObject {
-			return ErrorPosf(def.Position, "definition %s should be object or input object", def.Name)
+			return nil, ErrorPosf(def.Position, "definition %s should be object or input object", def.Name)
 		}
-		err := validateDefinition(SchemaDefs(schema), def, &Options{})
+		err := validateDefinition(origin.Definitions, def, &Options{})
 		if err != nil {
-			return err
+			return nil, err
 		}
-		schema.Types[def.Name] = def
-		schema.PossibleTypes[def.Name] = append(schema.PossibleTypes[def.Name], def)
+		origin.Definitions = append(origin.Definitions, def)
 	}
 
 	// make a copy of definition, before change
 	for _, def := range extension.Extensions {
-		origin := schema.Types[def.Name]
+		originDef := origin.Definitions.ForName(def.Name)
 		if origin == nil {
-			return ErrorPosf(def.Position, "extended definition %s not found", def.Name)
+			return nil, ErrorPosf(def.Position, "extended definition %s not found", def.Name)
 		}
-		if origin.Kind != ast.Object {
-			return ErrorPosf(def.Position, "extended definition %s should be object", def.Name)
+		if originDef.Kind != ast.Object {
+			return nil, ErrorPosf(def.Position, "extended definition %s should be object", def.Name)
 		}
-		if origin.Kind != def.Kind {
-			return ErrorPosf(def.Position, "extended definition %s kind mismatch", def.Name)
+		if originDef.Kind != def.Kind {
+			return nil, ErrorPosf(def.Position, "extended definition %s kind mismatch", def.Name)
 		}
-		err := extendObjectDefinition(SchemaDefs(schema), origin, def)
+		err := extendObjectDefinition(origin, originDef, def)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return validator.ValidateSchemaDocument(origin)
 }
 
 func addPrefix(schema *ast.SchemaDocument, opt *Options) *ast.SchemaDocument {

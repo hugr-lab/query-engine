@@ -208,7 +208,7 @@ func (s *Service) RebuildSchema(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) mergeSchema() (*ast.Schema, error) {
+func (s *Service) mergeSchema() (*ast.SchemaDocument, error) {
 	var cs []*ast.Schema
 	for _, c := range s.catalogs {
 		cs = append(cs, c.Schema())
@@ -223,12 +223,12 @@ func (s *Service) mergeSchema() (*ast.Schema, error) {
 }
 
 func (s *Service) rebuildSchema(ctx context.Context) (*ast.Schema, error) {
-	schema, err := s.mergeSchema()
+	schemaDoc, err := s.mergeSchema()
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.loadExtensions(ctx, schema)
+	schema, err := s.loadExtensions(ctx, schemaDoc)
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +236,7 @@ func (s *Service) rebuildSchema(ctx context.Context) (*ast.Schema, error) {
 	return schema, nil
 }
 
-func (s *Service) loadExtensions(ctx context.Context, schema *ast.Schema) error {
+func (s *Service) loadExtensions(ctx context.Context, schemaDoc *ast.SchemaDocument) (*ast.Schema, error) {
 	doc := &ast.SchemaDocument{}
 	for _, ext := range s.extensions {
 		if sd := ext.Source(); sd != nil {
@@ -244,5 +244,5 @@ func (s *Service) loadExtensions(ctx context.Context, schema *ast.Schema) error 
 		}
 	}
 
-	return compiler.AddExtensions(schema, doc)
+	return compiler.AddExtensions(schemaDoc, doc)
 }
