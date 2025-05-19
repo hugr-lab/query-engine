@@ -450,7 +450,7 @@ func (e DuckDB) ExtractNestedTypedValue(sql, path, t string) string {
 	case "timestamp":
 		return "try_cast(" + val + " AS TIMESTAMP)"
 	case "":
-		return sql
+		return val
 	}
 	return fmt.Sprintf("try_cast(%s AS %s)", val, t)
 }
@@ -801,12 +801,12 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 	return "{" + strings.Join(fields, ",") + "}"
 }
 
-func JsonToStruct(field *ast.Field, prefix string, useNativeTypes bool) string {
+func JsonToStruct(field *ast.Field, prefix string, useNativeTypes bool, byFieldFieldSource bool) string {
 	fieldName := Ident(field.Alias)
 	if prefix != "" {
 		fieldName = prefix + "." + fieldName
 	}
-	structStr := jsonStructRecursive(field, useNativeTypes)
+	structStr := jsonStructRecursive(field, useNativeTypes, byFieldFieldSource)
 	return "json_transform(" + fieldName + ", '" + structStr + "')"
 }
 
@@ -830,25 +830,34 @@ func extractStructFieldByPath(path string) string {
 	return strings.Join(pathValues, "")
 }
 
-func jsonStructRecursive(field *ast.Field, useNativeTypes bool) string {
+func jsonStructRecursive(field *ast.Field, useNativeTypes bool, byFieldSource bool) string {
 	var fields []string
 	for _, f := range SelectedFields(field.SelectionSet) {
 		leftBracket, rightBracket := "", ""
 		if f.Field.Definition.Type.NamedType == "" {
 			leftBracket, rightBracket = "[", "]"
 		}
+		fn := f.Field.Alias
+		if byFieldSource {
+			fi := compiler.FieldInfo(f.Field)
+			if fi != nil {
+				fn = fi.FieldSourceName("", false)
+			} else {
+				fn = f.Field.Name
+			}
+		}
 		if t, ok := compiler.ScalarTypes[f.Field.Definition.Type.Name()]; ok {
 			tn := t.JSONToStructType
 			if useNativeTypes {
 				tn = t.JSONNativeType
 			}
-			fields = append(fields, "\""+f.Field.Alias+"\":"+
+			fields = append(fields, "\""+fn+"\":"+
 				leftBracket+"\""+tn+"\""+rightBracket,
 			)
 			continue
 		}
-		fields = append(fields, "\""+f.Field.Alias+"\":"+
-			leftBracket+jsonStructRecursive(f.Field, useNativeTypes)+rightBracket,
+		fields = append(fields, "\""+fn+"\":"+
+			leftBracket+jsonStructRecursive(f.Field, useNativeTypes, byFieldSource)+rightBracket,
 		)
 	}
 	return "{" + strings.Join(fields, ",") + "}"

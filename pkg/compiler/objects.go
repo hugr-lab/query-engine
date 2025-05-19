@@ -153,6 +153,11 @@ func validateObject(defs Definitions, def *ast.Definition, opt *Options) error {
 			if a.Value.Raw == "true" || required {
 				a.Value.Raw = "true"
 			}
+		case base.DependencyDirectiveName:
+			// extension object that has dependencies can be only a view
+			if objectType != objectViewDirectiveName {
+				return ErrorPosf(d.Position, "object %s should have @%s directive before @%s", def.Name, objectViewDirectiveName, d.Name)
+			}
 		case base.CatalogDirectiveName, base.OriginalNameDirectiveName:
 		default:
 			return ErrorPosf(d.Position, "object %s has unknown directive %s", def.Name, d.Name)
@@ -444,26 +449,29 @@ func isM2MTable(def *ast.Definition) bool {
 	return false
 }
 
-func extendObjectDefinition(defs Definitions, origin, from *ast.Definition) error {
+func extendObjectDefinition(schema *ast.SchemaDocument, origin, from *ast.Definition) error {
 	if origin.Name != from.Name {
 		return ErrorPosf(from.Position, "can't extend object %s with %s", origin.Name, from.Name)
 	}
 	if len(from.Interfaces) > 0 {
 		return ErrorPosf(from.Position, "can't extend object %s with interfaces", from.Name)
 	}
-	if len(from.Directives) > 0 {
-		return ErrorPosf(from.Position, "can't extend object %s with directives", from.Name)
+	for _, d := range from.Directives {
+		if d.Name != base.DependencyDirectiveName {
+			return ErrorPosf(from.Position, "can't extend object %s with directive %s", from.Name, d.Name)
+		}
 	}
+	var catalog *ast.Directive
 	for _, field := range from.Fields {
 		var err error
 		switch {
 		case IsSubQuery(field):
-			err = validateJoin(defs, origin, field)
+			err = validateJoin(schema.Definitions, origin, field)
 			if err != nil {
 				return err
 			}
 			// add arguments to field
-			def := defs.ForName(field.Type.Name())
+			def := schema.Definitions.ForName(field.Type.Name())
 			if def == nil {
 				return ErrorPosf(field.Position, "subquery %s not found", field.Type.Name())
 			}
@@ -472,16 +480,114 @@ func extendObjectDefinition(defs Definitions, origin, from *ast.Definition) erro
 				return ErrorPosf(field.Position, "subquery %s should be a data object", field.Type.Name())
 			}
 			field.Arguments = info.subQueryArguments()
+			catalog = def.Directives.ForName(base.CatalogDirectiveName)
+			if catalog == nil {
+				return ErrorPosf(field.Position, "object %s should have @%s directive", origin.Name, base.CatalogDirectiveName)
+			}
+			catalog = base.CatalogDirective(
+				directiveArgValue(catalog, "name"),
+				directiveArgValue(catalog, "engine"),
+			)
 		case IsFunctionCall(field):
-			err = validateFunctionCall(defs, origin, field, true)
+			err = validateFunctionCall(schema.Definitions, origin, field, true)
 			if err != nil {
 				return err
 			}
+			catalog = field.Directives.ForName(base.CatalogDirectiveName)
 		default:
 			return ErrorPosf(field.Position, "as a field %s only function calls or joins allowed", field.Name)
 		}
+		newFieldIdx := len(origin.Fields)
 		origin.Fields = append(origin.Fields, field)
+		opt := &Options{}
+		if catalog != nil {
+			opt.catalog = catalog
+		}
 		// add aggregation fields for object
+		// skip if field returns array
+		var aggTypeName string
+		if field.Type.NamedType != "" && IsScalarType(field.Type.Name()) {
+			aggTypeName = ScalarTypes[field.Type.Name()].AggType
+		}
+		if !IsScalarType(field.Type.Name()) {
+			def := schema.Definitions.ForName(field.Type.Name())
+			if def == nil {
+				return ErrorPosf(field.Position, "extension: object %s not found", field.Type.Name())
+			}
+			aggTypeName = objectAggregationTypeName(schema, opt, def, false)
+		}
+		if aggTypeName == "" {
+			continue
+		}
+		if field.Type.NamedType == "" {
+			origin.Fields = append(origin.Fields, &ast.FieldDefinition{
+				Name:        field.Name + AggregationSuffix,
+				Type:        ast.NamedType(aggTypeName, CompiledPosName("extension")),
+				Arguments:   field.Arguments,
+				Description: "The aggregation for " + field.Name,
+				Directives:  ast.DirectiveList{aggQueryDirective(field, false), catalog},
+				Position:    CompiledPosName("extension"),
+			})
+		}
+		// add aggregation fields aggregation
+		originCatalog := origin.Directives.ForName(base.CatalogDirectiveName)
+		originAggTypeName := objectAggregationTypeName(schema, &Options{catalog: originCatalog}, origin, false)
+		if originAT := schema.Definitions.ForName(originAggTypeName); originAT != nil {
+			originAT.Fields = append(originAT.Fields, &ast.FieldDefinition{
+				Name:        field.Name,
+				Type:        ast.NamedType(aggTypeName, CompiledPosName("extension")),
+				Arguments:   field.Arguments,
+				Description: "The aggregation for " + field.Name,
+				Directives: ast.DirectiveList{
+					aggObjectFieldAggregationDirective(origin.Fields[newFieldIdx]),
+					catalog},
+				Position: CompiledPosName("extension"),
+			})
+			// add sub aggregation
+			if field.Type.NamedType == "" {
+				var subAggTypeName string
+				if IsScalarType(field.Type.Name()) {
+					subAggTypeName = subAggregationTypes[field.Type.Name()]
+				}
+				if !IsScalarType(field.Type.Name()) {
+					subAggTypeName = objectAggregationTypeName(schema, &Options{
+						catalog: catalog,
+					}, schema.Definitions.ForName(aggTypeName), false)
+				}
+				if subAggTypeName != "" {
+					originAT.Fields = append(originAT.Fields, &ast.FieldDefinition{
+						Name:        field.Name + AggregationSuffix,
+						Type:        ast.NamedType(subAggTypeName, CompiledPosName("extension")),
+						Arguments:   field.Arguments,
+						Description: "The aggregation for " + field.Name,
+						Directives: ast.DirectiveList{
+							aggObjectFieldAggregationDirective(origin.Fields[newFieldIdx+1]),
+							catalog,
+						},
+						Position: CompiledPosName("extension"),
+					})
+				}
+			}
+		}
+		if IsScalarType(field.Type.Name()) || field.Type.NamedType != "" {
+			continue
+		}
+		// add bucket aggregation fields for object
+		aggTypeName = objectAggregationTypeName(schema, opt, schema.Definitions.ForName(field.Type.Name()), true)
+		if aggTypeName == "" {
+			continue
+		}
+		origin.Fields = append(origin.Fields, &ast.FieldDefinition{
+			Name: field.Name + BucketAggregationSuffix,
+			Type: ast.ListType(
+				ast.NamedType(aggTypeName, CompiledPosName("extension")),
+				CompiledPosName("extension"),
+			),
+			Arguments:   field.Arguments,
+			Description: "The bucket aggregation for " + field.Name,
+			Directives:  ast.DirectiveList{aggQueryDirective(field, true), catalog},
+			Position:    compiledPos(),
+		})
 	}
 	return nil
 }

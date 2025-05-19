@@ -3,20 +3,20 @@ package compiler
 import "github.com/vektah/gqlparser/v2/ast"
 
 const (
-	QueryTimeJoinFieldName  = "_join"
-	QueryTimeJoinObjectName = "_join"
+	QueryTimeJoinsFieldName = "_join"
+	QueryTimeJoinsTypeName  = "_join"
 
 	QueryTimeSpatialFieldName = "_spatial"
-	QueryTimeSpatialObject    = "_spatial"
+	QueryTimeSpatialTypeName  = "_spatial"
 )
 
 func spatialJoinObject(schema *ast.SchemaDocument) *ast.Definition {
-	if def := schema.Definitions.ForName(QueryTimeSpatialObject); def != nil {
+	if def := schema.Definitions.ForName(QueryTimeSpatialTypeName); def != nil {
 		return def
 	}
 	def := &ast.Definition{
 		Kind:        ast.Object,
-		Name:        QueryTimeSpatialObject,
+		Name:        QueryTimeSpatialTypeName,
 		Description: "Spatial query object",
 		Position:    &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},
 		Directives:  ast.DirectiveList{systemDirective},
@@ -26,12 +26,12 @@ func spatialJoinObject(schema *ast.SchemaDocument) *ast.Definition {
 }
 
 func joinObject(schema *ast.SchemaDocument) *ast.Definition {
-	if def := schema.Definitions.ForName(QueryTimeJoinObjectName); def != nil {
+	if def := schema.Definitions.ForName(QueryTimeJoinsTypeName); def != nil {
 		return def
 	}
 	def := &ast.Definition{
 		Kind:        ast.Object,
-		Name:        QueryTimeJoinObjectName,
+		Name:        QueryTimeJoinsTypeName,
 		Description: "Join query object",
 		Position:    &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},
 		Directives:  ast.DirectiveList{systemDirective},
@@ -41,10 +41,10 @@ func joinObject(schema *ast.SchemaDocument) *ast.Definition {
 }
 
 func addJoinsQueryFields(schema *ast.SchemaDocument, def *ast.Definition) {
-	join := schema.Definitions.ForName(QueryTimeJoinObjectName)
+	join := schema.Definitions.ForName(QueryTimeJoinsTypeName)
 	if join != nil {
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
-			Name:        QueryTimeJoinFieldName,
+			Name:        QueryTimeJoinsFieldName,
 			Description: "field for joining",
 			Arguments: ast.ArgumentDefinitionList{
 				{
@@ -54,7 +54,7 @@ func addJoinsQueryFields(schema *ast.SchemaDocument, def *ast.Definition) {
 					Position:    compiledPos(),
 				},
 			},
-			Type:     ast.NamedType(QueryTimeJoinObjectName, compiledPos()),
+			Type:     ast.NamedType(QueryTimeJoinsTypeName, compiledPos()),
 			Position: compiledPos(),
 		})
 	}
@@ -86,7 +86,7 @@ func addJoinsQueryFields(schema *ast.SchemaDocument, def *ast.Definition) {
 				Position:    compiledPos(),
 			},
 		},
-		Type:     ast.NamedType(QueryTimeSpatialObject, compiledPos()),
+		Type:     ast.NamedType(QueryTimeSpatialTypeName, compiledPos()),
 		Position: compiledPos(),
 	})
 }

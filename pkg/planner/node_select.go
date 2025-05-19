@@ -559,6 +559,9 @@ func subDataQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 		if len(fInfo.ArgumentMap()) != 0 && qCatalog == info.Catalog {
 			return nil, false, nil
 		}
+		if len(fInfo.ArgumentMap()) != 0 && qCatalog != info.Catalog {
+			return nil, true, nil
+		}
 		_, ok := e.(engines.EngineQueryScanner)
 		if ok && len(fInfo.ArgumentMap()) != 0 {
 			return nil, false, errors.New("pass arguments to function call (arguments mapping) is not supported by query engine")
@@ -1136,7 +1139,7 @@ func splitByQueryParts(_ context.Context, defs compiler.DefinitionsSource, query
 			qp.subQueries = append(qp.subQueries, field.Field)
 		case compiler.IsJoinSubquery(field.Field):
 			qp.subQueries = append(qp.subQueries, field.Field)
-		case field.Field.Name == compiler.QueryTimeJoinFieldName:
+		case field.Field.Name == compiler.QueryTimeJoinsFieldName:
 			queryTimeJoins = append(queryTimeJoins, field.Field)
 		case field.Field.Name == compiler.QueryTimeSpatialFieldName:
 			queryTimeSpatial = append(queryTimeSpatial, field.Field)
@@ -1222,7 +1225,7 @@ func splitByQueryParts(_ context.Context, defs compiler.DefinitionsSource, query
 }
 
 func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *ast.Field, vars map[string]any) (*ast.Field, bool, error) {
-	if joinQuery.Name != compiler.QueryTimeJoinFieldName {
+	if joinQuery.Name != compiler.QueryTimeJoinsFieldName {
 		return nil, false, errors.New("field is not join")
 	}
 	// 1. create copy of join field
@@ -1351,12 +1354,12 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 		return nil, false, errors.New("field is not spatial query")
 	}
 	def := defs.ForName(query.Definition.Type.Name())
-	joinField := def.Fields.ForName(compiler.QueryTimeJoinFieldName)
+	joinField := def.Fields.ForName(compiler.QueryTimeJoinsFieldName)
 	if joinField == nil {
 		return nil, false, errors.New("join field not found")
 	}
 
-	joinObject := defs.ForName(compiler.QueryTimeJoinObjectName)
+	joinObject := defs.ForName(compiler.QueryTimeJoinsTypeName)
 	if joinObject == nil {
 		return nil, false, errors.New("join object not found")
 	}
@@ -1531,7 +1534,7 @@ func referencesFields(defs compiler.DefinitionsSource, query *ast.Field) (fieldL
 			return nil, errors.New("function call info not found")
 		}
 		refFields = fc.ReferencesFields()
-	case query.ObjectDefinition.Name == compiler.QueryTimeJoinObjectName:
+	case query.ObjectDefinition.Name == compiler.QueryTimeJoinsTypeName:
 		a := query.Arguments.ForName("fields")
 		if a == nil {
 			return nil, errors.New("fields argument is required")
@@ -1623,7 +1626,7 @@ func sourceFields(defs compiler.DefinitionsSource, def *ast.Definition, query *a
 		}
 		ff := ri.SourceFields()
 		fieldNames = ff
-	case query.Name == compiler.QueryTimeJoinFieldName:
+	case query.Name == compiler.QueryTimeJoinsFieldName:
 		a := query.Arguments.ForName("fields")
 		if a == nil {
 			return nil, errors.New("fields argument is required")

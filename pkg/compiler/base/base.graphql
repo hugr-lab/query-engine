@@ -33,6 +33,13 @@ directive @table(
 directive @view(name: String!, sql: String) on OBJECT
 """ The arguments for the view directive defines input name to request data """
 directive @args(name: String!, required: Boolean = false) on OBJECT
+
+# Add list of dependencies (data sources) to the views or objects it is used in.
+# This directive is repeatable, allowing multiple dependencies to be specified for a single object.
+directive @dependency(
+	name: String!
+) repeatable on OBJECT
+
 """ The argument is named """
 directive @named(name: String) on INPUT_FIELD_DEFINITION 
 

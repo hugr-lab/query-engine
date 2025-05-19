@@ -5,6 +5,7 @@ import "github.com/vektah/gqlparser/v2/ast"
 const (
 	CatalogDirectiveName    = "catalog"
 	DeprecatedDirectiveName = "deprecated"
+	DependencyDirectiveName = "dependency" // dependencies of the catalogs
 )
 
 func CatalogDirective(catalog string, engine string) *ast.Directive {

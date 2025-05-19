@@ -3,10 +3,12 @@ package hugr
 import (
 	"context"
 	"errors"
+	"sort"
 
 	"log"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/types"
 )
 
@@ -17,6 +19,7 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 			core {
 				data_sources(filter:{disabled:{eq: false}}){
 					name
+					type
 				}
 			}
 		}`, nil)
@@ -33,12 +36,29 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 		return err
 	}
 
+	// load first data sources than extensions
+	sort.Slice(data, func(i, j int) bool {
+		if data[i].Type == data[j].Type {
+			return data[i].Name < data[j].Name
+		}
+		if data[i].Type == sources.Extension {
+			return false
+		}
+		if data[j].Type == sources.Extension {
+			return true
+		}
+		return data[i].Name < data[j].Name
+	})
 	for _, ds := range data {
 		err := s.LoadDataSource(ctx, ds.Name)
 		if err != nil {
 			log.Printf("ERR: failed to load datasource %s: %v", ds.Name, err)
 		}
+		if err == nil {
+			log.Printf("INFO: loaded datasource %s", ds.Name)
+		}
 	}
+
 	return nil
 }
 
