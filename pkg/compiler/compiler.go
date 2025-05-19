@@ -139,7 +139,7 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.SchemaDocument, error) {
 			}
 			// copy joins and spatial fields
 			if def.Kind == ast.Object &&
-				(strings.HasPrefix(def.Name, QueryTimeJoinObjectName) || strings.HasPrefix(def.Name, QueryTimeSpatialObject)) {
+				(strings.HasPrefix(def.Name, QueryTimeJoinsTypeName) || strings.HasPrefix(def.Name, QueryTimeSpatialTypeName)) {
 				if doc.Definitions.ForName(def.Name) == nil {
 					doc.Definitions = append(doc.Definitions, def)
 					continue
@@ -437,8 +437,8 @@ func addAggregationQueries(schema *ast.SchemaDocument, opt *Options) {
 	for _, def := range schema.Definitions {
 		mInfo := ModuleRootInfo(def)
 		if !IsDataObject(def) && mInfo == nil &&
-			def.Name != QueryTimeJoinObjectName &&
-			def.Name != QueryTimeSpatialObject {
+			def.Name != QueryTimeJoinsTypeName &&
+			def.Name != QueryTimeSpatialTypeName {
 			continue
 		}
 		if mInfo != nil && mInfo.Type != ModuleQuery && mInfo.Type != ModuleFunction {

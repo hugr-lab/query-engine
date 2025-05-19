@@ -187,7 +187,7 @@ func (f *Field) IsNotDBField() bool {
 		f.def.Directives.ForName(functionCallDirectiveName) != nil ||
 		f.def.Directives.ForName(functionCallTableJoinDirectiveName) != nil ||
 		f.def.Directives.ForName(JoinDirectiveName) != nil ||
-		f.def.Name == QueryTimeJoinFieldName ||
+		f.def.Name == QueryTimeJoinsFieldName ||
 		f.def.Name == QueryTimeSpatialFieldName
 }
 
