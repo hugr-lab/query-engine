@@ -18,6 +18,7 @@ type catalog_sources @module(name: "core")
   - duckdb - accepts path to the duckdb database file
   - postgres - accepts connection string to the postgres database
   - http - accepts uri to the open-api specification of the http web service
+  - extension - extents the common schema to add fields (joins and function calls) to the data objects
 """
 type data_sources @module(name: "core") 
   @table(name: "data_sources") {
