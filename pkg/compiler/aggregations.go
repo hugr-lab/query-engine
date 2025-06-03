@@ -205,6 +205,10 @@ func objectAggregationTypeName(schema *ast.SchemaDocument, opt *Options, def *as
 	if def.Name == QueryTimeSpatialTypeName {
 		typeName = QueryTimeSpatialTypeName + AggregationSuffix
 	}
+	if def.Name == QueryTimeJoinsTypeName+AggregationSuffix ||
+		def.Name == QueryTimeSpatialTypeName+AggregationSuffix {
+		return ""
+	}
 	aggType := schema.Definitions.ForName(typeName)
 	if aggType != nil {
 		return typeName

@@ -12,6 +12,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/extension"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/http"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/postgres"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -203,6 +204,8 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 		return postgres.New(ds, attached)
 	case DuckDB:
 		return duckdb.New(ds, attached)
+	case MySQL:
+		return mysql.New(ds, attached)
 	case Http:
 		return http.New(ds, attached)
 	case Extension:

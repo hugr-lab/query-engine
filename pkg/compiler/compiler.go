@@ -140,6 +140,9 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.SchemaDocument, error) {
 			// copy joins and spatial fields
 			if def.Kind == ast.Object &&
 				(strings.HasPrefix(def.Name, QueryTimeJoinsTypeName) || strings.HasPrefix(def.Name, QueryTimeSpatialTypeName)) {
+				if len(def.Fields) == 0 {
+					continue
+				}
 				if doc.Definitions.ForName(def.Name) == nil {
 					doc.Definitions = append(doc.Definitions, def)
 					continue
@@ -359,7 +362,7 @@ func AddExtensions(origin *ast.SchemaDocument, extension *ast.SchemaDocument) (*
 	// make a copy of definition, before change
 	for _, def := range extension.Extensions {
 		originDef := origin.Definitions.ForName(def.Name)
-		if origin == nil {
+		if originDef == nil {
 			return nil, ErrorPosf(def.Position, "extended definition %s not found", def.Name)
 		}
 		if originDef.Kind != ast.Object {
@@ -414,6 +417,10 @@ func addReferencesQuery(schema *ast.SchemaDocument, opt *Options) {
 func addQueryFields(schema *ast.SchemaDocument) {
 	for _, def := range schema.Definitions {
 		if !IsDataObject(def) {
+			continue
+		}
+		if d := def.Directives.ForName(objectTableDirectiveName); d != nil &&
+			directiveArgValue(d, "is_m2m") == "true" {
 			continue
 		}
 		addJoinsQueryFields(schema, def)

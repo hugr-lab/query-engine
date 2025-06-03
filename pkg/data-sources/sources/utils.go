@@ -23,6 +23,7 @@ var (
 	ErrDataSourceAttachedWithDifferentType = errors.New("data source already attached with different type exists")
 	ErrEmptyQuery                          = errors.New("empty query")
 	ErrQueryParsingFailed                  = errors.New("query parsing failed")
+	ErrInvalidDataSourcePath               = errors.New("invalid data source path")
 )
 
 func CheckDBExists(ctx context.Context, db *db.Pool, name string, dsType types.DataSourceType) error {

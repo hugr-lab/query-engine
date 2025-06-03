@@ -55,6 +55,8 @@ func ParseIntervalValue(v any) (time.Duration, error) {
 		return d, nil
 	case int:
 		return time.Duration(v) * time.Second, nil
+	case int64:
+		return time.Duration(v) * time.Second, nil
 	case time.Duration:
 		return v, nil
 	case Interval:

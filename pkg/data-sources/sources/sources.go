@@ -12,6 +12,7 @@ import (
 const (
 	Postgres  types.DataSourceType = "postgres"
 	DuckDB    types.DataSourceType = "duckdb"
+	MySQL     types.DataSourceType = "mysql"
 	Http      types.DataSourceType = "http"
 	Runtime   types.DataSourceType = "runtime"
 	Extension types.DataSourceType = "extension"

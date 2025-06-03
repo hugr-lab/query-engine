@@ -657,7 +657,22 @@ func (m *Mutation) SelectByPKQuery(query *ast.Field) *ast.Field {
 	if qm == nil {
 		return nil
 	}
-	qd := qm.Fields.ForName(m.ObjectName + ObjectQueryByPKSuffix)
+	var qn string
+	for _, d := range m.ObjectDefinition.Directives.ForNames(queryDirectiveName) {
+		if directiveArgValue(d, "type") != queryTypeTextSelectOne {
+			continue
+		}
+		name := directiveArgValue(d, "name")
+		if name == "" || !strings.HasSuffix(name, ObjectQueryByPKSuffix) {
+			continue
+		}
+		qn = name
+		break
+	}
+	if qn == "" {
+		return nil
+	}
+	qd := qm.Fields.ForName(qn)
 	if qd == nil {
 		return nil
 	}

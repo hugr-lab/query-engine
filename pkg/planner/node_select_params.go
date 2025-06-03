@@ -269,10 +269,9 @@ func orderByNode(e engines.Engine, info *compiler.Object, query *ast.Field, pref
 					if !ok {
 						return "", nil, fmt.Errorf("invalid orderBy field %s", fieldName)
 					}
-					if field.Field.Definition.Type.NamedType == compiler.TimestampTypeName {
-						if field.Field.Arguments.ForName("extract") != nil {
-							t = "number"
-						}
+					if field.Field.Definition.Type.NamedType == compiler.TimestampTypeName &&
+						field.Field.Arguments.ForName("extract") != nil {
+						t = "number"
 					}
 					fieldName = e.ExtractNestedTypedValue(pp[0], pp[1], t)
 				}
@@ -606,10 +605,10 @@ func whereReferencesObjectNode(ctx context.Context, defs compiler.DefinitionsSou
 			// join
 			var addSQL string
 			if !refInfo.IsM2M {
-				addSQL, err = refInfo.JoinConditions(node.TypeDefs(), prefix, joinObjectAlias, true, false)
+				addSQL, err = refInfo.JoinConditions(node.TypeDefs(), prefix, joinObjectAlias, true, true)
 			}
 			if refInfo.IsM2M {
-				addSQL, err = refInfo.ToM2MJoinConditions(node.TypeDefs(), prefix, joinObjectAlias, true, false)
+				addSQL, err = refInfo.ToM2MJoinConditions(node.TypeDefs(), prefix, joinObjectAlias, true, true)
 			}
 			if err != nil {
 				return "", nil, err
