@@ -3,8 +3,11 @@ package datasources
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/vektah/gqlparser/v2/formatter"
+
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
 	. "github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 )
@@ -85,4 +88,27 @@ func (s *Service) UnloadDataSource(ctx context.Context, name string) error {
 		return err
 	}
 	return nil
+}
+
+func (s *Service) DescribeDataSource(ctx context.Context, name string, self bool) (string, error) {
+	ds, err := s.DataSource(name)
+	if err != nil {
+		return "", err
+	}
+
+	source, err := s.catalogSource(ctx, ds, self)
+	if err != nil {
+		return "", err
+	}
+	if source == nil {
+		return "", nil
+	}
+
+	sd, err := source.SchemaDocument(ctx)
+	if err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	formatter.NewFormatter(&sb).FormatSchemaDocument(sd)
+	return sb.String(), nil
 }

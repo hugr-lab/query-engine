@@ -282,7 +282,7 @@ func objectAggregationTypeName(schema *ast.SchemaDocument, opt *Options, def *as
 			continue
 		}
 		aggFieldDirectives := ast.DirectiveList{aggObjectFieldAggregationDirective(field)}
-		if def.Name == QueryTimeJoinsTypeName || def.Name != QueryTimeSpatialTypeName {
+		if def.Name == QueryTimeJoinsTypeName || def.Name == QueryTimeSpatialTypeName {
 			aggFieldDirectives = append(aggFieldDirectives, aggQueryDirective(field, false), opt.catalog)
 		}
 		fieldName := field.Name

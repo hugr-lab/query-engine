@@ -234,6 +234,10 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 			if a := f.Arguments.ForName("order_by"); a != nil {
 				baseQuery.Arguments = append(baseQuery.Arguments, a)
 			}
+			// args for parameterized view
+			if a := query.Arguments.ForName("args"); a != nil {
+				baseQuery.Arguments = append(baseQuery.Arguments, a)
+			}
 			// filter arguments
 			if qa := query.Arguments.ForName("filter"); qa != nil {
 				if a := f.Arguments.ForName("filter"); a != nil {

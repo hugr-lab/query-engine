@@ -16,6 +16,7 @@ type Querier interface {
 	LoadDataSource(ctx context.Context, name string) error
 	UnloadDataSource(ctx context.Context, name string) error
 	DataSourceStatus(ctx context.Context, name string) (string, error)
+	DescribeDataSource(ctx context.Context, name string, self bool) (string, error)
 }
 
 type Response struct {

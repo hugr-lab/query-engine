@@ -98,3 +98,8 @@ func (s *Service) DataSourceStatus(ctx context.Context, name string) (string, er
 	}
 	return "detached", nil
 }
+
+// DescribeDataSource returns the formatted schema definition of a data source by its name.
+func (s *Service) DescribeDataSource(ctx context.Context, name string, self bool) (string, error) {
+	return s.ds.DescribeDataSource(ctx, name, self)
+}

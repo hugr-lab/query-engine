@@ -500,14 +500,12 @@ func Ident(s string) string {
 	return s
 }
 
-// Функция для проверки идентификатора
 func IsValidIdentifier(s string) bool {
 	upperStr := strings.ToUpper(s)
 	_, isKeyword := sqlKeywords[upperStr]
 	if isKeyword {
 		return false
 	}
-	// Проверка валидности идентификатора
 	if len(s) == 0 {
 		return false
 	}

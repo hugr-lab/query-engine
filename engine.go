@@ -14,6 +14,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	dssource "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/data-sources"
+	metainfo "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/meta-info"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/storage"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	permissions "github.com/hugr-lab/query-engine/pkg/perm"
@@ -129,6 +130,10 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	err = s.ds.AttachRuntimeSource(ctx, dssource.New(s))
 	if err != nil {
 		return fmt.Errorf("attach s3 source: %w", err)
+	}
+	err = s.ds.AttachRuntimeSource(ctx, metainfo.New())
+	if err != nil {
+		return fmt.Errorf("attach meta info source: %w", err)
 	}
 
 	s.planner = planner.New(s.catalog)

@@ -148,8 +148,49 @@ var ScalarTypes = map[string]ScalarType{
 		MeasurementAggs: "BooleanMeasurementAggregation",
 	},
 	"Date": {
-		Name:             "Date",
-		Description:      "Date type",
+		Name:        "Date",
+		Description: "Date type",
+		Arguments: ast.ArgumentDefinitionList{
+			{
+				Name: "bucket",
+				Description: "Truncate ti the specified part of the timestamp. " +
+					"Possible values: 'year', 'month', 'day'.",
+				Type:     ast.NamedType("TimeBucket", compiledPos()),
+				Position: compiledPos(),
+			},
+		},
+		ExtraField: func(field *ast.FieldDefinition) *ast.FieldDefinition {
+			fieldName := "_" + field.Name + "_part"
+			if strings.HasPrefix(field.Name, "_") {
+				fieldName = strings.TrimPrefix(field.Name, "_")
+			}
+
+			sql := "[" + field.Name + "]"
+
+			return &ast.FieldDefinition{
+				Name:        fieldName,
+				Description: field.Description + " (extracted part)",
+				Arguments: ast.ArgumentDefinitionList{
+					{
+						Name:        "extract",
+						Description: "Extracts the specified part of the date",
+						Type:        ast.NonNullNamedType("TimeExtract", compiledPos()),
+						Position:    compiledPos(),
+					},
+					{
+						Name:        "extract_divide",
+						Description: "Divides the extracted value",
+						Type:        ast.NamedType("Int", compiledPos()),
+						Position:    compiledPos(),
+					},
+				},
+				Directives: ast.DirectiveList{
+					base.SqlFieldDirective(sql),
+					base.ExtraFieldDirective(TimestampExtractExtraFieldName, TimestampTypeName),
+				},
+				Type: ast.NamedType("BigInt", compiledPos()),
+			}
+		},
 		JSONType:         "timestamp",
 		JSONToStructType: "DATE",
 		JSONNativeType:   "VARCHAR",
