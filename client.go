@@ -262,6 +262,36 @@ func (c *Client) DataSourceStatus(ctx context.Context, name string) (string, err
 	return status, err
 }
 
+// DescribeDataSource returns the description of the data source.
+func (c *Client) DescribeDataSource(ctx context.Context, name string, self bool) (string, error) {
+	res, err := c.Query(ctx, `query($name: String!, $self: Boolean=false){
+		function {
+			core{
+				describe_data_source_schema(name: $name, self: $self)
+			}
+		}
+	}`, map[string]any{
+		"name": name,
+		"self": self,
+	})
+	if err != nil {
+		return "", err
+	}
+	defer res.Close()
+	if res.Err() != nil {
+		return "", res.Err()
+	}
+	var desc string
+	err = res.ScanData("function.core.describe_data_source_schema", &desc)
+	if err != nil {
+		return "", err
+	}
+	if desc == "" {
+		return "", errors.New("data source not found")
+	}
+	return desc, nil
+}
+
 func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error) {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(map[string]any{

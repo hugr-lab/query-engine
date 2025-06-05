@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/hugr-lab/query-engine/pkg/catalogs"
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/extension"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/http"
@@ -140,6 +139,9 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	if c == nil {
+		return nil
+	}
 
 	// add catalog
 	return s.catalogs.AddCatalog(ctx, name, c)
@@ -213,56 +215,6 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 	default:
 		return nil, ErrUnknownDataSourceType
 	}
-}
-
-func (s *Service) dataSourceCatalog(ctx context.Context, name string) (*catalogs.Catalog, error) {
-	ds := s.dataSources[name]
-	source, err := s.catalogSource(ctx, ds)
-	if err != nil {
-		return nil, err
-	}
-	def := ds.Definition()
-	return catalogs.NewCatalog(ctx, def.Name, def.Prefix, ds.Engine(), source, def.AsModule, ds.ReadOnly())
-}
-
-func (s *Service) extensionCatalog(ctx context.Context, name string) (*catalogs.Extension, error) {
-	ds := s.dataSources[name]
-	source, err := s.catalogSource(ctx, ds)
-	if err != nil {
-		return nil, err
-	}
-	def := ds.Definition()
-	return s.catalogs.NewExtension(ctx, def, source)
-}
-
-func (s *Service) catalogSource(ctx context.Context, ds Source) (sources.Source, error) {
-	var ss []sources.Source
-	def := ds.Definition()
-	for _, cs := range def.Sources {
-		s, err := s.loadCatalogSource(ctx, cs.Type, cs.Path)
-		if err != nil {
-			return nil, err
-		}
-		ss = append(ss, s)
-	}
-	if ds, ok := ds.(SelfDescriber); def.SelfDefined && ok {
-		s, err := ds.CatalogSource(ctx, s.db)
-		if err != nil {
-			return nil, err
-		}
-		ss = append(ss, s)
-	}
-	if len(ss) == 0 {
-		return nil, errors.New("data source does not have catalog source")
-	}
-	var source sources.Source
-	if len(ss) == 1 {
-		source = ss[0]
-	}
-	if len(ss) > 1 {
-		source = sources.MergeSource(ss...)
-	}
-	return source, nil
 }
 
 func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers, params, body, jqq string) (any, error) {

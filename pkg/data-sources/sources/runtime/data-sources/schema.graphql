@@ -21,4 +21,11 @@ extend type Function {
     name: String!
   ): String @module(name: "core")
     @function(name: "data_source_status")
+
+  describe_data_source_schema(
+    name: String!
+    self: Boolean = false
+    log: Boolean = false
+  ): String @module(name: "core")
+    @function(name: "describe_data_source_schema")
 }

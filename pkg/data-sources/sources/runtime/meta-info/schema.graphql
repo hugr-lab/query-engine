@@ -1,0 +1,305 @@
+# Databases
+type databases @view(name: "duckdb_databases" sql: "FROM duckdb_databases") 
+  @unique(fields: ["name"], query_suffix: "by_name"){
+  id: BigInt! @pk @field_source(field: "database_oid")
+  name: String! @field_source(field: "database_name")
+  type: String!
+  comment: String
+  tags: JSON
+  readonly: Boolean
+  internal: Boolean
+}
+
+# schemas
+type schemas @view(name: "duckdb_schemas" sql: "FROM duckdb_schemas()") {
+  id: BigInt! @pk @field_source(field: "oid")
+  name: String! @pk @field_source(field: "schema_name")
+  database_id: BigInt! @field_source(field: "database_oid")
+    @field_references(
+        name: "schemas_databases_id"
+        references_name: "databases"
+        field: "id"
+        query: "database"
+        references_query: "schemas"
+    )
+  database_name: String!
+  comment: String
+  tags: JSON
+  internal: Boolean
+}
+
+# tables
+type tables @view(name: "duckdb_tables", sql: "FROM duckdb_tables") {
+  id: BigInt! @pk @field_source(field: "table_oid")
+  name: String! @field_source(field: "table_name")
+  database_id: BigInt! @field_source(field: "database_oid")
+    @field_references(
+        name: "tables_databases_id"
+        references_name: "databases"
+        field: "id"
+        query: "database"
+        references_query: "tables"
+    )
+  database_name: String!
+  schema_id: BigInt! @field_source(field: "schema_oid")
+    @field_references(
+        name: "tables_schemas_id"
+        references_name: "schemas"
+        field: "id"
+        query: "schema"
+        references_query: "tables"
+    )
+  schema_name: String!
+  comment: String
+  tags: JSON
+  internal: Boolean
+  temporary: Boolean
+  has_primary_key: Boolean
+  estimated_size: BigInt
+  column_count: Int
+  index_count: Int
+}
+
+# views
+type views @view(name: "duckdb_views", sql: "FROM duckdb_views") {
+  id: BigInt! @pk @field_source(field: "view_oid")
+  name: String! @pk @field_source(field: "view_name")
+  database_id: BigInt! @field_source(field: "database_oid")
+    @field_references(
+        name: "views_databases_id"
+        references_name: "databases"
+        field: "id"
+        query: "database"
+        references_query: "views"
+    )
+  database_name: String!
+  schema_id: BigInt! @field_source(field: "schema_oid")
+    @field_references(
+        name: "views_schemas_id"
+        references_name: "schemas"
+        field: "id"
+        query: "schema"
+        references_query: "views"
+    )
+  schema_name: String!
+  comment: String
+  tags: JSON
+  internal: Boolean
+  temporary: Boolean
+  column_count: Int
+}
+
+# columns
+type columns @view(name: "duckdb_columns", sql: "FROM duckdb_columns") {
+  name: String! @pk @field_source(field: "column_name")
+  database_id: BigInt! @field_source(field: "database_oid")
+    @field_references(
+        name: "columns_databases_id"
+        references_name: "databases"
+        field: "id"
+        query: "database"
+        references_query: "columns"
+    )
+  database_name: String!
+  schema_id: BigInt! @field_source(field: "schema_oid")
+    @field_references(
+        name: "columns_schemas_id"
+        references_name: "schemas"
+        field: "id"
+        query: "schema"
+        references_query: "columns"
+    )
+  schema_name: String!
+  table_id: BigInt! @field_source(field: "table_oid")
+    @field_references(
+        name: "columns_tables_id"
+        references_name: "tables"
+        field: "id"
+        query: "table"
+        references_query: "columns"
+    )
+    @field_references(
+        name: "columns_views_id"
+        references_name: "views"
+        field: "id"
+        query: "view"
+        references_query: "columns"
+    )
+  table_name: String!
+  data_type: String
+  is_nullable: Boolean
+  default: String @field_source(field: "column_default")
+  comment: String
+  tags: JSON
+  internal: Boolean
+  ordinal_position: Int
+}
+
+# constraints
+type constraints @view(name: "duckdb_constraints", sql: "FROM duckdb_constraints") {
+  name: String! @pk @field_source(field: "constraint_name")
+  database_id: BigInt! @field_source(field: "database_oid")
+    @field_references(
+        name: "constraints_databases_id"
+        references_name: "databases"
+        field: "id"
+        query: "database"
+        references_query: "constraints"
+    )
+  database_name: String!
+  schema_id: BigInt! @field_source(field: "schema_oid")
+    @field_references(
+        name: "constraints_schemas_id"
+        references_name: "schemas"
+        field: "id"
+        query: "schema"
+        references_query: "constraints"
+    )
+  schema_name: String!
+  table_id: BigInt! @field_source(field: "table_oid")
+    @field_references(
+        name: "constraints_tables_id"
+        references_name: "tables"
+        field: "id"
+        query: "table"
+        references_query: "constraints"
+    )
+  table_name: String!
+  type: String @field_source(field: "constraint_type")
+  columns: [String!] @field_source(field: "constraint_column_names")
+  references_table_name: String @field_source(field: "referenced_table")
+    @field_references(
+        name: "constraints_references_name"
+        references_name: "tables"
+        field: "name"
+        query: "references"
+        references_query: "referenced_constraints"
+    )
+  references_columns: [String!] @field_source(field: "referenced_column_names")
+}
+
+# Extensions
+type extensions @view(name: "duckdb_extensions", sql: "FROM duckdb_extensions()") {
+  name: String! @pk @field_source(field: "extension_name")
+  loaded: Boolean
+  installed: Boolean
+  install_path: String
+  description: String
+  aliases: [String]
+  version: String @field_source(field: "extension_version")
+  install_mode: String
+  installed_from: String
+}
+
+# Functions
+type functions @view(name: "duckdb_functions", sql: "FROM duckdb_functions()") {
+  name: String! @pk @field_source(field: "function_name")
+  database_name: String!
+    @field_references(
+        name: "functions_databases_name"
+        references_name: "databases"
+        field: "name"
+        query: "database"
+        references_query: "functions"
+    )
+  schema_name: String!
+    @field_references(
+        name: "functions_schemas_name"
+        references_name: "schemas"
+        field: "name"
+        query: "schema"
+        references_query: "functions"
+    )
+  type: String @field_source(field: "function_type")
+  description: String
+  comment: String
+  tags: JSON
+  return_type: String
+  parameters: [String!]
+  parameter_types: [String!]
+  has_side_effects: Boolean
+  internal: Boolean
+  examples: [String!]
+  stability: String
+}
+
+# Log contexts
+type log_contexts @view(name: "duckdb_log_contexts", sql: "FROM duckdb_log_contexts()") {
+  id: BigInt! @pk @field_source(field: "context_id")
+  scope: String!
+  connection_id: String
+  transaction_id: String
+  query_id: String
+  thread_id: String
+}
+
+# Log entries
+type log_entries @view(name: "duckdb_log_entries", sql: "FROM duckdb_logs()") {
+  context_id: BigInt!
+    @field_references(
+        name: "log_entries_contexts_id"
+        references_name: "log_contexts"
+        field: "id"
+        query: "context"
+        references_query: "entries"
+    )
+  timestamp: Timestamp!
+  type: String
+  log_level: String
+  message: String
+}
+
+# duckdb_memory
+type duckdb_memory @view(name: "duckdb_memory", sql: "FROM duckdb_memory()") {
+  tag: String! @pk
+  memory_usage: BigInt @field_source(field: "memory_usage_bytes")
+  temporary_storage: BigInt @field_source(field: "temporary_storage_bytes")
+}
+
+# secret types
+type secret_types @view(name: "duckdb_secret_types", sql: "FROM duckdb_secret_types()") {
+  type: String! @pk
+  default_provider: String
+  extension_name: String @field_source(field: "extension")
+    @field_references(
+        name: "secret_types_extension_name"
+        references_name: "extensions"
+        field: "name"
+        query: "extension"
+        references_query: "secret_types"
+    )
+}
+
+# secrets
+type secrets @view(name: "duckdb_secrets", sql: "FROM duckdb_secrets()") {
+  name: String! @pk
+  type_name: String! @field_source(field: "type")
+    @field_references(
+        name: "secrets_types_type"
+        references_name: "secret_types"
+        field: "type"
+        query: "type"
+        references_query: "secrets"
+    )
+  provider: String
+  persistent: Boolean
+  storage: String
+  scope: [String]
+  secret_string: String
+}
+
+# Settings
+type settings @view(name: "duckdb_settings", sql: "FROM duckdb_settings()") {
+  name: String! @pk
+  value: String
+  description: String
+  input_type: String
+  scope: String
+}
+
+# temporary files
+type temporary_files @view(name: "duckdb_temporary_files", sql: "FROM duckdb_temporary_files()") {
+  path: String! @pk
+  size: BigInt
+}
+
