@@ -244,9 +244,9 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	}
 	if info.HasArguments() {
 		arg := queryArg.ForName("args")
-		am := map[string]any{}
-		if arg != nil {
-			am, _ = arg.Value.(map[string]any)
+		am, ok := arg.Value.(map[string]any)
+		if !ok {
+			am = map[string]any{}
 		}
 		err = info.ApplyArguments(defs, am, e)
 		if err != nil {
