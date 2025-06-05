@@ -111,7 +111,7 @@ func (s *Source) registerUDF(ctx context.Context) error {
 		},
 		ConvertInput: func(args []driver.Value) (describeArgs, error) {
 			if len(args) != 3 {
-				return describeArgs{}, errors.New("invalid number of arguments")
+				return describeArgs{}, fmt.Errorf("invalid number of arguments: expected 3, got %d", len(args))
 			}
 			return describeArgs{
 				name: args[0].(string),
