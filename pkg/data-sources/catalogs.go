@@ -54,7 +54,7 @@ func (s *Service) catalogSource(ctx context.Context, ds Source, self bool) (sour
 		if self {
 			return source, nil
 		}
-		if s != nil {
+		if source != nil {
 			ss = append(ss, source)
 		}
 	}

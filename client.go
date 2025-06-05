@@ -267,7 +267,7 @@ func (c *Client) DescribeDataSource(ctx context.Context, name string, self bool)
 	res, err := c.Query(ctx, `query($name: String!, $self: Boolean=false){
 		function {
 			core{
-				describe_data_source(name: $name, self: $self)
+				describe_data_source_schema(name: $name, self: $self)
 			}
 		}
 	}`, map[string]any{
@@ -282,7 +282,7 @@ func (c *Client) DescribeDataSource(ctx context.Context, name string, self bool)
 		return "", res.Err()
 	}
 	var desc string
-	err = res.ScanData("function.core.describe_data_source", &desc)
+	err = res.ScanData("function.core.describe_data_source_schema", &desc)
 	if err != nil {
 		return "", err
 	}
