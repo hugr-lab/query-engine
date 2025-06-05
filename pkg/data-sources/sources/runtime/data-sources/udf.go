@@ -105,7 +105,7 @@ func (s *Source) registerUDF(ctx context.Context) error {
 				return "", err
 			}
 			if p.log {
-				fmt.Println("describe_data_source_schema output:", out)
+				log.Printf("describe_data_source_schema output: %s", out)
 			}
 			return out, nil
 		},
