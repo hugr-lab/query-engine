@@ -189,7 +189,10 @@ func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, pa
 		sqlName += extractStructFieldByPath(path)
 	}
 	if op == "is_null" {
-		return fmt.Sprintf("%s IS NULL", sqlName), params, nil
+		if value.(bool) {
+			return fmt.Sprintf("%s IS NULL", sqlName), params, nil
+		}
+		return fmt.Sprintf("%s IS NOT NULL", sqlName), params, nil
 	}
 
 	switch value := value.(type) {

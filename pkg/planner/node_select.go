@@ -276,6 +276,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		}
 	}
 
+	// params nodes (limit, offset, filter, order by, distinct on)
 	var paramNodes QueryPlanNodes
 	if compiler.IsSelectOneQuery(query) {
 		// return query with limit 1 and filtered by unique fields
@@ -291,6 +292,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			return nil, false, err
 		}
 	}
+
 	pn, err := permissionFilterNode(ctx, defs, info, query, "_objects", false)
 	if err != nil {
 		return nil, false, err
@@ -299,17 +301,68 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		paramNodes = append(paramNodes, pn)
 	}
 	if len(joinCatalogNodes) == 0 && len(joinGeneralNodes) == 0 {
+		// if there are no joins, we push down all params nodes
 		nodes = append(nodes, paramNodes...)
-	} else {
+	}
+	if len(joinCatalogNodes) != 0 || len(joinGeneralNodes) != 0 {
+		// if there are joins, we push down only where node
 		whereNode := paramNodes.ForName("where")
 		if whereNode != nil {
 			nodes = append(nodes, whereNode)
 		}
 	}
 
-	// add group by nodes if it is cube data object
-
 	baseData := selectStatementNode(query, nodes, "_objects", qp.withRowNum)
+	// if there are no joins, we can return the base query
+	if len(joinGeneralNodes) == 0 && len(joinCatalogNodes) == 0 {
+		return baseData, false, nil
+	}
+
+	// get parameters nodes by aliases
+	paramNodes, err = selectQueryParamsNodes(ctx, defs, e, info, "_objects", query, queryArg, true)
+	if err != nil {
+		return nil, false, err
+	}
+
+	distinctNode := paramNodes.ForName("distinct")
+	orderByNode := paramNodes.ForName("orderBy")
+	limitNode := paramNodes.ForName("limit")
+	offsetNode := paramNodes.ForName("offset")
+
+	canOrderByPushDown := len(joinGeneralNodes) == 0
+
+	// check if we can push down order by fields
+	// look at order by fields (nested node names in order by node) and check if they are all in catalog query
+	if orderByNode != nil && !canOrderByPushDown {
+		canOrderByPushDown = true
+		for _, orderByFieldNode := range orderByNode.Nodes {
+			if !strings.Contains(orderByFieldNode.Name, ".") {
+				// if order by field is not a nested node, we can push down order by
+				continue
+			}
+			pp := strings.SplitN(orderByFieldNode.Name, ".", 2)
+			// check join nodes for general catalog query
+			if slices.ContainsFunc(joinGeneralNodes, func(n *QueryPlanNode) bool {
+				return n.Query.Alias == pp[0]
+			}) {
+				canOrderByPushDown = false
+				break
+			}
+
+			// check join queries nodes for general catalog query
+			jm, ok := qJoinsGeneralFields[pp[0]]
+			if !ok {
+				continue
+			}
+
+			if _, ok := jm[pp[1]]; ok {
+				canOrderByPushDown = false
+				break
+			}
+		}
+	}
+
+	canLimitPushDown := len(joinGeneralNodes) == 0 || len(innerGeneral) == 0 && (canOrderByPushDown || orderByNode == nil)
 
 	if len(joinCatalogNodes) != 0 {
 		baseData.Name = "_objects"
@@ -338,15 +391,9 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			},
 			joinsNode(joinCatalogNodes),
 		}
-		if len(joinGeneralNodes) == 0 && !compiler.IsSelectOneQuery(query) {
-			paramNodes, err = selectQueryParamsNodes(ctx, defs, e, info, "_objects", query, queryArg, true)
-			if err != nil {
-				return nil, false, err
-			}
-			paramNodes = slices.DeleteFunc(paramNodes, func(n *QueryPlanNode) bool {
-				return n.Name == "where"
-			})
-			nodes = append(nodes, paramNodes...)
+		if len(joinGeneralNodes) == 0 && !compiler.IsSelectOneQuery(query) && distinctNode != nil {
+			// only distinct on params can be pushed down, because the distinct fields always are in the base data object
+			nodes = append(nodes, distinctNode)
 		}
 		if len(innerCatalog) != 0 {
 			nodes = append(nodes, &QueryPlanNode{
@@ -359,7 +406,41 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		}
 		baseData = selectStatementNode(query, nodes, "_objects", qp.withRowNum)
 	}
+
+	if canLimitPushDown || canOrderByPushDown {
+		// create the top query based on the base query with items
+		baseData.Name = "_objects"
+		nodes := QueryPlanNodes{
+			withNode(QueryPlanNodes{baseData}),
+			&QueryPlanNode{
+				Name:  "fields",
+				Query: query,
+				CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+					return "_objects.*", params, nil
+				},
+			},
+			&QueryPlanNode{
+				Name:  "from",
+				Query: query,
+				CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+					return "_objects", params, nil
+				},
+			},
+		}
+		if canLimitPushDown && limitNode != nil {
+			nodes = append(nodes, limitNode)
+		}
+		if canLimitPushDown && offsetNode != nil {
+			nodes = append(nodes, offsetNode)
+		}
+		if canOrderByPushDown && orderByNode != nil {
+			nodes = append(nodes, orderByNode)
+		}
+		baseData = selectStatementNode(query, nodes, "_objects", false)
+	}
+
 	if len(joinGeneralNodes) == 0 {
+		// if there are no general joins, we can return the base query
 		return baseData, false, nil
 	}
 
@@ -476,7 +557,38 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			},
 		})
 	}
+	if canOrderByPushDown && canLimitPushDown {
+		return selectStatementNode(query, nodes, "_objects", qp.withRowNum), true, nil
+	}
 
+	// create the top query based on the last one with order by and limits
+	baseData.Name = "_objects"
+	nodes = QueryPlanNodes{
+		withNode(QueryPlanNodes{selectStatementNode(query, nodes, "_objects", false)}),
+		&QueryPlanNode{
+			Name:  "fields",
+			Query: query,
+			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+				return "_objects.*", params, nil
+			},
+		},
+		&QueryPlanNode{
+			Name:  "from",
+			Query: query,
+			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+				return "_objects", params, nil
+			},
+		},
+	}
+	if canLimitPushDown && limitNode != nil {
+		nodes = append(nodes, limitNode)
+	}
+	if canLimitPushDown && offsetNode != nil {
+		nodes = append(nodes, offsetNode)
+	}
+	if canOrderByPushDown && orderByNode != nil {
+		nodes = append(nodes, orderByNode)
+	}
 	return selectStatementNode(query, nodes, "_objects", false), true, nil
 }
 
@@ -641,7 +753,7 @@ func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 		}
 		limit, ok := am["nested_limit"]
 		if ok {
-			if l, ok := limit.(int64); ok && l == 0 {
+			if l, ok := limit.(int64); ok && l != 0 {
 				nodes = append(nodes, &QueryPlanNode{
 					Name: "nested_limit",
 					CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
@@ -652,7 +764,7 @@ func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 		}
 		offset, ok := am["nested_offset"]
 		if ok {
-			if o, ok := offset.(int64); ok && o == 0 {
+			if o, ok := offset.(int64); ok && o != 0 {
 				nodes = append(nodes, &QueryPlanNode{
 					Name: "nested_offset",
 					CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
@@ -1277,6 +1389,10 @@ func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *
 		if len(sourceFields) != len(refFields) {
 			return nil, false, compiler.ErrorPosf(sq.Field.Position, "fields and references fields must have the same length")
 		}
+		sourceDef := defs.ForName(query.Definition.Type.Name())
+		if sourceDef == nil {
+			return nil, false, compiler.ErrorPosf(sq.Field.Position, "left object %s not found", query.Definition.Type.Name())
+		}
 		var sql string
 		for i, f := range sourceFields {
 			sourceFieldName, ok := f.(string)
@@ -1291,9 +1407,8 @@ func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *
 			if s := engines.SelectedFields(query.SelectionSet).ForName(sourceFieldName); s != nil {
 				sourceFieldDef = s.Field.Definition
 			}
-			if sourceFieldDef == nil &&
-				query.ObjectDefinition.Fields.ForName(sourceFieldName) != nil {
-				sourceFieldDef = query.ObjectDefinition.Fields.ForName(sourceFieldName)
+			if sourceFieldDef == nil && sourceDef.Fields.ForName(sourceFieldName) != nil {
+				sourceFieldDef = sourceDef.Fields.ForName(sourceFieldName)
 			}
 			if sourceFieldDef == nil {
 				return nil, false, compiler.ErrorPosf(sq.Field.Position, "left object field %s not found", sourceFieldName)
@@ -1314,12 +1429,11 @@ func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *
 			if s := engines.SelectedFields(sq.Field.SelectionSet).ForName(refFieldName); s != nil {
 				refFieldDef = s.Field.Definition
 			}
-			if refFieldDef == nil &&
-				rightDef.Fields.ForName(refFieldName) != nil {
+			if refFieldDef == nil && rightDef.Fields.ForName(refFieldName) != nil {
 				refFieldDef = rightDef.Fields.ForName(refFieldName)
 			}
 			if refFieldDef == nil {
-				return nil, false, compiler.ErrorPosf(sq.Field.Position, "right object field %s not found", sourceFieldName)
+				return nil, false, compiler.ErrorPosf(sq.Field.Position, "right object field %s not found", refFieldName)
 			}
 			if sourceFieldDef.Type.NamedType == "" ||
 				!compiler.IsScalarType(sourceFieldDef.Type.NamedType) ||

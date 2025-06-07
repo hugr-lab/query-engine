@@ -226,83 +226,86 @@ func orderByNode(e engines.Engine, info *compiler.Object, query *ast.Field, pref
 	if param == nil {
 		return nil, nil
 	}
-	var orderBy []orderByField
-	if distinctParam != nil {
-		vv, ok := distinctParam.([]string)
-		if !ok {
-			return nil, errors.New("invalid distinctOn value")
-		}
-		for _, v := range vv {
-			orderBy = append(orderBy, orderByField{field: v})
-		}
-	}
-	oo, err := parseOrderByArray(param)
+	orderByFields, err := parseOrderByArray(param)
 	if err != nil {
 		return nil, err
 	}
-	orderBy = append(orderBy, oo...)
-	if len(orderBy) == 0 {
+
+	var nodes QueryPlanNodes
+	for _, o := range orderByFields {
+		nodes = append(nodes, orderByFieldNode(e, info, query, prefix, o, byAlias))
+	}
+	if len(nodes) == 0 {
 		return nil, nil
 	}
 
 	return &QueryPlanNode{
 		Name:  "orderBy",
 		Query: query,
+		Nodes: nodes,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 			var ff []string
-			sf := engines.SelectedFields(node.Query.SelectionSet)
-			for _, order := range orderBy {
-				var fieldName string
-				var fieldInfo *compiler.Field
-				fieldName = order.field
-				field := sf.ForPath(fieldName)
-				if field == nil {
-					return "", nil, fmt.Errorf("field %s not found", order.field)
+			for _, f := range children {
+				if f.Result != "" {
+					ff = append(ff, f.Result)
 				}
-				if strings.Contains(fieldName, ".") {
-					// extract real value for ordering
-					pp := strings.SplitN(fieldName, ".", 2)
-					if prefix != "" {
-						pp[0] = prefix + "." + engines.Ident(pp[0])
-					}
-					t, ok := compiler.FieldJSONTypes[field.Field.Definition.Type.Name()]
-					if !ok {
-						return "", nil, fmt.Errorf("invalid orderBy field %s", fieldName)
-					}
-					if field.Field.Definition.Type.NamedType == compiler.TimestampTypeName &&
-						field.Field.Arguments.ForName("extract") != nil {
-						t = "number"
-					}
-					fieldName = e.ExtractNestedTypedValue(pp[0], pp[1], t)
-				}
-				if !strings.Contains(fieldName, ".") {
-					if prefix != "" {
-						fieldName = prefix + "." + engines.Ident(fieldName)
-					}
-					if !byAlias && info != nil {
-						fieldInfo = info.FieldForName(field.Field.Name)
-						if fieldInfo == nil {
-							return "", nil, fmt.Errorf("field %s not found", field.Field.Name)
-						}
-						fieldName = fieldInfo.SQL(prefix)
-					}
-					if !byAlias && info == nil {
-						continue
-					}
-				}
-				if !compiler.IsScalarType(field.Field.Definition.Type.NamedType) {
-					return "", nil, fmt.Errorf("invalid orderBy field %s", fieldName)
-				}
-
-				if order.desc {
-					ff = append(ff, fieldName+" DESC")
-					continue
-				}
-				ff = append(ff, fieldName)
 			}
 			return strings.Join(ff, ", "), params, nil
 		},
 	}, nil
+}
+
+func orderByFieldNode(e engines.Engine, info *compiler.Object, query *ast.Field, prefix string, field orderByField, byAlias bool) *QueryPlanNode {
+	return &QueryPlanNode{
+		Name:  field.field,
+		Query: query,
+		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+			var fieldName string
+			var fieldInfo *compiler.Field
+			fieldName = field.field
+			sf := engines.SelectedFields(node.Query.SelectionSet)
+			queryField := sf.ScalarForPath(fieldName)
+			if queryField == nil {
+				return "", nil, fmt.Errorf("field %s not found or not sortable", field.field)
+			}
+			// if nested field, extract real value for ordering
+			if strings.Contains(fieldName, ".") {
+				// extract real value for ordering
+				pp := strings.SplitN(fieldName, ".", 2)
+				if prefix != "" {
+					pp[0] = prefix + "." + engines.Ident(pp[0])
+				}
+				t, ok := compiler.FieldJSONTypes[queryField.Field.Definition.Type.Name()]
+				if !ok {
+					return "", nil, fmt.Errorf("invalid orderBy field %s", fieldName)
+				}
+				fieldName = e.ExtractNestedTypedValue(pp[0], pp[1], t)
+			}
+			if !strings.Contains(fieldName, ".") {
+				if prefix != "" {
+					fieldName = prefix + "." + engines.Ident(fieldName)
+				}
+				if !byAlias && info != nil {
+					fieldInfo = info.FieldForName(queryField.Field.Name)
+					if fieldInfo == nil {
+						return "", nil, fmt.Errorf("field %s not found", queryField.Field.Name)
+					}
+					fieldName = fieldInfo.SQL(prefix)
+				}
+				if !byAlias && info == nil {
+					return "", params, nil
+				}
+			}
+			if !compiler.IsScalarType(queryField.Field.Definition.Type.NamedType) {
+				return "", nil, fmt.Errorf("invalid orderBy field %s", fieldName)
+			}
+
+			if field.desc {
+				return fieldName + " DESC", params, nil
+			}
+			return fieldName, params, nil
+		},
+	}
 }
 
 func distinctOnNode(info *compiler.Object, query *ast.Field, prefix string, param any, byAlias bool) (*QueryPlanNode, error) {

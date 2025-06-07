@@ -417,7 +417,7 @@ func (c *DBColumnInfo) Definition() (*ast.FieldDefinition, error) {
 			Name: "field_source",
 			Arguments: ast.ArgumentList{
 				&ast.Argument{
-					Name:     "source",
+					Name:     "field",
 					Value:    &ast.Value{Raw: c.Name, Kind: ast.StringValue, Position: compiler.CompiledPosName("self-described-field-source")},
 					Position: compiler.CompiledPosName("self-described-field-source"),
 				},

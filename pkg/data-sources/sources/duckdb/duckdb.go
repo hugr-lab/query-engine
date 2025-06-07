@@ -65,7 +65,12 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) (err error) {
 		return err
 	}
 
-	_, err = db.Exec(ctx, "ATTACH DATABASE '"+s.ds.Path+"' AS "+s.ds.Name)
+	sql := "ATTACH DATABASE '" + s.ds.Path + "' AS " + s.ds.Name
+	if s.ds.ReadOnly {
+		sql += "(READ_ONLY)"
+	}
+
+	_, err = db.Exec(ctx, sql)
 	if err != nil {
 		return err
 	}

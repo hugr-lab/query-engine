@@ -103,6 +103,26 @@ func Test_ApplyQueryParams(t *testing.T) {
 			applied:  3,
 			expected: "SELECT ('$3', 44, '''$2') FROM table WHERE id = 44",
 		},
+		{
+			name:     "complex case inside string after ''",
+			query:    "SELECT ('$3', $4, '''$2') FROM table WHERE id = '' OR id=$4",
+			params:   []any{1, "test", 23, "test"},
+			applied:  3,
+			expected: "SELECT ('$3', 'test', '''$2') FROM table WHERE id = '' OR id='test'",
+		},
+		{
+			name: "complex case inside string with escaped quotes",
+			query: `
+			WITH table AS (SELECT * FROM postgres_query('name', 'SELECT ''$3'' FROM func(''$2'') AS id)'))
+			SELECT ('$3', $4, '''$2') FROM table WHERE id = '' OR id=$4
+			`,
+			params:  []any{1, "test", 23, "test"},
+			applied: 3,
+			expected: `
+			WITH table AS (SELECT * FROM postgres_query('name', 'SELECT ''$3'' FROM func(''$2'') AS id)'))
+			SELECT ('$3', 'test', '''$2') FROM table WHERE id = '' OR id='test'
+			`,
+		},
 	}
 
 	for _, tt := range tests {
