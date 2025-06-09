@@ -60,6 +60,7 @@ func (s *Source) loadSpecs(ctx context.Context) (err error) {
 		return nil
 	}
 	loader := openapi3.NewLoader()
+	loader.ReadFromURIFunc = openapi3.ReadFromURIs(openapi3.ReadFromHTTP(http.DefaultClient), openapi3.ReadFromFile)
 	var spec *openapi3.T
 	if sp.isFile {
 		spec, err = loader.LoadFromFile(sp.specPath)
@@ -180,6 +181,9 @@ func (s *Source) schemaFromSpec() (doc *ast.SchemaDocument, err error) {
 				if err != nil {
 					continue NEXT
 				}
+				if p.Value != nil && gt != nil && p.Value.Required {
+					gt.NonNull = true
+				}
 				f.Parameters[p.Value.Name] = openApiFuncParam{
 					Name:        p.Value.Name,
 					In:          p.Value.In,
@@ -297,10 +301,6 @@ func (s *Source) functionFields(defs ast.DefinitionList, funcs []openApiFunction
 				Description: p.Description,
 				Type:        p.Type,
 				Position:    pos,
-				DefaultValue: &ast.Value{
-					Kind:     ast.NullValue,
-					Position: pos,
-				},
 			})
 			sql := "[" + p.Name + "]"
 			if p.Type.NamedType == compiler.GeometryTypeName {
@@ -378,7 +378,7 @@ func (s *Source) functionFields(defs ast.DefinitionList, funcs []openApiFunction
 			bSQL,
 		)
 		// directive
-		def := compiler.NewFunction("http."+s.ds.Name, f.Name, sql, resType, false, true, args, pos)
+		def := compiler.NewFunction("", f.Name, sql, resType, false, true, args, pos)
 		fields = append(fields, def)
 	}
 	return fields, nil
@@ -454,7 +454,7 @@ func openAPISchemaToGraphQL(defs ast.DefinitionList, t *openapi3.Schema, parentN
 	case t.Type.Is(openapi3.TypeBoolean):
 		return ast.NamedType("Boolean", pos), defs, nil
 	case t.Type.Is(openapi3.TypeArray):
-		parentName += "Item"
+		parentName += "_item"
 		nt, dd, err := openApiSchemaRefToGraphQL(defs, t.Items, parentName, pos, asInput)
 		if err != nil {
 			return nil, nil, err
@@ -477,7 +477,7 @@ func openAPISchemaToGraphQL(defs ast.DefinitionList, t *openapi3.Schema, parentN
 		}
 		defs = append(defs, def)
 		for name, prop := range t.Properties {
-			nt, dd, err := openApiSchemaRefToGraphQL(defs, prop, parentName+openAPINameToGraphQLName(name), pos, asInput)
+			nt, dd, err := openApiSchemaRefToGraphQL(defs, prop, parentName+"_"+openAPINameToGraphQLName(name), pos, asInput)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -541,7 +541,7 @@ func openAPINameToGraphQLName(name string) string {
 	skipped := false
 	for _, r := range name {
 		switch {
-		case r == ' ' || r == '.' || r == '/' || r == '\\' || r == ':' || r == '_' || r == '{' || r == '}':
+		case r == ' ' || r == '.' || r == '/' || r == '\\' || r == ':' || r == '{' || r == '}':
 			skipped = true
 			continue
 		case isUpperRune(r):
@@ -562,7 +562,7 @@ func isUpperRune(r rune) bool {
 	return r >= 'A' && r <= 'Z'
 }
 func checkRune(r rune) bool {
-	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-'
+	return (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_'
 }
 
 type openApiTypeExt struct {

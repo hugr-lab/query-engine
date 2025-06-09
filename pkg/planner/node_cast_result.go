@@ -21,6 +21,9 @@ func castResultsNode(_ context.Context, caster engines.EngineTypeCaster, node *Q
 			if len(children) == 0 {
 				return "", nil, ErrInternalPlanner
 			}
+			if caster == nil {
+				return children.FirstResult().Result, params, nil
+			}
 			res := children.FirstResult()
 			if res == nil {
 				return "", nil, ErrInternalPlanner

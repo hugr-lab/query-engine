@@ -177,9 +177,9 @@ paths:
       operationId: deleteDataById
       parameters:
         - name: id
+          required: true
           description: ID of the object
           in: path
-          required: true
           schema:
             type: integer
       responses:

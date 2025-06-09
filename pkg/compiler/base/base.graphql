@@ -179,6 +179,3 @@ directive @cache(
 	"""
 	tags: [String!]
 ) on FIELD | OBJECT | FIELD_DEFINITION
-
-directive @no_cache on FIELD
-directive @invalidate_cache on FIELD
