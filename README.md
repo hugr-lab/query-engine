@@ -1,7 +1,8 @@
 # The Hugr query-engine
 
-The Hugr query engine is golang package that provide GraphQL query engine to work with various data sources.
-It is designed to be extensible and pluggable, allowing you to add your own data sources and query types as needed.
+The Hugr query engine is a part of the Hugr project, which provides a powerful and flexible GraphQL query engine designed to work with various data sources. It supports features like caching, authentication, and schema extensions, making it suitable for building scalable and efficient applications.
+
+See the [Hugr documentation](https://hugr-lab.github.io) for more details.
 
 ## Dependencies
 
