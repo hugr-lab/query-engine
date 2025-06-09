@@ -102,10 +102,8 @@ func ApplyQueryParams(e Engine, query string, params []any) (string, int, error)
 		if deep != 0 && r == '\'' {
 			// reduce deep if we are left from string
 			out = append(out, r)
-			if qr[i-1] != '\'' {
-				// escape quote
-				deep--
-			}
+			// escape quote
+			deep--
 			continue
 		}
 		if r == '\'' {
@@ -202,6 +200,29 @@ func (ss SelectionSet) ForPath(path string) *SelectedField {
 				return &s
 			}
 			return SelectedFields(s.Field.SelectionSet).ForPath(pp[1])
+		}
+	}
+	return nil
+}
+
+func (ss SelectionSet) ScalarForPath(path string) *SelectedField {
+	if len(ss) == 0 {
+		return nil
+	}
+	pp := strings.SplitN(path, ".", 2)
+	for _, s := range ss {
+		if s.Field.Alias == pp[0] {
+			if len(pp) == 1 {
+				if s.Field.Definition.Type.NamedType == "" ||
+					!compiler.IsScalarType(s.Field.Definition.Type.NamedType) {
+					return nil
+				}
+				return &s
+			}
+			if s.Field.Definition.Type.NamedType == "" {
+				return nil
+			}
+			return SelectedFields(s.Field.SelectionSet).ScalarForPath(pp[1])
 		}
 	}
 	return nil
