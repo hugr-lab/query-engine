@@ -15,7 +15,7 @@ type ScalarFunction interface {
 
 type ScalarFunctionSet interface {
 	FuncName() string
-	Functions(ctx context.Context) []duckdb.ScalarFunc
+	Functions(ctx context.Context, db *Pool) []duckdb.ScalarFunc
 }
 
 func RegisterScalarFunction(ctx context.Context, db *Pool, function ScalarFunction) error {
@@ -25,7 +25,6 @@ func RegisterScalarFunction(ctx context.Context, db *Pool, function ScalarFuncti
 	}
 	defer c.Close()
 	return duckdb.RegisterScalarUDF(c.DBConn(), function.FuncName(), &scalarUDF{
-		ctx:      ctx,
 		function: function,
 	})
 }
@@ -37,7 +36,7 @@ func RegisterScalarFunctionSet(ctx context.Context, db *Pool, set ScalarFunction
 	}
 	defer c.Close()
 
-	return duckdb.RegisterScalarUDFSet(c.DBConn(), set.FuncName(), set.Functions(ctx)...)
+	return duckdb.RegisterScalarUDFSet(c.DBConn(), set.FuncName(), set.Functions(ctx, db)...)
 }
 
 var _ ScalarFunction = (*ScalarFunctionWithArgs[any, any])(nil)
@@ -158,11 +157,11 @@ func (s *ScalarFunctionTypedSet[O]) FuncName() string {
 	return s.Name
 }
 
-func (s *ScalarFunctionTypedSet[O]) Functions(ctx context.Context) []duckdb.ScalarFunc {
+func (s *ScalarFunctionTypedSet[O]) Functions(ctx context.Context, db *Pool) []duckdb.ScalarFunc {
 	var funcs []duckdb.ScalarFunc
 	for _, f := range s.Funcs {
 		funcs = append(funcs, &scalarUDF{
-			ctx:      ctx,
+			db:       db,
 			function: f.ScalarUDF(s),
 		})
 	}
@@ -203,7 +202,7 @@ func (f *ScalarFunctionSetItemNoArgs[O]) ScalarUDF(set *ScalarFunctionTypedSet[O
 }
 
 type scalarUDF struct {
-	ctx      context.Context
+	db       *Pool
 	function ScalarFunction
 }
 
@@ -213,8 +212,11 @@ func (f *scalarUDF) Config() duckdb.ScalarFuncConfig {
 
 func (f *scalarUDF) Executor() duckdb.ScalarFuncExecutor {
 	return duckdb.ScalarFuncExecutor{
-		RowExecutor: func(values []driver.Value) (any, error) {
-			return f.function.Executor()(f.ctx, values)
+		RowContextExecutor: func(ctx context.Context, values []driver.Value) (any, error) {
+			if f.db.IsTxContext(ctx) {
+				ctx = ClearTxContext(ctx)
+			}
+			return f.function.Executor()(ctx, values)
 		},
 	}
 }

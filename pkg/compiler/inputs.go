@@ -46,7 +46,7 @@ func validateInputObject(def *ast.Definition) error {
 		for _, d := range field.Directives {
 			switch d.Name {
 			case base.DeprecatedDirectiveName,
-				fieldFieldSourceDirectiveName,
+				base.FieldSourceDirectiveName,
 				inputFieldNamedArgDirectiveName:
 			default:
 				errs = append(errs, ErrorPosf(d.Position, "input object field %s shouldn't have directive %s", field.Name, d.Name))
@@ -131,18 +131,16 @@ func inputObjectQueryArgs(schema *ast.SchemaDocument, def *ast.Definition, forSu
 				Type:        ast.ListType(ast.NamedType("OrderByField", compiledPos()), compiledPos()),
 			},
 			&ast.ArgumentDefinition{
-				Name:         "nested_limit",
-				Description:  "Limit the number of returned objects",
-				DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue},
-				Type:         ast.NamedType("Int", compiledPos()),
-				Position:     compiledPos(),
+				Name:        "nested_limit",
+				Description: "Limit the number of returned objects",
+				Type:        ast.NamedType("Int", compiledPos()),
+				Position:    compiledPos(),
 			},
 			&ast.ArgumentDefinition{
-				Name:         "nested_offset",
-				Description:  "Skip the first n objects",
-				DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue},
-				Type:         ast.NamedType("Int", compiledPos()),
-				Position:     compiledPos(),
+				Name:        "nested_offset",
+				Description: "Skip the first n objects",
+				Type:        ast.NamedType("Int", compiledPos()),
+				Position:    compiledPos(),
 			},
 		)
 	}

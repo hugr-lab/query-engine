@@ -1,7 +1,6 @@
 package engines
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -10,9 +9,10 @@ import (
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/paulmach/orb"
-	"github.com/paulmach/orb/encoding/wkb"
+	"github.com/paulmach/orb/encoding/wkt"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -61,11 +61,8 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 	case []string:
 		return SQLValueArrayFormatter(e, v)
 	case orb.Geometry:
-		b, err := wkb.MarshalToHex(v, binary.LittleEndian)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("ST_GeomFromWKB('\\x%s')", b), nil
+		b := wkt.Marshal(v)
+		return fmt.Sprintf("ST_GeomFromText('%s')", b), nil
 	case time.Time:
 		return fmt.Sprintf("'%s'::TIMESTAMP", v.Format(time.RFC3339)), nil
 	case []time.Time:
@@ -461,12 +458,12 @@ func (e *Postgres) AddObjectFields(sqlName string, fields map[string]string) str
 
 func (e *Postgres) WarpScann(db, query string) string {
 	query = strings.ReplaceAll(query, "'", "''")
-	return fmt.Sprintf("postgres_query(%s,' %s ')", db, query)
+	return fmt.Sprintf("postgres_query(%s,' %s ')", Ident(db), query)
 }
 
 func (e *Postgres) WrapExec(db, query string) string {
 	query = strings.ReplaceAll(query, "'", "''")
-	return fmt.Sprintf("postgres_execute(%s,' %s ')", db, query)
+	return fmt.Sprintf("postgres_execute(%s,' %s ')", Ident(db), query)
 }
 
 func (e *Postgres) ToIntermediateType(f *ast.Field) (string, error) {
@@ -491,7 +488,7 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 			}
 			return Ident(f.Alias) + "::JSON", nil
 		}
-		if f.Definition.Type.NamedType == "" && f.Directives.ForName("unnest") == nil {
+		if f.Definition.Type.NamedType == "" && f.Directives.ForName(base.UnnestDirective) == nil {
 			return "list_transform(" + Ident(f.Alias) + "," + Ident(f.Alias) + "->" + JsonToStruct(f, "", false, false) + ")", nil
 		}
 		return JsonToStruct(f, "", false, false), nil

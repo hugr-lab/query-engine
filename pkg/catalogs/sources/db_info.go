@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -413,17 +414,7 @@ func (c *DBColumnInfo) Definition() (*ast.FieldDefinition, error) {
 	name := identGraphQL(c.Name)
 	if name != c.Name {
 		fieldDef.Name = name // Use the sanitized name
-		fieldDef.Directives = append(fieldDef.Directives, &ast.Directive{
-			Name: "field_source",
-			Arguments: ast.ArgumentList{
-				&ast.Argument{
-					Name:     "field",
-					Value:    &ast.Value{Raw: c.Name, Kind: ast.StringValue, Position: compiler.CompiledPosName("self-described-field-source")},
-					Position: compiler.CompiledPosName("self-described-field-source"),
-				},
-			},
-			Position: compiler.CompiledPosName("self-described-field-source"),
-		})
+		fieldDef.Directives = append(fieldDef.Directives, base.FieldSourceDirective(c.Name))
 	}
 
 	if !c.IsNullable {

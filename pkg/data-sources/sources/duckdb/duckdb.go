@@ -65,7 +65,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) (err error) {
 		return err
 	}
 
-	sql := "ATTACH DATABASE '" + s.ds.Path + "' AS " + s.ds.Name
+	sql := "ATTACH DATABASE '" + s.ds.Path + "' AS " + engines.Ident(s.ds.Name)
 	if s.ds.ReadOnly {
 		sql += "(READ_ONLY)"
 	}
@@ -80,7 +80,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) (err error) {
 }
 
 func (s *Source) Detach(ctx context.Context, db *db.Pool) error {
-	_, err := db.Exec(ctx, "DETACH DATABASE "+s.ds.Name)
+	_, err := db.Exec(ctx, "DETACH DATABASE "+engines.Ident(s.ds.Name))
 	if err != nil {
 		return err
 	}

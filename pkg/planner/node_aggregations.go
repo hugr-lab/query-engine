@@ -48,7 +48,7 @@ func joinAggregateNodes(_ context.Context, defs compiler.DefinitionsSource, plan
 				e = defaultEngine
 			}
 			sql := e.PackFieldsToObject(rAlias, right)
-			return sql + " AS _selection", params, nil
+			return rAlias + "._root_row_num, " + sql + " AS _selection", params, nil
 		},
 	})
 	nodes.Add(&QueryPlanNode{
@@ -71,7 +71,16 @@ func joinAggregateNodes(_ context.Context, defs compiler.DefinitionsSource, plan
 			Name:  "fields_agg",
 			Query: right,
 			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-				return "array_agg( _selection) AS _selection", params, nil
+				return "_root_row_num, array_agg( _selection) AS _selection", params, nil
+			},
+		})
+	}
+	if right.Directives.ForName(base.UnnestDirective) == nil {
+		nodes.Add(&QueryPlanNode{
+			Name:  "groupBy",
+			Query: right,
+			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+				return "_root_row_num", params, nil
 			},
 		})
 	}
@@ -591,7 +600,7 @@ func aggSelectedFieldsForAggregation(defs compiler.Definitions, query *ast.Field
 		}
 		if fd.Type.NamedType == "" {
 			fields[len(fields)-1].Directives = append(fields[len(fields)-1].Directives, &ast.Directive{
-				Name: "unnest",
+				Name: base.UnnestDirective,
 			})
 		}
 		ff, err := aggSelectedFieldsForAggregation(defs, f.Field)

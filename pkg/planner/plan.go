@@ -102,6 +102,9 @@ func (n *QueryPlanNode) Compile(parent *QueryPlanNode, res *Result) (*Result, er
 	}
 	var err error
 	for _, v := range n.Nodes {
+		if v == nil {
+			return nil, errors.New("nil node in query plan")
+		}
 		v.BeforeParamsLen = len(params)
 		v.Parent = n
 		res, err = v.Compile(v, res)

@@ -44,7 +44,7 @@ func deleteRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 	if _, ok := e.(engines.EngineQueryScanner); !ok {
 		prefix = catalog
 	}
-	dbObject := info.SQL(ctx, prefix)
+	dbObject := info.SQL(ctx, engines.Ident(prefix))
 
 	var nodes QueryPlanNodes
 	// where node

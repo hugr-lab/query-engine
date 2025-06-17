@@ -501,6 +501,9 @@ func Ident(s string) string {
 }
 
 func IsValidIdentifier(s string) bool {
+	if s == "" {
+		return true
+	}
 	upperStr := strings.ToUpper(s)
 	_, isKeyword := sqlKeywords[upperStr]
 	if isKeyword {

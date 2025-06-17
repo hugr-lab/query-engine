@@ -76,14 +76,14 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 				PASSWORD '%s',
 				DATABASE '%s'
 			); 
-		`, s.ds.Name, dsn.Host, dsn.Port, dsn.User, dsn.Password, dsn.DBName,
+		`, engines.Ident(s.ds.Name+"_secret"), dsn.Host, dsn.Port, dsn.User, dsn.Password, dsn.DBName,
 		))
 		if err != nil {
 			return err
 		}
 	}
 
-	_, err = db.Exec(ctx, fmt.Sprintf("ATTACH '' AS %s (TYPE POSTGRES, SECRET %[1]s_secret);", s.ds.Name))
+	_, err = db.Exec(ctx, fmt.Sprintf("ATTACH '' AS %s (TYPE POSTGRES, SECRET %s);", engines.Ident(s.ds.Name), engines.Ident(s.ds.Name+"_secret")))
 	if err != nil {
 		return err
 	}
@@ -92,7 +92,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 }
 
 func (s *Source) Detach(ctx context.Context, db *db.Pool) error {
-	_, err := db.Exec(ctx, fmt.Sprintf("DETACH %s;", s.ds.Name))
+	_, err := db.Exec(ctx, fmt.Sprintf("DETACH %s;", engines.Ident(s.ds.Name)))
 	if err != nil {
 		return err
 	}

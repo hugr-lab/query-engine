@@ -27,6 +27,7 @@ const (
 	WithDeletedDirective = "with_deleted"
 	StatsDirective       = "stats"
 	RawResultsDirective  = "raw"
+	UnnestDirective      = "unnest"
 )
 
 const (
@@ -44,6 +45,7 @@ const (
 	FieldGeometryInfoDirectiveName = "geometry_info"
 	FieldSqlDirectiveName          = "sql"
 	FieldExtraFieldDirectiveName   = "extra_field"
+	FieldSourceDirectiveName       = "field_source"
 )
 
 func Init() {
@@ -69,6 +71,7 @@ func QuerySideDirectives() []string {
 		StatsDirective,
 		WithDeletedDirective,
 		RawResultsDirective,
+		UnnestDirective,
 	}
 }
 
@@ -100,6 +103,7 @@ func FieldGeometryInfoDirective(geomType string, srid int) *ast.Directive {
 }
 
 func FieldSqlDirective(sql string) *ast.Directive {
+	pos := &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}}
 	return &ast.Directive{
 		Name: FieldSqlDirectiveName,
 		Arguments: []*ast.Argument{
@@ -108,12 +112,23 @@ func FieldSqlDirective(sql string) *ast.Directive {
 				Value: &ast.Value{
 					Raw:      sql,
 					Kind:     ast.StringValue,
-					Position: &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},
+					Position: pos,
 				},
-				Position: &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},
+				Position: pos,
 			},
 		},
-		Position: &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},
+		Position: pos,
+	}
+}
+
+func FieldSourceDirective(name string) *ast.Directive {
+	pos := &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}}
+	return &ast.Directive{
+		Name: FieldSourceDirectiveName,
+		Arguments: []*ast.Argument{
+			{Name: "field", Value: &ast.Value{Kind: ast.StringValue, Raw: name, Position: pos}, Position: pos},
+		},
+		Position: pos,
 	}
 }
 

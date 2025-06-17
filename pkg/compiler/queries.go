@@ -646,7 +646,7 @@ func (m *Mutation) DBFieldName(name string) string {
 	if field == nil {
 		return ""
 	}
-	if d := field.Directives.ForName(fieldFieldSourceDirectiveName); d != nil {
+	if d := field.Directives.ForName(base.FieldSourceDirectiveName); d != nil {
 		return directiveArgValue(d, "field")
 	}
 	return field.Name

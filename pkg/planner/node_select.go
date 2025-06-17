@@ -238,6 +238,30 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			}
 		}
 	}
+	// sort join nodes by unnsested first than by name
+	slices.SortFunc(joinCatalogNodes, func(a, b *QueryPlanNode) int {
+		au := a.Query.Directives.ForName(base.UnnestDirective)
+		bu := b.Query.Directives.ForName(base.UnnestDirective)
+		if au != nil && bu == nil {
+			return -1 // a is unnest, b is not
+		}
+		if au == nil && bu != nil {
+			return 1 // b is unnest, a is not
+		}
+		return strings.Compare(a.Name, b.Name) // both are unnest or both are not
+	})
+	// sort join nodes by unnsested first than by name
+	slices.SortFunc(joinGeneralNodes, func(a, b *QueryPlanNode) int {
+		au := a.Query.Directives.ForName(base.UnnestDirective)
+		bu := b.Query.Directives.ForName(base.UnnestDirective)
+		if au != nil && bu == nil {
+			return -1 // a is unnest, b is not
+		}
+		if au == nil && bu != nil {
+			return 1 // b is unnest, a is not
+		}
+		return strings.Compare(a.Name, b.Name) // both are unnest or both are not
+	})
 	queryArg, err := compiler.ArgumentValues(defs, query, vars, true)
 	if err != nil {
 		return nil, false, err
@@ -562,9 +586,10 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	}
 
 	// create the top query based on the last one with order by and limits
+	baseData = selectStatementNode(query, nodes, "_objects", qp.withRowNum)
 	baseData.Name = "_objects"
 	nodes = QueryPlanNodes{
-		withNode(QueryPlanNodes{selectStatementNode(query, nodes, "_objects", false)}),
+		withNode(QueryPlanNodes{baseData}),
 		&QueryPlanNode{
 			Name:  "fields",
 			Query: query,
@@ -749,6 +774,7 @@ func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 			if err != nil {
 				return nil, err
 			}
+			node.Name = "nested_order_by"
 			nodes = append(nodes, node)
 		}
 		limit, ok := am["nested_limit"]
@@ -768,7 +794,7 @@ func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 				nodes = append(nodes, &QueryPlanNode{
 					Name: "nested_offset",
 					CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-						return fmt.Sprintf("%d", 0), params, nil
+						return fmt.Sprintf("%d", o), params, nil
 					},
 				})
 			}
@@ -783,7 +809,7 @@ func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 			fields := children.ForName("fields").Result
 			sql := "SELECT " + fields + " FROM " + children.ForName("from").Result
 			where := children.ForName("where")
-			if where != nil && node.Query.Directives.ForName("unnest") == nil && where.Result != "" {
+			if where != nil && node.Query.Directives.ForName(base.UnnestDirective) == nil && where.Result != "" {
 				sql += " WHERE " + where.Result
 			}
 			orderBy := children.ForName("nested_order_by")
@@ -799,12 +825,15 @@ func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 				sql += " OFFSET " + offset.Result
 			}
 			fieldsAgg := children.ForName("fields_agg")
-			if fieldsAgg != nil && node.Query.Directives.ForName("unnest") == nil {
+			if fieldsAgg != nil && node.Query.Directives.ForName(base.UnnestDirective) == nil {
 				sql = "SELECT " + fieldsAgg.Result + " FROM (" + sql + ") AS _subquery_sub_node"
+				if groupBy := children.ForName("groupBy"); groupBy != nil {
+					sql += " GROUP BY " + groupBy.Result
+				}
 				// check args for subquery (nested_order_by, nested_limit, nested_offset)
 			}
 
-			if node.Query.Directives.ForName("unnest") != nil {
+			if node.Query.Directives.ForName(base.UnnestDirective) != nil {
 				sql = " LEFT JOIN (" + sql + ") AS " + node.Name + " ON "
 				if where == nil {
 					return sql + "true", params, nil
@@ -845,7 +874,7 @@ func joinReferencesQueryNodes(ctx context.Context, defs compiler.DefinitionsSour
 					if !inGeneral {
 						db = ""
 					}
-					sql += " INNER JOIN " + m2mInfo.SQL(ctx, db) + " AS _join_m2m ON " + jc
+					sql += " INNER JOIN " + m2mInfo.SQL(ctx, engines.Ident(db)) + " AS _join_m2m ON " + jc
 				}
 				return sql, params, nil
 			},
@@ -873,7 +902,7 @@ func joinReferencesQueryNodes(ctx context.Context, defs compiler.DefinitionsSour
 					e = defaultEngine
 				}
 				sql := e.PackFieldsToObject(rAlias, field) + " AS _selection"
-				if node.Query.Directives.ForName("unnest") != nil {
+				if node.Query.Directives.ForName(base.UnnestDirective) != nil {
 					for _, f := range ri.ReferencesFields() {
 						if ri.IsM2M {
 							sql += ", _join_m2m." + f
@@ -956,7 +985,7 @@ func joinQueryNodes(_ context.Context, defs compiler.DefinitionsSource, inGenera
 				if len(right.SelectionSet) == 0 {
 					sql = "1 AS _selection"
 				}
-				if node.Query.Directives.ForName("unnest") != nil {
+				if node.Query.Directives.ForName(base.UnnestDirective) != nil {
 					rightFields, err := ji.ReferencesFields()
 					if err != nil {
 						return "", nil, err
@@ -1056,7 +1085,7 @@ func joinFunctionCallNodes(_ context.Context, defs compiler.DefinitionsSource, i
 					e = defaultEngine
 				}
 				sql := e.PackFieldsToObject(rAlias, right) + " AS _selection"
-				if node.Query.Directives.ForName("unnest") != nil {
+				if node.Query.Directives.ForName(base.UnnestDirective) != nil {
 					rightFields := call.ReferencesFields()
 					for _, fn := range rightFields {
 						sql += ", " + rAlias + "." + fn
@@ -1137,7 +1166,7 @@ func fromDataObjectNode(ctx context.Context, info *compiler.Object) *QueryPlanNo
 			if _, ok := e.(engines.EngineQueryScanner); ok {
 				prefix = ""
 			}
-			return info.SQL(ctx, prefix), params, nil
+			return info.SQL(ctx, engines.Ident(prefix)), params, nil
 		},
 	}
 }
@@ -1325,8 +1354,8 @@ func splitByQueryParts(_ context.Context, defs compiler.DefinitionsSource, query
 	}
 	// add source fields for order by arguments to order by non selected fields (will be used in aggregation)
 	slices.SortFunc(qp.subQueries, func(f1, f2 *ast.Field) int {
-		u1 := f1.Directives.ForName("unnest") != nil
-		u2 := f2.Directives.ForName("unnest") != nil
+		u1 := f1.Directives.ForName(base.UnnestDirective) != nil
+		u2 := f2.Directives.ForName(base.UnnestDirective) != nil
 		if u1 && u2 || !u1 && !u2 {
 			return 0
 		}
@@ -1605,6 +1634,11 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 			SelectionSet:     f.Field.SelectionSet,
 			Arguments:        args,
 			Directives:       []*ast.Directive{joinDirective},
+		}
+		if f.Field.Directives.ForName(base.UnnestDirective) != nil {
+			newField.Directives = append(newField.Directives,
+				f.Field.Directives.ForName(base.UnnestDirective),
+			)
 		}
 		new.SelectionSet = append(new.SelectionSet, newField)
 	}
