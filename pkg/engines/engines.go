@@ -219,7 +219,8 @@ func (ss SelectionSet) ScalarForPath(path string) *SelectedField {
 				}
 				return &s
 			}
-			if s.Field.Definition.Type.NamedType == "" {
+			if s.Field.Definition.Type.NamedType == "" &&
+				s.Field.Directives.ForName(base.UnnestDirective) == nil {
 				return nil
 			}
 			return SelectedFields(s.Field.SelectionSet).ScalarForPath(pp[1])

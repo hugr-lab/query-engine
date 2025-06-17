@@ -89,7 +89,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) (err error) {
 	_, err = db.Exec(ctx, fmt.Sprintf(
 		`ATTACH DATABASE '%s' AS %s (TYPE mysql)`,
 		cs,
-		s.ds.Name,
+		engines.Ident(s.ds.Name),
 	))
 	if err != nil {
 		return fmt.Errorf("failed to attach MySQL database %s: %w", s.ds.Name, err)
@@ -138,7 +138,7 @@ func (s *Source) Detach(ctx context.Context, db *db.Pool) error {
 		return nil
 	}
 
-	_, err := db.Exec(ctx, fmt.Sprintf("DETACH DATABASE %s", s.ds.Name))
+	_, err := db.Exec(ctx, fmt.Sprintf("DETACH DATABASE %s", engines.Ident(s.ds.Name)))
 	if err != nil {
 		return fmt.Errorf("failed to detach MySQL database %s: %w", s.ds.Name, err)
 	}

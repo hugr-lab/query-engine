@@ -16,6 +16,10 @@ type txContext struct {
 	level atomic.Int32
 }
 
+func ClearTxContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, txKey, nil)
+}
+
 func (p *Pool) WithTx(parent context.Context) (context.Context, error) {
 	tx := parent.Value(txKey)
 	if tx != nil {

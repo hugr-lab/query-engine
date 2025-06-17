@@ -365,7 +365,7 @@ func Test_duckdb_SQLValue(t *testing.T) {
 		{"time array value", []time.Time{tm, tm}, fmt.Sprintf("ARRAY['%s'::TIMESTAMP,'%[1]s'::TIMESTAMP]", tstr), false},
 		{"duration array value", []time.Duration{35 * time.Second, time.Second}, "ARRAY['35 seconds'::INTERVAL,'1 seconds'::INTERVAL]", false},
 		{"map value", map[string]any{"key": "value"}, "'{\"key\":\"value\"}'::JSON", false},
-		{"geometry value", orb.LineString{{32, 43}, {23, 55}}, "ST_GeomFromWKB('\x01\x02\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00@@\x00\x00\x00\x00\x00\x80E@\x00\x00\x00\x00\x00\x007@\x00\x00\x00\x00\x00\x80K@'::BLOB)", false},
+		{"geometry value", orb.LineString{{32, 43}, {23, 55}}, "ST_GeomFromText('LINESTRING(32 43,23 55)', true)", false},
 		{"unsupported value", struct{}{}, "", true},
 	}
 

@@ -46,11 +46,10 @@ type httpSourceParams struct {
 }
 
 const (
-	securityParamsKey  = "x-hugr-security"
-	serverParamKey     = "x-hugr-server"
-	specPathParamKey   = "x-hugr-spec-path"
-	specUrlParamKey    = "x-hugr-spec-url"
-	openApiTypeExtName = "x-hugr-type"
+	securityParamsKey = "x-hugr-security"
+	serverParamKey    = "x-hugr-server"
+	specPathParamKey  = "x-hugr-spec-path"
+	specUrlParamKey   = "x-hugr-spec-url"
 )
 
 func sourceParamsFromPath(path string) (httpSourceParams, error) {
@@ -192,34 +191,13 @@ func (p *httpSecurityParams) validate() error {
 		if p.Scheme != "basic" {
 			return fmt.Errorf("security schema %s is supported only basic", p.SchemaName)
 		}
+		if p.Username == "" || p.Password == "" {
+			return fmt.Errorf("security schema %s is http but missing required fields - username and password", p.SchemaName)
+		}
 	default:
 		return fmt.Errorf("security schema %s has unsupported type %s", p.SchemaName, p.Type)
 	}
 	return nil
-}
-
-func (p *httpSecurityParams) oauth2Config() *oauth2.Config {
-	switch p.FlowName {
-	case "password":
-		return &oauth2.Config{
-			ClientID:     p.ClientID,
-			ClientSecret: p.ClientSecret,
-
-			Endpoint: oauth2.Endpoint{
-				TokenURL: p.Flows.Password.TokenURL,
-			},
-		}
-	case "client_credentials":
-		return &oauth2.Config{
-			ClientID:     p.ClientID,
-			ClientSecret: p.ClientSecret,
-			Endpoint: oauth2.Endpoint{
-				TokenURL: p.Flows.ClientCredentials.TokenURL,
-			},
-		}
-	default:
-		return nil
-	}
 }
 
 func newHttpClient(params httpSourceParams, base http.RoundTripper) (*http.Client, error) {

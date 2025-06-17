@@ -734,18 +734,16 @@ func (info *Object) subQueryArguments() ast.ArgumentDefinitionList {
 			Type:        ast.ListType(ast.NamedType("OrderByField", compiledPos()), compiledPos()),
 		},
 		&ast.ArgumentDefinition{
-			Name:         "nested_limit",
-			Description:  "Limit the number of returned objects",
-			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue},
-			Type:         ast.NamedType("Int", compiledPos()),
-			Position:     compiledPos(),
+			Name:        "nested_limit",
+			Description: "Limit the number of returned objects",
+			Type:        ast.NamedType("Int", compiledPos()),
+			Position:    compiledPos(),
 		},
 		&ast.ArgumentDefinition{
-			Name:         "nested_offset",
-			Description:  "Skip the first n objects",
-			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue},
-			Type:         ast.NamedType("Int", compiledPos()),
-			Position:     compiledPos(),
+			Name:        "nested_offset",
+			Description: "Skip the first n objects",
+			Type:        ast.NamedType("Int", compiledPos()),
+			Position:    compiledPos(),
 		},
 	)
 }

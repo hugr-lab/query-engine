@@ -16,6 +16,11 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+const (
+	openApiTypeExtName  = "x-hugr-type"
+	openAPIFieldExtName = "x-hugr-name"
+)
+
 func (s *Source) CatalogSource(ctx context.Context, db *db.Pool) (sources.Source, error) {
 	return s, nil
 }
@@ -60,9 +65,10 @@ func (s *Source) loadSpecs(ctx context.Context) (err error) {
 		return nil
 	}
 	loader := openapi3.NewLoader()
-	loader.ReadFromURIFunc = openapi3.ReadFromURIs(openapi3.ReadFromHTTP(http.DefaultClient), openapi3.ReadFromFile)
+	loader.Context = ctx
 	var spec *openapi3.T
 	if sp.isFile {
+		loader.ReadFromURIFunc = openapi3.ReadFromURIs(openapi3.ReadFromHTTP(http.DefaultClient), openapi3.ReadFromFile)
 		spec, err = loader.LoadFromFile(sp.specPath)
 	}
 	if !sp.isFile {
@@ -491,6 +497,19 @@ func openAPISchemaToGraphQL(defs ast.DefinitionList, t *openapi3.Schema, parentN
 			}
 			if prop.Value != nil {
 				f.Description = prop.Value.Description
+				// field source directive if exists
+				if prop.Value.Extensions != nil {
+					if fn := prop.Value.Extensions[openAPIFieldExtName]; fn != nil {
+						fn, ok := fn.(string)
+						if !ok {
+							return nil, nil, fmt.Errorf("invalid field name extension %T for %s", fn, name)
+						}
+						if fn != "" && fn != name {
+							f.Name = fn
+							f.Directives = append(f.Directives, base.FieldSourceDirective(name))
+						}
+					}
+				}
 				ext, err := openApiTypeExtension(prop.Value)
 				if err != nil {
 					return nil, nil, err
@@ -578,7 +597,13 @@ func (t *openApiTypeExt) FieldDirectives(name string) []*ast.Directive {
 	var dd ast.DirectiveList
 	switch {
 	case t.TypeName == compiler.TimestampTypeName:
-		dd = append(dd, base.FieldSqlDirective(fmt.Sprintf("[%s]::TIMESTAMP_TZ", name)))
+		sql := "[" + name + "]"
+		switch t.TransformName {
+		case "FromUnixTime":
+			dd = append(dd, base.FieldSqlDirective(fmt.Sprintf("TO_TIMESTAMP(try_cast(%s AS BIGINT))", sql)))
+		default:
+			dd = append(dd, base.FieldSqlDirective(fmt.Sprintf("try_cast(%s AS VARCHAR)::TIMESTAMP_TZ", sql)))
+		}
 	case t.TypeName == compiler.GeometryTypeName:
 		if t.GeometryInfo.GeometryType != "" && t.GeometryInfo.SRID != 0 {
 			dd = append(dd, base.FieldGeometryInfoDirective(t.GeometryInfo.GeometryType, t.GeometryInfo.SRID))
@@ -595,8 +620,11 @@ func openApiTypeExtension(t *openapi3.Schema) (*openApiTypeExt, error) {
 	if t.Extensions == nil {
 		return nil, nil
 	}
-	et := t.Extensions[openApiTypeExtName]
 	ext := openApiTypeExt{}
+	et, ok := t.Extensions[openApiTypeExtName]
+	if !ok || et == nil {
+		return nil, nil // no extension found
+	}
 	etm, ok := et.(map[string]any)
 	if !ok || etm == nil {
 		return nil, fmt.Errorf("invalid extension type %T", et)

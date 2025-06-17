@@ -9,6 +9,7 @@ type AuthInfo struct {
 
 	AuthType     string
 	AuthProvider string
+	Token        string
 }
 
 type authInfoKeyType string

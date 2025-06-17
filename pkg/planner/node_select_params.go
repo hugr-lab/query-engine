@@ -470,7 +470,9 @@ func whereNode(ctx context.Context, defs compiler.DefinitionsSource, info *compi
 			if err != nil {
 				return nil, err
 			}
-			nodes = append(nodes, node)
+			if node != nil {
+				nodes = append(nodes, node)
+			}
 		}
 	}
 

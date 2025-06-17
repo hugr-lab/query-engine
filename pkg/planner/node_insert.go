@@ -464,7 +464,7 @@ func insertNode(ctx context.Context, info *compiler.Object, fieldValues map[stri
 			if _, ok := e.(engines.EngineQueryScanner); !ok {
 				prefix = info.Catalog
 			}
-			sql := "INSERT INTO " + info.SQL(ctx, prefix)
+			sql := "INSERT INTO " + info.SQL(ctx, engines.Ident(prefix))
 			var fields, values []string
 			for fn, fv := range fieldValues {
 				fi := info.FieldForName(fn)

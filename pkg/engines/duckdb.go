@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/paulmach/orb"
-	"github.com/paulmach/orb/encoding/wkb"
+	"github.com/paulmach/orb/encoding/wkt"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -57,11 +58,8 @@ func (e *DuckDB) SQLValue(v any) (string, error) {
 	case []string:
 		return SQLValueArrayFormatter(e, v)
 	case orb.Geometry:
-		b, err := wkb.Marshal(v)
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("ST_GeomFromWKB('%s'::BLOB)", string(b)), nil
+		b := wkt.Marshal(v)
+		return fmt.Sprintf("ST_GeomFromText('%s', true)", string(b)), nil
 	case time.Time:
 		return fmt.Sprintf("'%s'::TIMESTAMP", v.Format(time.RFC3339)), nil
 	case []time.Time:
@@ -774,7 +772,7 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 			if f.Field.Name == f.Field.Alias {
 				check[f.Field.ObjectDefinition.Name]--
 			}
-		case f.Field.Definition.Type.NamedType != "" || f.Field.Directives.ForName("unnest") != nil:
+		case f.Field.Definition.Type.NamedType != "" || f.Field.Directives.ForName(base.UnnestDirective) != nil:
 			children := repackStructRecursive(sql, f.Field, fieldName)
 			fields = append(fields, Ident(f.Field.Alias)+": "+children)
 			if f.Field.Name == f.Field.Alias && children == sql {

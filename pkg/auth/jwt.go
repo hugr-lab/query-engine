@@ -120,6 +120,7 @@ func (p *JwtProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 		UserName:     userName,
 		AuthType:     "jwt",
 		AuthProvider: p.c.Issuer,
+		Token:        t.Raw,
 	}, nil
 }
 

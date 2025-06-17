@@ -13,7 +13,6 @@ const (
 	fieldPrimaryKeyDirectiveName     = "pk"
 	fieldUniqueRuleDirectiveName     = "unique_rule"
 	fieldExcludeFilterDirectiveName  = "exclude_filter"
-	fieldFieldSourceDirectiveName    = "field_source"
 	fieldDefaultDirectiveName        = "default"
 	fieldFilterRequiredDirectiveName = "filter_required"
 	fieldTimescaleKeyDirectiveName   = "timescale_key"
@@ -50,7 +49,7 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 				return ErrorPosf(d.Position, "field %s of object %s should be a scalar type", field.Name, def.Name)
 			}
 		case fieldPrimaryKeyDirectiveName, fieldExcludeFilterDirectiveName,
-			fieldFilterRequiredDirectiveName, fieldFieldSourceDirectiveName:
+			fieldFilterRequiredDirectiveName, base.FieldSourceDirectiveName:
 		case base.FieldGeometryInfoDirectiveName:
 			if field.Type.Name() != GeometryTypeName {
 				return ErrorPosf(d.Position, "field %s of object %s should be a Geometry type", field.Name, def.Name)
@@ -160,7 +159,7 @@ func FieldInfo(field *ast.Field) *Field {
 func fieldInfo(field *ast.FieldDefinition, object *ast.Definition) *Field {
 	return &Field{
 		Name:         field.Name,
-		dbName:       fieldDirectiveArgValue(field, fieldFieldSourceDirectiveName, "field"),
+		dbName:       fieldDirectiveArgValue(field, base.FieldSourceDirectiveName, "field"),
 		sql:          fieldDirectiveArgValue(field, base.FieldSqlDirectiveName, "exp"),
 		geometrySRID: fieldDirectiveArgValue(field, base.FieldGeometryInfoDirectiveName, "srid"),
 		geometryType: fieldDirectiveArgValue(field, base.FieldGeometryInfoDirectiveName, "type"),
