@@ -14,22 +14,34 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-type ArrowTable struct {
+type ArrowTable interface {
+	SetInfo(info string)
+	Info() string
+	Retain()
+	Release()
+	MarshalJSON() ([]byte, error)
+	DecodeMsgpack(dec *msgpack.Decoder) error
+	EncodeMsgpack(enc *msgpack.Encoder) error
+	Records() ([]arrow.Record, error)
+	Reader(retain bool) (array.RecordReader, error)
+}
+
+type ArrowTableChunked struct {
 	chunks  []arrow.Record
 	wrapped bool
 	asArray bool
 }
 
-func NewArrowTable() *ArrowTable {
-	return &ArrowTable{}
+func NewArrowTable() *ArrowTableChunked {
+	return &ArrowTableChunked{}
 }
 
-func (t *ArrowTable) SetInfo(info string) {
+func (t *ArrowTableChunked) SetInfo(info string) {
 	t.wrapped = strings.Contains(info, "wrapped")
 	t.asArray = strings.Contains(info, "asArray")
 }
 
-func (t *ArrowTable) Info() string {
+func (t *ArrowTableChunked) Info() string {
 	var info []string
 	if t.wrapped {
 		info = append(info, "wrapped")
@@ -40,18 +52,54 @@ func (t *ArrowTable) Info() string {
 	return strings.Join(info, ",")
 }
 
-func (t *ArrowTable) Append(rec arrow.Record) {
+func (t *ArrowTableChunked) Append(rec arrow.Record) {
 	rec.Retain()
 	t.chunks = append(t.chunks, rec)
 }
 
-func (t *ArrowTable) Release() {
+func (t *ArrowTableChunked) Retain() {
+	for _, rec := range t.chunks {
+		rec.Retain()
+	}
+}
+
+func (t *ArrowTableChunked) Release() {
 	for _, rec := range t.chunks {
 		rec.Release()
 	}
 }
 
-func (t *ArrowTable) RowData(i int) (map[string]any, bool) {
+func (t *ArrowTableChunked) Records() ([]arrow.Record, error) {
+	if len(t.chunks) == 0 {
+		return nil, nil
+	}
+	records := make([]arrow.Record, len(t.chunks))
+	for i, rec := range t.chunks {
+		rec.Retain()
+		records[i] = rec
+	}
+	return records, nil
+}
+
+func (t *ArrowTableChunked) Reader(retain bool) (array.RecordReader, error) {
+	if len(t.chunks) == 0 {
+		return nil, nil
+	}
+	reader, err := array.NewRecordReader(t.chunks[0].Schema(), t.chunks)
+	if err != nil {
+		for _, rec := range t.chunks {
+			rec.Release()
+		}
+		t.chunks = nil
+		return nil, err
+	}
+	if retain {
+		t.Retain()
+	}
+	return reader, nil
+}
+
+func (t *ArrowTableChunked) RowData(i int) (map[string]any, bool) {
 	if i < 0 || i >= t.NumRows() {
 		return nil, false
 	}
@@ -70,15 +118,15 @@ func (t *ArrowTable) RowData(i int) (map[string]any, bool) {
 	return nil, false
 }
 
-func (t *ArrowTable) NumChunks() int {
+func (t *ArrowTableChunked) NumChunks() int {
 	return len(t.chunks)
 }
 
-func (t *ArrowTable) Chunk(i int) arrow.Record {
+func (t *ArrowTableChunked) Chunk(i int) arrow.Record {
 	return t.chunks[i]
 }
 
-func (t *ArrowTable) NumRows() int {
+func (t *ArrowTableChunked) NumRows() int {
 	var numRows int64
 	for _, rec := range t.chunks {
 		numRows += rec.NumRows()
@@ -86,14 +134,14 @@ func (t *ArrowTable) NumRows() int {
 	return int(numRows)
 }
 
-func (t *ArrowTable) NumCols() int {
+func (t *ArrowTableChunked) NumCols() int {
 	if len(t.chunks) == 0 {
 		return 0
 	}
 	return int(t.chunks[0].NumCols())
 }
 
-func (t *ArrowTable) MarshalJSON() ([]byte, error) {
+func (t *ArrowTableChunked) MarshalJSON() ([]byte, error) {
 	if t == nil {
 		return []byte("null"), nil
 	}
@@ -327,9 +375,9 @@ func ColumnValue(a arrow.Array, i int) any {
 }
 
 // msgpack custom decoder
-var _ msgpack.CustomDecoder = (*ArrowTable)(nil)
+var _ msgpack.CustomDecoder = (*ArrowTableChunked)(nil)
 
-func (t *ArrowTable) DecodeMsgpack(dec *msgpack.Decoder) error {
+func (t *ArrowTableChunked) DecodeMsgpack(dec *msgpack.Decoder) error {
 	err := dec.DecodeMulti(&t.wrapped, &t.asArray)
 	if err != nil {
 		return err
@@ -342,11 +390,11 @@ func (t *ArrowTable) DecodeMsgpack(dec *msgpack.Decoder) error {
 	if len(encoded) == 0 {
 		return nil
 	}
-	t.chunks, err = decodeRecordFromIPC(encoded)
+	t.chunks, err = decodeRecordsFromIPC(encoded)
 	return err
 }
 
-func decodeRecordFromIPC(b []byte) ([]arrow.Record, error) {
+func decodeRecordsFromIPC(b []byte) ([]arrow.Record, error) {
 	buf := bytes.NewReader(b)
 	fr, err := ipc.NewFileReader(buf)
 	if err != nil {
@@ -374,9 +422,9 @@ func decodeRecordFromIPC(b []byte) ([]arrow.Record, error) {
 }
 
 // msgpack custom encoder
-var _ msgpack.CustomEncoder = (*ArrowTable)(nil)
+var _ msgpack.CustomEncoder = (*ArrowTableChunked)(nil)
 
-func (t *ArrowTable) EncodeMsgpack(enc *msgpack.Encoder) error {
+func (t *ArrowTableChunked) EncodeMsgpack(enc *msgpack.Encoder) error {
 	if t == nil {
 		enc.EncodeNil()
 	}
@@ -386,14 +434,14 @@ func (t *ArrowTable) EncodeMsgpack(enc *msgpack.Encoder) error {
 		return err
 	}
 	// encode each chunk as []string ([][]byte)
-	encoded, err := encodeRecordToIPC(t.chunks)
+	encoded, err := encodeRecordsToIPC(t.chunks)
 	if err != nil {
 		return err
 	}
 	return enc.Encode(encoded)
 }
 
-func encodeRecordToIPC(rr []arrow.Record) ([]byte, error) {
+func encodeRecordsToIPC(rr []arrow.Record) ([]byte, error) {
 	if len(rr) == 0 {
 		return nil, nil
 	}
@@ -419,4 +467,274 @@ type JsonValue string
 
 func (v *JsonValue) MarshalJSON() ([]byte, error) {
 	return []byte(*v), nil
+}
+
+type ArrowTableStream struct {
+	reader  array.RecordReader
+	wrapped bool
+	asArray bool
+}
+
+func NewArrowTableStream(reader array.RecordReader) *ArrowTableStream {
+	return &ArrowTableStream{
+		reader: reader,
+	}
+}
+
+func (t *ArrowTableStream) Info() string {
+	var info []string
+	if t.wrapped {
+		info = append(info, "wrapped")
+	}
+	if t.asArray {
+		info = append(info, "asArray")
+	}
+	return strings.Join(info, ",")
+}
+
+func (t *ArrowTableStream) SetInfo(info string) {
+	t.wrapped = strings.Contains(info, "wrapped")
+	t.asArray = strings.Contains(info, "asArray")
+}
+
+func (t *ArrowTableStream) Release() {
+	t.reader.Release()
+}
+
+func (t *ArrowTableStream) Retain() {
+	t.reader.Retain()
+}
+
+func (t *ArrowTableStream) Records() ([]arrow.Record, error) {
+	if t.reader == nil {
+		return nil, nil
+	}
+	rr, err := t.readAll()
+	if err != nil {
+		t.reader.Release()
+		for _, rec := range rr {
+			rec.Release()
+		}
+		return nil, err
+	}
+	if len(rr) == 0 {
+		return nil, nil
+	}
+	// create a new reader for the records
+	reader, err := array.NewRecordReader(rr[0].Schema(), rr)
+	if err != nil {
+		for _, rec := range rr {
+			rec.Release()
+		}
+		return nil, err
+	}
+	t.reader.Release()
+	t.reader = reader
+	return rr, nil
+}
+
+func (t *ArrowTableStream) Reader(retain bool) (array.RecordReader, error) {
+	if !retain || t.reader == nil {
+		return t.reader, nil
+	}
+	rr, err := t.readAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(rr) == 0 {
+		return t.reader, nil
+	}
+
+	reader, err := array.NewRecordReader(rr[0].Schema(), rr)
+	if err != nil {
+		for _, rec := range rr {
+			rec.Release()
+		}
+		return nil, err
+	}
+	t.reader.Release()
+	t.reader = reader
+	return array.NewRecordReader(rr[0].Schema(), rr)
+}
+
+func (t *ArrowTableStream) MarshalJSON() ([]byte, error) {
+	if t == nil {
+		return []byte("null"), nil
+	}
+	rr, err := t.readAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(rr) == 0 {
+		return []byte("[]"), nil
+	}
+	w := bytes.NewBuffer(nil)
+	w.WriteByte('[')
+	for i, rec := range rr {
+		if i > 0 {
+			w.WriteByte(',')
+		}
+		if !t.wrapped {
+			RecordToJSON(rec, t.asArray, w)
+			continue
+		}
+		col := colVal{a: rec.Column(0)}
+		for i := 0; i < int(rec.NumRows()); i++ {
+			if i > 0 {
+				w.WriteByte(',')
+			}
+			val := col.Value(i)
+			if val == nil {
+				w.WriteString("null")
+				continue
+			}
+			var err error
+			switch val := val.(type) {
+			case string:
+				_, err = w.WriteString(val)
+			case []byte:
+				w.Write(val)
+			default:
+				err = json.NewEncoder(w).Encode(val)
+			}
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	err = w.WriteByte(']')
+	if err != nil {
+		return nil, err
+	}
+	reader, err := array.NewRecordReader(rr[0].Schema(), rr)
+	if err != nil {
+		for _, rec := range rr {
+			rec.Release()
+		}
+		return nil, err
+	}
+	t.reader.Release()
+	t.reader = reader
+
+	return w.Bytes(), nil
+}
+
+func (t *ArrowTableStream) readAll() ([]arrow.Record, error) {
+	if t.reader == nil {
+		return nil, nil
+	}
+	var rr []arrow.Record
+	for t.reader.Next() {
+		rec := t.reader.Record()
+		if t.reader.Err() != nil {
+			t.reader.Release()
+			for _, r := range rr {
+				r.Release()
+			}
+			return nil, t.reader.Err()
+		}
+		rr = append(rr, rec)
+		rec.Retain()
+	}
+	return rr, nil
+}
+
+// msgpack custom decoder
+var _ msgpack.CustomDecoder = (*ArrowTableStream)(nil)
+
+func (t *ArrowTableStream) DecodeMsgpack(dec *msgpack.Decoder) error {
+	err := dec.DecodeMulti(&t.wrapped, &t.asArray)
+	if err != nil {
+		return err
+	}
+	var encoded []byte
+	err = dec.Decode(&encoded)
+	if err != nil {
+		return err
+	}
+	if len(encoded) == 0 {
+		return nil
+	}
+	rr, err := decodeRecordsFromIPC(encoded)
+	if err != nil {
+		return err
+	}
+	if len(rr) == 0 {
+		return nil
+	}
+	t.reader, err = array.NewRecordReader(rr[0].Schema(), rr)
+	if err != nil {
+		for _, rec := range rr {
+			rec.Release()
+		}
+		return err
+	}
+
+	return nil
+}
+
+// msgpack custom encoder
+var _ msgpack.CustomEncoder = (*ArrowTableStream)(nil)
+
+func (t *ArrowTableStream) EncodeMsgpack(enc *msgpack.Encoder) error {
+	if t == nil {
+		enc.EncodeNil()
+	}
+	err := enc.EncodeMulti(t.wrapped, t.asArray)
+	if err != nil {
+		return err
+	}
+	rr, err := t.readAll()
+	if err != nil {
+		return err
+	}
+	if len(rr) == 0 {
+		return errors.New("no records to encode")
+	}
+	// create a new reader for the records
+	reader, err := array.NewRecordReader(rr[0].Schema(), rr)
+	if err != nil {
+		for _, rec := range rr {
+			rec.Release()
+		}
+		return err
+	}
+	t.reader.Release()
+	t.reader = reader
+	// encode each chunk as []string ([][]byte)
+	encoded, err := encodeRecordsToIPC(rr)
+	if err != nil {
+		return err
+	}
+	return enc.Encode(encoded)
+}
+
+func RecordsColNums(rr []arrow.Record) int64 {
+	if len(rr) == 0 {
+		return 0
+	}
+	return rr[0].NumCols()
+}
+
+func RecordsRowNums(rr []arrow.Record) int64 {
+	if len(rr) == 0 {
+		return 0
+	}
+	var numRows int64
+	for _, rec := range rr {
+		numRows += rec.NumRows()
+	}
+	return numRows
+}
+
+func ReleaseRecords(rr []arrow.Record) {
+	for _, rec := range rr {
+		rec.Release()
+	}
+}
+
+func RetainRecords(rr []arrow.Record) {
+	for _, rec := range rr {
+		rec.Retain()
+	}
 }

@@ -566,10 +566,9 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		if err != nil {
 			return nil, false, err
 		}
-		paramNodes = slices.DeleteFunc(paramNodes, func(n *QueryPlanNode) bool {
-			return n.Name == "where"
-		})
-		nodes = append(nodes, paramNodes...)
+		orderByNode = paramNodes.ForName("orderBy")
+		limitNode = paramNodes.ForName("limit")
+		offsetNode = paramNodes.ForName("offset")
 	}
 
 	if len(innerGeneral) != 0 {
@@ -581,7 +580,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			},
 		})
 	}
-	if canOrderByPushDown && canLimitPushDown {
+	if orderByNode == nil && limitNode == nil {
 		return selectStatementNode(query, nodes, "_objects", qp.withRowNum), true, nil
 	}
 
@@ -605,13 +604,13 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			},
 		},
 	}
-	if canLimitPushDown && limitNode != nil {
+	if limitNode != nil {
 		nodes = append(nodes, limitNode)
 	}
-	if canLimitPushDown && offsetNode != nil {
+	if offsetNode != nil {
 		nodes = append(nodes, offsetNode)
 	}
-	if canOrderByPushDown && orderByNode != nil {
+	if orderByNode != nil {
 		nodes = append(nodes, orderByNode)
 	}
 	return selectStatementNode(query, nodes, "_objects", false), true, nil
@@ -1564,13 +1563,6 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 		}
 		// convert buffer from meters to degrees (1 degree = 111 km)
 		buffer = buffer / 111111
-		sqlTemplate = strings.ReplaceAll(sqlTemplate, "[field1]",
-			fmt.Sprintf("ST_Buffer([%s.%s], %f)",
-				compiler.JoinSourceFieldPrefix, aliasName, buffer),
-		)
-	}
-	if buffer == 0 {
-		sqlTemplate = strings.ReplaceAll(sqlTemplate, "[field1]", "["+compiler.JoinSourceFieldPrefix+"."+aliasName+"]")
 	}
 	switch operation {
 	case "INTERSECTS":
@@ -1581,7 +1573,16 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 		sqlTemplate = strings.ReplaceAll(sqlTemplate, "[operation]", "Contains")
 	case "DISJOIN":
 		sqlTemplate = "NOT(" + strings.ReplaceAll(sqlTemplate, "[operation]", "Intersects") + ")"
+	case "DWITHIN":
+		sqlTemplate = fmt.Sprintf("ST_DWithin([field1], [field2], %f)", buffer)
+		buffer = 0
 	}
+	if buffer != 0 {
+		sqlTemplate = strings.ReplaceAll(sqlTemplate, "[field1]",
+			fmt.Sprintf("ST_Buffer([field1], %f)", buffer),
+		)
+	}
+	sqlTemplate = strings.ReplaceAll(sqlTemplate, "[field1]", "["+compiler.JoinSourceFieldPrefix+"."+aliasName+"]")
 
 	withAgg := false
 	for _, f := range engines.SelectedFields(field.SelectionSet) {

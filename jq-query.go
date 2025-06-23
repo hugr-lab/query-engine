@@ -11,6 +11,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	"github.com/hugr-lab/query-engine/pkg/jq"
+	"github.com/hugr-lab/query-engine/pkg/types"
 )
 
 type JQRequest struct {
@@ -62,6 +63,7 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 	info := requestCacheInfo(r)
 	if !info.Use {
 		data, err := dataFunc()
+		defer types.DataClose(data)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -81,6 +83,7 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	defer types.DataClose(data)
 	if info.Invalidate {
 		err = s.cache.Invalidate(r.Context(), info.Tags...)
 		if err != nil {

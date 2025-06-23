@@ -26,7 +26,7 @@ func (db *Pool) QueryArrowTable(ctx context.Context, q string, wrap bool, params
 	return db.QueryJsonTableArrow(ctx, q, wrap, params...)
 }
 
-func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, params ...any) (*ArrowTable, error) {
+func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, params ...any) (ArrowTable, error) {
 	ar, err := db.Arrow(ctx)
 	if err != nil {
 		return nil, err
@@ -40,19 +40,10 @@ func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, pa
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Release()
-
-	table := NewArrowTable()
+	table := NewArrowTableStream(reader)
 	table.wrapped = wrap
-	for reader.Next() {
-		rec := reader.Record()
-		if rec == nil {
-			continue
-		}
-		table.Append(rec)
-	}
 
-	return table, reader.Err()
+	return table, nil
 }
 
 func (db *Pool) queryJsonTableTx(ctx context.Context, q string, wrap bool, params ...any) (any, error) {
@@ -91,7 +82,7 @@ func (db *Pool) QueryJsonScalarArray(ctx context.Context, q string, params ...an
 	return db.QueryJsonScalarArrayArrow(ctx, q, params...)
 }
 
-func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params ...any) (*ArrowTable, error) {
+func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params ...any) (ArrowTable, error) {
 	ar, err := db.Arrow(ctx)
 	if err != nil {
 		return nil, err
@@ -102,19 +93,10 @@ func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params 
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Release()
 
-	table := NewArrowTable()
+	table := NewArrowTableStream(reader)
 	table.asArray = true
-	for reader.Next() {
-		rec := reader.Record()
-		if rec == nil {
-			continue
-		}
-		table.Append(rec)
-	}
-
-	return table, reader.Err()
+	return table, nil
 }
 
 func (db *Pool) queryJsonScalarArrayTx(ctx context.Context, q string, params ...any) (any, error) {

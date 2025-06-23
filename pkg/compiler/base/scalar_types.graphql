@@ -80,6 +80,7 @@ enum GeometryTransform @system {
   Reverse
   FlipCoordinates
   ConvexHull
+  Envelope
 }
 
 enum GeometryMeasurementTypes @system {

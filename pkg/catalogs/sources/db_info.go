@@ -76,10 +76,10 @@ func DescribeDataSource(ctx context.Context, qe types.Querier, name string) (*DB
 	}`, map[string]any{
 		"name": name,
 	})
+	defer res.Close()
 	if err != nil {
 		return nil, fmt.Errorf("failed to query data source %s: %w", name, err)
 	}
-	defer res.Close()
 	var dbInfo DBInfo
 	err = res.ScanData("core.meta.databases_by_name", &dbInfo)
 	if err != nil {

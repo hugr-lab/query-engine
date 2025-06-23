@@ -27,10 +27,18 @@ func TestQueryJsonTable(t *testing.T) {
 	if table == nil {
 		t.Fatalf("QueryJsonTable() returned nil table")
 	}
-	if got := table.NumCols(); got != 2 {
-		t.Errorf("NumCols() = %v, want %v", got, 1)
+	rr, err := table.Records()
+	if err != nil {
+		t.Fatalf("table.Records() error = %v", err)
 	}
-	if got := table.NumRows(); got != 2 {
+	if len(rr) == 0 {
+		t.Fatalf("table.Records() returned empty records")
+	}
+	defer ReleaseRecords(rr)
+	if got := RecordsColNums(rr); got != 2 {
+		t.Errorf("NumCols() = %v, want %v", got, 2)
+	}
+	if got := RecordsRowNums(rr); got != 2 {
 		t.Errorf("NumRows() = %v, want %v", got, 2)
 	}
 }

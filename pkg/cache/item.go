@@ -9,7 +9,7 @@ import (
 
 const (
 	ItemDataTypeMap = iota
-	ItemDataTypeDBJsonTable
+	ItemDataTypeArrowTable
 	ItemDataTypeJsonValue
 	ItemDataTypeBytes
 	ItemDataTypeString
@@ -35,12 +35,17 @@ func NewCacheItem(data any) (*CacheItem, error) {
 			Type: ItemDataTypeMap,
 			Data: v,
 		}, nil
-	case *db.ArrowTable:
+	case db.ArrowTable:
 		return &CacheItem{
-			Type: ItemDataTypeDBJsonTable,
+			Type: ItemDataTypeArrowTable,
 			Data: v,
 		}, nil
 	case *db.JsonValue:
+		return &CacheItem{
+			Type: ItemDataTypeJsonValue,
+			Data: v,
+		}, nil
+	case []db.JsonValue:
 		return &CacheItem{
 			Type: ItemDataTypeJsonValue,
 			Data: v,
@@ -70,8 +75,8 @@ func (item *CacheItem) DecodeMsgpack(dec *msgpack.Decoder) (err error) {
 	switch item.Type {
 	case ItemDataTypeMap:
 		item.Data, err = dec.DecodeMap()
-	case ItemDataTypeDBJsonTable:
-		data := new(db.ArrowTable)
+	case ItemDataTypeArrowTable:
+		data := new(db.ArrowTableStream)
 		err = dec.Decode(data)
 		item.Data = data
 	case ItemDataTypeJsonValue:

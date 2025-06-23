@@ -26,4 +26,8 @@ enum GeometrySpatialQueryType @system {
     checks if the geometries don't intersect
     """
     DISJOIN
+    """
+    checks if the geometries are within a distance
+    """
+    DWITHIN
 }
