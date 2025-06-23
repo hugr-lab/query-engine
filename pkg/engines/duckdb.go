@@ -327,15 +327,15 @@ func (e DuckDB) GeometryTransform(sql string, field *ast.Field, args compiler.Fi
 		case "Area":
 			sql = fmt.Sprintf("ST_Area(%s)", sql)
 		case "AreaSpheroid":
-			sql = fmt.Sprintf("ST_AreaSpheroid(%s)", sql)
+			sql = fmt.Sprintf("ST_Area_Spheroid(%s)", sql)
 		case "Length":
 			sql = fmt.Sprintf("ST_Length(%s)", sql)
 		case "LengthSpheroid":
-			sql = fmt.Sprintf("ST_LengthSpheroid(%s)", sql)
+			sql = fmt.Sprintf("ST_Length_Spheroid(%s)", sql)
 		case "Perimeter":
 			sql = fmt.Sprintf("ST_Perimeter(%s)", sql)
 		case "PerimeterSpheroid":
-			sql = fmt.Sprintf("ST_PerimeterSpheroid(%s)", sql)
+			sql = fmt.Sprintf("ST_Perimeter_Spheroid(%s)", sql)
 		}
 	}
 
@@ -345,7 +345,11 @@ func (e DuckDB) GeometryTransform(sql string, field *ast.Field, args compiler.Fi
 	}
 	tt, ok := v.Value.([]any)
 	if !ok {
-		return "NULL"
+		t, ok := v.Value.(string)
+		if !ok {
+			return "NULL"
+		}
+		tt = []any{t}
 	}
 	currentSrid := 4326
 	if d := field.Definition.Directives.ForName("geometry_info"); d != nil {
@@ -403,6 +407,8 @@ func (e DuckDB) GeometryTransform(sql string, field *ast.Field, args compiler.Fi
 			sql = fmt.Sprintf("ST_FlipCoordinates(%s)", sql)
 		case "ConvexHull":
 			sql = fmt.Sprintf("ST_ConvexHull(%s)", sql)
+		case "Envelope":
+			sql = fmt.Sprintf("ST_Envelope(%s)", sql)
 		}
 	}
 	return sql

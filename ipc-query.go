@@ -150,60 +150,90 @@ func flatQuery(queries []compiler.QueryRequest) map[string]compiler.QueryRequest
 
 func writeDataIPC(w *multipart.Writer, aloc memory.Allocator, path string, query compiler.QueryRequest, data any) error {
 	switch data := data.(type) {
-	case *db.ArrowTable:
+	case db.ArrowTable:
 		return writeArrowTableToIPC(w, aloc, path, query, data)
 	default:
 		return writeJsonValueToIPC(w, aloc, path, query, data)
 	}
 }
 
-func writeArrowTableToIPC(w *multipart.Writer, aloc memory.Allocator, path string, query compiler.QueryRequest, data *db.ArrowTable) error {
+func writeArrowTableToIPC(w *multipart.Writer, aloc memory.Allocator, path string, query compiler.QueryRequest, data db.ArrowTable) error {
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Type", "application/vnd.apache.arrow.stream")
 	hdr.Set("X-Hugr-Part-Type", "data")
 	hdr.Set("X-Hugr-Path", path)
 	hdr.Set("X-Hugr-Format", "table")
-	if data == nil || data.NumChunks() == 0 {
+	if data == nil {
 		hdr.Set("X-Hugr-Empty", "true")
-		hdr.Set("X-Hugr-Chunk", "0")
 		hdr.Set("X-Hugr-Table-Info", "{}")
+		_, err := w.CreatePart(hdr)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
-	var meta map[string]string
-	if data != nil && data.NumChunks() > 0 {
-		hdr.Set("X-Hugr-Chunk", strconv.Itoa(data.NumChunks()))
-		hdr.Set("X-Hugr-Table-Info", data.Info())
-		meta = map[string]string{
-			"chunks": strconv.Itoa(data.NumChunks()),
+	defer data.Release()
+	rr, err := data.Reader(false)
+	if err != nil {
+		return err
+	}
+	defer rr.Release()
+	i := 0
+	// writing first chunk to ensure we have at least one record
+	if !rr.Next() {
+		// empty table, write empty part
+		hdr.Set("X-Hugr-Empty", "true")
+		hdr.Set("X-Hugr-Table-Info", "{}")
+		_, err := w.CreatePart(hdr)
+		if err != nil {
+			return err
 		}
-		if gi, ok := geometryInfo(query.Field); ok {
-			hdr.Set("X-Hugr-Geometry-Fields", gi)
-			hdr.Set("X-Hugr-Geometry", "true")
-		}
+		return nil
+	}
+	meta := map[string]string{}
+	hdr.Set("X-Hugr-Table-Info", data.Info())
+	if gi, ok := geometryInfo(query.Field); ok {
+		hdr.Set("X-Hugr-Geometry-Fields", gi)
+		hdr.Set("X-Hugr-Geometry", "true")
 	}
 	pw, err := w.CreatePart(hdr)
 	if err != nil {
 		return err
 	}
-
-	if data == nil || data.NumChunks() == 0 {
-		return nil
+	chunk := rr.Record()
+	if rr.Err() != nil {
+		return rr.Err()
 	}
-
+	if chunk == nil {
+		return gqlerror.Errorf("no data found for query %s", query.Field.Alias)
+	}
 	iw := ipc.NewWriter(pw)
 	defer iw.Close()
-	// add geom fields to the metadata
-	defer data.Release()
-	for cn := range data.NumChunks() {
-		chunk := data.Chunk(cn)
+
+	meta["chunk"] = strconv.Itoa(i)
+	ns := addMeta(chunk.Schema(), meta)
+	err = iw.Write(array.NewRecord(ns, chunk.Columns(), chunk.NumRows()))
+	if err != nil {
+		return err
+	}
+	i++
+
+	// write remaining chunks
+	for rr.Next() {
+		chunk = rr.Record()
+		if rr.Err() != nil {
+			return rr.Err()
+		}
 		if chunk == nil {
 			continue
 		}
-		meta["chunk"] = strconv.Itoa(cn)
+		meta["chunk"] = strconv.Itoa(i)
 		ns := addMeta(chunk.Schema(), meta)
 		err := iw.Write(array.NewRecord(ns, chunk.Columns(), chunk.NumRows()))
 		if err != nil {
 			return err
 		}
+		i++
 	}
 	return nil
 }

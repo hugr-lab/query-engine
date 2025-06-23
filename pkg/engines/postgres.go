@@ -683,7 +683,11 @@ func (e Postgres) GeometryTransform(sql string, field *ast.Field, args compiler.
 	}
 	tt, ok := v.Value.([]any)
 	if !ok {
-		return "NULL"
+		t, ok := v.Value.(string)
+		if !ok {
+			return "NULL"
+		}
+		tt = []any{t}
 	}
 	currentSrid := 4326
 	if d := field.Definition.Directives.ForName("geometry_info"); d != nil {
@@ -741,6 +745,8 @@ func (e Postgres) GeometryTransform(sql string, field *ast.Field, args compiler.
 			sql = fmt.Sprintf("ST_FlipCoordinates(%s)", sql)
 		case "ConvexHull":
 			sql = fmt.Sprintf("ST_ConvexHull(%s)", sql)
+		case "Envelope":
+			sql = fmt.Sprintf("ST_Envelope(%s)", sql)
 		default:
 			return "NULL"
 		}

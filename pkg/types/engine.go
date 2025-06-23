@@ -46,7 +46,7 @@ func DataClose(data any) {
 	}
 	switch v := data.(type) {
 	case *db.JsonValue:
-	case *db.ArrowTable:
+	case db.ArrowTable:
 		v.Release()
 	case map[string]any:
 		for _, val := range v {
