@@ -102,11 +102,11 @@ func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.
 			}
 		}
 	}
-	if len(extensions) == 0 && op.Directives.ForName(base.StatsDirective) == nil {
+	if len(extensions) == 0 && op.Directives.ForName(base.StatsDirectiveName) == nil {
 		return data, nil, nil
 	}
 	ext := map[string]any{}
-	if op.Directives.ForName(base.StatsDirective) != nil {
+	if op.Directives.ForName(base.StatsDirectiveName) != nil {
 		ext["stats"] = map[string]any{
 			"name":       op.Name,
 			"total_time": time.Since(start).String(),
@@ -187,7 +187,7 @@ func (s *Service) processQuerySequential(ctx context.Context,
 					return err
 				}
 			}
-			if query.Field.Directives.ForName(base.StatsDirective) != nil {
+			if query.Field.Directives.ForName(base.StatsDirectiveName) != nil {
 				ext = map[string]any{
 					"stats": map[string]any{
 						"name":      query.Name,
@@ -197,11 +197,11 @@ func (s *Service) processQuerySequential(ctx context.Context,
 			}
 		case compiler.QueryTypeMeta:
 			res, err = metadata.ProcessQuery(ctx, schema, query, s.config.MaxDepth)
-		case compiler.QueryTypeQuery, compiler.QueryTypeFunction:
+		case compiler.QueryTypeQuery, compiler.QueryTypeFunction, compiler.QueryTypeH3Aggregation:
 			res, ext, err = s.processDataQuery(ctx, schema, query, vars)
 		case compiler.QueryTypeMutation, compiler.QueryTypeFunctionMutation:
 			res, ext, err = s.processDataQuery(ctx, schema, query, vars)
-		case compiler.QueryJQTransform:
+		case compiler.QueryTypeJQTransform:
 			res, ext, err = s.processJQTransformation(ctx, schema, query, vars)
 		}
 		if err != nil {
@@ -233,7 +233,7 @@ func (s *Service) processQueryParallel(
 		switch query.QueryType {
 		case compiler.QueryTypeNone:
 			s.processQueryParallel(ctx, wg, eg, schema, query.Subset, vars, append(path, query.Name), dataCh)
-		case compiler.QueryJQTransform:
+		case compiler.QueryTypeJQTransform:
 			wg.Add(1)
 			eg.Go(func() error {
 				defer wg.Done()
@@ -263,7 +263,7 @@ func (s *Service) processQueryParallel(
 				}
 				return nil
 			})
-		case compiler.QueryTypeQuery, compiler.QueryTypeFunction:
+		case compiler.QueryTypeQuery, compiler.QueryTypeFunction, compiler.QueryTypeH3Aggregation:
 			wg.Add(1)
 			eg.Go(func() error {
 				defer wg.Done()
@@ -361,7 +361,7 @@ func (s *Service) processDataQuery(ctx context.Context, schema *ast.Schema, quer
 	}
 
 	execTime := time.Since(start)
-	if query.Field.Directives.ForName(base.StatsDirective) != nil {
+	if query.Field.Directives.ForName(base.StatsDirectiveName) != nil {
 		ext = map[string]any{
 			"stats": map[string]any{
 				"name":          query.Field.Alias,
@@ -469,7 +469,7 @@ func (s *Service) processJQTransformation(ctx context.Context, schema *ast.Schem
 	out := res.(map[string]any)
 	data = out["data"]
 	ext = out["ext"].(map[string]any)
-	if query.Field.Directives.ForName(base.StatsDirective) != nil {
+	if query.Field.Directives.ForName(base.StatsDirectiveName) != nil {
 		ext["stats"] = map[string]any{
 			"data_request_time":  dataTime.String(),
 			"compiler_time":      compilerTime.String(),

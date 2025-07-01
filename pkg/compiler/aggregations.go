@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -38,7 +39,7 @@ func addAggregationQueryField(schema *ast.SchemaDocument, def *ast.Definition, f
 	}
 	// add only data objects or table functions or joins (spatial and join)
 	if !IsDataObject(ft) && !IsFunctionCall(field) && !IsFunction(field) &&
-		field.Name != QueryTimeJoinsFieldName && field.Name != QueryTimeSpatialFieldName {
+		field.Name != base.QueryTimeJoinsFieldName && field.Name != base.QueryTimeSpatialFieldName {
 		return
 	}
 	// add only functions call with out arguments
@@ -199,14 +200,14 @@ func objectAggregationTypeName(schema *ast.SchemaDocument, opt *Options, def *as
 	if isBucket {
 		typeName += "_bucket"
 	}
-	if def.Name == QueryTimeJoinsTypeName {
-		typeName = QueryTimeJoinsTypeName + AggregationSuffix
+	if def.Name == base.QueryTimeJoinsTypeName {
+		typeName = base.QueryTimeJoinsTypeName + AggregationSuffix
 	}
-	if def.Name == QueryTimeSpatialTypeName {
-		typeName = QueryTimeSpatialTypeName + AggregationSuffix
+	if def.Name == base.QueryTimeSpatialTypeName {
+		typeName = base.QueryTimeSpatialTypeName + AggregationSuffix
 	}
-	if def.Name == QueryTimeJoinsTypeName+AggregationSuffix ||
-		def.Name == QueryTimeSpatialTypeName+AggregationSuffix {
+	if def.Name == base.QueryTimeJoinsTypeName+AggregationSuffix ||
+		def.Name == base.QueryTimeSpatialTypeName+AggregationSuffix {
 		return ""
 	}
 	aggType := schema.Definitions.ForName(typeName)
@@ -250,7 +251,7 @@ func objectAggregationTypeName(schema *ast.SchemaDocument, opt *Options, def *as
 		)
 		return typeName
 	}
-	if def.Name != QueryTimeJoinsTypeName && def.Name != QueryTimeSpatialTypeName &&
+	if def.Name != base.QueryTimeJoinsTypeName && def.Name != base.QueryTimeSpatialTypeName &&
 		def.Directives.ForName(objectAggregationDirectiveName) == nil {
 		aggType.Fields = append(aggType.Fields, &ast.FieldDefinition{
 			Name:        AggRowsCountFieldName,
@@ -282,7 +283,7 @@ func objectAggregationTypeName(schema *ast.SchemaDocument, opt *Options, def *as
 			continue
 		}
 		aggFieldDirectives := ast.DirectiveList{aggObjectFieldAggregationDirective(field)}
-		if def.Name == QueryTimeJoinsTypeName || def.Name == QueryTimeSpatialTypeName {
+		if def.Name == base.QueryTimeJoinsTypeName || def.Name == base.QueryTimeSpatialTypeName {
 			aggFieldDirectives = append(aggFieldDirectives, aggQueryDirective(field, false), opt.catalog)
 		}
 		fieldName := field.Name
@@ -323,7 +324,7 @@ func objectAggregationTypeName(schema *ast.SchemaDocument, opt *Options, def *as
 		// add sub aggregations
 		if field.Type.NamedType == "" &&
 			// add only if it is not join and not spatial object aggregation and not scalar function call
-			def.Name != QueryTimeJoinsTypeName && def.Name != QueryTimeSpatialTypeName &&
+			def.Name != base.QueryTimeJoinsTypeName && def.Name != base.QueryTimeSpatialTypeName &&
 			!(IsFunctionCall(field) && !IsTableFuncJoin(field)) {
 			ft := schema.Definitions.ForName(aggTypeName)
 			if ft == nil {

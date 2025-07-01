@@ -298,10 +298,11 @@ const (
 	QueryTypeNone QueryType = 0
 	QueryTypeMeta QueryType = 1 << iota
 	QueryTypeQuery
-	QueryJQTransform
+	QueryTypeJQTransform
 	QueryTypeMutation
 	QueryTypeFunction
 	QueryTypeFunctionMutation
+	QueryTypeH3Aggregation
 )
 
 const (
@@ -394,9 +395,16 @@ func QueryRequestInfo(ss ast.SelectionSet) ([]QueryRequest, QueryType) {
 			resolvers = append(resolvers, QueryRequest{
 				Name:      field.Alias,
 				Field:     field,
-				QueryType: QueryJQTransform,
+				QueryType: QueryTypeJQTransform,
 			})
-			qtt |= QueryJQTransform
+			qtt |= QueryTypeJQTransform
+		case field.Name == base.H3QueryFieldName:
+			resolvers = append(resolvers, QueryRequest{
+				Name:      field.Alias,
+				Field:     field,
+				QueryType: QueryTypeH3Aggregation,
+			})
+			qtt |= QueryTypeH3Aggregation
 		default:
 			rr, qt := QueryRequestInfo(field.SelectionSet)
 			resolvers = append(resolvers, QueryRequest{

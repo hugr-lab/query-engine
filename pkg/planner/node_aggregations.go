@@ -75,7 +75,7 @@ func joinAggregateNodes(_ context.Context, defs compiler.DefinitionsSource, plan
 			},
 		})
 	}
-	if right.Directives.ForName(base.UnnestDirective) == nil {
+	if right.Directives.ForName(base.UnnestDirectiveName) == nil {
 		nodes.Add(&QueryPlanNode{
 			Name:  "groupBy",
 			Query: right,
@@ -112,6 +112,7 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 			}
 		}
 	}
+	splitByH3 := compiler.DirectiveArgValue(query.Directives.ForName(base.AddH3DirectiveName), "divide_values", vars) == "true"
 	// if keys is not empty create group by fields (merge selected fields)
 	refFields, err := referencesFields(defs, &ast.Field{
 		Alias:            query.Alias,
@@ -339,6 +340,14 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 				},
 			})
 		}
+		if query.Directives.ForName(base.AddH3DirectiveName) != nil {
+			fieldNodes.Add(&QueryPlanNode{
+				Name: "_h3_cell",
+				CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+					return "_" + alias + "._h3_cell", params, nil
+				},
+			})
+		}
 		// 1.2. add group by fields (key fields)
 		for _, key := range keyFields {
 			fieldNodes.Add(&QueryPlanNode{
@@ -352,7 +361,7 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 		// 1.3. add aggregation fields
 		// 1.3.1. add aggregation fields for non bucket aggregation (as is with out sub query fields)
 		if !compiler.IsBucketAggregateQuery(query) {
-			ff, err := aggAggregationFieldNodes(aggregator, defs, query, vars, node.Name, "")
+			ff, err := aggAggregationFieldNodes(aggregator, defs, query, vars, node.Name, "", splitByH3)
 			if err != nil {
 				return nil, false, err
 			}
@@ -374,7 +383,7 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 			if f == nil {
 				return nil, false, compiler.ErrorPosf(query.Position, "field %s not found in query", alias)
 			}
-			ff, err := aggAggregationFieldNodes(aggregator, defs, f.Field, vars, node.Name, "")
+			ff, err := aggAggregationFieldNodes(aggregator, defs, f.Field, vars, node.Name, "", splitByH3)
 			if err != nil {
 				return nil, false, err
 			}
@@ -433,7 +442,7 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 						if isInCatalog {
 							db = ""
 						}
-						return "INNER JOIN " + m2mInfo.SQL(ctx, db) + " AS _join_m2m ON " + jc, params, nil
+						return "INNER JOIN " + m2mInfo.SQL(ctx, engines.Ident(db)) + " AS _join_m2m ON " + jc, params, nil
 					},
 				})
 			}
@@ -455,7 +464,7 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 				nodes.Add(joinsNode(joinNodes))
 			}
 		}
-		if len(groupByNodes) != 0 || len(refFields) != 0 {
+		if len(groupByNodes) != 0 || len(refFields) != 0 || query.Directives.ForName(base.AddH3DirectiveName) != nil {
 			nodes.Add(&QueryPlanNode{
 				Name:  "groupBy",
 				Nodes: groupByNodes,
@@ -466,6 +475,9 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 					}
 					if len(refFields) != 0 {
 						sql = append(sql, "_root_objects._row_num")
+					}
+					if query.Directives.ForName(base.AddH3DirectiveName) != nil {
+						sql = append(sql, "_"+alias+"._h3_cell")
 					}
 					return strings.Join(sql, ", "), params, nil
 				},
@@ -484,6 +496,9 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 	var finalFieldList, fieldList, groupByFieldList []string
 	if len(refFields) != 0 {
 		fieldList = append(fieldList, "_root_row_num")
+	}
+	if query.Directives.ForName(base.AddH3DirectiveName) != nil {
+		fieldList = append(fieldList, "_h3_cell")
 	}
 	for _, f := range keyFields {
 		fieldList = append(fieldList, engines.Ident(f.Alias))
@@ -600,7 +615,7 @@ func aggSelectedFieldsForAggregation(defs compiler.Definitions, query *ast.Field
 		}
 		if fd.Type.NamedType == "" {
 			fields[len(fields)-1].Directives = append(fields[len(fields)-1].Directives, &ast.Directive{
-				Name: base.UnnestDirective,
+				Name: base.UnnestDirectiveName,
 			})
 		}
 		ff, err := aggSelectedFieldsForAggregation(defs, f.Field)
@@ -612,7 +627,7 @@ func aggSelectedFieldsForAggregation(defs compiler.Definitions, query *ast.Field
 	return fields, nil
 }
 
-func aggAggregationFieldNodes(e engines.EngineAggregator, defs compiler.Definitions, query *ast.Field, vars map[string]any, prefix, path string) (QueryPlanNodes, error) {
+func aggAggregationFieldNodes(e engines.EngineAggregator, defs compiler.Definitions, query *ast.Field, vars map[string]any, prefix, path string, splitByH3 bool) (QueryPlanNodes, error) {
 	def := defs.ForName(query.Definition.Type.Name())
 	def = compiler.AggregatedObjectDef(defs, def)
 	if def == nil {
@@ -636,7 +651,14 @@ func aggAggregationFieldNodes(e engines.EngineAggregator, defs compiler.Definiti
 				Name:  f.Field.Alias,
 				Query: f.Field,
 				CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-					return e.AggregateFuncSQL("count", "", "", f.Field, f.Field.ArgumentMap(vars), params)
+					if splitByH3 {
+						field := "_h3_cells_count"
+						if prefix != "" {
+							field = prefix + "." + field
+						}
+						return "SUM(1./" + field + ")::BIGINT", params, nil
+					}
+					return e.AggregateFuncSQL("count", "", "", "", nil, false, f.Field.ArgumentMap(vars), params)
 				},
 			})
 			continue
@@ -674,7 +696,18 @@ func aggAggregationFieldNodes(e engines.EngineAggregator, defs compiler.Definiti
 							}
 							sp = pp[1]
 						}
-						sql, params, err := e.AggregateFuncSQL(ac.Field.Name, sql, sp, f.Field, ac.Field.ArgumentMap(vars), params)
+						factor := ""
+						if splitByH3 &&
+							(ac.Field.Definition.Type.NamedType == "Float" ||
+								ac.Field.Definition.Type.NamedType == "Int" ||
+								ac.Field.Definition.Type.NamedType == "BigInt") {
+							factor = "_h3_cells_count"
+							if prefix != "" {
+								factor = prefix + "." + factor
+							}
+							factor = "(1. / " + factor + ")"
+						}
+						sql, params, err := e.AggregateFuncSQL(ac.Field.Name, sql, sp, factor, fd, false, ac.Field.ArgumentMap(vars), params)
 						if err != nil {
 							return "", nil, err
 						}
@@ -704,7 +737,7 @@ func aggAggregationFieldNodes(e engines.EngineAggregator, defs compiler.Definiti
 			subPath += "."
 		}
 		subPath += f.Field.Alias
-		ff, err := aggAggregationFieldNodes(e, defs, f.Field, vars, prefix, subPath)
+		ff, err := aggAggregationFieldNodes(e, defs, f.Field, vars, prefix, subPath, splitByH3)
 		if err != nil {
 			return nil, err
 		}

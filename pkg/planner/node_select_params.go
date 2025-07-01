@@ -19,7 +19,7 @@ func selectQueryParamsNodes(ctx context.Context, defs compiler.DefinitionsSource
 	distinctOn := args.ForName("distinct_on")
 	orderBy := args.ForName("order_by")
 	if info != nil {
-		selectDeleted := info.SoftDelete && query.Directives.ForName(base.WithDeletedDirective) != nil
+		selectDeleted := info.SoftDelete && query.Directives.ForName(base.WithDeletedDirectiveName) != nil
 		if filter == nil && !selectDeleted && info.SoftDelete {
 			nodes = append(nodes, &QueryPlanNode{
 				Name: "where",
@@ -92,7 +92,7 @@ func selectOneQueryParamsNodes(ctx context.Context, info *compiler.Object, query
 			},
 		},
 	}
-	selectDeleted := info.SoftDelete && query.Directives.ForName(base.WithDeletedDirective) != nil
+	selectDeleted := info.SoftDelete && query.Directives.ForName(base.WithDeletedDirectiveName) != nil
 	where, err := whereUniqueNode(ctx, info, args, prefix, selectDeleted)
 	if err != nil {
 		return nil, err

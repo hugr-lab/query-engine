@@ -3,14 +3,42 @@ package hugr
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 
 	"log"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
+	dssource "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/data-sources"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/gis"
+	metainfo "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/meta-info"
 	"github.com/hugr-lab/query-engine/pkg/types"
 )
+
+func (s *Service) attachRuntimeSources(ctx context.Context) error {
+	err := s.ds.AttachRuntimeSource(ctx, s.cache)
+	if err != nil {
+		return fmt.Errorf("attach cache source: %w", err)
+	}
+	err = s.ds.AttachRuntimeSource(ctx, s.s3)
+	if err != nil {
+		return fmt.Errorf("attach s3 source: %w", err)
+	}
+	err = s.ds.AttachRuntimeSource(ctx, dssource.New(s))
+	if err != nil {
+		return fmt.Errorf("attach data source: %w", err)
+	}
+	err = s.ds.AttachRuntimeSource(ctx, metainfo.New())
+	if err != nil {
+		return fmt.Errorf("attach meta info source: %w", err)
+	}
+	err = s.ds.AttachRuntimeSource(ctx, gis.New())
+	if err != nil {
+		return fmt.Errorf("attach GIS source: %w", err)
+	}
+	return nil
+}
 
 func (s *Service) loadDataSources(ctx context.Context) error {
 	ctx = auth.ContextWithFullAccess(ctx)

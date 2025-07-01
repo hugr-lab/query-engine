@@ -41,7 +41,7 @@ type Engine interface {
 type EngineAggregator interface {
 	// AggregateFuncSQL returns SQL for aggregate function
 	Engine
-	AggregateFuncSQL(funcName, sql, path string, field *ast.Field, args map[string]any, params []any) (string, []any, error)
+	AggregateFuncSQL(funcName, sql, path, factor string, originField *ast.FieldDefinition, isHyperTable bool, args map[string]any, params []any) (string, []any, error)
 	AggregateFuncAny(sql string) string
 	JSONTypeCast(sql string) string
 }
@@ -220,7 +220,7 @@ func (ss SelectionSet) ScalarForPath(path string) *SelectedField {
 				return &s
 			}
 			if s.Field.Definition.Type.NamedType == "" &&
-				s.Field.Directives.ForName(base.UnnestDirective) == nil {
+				s.Field.Directives.ForName(base.UnnestDirectiveName) == nil {
 				return nil
 			}
 			return SelectedFields(s.Field.SelectionSet).ScalarForPath(pp[1])

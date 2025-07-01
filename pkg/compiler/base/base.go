@@ -24,15 +24,17 @@ var queryDirectivesDef string
 var Schema *ast.Schema
 
 const (
-	WithDeletedDirective = "with_deleted"
-	StatsDirective       = "stats"
-	RawResultsDirective  = "raw"
-	UnnestDirective      = "unnest"
+	WithDeletedDirectiveName = "with_deleted"
+	StatsDirectiveName       = "stats"
+	RawResultsDirectiveName  = "raw"
+	UnnestDirectiveName      = "unnest"
 )
 
 const (
 	FunctionTypeName         = "Function"
 	FunctionMutationTypeName = "MutationFunction"
+	QueryBaseName            = "Query"
+	MutationBaseName         = "Mutation"
 
 	ModuleDirectiveName = "module"
 )
@@ -62,16 +64,28 @@ func Sources() []*ast.Source {
 	}
 }
 
+func CompiledPos(name string) *ast.Position {
+	if name != "" {
+		name = "compiled-instruction-" + name
+	}
+	return &ast.Position{
+		Src: &ast.Source{Name: name},
+	}
+}
+
+var SystemDirective = &ast.Directive{Name: "system", Position: CompiledPos("")}
+
 func QuerySideDirectives() []string {
 	return []string{
 		"include", "skip", "defer",
 		CacheDirectiveName,
 		NoCacheDirectiveName,
 		InvalidateCacheDirectiveName,
-		StatsDirective,
-		WithDeletedDirective,
-		RawResultsDirective,
-		UnnestDirective,
+		StatsDirectiveName,
+		WithDeletedDirectiveName,
+		RawResultsDirectiveName,
+		UnnestDirectiveName,
+		AddH3DirectiveName,
 	}
 }
 

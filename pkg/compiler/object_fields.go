@@ -186,8 +186,8 @@ func (f *Field) IsNotDBField() bool {
 		f.def.Directives.ForName(functionCallDirectiveName) != nil ||
 		f.def.Directives.ForName(functionCallTableJoinDirectiveName) != nil ||
 		f.def.Directives.ForName(JoinDirectiveName) != nil ||
-		f.def.Name == QueryTimeJoinsFieldName ||
-		f.def.Name == QueryTimeSpatialFieldName
+		f.def.Name == base.QueryTimeJoinsFieldName ||
+		f.def.Name == base.QueryTimeSpatialFieldName
 }
 
 func (f *Field) IsGeometry() bool {

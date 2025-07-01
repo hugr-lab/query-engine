@@ -97,11 +97,6 @@ Aggregation func should be return the same type as field type.
 """
 directive @measurement on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
-"""
-Mark do not aggregate subquery result
-"""
-directive @unnest on FIELD
-
 # define FK on the data object (view or table)
 directive @references(
 	name: String

@@ -47,6 +47,8 @@ func (s *Service) Plan(ctx context.Context, schema *ast.Schema, query *ast.Field
 		node, err = updateRootNode(ctx, schema, s.engines, query, vars)
 	case compiler.IsDeleteQuery(query):
 		node, err = deleteRootNode(ctx, schema, s.engines, query, vars)
+	case compiler.IsH3Query(query):
+		node, err = h3RootNode(ctx, schema, s.engines, query, vars)
 	default:
 		return nil, errors.New("unsupported query type")
 	}
