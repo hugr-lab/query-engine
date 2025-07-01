@@ -20,6 +20,7 @@ var (
 	_ Engine             = &Postgres{}
 	_ EngineQueryScanner = &Postgres{}
 	_ EngineTypeCaster   = &Postgres{}
+	_ EngineAggregator   = &Postgres{}
 )
 
 type Postgres struct {
@@ -488,7 +489,7 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 			}
 			return Ident(f.Alias) + "::JSON", nil
 		}
-		if f.Definition.Type.NamedType == "" && f.Directives.ForName(base.UnnestDirective) == nil {
+		if f.Definition.Type.NamedType == "" && f.Directives.ForName(base.UnnestDirectiveName) == nil {
 			return "list_transform(" + Ident(f.Alias) + "," + Ident(f.Alias) + "->" + JsonToStruct(f, "", false, false) + ")", nil
 		}
 		return JsonToStruct(f, "", false, false), nil
@@ -847,13 +848,13 @@ func (e *Postgres) extractJsonTypedValue(field, typeName string) string {
 	}
 }
 
-func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field, args map[string]any, params []any) (string, []any, error) {
+func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.FieldDefinition, isHyperTable bool, args map[string]any, params []any) (string, []any, error) {
 	switch funcName {
 	case "count":
-		if field.Name == compiler.AggRowsCountFieldName {
+		if field == nil {
 			return "COUNT(*)", params, nil
 		}
-		if field.Definition.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -864,7 +865,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 		}
 		return "COUNT(DISTINCT " + sql + ")", params, nil
 	case "sum":
-		if field.Definition.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == compiler.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
 				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
@@ -879,7 +880,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 		}
 		return "SUM(" + sql + ")", params, nil
 	case "avg":
-		if field.Definition.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == compiler.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
 				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
@@ -894,7 +895,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 		}
 		return "AVG(" + sql + ")", params, nil
 	case "min":
-		if field.Definition.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == compiler.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
 				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
@@ -905,7 +906,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 			path += jp.(string)
 		}
 		if path != "" {
-			jt, ok := compiler.FieldJSONTypes[field.Definition.Type.Name()]
+			jt, ok := compiler.FieldJSONTypes[field.Type.Name()]
 			if !ok {
 				return "", nil, compiler.ErrorPosf(field.Position, "unsupported type for min aggregate function")
 			}
@@ -916,7 +917,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 		}
 		return "MIN(" + sql + ")", params, nil
 	case "max":
-		if field.Definition.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == compiler.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
 				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
@@ -927,7 +928,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 			path += jp.(string)
 		}
 		if path != "" {
-			jt, ok := compiler.FieldJSONTypes[field.Definition.Type.Name()]
+			jt, ok := compiler.FieldJSONTypes[field.Type.Name()]
 			if !ok {
 				return "", nil, compiler.ErrorPosf(field.Position, "unsupported type for min aggregate function")
 			}
@@ -938,7 +939,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 		}
 		return "MAX(" + sql + ")", params, nil
 	case "list":
-		if field.Definition.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -952,7 +953,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 		}
 		return "ARRAY_AGG(" + sql + ")", params, nil
 	case "last":
-		if field.Definition.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -962,12 +963,12 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 			sql = e.ExtractNestedTypedValue(sql, path, "")
 		}
 		// only for hypetable
-		if !compiler.IsHyperTable(field.ObjectDefinition) {
+		if !isHyperTable {
 			return "LAST_AGG_VALUE(" + sql + ")", params, nil
 		}
 		return "LAST(" + sql + ")", params, nil
 	case "any":
-		if field.Definition.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -978,7 +979,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 		}
 		return "ANY_VALUE(" + sql + ")", params, nil
 	case "bool_and":
-		if field.Definition.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == compiler.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
 				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
@@ -993,7 +994,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 		}
 		return "BOOL_AND(" + sql + ")", params, nil
 	case "bool_or":
-		if field.Definition.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == compiler.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
 				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
@@ -1012,7 +1013,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path string, field *ast.Field,
 		if sep == nil {
 			return "", nil, compiler.ErrorPosf(field.Position, "separator argument is required")
 		}
-		if field.Definition.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == compiler.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
 				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")

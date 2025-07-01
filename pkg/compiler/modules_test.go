@@ -15,12 +15,12 @@ func TestModuleObject(t *testing.T) {
 		expected        string
 		expectedParents []string
 	}{
-		{"", ModuleQuery, queryBaseName, nil},
-		{"", ModuleMutation, mutationBaseName, nil},
-		{"module1", ModuleQuery, "module1_query", []string{queryBaseName}},
-		{"module1.module2", ModuleQuery, "module1_module2_query", []string{queryBaseName, "module1"}},
-		{"module1", ModuleMutation, "module1_mutation", []string{mutationBaseName}},
-		{"module1.module2", ModuleMutation, "module1_module2_mutation", []string{mutationBaseName, "module1"}},
+		{"", ModuleQuery, base.QueryBaseName, nil},
+		{"", ModuleMutation, base.MutationBaseName, nil},
+		{"module1", ModuleQuery, "module1_query", []string{base.QueryBaseName}},
+		{"module1.module2", ModuleQuery, "module1_module2_query", []string{base.QueryBaseName, "module1"}},
+		{"module1", ModuleMutation, "module1_mutation", []string{base.MutationBaseName}},
+		{"module1.module2", ModuleMutation, "module1_module2_mutation", []string{base.MutationBaseName, "module1"}},
 		{"module1", ModuleFunction, "module1_function", []string{base.FunctionTypeName}},
 		{"module1.module2", ModuleFunction, "module1_module2_function", []string{base.FunctionTypeName, "module1"}},
 		{"module1", ModuleMutationFunction, "module1_function_mutation", []string{base.FunctionMutationTypeName}},
@@ -33,11 +33,11 @@ func TestModuleObject(t *testing.T) {
 				Definitions: ast.DefinitionList{
 					&ast.Definition{
 						Kind: ast.Object,
-						Name: queryBaseName,
+						Name: base.QueryBaseName,
 					},
 					&ast.Definition{
 						Kind: ast.Object,
-						Name: mutationBaseName,
+						Name: base.MutationBaseName,
 					},
 					&ast.Definition{
 						Kind: ast.Object,

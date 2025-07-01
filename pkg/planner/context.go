@@ -16,7 +16,7 @@ func ContextWithRawResultsFlag(ctx context.Context) context.Context {
 }
 
 func IsRawResultsQuery(ctx context.Context, field *ast.Field) bool {
-	if field.Directives.ForName(base.RawResultsDirective) != nil {
+	if field.Directives.ForName(base.RawResultsDirectiveName) != nil {
 		return true
 	}
 	if ctx == nil {

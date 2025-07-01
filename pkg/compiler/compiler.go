@@ -64,36 +64,36 @@ func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
 
 	if opt.ReadOnly {
 		source.Definitions = slices.DeleteFunc(source.Definitions, func(def *ast.Definition) bool {
-			return def.Name == mutationBaseName || def.Name == base.FunctionMutationTypeName
+			return def.Name == base.MutationBaseName || def.Name == base.FunctionMutationTypeName
 		})
 		for _, s := range source.Schema {
 			s.OperationTypes = slices.DeleteFunc(s.OperationTypes, func(op *ast.OperationTypeDefinition) bool {
-				return op.Type == mutationBaseName
+				return op.Type == base.MutationBaseName
 			})
 		}
 	}
 
 	for i, s := range source.Schema {
-		if i == 0 && s.OperationTypes.ForType(queryBaseName) == nil &&
-			source.Definitions.ForName(queryBaseName) != nil {
+		if i == 0 && s.OperationTypes.ForType(base.QueryBaseName) == nil &&
+			source.Definitions.ForName(base.QueryBaseName) != nil {
 			source.Schema[0].OperationTypes = append(source.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
 				Operation: ast.Query,
-				Type:      queryBaseName,
+				Type:      base.QueryBaseName,
 				Position:  compiledPos(),
 			})
 		}
 
-		if i == 0 && s.OperationTypes.ForType(mutationBaseName) == nil &&
-			source.Definitions.ForName(mutationBaseName) != nil {
+		if i == 0 && s.OperationTypes.ForType(base.MutationBaseName) == nil &&
+			source.Definitions.ForName(base.MutationBaseName) != nil {
 			source.Schema[0].OperationTypes = append(source.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
 				Operation: ast.Mutation,
-				Type:      mutationBaseName,
+				Type:      base.MutationBaseName,
 				Position:  compiledPos(),
 			})
 		}
 	}
 
-	if def := source.Definitions.ForName(queryBaseName); def != nil &&
+	if def := source.Definitions.ForName(base.QueryBaseName); def != nil &&
 		doc.Definitions.ForName(base.FunctionTypeName) != nil &&
 		def.Fields.ForName("function") == nil {
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
@@ -104,7 +104,7 @@ func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
 		})
 	}
 
-	if def := source.Definitions.ForName(mutationBaseName); def != nil &&
+	if def := source.Definitions.ForName(base.MutationBaseName); def != nil &&
 		doc.Definitions.ForName(base.FunctionMutationTypeName) != nil &&
 		def.Fields.ForName("function") == nil {
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
@@ -114,6 +114,8 @@ func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
 			Position:    compiledPos(),
 		})
 	}
+
+	addH3Queries(source)
 
 	return validator.ValidateSchemaDocument(source)
 }
@@ -139,7 +141,9 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.SchemaDocument, error) {
 			}
 			// copy joins and spatial fields
 			if def.Kind == ast.Object &&
-				(strings.HasPrefix(def.Name, QueryTimeJoinsTypeName) || strings.HasPrefix(def.Name, QueryTimeSpatialTypeName)) {
+				(strings.HasPrefix(def.Name, base.QueryTimeJoinsTypeName) ||
+					strings.HasPrefix(def.Name, base.QueryTimeSpatialTypeName) ||
+					strings.HasPrefix(def.Name, base.H3DataQueryTypeName)) {
 				if len(def.Fields) == 0 {
 					continue
 				}
@@ -172,7 +176,7 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.SchemaDocument, error) {
 					if info.Name == "" && field.Name == queryBaseFunctionFieldName {
 						continue
 					}
-					if field.Directives.ForName(systemDirective.Name) != nil {
+					if HasSystemDirective(field.Directives) && field.Name != base.H3QueryFieldName {
 						continue
 					}
 					if moduleRoot.Fields.ForName(field.Name) != nil {
@@ -223,25 +227,25 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.SchemaDocument, error) {
 		return nil, ErrorPosf(compiledPos(), "only one schema definition is allowed")
 	}
 
-	if doc.Schema[0].OperationTypes.ForType(queryBaseName) == nil &&
-		doc.Definitions.ForName(queryBaseName) != nil {
+	if doc.Schema[0].OperationTypes.ForType(base.QueryBaseName) == nil &&
+		doc.Definitions.ForName(base.QueryBaseName) != nil {
 		doc.Schema[0].OperationTypes = append(doc.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
 			Operation: ast.Query,
-			Type:      queryBaseName,
+			Type:      base.QueryBaseName,
 			Position:  compiledPos(),
 		})
 	}
 
-	if doc.Schema[0].OperationTypes.ForType(mutationBaseName) == nil &&
-		doc.Definitions.ForName(mutationBaseName) != nil {
+	if doc.Schema[0].OperationTypes.ForType(base.MutationBaseName) == nil &&
+		doc.Definitions.ForName(base.MutationBaseName) != nil {
 		doc.Schema[0].OperationTypes = append(doc.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
 			Operation: ast.Mutation,
-			Type:      mutationBaseName,
+			Type:      base.MutationBaseName,
 			Position:  compiledPos(),
 		})
 	}
 
-	if def := doc.Definitions.ForName(queryBaseName); def != nil &&
+	if def := doc.Definitions.ForName(base.QueryBaseName); def != nil &&
 		doc.Definitions.ForName(base.FunctionTypeName) != nil &&
 		def.Fields.ForName("function") == nil {
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
@@ -252,7 +256,7 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.SchemaDocument, error) {
 		})
 	}
 
-	if def := doc.Definitions.ForName(mutationBaseName); def != nil &&
+	if def := doc.Definitions.ForName(base.MutationBaseName); def != nil &&
 		doc.Definitions.ForName(base.FunctionMutationTypeName) != nil &&
 		def.Fields.ForName("function") == nil {
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
@@ -424,6 +428,8 @@ func addQueryFields(schema *ast.SchemaDocument) {
 			continue
 		}
 		addJoinsQueryFields(schema, def)
+
+		// add calculation fields
 	}
 }
 
@@ -444,8 +450,8 @@ func addAggregationQueries(schema *ast.SchemaDocument, opt *Options) {
 	for _, def := range schema.Definitions {
 		mInfo := ModuleRootInfo(def)
 		if !IsDataObject(def) && mInfo == nil &&
-			def.Name != QueryTimeJoinsTypeName &&
-			def.Name != QueryTimeSpatialTypeName {
+			def.Name != base.QueryTimeJoinsTypeName &&
+			def.Name != base.QueryTimeSpatialTypeName {
 			continue
 		}
 		if mInfo != nil && mInfo.Type != ModuleQuery && mInfo.Type != ModuleFunction {
@@ -460,10 +466,10 @@ func rootType(schema *ast.SchemaDocument, objectType ModuleObjectType) (*ast.Def
 	description := "The root query object of the module"
 	switch objectType {
 	case ModuleQuery:
-		name = queryBaseName
+		name = base.QueryBaseName
 		description = "The root query object of the module"
 	case ModuleMutation:
-		name = mutationBaseName
+		name = base.MutationBaseName
 		description = "The root mutation object of the module"
 		if len(schema.Schema) != 1 {
 			return nil, ErrorPosf(compiledPos(), "only one schema definition is allowed")
@@ -471,7 +477,7 @@ func rootType(schema *ast.SchemaDocument, objectType ModuleObjectType) (*ast.Def
 		if schema.Schema[0].OperationTypes.ForType(name) == nil {
 			schema.Schema[0].OperationTypes = append(schema.Schema[0].OperationTypes, &ast.OperationTypeDefinition{
 				Operation: ast.Mutation,
-				Type:      mutationBaseName,
+				Type:      base.MutationBaseName,
 				Position:  compiledPos(),
 			})
 		}
@@ -514,7 +520,7 @@ func rootType(schema *ast.SchemaDocument, objectType ModuleObjectType) (*ast.Def
 		Kind:        ast.Object,
 		Name:        name,
 		Description: description,
-		Directives:  ast.DirectiveList{systemDirective},
+		Directives:  ast.DirectiveList{base.SystemDirective},
 		Position:    compiledPos(),
 	}
 	schema.Definitions = append(schema.Definitions, def)

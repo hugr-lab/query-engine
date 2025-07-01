@@ -3,6 +3,7 @@ package compiler
 import (
 	"fmt"
 
+	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -14,6 +15,11 @@ func IsAggregateQuery(field *ast.Field) bool {
 func IsBucketAggregateQuery(field *ast.Field) bool {
 	d := field.Definition.Directives.ForName(fieldAggregationQueryDirectiveName)
 	return d != nil && directiveArgValue(d, "is_bucket") == "true"
+}
+
+func IsH3Query(field *ast.Field) bool {
+	return field.Definition.Type.Name() == base.H3QueryTypeName &&
+		field.Definition.Type.NamedType == ""
 }
 
 func IsSelectQuery(field *ast.Field) bool {

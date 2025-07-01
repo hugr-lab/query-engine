@@ -44,7 +44,6 @@ type Query @system {
 	jq(query: String!, include_origin: Boolean = false): Query @system
 }
 
-
 # generated directives
 directive @filter_input(name: String!) on OBJECT | INPUT_OBJECT
 directive @filter_list_input(name: String!) on OBJECT | INPUT_OBJECT
@@ -84,4 +83,75 @@ enum GeometryType @system {
 	MULTILINESTRING
 	MULTIPOLYGON
 	GEOMETRYCOLLECTION
+}
+
+"""
+Value distribution data type
+"""
+type _distribution_by @system {
+	# distributed value - numerator * ratio
+	value: Float
+	# ratio of the value denominator / denominator_total
+	ratio: Float
+	# non-distributed value - numerator
+	numerator: Float
+	# distribution base value - denominator
+	denominator: Float
+	# total value for the denominator, used for ratio calculation
+	denominator_total: Float
+}
+
+"""
+Value distribution aggregation data type
+"""
+type _distribution_by_aggregation @system {
+	# distributed value - numerator * ratio
+	value: FloatAggregation
+	# ratio of the value denominator / denominator_total
+	ratio: FloatAggregation
+	# non-distributed value - numerator
+	numerator: FloatAggregation
+	# distribution base value - denominator
+	denominator: FloatAggregation
+	# total value for the denominator, used for ratio calculation
+	denominator_total: FloatAggregation
+}
+
+"""
+Value distribution bucket data type
+This type is used to store distribution data in buckets.
+"""
+type _distribution_by_bucket @system{
+	# numerator bucket key
+	numerator_key: JSON
+	# denominator bucket key
+	denominator_key: JSON
+	# distributed value - numerator * ratio
+	value: Float
+	# ratio of the value denominator / denominator_total
+	ratio: Float
+	# non-distributed value - numerator
+	numerator: Float
+	# distribution base value - denominator
+	denominator: Float
+	# total value for the denominator, used for ratio calculation
+	denominator_total: Float
+}
+
+"""
+Value distribution bucket aggregation data type
+"""
+type _distribution_by_bucket_aggregation @system {
+	# bucket key
+	key: JSONAggregation
+	# distributed value - numerator * ratio
+	value: FloatAggregation
+	# ratio of the value denominator / denominator_total
+	ratio: FloatAggregation
+	# non-distributed value - numerator
+	numerator: FloatAggregation
+	# distribution base value - denominator
+	denominator: FloatAggregation
+	# total value for the denominator, used for ratio calculation
+	denominator_total: FloatAggregation
 }

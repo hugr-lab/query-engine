@@ -14,7 +14,7 @@ func ParseScalarArray[T ScalarTypes](v any) ([]T, error) {
 		for i, e := range v {
 			t, ok := e.(T)
 			if !ok {
-				return nil, fmt.Errorf("invalid %T array value: %v", *new(T), e)
+				return nil, fmt.Errorf("invalid %T array value: %v(%[2]T)", *new(T), e)
 			}
 			a[i] = t
 		}

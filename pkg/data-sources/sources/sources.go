@@ -48,5 +48,5 @@ type RuntimeSource interface {
 }
 
 type RuntimeSourceQuerier interface {
-	QueryEngineSetup(querier *types.Querier)
+	QueryEngineSetup(querier types.Querier)
 }

@@ -36,26 +36,28 @@ func finalResultNode(ctx context.Context, schema *ast.Schema, planner Catalog, f
 			if !transformTypes && !IsRawResultsQuery(ctx, field) {
 				return sql, params, nil
 			}
-			geomTransformFunc := "ST_AsGeoJSON"
-			if IsRawResultsQuery(ctx, field) {
-				geomTransformFunc = "ST_AsWKB"
-			}
 			if compiler.IsScalarType(node.Query.Definition.Type.Name()) {
-				if node.Query.Definition.Type.Name() != compiler.GeometryTypeName {
+				st, ok := compiler.ScalarTypes[node.Query.Definition.Type.Name()]
+				if !ok {
+					return "", nil, fmt.Errorf("unknown scalar type %s", node.Query.Definition.Type.Name())
+				}
+				if st.ToOutputTypeSQL == nil {
 					return sql, params, nil
 				}
-				if node.Query.Definition.Type.NamedType != "" {
-					return fmt.Sprintf("SELECT %s(%s) AS %s", geomTransformFunc, sql, engines.Ident(node.Query.Alias)), params, nil
-				}
-				return fmt.Sprintf("SELECT %s(_geom) AS %s FROM (%s) AS _geom",
-					geomTransformFunc, engines.Ident(node.Query.Alias), sql,
+				return fmt.Sprintf("SELECT %s AS %s FROM (%s) AS _raw",
+					st.ToOutputTypeSQL(engines.Ident(node.Query.Alias), IsRawResultsQuery(ctx, field)),
+					engines.Ident(node.Query.Alias), sql,
 				), params, nil
 			}
 			// transform fields to output format
 			var fields []string
 			for _, f := range engines.SelectedFields(node.Query.SelectionSet) {
-				if f.Field.Definition.Type.Name() == compiler.GeometryTypeName {
-					fields = append(fields, geomTransformFunc+"("+engines.Ident(f.Field.Alias)+") AS "+engines.Ident(f.Field.Alias))
+				if st, ok := compiler.ScalarTypes[f.Field.Definition.Type.Name()]; ok && st.ToOutputTypeSQL != nil {
+					fields = append(fields,
+						st.ToOutputTypeSQL(
+							engines.Ident(f.Field.Alias),
+							IsRawResultsQuery(ctx, field),
+						)+" AS "+engines.Ident(f.Field.Alias))
 					continue
 				}
 				fields = append(fields, engines.Ident(f.Field.Alias))

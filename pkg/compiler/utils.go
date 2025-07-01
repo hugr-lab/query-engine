@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	_ "embed"
@@ -13,8 +14,6 @@ import (
 const (
 	catalogSystemVariableName = "$catalog"
 )
-
-var systemDirective = &ast.Directive{Name: "system", Position: compiledPos()}
 
 var systemTypeByName = map[string]struct{}{
 	"Query":        {},
@@ -30,11 +29,11 @@ func IsSystemType(def *ast.Definition) bool {
 		return true
 	}
 
-	return checkSystemDirective(def.Directives)
+	return HasSystemDirective(def.Directives)
 }
 
-func checkSystemDirective(def ast.DirectiveList) bool {
-	return def.ForName(systemDirective.Name) != nil
+func HasSystemDirective(def ast.DirectiveList) bool {
+	return def.ForName(base.SystemDirective.Name) != nil
 }
 
 func IsDataObject(def *ast.Definition) bool {
@@ -95,15 +94,11 @@ func IsEqualTypes(a, b *ast.Type) bool {
 }
 
 func compiledPos() *ast.Position {
-	return &ast.Position{
-		Src: &ast.Source{Name: "compiled-instruction"},
-	}
+	return base.CompiledPos("")
 }
 
 func CompiledPosName(name string) *ast.Position {
-	return &ast.Position{
-		Src: &ast.Source{Name: "compiled-instruction-" + name},
-	}
+	return base.CompiledPos(name)
 }
 
 type Deprecated struct {

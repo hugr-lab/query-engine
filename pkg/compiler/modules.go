@@ -21,9 +21,6 @@ const (
 
 	queryBaseFunctionFieldName = "function"
 
-	queryBaseName    = "Query"
-	mutationBaseName = "Mutation"
-
 	moduleQuerySuffix            = "_query"
 	moduleMutationSuffix         = "_mutation"
 	moduleFunctionSuffix         = "_function"
@@ -66,9 +63,9 @@ func moduleType(schema *ast.SchemaDocument, module string, objectType ModuleObje
 		return m, nil
 	}
 	switch moduleObjectName {
-	case queryBaseName:
+	case base.QueryBaseName:
 		return rootType(schema, ModuleQuery)
-	case mutationBaseName:
+	case base.MutationBaseName:
 		return rootType(schema, ModuleMutation)
 	case base.FunctionTypeName:
 		return rootType(schema, ModuleFunction)
@@ -103,9 +100,9 @@ func moduleTypeName(module string, objectType ModuleObjectType) string {
 	if module == "" {
 		switch objectType {
 		case ModuleQuery:
-			return queryBaseName
+			return base.QueryBaseName
 		case ModuleMutation:
-			return mutationBaseName
+			return base.MutationBaseName
 		case ModuleFunction:
 			return base.FunctionTypeName
 		case ModuleMutationFunction:
@@ -161,12 +158,12 @@ func ModuleRootInfo(def *ast.Definition) *ModuleRoot {
 	d := def.Directives.ForName(moduleRootDirectiveName)
 	if d == nil {
 		switch def.Name {
-		case queryBaseName:
+		case base.QueryBaseName:
 			return &ModuleRoot{
 				Name: "",
 				Type: ModuleQuery,
 			}
-		case mutationBaseName:
+		case base.MutationBaseName:
 			return &ModuleRoot{
 				Name: "",
 				Type: ModuleMutation,

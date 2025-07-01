@@ -1,50 +1,45 @@
 package compiler
 
-import "github.com/vektah/gqlparser/v2/ast"
-
-const (
-	QueryTimeJoinsFieldName = "_join"
-	QueryTimeJoinsTypeName  = "_join"
-
-	QueryTimeSpatialFieldName = "_spatial"
-	QueryTimeSpatialTypeName  = "_spatial"
+import (
+	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func spatialJoinObject(schema *ast.SchemaDocument) *ast.Definition {
-	if def := schema.Definitions.ForName(QueryTimeSpatialTypeName); def != nil {
+	if def := schema.Definitions.ForName(base.QueryTimeSpatialTypeName); def != nil {
 		return def
 	}
 	def := &ast.Definition{
 		Kind:        ast.Object,
-		Name:        QueryTimeSpatialTypeName,
+		Name:        base.QueryTimeSpatialTypeName,
 		Description: "Spatial query object",
 		Position:    &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},
-		Directives:  ast.DirectiveList{systemDirective},
+		Directives:  ast.DirectiveList{base.SystemDirective},
 	}
 	schema.Definitions = append(schema.Definitions, def)
 	return def
 }
 
 func joinObject(schema *ast.SchemaDocument) *ast.Definition {
-	if def := schema.Definitions.ForName(QueryTimeJoinsTypeName); def != nil {
+	if def := schema.Definitions.ForName(base.QueryTimeJoinsTypeName); def != nil {
 		return def
 	}
 	def := &ast.Definition{
 		Kind:        ast.Object,
-		Name:        QueryTimeJoinsTypeName,
+		Name:        base.QueryTimeJoinsTypeName,
 		Description: "Join query object",
 		Position:    &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},
-		Directives:  ast.DirectiveList{systemDirective},
+		Directives:  ast.DirectiveList{base.SystemDirective},
 	}
 	schema.Definitions = append(schema.Definitions, def)
 	return def
 }
 
 func addJoinsQueryFields(schema *ast.SchemaDocument, def *ast.Definition) {
-	join := schema.Definitions.ForName(QueryTimeJoinsTypeName)
+	join := schema.Definitions.ForName(base.QueryTimeJoinsTypeName)
 	if join != nil {
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
-			Name:        QueryTimeJoinsFieldName,
+			Name:        base.QueryTimeJoinsFieldName,
 			Description: "field for joining",
 			Arguments: ast.ArgumentDefinitionList{
 				{
@@ -54,7 +49,7 @@ func addJoinsQueryFields(schema *ast.SchemaDocument, def *ast.Definition) {
 					Position:    compiledPos(),
 				},
 			},
-			Type:     ast.NamedType(QueryTimeJoinsTypeName, compiledPos()),
+			Type:     ast.NamedType(base.QueryTimeJoinsTypeName, compiledPos()),
 			Position: compiledPos(),
 		})
 	}
@@ -64,7 +59,7 @@ func addJoinsQueryFields(schema *ast.SchemaDocument, def *ast.Definition) {
 	}
 
 	def.Fields = append(def.Fields, &ast.FieldDefinition{
-		Name:        QueryTimeSpatialFieldName,
+		Name:        base.QueryTimeSpatialFieldName,
 		Description: "field for spatial operations",
 		Arguments: ast.ArgumentDefinitionList{
 			{
@@ -86,7 +81,7 @@ func addJoinsQueryFields(schema *ast.SchemaDocument, def *ast.Definition) {
 				Position:    compiledPos(),
 			},
 		},
-		Type:     ast.NamedType(QueryTimeSpatialTypeName, compiledPos()),
+		Type:     ast.NamedType(base.QueryTimeSpatialTypeName, compiledPos()),
 		Position: compiledPos(),
 	})
 }

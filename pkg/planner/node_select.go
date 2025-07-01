@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
@@ -240,8 +241,8 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	}
 	// sort join nodes by unnsested first than by name
 	slices.SortFunc(joinCatalogNodes, func(a, b *QueryPlanNode) int {
-		au := a.Query.Directives.ForName(base.UnnestDirective)
-		bu := b.Query.Directives.ForName(base.UnnestDirective)
+		au := a.Query.Directives.ForName(base.UnnestDirectiveName)
+		bu := b.Query.Directives.ForName(base.UnnestDirectiveName)
 		if au != nil && bu == nil {
 			return -1 // a is unnest, b is not
 		}
@@ -252,8 +253,8 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	})
 	// sort join nodes by unnsested first than by name
 	slices.SortFunc(joinGeneralNodes, func(a, b *QueryPlanNode) int {
-		au := a.Query.Directives.ForName(base.UnnestDirective)
-		bu := b.Query.Directives.ForName(base.UnnestDirective)
+		au := a.Query.Directives.ForName(base.UnnestDirectiveName)
+		bu := b.Query.Directives.ForName(base.UnnestDirectiveName)
 		if au != nil && bu == nil {
 			return -1 // a is unnest, b is not
 		}
@@ -338,7 +339,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 
 	baseData := selectStatementNode(query, nodes, "_objects", qp.withRowNum)
 	// if there are no joins, we can return the base query
-	if len(joinGeneralNodes) == 0 && len(joinCatalogNodes) == 0 {
+	if len(joinGeneralNodes) == 0 && len(joinCatalogNodes) == 0 && qp.h3 == nil {
 		return baseData, false, nil
 	}
 
@@ -463,9 +464,14 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		baseData = selectStatementNode(query, nodes, "_objects", false)
 	}
 
-	if len(joinGeneralNodes) == 0 {
+	if len(joinGeneralNodes) == 0 && qp.h3 == nil {
 		// if there are no general joins, we can return the base query
 		return baseData, false, nil
+	}
+
+	if qp.h3 != nil {
+		// if there is h3 query, we need to add geometry source fields to the base query
+		generalSourceFields = append(generalSourceFields, qp.extraSourceFields.ForAlias("_h3_base_field"))
 	}
 
 	// change cast fields list (only needed fields)
@@ -539,6 +545,16 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			},
 		})
 	}
+	// add h3 field if needed
+	if qp.h3 != nil {
+		ff = append(ff, &QueryPlanNode{
+			Name:  "_h3_base_field",
+			Query: query,
+			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+				return "_objects._h3_base_field", params, nil
+			},
+		})
+	}
 
 	nodes = QueryPlanNodes{
 		withNode(
@@ -580,11 +596,14 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			},
 		})
 	}
-	if orderByNode == nil && limitNode == nil {
+	if orderByNode == nil && limitNode == nil && qp.h3 == nil {
 		return selectStatementNode(query, nodes, "_objects", qp.withRowNum), true, nil
 	}
 
 	// create the top query based on the last one with order by and limits
+	if qp.h3 != nil {
+		qp.withRowNum = true
+	}
 	baseData = selectStatementNode(query, nodes, "_objects", qp.withRowNum)
 	baseData.Name = "_objects"
 	nodes = QueryPlanNodes{
@@ -593,7 +612,29 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			Name:  "fields",
 			Query: query,
 			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-				return "_objects.*", params, nil
+				if qp.h3 == nil && !qp.withRowNum {
+					return "_objects.*", params, nil
+				}
+				if qp.h3 == nil && qp.withRowNum {
+					return "_objects.* EXCLUDE(_row_num)", params, nil
+				}
+				sql := "_h3_base_field"
+				if qp.withRowNum {
+					sql += ",_row_num"
+				}
+				sql = "_objects.* EXCLUDE(" + sql + ")"
+				h3Field := "_objects._h3_base_field"
+				if qp.h3.extractFromGeom {
+					h3Field = "_h3_cells._list"
+				}
+				if qp.h3.unnest {
+					sql += ", unnest(" + h3Field + ") AS _h3_cell"
+					sql += ", len(" + h3Field + ") AS _h3_cells_count"
+				} else {
+					sql += ", " + h3Field + " AS _h3_cell"
+					sql += ", 1 AS _h3_cells_count"
+				}
+				return sql, params, nil
 			},
 		},
 		&QueryPlanNode{
@@ -604,6 +645,25 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			},
 		},
 	}
+	if qp.h3.extractFromGeom {
+		nodes.Add(&QueryPlanNode{
+			Name:  "joins",
+			Query: query,
+			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+				h3SQL := "_objects._h3_base_field"
+				if qp.h3.extractFromGeom {
+					if qp.h3.transformFrom != 0 {
+						h3SQL = fmt.Sprintf("ST_Transform(%s, 'EPSG:%d', 'EPSG:4326')", h3SQL, qp.h3.transformFrom)
+					}
+					if qp.h3.buffer > 0 {
+						h3SQL = fmt.Sprintf("ST_Buffer(%s, %f)", h3SQL, qp.h3.buffer)
+					}
+					h3SQL = fmt.Sprintf("h3_geom_to_cells(%s, %d, %v)", h3SQL, qp.h3.res, qp.h3.simplify)
+				}
+				return defaultEngine.LateralJoin("SELECT "+h3SQL+" as _list", "_h3_cells"), params, nil
+			},
+		})
+	}
 	if limitNode != nil {
 		nodes = append(nodes, limitNode)
 	}
@@ -613,7 +673,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	if orderByNode != nil {
 		nodes = append(nodes, orderByNode)
 	}
-	return selectStatementNode(query, nodes, "_objects", false), true, nil
+	return selectStatementNode(query, nodes, "_objects", qp.withRowNum), true, nil
 }
 
 func cubeGroupByNode(info *compiler.Object, query *ast.Field, fieldList fieldList) (*QueryPlanNode, error) {
@@ -808,7 +868,7 @@ func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 			fields := children.ForName("fields").Result
 			sql := "SELECT " + fields + " FROM " + children.ForName("from").Result
 			where := children.ForName("where")
-			if where != nil && node.Query.Directives.ForName(base.UnnestDirective) == nil && where.Result != "" {
+			if where != nil && node.Query.Directives.ForName(base.UnnestDirectiveName) == nil && where.Result != "" {
 				sql += " WHERE " + where.Result
 			}
 			orderBy := children.ForName("nested_order_by")
@@ -824,7 +884,7 @@ func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 				sql += " OFFSET " + offset.Result
 			}
 			fieldsAgg := children.ForName("fields_agg")
-			if fieldsAgg != nil && node.Query.Directives.ForName(base.UnnestDirective) == nil {
+			if fieldsAgg != nil && node.Query.Directives.ForName(base.UnnestDirectiveName) == nil {
 				sql = "SELECT " + fieldsAgg.Result + " FROM (" + sql + ") AS _subquery_sub_node"
 				if groupBy := children.ForName("groupBy"); groupBy != nil {
 					sql += " GROUP BY " + groupBy.Result
@@ -832,7 +892,7 @@ func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 				// check args for subquery (nested_order_by, nested_limit, nested_offset)
 			}
 
-			if node.Query.Directives.ForName(base.UnnestDirective) != nil {
+			if node.Query.Directives.ForName(base.UnnestDirectiveName) != nil {
 				sql = " LEFT JOIN (" + sql + ") AS " + node.Name + " ON "
 				if where == nil {
 					return sql + "true", params, nil
@@ -901,7 +961,7 @@ func joinReferencesQueryNodes(ctx context.Context, defs compiler.DefinitionsSour
 					e = defaultEngine
 				}
 				sql := e.PackFieldsToObject(rAlias, field) + " AS _selection"
-				if node.Query.Directives.ForName(base.UnnestDirective) != nil {
+				if node.Query.Directives.ForName(base.UnnestDirectiveName) != nil {
 					for _, f := range ri.ReferencesFields() {
 						if ri.IsM2M {
 							sql += ", _join_m2m." + f
@@ -984,7 +1044,7 @@ func joinQueryNodes(_ context.Context, defs compiler.DefinitionsSource, inGenera
 				if len(right.SelectionSet) == 0 {
 					sql = "1 AS _selection"
 				}
-				if node.Query.Directives.ForName(base.UnnestDirective) != nil {
+				if node.Query.Directives.ForName(base.UnnestDirectiveName) != nil {
 					rightFields, err := ji.ReferencesFields()
 					if err != nil {
 						return "", nil, err
@@ -1084,7 +1144,7 @@ func joinFunctionCallNodes(_ context.Context, defs compiler.DefinitionsSource, i
 					e = defaultEngine
 				}
 				sql := e.PackFieldsToObject(rAlias, right) + " AS _selection"
-				if node.Query.Directives.ForName(base.UnnestDirective) != nil {
+				if node.Query.Directives.ForName(base.UnnestDirectiveName) != nil {
 					rightFields := call.ReferencesFields()
 					for _, fn := range rightFields {
 						sql += ", " + rAlias + "." + fn
@@ -1235,7 +1295,7 @@ func fieldsNodes(e engines.Engine, info *compiler.Object, prefix string, fields 
 						if !ok {
 							return "", nil, fmt.Errorf("cube %s engine does not support aggregation", info.Name)
 						}
-						sql, params, err = aggregator.AggregateFuncSQL(compiler.MeasurementAggregations[mf], sql, "", field, nil, params)
+						sql, params, err = aggregator.AggregateFuncSQL(compiler.MeasurementAggregations[mf], sql, "", "", field.Definition, compiler.IsHyperTable(info.Definition()), nil, params)
 						if err != nil {
 							return "", nil, err
 						}
@@ -1268,6 +1328,21 @@ type queryPart struct {
 	extraSourceFields fieldList
 	subQueries        fieldList
 	queryTimeJoins    fieldList
+
+	// h3, if non nil, the special H3 field will be added to the query
+	// the field will have the name "_h3_cell", cells will be unnested
+	// The conditions - @add_h3(field: "geom", res: 9) - will be added to the query
+	h3 *h3SubQuery
+}
+
+type h3SubQuery struct {
+	res             int     // resolution of the H3 index
+	baseGeom        string  // name of the geometry or H3 field to get H3 indexes
+	unnest          bool    // if true, the H3 cells will be unnested
+	extractFromGeom bool    // if true, the H3 cells will be extracted from the geometry
+	simplify        bool    // if true, the geometry will be simplified before extracting H3 cells
+	transformFrom   int     // if non zero, the H3 cells will be transformed from this resolution to the `res` resolution
+	buffer          float64 // if non zero, the H3 cells will be buffered by this value
 }
 
 func splitByQueryParts(_ context.Context, defs compiler.DefinitionsSource, query *ast.Field, vars map[string]any) (*queryPart, error) {
@@ -1282,9 +1357,9 @@ func splitByQueryParts(_ context.Context, defs compiler.DefinitionsSource, query
 			qp.subQueries = append(qp.subQueries, field.Field)
 		case compiler.IsJoinSubquery(field.Field):
 			qp.subQueries = append(qp.subQueries, field.Field)
-		case field.Field.Name == compiler.QueryTimeJoinsFieldName:
+		case field.Field.Name == base.QueryTimeJoinsFieldName:
 			queryTimeJoins = append(queryTimeJoins, field.Field)
-		case field.Field.Name == compiler.QueryTimeSpatialFieldName:
+		case field.Field.Name == base.QueryTimeSpatialFieldName:
 			queryTimeSpatial = append(queryTimeSpatial, field.Field)
 		case compiler.IsAggregateQuery(field.Field), compiler.IsBucketAggregateQuery(field.Field):
 			qp.subQueries = append(qp.subQueries, field.Field)
@@ -1351,10 +1426,64 @@ func splitByQueryParts(_ context.Context, defs compiler.DefinitionsSource, query
 			}
 		}
 	}
+	// add H3 base field if needed
+	if d := query.Directives.ForName(base.AddH3DirectiveName); d != nil {
+		res, err := strconv.Atoi(compiler.DirectiveArgValue(d, "res", vars))
+		if err != nil {
+			return nil, compiler.ErrorPosf(d.Position, "invalid H3 resolution: %s", err.Error())
+		}
+		if res < 0 || res > 15 {
+			return nil, compiler.ErrorPosf(d.Position, "H3 resolution must be in range 0-15, got %d", res)
+		}
+		qp.h3 = &h3SubQuery{
+			res:      res,
+			baseGeom: compiler.DirectiveArgValue(d, "field", vars),
+		}
+		def := defs.ForName(query.Definition.Type.Name())
+		if def == nil {
+			return nil, compiler.ErrorPosf(d.Position, "object %s not found", query.Definition.Type.Name())
+		}
+		h3Base := def.Fields.ForName(qp.h3.baseGeom)
+		if h3Base == nil {
+			return nil, compiler.ErrorPosf(d.Position, "H3 base field %s not found in object %s", qp.h3.baseGeom, query.ObjectDefinition.Name)
+		}
+		if h3Base.Type.NamedType != compiler.GeometryTypeName &&
+			h3Base.Type.Name() != compiler.H3CellTypeName {
+			return nil, compiler.ErrorPosf(d.Position, "H3 base field %s must be of type %s or %s, got %s",
+				qp.h3.baseGeom,
+				compiler.GeometryTypeName,
+				compiler.H3CellTypeName,
+				h3Base.Type.NamedType)
+		}
+		qp.h3.transformFrom, _ = strconv.Atoi(compiler.DirectiveArgValue(d, "transform_from", vars))
+		if d := h3Base.Directives.ForName(base.FieldGeometryInfoDirectiveName); d != nil && qp.h3.transformFrom == 0 {
+			qp.h3.transformFrom, _ = strconv.Atoi(compiler.DirectiveArgValue(d, "srid", vars))
+			if qp.h3.transformFrom == 4326 {
+				qp.h3.transformFrom = 0 // 4326 is the default SRID, no need to transform
+			}
+		}
+		qp.h3.buffer, _ = strconv.ParseFloat(compiler.DirectiveArgValue(d, "buffer", vars), 64)
+		if qp.h3.buffer != 0 {
+			if qp.h3.buffer > 5000 {
+				return nil, compiler.ErrorPosf(d.Position, "H3 buffer must be in range 0-5000 meters, got %f", qp.h3.buffer)
+			}
+			qp.h3.buffer /= 111111 // convert meters to degrees
+		}
+		qp.h3.extractFromGeom = h3Base.Type.NamedType == compiler.GeometryTypeName
+		qp.h3.unnest = h3Base.Type.Name() != compiler.H3CellTypeName || h3Base.Type.NamedType != ""
+		qp.h3.simplify = compiler.DirectiveArgValue(d, "simplify", vars) == "true"
+		qp.extraSourceFields = append(qp.extraSourceFields, &ast.Field{
+			Alias:            "_h3_base_field",
+			Name:             qp.h3.baseGeom,
+			Definition:       h3Base,
+			ObjectDefinition: def,
+			Position:         h3Base.Position,
+		})
+	}
 	// add source fields for order by arguments to order by non selected fields (will be used in aggregation)
 	slices.SortFunc(qp.subQueries, func(f1, f2 *ast.Field) int {
-		u1 := f1.Directives.ForName(base.UnnestDirective) != nil
-		u2 := f2.Directives.ForName(base.UnnestDirective) != nil
+		u1 := f1.Directives.ForName(base.UnnestDirectiveName) != nil
+		u2 := f2.Directives.ForName(base.UnnestDirectiveName) != nil
 		if u1 && u2 || !u1 && !u2 {
 			return 0
 		}
@@ -1368,7 +1497,7 @@ func splitByQueryParts(_ context.Context, defs compiler.DefinitionsSource, query
 }
 
 func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *ast.Field, vars map[string]any) (*ast.Field, bool, error) {
-	if joinQuery.Name != compiler.QueryTimeJoinsFieldName {
+	if joinQuery.Name != base.QueryTimeJoinsFieldName {
 		return nil, false, errors.New("field is not join")
 	}
 	// 1. create copy of join field
@@ -1495,16 +1624,16 @@ func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *
 }
 
 func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, field *ast.Field, vars map[string]any) (*ast.Field, bool, error) {
-	if field.Name != compiler.QueryTimeSpatialFieldName {
+	if field.Name != base.QueryTimeSpatialFieldName {
 		return nil, false, errors.New("field is not spatial query")
 	}
 	def := defs.ForName(query.Definition.Type.Name())
-	joinField := def.Fields.ForName(compiler.QueryTimeJoinsFieldName)
+	joinField := def.Fields.ForName(base.QueryTimeJoinsFieldName)
 	if joinField == nil {
 		return nil, false, errors.New("join field not found")
 	}
 
-	joinObject := defs.ForName(compiler.QueryTimeJoinsTypeName)
+	joinObject := defs.ForName(base.QueryTimeJoinsTypeName)
 	if joinObject == nil {
 		return nil, false, errors.New("join object not found")
 	}
@@ -1595,7 +1724,9 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 		if !ok {
 			return nil, false, errors.New("field argument for spatial query is required")
 		}
-		sql = strings.ReplaceAll(sql, "[field2]", "["+compiler.JoinRefFieldPrefix+"."+v.(string)+"]")
+		fieldSQL := v.(string)
+
+		sql = strings.ReplaceAll(sql, "[field2]", "["+compiler.JoinRefFieldPrefix+"."+fieldSQL+"]")
 
 		joinDirective := &ast.Directive{
 			Name: compiler.JoinDirectiveName,
@@ -1620,7 +1751,7 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 
 		var args ast.ArgumentList
 		for _, arg := range f.Field.Arguments {
-			if arg.Name == "field" || arg.Name == "alias" {
+			if arg.Name == "field" {
 				continue
 			}
 			args = append(args, arg)
@@ -1636,9 +1767,9 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 			Arguments:        args,
 			Directives:       []*ast.Directive{joinDirective},
 		}
-		if f.Field.Directives.ForName(base.UnnestDirective) != nil {
+		if f.Field.Directives.ForName(base.UnnestDirectiveName) != nil {
 			newField.Directives = append(newField.Directives,
-				f.Field.Directives.ForName(base.UnnestDirective),
+				f.Field.Directives.ForName(base.UnnestDirectiveName),
 			)
 		}
 		new.SelectionSet = append(new.SelectionSet, newField)
@@ -1686,7 +1817,7 @@ func referencesFields(defs compiler.DefinitionsSource, query *ast.Field) (fieldL
 			return nil, errors.New("function call info not found")
 		}
 		refFields = fc.ReferencesFields()
-	case query.ObjectDefinition.Name == compiler.QueryTimeJoinsTypeName:
+	case query.ObjectDefinition.Name == base.QueryTimeJoinsTypeName:
 		a := query.Arguments.ForName("fields")
 		if a == nil {
 			return nil, errors.New("fields argument is required")
@@ -1718,7 +1849,7 @@ func referencesFields(defs compiler.DefinitionsSource, query *ast.Field) (fieldL
 			Alias:            f,
 			Name:             f,
 			Definition:       fd,
-			ObjectDefinition: query.ObjectDefinition,
+			ObjectDefinition: def,
 			Position:         query.Position,
 		})
 	}
@@ -1778,7 +1909,7 @@ func sourceFields(defs compiler.DefinitionsSource, def *ast.Definition, query *a
 		}
 		ff := ri.SourceFields()
 		fieldNames = ff
-	case query.Name == compiler.QueryTimeJoinsFieldName:
+	case query.Name == base.QueryTimeJoinsFieldName:
 		a := query.Arguments.ForName("fields")
 		if a == nil {
 			return nil, errors.New("fields argument is required")
@@ -1798,7 +1929,7 @@ func sourceFields(defs compiler.DefinitionsSource, def *ast.Definition, query *a
 			}
 			fieldNames = append(fieldNames, ff)
 		}
-	case query.Name == compiler.QueryTimeSpatialFieldName:
+	case query.Name == base.QueryTimeSpatialFieldName:
 		a := query.Arguments.ForName("field")
 		if a == nil {
 			return nil, errors.New("field argument is required")

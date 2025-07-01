@@ -42,6 +42,10 @@ func New(qe types.Querier, db *db.Pool, cs *catalogs.Service) *Service {
 }
 
 func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource) error {
+	if sq, ok := source.(RuntimeSourceQuerier); ok {
+		sq.QueryEngineSetup(s.qe)
+	}
+
 	err := source.Attach(ctx, s.db)
 	if err != nil {
 		return err

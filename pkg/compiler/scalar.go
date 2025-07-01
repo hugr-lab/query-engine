@@ -15,6 +15,7 @@ import (
 const (
 	JSONTypeName                = "JSON"
 	TimestampTypeName           = "Timestamp"
+	H3CellTypeName              = "H3Cell"
 	GeometryTypeName            = "Geometry"
 	GeometryAggregationTypeName = "GeometryAggregation"
 
@@ -30,6 +31,9 @@ type ScalarType struct {
 	JSONType         string
 	JSONToStructType string
 	JSONNativeType   string
+	// ToOutputType converts SQL string to output type.
+	ToOutputTypeSQL  func(sql string, raw bool) string
+	ToStructFieldSQL func(sql string) string
 	FilterInput      string
 	ListFilterInput  string
 	ParseValue       func(value any) (any, error)
@@ -75,7 +79,28 @@ var ScalarTypes = map[string]ScalarType{
 			return nil, fmt.Errorf("unexpected type %T for BigInt", value)
 		},
 		ParseArray: func(value any) (any, error) {
-			return types.ParseScalarArray[int64](value)
+			if value == nil {
+				return nil, nil
+			}
+			vv, ok := value.([]any)
+			if !ok {
+				return nil, fmt.Errorf("expected array of BigInt values, got %T", value)
+			}
+			if len(vv) == 0 {
+				return []int64{}, nil
+			}
+			if _, ok := vv[0].(float64); !ok {
+				return types.ParseScalarArray[int64](vv)
+			}
+			dd, err := types.ParseScalarArray[float64](value)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]int64, len(dd))
+			for i, v := range dd {
+				out[i] = int64(v)
+			}
+			return out, nil
 		},
 		AggType:         "IntAggregation",
 		MeasurementAggs: "IntMeasurementAggregation",
@@ -102,7 +127,28 @@ var ScalarTypes = map[string]ScalarType{
 			return nil, fmt.Errorf("unexpected type %T for BigInt", value)
 		},
 		ParseArray: func(value any) (any, error) {
-			return types.ParseScalarArray[int64](value)
+			if value == nil {
+				return nil, nil
+			}
+			vv, ok := value.([]any)
+			if !ok {
+				return nil, fmt.Errorf("expected array of BigInt values, got %T", value)
+			}
+			if len(vv) == 0 {
+				return []int64{}, nil
+			}
+			if _, ok := vv[0].(float64); !ok {
+				return types.ParseScalarArray[int64](vv)
+			}
+			dd, err := types.ParseScalarArray[float64](value)
+			if err != nil {
+				return nil, err
+			}
+			out := make([]int64, len(dd))
+			for i, v := range dd {
+				out[i] = int64(v)
+			}
+			return out, nil
 		},
 		AggType:         "BigIntAggregation",
 		MeasurementAggs: "BigIntMeasurementAggregation",
@@ -188,7 +234,8 @@ var ScalarTypes = map[string]ScalarType{
 					base.SqlFieldDirective(sql),
 					base.ExtraFieldDirective(TimestampExtractExtraFieldName, TimestampTypeName),
 				},
-				Type: ast.NamedType("BigInt", compiledPos()),
+				Type:     ast.NamedType("BigInt", compiledPos()),
+				Position: compiledPos(),
 			}
 		},
 		JSONType:         "timestamp",
@@ -252,7 +299,8 @@ var ScalarTypes = map[string]ScalarType{
 					base.SqlFieldDirective(sql),
 					base.ExtraFieldDirective(TimestampExtractExtraFieldName, TimestampTypeName),
 				},
-				Type: ast.NamedType("BigInt", compiledPos()),
+				Type:     ast.NamedType("BigInt", compiledPos()),
+				Position: compiledPos(),
 			}
 		},
 		JSONToStructType: "TIMESTAMP",
@@ -486,7 +534,8 @@ var ScalarTypes = map[string]ScalarType{
 					base.SqlFieldDirective(sql),
 					base.ExtraFieldDirective(GeometryMeasurementExtraFieldName, GeometryTypeName),
 				},
-				Type: ast.NamedType("Float", compiledPos()),
+				Type:     ast.NamedType("Float", compiledPos()),
+				Position: compiledPos(),
 			}
 		},
 		JSONToStructType: "JSON",
@@ -496,6 +545,49 @@ var ScalarTypes = map[string]ScalarType{
 			return types.ParseGeometryValue(value)
 		},
 		AggType: "GeometryAggregation",
+		ToOutputTypeSQL: func(sql string, raw bool) string {
+			if raw {
+				return fmt.Sprintf("ST_AsWKB(%s)", sql)
+			}
+			return fmt.Sprintf("ST_AsGeoJSON(%s)", sql)
+		},
+		ToStructFieldSQL: func(sql string) string {
+			return fmt.Sprintf("ST_AsGeoJSON(%s)", sql)
+		},
+	},
+	"H3Cell": {
+		Name:             "H3Cell",
+		Description:      "H3Cell type",
+		JSONType:         "h3string",
+		JSONToStructType: "VARCHAR",
+		JSONNativeType:   "VARCHAR",
+		ParseValue: func(value any) (any, error) {
+			return types.ParseH3Cell(value)
+		},
+		ParseArray: func(value any) (any, error) {
+			vv, ok := value.([]any)
+			if !ok {
+				return nil, fmt.Errorf("expected array of H3 cells, got %T", value)
+			}
+			out := make([]any, len(vv))
+			var err error
+			for i, v := range vv {
+				if v == nil {
+					continue
+				}
+				out[i], err = types.ParseH3Cell(v)
+				if err != nil {
+					return nil, fmt.Errorf("invalid H3 cell value at index %d: %w", i, err)
+				}
+			}
+			return out, nil
+		},
+		ToOutputTypeSQL: func(sql string, raw bool) string {
+			return "h3_h3_to_string(" + sql + ")"
+		},
+		ToStructFieldSQL: func(sql string) string {
+			return "h3_h3_to_string(" + sql + ")"
+		},
 	},
 }
 
@@ -547,6 +639,7 @@ var FieldJSONTypes = map[string]string{
 	"DateAggregation":         "timestamp",
 	"TimestampAggregation":    "timestamp",
 	"TimeAggregation":         "timestamp",
+	"H3Cell":                  "h3string",
 	"StringSubAggregation":    "",
 	"IntSubAggregation":       "",
 	"BigIntSubAggregation":    "",

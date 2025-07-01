@@ -9,6 +9,7 @@ scalar JSON
 scalar IntRange 
 scalar TimestampRange
 scalar BigIntRange
+scalar H3Cell
 
 directive @base(name: String!) on INPUT_FIELD_DEFINITION | FIELD_DEFINITION | OBJECT | INPUT_OBJECT | ENUM
 

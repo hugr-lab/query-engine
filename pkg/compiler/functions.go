@@ -16,7 +16,7 @@ const (
 
 func addFunctionsPrefix(defs Definitions, def *ast.Definition, opt *Options) {
 	for _, field := range def.Fields {
-		if checkSystemDirective(field.Directives) {
+		if HasSystemDirective(field.Directives) {
 			continue
 		}
 
