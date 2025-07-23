@@ -93,7 +93,7 @@ func (s *Service) wfs3ConformanceHandler(w http.ResponseWriter, r *http.Request)
 	if slices.Contains(accepts, mimeHTML) {
 		ct = mimeHTML
 	}
-	w.Header().Set("Content-Type", mimeJSON)
+	// Content-Type will be set later based on the value of ct
 	content := ConformanceClasses{
 		ConformsTo: []string{
 			"http://www.opengis.net/spec/wfs-1/3.0/req/core",
