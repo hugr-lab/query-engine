@@ -257,7 +257,7 @@ func wfsFieldDef(ctx context.Context, field *ast.FieldDefinition, defs compiler.
 			result = append(result, wfsFieldDefinition{
 				Name:      name + sep + f.Name,
 				Schema:    wfsFieldSchema(ctx, f, defs, 0),
-				JQConvert: "." + name + f.Name,
+				JQConvert: "." + name + "." + f.Name,
 			})
 			continue
 		}
