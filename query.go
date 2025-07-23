@@ -392,7 +392,7 @@ func (s *Service) processJQTransformation(ctx context.Context, schema *ast.Schem
 		if !ok {
 			return nil, compiler.ErrorPosf(query.Field.Position, "jq query argument should be string")
 		}
-		t, err := jq.NewTransformer(q, map[string]any{"$vars": vars})
+		t, err := jq.NewTransformer(ctx, q, jq.WithVariables(vars), jq.WithQuerier(s), jq.WithCollectStat())
 		if err != nil {
 			return nil, compiler.ErrorPosf(query.Field.Position, "jq query compile error: %v", err)
 		}
@@ -416,7 +416,7 @@ func (s *Service) processJQTransformation(ctx context.Context, schema *ast.Schem
 		if !includeResults {
 			defer types.DataClose(data)
 		}
-		transformed, err := t.Transform(ctx, data, map[string]any{"$vars": vars})
+		transformed, err := t.Transform(ctx, data, nil)
 		if err != nil {
 			return nil, compiler.ErrorPosf(query.Field.Position, "jq query execution error: %v", err)
 		}
