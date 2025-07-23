@@ -505,12 +505,12 @@ type GeometryAggregation @system {
   last: Geometry
   intersection: Geometry
   union: Geometry
-  envelope: Geometry
+  extent: Geometry
 }
 
 type GeometrySubAggregation @system {
   count: BigIntAggregation
   intersection: GeometryAggregation
   union: GeometryAggregation
-  envelope: GeometryAggregation
+  extent: GeometryAggregation
 }

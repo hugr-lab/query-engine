@@ -33,7 +33,8 @@ func finalResultNode(ctx context.Context, schema *ast.Schema, planner Catalog, f
 				return "", nil, err
 			}
 			params = params[:n]
-			if !transformTypes && !IsRawResultsQuery(ctx, field) {
+			isRaw := IsRawResultsQuery(ctx, field)
+			if !transformTypes && !isRaw {
 				return sql, params, nil
 			}
 			if compiler.IsScalarType(node.Query.Definition.Type.Name()) {
@@ -45,7 +46,7 @@ func finalResultNode(ctx context.Context, schema *ast.Schema, planner Catalog, f
 					return sql, params, nil
 				}
 				return fmt.Sprintf("SELECT %s AS %s FROM (%s) AS _raw",
-					st.ToOutputTypeSQL(engines.Ident(node.Query.Alias), IsRawResultsQuery(ctx, field)),
+					st.ToOutputTypeSQL(engines.Ident(node.Query.Alias), isRaw),
 					engines.Ident(node.Query.Alias), sql,
 				), params, nil
 			}
@@ -56,7 +57,7 @@ func finalResultNode(ctx context.Context, schema *ast.Schema, planner Catalog, f
 					fields = append(fields,
 						st.ToOutputTypeSQL(
 							engines.Ident(f.Field.Alias),
-							IsRawResultsQuery(ctx, field),
+							isRaw,
 						)+" AS "+engines.Ident(f.Field.Alias))
 					continue
 				}

@@ -102,10 +102,13 @@ func applyExtension(source *ast.SchemaDocument, opt *Options) (errs gqlerror.Lis
 			continue
 		}
 		if len(def.Directives) != 0 {
-			errs = append(errs, ErrorPosf(def.Position, "extended definition %s shouldn't have any directive", def.Name))
-			continue
+			origin.Directives = append(origin.Directives, def.Directives...)
 		}
 		for _, field := range def.Fields {
+			// skip stub field
+			if field.Name == base.StubFieldName {
+				continue
+			}
 			originField := origin.Fields.ForName(field.Name)
 			if originField == nil {
 				origin.Fields = append(origin.Fields, field)

@@ -117,6 +117,11 @@ func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
 
 	addH3Queries(source)
 
+	// add gis WFS type to allow to query WFS features
+	errs := makeWFSType(source)
+	if len(errs) != 0 {
+		return nil, errs
+	}
 	return validator.ValidateSchemaDocument(source)
 }
 
@@ -143,7 +148,8 @@ func MergeSchema(schemas ...*ast.Schema) (*ast.SchemaDocument, error) {
 			if def.Kind == ast.Object &&
 				(strings.HasPrefix(def.Name, base.QueryTimeJoinsTypeName) ||
 					strings.HasPrefix(def.Name, base.QueryTimeSpatialTypeName) ||
-					strings.HasPrefix(def.Name, base.H3DataQueryTypeName)) {
+					strings.HasPrefix(def.Name, base.H3DataQueryTypeName) ||
+					def.Name == base.GisWFSTypeName) {
 				if len(def.Fields) == 0 {
 					continue
 				}
@@ -423,7 +429,7 @@ func addQueryFields(schema *ast.SchemaDocument) {
 		if !IsDataObject(def) {
 			continue
 		}
-		if d := def.Directives.ForName(objectTableDirectiveName); d != nil &&
+		if d := def.Directives.ForName(base.ObjectTableDirectiveName); d != nil &&
 			directiveArgValue(d, "is_m2m") == "true" {
 			continue
 		}

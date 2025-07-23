@@ -9,8 +9,6 @@ import (
 )
 
 const (
-	objectTableDirectiveName      = "table"
-	objectViewDirectiveName       = "view"
 	objectHyperTableDirectiveName = "hypertable"
 	objectCubeDirectiveName       = "cube"
 
@@ -91,7 +89,7 @@ func validateObject(defs Definitions, def *ast.Definition, opt *Options) error {
 	for _, d := range def.Directives {
 		switch d.Name {
 		case base.ModuleDirectiveName:
-		case objectTableDirectiveName, objectViewDirectiveName:
+		case base.ObjectTableDirectiveName, base.ObjectViewDirectiveName:
 			if objectType != "" {
 				return ErrorPosf(d.Position, "object %s can't have multiple type directives", def.Name)
 			}
@@ -123,13 +121,13 @@ func validateObject(defs Definitions, def *ast.Definition, opt *Options) error {
 				return err
 			}
 		case base.ViewArgsDirectiveName:
-			if objectType != objectViewDirectiveName {
-				return ErrorPosf(d.Position, "object %s should have @%s directive before @%s", def.Name, objectViewDirectiveName, d.Name)
+			if objectType != base.ObjectViewDirectiveName {
+				return ErrorPosf(d.Position, "object %s should have @%s directive before @%s", def.Name, base.ObjectViewDirectiveName, d.Name)
 			}
 			argName := directiveArgValue(d, "name")
 			it := defs.ForName(argName)
 			if it == nil {
-				return ErrorPosf(d.Position, "object %s have @%s directive. Input object %s definition not found", def.Name, objectViewDirectiveName, argName)
+				return ErrorPosf(d.Position, "object %s have @%s directive. Input object %s definition not found", def.Name, base.ObjectViewDirectiveName, argName)
 			}
 			required := false
 			for _, field := range it.Fields {
@@ -155,10 +153,18 @@ func validateObject(defs Definitions, def *ast.Definition, opt *Options) error {
 			}
 		case base.DependencyDirectiveName:
 			// extension object that has dependencies can be only a view
-			if objectType != objectViewDirectiveName {
-				return ErrorPosf(d.Position, "object %s should have @%s directive before @%s", def.Name, objectViewDirectiveName, d.Name)
+			if objectType != base.ObjectViewDirectiveName {
+				return ErrorPosf(d.Position, "object %s should have @%s directive before @%s", def.Name, base.ObjectViewDirectiveName, d.Name)
 			}
 		case base.CatalogDirectiveName, base.OriginalNameDirectiveName:
+		case base.GisWFSDirectiveName:
+			if objectType != base.ObjectViewDirectiveName && objectType != base.ObjectTableDirectiveName {
+				return ErrorPosf(d.Position, "object %s should be defined as Data Object (table or view) before @%s", def.Name, d.Name)
+			}
+			err := validateGisDirectives(def, opt)
+			if err != nil {
+				return err
+			}
 		default:
 			return ErrorPosf(d.Position, "object %s has unknown directive %s", def.Name, d.Name)
 		}
@@ -317,7 +323,7 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 		}
 	}
 
-	if opt.ReadOnly || def.Directives.ForName(objectTableDirectiveName) == nil {
+	if opt.ReadOnly || def.Directives.ForName(base.ObjectTableDirectiveName) == nil {
 		return nil
 	}
 	// add insert mutation
@@ -439,7 +445,7 @@ func objectFieldByPath(defs Definitions, objectName string, path string, noSubQu
 }
 
 func isM2MTable(def *ast.Definition) bool {
-	d := def.Directives.ForName(objectTableDirectiveName)
+	d := def.Directives.ForName(base.ObjectTableDirectiveName)
 	if d == nil {
 		return false
 	}
@@ -457,12 +463,35 @@ func extendObjectDefinition(schema *ast.SchemaDocument, origin, from *ast.Defini
 		return ErrorPosf(from.Position, "can't extend object %s with interfaces", from.Name)
 	}
 	for _, d := range from.Directives {
-		if d.Name != base.DependencyDirectiveName {
+		// only dependencies and WFS directives are allowed
+		if d.Name != base.DependencyDirectiveName &&
+			d.Name != base.GisWFSDirectiveName {
 			return ErrorPosf(from.Position, "can't extend object %s with directive %s", from.Name, d.Name)
+		}
+		if d.Name == base.DependencyDirectiveName {
+			continue
+		}
+		od := origin.Directives.ForName(d.Name)
+		if od != nil {
+			return ErrorPosf(from.Position, "WFS directive %s already exists in object %s", d.Name, origin.Name)
+		}
+		origin.Directives = append(origin.Directives, d)
+		err := validateGisDirectives(origin, nil)
+		if err != nil {
+			return err
+		}
+		// add WFS collection field
+		err = addWFSCollectionField(schema, origin)
+		if err != nil {
+			return err
 		}
 	}
 	var catalog *ast.Directive
 	for _, field := range from.Fields {
+		// skip stub field
+		if field.Name == base.StubFieldName {
+			continue
+		}
 		var err error
 		switch {
 		case IsSubQuery(field):
@@ -494,8 +523,21 @@ func extendObjectDefinition(schema *ast.SchemaDocument, origin, from *ast.Defini
 				return err
 			}
 			catalog = field.Directives.ForName(base.CatalogDirectiveName)
+		case field.Directives.ForName(base.GisWFSFieldDirectiveName) != nil ||
+			field.Directives.ForName(base.GisWFSExcludeDirectiveName) != nil:
+			// wfs directives add it to the origin field
+			originField := origin.Fields.ForName(field.Name)
+			if originField == nil {
+				return ErrorPosf(field.Position, "extended field %s not found in object %s", field.Name, origin.Name)
+			}
+			if d := field.Directives.ForName(base.GisWFSFieldDirectiveName); d != nil {
+				originField.Directives = append(originField.Directives, d)
+			}
+			if d := field.Directives.ForName(base.GisWFSExcludeDirectiveName); d != nil {
+				originField.Directives = append(originField.Directives, d)
+			}
 		default:
-			return ErrorPosf(field.Position, "as a field %s only function calls or joins allowed", field.Name)
+			return ErrorPosf(field.Position, "as a field %s only function calls or joins allowed or WFS directives", field.Name)
 		}
 		newFieldIdx := len(origin.Fields)
 		origin.Fields = append(origin.Fields, field)
@@ -627,17 +669,17 @@ func DataObjectInfo(def *ast.Definition) *Object {
 		def:     def,
 	}
 
-	if def.Directives.ForName(objectTableDirectiveName) != nil {
-		info.Name = objectDirectiveArgValue(def, objectTableDirectiveName, "name")
-		info.SoftDelete = objectDirectiveArgValue(def, objectTableDirectiveName, "soft_delete") == "true"
-		info.softDeleteCondition = objectDirectiveArgValue(def, objectTableDirectiveName, "soft_delete_cond")
-		info.softDeleteSet = objectDirectiveArgValue(def, objectTableDirectiveName, "soft_delete_set")
+	if def.Directives.ForName(base.ObjectTableDirectiveName) != nil {
+		info.Name = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "name")
+		info.SoftDelete = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "soft_delete") == "true"
+		info.softDeleteCondition = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "soft_delete_cond")
+		info.softDeleteSet = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "soft_delete_set")
 		info.Type = TableDataObject
 	}
 
-	if def.Directives.ForName(objectViewDirectiveName) != nil {
-		info.Name = objectDirectiveArgValue(def, objectViewDirectiveName, "name")
-		info.sql = objectDirectiveArgValue(def, objectViewDirectiveName, "sql")
+	if def.Directives.ForName(base.ObjectViewDirectiveName) != nil {
+		info.Name = objectDirectiveArgValue(def, base.ObjectViewDirectiveName, "name")
+		info.sql = objectDirectiveArgValue(def, base.ObjectViewDirectiveName, "sql")
 		info.Type = ViewDataObject
 	}
 

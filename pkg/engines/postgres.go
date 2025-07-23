@@ -1037,12 +1037,12 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 			sql = "ST_GeomFromGeoJSON(" + sql + ")"
 		}
 		return "ST_UNION(" + sql + ")", params, nil
-	case "envelope":
+	case "extent":
 		if path != "" {
 			sql = e.ExtractNestedTypedValue(sql, path, "")
 			sql = "ST_GeomFromGeoJSON(" + sql + ")"
 		}
-		return "ST_Extent(" + sql + ")", params, nil
+		return "ST_Extent(" + sql + ")::geometry", params, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported aggregate function: %s", funcName)
 	}

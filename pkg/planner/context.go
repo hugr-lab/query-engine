@@ -16,6 +16,9 @@ func ContextWithRawResultsFlag(ctx context.Context) context.Context {
 }
 
 func IsRawResultsQuery(ctx context.Context, field *ast.Field) bool {
+	if field.Definition.Type.NamedType != "" { // all select one records is not raw output
+		return false
+	}
 	if field.Directives.ForName(base.RawResultsDirectiveName) != nil {
 		return true
 	}

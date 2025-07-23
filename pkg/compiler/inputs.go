@@ -206,7 +206,7 @@ func inputObjectFilterName(schema *ast.SchemaDocument, def *ast.Definition, isLi
 		switch {
 		case t.Kind == ast.Object:
 			// skip parametrized views
-			if t.Directives.ForName(objectViewDirectiveName) != nil &&
+			if t.Directives.ForName(base.ObjectViewDirectiveName) != nil &&
 				t.Directives.ForName(base.ViewArgsDirectiveName) != nil {
 				continue
 			}
@@ -268,7 +268,7 @@ func inputObjectFilterName(schema *ast.SchemaDocument, def *ast.Definition, isLi
 func appendFilterInputObject(schema *ast.SchemaDocument, def *ast.Definition, field *ast.FieldDefinition) {
 	// skip parametrized views
 	t := schema.Definitions.ForName(field.Type.Name())
-	if t.Directives.ForName(objectViewDirectiveName) != nil &&
+	if t.Directives.ForName(base.ObjectViewDirectiveName) != nil &&
 		t.Directives.ForName(base.ViewArgsDirectiveName) != nil {
 		return
 	}
@@ -338,7 +338,7 @@ func inputObjectMutationInsertName(schema *ast.SchemaDocument, def *ast.Definiti
 				log.Printf("warn: type %s not found for field %s", t.Name(), field.Name)
 				continue
 			}
-			if td.Directives.ForName(objectViewDirectiveName) != nil {
+			if td.Directives.ForName(base.ObjectViewDirectiveName) != nil {
 				continue
 			}
 			tn := inputObjectMutationInsertName(schema, td)

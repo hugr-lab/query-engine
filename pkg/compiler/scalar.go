@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -40,6 +41,7 @@ type ScalarType struct {
 	ParseArray       func(value any) (any, error)
 	AggType          string
 	MeasurementAggs  string
+	OpenAPISchema    *openapi3.Schema
 }
 
 var ScalarTypes = map[string]ScalarType{
@@ -56,6 +58,7 @@ var ScalarTypes = map[string]ScalarType{
 		},
 		AggType:         "StringAggregation",
 		MeasurementAggs: "StringMeasurementAggregation",
+		OpenAPISchema:   openapi3.NewStringSchema(),
 	},
 	"Int": {
 		Name:             "Int",
@@ -104,6 +107,7 @@ var ScalarTypes = map[string]ScalarType{
 		},
 		AggType:         "IntAggregation",
 		MeasurementAggs: "IntMeasurementAggregation",
+		OpenAPISchema:   openapi3.NewInt32Schema(),
 	},
 	"BigInt": {
 		Name:             "BigInt",
@@ -152,6 +156,7 @@ var ScalarTypes = map[string]ScalarType{
 		},
 		AggType:         "BigIntAggregation",
 		MeasurementAggs: "BigIntMeasurementAggregation",
+		OpenAPISchema:   openapi3.NewInt64Schema(),
 	},
 	"Float": {
 		Name:             "Float",
@@ -179,6 +184,7 @@ var ScalarTypes = map[string]ScalarType{
 		},
 		AggType:         "FloatAggregation",
 		MeasurementAggs: "FloatMeasurementAggregation",
+		OpenAPISchema:   openapi3.NewFloat64Schema(),
 	},
 	"Boolean": {
 		Name:             "Boolean",
@@ -192,6 +198,7 @@ var ScalarTypes = map[string]ScalarType{
 		},
 		AggType:         "BooleanAggregation",
 		MeasurementAggs: "BooleanMeasurementAggregation",
+		OpenAPISchema:   openapi3.NewBoolSchema(),
 	},
 	"Date": {
 		Name:        "Date",
@@ -251,6 +258,7 @@ var ScalarTypes = map[string]ScalarType{
 		},
 		AggType:         "DateAggregation",
 		MeasurementAggs: "DateMeasurementAggregation",
+		OpenAPISchema:   openapi3.NewStringSchema().WithFormat("date"),
 	},
 	"Timestamp": {
 		Name:        "Timestamp",
@@ -316,6 +324,7 @@ var ScalarTypes = map[string]ScalarType{
 		},
 		AggType:         "TimestampAggregation",
 		MeasurementAggs: "TimestampMeasurementAggregation",
+		OpenAPISchema:   openapi3.NewStringSchema().WithFormat("date-time"),
 	},
 	"Time": {
 		Name:             "Time",
@@ -333,6 +342,7 @@ var ScalarTypes = map[string]ScalarType{
 		},
 		AggType:         "TimeAggregation",
 		MeasurementAggs: "TimeMeasurementAggregation",
+		OpenAPISchema:   openapi3.NewStringSchema().WithFormat("time"),
 	},
 	"Interval": {
 		Name:             "Interval",
@@ -360,6 +370,7 @@ var ScalarTypes = map[string]ScalarType{
 			}
 			return out, nil
 		},
+		OpenAPISchema: openapi3.NewStringSchema().WithFormat("interval"),
 	},
 	"JSON": {
 		Name:        "JSON",
@@ -379,7 +390,8 @@ var ScalarTypes = map[string]ScalarType{
 		ParseValue: func(value any) (any, error) {
 			return types.ParseJsonValue(value)
 		},
-		AggType: "JSONAggregation",
+		AggType:       "JSONAggregation",
+		OpenAPISchema: openapi3.NewObjectSchema(),
 	},
 	"IntRange": {
 		Name:             "IntRange",
@@ -406,6 +418,7 @@ var ScalarTypes = map[string]ScalarType{
 			}
 			return out, nil
 		},
+		OpenAPISchema: openapi3.NewStringSchema().WithFormat("int-range"),
 	},
 	"BigIntRange": {
 		Name:             "Int8Range",
@@ -432,6 +445,7 @@ var ScalarTypes = map[string]ScalarType{
 			}
 			return out, nil
 		},
+		OpenAPISchema: openapi3.NewStringSchema().WithFormat("int-range"),
 	},
 	"TimestampRange": {
 		Name:             "TimestampRange",
@@ -458,6 +472,7 @@ var ScalarTypes = map[string]ScalarType{
 			}
 			return out, nil
 		},
+		OpenAPISchema: openapi3.NewStringSchema().WithFormat("timestamp-range"),
 	},
 	"Geometry": {
 		Name:        "Geometry",
@@ -554,6 +569,7 @@ var ScalarTypes = map[string]ScalarType{
 		ToStructFieldSQL: func(sql string) string {
 			return fmt.Sprintf("ST_AsGeoJSON(%s)", sql)
 		},
+		OpenAPISchema: openapi3.NewObjectSchema().WithProperty("type", openapi3.NewStringSchema().WithEnum([]string{"Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "GeometryCollection"})),
 	},
 	"H3Cell": {
 		Name:             "H3Cell",
@@ -588,6 +604,7 @@ var ScalarTypes = map[string]ScalarType{
 		ToStructFieldSQL: func(sql string) string {
 			return "h3_h3_to_string(" + sql + ")"
 		},
+		OpenAPISchema: openapi3.NewStringSchema().WithFormat("h3string"),
 	},
 }
 

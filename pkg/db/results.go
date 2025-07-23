@@ -36,6 +36,24 @@ func NewArrowTable() *ArrowTableChunked {
 	return &ArrowTableChunked{}
 }
 
+func NewArrowTableFromReader(reader array.RecordReader) *ArrowTableChunked {
+	if reader == nil {
+		return nil
+	}
+	t := &ArrowTableChunked{}
+	defer reader.Release()
+
+	for reader.Next() {
+		if reader.Err() != nil {
+			reader.Release()
+			return nil
+		}
+		rec := reader.Record()
+		t.Append(rec)
+	}
+	return t
+}
+
 func (t *ArrowTableChunked) SetInfo(info string) {
 	t.wrapped = strings.Contains(info, "wrapped")
 	t.asArray = strings.Contains(info, "asArray")
@@ -291,7 +309,7 @@ func (c *colVal) Value(i int) any {
 		case *array.Struct:
 			c.valFunc = func(a arrow.Array, i int) any {
 				s := make(map[string]any)
-				for j := 0; j < v.Len(); j++ {
+				for j := 0; j < v.NumField(); j++ {
 					field := v.Field(j)
 					s[field.String()] = ColumnValue(field, i)
 				}
@@ -362,12 +380,7 @@ func ColumnValue(a arrow.Array, i int) any {
 		}
 		return m
 	case *array.Struct:
-		s := make(map[string]any)
-		for j := 0; j < v.Len(); j++ {
-			field := v.Field(j)
-			s[field.String()] = ColumnValue(field, i)
-		}
-		return s
+		return v.GetOneForMarshal(i)
 	case *array.Null:
 		return nil
 	}
@@ -625,7 +638,6 @@ func (t *ArrowTableStream) readAll() ([]arrow.Record, error) {
 	}
 	var rr []arrow.Record
 	for t.reader.Next() {
-		rec := t.reader.Record()
 		if t.reader.Err() != nil {
 			t.reader.Release()
 			for _, r := range rr {
@@ -633,6 +645,7 @@ func (t *ArrowTableStream) readAll() ([]arrow.Record, error) {
 			}
 			return nil, t.reader.Err()
 		}
+		rec := t.reader.Record()
 		rr = append(rr, rec)
 		rec.Retain()
 	}
