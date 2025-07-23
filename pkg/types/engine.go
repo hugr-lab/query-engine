@@ -19,6 +19,12 @@ type Querier interface {
 	DescribeDataSource(ctx context.Context, name string, self bool) (string, error)
 }
 
+type Request struct {
+	Query         string                 `json:"query"`
+	Variables     map[string]interface{} `json:"variables"`
+	OperationName string                 `json:"operationName,omitempty"`
+}
+
 type Response struct {
 	Data       map[string]any `json:"data,omitempty"`
 	Extensions map[string]any `json:"extensions,omitempty"`
@@ -122,4 +128,30 @@ func scanRecursive(path string, data any, dest interface{}) error {
 	default:
 		return ErrWrongDataPath
 	}
+}
+
+func (r *Response) DataPart(path string) any {
+	if r.Data == nil {
+		return nil
+	}
+	return ExtractResponseData(path, r.Data)
+}
+
+func ExtractResponseData(path string, data map[string]any) any {
+	if path == "" {
+		return data
+	}
+	pp := strings.SplitN(path, ".", 2)
+	if len(pp) == 1 {
+		return data[pp[0]]
+	}
+	d, ok := data[pp[0]]
+	if !ok || d == nil {
+		return nil
+	}
+	dm, ok := d.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return ExtractResponseData(pp[1], dm)
 }

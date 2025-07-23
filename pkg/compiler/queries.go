@@ -56,6 +56,39 @@ func objectQueryDirective(name string, queryType ObjectQueryType) *ast.Directive
 	}
 }
 
+func queryTypeToText(queryType ObjectQueryType) string {
+	switch queryType {
+	case QueryTypeSelect:
+		return queryTypeTextSelect
+	case QueryTypeSelectOne:
+		return queryTypeTextSelectOne
+	}
+	return ""
+}
+
+func ObjectQueryDefinition(defs Definitions, def *ast.Definition, queryType ObjectQueryType) (string, *ast.FieldDefinition) {
+	if def == nil {
+		return "", nil
+	}
+	qt := queryTypeToText(queryType)
+	var d *ast.Directive
+	for _, d = range def.Directives.ForNames(queryDirectiveName) {
+		if directiveArgValue(d, "type") != qt {
+			continue
+		}
+		qn := directiveArgValue(d, "name")
+		if qn == "" {
+			return "", nil
+		}
+		if queryType == QueryTypeSelectOne && !strings.HasSuffix(qn, ObjectQueryByPKSuffix) {
+			continue
+		}
+		module := objectModuleType(defs, def, ModuleQuery)
+		return objectModule(def), module.Fields.ForName(qn)
+	}
+	return "", nil
+}
+
 type ObjectMutationType int
 
 const (
@@ -79,6 +112,38 @@ func objectMutationDirective(name string, mutationType ObjectMutationType) *ast.
 		},
 		Position: compiledPos(),
 	}
+}
+
+func mutationTypeToText(mutationType ObjectMutationType) string {
+	switch mutationType {
+	case MutationTypeInsert:
+		return mutationTypeTextInsert
+	case MutationTypeUpdate:
+		return mutationTypeTextUpdate
+	case MutationTypeDelete:
+		return mutationTypeTextDelete
+	}
+	return ""
+}
+
+func ObjectMutationDefinition(defs Definitions, def *ast.Definition, mutationType ObjectMutationType) (string, *ast.FieldDefinition) {
+	if def == nil {
+		return "", nil
+	}
+	mt := mutationTypeToText(mutationType)
+	var d *ast.Directive
+	for _, d = range def.Directives.ForNames(mutationDirectiveName) {
+		if directiveArgValue(d, "type") != mt {
+			continue
+		}
+		mn := directiveArgValue(d, "name")
+		if mn == "" {
+			return "", nil
+		}
+		module := objectModuleType(defs, def, ModuleMutation)
+		return objectModule(def), module.Fields.ForName(mn)
+	}
+	return "", nil
 }
 
 func IsSubQuery(field *ast.FieldDefinition) bool {
@@ -418,6 +483,30 @@ func QueryRequestInfo(ss ast.SelectionSet) ([]QueryRequest, QueryType) {
 	}
 
 	return resolvers, qtt
+}
+
+func FlatQuery(queries []QueryRequest) map[string]QueryRequest {
+	// flatten query
+	if len(queries) == 0 {
+		return nil
+	}
+	flat := make(map[string]QueryRequest, len(queries))
+	for _, q := range queries {
+		switch q.QueryType {
+		case QueryTypeNone:
+			// seek children
+			for k, v := range FlatQuery(q.Subset) {
+				flat[q.Field.Alias+"."+k] = v
+			}
+		case QueryTypeQuery,
+			QueryTypeFunction,
+			QueryTypeFunctionMutation,
+			QueryTypeMutation,
+			QueryTypeMeta:
+			flat[q.Field.Alias] = q
+		}
+	}
+	return flat
 }
 
 type Mutation struct {

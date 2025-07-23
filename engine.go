@@ -15,6 +15,7 @@ import (
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/storage"
 	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/pkg/gis"
 	permissions "github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -22,21 +23,8 @@ import (
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"github.com/vektah/gqlparser/v2/validator"
-	"github.com/vektah/gqlparser/v2/validator/rules"
 	"golang.org/x/sync/errgroup"
 )
-
-func init() {
-	// remove unused variable GraphQL validation rule
-	validator.RemoveRule(rules.NoUnusedVariablesRule.Name)
-}
-
-type Request struct {
-	Query         string                 `json:"query"`
-	Variables     map[string]interface{} `json:"variables"`
-	OperationName string                 `json:"operationName,omitempty"`
-}
 
 type Service struct {
 	config Config
@@ -50,6 +38,7 @@ type Service struct {
 	perm    permissions.Store
 	cache   *cache.Service
 	s3      *storage.Source
+	gis     *gis.Service
 }
 
 type Config struct {
@@ -136,20 +125,31 @@ func (s *Service) Init(ctx context.Context) (err error) {
 			return err
 		}
 	}
+	s.perm = permissions.New(s)
+
+	s.gis = gis.New(gis.Config{
+		Querier: s,
+		Schema:  s,
+	})
 
 	s.endpoints()
 	if s.config.MaxDepth == 0 {
 		s.config.MaxDepth = 7
 	}
 
-	s.perm = permissions.New(s)
-
 	// load stored data sources
-	if s.config.CoreDB == nil {
-		return nil
+	if s.config.CoreDB != nil {
+		err = s.loadDataSources(ctx)
+		if err != nil {
+			return fmt.Errorf("load data sources: %w", err)
+		}
 	}
 
-	return s.loadDataSources(ctx)
+	err = s.gis.Init()
+	if err != nil {
+		return fmt.Errorf("init GIS service: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) Info() Info {
@@ -198,10 +198,13 @@ func (s *Service) endpoints() {
 	s.router.Handle("/query", mw(http.HandlerFunc(s.queryHandler)))
 	s.router.Handle("/jq-query", mw(http.HandlerFunc(s.jqHandler)))
 	s.router.Handle("/ipc", mw(http.HandlerFunc(s.ipcHandler)))
-	s.router.Handle("/{catalog}/query", mw(http.HandlerFunc(s.queryHandler)))
 
 	if s.config.AdminUI {
 		s.router.Handle("/admin", mw(http.HandlerFunc(s.adminUI)))
+	}
+
+	if s.gis != nil {
+		s.router.Handle("/gis/", mw(http.StripPrefix("/gis", s.gis)))
 	}
 }
 
@@ -229,11 +232,11 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Service) parseRequest(r *http.Request) (req Request, err error) {
+func (s *Service) parseRequest(r *http.Request) (req types.Request, err error) {
 	switch r.Method {
 	case http.MethodGet:
 		query := r.URL.Query()
-		req = Request{
+		req = types.Request{
 			Query:         query.Get("query"),
 			Variables:     make(map[string]any),
 			OperationName: query.Get("operationName"),
@@ -242,7 +245,7 @@ func (s *Service) parseRequest(r *http.Request) (req Request, err error) {
 		if vars != "" {
 			err = json.Unmarshal([]byte(vars), &req.Variables)
 			if err != nil {
-				return Request{}, fmt.Errorf("unmarshal variables: %w", err)
+				return types.Request{}, fmt.Errorf("unmarshal variables: %w", err)
 			}
 		}
 	case http.MethodPost:
@@ -253,7 +256,7 @@ func (s *Service) parseRequest(r *http.Request) (req Request, err error) {
 	return req, err
 }
 
-func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request) types.Response {
+func (s *Service) ProcessQuery(ctx context.Context, catalog string, req types.Request) types.Response {
 	// add permissions to context
 	ctx, err := s.perm.ContextWithPermissions(ctx)
 	if err != nil {
@@ -264,7 +267,7 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request)
 		return types.ErrResponse(err)
 	}
 
-	qd, errs := gqlparser.LoadQuery(schema, req.Query)
+	qd, errs := gqlparser.LoadQueryWithRules(schema, req.Query, types.GraphQLQueryRules)
 	if len(errs) > 0 {
 		return types.ErrResponse(errs)
 	}
@@ -287,7 +290,7 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request)
 				return types.ErrResponse(gqlerror.Errorf("operation %s not found", req.OperationName))
 			}
 		}
-		data, ext, err := s.processOperation(ctx, schema, op, req.Variables)
+		data, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
 		if err != nil {
 			return types.ErrResponse(err)
 		}
@@ -310,7 +313,7 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request)
 	for _, op := range qd.Operations {
 		op := op
 		eg.Go(func() error {
-			d, ext, err := s.processOperation(ctx, schema, op, req.Variables)
+			d, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
 			data[op.Name] = d
 			if ext != nil {
 				extensions[op.Name] = ext
@@ -339,7 +342,7 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req Request)
 	return res
 }
 
-func (s *Service) processOperation(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (map[string]any, map[string]any, error) {
+func (s *Service) ProcessOperation(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (map[string]any, map[string]any, error) {
 	switch op.Operation {
 	case ast.Query, ast.Mutation:
 		return s.processQuery(ctx, schema, op, vars)
@@ -356,7 +359,7 @@ func (s *Service) Query(ctx context.Context, query string, vars map[string]any) 
 }
 
 func (s *Service) QueryCatalog(ctx context.Context, catalog, query string, vars map[string]any) (*types.Response, error) {
-	res := s.ProcessQuery(ctx, catalog, Request{
+	res := s.ProcessQuery(ctx, catalog, types.Request{
 		Query:     query,
 		Variables: vars,
 	})

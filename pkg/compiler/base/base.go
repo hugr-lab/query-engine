@@ -24,6 +24,15 @@ var queryDirectivesDef string
 var Schema *ast.Schema
 
 const (
+	ObjectTableDirectiveName = "table"
+	ObjectViewDirectiveName  = "view"
+)
+
+const (
+	FieldPrimaryKeyDirectiveName = "pk"
+)
+
+const (
 	WithDeletedDirectiveName = "with_deleted"
 	StatsDirectiveName       = "stats"
 	RawResultsDirectiveName  = "raw"
@@ -50,6 +59,10 @@ const (
 	FieldSourceDirectiveName       = "field_source"
 )
 
+const (
+	StubFieldName = "_stub"
+)
+
 func Init() {
 	Schema = gqlparser.MustLoadSchema(Sources()...)
 }
@@ -61,6 +74,7 @@ func Sources() []*ast.Source {
 		{Name: "scalar_types.graphql", Input: scalarTypesDef},
 		{Name: "base.graphql", Input: baseSchemaData},
 		{Name: "query_directives.graphql", Input: queryDirectivesDef},
+		{Name: "gis.graphql", Input: gisDirectives},
 	}
 }
 
@@ -86,6 +100,7 @@ func QuerySideDirectives() []string {
 		RawResultsDirectiveName,
 		UnnestDirectiveName,
 		AddH3DirectiveName,
+		GisFeatureDirectiveName,
 	}
 }
 

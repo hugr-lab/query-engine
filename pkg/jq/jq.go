@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/itchyny/gojq"
@@ -11,8 +12,9 @@ import (
 
 type Transformer struct {
 	code *gojq.Code
-	vars []string
+	opt  options
 
+	mu   sync.Mutex
 	stat Stat
 }
 
@@ -24,31 +26,26 @@ type Stat struct {
 	Transformed       int           `json:"transformed"`
 }
 
-func NewTransformer(query string, vars map[string]any) (*Transformer, error) {
+func NewTransformer(ctx context.Context, query string, opts ...Option) (*Transformer, error) {
 	start := time.Now()
 	q, err := gojq.Parse(query)
 	if err != nil {
 		return nil, err
 	}
 
-	var vv []string
-	for k := range vars {
-		vv = append(vv, k)
+	transformOptions := &options{}
+	for _, opt := range opts {
+		opt(transformOptions)
 	}
 
-	var opts []gojq.CompilerOption
-	if len(vv) != 0 {
-		opts = append(opts, gojq.WithVariables(vv))
-	}
-
-	c, err := gojq.Compile(q, opts...)
+	c, err := gojq.Compile(q, transformOptions.compilerOptions(ctx)...)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Transformer{
 		code: c,
-		vars: vv,
+		opt:  *transformOptions,
 		stat: Stat{
 			CompilerTime: time.Since(start),
 		},
@@ -66,11 +63,15 @@ func (t *Transformer) Transform(ctx context.Context, data interface{}, vars map[
 	if err != nil {
 		return nil, fmt.Errorf("jq: json unmarshal results error: %v", err)
 	}
-	t.stat.SerializationTime += time.Since(start)
+	st := time.Since(start)
 
 	start = time.Now()
 	var vv []any
-	for _, name := range t.vars {
+	for _, name := range t.opt.varNames {
+		if vars == nil {
+			vv = append(vv, t.opt.vars[name])
+			continue
+		}
 		vv = append(vv, vars[name])
 	}
 	iter := t.code.RunWithContext(ctx, data, vv...)
@@ -84,9 +85,14 @@ func (t *Transformer) Transform(ctx context.Context, data interface{}, vars map[
 		results = append(results, v)
 		res++
 	}
-	t.stat.ExecutionTime += time.Since(start)
-	t.stat.Runs++
-	t.stat.Transformed += res
+	if t.opt.collectStat {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		t.stat.SerializationTime += st
+		t.stat.ExecutionTime += time.Since(start)
+		t.stat.Runs++
+		t.stat.Transformed += res
+	}
 	if len(results) == 1 {
 		return results[0], nil
 	}

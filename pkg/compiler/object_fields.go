@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	fieldPrimaryKeyDirectiveName     = "pk"
 	fieldUniqueRuleDirectiveName     = "unique_rule"
 	fieldExcludeFilterDirectiveName  = "exclude_filter"
 	fieldDefaultDirectiveName        = "default"
@@ -48,7 +47,7 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 				field.Type.Name() != JSONTypeName {
 				return ErrorPosf(d.Position, "field %s of object %s should be a scalar type", field.Name, def.Name)
 			}
-		case fieldPrimaryKeyDirectiveName, fieldExcludeFilterDirectiveName,
+		case base.FieldPrimaryKeyDirectiveName, fieldExcludeFilterDirectiveName,
 			fieldFilterRequiredDirectiveName, base.FieldSourceDirectiveName:
 		case base.FieldGeometryInfoDirectiveName:
 			if field.Type.Name() != GeometryTypeName {
@@ -79,6 +78,13 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 				return ErrorPosf(d.Position, "measurement field %s of object %s should be a valid scalar type", field.Name, def.Name)
 			}
 		case base.DeprecatedDirectiveName, base.FieldSqlDirectiveName:
+		case base.GisWFSFieldDirectiveName, base.GisWFSExcludeDirectiveName:
+			if !IsDataObject(def) {
+				return ErrorPosf(d.Position, "field %s of object %s can't have directive %s", field.Name, def.Name, d.Name)
+			}
+			if def.Directives.ForName(base.GisWFSDirectiveName) == nil {
+				return ErrorPosf(d.Position, "field %s of object %s should have @%s directive", field.Name, def.Name, base.GisWFSDirectiveName)
+			}
 		default:
 			return ErrorPosf(d.Position, "field %s of object %s has unknown directive %s", field.Name, def.Name, d.Name)
 		}
@@ -170,7 +176,7 @@ func fieldInfo(field *ast.FieldDefinition, object *ast.Definition) *Field {
 }
 
 func (f *Field) IsRequired() bool {
-	return f.def.Directives.ForName(fieldPrimaryKeyDirectiveName) != nil || f.def.Type.NonNull
+	return f.def.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil || f.def.Type.NonNull
 }
 
 func (f *Field) SequenceName() string {

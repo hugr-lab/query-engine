@@ -709,12 +709,12 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 			sql = "ST_GeomFromGeoJSON(" + sql + ")"
 		}
 		return "ST_AsGeoJson(ST_UNION_AGG(" + sql + "))", params, nil
-	case "envelope":
+	case "extent":
 		if path != "" {
 			sql = e.ExtractNestedTypedValue(sql, path, "")
 			sql = "ST_GeomFromGeoJSON(" + sql + ")"
 		}
-		return "ST_AsGeoJson(ST_ENVELOPE(" + sql + "))", params, nil
+		return "ST_AsGeoJson(ST_EXTENT_AGG(" + sql + "))", params, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported aggregate function: %s", funcName)
 	}

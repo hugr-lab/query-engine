@@ -229,6 +229,14 @@ func (ss SelectionSet) ScalarForPath(path string) *SelectedField {
 	return nil
 }
 
+func (ss SelectionSet) AsSelectionSet() ast.SelectionSet {
+	var selections ast.SelectionSet
+	for _, s := range ss {
+		selections = append(selections, s.Field)
+	}
+	return selections
+}
+
 func SelectedFields(ss ast.SelectionSet) SelectionSet {
 	var fields SelectionSet
 	for _, s := range ss {

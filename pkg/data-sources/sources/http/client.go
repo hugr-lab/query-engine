@@ -770,13 +770,13 @@ func (t *tokenRequestTransform) parse(param httpSecurityParams) error {
 	}
 	var err error
 	if t.Body != "" {
-		t.body, err = jq.NewTransformer(t.Body, t.vars)
+		t.body, err = jq.NewTransformer(context.Background(), t.Body, jq.WithVariables(t.vars))
 		if err != nil {
 			return fmt.Errorf("failed to parse request body jq transform: %w", err)
 		}
 	}
 	if t.Response != "" {
-		t.response, err = jq.NewTransformer(t.Response, t.vars)
+		t.response, err = jq.NewTransformer(context.Background(), t.Response, jq.WithVariables(t.vars))
 		if err != nil {
 			return fmt.Errorf("failed to parse response body jq transform: %w", err)
 		}

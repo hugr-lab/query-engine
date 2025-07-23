@@ -7,13 +7,35 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+func IsDataObjectFieldDefinition(def *ast.FieldDefinition) bool {
+	if def == nil {
+		return false
+	}
+	return !IsAggregateQueryDefinition(def) &&
+		!IsBucketAggregateQueryDefinition(def) &&
+		!IsJoinSubqueryDefinition(def) &&
+		!IsFunctionCallSubqueryDefinition(def) &&
+		!IsTableFuncJoinSubqueryDefinition(def) &&
+		!IsReferencesSubquery(def) &&
+		!IsSelectQueryDefinition(def) &&
+		!IsSelectOneQueryDefinition(def)
+}
+
 func IsAggregateQuery(field *ast.Field) bool {
-	d := field.Definition.Directives.ForName(fieldAggregationQueryDirectiveName)
+	return IsAggregateQueryDefinition(field.Definition)
+}
+
+func IsAggregateQueryDefinition(def *ast.FieldDefinition) bool {
+	d := def.Directives.ForName(fieldAggregationQueryDirectiveName)
 	return d != nil && directiveArgValue(d, "is_bucket") != "true"
 }
 
 func IsBucketAggregateQuery(field *ast.Field) bool {
-	d := field.Definition.Directives.ForName(fieldAggregationQueryDirectiveName)
+	return IsBucketAggregateQueryDefinition(field.Definition)
+}
+
+func IsBucketAggregateQueryDefinition(def *ast.FieldDefinition) bool {
+	d := def.Directives.ForName(fieldAggregationQueryDirectiveName)
 	return d != nil && directiveArgValue(d, "is_bucket") == "true"
 }
 
@@ -23,22 +45,10 @@ func IsH3Query(field *ast.Field) bool {
 }
 
 func IsSelectQuery(field *ast.Field) bool {
-	return isSelectQueryDefinition(field.Definition)
+	return IsSelectQueryDefinition(field.Definition)
 }
 
-func IsSelectOneQuery(field *ast.Field) bool {
-	d := field.Definition.Directives.ForName(queryDirectiveName)
-	if d == nil {
-		return false
-	}
-	t := d.Arguments.ForName("type")
-	if t == nil {
-		return false
-	}
-	return t.Value.Raw == queryTypeTextSelectOne
-}
-
-func isSelectQueryDefinition(field *ast.FieldDefinition) bool {
+func IsSelectQueryDefinition(field *ast.FieldDefinition) bool {
 	d := field.Directives.ForName(queryDirectiveName)
 	if d == nil {
 		return false
@@ -50,12 +60,32 @@ func isSelectQueryDefinition(field *ast.FieldDefinition) bool {
 	return t.Value.Raw == queryTypeTextSelect
 }
 
+func IsSelectOneQuery(field *ast.Field) bool {
+	return IsSelectOneQueryDefinition(field.Definition)
+}
+
+func IsSelectOneQueryDefinition(def *ast.FieldDefinition) bool {
+	d := def.Directives.ForName(queryDirectiveName)
+	if d == nil {
+		return false
+	}
+	t := d.Arguments.ForName("type")
+	if t == nil {
+		return false
+	}
+	return t.Value.Raw == queryTypeTextSelectOne
+}
+
 func IsFunctionCallQuery(field *ast.Field) bool {
 	return IsFunction(field.Definition)
 }
 
 func IsInsertQuery(field *ast.Field) bool {
-	d := field.Definition.Directives.ForName(mutationDirectiveName)
+	return IsInsertQueryDefinition(field.Definition)
+}
+
+func IsInsertQueryDefinition(def *ast.FieldDefinition) bool {
+	d := def.Directives.ForName(mutationDirectiveName)
 	if d == nil {
 		return false
 	}
@@ -78,8 +108,32 @@ func IsUpdateQuery(field *ast.Field) bool {
 	return t.Value.Raw == mutationTypeTextUpdate
 }
 
+func IsUpdateQueryDefinition(def *ast.FieldDefinition) bool {
+	d := def.Directives.ForName(mutationDirectiveName)
+	if d == nil {
+		return false
+	}
+	t := d.Arguments.ForName("type")
+	if t == nil {
+		return false
+	}
+	return t.Value.Raw == mutationTypeTextUpdate
+}
+
 func IsDeleteQuery(field *ast.Field) bool {
 	d := field.Definition.Directives.ForName(mutationDirectiveName)
+	if d == nil {
+		return false
+	}
+	t := d.Arguments.ForName("type")
+	if t == nil {
+		return false
+	}
+	return t.Value.Raw == mutationTypeTextDelete
+}
+
+func IsDeleteQueryDefinition(def *ast.FieldDefinition) bool {
+	d := def.Directives.ForName(mutationDirectiveName)
 	if d == nil {
 		return false
 	}
@@ -99,22 +153,34 @@ func IsJoinSubquery(field *ast.Field) bool {
 		field.Directives.ForName(JoinDirectiveName) != nil
 }
 
+func IsJoinSubqueryDefinition(def *ast.FieldDefinition) bool {
+	return def.Directives.ForName(JoinDirectiveName) != nil
+}
+
 func IsFunctionCallSubquery(field *ast.Field) bool {
-	return field.Definition.Directives.ForName(functionCallDirectiveName) != nil
+	return IsFunctionCallSubqueryDefinition(field.Definition)
+}
+
+func IsFunctionCallSubqueryDefinition(def *ast.FieldDefinition) bool {
+	return def.Directives.ForName(functionCallDirectiveName) != nil
 }
 
 func IsTableFuncJoinSubquery(field *ast.Field) bool {
-	return field.Definition.Directives.ForName(functionCallTableJoinDirectiveName) != nil
+	return IsTableFuncJoinSubqueryDefinition(field.Definition)
+}
+
+func IsTableFuncJoinSubqueryDefinition(def *ast.FieldDefinition) bool {
+	return def.Directives.ForName(functionCallTableJoinDirectiveName) != nil
 }
 
 func ObjectSQL(def *ast.Definition) string {
-	name := objectDirectiveArgValue(def, objectTableDirectiveName, "name")
+	name := objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "name")
 	if name != "" {
 		return name
 	}
 
-	name = objectDirectiveArgValue(def, objectViewDirectiveName, "name")
-	sql := objectDirectiveArgValue(def, objectViewDirectiveName, "sql")
+	name = objectDirectiveArgValue(def, base.ObjectViewDirectiveName, "name")
+	sql := objectDirectiveArgValue(def, base.ObjectViewDirectiveName, "sql")
 	if sql != "" {
 		return fmt.Sprintf("(%s) AS %s", sql, name)
 	}

@@ -43,10 +43,10 @@ func IsDataObject(def *ast.Definition) bool {
 	if IsSystemType(def) {
 		return false
 	}
-	if d := def.Directives.ForName(objectTableDirectiveName); d != nil {
+	if d := def.Directives.ForName(base.ObjectTableDirectiveName); d != nil {
 		return true
 	}
-	if d := def.Directives.ForName(objectViewDirectiveName); d != nil {
+	if d := def.Directives.ForName(base.ObjectViewDirectiveName); d != nil {
 		return true
 	}
 	return false

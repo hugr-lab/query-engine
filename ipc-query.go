@@ -51,14 +51,14 @@ func (s *Service) ipcHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req Request) error {
+func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.Request) error {
 	// add permissions to context
 	ctx, err := s.perm.ContextWithPermissions(ctx)
 	if err != nil {
 		return err
 	}
 	schema := s.catalog.Schema()
-	query, errs := gqlparser.LoadQuery(schema, req.Query)
+	query, errs := gqlparser.LoadQueryWithRules(schema, req.Query, types.GraphQLQueryRules)
 	if len(errs) != 0 {
 		// write errors to IPC
 		return writeErrorsToIPC(mw, memory.DefaultAllocator, "", errs)
@@ -71,18 +71,21 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req Reques
 	aloc := memory.NewGoAllocator()
 
 	for _, op := range query.Operations {
+		if req.OperationName != "" && req.OperationName != op.Name {
+			continue
+		}
 		qq, _ := compiler.QueryRequestInfo(op.SelectionSet)
-		qm := flatQuery(qq)
+		qm := compiler.FlatQuery(qq)
 		if len(qm) == 0 {
 			return nil
 		}
-		data, ext, err := s.processOperation(ctx, schema, op, req.Variables)
+		data, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
 		if err != nil {
 			return writeErrorsToIPC(mw, aloc, op.Name, types.WarpGraphQLError(err))
 		}
 		for path, q := range qm {
-			qd := extractData(path, data)
-			if len(query.Operations) > 1 {
+			qd := types.ExtractResponseData(path, data)
+			if len(query.Operations) > 1 && req.OperationName == "" {
 				path = op.Name + "." + path
 			}
 			err = writeDataIPC(mw, aloc, "data."+path, q, qd)
@@ -95,7 +98,7 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req Reques
 		// write extensions to IPC
 		if len(ext) != 0 {
 			path := "extensions"
-			if len(query.Operations) > 1 {
+			if len(query.Operations) > 1 && req.OperationName == "" {
 				path = op.Name + "." + path
 			}
 			return writeExtensionsToIPC(mw, aloc, path, ext)
@@ -103,49 +106,6 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req Reques
 	}
 
 	return nil
-}
-
-func extractData(path string, data map[string]any) any {
-	if path == "" {
-		return data
-	}
-	pp := strings.SplitN(path, ".", 2)
-	if len(pp) == 1 {
-		return data[pp[0]]
-	}
-	d, ok := data[pp[0]]
-	if !ok || d == nil {
-		return nil
-	}
-	dm, ok := d.(map[string]any)
-	if !ok {
-		return nil
-	}
-	return extractData(pp[1], dm)
-}
-
-func flatQuery(queries []compiler.QueryRequest) map[string]compiler.QueryRequest {
-	// flatten query
-	if len(queries) == 0 {
-		return nil
-	}
-	flat := make(map[string]compiler.QueryRequest, len(queries))
-	for _, q := range queries {
-		switch q.QueryType {
-		case compiler.QueryTypeNone:
-			// seek children
-			for k, v := range flatQuery(q.Subset) {
-				flat[q.Field.Alias+"."+k] = v
-			}
-		case compiler.QueryTypeQuery,
-			compiler.QueryTypeFunction,
-			compiler.QueryTypeFunctionMutation,
-			compiler.QueryTypeMutation,
-			compiler.QueryTypeMeta:
-			flat[q.Field.Alias] = q
-		}
-	}
-	return flat
 }
 
 func writeDataIPC(w *multipart.Writer, aloc memory.Allocator, path string, query compiler.QueryRequest, data any) error {

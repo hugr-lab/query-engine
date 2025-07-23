@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Hugr WFS 3.0</title>
+    </head>
+    <body>
+        <h1>Hugr WFS 3.0</h1>
+        <p>Welcome to the Hugr WFS 3.0 service. This service provides access to geographic data through the Web Feature Service (WFS) standard version 3.0.</p>
+        <p>For more information, please refer to the <a href="https://www.ogc.org/standards/wfs">OGC WFS 3.0 documentation</a>.</p>
+        <h2><a href="conformance">Conformance</a></h2>
+        <h2><a href="collections">Collections</a></h2>
+        <h2>Links</h2>
+        <ul>
+        {{ range .Links }}
+            <li><a href="{{ .Href }}" type="{{ .Type }}">{{ .Title }} - {{ .Href }} ({{ .Type }})</a></li>
+        {{ end }}
+        </ul>
+    </body>
+</html>

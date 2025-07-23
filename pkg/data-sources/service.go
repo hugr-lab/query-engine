@@ -251,7 +251,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 		return nil, err
 	}
 	if jqq != "" {
-		transform, err := jq.NewTransformer(jqq, nil)
+		transform, err := jq.NewTransformer(ctx, jqq, jq.WithQuerier(s.qe))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create jq transformer: %v", err)
 		}

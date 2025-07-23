@@ -15,8 +15,8 @@ import (
 )
 
 type JQRequest struct {
-	JQ    string  `json:"jq"`
-	Query Request `json:"query"`
+	JQ    string        `json:"jq"`
+	Query types.Request `json:"query"`
 }
 
 // jqHandler execute query and apply jq transformation to the result
@@ -36,7 +36,7 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		var t *jq.Transformer
 		if req.JQ != "" {
-			t, err = jq.NewTransformer(req.JQ, map[string]any{"$vars": req.Query.Variables})
+			t, err = jq.NewTransformer(r.Context(), req.JQ, jq.WithVariables(req.Query.Variables), jq.WithQuerier(s))
 			if err != nil {
 				return nil, fmt.Errorf("JQ compiler: %w", err)
 			}
@@ -53,7 +53,7 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 			return json.Marshal(res)
 		}
 		// handle jq request
-		transformed, err := t.Transform(r.Context(), res, map[string]any{"$vars": req.Query.Variables})
+		transformed, err := t.Transform(r.Context(), res, nil)
 		if err != nil {
 			return nil, fmt.Errorf("JQ transform: %w", err)
 		}
