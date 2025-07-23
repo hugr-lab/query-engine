@@ -76,7 +76,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 				PASSWORD '%s',
 				DATABASE '%s'
 			); 
-		`, engines.Ident(s.ds.Name+"_secret"), dsn.Host, dsn.Port, dsn.User, dsn.Password, dsn.DBName,
+		`, engines.Ident(s.ds.Name), dsn.Host, dsn.Port, dsn.User, dsn.Password, dsn.DBName,
 		))
 		if err != nil {
 			return err
