@@ -81,7 +81,7 @@ func WithVariables(vars map[string]any) Option {
 	return func(opts *options) {
 		opts.varNames = make([]string, 0, len(vars))
 		for k := range vars {
-			opts.varNames = append(opts.varNames, k)
+			opts.varNames = append(opts.varNames, "$"+k)
 		}
 		opts.vars = vars
 	}

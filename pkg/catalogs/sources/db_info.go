@@ -132,11 +132,11 @@ type DBColumnInfo struct {
 
 type DBConstraintInfo struct {
 	Name              string   `json:"name"`
-	Type              string   `json:"type"`                         // e.g., PRIMARY KEY, FOREIGN KEY, UNIQUE
-	Columns           []string `json:"columns"`                      // list of column names involved in the constraint
-	ReferencedSchema  string   `json:"referenced_schema,omitempty"`  // for foreign keys, the schema of the referenced table
-	ReferencedTable   string   `json:"referenced_table,omitempty"`   // for foreign keys
-	ReferencedColumns []string `json:"referenced_columns,omitempty"` // columns in the referenced table
+	Type              string   `json:"type"`                             // e.g., PRIMARY KEY, FOREIGN KEY, UNIQUE
+	Columns           []string `json:"columns"`                          // list of column names involved in the constraint
+	ReferencesSchema  string   `json:"references_schema_name,omitempty"` // for foreign keys, the schema of the referenced table
+	ReferencesTable   string   `json:"references_table_name,omitempty"`  // for foreign keys
+	ReferencesColumns []string `json:"references_columns,omitempty"`     // columns in the referenced table
 }
 
 func (s *DBInfo) SchemaDocument(ctx context.Context) (*ast.SchemaDocument, error) {
@@ -237,6 +237,7 @@ func (t *DBTableInfo) Definition() (*ast.Definition, error) {
 	if len(def.Fields) == 0 {
 		return nil, nil // No fields, no definition
 	}
+	// add fk to constraints
 	for _, constraint := range t.Constraints {
 		switch strings.ToUpper(constraint.Type) {
 		case "PRIMARY KEY":
@@ -258,27 +259,31 @@ func (t *DBTableInfo) Definition() (*ast.Definition, error) {
 			}
 		case "FOREIGN KEY":
 			// add foreign key directive to the type
-			if len(constraint.ReferencedColumns) == 0 ||
-				len(constraint.Columns) != len(constraint.ReferencedColumns) {
+			if len(constraint.ReferencesColumns) == 0 ||
+				len(constraint.Columns) != len(constraint.ReferencesColumns) {
 				continue
 			}
 			// make columns list
 			columns := make(ast.ChildValueList, len(constraint.Columns))
+			ref_query_suffix := make([]string, len(constraint.Columns))
 			for i, col := range constraint.Columns {
 				columns[i] = &ast.ChildValue{
 					Name:     identGraphQL(col),
 					Value:    &ast.Value{Raw: identGraphQL(col), Kind: ast.StringValue, Position: compiler.CompiledPosName("self-described-foreign-key")},
 					Position: compiler.CompiledPosName("self-described-foreign-key"),
 				}
+				ref_query_suffix[i] = identGraphQL(constraint.Columns[i])
 			}
 			// make references columns list
-			references := make(ast.ChildValueList, len(constraint.ReferencedColumns))
-			for i, col := range constraint.ReferencedColumns {
+			query_suffix := make([]string, len(constraint.ReferencesColumns))
+			references := make(ast.ChildValueList, len(constraint.ReferencesColumns))
+			for i, col := range constraint.ReferencesColumns {
 				references[i] = &ast.ChildValue{
 					Name:     identGraphQL(col),
-					Value:    &ast.Value{Raw: identGraphQL(constraint.Columns[i]), Kind: ast.StringValue, Position: compiler.CompiledPosName("self-described-foreign-key")},
+					Value:    &ast.Value{Raw: identGraphQL(constraint.ReferencesColumns[i]), Kind: ast.StringValue, Position: compiler.CompiledPosName("self-described-foreign-key")},
 					Position: compiler.CompiledPosName("self-described-foreign-key"),
 				}
+				query_suffix[i] = identGraphQL(constraint.ReferencesColumns[i])
 			}
 			ref := &ast.Directive{
 				Name: "references",
@@ -295,7 +300,7 @@ func (t *DBTableInfo) Definition() (*ast.Definition, error) {
 					&ast.Argument{
 						Name: "references_name",
 						Value: &ast.Value{
-							Raw:      dataObjectName(constraint.ReferencedSchema, constraint.ReferencedTable),
+							Raw:      dataObjectName(constraint.ReferencesSchema, constraint.ReferencesTable),
 							Kind:     ast.StringValue,
 							Position: compiler.CompiledPosName("self-described-foreign-key"),
 						},
@@ -320,7 +325,7 @@ func (t *DBTableInfo) Definition() (*ast.Definition, error) {
 					&ast.Argument{
 						Name: "query",
 						Value: &ast.Value{
-							Raw:      identGraphQL("ref_" + constraint.ReferencedTable),
+							Raw:      identGraphQL("ref_" + constraint.Name),
 							Kind:     ast.StringValue,
 							Position: compiler.CompiledPosName("self-described-foreign-key"),
 						},
@@ -328,7 +333,7 @@ func (t *DBTableInfo) Definition() (*ast.Definition, error) {
 					&ast.Argument{
 						Name: "references_query",
 						Value: &ast.Value{
-							Raw:      identGraphQL("ref_" + t.Name),
+							Raw:      identGraphQL("ref_" + constraint.Name),
 							Kind:     ast.StringValue,
 							Position: compiler.CompiledPosName("self-described-foreign-key"),
 						},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,7 +70,7 @@ func (t *Transformer) Transform(ctx context.Context, data interface{}, vars map[
 	var vv []any
 	for _, name := range t.opt.varNames {
 		if vars == nil {
-			vv = append(vv, t.opt.vars[name])
+			vv = append(vv, t.opt.vars[strings.TrimPrefix(name, "$")])
 			continue
 		}
 		vv = append(vv, vars[name])
