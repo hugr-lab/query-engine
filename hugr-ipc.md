@@ -131,3 +131,80 @@ GraphQL queries can inherently return results from multiple data requests. The e
 - Extensions are transmitted as `JSON` objects.
 - If the query includes multiple named operations, multiple `extensions` objects are returned.
 - The paths for these objects include the operation names, e.g., `extensions.name`.
+
+## HUGR IPC WebSocket Stream Protocol
+
+The HUGR IPC stream protocol allows clients to execute GraphQL queries and receive results as Arrow streams over a WebSocket connection. This is designed for efficient, real-time, and large-scale data transfer.
+
+### WebSocket Connection
+
+- The client connects to the server using a WebSocket with the subprotocol `hugr-ipc-ws`.
+- The server upgrades the connection and maintains it for streaming data and control messages.
+
+### Message Types
+
+All messages are JSON objects with a `type` field:
+
+- `query_object`: Request to stream a table or view. Fields:
+  - `data_object`: Name of the data object (table/view).
+  - `selected_fields`: Array of field names to select.
+  - `variables`: (Optional) Query variables.
+- `query`: Request to execute a raw GraphQL query. Fields:
+  - `query`: The GraphQL query string.
+  - `variables`: (Optional) Query variables.
+- `cancel`: Cancel the current active query.
+- `error`: Error message from the server.
+- `complete`: Indicates the end of the stream.
+
+### Example Client Request
+
+```json
+{
+  "type": "query_object",
+  "data_object": "users",
+  "selected_fields": ["id", "name"],
+  "variables": {"limit": 100}
+}
+```
+
+### Server Stream Response
+
+- Data is sent as binary WebSocket messages containing Arrow IPC RecordBatches.
+- Control messages (`error`, `complete`) are sent as JSON.
+- The server may send multiple Arrow RecordBatches for large results.
+
+### Error Handling
+
+- If an error occurs, the server sends a message:
+
+```json
+{
+  "type": "error",
+  "error": "Description of the error"
+}
+```
+
+### Completion
+
+- When the stream is finished, the server sends:
+
+```json
+{
+  "type": "complete"
+}
+```
+
+### Keep-Alive
+
+- The server sends WebSocket ping frames every 30 seconds to keep the connection alive.
+- The client should respond with pong frames.
+
+### Cancellation
+
+- The client can send a `cancel` message to abort the current query and close the stream.
+
+### Notes
+
+- Only one active query per connection is allowed.
+- If a new query is sent while another is active, the server responds with an error.
+- The protocol is designed for streaming large tabular results efficiently using Arrow IPC.

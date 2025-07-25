@@ -53,6 +53,20 @@ func (p *QueryPlan) Execute(ctx context.Context, db *db.Pool) (data interface{},
 	}
 }
 
+func (p *QueryPlan) ExecuteStream(ctx context.Context, db *db.Pool) (db.ArrowTable, func(), error) {
+	if p.CompiledQuery == "" {
+		return nil, nil, errors.New("no compiled query")
+	}
+	if p.RootNode.Before != nil {
+		err := p.RootNode.Before(ctx, db, p.RootNode)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return db.QueryTableStream(ctx, p.CompiledQuery, p.Params...)
+}
+
 func (p *QueryPlan) Log() string {
 	return p.CompiledQuery
 }

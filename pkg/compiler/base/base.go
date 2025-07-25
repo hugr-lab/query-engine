@@ -101,6 +101,7 @@ func QuerySideDirectives() []string {
 		UnnestDirectiveName,
 		AddH3DirectiveName,
 		GisFeatureDirectiveName,
+		NoPushdownDirectiveName,
 	}
 }
 

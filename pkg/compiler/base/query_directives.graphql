@@ -15,6 +15,13 @@ Mark do not aggregate subquery result
 directive @unnest on FIELD
 
 """
+Mark the subquery to do not pushdown to the database
+It is used to prevent the subquery from being executed in the database and instead execute it in the duckdb.
+"""
+directive @no_pushdown on FIELD | FIELD_DEFINITION
+
+
+"""
 This directive is used to define H3 functions and their parameters.
 """
 directive @add_h3(

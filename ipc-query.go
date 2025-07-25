@@ -13,7 +13,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -24,10 +23,21 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-// ipcHandler handles the IPC (Inter-Process Communication) requests.
+func (s *Service) ipcHandler(w http.ResponseWriter, r *http.Request) {
+	// Check if client requests streaming via headers
+	if s.isStreamingRequest(r) {
+		s.ipcStreamHandler(w, r)
+		return
+	}
+
+	// Regular HTTP multipart response (existing implementation)
+	s.ipcMultiPartHandler(w, r)
+}
+
+// ipcMultiPartHandler handles the IPC (Inter-Process Communication) requests.
 // It is used to execute queries and return results in a streaming format.
 // Accepts a JSON payload with the query and variables (like normal GraphQL).
-func (s *Service) ipcHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Service) ipcMultiPartHandler(w http.ResponseWriter, r *http.Request) {
 	req, err := s.parseRequest(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -61,14 +71,13 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 	query, errs := gqlparser.LoadQueryWithRules(schema, req.Query, types.GraphQLQueryRules)
 	if len(errs) != 0 {
 		// write errors to IPC
-		return writeErrorsToIPC(mw, memory.DefaultAllocator, "", errs)
+		return writeErrorsToIPC(mw, "", errs)
 	}
 	if len(query.Operations) == 0 {
 		return gqlerror.Errorf("no operations found")
 	}
 
 	ctx = planner.ContextWithRawResultsFlag(ctx)
-	aloc := memory.NewGoAllocator()
 
 	for _, op := range query.Operations {
 		if req.OperationName != "" && req.OperationName != op.Name {
@@ -81,14 +90,14 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 		}
 		data, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
 		if err != nil {
-			return writeErrorsToIPC(mw, aloc, op.Name, types.WarpGraphQLError(err))
+			return writeErrorsToIPC(mw, op.Name, types.WarpGraphQLError(err))
 		}
 		for path, q := range qm {
 			qd := types.ExtractResponseData(path, data)
 			if len(query.Operations) > 1 && req.OperationName == "" {
 				path = op.Name + "." + path
 			}
-			err = writeDataIPC(mw, aloc, "data."+path, q, qd)
+			err = writeDataIPC(mw, "data."+path, q, qd)
 			if err != nil {
 				types.DataClose(data)
 				return err
@@ -101,23 +110,23 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 			if len(query.Operations) > 1 && req.OperationName == "" {
 				path = op.Name + "." + path
 			}
-			return writeExtensionsToIPC(mw, aloc, path, ext)
+			return writeExtensionsToIPC(mw, path, ext)
 		}
 	}
 
 	return nil
 }
 
-func writeDataIPC(w *multipart.Writer, aloc memory.Allocator, path string, query compiler.QueryRequest, data any) error {
+func writeDataIPC(w *multipart.Writer, path string, query compiler.QueryRequest, data any) error {
 	switch data := data.(type) {
 	case db.ArrowTable:
-		return writeArrowTableToIPC(w, aloc, path, query, data)
+		return writeArrowTableToIPC(w, path, query, data)
 	default:
-		return writeJsonValueToIPC(w, aloc, path, query, data)
+		return writeJsonValueToIPC(w, path, query, data)
 	}
 }
 
-func writeArrowTableToIPC(w *multipart.Writer, aloc memory.Allocator, path string, query compiler.QueryRequest, data db.ArrowTable) error {
+func writeArrowTableToIPC(w *multipart.Writer, path string, query compiler.QueryRequest, data db.ArrowTable) error {
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Type", "application/vnd.apache.arrow.stream")
 	hdr.Set("X-Hugr-Part-Type", "data")
@@ -223,6 +232,14 @@ type geomInfo struct {
 
 func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomInfo {
 	if compiler.IsScalarType(query.Definition.Type.Name()) {
+		if query.Definition.Type.NamedType == compiler.H3CellTypeName {
+			// H3 cell type is special, it has no geometry, but we can return its info
+			return map[string]geomInfo{
+				"": {
+					Format: "H3Cell",
+				},
+			}
+		}
 		if query.Definition.Type.NamedType != compiler.GeometryTypeName {
 			return nil
 		}
@@ -257,7 +274,7 @@ func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomInfo {
 	return meta
 }
 
-func writeJsonValueToIPC(w *multipart.Writer, aloc memory.Allocator, path string, query compiler.QueryRequest, val any) error {
+func writeJsonValueToIPC(w *multipart.Writer, path string, query compiler.QueryRequest, val any) error {
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Type", "application/json")
 	hdr.Set("X-Hugr-Part-Type", "data")
@@ -274,7 +291,7 @@ func writeJsonValueToIPC(w *multipart.Writer, aloc memory.Allocator, path string
 	return json.NewEncoder(pw).Encode(val)
 }
 
-func writeExtensionsToIPC(w *multipart.Writer, aloc memory.Allocator, path string, ext any) error {
+func writeExtensionsToIPC(w *multipart.Writer, path string, ext any) error {
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Type", "application/json")
 	hdr.Set("X-Hugr-Part-Type", "extensions")
@@ -289,7 +306,7 @@ func writeExtensionsToIPC(w *multipart.Writer, aloc memory.Allocator, path strin
 	return json.NewEncoder(pw).Encode(ext)
 }
 
-func writeErrorsToIPC(w *multipart.Writer, aloc memory.Allocator, path string, errs gqlerror.List) error {
+func writeErrorsToIPC(w *multipart.Writer, path string, errs gqlerror.List) error {
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Type", "application/json")
 	hdr.Set("X-Hugr-Part-Type", "errors")

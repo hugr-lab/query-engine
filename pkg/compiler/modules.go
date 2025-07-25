@@ -27,7 +27,7 @@ const (
 	moduleMutationFunctionSuffix = "_function_mutation"
 )
 
-func objectModule(def *ast.Definition) string {
+func ObjectModule(def *ast.Definition) string {
 	if def == nil {
 		return ""
 	}
@@ -40,7 +40,7 @@ func objectModule(def *ast.Definition) string {
 }
 
 func objectModuleType(defs Definitions, def *ast.Definition, objectType ModuleObjectType) *ast.Definition {
-	return defs.ForName(moduleTypeName(objectModule(def), objectType))
+	return defs.ForName(ModuleTypeName(ObjectModule(def), objectType))
 }
 
 func functionModule(def *ast.FieldDefinition) string {
@@ -57,7 +57,7 @@ func functionModule(def *ast.FieldDefinition) string {
 
 func moduleType(schema *ast.SchemaDocument, module string, objectType ModuleObjectType) (*ast.Definition, error) {
 	moduleHierarchy := strings.Split(module, ".")
-	moduleObjectName := moduleTypeName(module, objectType)
+	moduleObjectName := ModuleTypeName(module, objectType)
 	m := schema.Definitions.ForName(moduleObjectName)
 	if m != nil {
 		return m, nil
@@ -96,7 +96,7 @@ func moduleType(schema *ast.SchemaDocument, module string, objectType ModuleObje
 	return m, err
 }
 
-func moduleTypeName(module string, objectType ModuleObjectType) string {
+func ModuleTypeName(module string, objectType ModuleObjectType) string {
 	if module == "" {
 		switch objectType {
 		case ModuleQuery:

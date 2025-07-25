@@ -166,6 +166,24 @@ func (db *Pool) QueryRowToData(ctx context.Context, data any, q string, params .
 	return json.NewDecoder(buf).Decode(data)
 }
 
+// Runs a query write results to a stream
+// This method does not support transactions
+func (db *Pool) QueryTableStream(ctx context.Context, q string, params ...any) (ArrowTable, func(), error) {
+	ar, err := db.Arrow(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	reader, err := ar.QueryContext(ctx, q, params...)
+	if err != nil {
+		ar.Close()
+		return nil, nil, err
+	}
+	finalize := func() {
+		ar.Close()
+	}
+	return NewArrowTableStream(reader), finalize, nil
+}
+
 func wrapJSON(query string) string {
 	return "SELECT (_data::JSON)::TEXT FROM (" + query + ") AS _data"
 }

@@ -339,7 +339,10 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 
 	baseData := selectStatementNode(query, nodes, "_objects", qp.withRowNum)
 	// if there are no joins, we can return the base query
-	if len(joinGeneralNodes) == 0 && len(joinCatalogNodes) == 0 && qp.h3 == nil {
+	if len(joinGeneralNodes) == 0 &&
+		len(joinCatalogNodes) == 0 &&
+		qp.h3 == nil &&
+		!compiler.IsNoJoinPushdown(query) {
 		return baseData, false, nil
 	}
 
@@ -464,7 +467,9 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		baseData = selectStatementNode(query, nodes, "_objects", false)
 	}
 
-	if len(joinGeneralNodes) == 0 && qp.h3 == nil {
+	if len(joinGeneralNodes) == 0 &&
+		qp.h3 == nil &&
+		!compiler.IsNoJoinPushdown(query) {
 		// if there are no general joins, we can return the base query
 		return baseData, false, nil
 	}
@@ -1770,6 +1775,17 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 		if f.Field.Directives.ForName(base.UnnestDirectiveName) != nil {
 			newField.Directives = append(newField.Directives,
 				f.Field.Directives.ForName(base.UnnestDirectiveName),
+			)
+		}
+		if f.Field.Directives.ForName(base.AddH3DirectiveName) != nil {
+			newField.Directives = append(newField.Directives,
+				f.Field.Directives.ForName(base.AddH3DirectiveName),
+			)
+		}
+		if compiler.IsNoJoinPushdown(query) ||
+			compiler.IsNoJoinPushdown(f.Field) {
+			newField.Directives = append(newField.Directives,
+				f.Field.Directives.ForName(base.NoPushdownDirectiveName),
 			)
 		}
 		new.SelectionSet = append(new.SelectionSet, newField)

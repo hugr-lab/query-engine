@@ -251,7 +251,7 @@ func (f *FunctionCall) FunctionInfo(defs Definitions) (*Function, error) {
 	if f.query != nil && f.query.Definition.Directives.ForName(functionDirectiveName) != nil {
 		return FunctionInfo(f.query.Definition)
 	}
-	module := defs.ForName(moduleTypeName(f.module, ModuleFunction))
+	module := defs.ForName(ModuleTypeName(f.module, ModuleFunction))
 	if module == nil {
 		return nil, ErrorPosf(f.directive.Position, "module root object %s for function is not defined", f.module)
 	}

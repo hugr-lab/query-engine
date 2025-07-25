@@ -217,3 +217,20 @@ func FieldReferencesInfo(defs Definitions, def *ast.Definition, field *ast.Field
 	}
 	return nil
 }
+
+func IsNoJoinPushdown(field *ast.Field) bool {
+	if field == nil {
+		return false
+	}
+	if field.Directives.ForName(base.NoPushdownDirectiveName) != nil {
+		return true
+	}
+	return IsNoJoinPushdownDefinition(field.Definition)
+}
+
+func IsNoJoinPushdownDefinition(def *ast.FieldDefinition) bool {
+	if def == nil {
+		return false
+	}
+	return def.Directives.ForName(base.NoPushdownDirectiveName) != nil
+}

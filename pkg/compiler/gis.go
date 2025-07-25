@@ -74,11 +74,11 @@ func wfsCollectionField(schema *ast.SchemaDocument, def *ast.Definition) (*ast.F
 	}
 	m := objectModuleType(schema.Definitions, def, ModuleQuery)
 	if m == nil {
-		return nil, ErrorPosf(def.Position, "module query %s not found for WFS collection field", objectModule(def))
+		return nil, ErrorPosf(def.Position, "module query %s not found for WFS collection field", ObjectModule(def))
 	}
 	qt := m.Fields.ForName(qtn)
 	if qt == nil {
-		return nil, ErrorPosf(def.Position, "query field %s not found in module %s for WFS collection field", qtn, objectModule(def))
+		return nil, ErrorPosf(def.Position, "query field %s not found in module %s for WFS collection field", qtn, ObjectModule(def))
 	}
 	wfsName := strings.ReplaceAll(directiveArgValue(d, "name"), ":", "_")
 
