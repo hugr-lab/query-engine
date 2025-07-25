@@ -304,7 +304,7 @@ func (s *stream) setActiveQuery(ctx context.Context, req *StreamMessage) (contex
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.activeQuery != nil {
-		return nil, fmt.Errorf("active query already set: %v", s.activeQuery)
+		return nil, fmt.Errorf("another query is already active on this connection")
 	}
 	s.activeQuery = req
 	ctx, cancel := context.WithCancel(ctx)
