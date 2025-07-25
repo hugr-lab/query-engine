@@ -80,7 +80,7 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-			fmt.Printf("Unexpected WebSocket close: %v\n", err)
+			log.Printf("Unexpected WebSocket close: %v", err)
 			break
 		}
 		if err != nil {
