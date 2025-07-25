@@ -26,6 +26,8 @@ type ArrowTable interface {
 	Reader(retain bool) (array.RecordReader, error)
 }
 
+var _ ArrowTable = (*ArrowTableChunked)(nil)
+
 type ArrowTableChunked struct {
 	chunks  []arrow.Record
 	wrapped bool
@@ -36,9 +38,9 @@ func NewArrowTable() *ArrowTableChunked {
 	return &ArrowTableChunked{}
 }
 
-func NewArrowTableFromReader(reader array.RecordReader) *ArrowTableChunked {
+func NewArrowTableFromReader(reader array.RecordReader) (*ArrowTableChunked, error) {
 	if reader == nil {
-		return nil
+		return nil, errors.New("reader is nil")
 	}
 	t := &ArrowTableChunked{}
 	defer reader.Release()
@@ -46,12 +48,12 @@ func NewArrowTableFromReader(reader array.RecordReader) *ArrowTableChunked {
 	for reader.Next() {
 		if reader.Err() != nil {
 			reader.Release()
-			return nil
+			return nil, reader.Err()
 		}
 		rec := reader.Record()
 		t.Append(rec)
 	}
-	return t
+	return t, nil
 }
 
 func (t *ArrowTableChunked) SetInfo(info string) {
@@ -481,6 +483,8 @@ type JsonValue string
 func (v *JsonValue) MarshalJSON() ([]byte, error) {
 	return []byte(*v), nil
 }
+
+var _ ArrowTable = (*ArrowTableStream)(nil)
 
 type ArrowTableStream struct {
 	reader  array.RecordReader

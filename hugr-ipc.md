@@ -173,7 +173,7 @@ All messages are JSON objects with a `type` field:
 - Control messages (`error`, `complete`) are sent as JSON.
 - The server may send multiple Arrow RecordBatches for large results.
 
-### Error Handling
+### Streaming Error Handling
 
 - If an error occurs, the server sends a message:
 

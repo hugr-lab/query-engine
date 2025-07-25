@@ -40,7 +40,11 @@ func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, pa
 	if err != nil {
 		return nil, err
 	}
-	table := NewArrowTableFromReader(reader)
+	defer reader.Release()
+	table, err := NewArrowTableFromReader(reader)
+	if err != nil {
+		return nil, err
+	}
 	table.wrapped = wrap
 
 	return table, nil
@@ -94,7 +98,10 @@ func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params 
 		return nil, err
 	}
 
-	table := NewArrowTableFromReader(reader)
+	table, err := NewArrowTableFromReader(reader)
+	if err != nil {
+		return nil, err
+	}
 	table.asArray = true
 	return table, nil
 }

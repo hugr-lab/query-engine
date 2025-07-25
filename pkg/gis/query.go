@@ -78,11 +78,11 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx := planner.ContextWithRawResultsFlag(r.Context())
 	res, err := s.qe.Query(ctx, req.Query, req.Variables)
+	defer res.Close()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer res.Close()
 	if res.Err() != nil {
 		http.Error(w, res.Err().Error(), http.StatusInternalServerError)
 		return

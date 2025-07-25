@@ -93,6 +93,7 @@ func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.
 	close(dataCh)
 	err := eg.Wait()
 	if err != nil {
+		types.DataClose(data)
 		return nil, nil, err
 	}
 	if len(data) == 1 {

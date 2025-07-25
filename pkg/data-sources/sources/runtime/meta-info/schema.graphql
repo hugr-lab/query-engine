@@ -1,3 +1,7 @@
+extend type Function {
+  duckdb_version: String @function(name: "version")
+}
+
 # Databases
 type databases @view(name: "duckdb_databases" sql: "FROM duckdb_databases") 
   @unique(fields: ["name"], query_suffix: "by_name"){

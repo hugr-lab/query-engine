@@ -60,13 +60,13 @@ func (s *Service) RolePermissions(ctx context.Context) (RolePermissions, error) 
 		}
 	}
 	`, map[string]any{"role": info.Role, "cacheKey": "RolePermissions:" + info.Role})
+	defer res.Close()
 	if errors.Is(err, types.ErrNoData) {
 		return RolePermissions{}, auth.ErrForbidden
 	}
 	if err != nil {
 		return RolePermissions{}, err
 	}
-	defer res.Close()
 	var role RolePermissions
 	err = res.ScanData("core.info", &role)
 

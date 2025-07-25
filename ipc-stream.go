@@ -24,8 +24,8 @@ var upgrader = &websocket.Upgrader{
 		return true // Allow all origins for IPC WebSocket connections
 	},
 	HandshakeTimeout: 10 * time.Second,
-	ReadBufferSize:   8024,
-	WriteBufferSize:  8024,
+	ReadBufferSize:   128 * 1024 * 1024, // 128 MB
+	WriteBufferSize:  128 * 1024 * 1024, // 128 MB
 }
 
 type StreamMessage struct {
@@ -154,13 +154,17 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 			continue // skip empty chunks
 		}
 		buf := bp.Get().(*bytes.Buffer)
-		writer := ipc.NewWriter(buf)
+		writer := ipc.NewWriter(buf, ipc.WithLZ4())
 		err = writer.Write(chunk)
 		writer.Close()
 		if err != nil {
 			stream.sendStreamError(fmt.Errorf("failed to write IPC stream chunk: %w", err))
 			buf.Reset()
 			bp.Put(buf)
+			// need to read all chunks to avoid blocking the reader
+			for reader.Next() {
+				_ = reader.Record() // read and discard
+			}
 			return
 		}
 		err = stream.writeMessage(websocket.BinaryMessage, buf.Bytes())
@@ -168,6 +172,10 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 		bp.Put(buf)
 		if err != nil {
 			stream.sendStreamError(fmt.Errorf("failed to send IPC stream chunk: %w", err))
+			// need to read all chunks to avoid blocking the reader
+			for reader.Next() {
+				_ = reader.Record() // read and discard
+			}
 			return
 		}
 	}

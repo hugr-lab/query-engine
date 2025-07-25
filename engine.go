@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 
 	adminui "github.com/hugr-lab/query-engine/pkg/admin-ui"
 	"github.com/hugr-lab/query-engine/pkg/auth"
@@ -46,6 +47,7 @@ type Config struct {
 	AdminUI          bool
 	AdminUIFetchPath string
 	Debug            bool
+	Profiling        bool
 
 	AllowParallel      bool
 	MaxParallelQueries int
@@ -202,6 +204,18 @@ func (s *Service) endpoints() {
 	if s.config.AdminUI {
 		s.router.Handle("/admin", mw(http.HandlerFunc(s.adminUI)))
 	}
+	if s.config.Profiling {
+		s.router.Handle("/debug/profile", mw(http.HandlerFunc(pprof.Profile)))
+		s.router.Handle("/debug/pprof/", mw(http.HandlerFunc(pprof.Index)))
+		s.router.Handle("/debug/pprof/cmdline", mw(http.HandlerFunc(pprof.Cmdline)))
+		s.router.Handle("/debug/pprof/symbol", mw(http.HandlerFunc(pprof.Symbol)))
+		s.router.Handle("/debug/pprof/trace", mw(http.HandlerFunc(pprof.Trace)))
+		s.router.Handle("/debug/pprof/goroutine", mw(http.HandlerFunc(pprof.Handler("goroutine").ServeHTTP)))
+		s.router.Handle("/debug/pprof/heap", mw(http.HandlerFunc(pprof.Handler("heap").ServeHTTP)))
+		s.router.Handle("/debug/pprof/block", mw(http.HandlerFunc(pprof.Handler("block").ServeHTTP)))
+		s.router.Handle("/debug/pprof/threadcreate", mw(http.HandlerFunc(pprof.Handler("threadcreate").ServeHTTP)))
+		s.router.Handle("/debug/pprof/mutex", mw(http.HandlerFunc(pprof.Handler("mutex").ServeHTTP)))
+	}
 
 	if s.gis != nil {
 		s.router.Handle("/gis/", mw(http.StripPrefix("/gis", s.gis)))
@@ -292,6 +306,7 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req types.Re
 		}
 		data, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
 		if err != nil {
+			types.DataClose(data)
 			return types.ErrResponse(err)
 		}
 		if data != nil {
@@ -319,6 +334,7 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req types.Re
 				extensions[op.Name] = ext
 			}
 			if err != nil {
+				types.DataClose(data)
 				return err
 			}
 			return nil

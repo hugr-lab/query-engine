@@ -44,10 +44,10 @@ func (o *options) compilerOptions(ctx context.Context) []gojq.CompilerOption {
 				vars = v
 			}
 			res, err := o.qe.Query(ctx, query, vars)
+			defer res.Close()
 			if err != nil {
 				return fmt.Errorf("failed to execute query: %w", err)
 			}
-			defer res.Close()
 			if len(res.Errors) > 0 {
 				return fmt.Errorf("failed to execute hugr query: %w", res.Errors)
 			}

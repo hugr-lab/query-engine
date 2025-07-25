@@ -58,6 +58,7 @@ func (p *DBApiKey) Authenticate(r *http.Request) (*AuthInfo, error) {
 	`,
 		map[string]any{"key": key, "cacheKey": "AUTH:API_KEY:" + key},
 	)
+	defer res.Close()
 	if errors.Is(err, types.ErrNoData) {
 		return nil, ErrForbidden
 	}
@@ -65,7 +66,6 @@ func (p *DBApiKey) Authenticate(r *http.Request) (*AuthInfo, error) {
 		log.Println("querying api key:", err)
 		return nil, ErrForbidden
 	}
-	defer res.Close()
 	if res.Err() != nil {
 		log.Println("querying api key:", res.Err())
 		return nil, ErrForbidden

@@ -143,10 +143,10 @@ func (c *Client) Ping(ctx context.Context) (string, error) {
 	res, err := c.Query(ctx, `{
 		function { core { info { version } } }
 	}`, nil)
+	defer res.Close()
 	if err != nil {
 		return "", err
 	}
-	defer res.Close()
 	if res.Err() != nil {
 		return "", res.Err()
 	}
@@ -167,10 +167,10 @@ func (c *Client) RegisterDataSource(ctx context.Context, ds types.DataSource) er
 	}`, map[string]any{
 		"data": ds,
 	})
+	defer res.Close()
 	if err != nil {
 		return err
 	}
-	defer res.Close()
 	if res.Err() != nil {
 		return res.Err()
 	}
@@ -190,10 +190,10 @@ func (c *Client) LoadDataSource(ctx context.Context, name string) error {
 	}`, map[string]any{
 		"name": name,
 	})
+	defer res.Close()
 	if err != nil {
 		return err
 	}
-	defer res.Close()
 	if res.Err() != nil {
 		return res.Err()
 	}
@@ -221,10 +221,10 @@ func (c *Client) UnloadDataSource(ctx context.Context, name string) error {
 	}`, map[string]any{
 		"name": name,
 	})
+	defer res.Close()
 	if err != nil {
 		return err
 	}
-	defer res.Close()
 	if res.Err() != nil {
 		return res.Err()
 	}
@@ -249,10 +249,10 @@ func (c *Client) DataSourceStatus(ctx context.Context, name string) (string, err
 	}`, map[string]any{
 		"name": name,
 	})
+	defer res.Close()
 	if err != nil {
 		return "", err
 	}
-	defer res.Close()
 	if res.Err() != nil {
 		return "", res.Err()
 	}
@@ -274,10 +274,10 @@ func (c *Client) DescribeDataSource(ctx context.Context, name string, self bool)
 		"name": name,
 		"self": self,
 	})
+	defer res.Close()
 	if err != nil {
 		return "", err
 	}
-	defer res.Close()
 	if res.Err() != nil {
 		return "", res.Err()
 	}

@@ -1,6 +1,6 @@
 module github.com/hugr-lab/query-engine
 
-go 1.24.2
+go 1.24.5
 
 require (
 	github.com/andybalholm/brotli v1.2.0
@@ -9,6 +9,7 @@ require (
 	github.com/eko/gocache/store/bigcache/v4 v4.2.2
 	github.com/getkin/kin-openapi v0.132.0
 	github.com/golang-jwt/jwt/v5 v5.2.3
+	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/itchyny/gojq v0.12.17
 	github.com/joho/godotenv v1.5.1
@@ -22,7 +23,17 @@ require (
 	golang.org/x/oauth2 v0.30.0
 	gopkg.in/errgo.v2 v2.1.0
 	gopkg.in/yaml.v2 v2.4.0
-	github.com/gorilla/websocket v1.5.3
+)
+
+require (
+	github.com/duckdb/duckdb-go-bindings v0.1.16 // indirect
+	github.com/duckdb/duckdb-go-bindings/darwin-amd64 v0.1.11 // indirect
+	github.com/duckdb/duckdb-go-bindings/darwin-arm64 v0.1.12 // indirect
+	github.com/duckdb/duckdb-go-bindings/linux-amd64 v0.1.11 // indirect
+	github.com/duckdb/duckdb-go-bindings/linux-arm64 v0.1.11 // indirect
+	github.com/duckdb/duckdb-go-bindings/windows-amd64 v0.1.11 // indirect
+	github.com/marcboeker/go-duckdb/arrowmapping v0.0.10 // indirect
+	github.com/marcboeker/go-duckdb/mapping v0.0.11 // indirect
 )
 
 require (
@@ -41,12 +52,6 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20250403215159-8d39553ac7cf
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/duckdb/duckdb-go-bindings v0.1.17 // indirect
-	github.com/duckdb/duckdb-go-bindings/darwin-amd64 v0.1.12 // indirect
-	github.com/duckdb/duckdb-go-bindings/darwin-arm64 v0.1.12 // indirect
-	github.com/duckdb/duckdb-go-bindings/linux-amd64 v0.1.12 // indirect
-	github.com/duckdb/duckdb-go-bindings/linux-arm64 v0.1.12 // indirect
-	github.com/duckdb/duckdb-go-bindings/windows-amd64 v0.1.12 // indirect
 	github.com/eko/gocache/store/memcache/v4 v4.2.2
 	github.com/eko/gocache/store/redis/v4 v4.2.2
 	github.com/eko/gocache/store/rediscluster/v4 v4.2.1
@@ -63,8 +68,6 @@ require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
-	github.com/marcboeker/go-duckdb/arrowmapping v0.0.10 // indirect
-	github.com/marcboeker/go-duckdb/mapping v0.0.11 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect

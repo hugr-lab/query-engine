@@ -43,6 +43,7 @@ func main() {
 		AdminUI:            conf.EnableAdminUI,
 		AdminUIFetchPath:   conf.AdminUIFetchPath,
 		Debug:              conf.DebugMode,
+		Profiling:          conf.HttpProfiling,
 		AllowParallel:      conf.AllowParallel,
 		MaxParallelQueries: conf.MaxParallelQueries,
 		MaxDepth:           conf.MaxDepthInTypes,

@@ -14,6 +14,7 @@ type Config struct {
 	EnableAdminUI      bool
 	AdminUIFetchPath   string
 	DebugMode          bool
+	HttpProfiling      bool
 	AllowParallel      bool
 	MaxParallelQueries int
 
@@ -56,6 +57,7 @@ func loadConfig() Config {
 		EnableAdminUI:      viper.GetBool("ADMIN_UI"),
 		AdminUIFetchPath:   viper.GetString("ADMIN_UI_FETCH_PATH"),
 		DebugMode:          viper.GetBool("DEBUG"),
+		HttpProfiling:      viper.GetBool("HTTP_PROFILING"),
 		AllowParallel:      viper.GetBool("ALLOW_PARALLEL"),
 		MaxParallelQueries: viper.GetInt("MAX_PARALLEL_QUERIES"),
 		MaxDepthInTypes:    viper.GetInt("MAX_DEPTH"),
