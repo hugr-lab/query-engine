@@ -365,7 +365,7 @@ func (s *stream) writeMessage(msgType int, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.conn == nil {
-		return fmt.Errorf("connection is closed")
+		return fmt.Errorf("cannot write message: WebSocket connection is closed")
 	}
 	return s.conn.WriteMessage(msgType, data)
 }
