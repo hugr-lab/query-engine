@@ -283,7 +283,7 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 		dd = append(dd, cacheDirective)
 	}
 	// module directive
-	moduleObject, err := moduleType(schema, objectModule(def), ModuleQuery)
+	moduleObject, err := moduleType(schema, ObjectModule(def), ModuleQuery)
 	if err != nil {
 		return err
 	}
@@ -339,7 +339,7 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 		outType = ast.NamedType(OperationResultTypeName, compiledPos())
 	}
 
-	moduleObject, err = moduleType(schema, objectModule(def), ModuleMutation)
+	moduleObject, err = moduleType(schema, ObjectModule(def), ModuleMutation)
 	if err != nil {
 		return err
 	}

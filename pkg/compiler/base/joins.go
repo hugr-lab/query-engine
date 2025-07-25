@@ -6,4 +6,6 @@ const (
 
 	QueryTimeSpatialFieldName = "_spatial"
 	QueryTimeSpatialTypeName  = "_spatial"
+
+	NoPushdownDirectiveName = "no_pushdown"
 )

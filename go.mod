@@ -22,6 +22,7 @@ require (
 	golang.org/x/oauth2 v0.30.0
 	gopkg.in/errgo.v2 v2.1.0
 	gopkg.in/yaml.v2 v2.4.0
+	github.com/gorilla/websocket v1.5.3
 )
 
 require (

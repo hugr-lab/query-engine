@@ -84,7 +84,7 @@ func ObjectQueryDefinition(defs Definitions, def *ast.Definition, queryType Obje
 			continue
 		}
 		module := objectModuleType(defs, def, ModuleQuery)
-		return objectModule(def), module.Fields.ForName(qn)
+		return ObjectModule(def), module.Fields.ForName(qn)
 	}
 	return "", nil
 }
@@ -141,7 +141,7 @@ func ObjectMutationDefinition(defs Definitions, def *ast.Definition, mutationTyp
 			return "", nil
 		}
 		module := objectModuleType(defs, def, ModuleMutation)
-		return objectModule(def), module.Fields.ForName(mn)
+		return ObjectModule(def), module.Fields.ForName(mn)
 	}
 	return "", nil
 }
@@ -502,6 +502,7 @@ func FlatQuery(queries []QueryRequest) map[string]QueryRequest {
 			QueryTypeFunction,
 			QueryTypeFunctionMutation,
 			QueryTypeMutation,
+			QueryTypeH3Aggregation,
 			QueryTypeMeta:
 			flat[q.Field.Alias] = q
 		}
