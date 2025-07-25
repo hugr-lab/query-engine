@@ -350,7 +350,7 @@ func (s *stream) ping(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := s.writeMessage(websocket.PingMessage, []byte{}); err != nil {
-				fmt.Printf("Failed to send ping: %v\n", err)
+				log.Printf("Failed to send ping: %v", err)
 				if s.cancel != nil {
 					s.cancel()
 				}
