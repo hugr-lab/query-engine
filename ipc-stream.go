@@ -320,7 +320,7 @@ func (s *stream) sendStreamComplete() error {
 		s.cancel = nil // Clear the cancel function after completion
 	}
 	if s.activeQuery == nil {
-		return fmt.Errorf("no active query to complete")
+		return fmt.Errorf("cannot complete stream: no active query found")
 	}
 	s.activeQuery = nil // Clear the active query after completion
 	// Send a completion message
