@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -54,7 +56,8 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 	stream := &stream{
-		conn: conn,
+		queryId: uuid.NewString(),
+		conn:    conn,
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	stream.connCancel = cancel
@@ -73,49 +76,67 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	go stream.ping(ctx)
+	if s.config.Debug {
+		if auth.IsFullAccess(ctx) {
+			log.Printf("stream %s: IPC stream connection established: full access", stream.queryId)
+		} else {
+			ai := auth.AuthInfoFromContext(ctx)
+			log.Printf("stream %s: IPC stream connection established: user %s, role %s", stream.queryId, ai.UserId, ai.Role)
+		}
+	}
 
 	for {
-		var req StreamMessage
-		err = conn.ReadJSON(&req)
-		if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
-			break
-		}
-		if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-			log.Printf("Unexpected WebSocket close: %v", err)
-			break
-		}
-		if err != nil {
-			stream.sendStreamError(fmt.Errorf("failed to read IPC request: %w", err))
-			continue
-		}
-
-		switch req.Type {
-		// case "mutation":
-		// in the future we can support mutations across IPC to allow for streaming updates, and inserts
-		case "query_object":
-			// Handle data_object streaming
-			req.Query, err = s.dataObjectStreamQuery(req.DataObject, req.SelectedFields, req.Variables)
-			if err != nil {
-				stream.sendStreamError(fmt.Errorf("failed to process data object query: %w", err))
-				continue
+		select {
+		case <-ctx.Done():
+			if s.config.Debug {
+				log.Printf("stream %s: IPC stream context cancelled, closing connection", stream.queryId)
 			}
-			fallthrough
-		case "query":
-			ctx, err := stream.setActiveQuery(ctx, &req)
-			if err != nil {
-				stream.sendStreamError(fmt.Errorf("failed to set active query: %w", err))
-				continue
-			}
-			go s.handleIPCStream(ctx, stream)
-		case "cancel":
-			// Handle cancel request
-			stream.mu.Lock()
-			if stream.cancel != nil {
-				stream.cancel()
-			}
-			stream.mu.Unlock()
+			return
 		default:
-			stream.sendStreamError(fmt.Errorf("unknown IPC stream message type: %s", req.Type))
+			var req StreamMessage
+			err = conn.ReadJSON(&req)
+			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
+				break
+			}
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("Unexpected WebSocket close: %v", err)
+				break
+			}
+			if err != nil {
+				stream.sendStreamError(fmt.Errorf("failed to read IPC request: %w", err))
+				continue
+			}
+			if s.config.Debug {
+				log.Printf("stream %s: Received IPC request: %s", stream.queryId, req.Type)
+			}
+			switch req.Type {
+			// case "mutation":
+			// in the future we can support mutations across IPC to allow for streaming updates, and inserts
+			case "query_object":
+				// Handle data_object streaming
+				req.Query, err = s.dataObjectStreamQuery(req.DataObject, req.SelectedFields, req.Variables)
+				if err != nil {
+					stream.sendStreamError(fmt.Errorf("failed to process data object query: %w", err))
+					continue
+				}
+				fallthrough
+			case "query":
+				ctx, err := stream.setActiveQuery(ctx, &req)
+				if err != nil {
+					stream.sendStreamError(fmt.Errorf("failed to set active query: %w", err))
+					continue
+				}
+				go s.handleIPCStream(ctx, stream)
+			case "cancel":
+				// Handle cancel request
+				stream.mu.Lock()
+				if stream.cancel != nil {
+					stream.cancel()
+				}
+				stream.mu.Unlock()
+			default:
+				stream.sendStreamError(fmt.Errorf("unknown IPC stream message type: %s", req.Type))
+			}
 		}
 	}
 }
@@ -145,38 +166,38 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 	}
 	defer reader.Release()
 	for reader.Next() {
-		chunk := reader.Record()
-		if reader.Err() != nil {
-			stream.sendStreamError(fmt.Errorf("error reading IPC stream: %w", reader.Err()))
+		select {
+		case <-ctx.Done():
+			stream.sendStreamError(fmt.Errorf("stream cancelled: %w", ctx.Err()))
 			return
-		}
-		if chunk == nil {
-			continue // skip empty chunks
-		}
-		buf := bp.Get().(*bytes.Buffer)
-		writer := ipc.NewWriter(buf, ipc.WithLZ4())
-		err = writer.Write(chunk)
-		writer.Close()
-		if err != nil {
-			stream.sendStreamError(fmt.Errorf("failed to write IPC stream chunk: %w", err))
+		default:
+			chunk := reader.Record()
+			if reader.Err() != nil {
+				stream.sendStreamError(fmt.Errorf("error reading IPC stream: %w", reader.Err()))
+				return
+			}
+			if chunk == nil {
+				stream.sendStreamError(fmt.Errorf("received nil chunk from IPC stream"))
+				return
+			}
+			defer chunk.Release()
+			buf := bp.Get().(*bytes.Buffer)
+			writer := ipc.NewWriter(buf, ipc.WithLZ4())
+			err = writer.Write(chunk)
+			writer.Close()
+			if err != nil {
+				stream.sendStreamError(fmt.Errorf("failed to write IPC stream chunk: %w", err))
+				buf.Reset()
+				bp.Put(buf)
+				return
+			}
+			err = stream.writeMessage(websocket.BinaryMessage, buf.Bytes())
 			buf.Reset()
 			bp.Put(buf)
-			// need to read all chunks to avoid blocking the reader
-			for reader.Next() {
-				_ = reader.Record() // read and discard
+			if err != nil {
+				stream.sendStreamError(fmt.Errorf("failed to send IPC stream chunk: %w", err))
+				return
 			}
-			return
-		}
-		err = stream.writeMessage(websocket.BinaryMessage, buf.Bytes())
-		buf.Reset()
-		bp.Put(buf)
-		if err != nil {
-			stream.sendStreamError(fmt.Errorf("failed to send IPC stream chunk: %w", err))
-			// need to read all chunks to avoid blocking the reader
-			for reader.Next() {
-				_ = reader.Record() // read and discard
-			}
-			return
 		}
 	}
 }
@@ -301,6 +322,7 @@ func (s *Service) dataObjectStreamQuery(dataObject string, fields []string, vari
 }
 
 type stream struct {
+	queryId    string
 	conn       *websocket.Conn
 	connCancel context.CancelFunc // Cancel function for connection context
 
@@ -313,7 +335,7 @@ func (s *stream) setActiveQuery(ctx context.Context, req *StreamMessage) (contex
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.activeQuery != nil {
-		return nil, fmt.Errorf("another query is already active on this connection")
+		return nil, fmt.Errorf("stream %s: another query is already active on this connection", s.queryId)
 	}
 	s.activeQuery = req
 	ctx, cancel := context.WithCancel(ctx)
@@ -329,7 +351,7 @@ func (s *stream) sendStreamComplete() error {
 		s.cancel = nil // Clear the cancel function after completion
 	}
 	if s.activeQuery == nil {
-		return fmt.Errorf("cannot complete stream: no active query found")
+		return fmt.Errorf("stream %s: cannot complete stream: no active query found", s.queryId)
 	}
 	s.activeQuery = nil // Clear the active query after completion
 	// Send a completion message
@@ -359,7 +381,7 @@ func (s *stream) ping(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := s.writeMessage(websocket.PingMessage, []byte{}); err != nil {
-				log.Printf("Failed to send ping: %v", err)
+				log.Printf("stream %s: Failed to send ping: %v", s.queryId, err)
 				if s.cancel != nil {
 					s.cancel()
 				}
@@ -374,7 +396,7 @@ func (s *stream) writeMessage(msgType int, data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.conn == nil {
-		return fmt.Errorf("cannot write message: WebSocket connection is closed")
+		return fmt.Errorf("stream %s: cannot write message: WebSocket connection is closed", s.queryId)
 	}
 	return s.conn.WriteMessage(msgType, data)
 }

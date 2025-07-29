@@ -9,11 +9,12 @@ require (
 	github.com/eko/gocache/store/bigcache/v4 v4.2.2
 	github.com/getkin/kin-openapi v0.132.0
 	github.com/golang-jwt/jwt/v5 v5.2.3
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/itchyny/gojq v0.12.17
 	github.com/joho/godotenv v1.5.1
-	github.com/marcboeker/go-duckdb/v2 v2.3.3
+	github.com/marcboeker/go-duckdb/v2 v2.3.4
 	github.com/paulmach/orb v0.11.1
 	github.com/spf13/viper v1.20.1
 	github.com/vektah/gqlparser/v2 v2.5.30
@@ -26,12 +27,12 @@ require (
 )
 
 require (
-	github.com/duckdb/duckdb-go-bindings v0.1.16 // indirect
-	github.com/duckdb/duckdb-go-bindings/darwin-amd64 v0.1.11 // indirect
+	github.com/duckdb/duckdb-go-bindings v0.1.17 // indirect
+	github.com/duckdb/duckdb-go-bindings/darwin-amd64 v0.1.12 // indirect
 	github.com/duckdb/duckdb-go-bindings/darwin-arm64 v0.1.12 // indirect
-	github.com/duckdb/duckdb-go-bindings/linux-amd64 v0.1.11 // indirect
-	github.com/duckdb/duckdb-go-bindings/linux-arm64 v0.1.11 // indirect
-	github.com/duckdb/duckdb-go-bindings/windows-amd64 v0.1.11 // indirect
+	github.com/duckdb/duckdb-go-bindings/linux-amd64 v0.1.12 // indirect
+	github.com/duckdb/duckdb-go-bindings/linux-arm64 v0.1.12 // indirect
+	github.com/duckdb/duckdb-go-bindings/windows-amd64 v0.1.12 // indirect
 	github.com/marcboeker/go-duckdb/arrowmapping v0.0.10 // indirect
 	github.com/marcboeker/go-duckdb/mapping v0.0.11 // indirect
 )
@@ -62,7 +63,6 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
@@ -77,15 +77,14 @@ require (
 	github.com/prometheus/common v0.65.0 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/redis/go-redis/v9 v9.11.0
-	github.com/sagikazarmark/locafero v0.9.0 // indirect
-	github.com/sourcegraph/conc v0.3.0 // indirect
+	github.com/sagikazarmark/locafero v0.10.0 // indirect
+	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.14.0 // indirect
 	github.com/spf13/cast v1.9.2 // indirect
 	github.com/spf13/pflag v1.0.7 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.uber.org/mock v0.5.2 // indirect
-	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/mod v0.26.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect

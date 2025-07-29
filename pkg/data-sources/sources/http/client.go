@@ -734,17 +734,17 @@ type tokenRequestTransform struct {
 
 func (t *tokenRequestTransform) parse(param httpSecurityParams) error {
 	t.vars = map[string]any{
-		"$type":          param.Type,
-		"$schema_name":   param.SchemaName,
-		"$flow":          param.FlowName,
-		"$scheme":        param.Scheme,
-		"$api_key_name":  param.Name,
-		"$api_key_in":    param.In,
-		"$api_key":       param.ApiKey,
-		"$username":      param.Username,
-		"$password":      param.Password,
-		"$client_id":     param.ClientID,
-		"$client_secret": param.ClientSecret,
+		"type":          param.Type,
+		"schema_name":   param.SchemaName,
+		"flow":          param.FlowName,
+		"scheme":        param.Scheme,
+		"api_key_name":  param.Name,
+		"api_key_in":    param.In,
+		"api_key":       param.ApiKey,
+		"username":      param.Username,
+		"password":      param.Password,
+		"client_id":     param.ClientID,
+		"client_secret": param.ClientSecret,
 	}
 	for k, v := range t.Params {
 		if strings.HasPrefix(v, "$") {

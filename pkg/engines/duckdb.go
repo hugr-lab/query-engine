@@ -428,14 +428,14 @@ func (e DuckDB) TimestampTransform(sql string, field *ast.Field, args compiler.F
 		return sql
 	}
 	if bucket := args.ForName("bucket"); bucket != nil {
-		return fmt.Sprintf("time_bucket('%s', %s)", bucket.Value, sql)
+		return fmt.Sprintf("date_trunc('%s', %s)", bucket.Value, sql)
 	}
 	if interval := args.ForName("bucket_interval"); interval != nil {
 		iSQL, err := types.IntervalToSQLValue(interval.Value)
 		if err != nil {
 			return "NULL"
 		}
-		return fmt.Sprintf("time_bucket(%s, %s)", iSQL, sql)
+		return fmt.Sprintf("time_bucket('%s', %s)", iSQL, sql)
 	}
 	if extract := args.ForName("extract"); extract != nil {
 		part := extract.Value.(string)

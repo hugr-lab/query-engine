@@ -650,7 +650,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			},
 		},
 	}
-	if qp.h3.extractFromGeom {
+	if qp.h3 != nil && qp.h3.extractFromGeom {
 		nodes.Add(&QueryPlanNode{
 			Name:  "joins",
 			Query: query,

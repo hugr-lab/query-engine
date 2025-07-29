@@ -83,6 +83,9 @@ func (t *Transformer) Transform(ctx context.Context, data interface{}, vars map[
 		if !ok {
 			break
 		}
+		if err, ok := v.(error); ok {
+			return nil, fmt.Errorf("jq: transform error: %v", err)
+		}
 		results = append(results, v)
 		res++
 	}

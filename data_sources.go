@@ -63,6 +63,7 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	res.Close()
 
 	// load first data sources than extensions
 	sort.Slice(data, func(i, j int) bool {

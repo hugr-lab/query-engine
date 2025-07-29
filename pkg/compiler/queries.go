@@ -503,7 +503,8 @@ func FlatQuery(queries []QueryRequest) map[string]QueryRequest {
 			QueryTypeFunctionMutation,
 			QueryTypeMutation,
 			QueryTypeH3Aggregation,
-			QueryTypeMeta:
+			QueryTypeMeta,
+			QueryTypeJQTransform:
 			flat[q.Field.Alias] = q
 		}
 	}
