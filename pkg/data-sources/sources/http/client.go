@@ -748,13 +748,11 @@ func (t *tokenRequestTransform) parse(param httpSecurityParams) error {
 	}
 	for k, v := range t.Params {
 		if strings.HasPrefix(v, "$") {
-			if newVal, ok := t.vars[v]; ok {
+			if newVal, ok := t.vars[strings.TrimPrefix(v, "$")]; ok {
 				v = fmt.Sprint(newVal)
 			}
 		}
-		if strings.HasPrefix(v, "~$") {
-			v = strings.TrimPrefix(v, "~")
-		}
+		v = strings.TrimPrefix(v, "~$")
 		t.Params[k] = v
 	}
 	for k, v := range t.Headers {
@@ -763,9 +761,7 @@ func (t *tokenRequestTransform) parse(param httpSecurityParams) error {
 				v = fmt.Sprint(newVal)
 			}
 		}
-		if strings.HasPrefix(v, "~$") {
-			v = strings.TrimPrefix(v, "~")
-		}
+		v = strings.TrimPrefix(v, "~$")
 		t.Headers[k] = v
 	}
 	var err error
