@@ -167,7 +167,7 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 	// remove catalog
 	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {
 		err := s.catalogs.RemoveExtension(ctx, name)
-		if err != nil {
+		if err != nil && !errors.Is(err, catalogs.ErrCatalogNotFound) {
 			return err
 		}
 		return ds.Detach(ctx, db)

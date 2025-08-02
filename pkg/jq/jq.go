@@ -53,13 +53,14 @@ func NewTransformer(ctx context.Context, query string, opts ...Option) (*Transfo
 	}, nil
 }
 
-func (t *Transformer) Transform(ctx context.Context, data interface{}, vars map[string]any) (interface{}, error) {
+func (t *Transformer) Transform(ctx context.Context, in any, vars map[string]any) (interface{}, error) {
 	start := time.Now()
 	// serialize data to json and back to interface{} to avoid issues with gojq
-	b, err := json.Marshal(data)
+	b, err := json.Marshal(in)
 	if err != nil {
 		return nil, fmt.Errorf("jq: json marshal error: %v", err)
 	}
+	var data any
 	err = json.Unmarshal(b, &data)
 	if err != nil {
 		return nil, fmt.Errorf("jq: json unmarshal results error: %v", err)

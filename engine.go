@@ -201,6 +201,8 @@ func (s *Service) endpoints() {
 	s.router.Handle("/jq-query", mw(http.HandlerFunc(s.jqHandler)))
 	s.router.Handle("/ipc", mw(http.HandlerFunc(s.ipcHandler)))
 
+	s.router.Handle("/schema", mw(http.HandlerFunc(s.schemaHandler)))
+
 	if s.config.AdminUI {
 		s.router.Handle("/admin", mw(http.HandlerFunc(s.adminUI)))
 	}
@@ -380,6 +382,7 @@ func (s *Service) QueryCatalog(ctx context.Context, catalog, query string, vars 
 		Variables: vars,
 	})
 	if len(res.Errors) > 0 {
+		types.DataClose(res.Data)
 		return nil, res.Errors
 	}
 	return &res, nil

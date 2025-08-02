@@ -33,7 +33,10 @@ func (s *Service) middlewares() func(next http.Handler) http.Handler {
 	s.config.Auth.Providers = pp
 	authMiddleware := auth.AuthMiddleware(*s.config.Auth)
 	mm = append(mm, authMiddleware)
-
+	// check endpoint access permissions
+	if s.perm != nil {
+		mm = append(mm, s.checkEndpointPermissionsMW)
+	}
 	// compress
 	mm = append(mm, compressMW)
 
@@ -47,6 +50,32 @@ func buildMW(middlewares ...func(next http.Handler) http.Handler) func(next http
 		}
 		return next
 	}
+}
+
+func (s *Service) checkEndpointPermissionsMW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		perm, err := s.perm.RolePermissions(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		pp := strings.Split(r.URL.Path, "/")
+		start := 0
+		if strings.HasPrefix(r.URL.Path, "/") {
+			start = 1
+		}
+		for i := start; i < len(pp); i++ {
+			path := strings.Join(pp[:i], "/")
+			if start == 0 {
+				path = "/" + path
+			}
+			if _, ok := perm.Enabled("_endpoints", path); !ok {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func compressMW(next http.Handler) http.Handler {

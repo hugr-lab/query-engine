@@ -51,10 +51,10 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 				}
 			}
 		}`, nil)
-	defer res.Close()
 	if err != nil {
 		return err
 	}
+	defer res.Close()
 	var data []types.DataSource
 	err = res.ScanData("core.data_sources", &data)
 	if errors.Is(err, types.ErrNoData) {
@@ -101,10 +101,10 @@ func (s *Service) RegisterDataSource(ctx context.Context, ds types.DataSource) e
 	}`, map[string]any{
 		"data": ds,
 	})
-	defer res.Close()
 	if err != nil {
 		return err
 	}
+	defer res.Close()
 
 	return s.LoadDataSource(ctx, ds.Name)
 }

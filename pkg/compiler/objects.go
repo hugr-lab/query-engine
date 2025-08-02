@@ -486,6 +486,16 @@ func extendObjectDefinition(schema *ast.SchemaDocument, origin, from *ast.Defini
 			return err
 		}
 	}
+
+	if from.AfterDescriptionComment != nil && from.AfterDescriptionComment.Dump() != "" {
+		origin.Description = ""
+		for i, comment := range from.AfterDescriptionComment.List {
+			if i > 0 {
+				origin.Description += "\n"
+			}
+			origin.Description += strings.TrimSpace(comment.Text())
+		}
+	}
 	var catalog *ast.Directive
 	for _, field := range from.Fields {
 		// skip stub field
@@ -495,6 +505,9 @@ func extendObjectDefinition(schema *ast.SchemaDocument, origin, from *ast.Defini
 		var err error
 		switch {
 		case IsSubQuery(field):
+			if !IsDataObject(origin) {
+				return ErrorPosf(field.Position, "subquery %s can be added only to data object", field.Name)
+			}
 			err = validateJoin(schema.Definitions, origin, field)
 			if err != nil {
 				return err
@@ -518,6 +531,9 @@ func extendObjectDefinition(schema *ast.SchemaDocument, origin, from *ast.Defini
 				directiveArgValue(catalog, "engine"),
 			)
 		case IsFunctionCall(field):
+			if !IsDataObject(origin) {
+				return ErrorPosf(field.Position, "function call %s can be added only to data object", field.Name)
+			}
 			err = validateFunctionCall(schema.Definitions, origin, field, true)
 			if err != nil {
 				return err
@@ -525,6 +541,9 @@ func extendObjectDefinition(schema *ast.SchemaDocument, origin, from *ast.Defini
 			catalog = field.Directives.ForName(base.CatalogDirectiveName)
 		case field.Directives.ForName(base.GisWFSFieldDirectiveName) != nil ||
 			field.Directives.ForName(base.GisWFSExcludeDirectiveName) != nil:
+			if !IsDataObject(origin) {
+				return ErrorPosf(field.Position, "WFS field %s can be added only to data object", field.Name)
+			}
 			// wfs directives add it to the origin field
 			originField := origin.Fields.ForName(field.Name)
 			if originField == nil {
@@ -536,8 +555,24 @@ func extendObjectDefinition(schema *ast.SchemaDocument, origin, from *ast.Defini
 			if d := field.Directives.ForName(base.GisWFSExcludeDirectiveName); d != nil {
 				originField.Directives = append(originField.Directives, d)
 			}
+			continue
 		default:
-			return ErrorPosf(field.Position, "as a field %s only function calls or joins allowed or WFS directives", field.Name)
+			if field.Description == "" {
+				return ErrorPosf(field.Position, "as a field %s only function calls or joins allowed or WFS directives or new comments", field.Name)
+			}
+			// find original field and add description if it is set in the extension
+			originField := origin.Fields.ForName(field.Name)
+			if originField == nil {
+				return ErrorPosf(field.Position, "extended field %s not found in object %s", field.Name, origin.Name)
+			}
+			originField.Description = field.Description
+			if field.BeforeDescriptionComment != nil && field.BeforeDescriptionComment.Dump() != "" {
+				originField.BeforeDescriptionComment = field.BeforeDescriptionComment
+			}
+			if field.AfterDescriptionComment != nil && field.AfterDescriptionComment.Dump() != "" {
+				originField.AfterDescriptionComment = field.AfterDescriptionComment
+			}
+			continue
 		}
 		newFieldIdx := len(origin.Fields)
 		origin.Fields = append(origin.Fields, field)

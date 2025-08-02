@@ -120,7 +120,7 @@ func ModuleTypeName(module string, objectType ModuleObjectType) string {
 	case ModuleMutationFunction:
 		suffix = moduleMutationFunctionSuffix
 	}
-	return strings.ReplaceAll(module, ".", "_") + suffix
+	return "_module_" + strings.ReplaceAll(module, ".", "_") + suffix
 }
 
 func moduleRootDirective(name string, objectType ModuleObjectType) *ast.Directive {
