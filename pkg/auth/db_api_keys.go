@@ -37,7 +37,7 @@ func (p *DBApiKey) Type() string {
 func (p *DBApiKey) Authenticate(r *http.Request) (*AuthInfo, error) {
 	key := r.Header.Get(p.headerName)
 	if key == "" {
-		return nil, nil
+		return nil, ErrSkipAuth
 	}
 
 	res, err := p.qe.Query(ContextWithFullAccess(r.Context()), `

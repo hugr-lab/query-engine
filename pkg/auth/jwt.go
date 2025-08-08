@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -85,6 +86,9 @@ func (p *JwtProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 	t, err := request.ParseFromRequest(r, p.extractor, func(token *jwt.Token) (interface{}, error) {
 		return p.key, nil
 	}, request.WithClaims(&claims))
+	if errors.Is(err, request.ErrNoTokenInRequest) {
+		return nil, ErrSkipAuth
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %w", err)
 	}

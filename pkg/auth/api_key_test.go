@@ -94,7 +94,7 @@ func TestApiKeyProvider_Authenticate(t *testing.T) {
 			},
 			headers:  map[string]string{},
 			wantAuth: nil,
-			wantErr:  nil,
+			wantErr:  ErrSkipAuth,
 		},
 		{
 			name: "valid api key with missing optional headers",

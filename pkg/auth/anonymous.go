@@ -27,7 +27,7 @@ func (p *AnonymousProvider) Type() string {
 
 func (p *AnonymousProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 	if !p.Config.Allowed {
-		return nil, nil
+		return nil, ErrSkipAuth
 	}
 	return &AuthInfo{
 		Role:         p.Config.Role,

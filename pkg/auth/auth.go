@@ -45,7 +45,9 @@ type AuthProvider interface {
 	Type() string
 }
 
+var ErrSkipAuth = errors.New("skip authentication")
 var ErrForbidden = errors.New("forbidden")
+var ErrTokenExpired = errors.New("token expired")
 var ErrNeedAuth = errors.New("authentication required")
 
 // Provide middleware for authentication
@@ -59,6 +61,14 @@ func AuthMiddleware(c Config) func(next http.Handler) http.Handler {
 			var authInfo *AuthInfo
 			for _, p := range c.Providers {
 				authInfo, err = p.Authenticate(r)
+				if errors.Is(err, ErrSkipAuth) {
+					// Skip authentication for this provider
+					continue
+				}
+				if errors.Is(err, ErrTokenExpired) {
+					http.Error(w, err.Error(), http.StatusUnauthorized)
+					return
+				}
 				if errors.Is(err, ErrNeedAuth) {
 					break
 				}

@@ -48,7 +48,7 @@ func (p *ApiKeyProvider) Type() string {
 func (p *ApiKeyProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 	key := r.Header.Get(p.c.Header)
 	if key == "" {
-		return nil, nil
+		return nil, ErrSkipAuth
 	}
 	if key != p.c.Key {
 		return nil, ErrForbidden
