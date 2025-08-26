@@ -1,30 +1,191 @@
 extend type MutationFunction {
+    """
+    Register a new or change an existing S3 object storage with the provided credentials.
+    """
     register_s3(
+        """
+        Name of the S3 object storage.
+        """
         name: String!
+        """
+        User or AWS access key ID.
+        """
         key: String!
+        """
+        User or AWS secret access key.
+        """
         secret: String!
+        """
+        AWS region.
+        """
         region: String!
+        """
+        S3 endpoint URL.
+        """
         endpoint: String!
+        """
+        Use SSL for S3 connections.
+        """
         use_ssl: Boolean!
+        """
+        S3 URL style (path or vhost).
+        """
         url_style: String!
-        scope: String! 
     ): OperationResult
         @function(name: "register_s3")
 
+    """
+    Unregister an existing S3 bucket.
+    """
     unregister_s3(
         name: String!
     ): OperationResult
         @function(name: "unregister_s3")
+
+
+    """
+    Register a new or change an existing object storage with the provided credentials.
+    """
+    register_object_storage(
+        """
+        Type of the object storage.
+        """
+        type: String!
+        """
+        Name of the object storage.
+        """
+        name: String!
+        """
+        Scope of the object storage. Define bucket name or bucket sub path
+        """
+        scope: String!
+        """
+        User or AWS access key ID.
+        """
+        key: String!
+        """
+        User or AWS secret access key.
+        """
+        secret: String!
+        """
+        AWS region.
+        """
+        region: String = ""
+        """
+        Endpoint URL.
+        """
+        endpoint: String!
+        """
+        Whether to use HTTPS or HTTP
+        """
+        use_ssl: Boolean! = True
+        """
+        S3 URL style (path or vhost).
+        """
+        url_style: String!
+        """
+        URL compatibility mode
+        """
+        url_compatibility: Boolean = false
+        """
+        AWS KMS (Key Management Service) key for Server Side Encryption S3
+        """
+        kms_key_id: String = ""
+        """
+        Cloudflare R2 account ID.
+        """
+        account_id: String = ""
+    ): OperationResult
+        @function(name: "register_object_storage")
+
+        """
+    Unregister an existing object storage.
+    """
+    unregister_storage(
+        name: String!
+    ): OperationResult
+        @function(name: "unregister_object_storage")
+
 }
 
+"""
+Registered S3 object storages view
+"""
 type registered_s3 @view(name: "core_registered_s3") {
+    """
+    Name of the S3 object storage.
+    """
     name: String! @pk
+    """
+    Type of the S3 object storage.
+    """
     type: String!
+    """
+    User or AWS access key ID.
+    """
     key: String
+    """
+    User or AWS secret access key.
+    """
+    secret: String
+    """
+    AWS region.
+    """
     region: String
+    """
+    S3 endpoint URL.
+    """
     endpoint: String
+    """
+    Use SSL for S3 connections.
+    """
     use_ssl: Boolean
+    """
+    S3 URL style (path or vhost).
+    """
     url_style: String
+    """
+    Scope of the S3 bucket. Define bucket name or bucket sub path
+    """
     scope: [String]
 }
 
+"""
+Registered S3 object storages view
+"""
+type registered_object_storages @view(name: "core_registered_object_storages") {
+    """
+    Name of the S3 object storage.
+    """
+    name: String! @pk
+    """
+    Type of the S3 object storage.
+    """
+    type: String!
+    """
+    Scope of the S3 bucket. Define bucket name or bucket sub path
+    """
+    scope: [String]
+    """
+    Parameters for the object storage.
+    """
+    parameters: String
+}
+
+
+"""
+Directory listing view, support object storages.
+"""
+type ls @view(name: "path_view", 
+    sql: """
+    SELECT parse_filename(filename, false, 'system') AS name, content FROM read_text([$path])
+    """
+    )
+    @args(name: "req_ls") {
+    name: String! @pk
+    content: String!
+}
+
+input req_ls {
+    path: String!
+}

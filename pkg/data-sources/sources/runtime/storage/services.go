@@ -46,30 +46,58 @@ func (s *Source) AsModule() bool {
 
 func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	s.db = pool
-
-	err := pool.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[S3Info, *types.OperationResult]{
-		Name: "register_s3",
-		Execute: func(ctx context.Context, info S3Info) (*types.OperationResult, error) {
-			err := s.RegisterS3(ctx, info)
+	err := pool.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[SecretInfo, *types.OperationResult]{
+		Name: "register_object_storage",
+		Execute: func(ctx context.Context, info SecretInfo) (*types.OperationResult, error) {
+			err := s.RegisterSecret(ctx, info)
 			if err != nil {
 				return types.ErrResult(err), nil
 			}
-			return types.Result("S3 storage registered", 1, 0), nil
+			return types.Result("Object storage registered", 1, 0), nil
 		},
-		ConvertInput: func(args []driver.Value) (S3Info, error) {
-			if len(args) != 8 {
-				return S3Info{}, fmt.Errorf("invalid number of arguments")
+		ConvertInput: func(args []driver.Value) (SecretInfo, error) {
+			if len(args) != 12 {
+				return SecretInfo{}, fmt.Errorf("invalid number of arguments")
 			}
-			return S3Info{
-				Name:     args[0].(string),
-				Type:     "s3",
-				KeyID:    args[1].(string),
-				Secret:   args[2].(string),
-				Region:   args[3].(string),
-				Endpoint: args[4].(string),
-				UseSSL:   args[5].(bool),
-				URLStyle: args[6].(string),
-				Scope:    args[7].(string),
+			params := make(map[string]any)
+			for i := 3; i < 12; i++ {
+				if args[i] == nil {
+					continue
+				}
+				switch i {
+				case 3:
+					params["KEY_ID"] = args[i].(string)
+				case 4:
+					params["SECRET"] = args[i].(string)
+				case 5:
+					if args[i].(string) != "" {
+						params["REGION"] = args[i].(string)
+					}
+				case 6:
+					params["ENDPOINT"] = args[i].(string)
+				case 7:
+					params["USE_SSL"] = args[i].(bool)
+				case 8:
+					params["URL_STYLE"] = args[i].(string)
+				case 9:
+					if args[i].(bool) {
+						params["URL_COMPATIBILITY_MODE"] = true
+					}
+				case 10:
+					if args[i].(string) != "" {
+						params["KMS_KEY_ID"] = args[i].(string)
+					}
+				case 11:
+					if args[i].(string) != "" {
+						params["ACCOUNT_ID"] = args[i].(string)
+					}
+				}
+			}
+			return SecretInfo{
+				Type:       args[0].(string),
+				Name:       args[1].(string),
+				Scope:      args[2].(string),
+				Parameters: params,
 			}, nil
 		},
 		ConvertOutput: func(out *types.OperationResult) (any, error) {
@@ -80,6 +108,10 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("BOOLEAN"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("BOOLEAN"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
@@ -92,13 +124,13 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	}
 
 	err = pool.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[string, *types.OperationResult]{
-		Name: "unregister_s3",
+		Name: "unregister_object_storage",
 		Execute: func(ctx context.Context, name string) (*types.OperationResult, error) {
-			err := s.UnregisterS3(ctx, name)
+			err := s.UnregisterSecret(ctx, name)
 			if err != nil {
 				return types.ErrResult(err), nil
 			}
-			return types.Result("S3 storage unregistered", 1, 0), nil
+			return types.Result("Object storage unregistered", 1, 0), nil
 		},
 		ConvertInput: func(args []driver.Value) (string, error) {
 			if len(args) != 1 {
@@ -118,25 +150,21 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	}
 	// register views
 	duckdb.RegisterReplacementScan(pool.Connector(), func(tableName string) (string, []any, error) {
-		if tableName != "core_registered_s3" {
+		if tableName != "core_registered_object_storages" {
 			return "", nil, &duckdb.Error{
 				Type: duckdb.ErrorTypeCatalog,
 			}
 		}
-		return "s3_secrets", nil, nil
+		return "core_object_storages", nil, nil
 	})
 
 	err = pool.RegisterTableRowFunction(ctx, &db.TableRowFunctionNoArgs[secrets]{
-		Name: "s3_secrets",
+		Name: "core_object_storages",
 		ColumnInfos: []duckdb.ColumnInfo{
 			{Name: "name", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
 			{Name: "type", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
-			{Name: "key", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
 			{Name: "scope", T: runtime.DuckDBListInfoByNameMust("VARCHAR")},
-			{Name: "region", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
-			{Name: "endpoint", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
-			{Name: "use_ssl", T: runtime.DuckDBTypeInfoByNameMust("BOOLEAN")},
-			{Name: "url_style", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
+			{Name: "parameters", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
 		},
 		Execute: func(ctx context.Context) ([]secrets, error) {
 			var data []secrets
@@ -156,35 +184,18 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 			if err != nil {
 				return err
 			}
-			err = duckdb.SetRowValue(row, 3, out.Scope)
+			err = duckdb.SetRowValue(row, 2, out.Scope)
 			if err != nil {
 				return err
 			}
-			for v := range strings.SplitSeq(out.Value, ";") {
-				switch {
-				case strings.HasPrefix(v, "key_id="):
-					err = duckdb.SetRowValue(row, 2, strings.TrimPrefix(v, "key_id="))
-				case strings.HasPrefix(v, "region="):
-					err = duckdb.SetRowValue(row, 4, strings.TrimPrefix(v, "region="))
-				case strings.HasPrefix(v, "endpoint="):
-					err = duckdb.SetRowValue(row, 5, strings.TrimPrefix(v, "endpoint="))
-				case strings.HasPrefix(v, "use_ssl="):
-					err = duckdb.SetRowValue(row, 6, v == "use_ssl=true")
-				case strings.HasPrefix(v, "url_style="):
-					err = duckdb.SetRowValue(row, 7, strings.TrimPrefix(v, "url_style="))
-				default:
-					continue
-				}
-				if err != nil {
-					return err
-				}
-			}
-			return nil
+			err = duckdb.SetRowValue(row, 3, out.Value)
+			return err
 		},
 	})
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -226,6 +237,48 @@ func (s *Source) RegisterS3(ctx context.Context, info S3Info) error {
 func (s *Source) UnregisterS3(ctx context.Context, name string) error {
 	_, err := s.db.Exec(ctx, fmt.Sprintf(`DROP PERSISTENT SECRET %s`, name))
 	return err
+}
+
+func (s *Source) RegisterSecret(ctx context.Context, info SecretInfo) error {
+	if info.Type != "S3" && info.Type != "R2" && info.Type != "GCS" {
+		return fmt.Errorf("unsupported secret type: %s", info.Type)
+	}
+	if len(info.Parameters) == 0 {
+		return fmt.Errorf("no parameters provided")
+	}
+
+	var params []string
+	for k, v := range info.Parameters {
+		vv, err := s.Engine().SQLValue(v)
+		if err != nil {
+			return fmt.Errorf("invalid parameter value for %s: %w", k, err)
+		}
+		params = append(params, fmt.Sprintf("%s %s", k, vv))
+	}
+
+	_, err := s.db.Exec(ctx, fmt.Sprintf(`
+		CREATE OR REPLACE PERSISTENT SECRET %s (
+			TYPE %s,
+			SCOPE '%s',
+			%s
+		);
+	`, info.Name, info.Type, info.Scope, strings.Join(params, ", ")))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Source) UnregisterSecret(ctx context.Context, name string) error {
+	_, err := s.db.Exec(ctx, fmt.Sprintf(`DROP PERSISTENT SECRET %s`, name))
+	return err
+}
+
+type SecretInfo struct {
+	Name       string         `json:"name"`
+	Type       string         `json:"type"`
+	Scope      string         `json:"scope"`
+	Parameters map[string]any `json:"parameters"`
 }
 
 type secrets struct {
