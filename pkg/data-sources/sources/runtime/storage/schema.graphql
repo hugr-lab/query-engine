@@ -1,49 +1,5 @@
 extend type MutationFunction {
     """
-    Register a new or change an existing S3 object storage with the provided credentials.
-    """
-    register_s3(
-        """
-        Name of the S3 object storage.
-        """
-        name: String!
-        """
-        User or AWS access key ID.
-        """
-        key: String!
-        """
-        User or AWS secret access key.
-        """
-        secret: String!
-        """
-        AWS region.
-        """
-        region: String!
-        """
-        S3 endpoint URL.
-        """
-        endpoint: String!
-        """
-        Use SSL for S3 connections.
-        """
-        use_ssl: Boolean!
-        """
-        S3 URL style (path or vhost).
-        """
-        url_style: String!
-    ): OperationResult
-        @function(name: "register_s3")
-
-    """
-    Unregister an existing S3 bucket.
-    """
-    unregister_s3(
-        name: String!
-    ): OperationResult
-        @function(name: "unregister_s3")
-
-
-    """
     Register a new or change an existing object storage with the provided credentials.
     """
     register_object_storage(
@@ -109,61 +65,19 @@ extend type MutationFunction {
 }
 
 """
-Registered S3 object storages view
-"""
-type registered_s3 @view(name: "core_registered_s3") {
-    """
-    Name of the S3 object storage.
-    """
-    name: String! @pk
-    """
-    Type of the S3 object storage.
-    """
-    type: String!
-    """
-    User or AWS access key ID.
-    """
-    key: String
-    """
-    User or AWS secret access key.
-    """
-    secret: String
-    """
-    AWS region.
-    """
-    region: String
-    """
-    S3 endpoint URL.
-    """
-    endpoint: String
-    """
-    Use SSL for S3 connections.
-    """
-    use_ssl: Boolean
-    """
-    S3 URL style (path or vhost).
-    """
-    url_style: String
-    """
-    Scope of the S3 bucket. Define bucket name or bucket sub path
-    """
-    scope: [String]
-}
-
-"""
-Registered S3 object storages view
+Registered object storages view
 """
 type registered_object_storages @view(name: "core_registered_object_storages") {
     """
-    Name of the S3 object storage.
+    Name of the object storage.
     """
     name: String! @pk
     """
-    Type of the S3 object storage.
+    Type of the object storage.
     """
     type: String!
     """
-    Scope of the S3 bucket. Define bucket name or bucket sub path
+    Scope of the object storage. Define bucket name or bucket sub path
     """
     scope: [String]
     """

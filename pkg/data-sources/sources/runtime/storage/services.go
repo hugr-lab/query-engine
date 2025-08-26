@@ -203,42 +203,6 @@ func (s *Source) Catalog(ctx context.Context) sources.Source {
 	return sources.NewStringSource("storage", schema)
 }
 
-type S3Info struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	KeyID    string `json:"key_id"`
-	Secret   string `json:"secret"`
-	Region   string `json:"region"`
-	Endpoint string `json:"endpoint"`
-	UseSSL   bool   `json:"use_ssl"`
-	URLStyle string `json:"url_style"`
-	Scope    string `json:"scope"`
-}
-
-func (s *Source) RegisterS3(ctx context.Context, info S3Info) error {
-	_, err := s.db.Exec(ctx, fmt.Sprintf(`
-		CREATE OR REPLACE PERSISTENT SECRET %s (
-			TYPE %s,
-			KEY_ID '%s',
-			SECRET '%s',
-			REGION '%s',
-			ENDPOINT '%s',
-			USE_SSL %v,
-			URL_STYLE '%s',
-			SCOPE '%s'
-		);
-	`, info.Name, info.Type, info.KeyID, info.Secret, info.Region, info.Endpoint, info.UseSSL, info.URLStyle, info.Scope))
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *Source) UnregisterS3(ctx context.Context, name string) error {
-	_, err := s.db.Exec(ctx, fmt.Sprintf(`DROP PERSISTENT SECRET %s`, name))
-	return err
-}
-
 func (s *Source) RegisterSecret(ctx context.Context, info SecretInfo) error {
 	if info.Type != "S3" && info.Type != "R2" && info.Type != "GCS" {
 		return fmt.Errorf("unsupported secret type: %s", info.Type)
