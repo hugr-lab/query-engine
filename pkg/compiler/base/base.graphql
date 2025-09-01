@@ -3,26 +3,26 @@ directive @module(name: String!) on OBJECT | FIELD_DEFINITION
 
 # define function info (apply to the extended Function or MutationFunction type)
 directive @function(
-	name: String!, 
-	sql: String, 
-	skip_null_arg: Boolean, # skip null argument if there is only one argument
-	is_table: Boolean, 
+	name: String!
+	sql: String
+	skip_null_arg: Boolean
+	is_table: Boolean
 	json_cast: Boolean
 ) on FIELD_DEFINITION
 
 
 # Mark object as table in the datasource
 directive @table(
-	name: String!, 
-	is_m2m: Boolean = false, 
+	name: String!
+	is_m2m: Boolean = false
 	"""
 	Apply soft delete to table
 	"""
-	soft_delete: Boolean = false, 
+	soft_delete: Boolean = false
 	"""
 	Soft delete condition to check if record is deleted
 	"""
-	soft_delete_cond: String, 
+	soft_delete_cond: String
 	"""
 	Soft delete update condition to update record as deleted
 	"""
@@ -31,7 +31,8 @@ directive @table(
 
 # Mark object as view in the datasource
 directive @view(name: String!, sql: String) on OBJECT
-""" The arguments for the view directive defines input name to request data """
+
+# The arguments for the view directive defines input name to request data
 directive @args(name: String!, required: Boolean = false) on OBJECT
 
 # Add list of dependencies (data sources) to the views or objects it is used in.
@@ -40,7 +41,7 @@ directive @dependency(
 	name: String!
 ) repeatable on OBJECT
 
-""" The argument is named """
+# The argument is named
 directive @named(name: String) on INPUT_FIELD_DEFINITION 
 
 # Add unique constraint to the object
@@ -65,7 +66,7 @@ directive @field_source(field: String!) on FIELD_DEFINITION | INPUT_FIELD_DEFINI
 # define additional info for the geometry field
 directive @geometry_info(
 	type: GeometryType
-	srid: String
+	srid: Int
 ) on FIELD_DEFINITION | INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
 
 # exclude operators for the filter

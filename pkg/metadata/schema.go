@@ -3,6 +3,7 @@ package metadata
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
@@ -338,6 +339,12 @@ func argumentResolver(ctx context.Context, schema *ast.Schema, def *ast.Argument
 		"defaultValue": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			if def.DefaultValue == nil {
 				return nil, nil
+			}
+			if def.DefaultValue.Kind == ast.StringValue {
+				if def.DefaultValue.Raw == "" {
+					return strconv.Quote("\"\""), nil
+				}
+				return strconv.Quote(def.DefaultValue.Raw), nil
 			}
 			return def.DefaultValue.Raw, nil
 		},

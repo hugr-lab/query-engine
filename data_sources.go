@@ -23,7 +23,7 @@ func (s *Service) attachRuntimeSources(ctx context.Context) error {
 	}
 	err = s.ds.AttachRuntimeSource(ctx, s.s3)
 	if err != nil {
-		return fmt.Errorf("attach s3 source: %w", err)
+		return fmt.Errorf("attach storage source: %w", err)
 	}
 	err = s.ds.AttachRuntimeSource(ctx, dssource.New(s))
 	if err != nil {

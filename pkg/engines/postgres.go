@@ -761,13 +761,13 @@ func (e Postgres) TimestampTransform(sql string, field *ast.Field, args compiler
 	}
 	if compiler.IsTimescaleKey(field.Definition) {
 		bf := "time_bucket"
+		if bucket := args.ForName("bucket"); bucket != nil {
+			return fmt.Sprintf("date_trunc('%s', %s)", bucket.Value, sql)
+		}
 		if gapFill := args.ForName("gapfill"); gapFill != nil {
 			if v, ok := gapFill.Value.(bool); v && ok {
 				bf = "time_bucket_gapfill"
 			}
-		}
-		if bucket := args.ForName("bucket"); bucket != nil {
-			return fmt.Sprintf("%s('%s', %s)", bf, bucket.Value, sql)
 		}
 		if interval := args.ForName("bucket_interval"); interval != nil {
 			iSQL, err := types.IntervalToSQLValue(interval.Value)
