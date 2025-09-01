@@ -8,7 +8,7 @@ require (
 	github.com/eko/gocache/lib/v4 v4.2.0
 	github.com/eko/gocache/store/bigcache/v4 v4.2.2
 	github.com/getkin/kin-openapi v0.132.0
-	github.com/golang-jwt/jwt/v5 v5.2.3
+	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/golang-lru/v2 v2.0.7
@@ -19,7 +19,7 @@ require (
 	github.com/spf13/viper v1.20.1
 	github.com/vektah/gqlparser/v2 v2.5.30
 	github.com/vmihailenco/msgpack/v5 v5.4.1
-	golang.org/x/crypto v0.40.0
+	golang.org/x/crypto v0.41.0
 	golang.org/x/exp v0.0.0-20250718183923-645b1fa84792
 	golang.org/x/oauth2 v0.30.0
 	gopkg.in/errgo.v2 v2.1.0
@@ -76,7 +76,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.65.0 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
-	github.com/redis/go-redis/v9 v9.11.0
+	github.com/redis/go-redis/v9 v9.12.0
 	github.com/sagikazarmark/locafero v0.10.0 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.14.0 // indirect
@@ -86,11 +86,11 @@ require (
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.uber.org/mock v0.5.2 // indirect
 	golang.org/x/mod v0.26.0 // indirect
-	golang.org/x/sys v0.34.0 // indirect
-	golang.org/x/text v0.27.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/text v0.28.0 // indirect
 	golang.org/x/tools v0.35.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
+	google.golang.org/protobuf v1.36.7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
