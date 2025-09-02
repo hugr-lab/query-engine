@@ -728,16 +728,116 @@ func (m *Mutation) DefaultSequencesValues() map[string]string {
 	}
 	sequencesValues := make(map[string]string)
 	for _, field := range m.ObjectDefinition.Fields {
-		if field.Directives.ForName(fieldDefaultDirectiveName) == nil {
+		if field.Directives.ForName(base.FieldDefaultDirectiveName) == nil {
 			continue
 		}
-		sequence := fieldDirectiveArgValue(field, fieldDefaultDirectiveName, "sequence")
+		sequence := fieldDirectiveArgValue(field, base.FieldDefaultDirectiveName, "sequence")
 		if sequence == "" {
 			continue
 		}
 		sequencesValues[field.Name] = sequence
 	}
 	return sequencesValues
+}
+
+func (m *Mutation) FieldHasDefaultInsertExpr(name string) bool {
+	field := m.ObjectDefinition.Fields.ForName(name)
+	if field == nil {
+		return false
+	}
+	d := field.Directives.ForName(base.FieldDefaultDirectiveName)
+	if d == nil {
+		return false
+	}
+	return d.Arguments.ForName(base.FieldDefaultDirectiveInsertExprArgName) != nil
+}
+
+func (m *Mutation) FieldHasDefaultUpdateExpr(name string) bool {
+	field := m.ObjectDefinition.Fields.ForName(name)
+	if field == nil {
+		return false
+	}
+	d := field.Directives.ForName(base.FieldDefaultDirectiveName)
+	if d == nil {
+		return false
+	}
+	return d.Arguments.ForName(base.FieldDefaultDirectiveUpdateExprArgName) != nil
+}
+
+func (m *Mutation) AppendInsertSQLExpression(data map[string]string, vars map[string]any, builder sqlBuilder) error {
+	for _, field := range m.Fields() {
+		if !m.FieldHasDefaultInsertExpr(field.Name) {
+			continue
+		}
+		if field.def == nil {
+			return ErrorPosf(m.query.Position, "field %s definition not found", field.Name)
+		}
+		sql := fieldDirectiveArgValue(field.def, base.FieldDefaultDirectiveName, base.FieldDefaultDirectiveInsertExprArgName)
+		if sql == "" {
+			continue
+		}
+		for _, f := range ExtractFieldsFromSQL(sql) {
+			if !strings.HasPrefix(f, "$") {
+				continue
+			}
+			// apply auth vars
+			if v, ok := vars[f]; ok {
+				sv, err := builder.SQLValue(v)
+				if err != nil {
+					return err
+				}
+				sql = strings.ReplaceAll(sql, "["+f+"]", sv)
+				continue
+			}
+			// apply data vars
+			if v, ok := data[strings.TrimPrefix(f, "$")]; ok {
+				sql = strings.ReplaceAll(sql, "["+f+"]", v)
+				continue
+			}
+			// set missing fields to NULL
+			sql = strings.ReplaceAll(sql, "["+f+"]", "NULL")
+		}
+		data[field.Name] = sql
+	}
+	return nil
+}
+
+func (m *Mutation) AppendUpdateSQLExpression(data map[string]string, vars map[string]any, builder sqlBuilder) error {
+	for _, field := range m.Fields() {
+		if !m.FieldHasDefaultUpdateExpr(field.Name) {
+			continue
+		}
+		if field.def == nil {
+			return ErrorPosf(m.query.Position, "field %s definition not found", field.Name)
+		}
+		sql := fieldDirectiveArgValue(field.def, base.FieldDefaultDirectiveName, base.FieldDefaultDirectiveUpdateExprArgName)
+		if sql == "" {
+			continue
+		}
+		for _, f := range ExtractFieldsFromSQL(sql) {
+			if !strings.HasPrefix(f, "$") {
+				continue
+			}
+			// apply auth vars
+			if v, ok := vars[f]; ok {
+				sv, err := builder.SQLValue(v)
+				if err != nil {
+					return err
+				}
+				sql = strings.ReplaceAll(sql, "["+f+"]", sv)
+				continue
+			}
+			// apply data vars
+			if v, ok := data[strings.TrimPrefix(f, "$")]; ok {
+				sql = strings.ReplaceAll(sql, "["+f+"]", v)
+				continue
+			}
+			// set missing fields to NULL
+			sql = strings.ReplaceAll(sql, "["+f+"]", "NULL")
+		}
+		data[field.Name] = sql
+	}
+	return nil
 }
 
 func (m *Mutation) DBFieldName(name string) string {
