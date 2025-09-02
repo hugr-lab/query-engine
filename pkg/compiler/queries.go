@@ -776,26 +776,9 @@ func (m *Mutation) AppendInsertSQLExpression(data map[string]string, vars map[st
 		if sql == "" {
 			continue
 		}
-		for _, f := range ExtractFieldsFromSQL(sql) {
-			if !strings.HasPrefix(f, "$") {
-				continue
-			}
-			// apply auth vars
-			if v, ok := vars[f]; ok {
-				sv, err := builder.SQLValue(v)
-				if err != nil {
-					return err
-				}
-				sql = strings.ReplaceAll(sql, "["+f+"]", sv)
-				continue
-			}
-			// apply data vars
-			if v, ok := data[strings.TrimPrefix(f, "$")]; ok {
-				sql = strings.ReplaceAll(sql, "["+f+"]", v)
-				continue
-			}
-			// set missing fields to NULL
-			sql = strings.ReplaceAll(sql, "["+f+"]", "NULL")
+		sql, err := applySQLVars(sql, data, vars, builder)
+		if err != nil {
+			return err
 		}
 		data[field.Name] = sql
 	}
@@ -814,30 +797,38 @@ func (m *Mutation) AppendUpdateSQLExpression(data map[string]string, vars map[st
 		if sql == "" {
 			continue
 		}
-		for _, f := range ExtractFieldsFromSQL(sql) {
-			if !strings.HasPrefix(f, "$") {
-				continue
-			}
-			// apply auth vars
-			if v, ok := vars[f]; ok {
-				sv, err := builder.SQLValue(v)
-				if err != nil {
-					return err
-				}
-				sql = strings.ReplaceAll(sql, "["+f+"]", sv)
-				continue
-			}
-			// apply data vars
-			if v, ok := data[strings.TrimPrefix(f, "$")]; ok {
-				sql = strings.ReplaceAll(sql, "["+f+"]", v)
-				continue
-			}
-			// set missing fields to NULL
-			sql = strings.ReplaceAll(sql, "["+f+"]", "NULL")
+		sql, err := applySQLVars(sql, data, vars, builder)
+		if err != nil {
+			return err
 		}
 		data[field.Name] = sql
 	}
 	return nil
+}
+
+func applySQLVars(sql string, data map[string]string, vars map[string]any, builder sqlBuilder) (string, error) {
+	for _, f := range ExtractFieldsFromSQL(sql) {
+		if !strings.HasPrefix(f, "$") {
+			continue
+		}
+		// apply auth vars
+		if v, ok := vars[f]; ok {
+			sv, err := builder.SQLValue(v)
+			if err != nil {
+				return "", err
+			}
+			sql = strings.ReplaceAll(sql, "["+f+"]", sv)
+			continue
+		}
+		// apply data vars
+		if v, ok := data[strings.TrimPrefix(f, "$")]; ok {
+			sql = strings.ReplaceAll(sql, "["+f+"]", v)
+			continue
+		}
+		// set missing fields to NULL
+		sql = strings.ReplaceAll(sql, "["+f+"]", "NULL")
+	}
+	return sql, nil
 }
 
 func (m *Mutation) DBFieldName(name string) string {
