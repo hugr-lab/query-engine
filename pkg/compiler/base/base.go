@@ -53,10 +53,15 @@ const (
 )
 
 const (
-	FieldGeometryInfoDirectiveName = "geometry_info"
-	FieldSqlDirectiveName          = "sql"
-	FieldExtraFieldDirectiveName   = "extra_field"
-	FieldSourceDirectiveName       = "field_source"
+	FieldGeometryInfoDirectiveName         = "geometry_info"
+	FieldSqlDirectiveName                  = "sql"
+	FieldExtraFieldDirectiveName           = "extra_field"
+	FieldSourceDirectiveName               = "field_source"
+	FieldDefaultDirectiveName              = "default"
+	FieldDefaultDirectiveInsertExprArgName = "insert_exp"
+	FieldDefaultDirectiveUpdateExprArgName = "update_exp"
+	FieldMeasurementDirectiveName          = "measurement"
+	FieldMeasurementFuncArgName            = "measurement_func"
 )
 
 const (

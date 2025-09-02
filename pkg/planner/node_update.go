@@ -10,6 +10,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -62,26 +63,37 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 	}
 	dbObject := info.SQL(ctx, engines.Ident(prefix))
 
+	updates := make(map[string]string)
+	for fn, v := range data {
+		fi := info.FieldForName(fn)
+		if fi == nil {
+			return nil, compiler.ErrorPosf(query.Position, "unknown field %s", fn)
+		}
+		if fi.IsRequired() && v == nil {
+			return nil, compiler.ErrorPosf(query.Position, "field %s is required", fn)
+		}
+		sv, err := e.SQLValue(v)
+		if err != nil {
+			return nil, err
+		}
+		updates[fn] = sv
+	}
+
+	err = m.AppendUpdateSQLExpression(updates, perm.AuthVars(ctx), e)
+	if err != nil {
+		return nil, err
+	}
+
 	// set data
 	nodes := QueryPlanNodes{{
 		Name:  "set",
 		Query: query,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 			var sets []string
-			for fn, v := range data {
-				fi := info.FieldForName(fn)
-				if fi == nil {
-					return "", nil, compiler.ErrorPosf(query.Position, "unknown field %s", fn)
-				}
-				if fi.IsRequired() && v == nil {
-					return "", nil, compiler.ErrorPosf(query.Position, "field %s is required", fn)
-				}
-				sv, err := e.SQLValue(v)
-				if err != nil {
-					return "", nil, err
-				}
+			for k, v := range updates {
+				fi := info.FieldForName(k)
 				sets = append(sets,
-					fmt.Sprintf("%s = %s", fi.SQL(""), sv),
+					fmt.Sprintf("%s = %s", fi.FieldSourceName("", true), v),
 				)
 			}
 			return strings.Join(sets, ","), params, nil
@@ -95,14 +107,14 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		if !ok {
 			return nil, compiler.ErrorPosf(query.Position, "invalid filter argument type")
 		}
-		whereNode, err := whereNode(ctx, compiler.SchemaDefs(schema), info, v, "_object", false, false)
+		whereNode, err := whereNode(ctx, compiler.SchemaDefs(schema), info, v, "objects", false, false)
 		if err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, whereNode)
 	}
 
-	pf, err := permissionFilterNode(ctx, compiler.SchemaDefs(schema), info, query, "_object", false)
+	pf, err := permissionFilterNode(ctx, compiler.SchemaDefs(schema), info, query, "objects", false)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +127,7 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		Query: query,
 		Nodes: nodes,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-			sql := "UPDATE " + dbObject + " AS _object SET " + children.ForName("set").Result
+			sql := "UPDATE " + dbObject + " AS objects SET " + children.ForName("set").Result
 			whereSQL := ""
 			where := children.ForName("where")
 			if where != nil {

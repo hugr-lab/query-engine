@@ -72,7 +72,11 @@ func (r *RolePermissions) CheckMutationInput(defs Definitions, inputName string,
 			return auth.ErrForbidden
 		}
 		if data, ok := fv.(map[string]any); ok {
-			if err := r.CheckMutationInput(defs, fn, data); err != nil {
+			fd := input.Fields.ForName(fn)
+			if fd == nil {
+				return fmt.Errorf("field %s not found in input type %s", fn, inputName)
+			}
+			if err := r.CheckMutationInput(defs, fd.Type.Name(), data); err != nil {
 				return err
 			}
 		}
@@ -133,7 +137,7 @@ func applyContextVariable(ctx context.Context, data map[string]any, vars map[str
 		return nil
 	}
 	if vars == nil {
-		vars = authVars(ctx)
+		vars = AuthVars(ctx)
 		if len(vars) == 0 {
 			return data
 		}
@@ -161,7 +165,7 @@ func applyContextVariable(ctx context.Context, data map[string]any, vars map[str
 	return res
 }
 
-func authVars(ctx context.Context) map[string]any {
+func AuthVars(ctx context.Context) map[string]any {
 	ai := auth.AuthInfoFromContext(ctx)
 	if ai == nil {
 		return nil

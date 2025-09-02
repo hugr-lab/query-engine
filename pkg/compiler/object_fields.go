@@ -12,11 +12,8 @@ import (
 const (
 	fieldUniqueRuleDirectiveName     = "unique_rule"
 	fieldExcludeFilterDirectiveName  = "exclude_filter"
-	fieldDefaultDirectiveName        = "default"
 	fieldFilterRequiredDirectiveName = "filter_required"
 	fieldTimescaleKeyDirectiveName   = "timescale_key"
-	FieldMeasurementDirectiveName    = "measurement"
-	FieldMeasurementFuncArgName      = "measurement_func"
 )
 
 func validateObjectField(defs Definitions, def *ast.Definition, field *ast.FieldDefinition) error {
@@ -38,7 +35,7 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 				return err
 			}
 			def.Directives = append(def.Directives, dir)
-		case fieldUniqueRuleDirectiveName, fieldDefaultDirectiveName:
+		case fieldUniqueRuleDirectiveName, base.FieldDefaultDirectiveName:
 			if DataObjectType(def) != Table {
 				return ErrorPosf(d.Position, "field %s of object %s can't have directive %s", field.Name, def.Name, d.Name)
 			}
@@ -67,7 +64,7 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 			if err := validateJoin(defs, def, field); err != nil {
 				return err
 			}
-		case FieldMeasurementDirectiveName:
+		case base.FieldMeasurementDirectiveName:
 			if def.Directives.ForName(objectCubeDirectiveName) == nil {
 				return ErrorPosf(d.Position, "field %s of object %s should have @cube directive", field.Name, def.Name)
 			}
@@ -115,9 +112,9 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 		}
 	}
 	// add measurement aggregation arguments
-	if field.Directives.ForName(FieldMeasurementDirectiveName) != nil {
+	if field.Directives.ForName(base.FieldMeasurementDirectiveName) != nil {
 		field.Arguments = append(field.Arguments, &ast.ArgumentDefinition{
-			Name:        FieldMeasurementFuncArgName,
+			Name:        base.FieldMeasurementFuncArgName,
 			Description: "Aggregation function for measurement field",
 			Type:        ast.NamedType(ScalarTypes[field.Type.Name()].MeasurementAggs, compiledPos()),
 			Position:    compiledPos(),
@@ -169,7 +166,7 @@ func fieldInfo(field *ast.FieldDefinition, object *ast.Definition) *Field {
 		sql:          fieldDirectiveArgValue(field, base.FieldSqlDirectiveName, "exp"),
 		geometrySRID: fieldDirectiveArgValue(field, base.FieldGeometryInfoDirectiveName, "srid"),
 		geometryType: fieldDirectiveArgValue(field, base.FieldGeometryInfoDirectiveName, "type"),
-		sequence:     fieldDirectiveArgValue(field, fieldDefaultDirectiveName, "sequence"),
+		sequence:     fieldDirectiveArgValue(field, base.FieldDefaultDirectiveName, "sequence"),
 		def:          field,
 		object:       object,
 	}

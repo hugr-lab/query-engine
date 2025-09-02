@@ -11,6 +11,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -322,6 +323,10 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 			path:         path,
 		})
 		fv[fieldInfo.Name] = "[" + sn + strconv.Itoa(len(sv)) + "]"
+	}
+	err = m.AppendInsertSQLExpression(fv, perm.AuthVars(ctx), e)
+	if err != nil {
+		return nil, nil, err
 	}
 	if len(fv) == 0 {
 		return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "no values provided for insert")

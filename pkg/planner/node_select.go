@@ -687,8 +687,8 @@ func cubeGroupByNode(info *compiler.Object, query *ast.Field, fieldList fieldLis
 	}
 	var fields []string
 	for _, f := range fieldList {
-		if f.Definition.Directives.ForName(compiler.FieldMeasurementDirectiveName) != nil &&
-			f.Arguments.ForName(compiler.FieldMeasurementFuncArgName) != nil {
+		if f.Definition.Directives.ForName(base.FieldMeasurementDirectiveName) != nil &&
+			f.Arguments.ForName(base.FieldMeasurementFuncArgName) != nil {
 			continue
 		}
 		fields = append(fields, engines.Ident(f.Alias))
@@ -1289,10 +1289,10 @@ func fieldsNodes(e engines.Engine, info *compiler.Object, prefix string, fields 
 						sql = e.ApplyFieldTransforms(sql, field, args)
 					}
 					if info.IsCube &&
-						fi.Definition().Directives.ForName(compiler.FieldMeasurementDirectiveName) != nil &&
-						args.ForName(compiler.FieldMeasurementFuncArgName) != nil {
+						fi.Definition().Directives.ForName(base.FieldMeasurementDirectiveName) != nil &&
+						args.ForName(base.FieldMeasurementFuncArgName) != nil {
 						// aggregate measurements
-						mf, ok := args.ForName(compiler.FieldMeasurementFuncArgName).Value.(string)
+						mf, ok := args.ForName(base.FieldMeasurementFuncArgName).Value.(string)
 						if !ok || compiler.MeasurementAggregations[mf] == "" {
 							return "", nil, errors.New("measurement function not found")
 						}
