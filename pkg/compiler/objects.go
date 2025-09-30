@@ -157,6 +157,25 @@ func validateObject(defs Definitions, def *ast.Definition, opt *Options) error {
 				return ErrorPosf(d.Position, "object %s should have @%s directive before @%s", def.Name, base.ObjectViewDirectiveName, d.Name)
 			}
 		case base.CatalogDirectiveName, base.OriginalNameDirectiveName:
+		case base.EmbeddingsDirectiveName:
+			if objectType != base.ObjectTableDirectiveName && objectType != base.ObjectViewDirectiveName {
+				return ErrorPosf(d.Position, "object %s should be defined as Data Object (table or view) before @%s", def.Name, d.Name)
+			}
+			// validate embeddings fields
+			fieldName := directiveArgValue(d, "vector")
+			if fieldName == "" {
+				return ErrorPosf(d.Position, "object %s should have vector field defined for @%s", def.Name, d.Name)
+			}
+			field := def.Fields.ForName(fieldName)
+			if field == nil {
+				return ErrorPosf(d.Position, "object %s should have vector field %s defined for @%s", def.Name, fieldName, d.Name)
+			}
+			if field.Type.NamedType != base.VectorTypeName {
+				return ErrorPosf(d.Position, "object %s field %s should be of type %s for @%s", def.Name, fieldName, base.VectorTypeName, d.Name)
+			}
+			if directiveArgValue(d, "distance") == "" {
+				return ErrorPosf(d.Position, "object %s should have distance argument defined for @%s", def.Name, d.Name)
+			}
 		case base.GisWFSDirectiveName:
 			if objectType != base.ObjectViewDirectiveName && objectType != base.ObjectTableDirectiveName {
 				return ErrorPosf(d.Position, "object %s should be defined as Data Object (table or view) before @%s", def.Name, d.Name)
@@ -175,6 +194,11 @@ func validateObject(defs Definitions, def *ast.Definition, opt *Options) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// add embedding distance extra field to calculate distance to the query vector
+	if vecFieldName := objectDirectiveArgValue(def, base.EmbeddingsDirectiveName, "vector"); vecFieldName != "" {
+		def.Fields = append(def.Fields, base.VectorEmbeddingsExtraField(vecFieldName))
 	}
 
 	if opt.AsModule && IsDataObject(def) {
@@ -327,8 +351,13 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 		return nil
 	}
 	// add insert mutation
+	dataInputName := inputObjectMutationInsertName(schema, def)
+	insertArgs := inputObjectMutationInsertArgs(schema, def)
+	if len(insertArgs) == 0 {
+		return ErrorPosf(def.Position, "object %s should have at least one insertable field to create insert mutation", def.Name)
+	}
 	dd = ast.DirectiveList{
-		objectMutationDirective(def.Name, MutationTypeInsert),
+		objectMutationDirective(def.Name, MutationTypeInsert, dataInputName),
 		opt.catalog,
 	}
 	if cacheDirective != nil {
@@ -346,16 +375,18 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 	moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
 		Name:        mutationInsertPrefix + name,
 		Description: def.Description,
-		Arguments:   inputObjectMutationInsertArgs(schema, def),
+		Arguments:   insertArgs,
 		Type:        outType,
 		Directives:  dd,
 		Position:    compiledPos(),
 	})
-	def.Directives = append(def.Directives, objectMutationDirective(mutationInsertPrefix+name, MutationTypeInsert))
+	def.Directives = append(def.Directives, objectMutationDirective(mutationInsertPrefix+name, MutationTypeInsert, dataInputName))
 
 	// add update mutation
+	dataInputName = inputObjectMutationDataName(schema, def)
+	updateArgs := inputObjectMutationUpdateArgs(schema, def)
 	dd = ast.DirectiveList{
-		objectMutationDirective(def.Name, MutationTypeUpdate),
+		objectMutationDirective(def.Name, MutationTypeUpdate, dataInputName),
 		opt.catalog,
 	}
 	if cacheDirective != nil {
@@ -364,26 +395,16 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 	moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
 		Name:        mutationUpdatePrefix + name,
 		Description: def.Description,
-		Arguments: ast.ArgumentDefinitionList{
-			{
-				Name:     "filter",
-				Type:     ast.NamedType(inputObjectFilterName(schema, def, false), nil),
-				Position: compiledPos(),
-			},
-			&ast.ArgumentDefinition{
-				Name:     "data",
-				Type:     ast.NonNullNamedType(inputObjectMutationDataName(schema, def), nil),
-				Position: compiledPos(),
-			},
-		},
-		Type:       ast.NamedType(OperationResultTypeName, compiledPos()),
-		Directives: dd,
-		Position:   compiledPos(),
+		Arguments:   updateArgs,
+		Type:        ast.NamedType(OperationResultTypeName, compiledPos()),
+		Directives:  dd,
+		Position:    compiledPos(),
 	})
-	def.Directives = append(def.Directives, objectMutationDirective(mutationUpdatePrefix+name, MutationTypeUpdate))
+	def.Directives = append(def.Directives, objectMutationDirective(mutationUpdatePrefix+name, MutationTypeUpdate, dataInputName))
+
 	// add delete mutation
 	dd = ast.DirectiveList{
-		objectMutationDirective(def.Name, MutationTypeDelete),
+		objectMutationDirective(def.Name, MutationTypeDelete, ""),
 		opt.catalog,
 	}
 	if cacheDirective != nil {
@@ -403,7 +424,7 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 		Directives: dd,
 		Position:   compiledPos(),
 	})
-	def.Directives = append(def.Directives, objectMutationDirective(mutationDeletePrefix+name, MutationTypeDelete))
+	def.Directives = append(def.Directives, objectMutationDirective(mutationDeletePrefix+name, MutationTypeDelete, ""))
 	return nil
 }
 
@@ -540,19 +561,29 @@ func extendObjectDefinition(schema *ast.SchemaDocument, origin, from *ast.Defini
 			}
 			catalog = field.Directives.ForName(base.CatalogDirectiveName)
 		case field.Directives.ForName(base.GisWFSFieldDirectiveName) != nil ||
-			field.Directives.ForName(base.GisWFSExcludeDirectiveName) != nil:
+			field.Directives.ForName(base.GisWFSExcludeDirectiveName) != nil ||
+			field.Directives.ForName(base.FieldExcludeMCPDirectiveName) != nil:
+			// add field directives to origin field
 			if !IsDataObject(origin) {
-				return ErrorPosf(field.Position, "WFS field %s can be added only to data object", field.Name)
+				return ErrorPosf(field.Position, "Field %s directives can be added only to data object", field.Name)
 			}
-			// wfs directives add it to the origin field
 			originField := origin.Fields.ForName(field.Name)
 			if originField == nil {
 				return ErrorPosf(field.Position, "extended field %s not found in object %s", field.Name, origin.Name)
 			}
-			if d := field.Directives.ForName(base.GisWFSFieldDirectiveName); d != nil {
+			// wfs directives add it to the origin field
+			if d := field.Directives.ForName(base.GisWFSFieldDirectiveName); d != nil &&
+				originField.Directives.ForName(base.GisWFSFieldDirectiveName) == nil {
 				originField.Directives = append(originField.Directives, d)
 			}
-			if d := field.Directives.ForName(base.GisWFSExcludeDirectiveName); d != nil {
+			// wfs exclude directive add it to the origin field
+			if d := field.Directives.ForName(base.GisWFSExcludeDirectiveName); d != nil &&
+				originField.Directives.ForName(base.GisWFSExcludeDirectiveName) == nil {
+				originField.Directives = append(originField.Directives, d)
+			}
+			// mcp exclude directive add it to the origin field
+			if d := field.Directives.ForName(base.FieldExcludeMCPDirectiveName); d != nil &&
+				originField.Directives.ForName(base.FieldExcludeMCPDirectiveName) == nil {
 				originField.Directives = append(originField.Directives, d)
 			}
 			continue
@@ -675,15 +706,18 @@ type Object struct {
 	Type                string
 	Catalog             string
 	SoftDelete          bool
+	IsM2M               bool
 	softDeleteCondition string
 	softDeleteSet       string
 	IsCube              bool
+	IsHypertable        bool
 
 	inputFilterName     string
 	inputFilterListName string
 
-	inputArgsName string
-	requiredArgs  bool
+	InputArgsName string
+	RequiredArgs  bool
+	HasVectors    bool
 	functionCall  bool
 
 	def *ast.Definition
@@ -693,6 +727,25 @@ const (
 	TableDataObject = "table"
 	ViewDataObject  = "view"
 )
+
+func IsVectorSearcheble(def *ast.Definition) bool {
+	if def == nil && !IsDataObject(def) {
+		return false
+	}
+	for _, f := range def.Fields {
+		if f.Type.NamedType == base.VectorTypeName {
+			return true
+		}
+	}
+	return false
+}
+
+func IsEmbeddedObject(def *ast.Definition) bool {
+	if def == nil {
+		return false
+	}
+	return def.Directives.ForName(base.EmbeddingsDirectiveName) != nil
+}
 
 func DataObjectInfo(def *ast.Definition) *Object {
 	if !IsDataObject(def) {
@@ -709,6 +762,7 @@ func DataObjectInfo(def *ast.Definition) *Object {
 		info.SoftDelete = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "soft_delete") == "true"
 		info.softDeleteCondition = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "soft_delete_cond")
 		info.softDeleteSet = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "soft_delete_set")
+		info.IsM2M = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "is_m2m") == "true"
 		info.Type = TableDataObject
 	}
 
@@ -718,11 +772,13 @@ func DataObjectInfo(def *ast.Definition) *Object {
 		info.Type = ViewDataObject
 	}
 
-	info.inputFilterName = objectDirectiveArgValue(def, filterInputDirectiveName, "name")
-	info.inputFilterListName = objectDirectiveArgValue(def, filterListInputDirectiveName, "name")
+	info.inputFilterName = objectDirectiveArgValue(def, FilterInputDirectiveName, "name")
+	info.inputFilterListName = objectDirectiveArgValue(def, FilterListInputDirectiveName, "name")
 	info.IsCube = def.Directives.ForName(objectCubeDirectiveName) != nil
-	info.inputArgsName = objectDirectiveArgValue(def, base.ViewArgsDirectiveName, "name")
-	info.requiredArgs = objectDirectiveArgValue(def, base.ViewArgsDirectiveName, "required") == "true"
+	info.IsHypertable = def.Directives.ForName(objectHyperTableDirectiveName) != nil
+	info.InputArgsName = objectDirectiveArgValue(def, base.ViewArgsDirectiveName, "name")
+	info.RequiredArgs = objectDirectiveArgValue(def, base.ViewArgsDirectiveName, "required") == "true"
+	info.HasVectors = IsVectorSearcheble(def)
 
 	return &info
 }
@@ -750,25 +806,25 @@ func (info *Object) SoftDeleteSet(prefix string) string {
 }
 
 func (info *Object) HasArguments() bool {
-	return info.inputArgsName != ""
+	return info.InputArgsName != ""
 }
 
 func (info *Object) subQueryArguments() ast.ArgumentDefinitionList {
 	var args ast.ArgumentDefinitionList
-	if info.inputArgsName != "" {
-		if !info.requiredArgs {
+	if info.InputArgsName != "" {
+		if !info.RequiredArgs {
 			args = append(args, &ast.ArgumentDefinition{
 				Name:        "args",
 				Description: "Arguments",
-				Type:        ast.NamedType(info.inputArgsName, compiledPos()),
+				Type:        ast.NamedType(info.InputArgsName, compiledPos()),
 				Position:    compiledPos(),
 			})
 		}
-		if info.requiredArgs {
+		if info.RequiredArgs {
 			args = append(args, &ast.ArgumentDefinition{
 				Name:        "args",
 				Description: "Arguments",
-				Type:        ast.NonNullNamedType(info.inputArgsName, compiledPos()),
+				Type:        ast.NonNullNamedType(info.InputArgsName, compiledPos()),
 				Position:    compiledPos(),
 			})
 		}
@@ -834,9 +890,9 @@ func (info *Object) ApplyArguments(defs Definitions, args map[string]any, builde
 	if !info.HasArguments() || len(args) == 0 {
 		return nil
 	}
-	it := defs.ForName(info.inputArgsName)
+	it := defs.ForName(info.InputArgsName)
 	if it == nil {
-		return ErrorPosf(info.def.Position, "input object %s not found", info.inputArgsName)
+		return ErrorPosf(info.def.Position, "input object %s not found", info.InputArgsName)
 	}
 
 	var posArgs []any
@@ -899,18 +955,105 @@ func (info *Object) SQL(ctx context.Context, prefix string) string {
 	return prefix + info.Name
 }
 
+type ObjectQuery struct {
+	Name string
+	Type ObjectQueryType
+}
+
+func (info *Object) Queries() (queries []ObjectQuery) {
+	for _, d := range info.def.Directives.ForNames(QueryDirectiveName) {
+		name := directiveArgValue(d, "name")
+		switch directiveArgValue(d, "type") {
+		case queryTypeTextSelect:
+			queries = append(queries, ObjectQuery{Name: name, Type: QueryTypeSelect})
+		case queryTypeTextSelectOne:
+			queries = append(queries, ObjectQuery{Name: name, Type: QueryTypeSelectOne})
+		case queryTypeTextAggregate:
+			queries = append(queries, ObjectQuery{Name: name, Type: QueryTypeAggregate})
+		case queryTypeTextAggregateBucket:
+			queries = append(queries, ObjectQuery{Name: name, Type: QueryTypeAggregateBucket})
+		}
+	}
+	return queries
+}
+
+func (info *Object) AggregationTypeName(defs Definitions) string {
+	name := buildObjectAggregationTypeName(info.def.Name, false, false)
+	if defs.ForName(name) == nil {
+		return ""
+	}
+	return name
+}
+
+func (info *Object) BucketAggregationTypeName(defs Definitions) string {
+	name := buildObjectAggregationTypeName(info.def.Name, false, true)
+	if defs.ForName(name) == nil {
+		return ""
+	}
+	return name
+}
+
+func (info *Object) SubAggregationTypeName(defs Definitions) string {
+	name := buildObjectAggregationTypeName(info.def.Name, true, false)
+	if defs.ForName(name) == nil {
+		return ""
+	}
+	return name
+}
+
 func (info *Object) InputFilterName() string {
 	return objectDirectiveArgValue(info.def, "filter_input", "name")
 }
 
 func (info *Object) InputInsertDataName() string {
-	return objectDirectiveArgValue(info.def, "insert_input", "name")
+	for _, d := range info.def.Directives.ForNames(MutationDirectiveName) {
+		if directiveArgValue(d, "type") == MutationTypeTextInsert {
+			return directiveArgValue(d, DataInputDirectiveName)
+		}
+	}
+	return ""
+}
+
+func (info *Object) InsertMutationName() string {
+	for _, d := range info.def.Directives.ForNames(MutationDirectiveName) {
+		if directiveArgValue(d, "type") == MutationTypeTextInsert {
+			return directiveArgValue(d, "name")
+		}
+	}
+	return ""
+}
+
+func (info *Object) InputUpdateDataName() string {
+	for _, d := range info.def.Directives.ForNames(MutationDirectiveName) {
+		if directiveArgValue(d, "type") == MutationTypeTextUpdate {
+			return directiveArgValue(d, DataInputDirectiveName)
+		}
+	}
+	return ""
+}
+
+func (info *Object) UpdateMutationName() string {
+	for _, d := range info.def.Directives.ForNames(MutationDirectiveName) {
+		if directiveArgValue(d, "type") == MutationTypeTextUpdate {
+			return directiveArgValue(d, "name")
+		}
+	}
+	return ""
+}
+
+func (info *Object) DeleteMutationName() string {
+	for _, d := range info.def.Directives.ForNames(MutationDirectiveName) {
+		if directiveArgValue(d, "type") == MutationTypeTextDelete {
+			return directiveArgValue(d, "name")
+		}
+	}
+	return ""
 }
 
 func (info *Object) FieldForName(name string) *Field {
 	for _, field := range info.def.Fields {
 		if field.Name == name {
-			return fieldInfo(field, info.def)
+			return FieldDefinitionInfo(field, info.def)
 		}
 	}
 	return nil

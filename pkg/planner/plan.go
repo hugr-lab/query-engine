@@ -7,6 +7,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -87,6 +88,7 @@ type QueryPlanNode struct {
 
 	schema  *ast.Schema
 	engines Catalog
+	querier types.Querier
 
 	plan *QueryPlan
 }
@@ -197,6 +199,16 @@ func (n *QueryPlanNode) Engine(name string) (engines.Engine, error) {
 		return n.Parent.Engine(name)
 	}
 	return nil, errors.New("no data source found")
+}
+
+func (n *QueryPlanNode) Querier() types.Querier {
+	if n.querier != nil {
+		return n.querier
+	}
+	if n.Parent != nil {
+		return n.Parent.Querier()
+	}
+	return nil
 }
 
 type NodeFunc func(node *QueryPlanNode, children Results, params []any) (string, []any, error)

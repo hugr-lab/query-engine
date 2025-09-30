@@ -1,5 +1,6 @@
 extend type Function {
   duckdb_version: String @function(name: "version")
+  schema_summary: JSON @function(name: "core_meta_schema_info", sql: "core_meta_schema_info()::JSON")
 }
 
 # Databases

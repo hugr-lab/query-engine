@@ -26,7 +26,7 @@ func IsAggregateQuery(field *ast.Field) bool {
 }
 
 func IsAggregateQueryDefinition(def *ast.FieldDefinition) bool {
-	d := def.Directives.ForName(fieldAggregationQueryDirectiveName)
+	d := def.Directives.ForName(FieldAggregationQueryDirectiveName)
 	return d != nil && directiveArgValue(d, "is_bucket") != "true"
 }
 
@@ -35,7 +35,7 @@ func IsBucketAggregateQuery(field *ast.Field) bool {
 }
 
 func IsBucketAggregateQueryDefinition(def *ast.FieldDefinition) bool {
-	d := def.Directives.ForName(fieldAggregationQueryDirectiveName)
+	d := def.Directives.ForName(FieldAggregationQueryDirectiveName)
 	return d != nil && directiveArgValue(d, "is_bucket") == "true"
 }
 
@@ -49,7 +49,7 @@ func IsSelectQuery(field *ast.Field) bool {
 }
 
 func IsSelectQueryDefinition(field *ast.FieldDefinition) bool {
-	d := field.Directives.ForName(queryDirectiveName)
+	d := field.Directives.ForName(QueryDirectiveName)
 	if d == nil {
 		return false
 	}
@@ -65,7 +65,7 @@ func IsSelectOneQuery(field *ast.Field) bool {
 }
 
 func IsSelectOneQueryDefinition(def *ast.FieldDefinition) bool {
-	d := def.Directives.ForName(queryDirectiveName)
+	d := def.Directives.ForName(QueryDirectiveName)
 	if d == nil {
 		return false
 	}
@@ -85,7 +85,7 @@ func IsInsertQuery(field *ast.Field) bool {
 }
 
 func IsInsertQueryDefinition(def *ast.FieldDefinition) bool {
-	d := def.Directives.ForName(mutationDirectiveName)
+	d := def.Directives.ForName(MutationDirectiveName)
 	if d == nil {
 		return false
 	}
@@ -93,11 +93,11 @@ func IsInsertQueryDefinition(def *ast.FieldDefinition) bool {
 	if t == nil {
 		return false
 	}
-	return t.Value.Raw == mutationTypeTextInsert
+	return t.Value.Raw == MutationTypeTextInsert
 }
 
 func IsUpdateQuery(field *ast.Field) bool {
-	d := field.Definition.Directives.ForName(mutationDirectiveName)
+	d := field.Definition.Directives.ForName(MutationDirectiveName)
 	if d == nil {
 		return false
 	}
@@ -105,11 +105,11 @@ func IsUpdateQuery(field *ast.Field) bool {
 	if t == nil {
 		return false
 	}
-	return t.Value.Raw == mutationTypeTextUpdate
+	return t.Value.Raw == MutationTypeTextUpdate
 }
 
 func IsUpdateQueryDefinition(def *ast.FieldDefinition) bool {
-	d := def.Directives.ForName(mutationDirectiveName)
+	d := def.Directives.ForName(MutationDirectiveName)
 	if d == nil {
 		return false
 	}
@@ -117,11 +117,11 @@ func IsUpdateQueryDefinition(def *ast.FieldDefinition) bool {
 	if t == nil {
 		return false
 	}
-	return t.Value.Raw == mutationTypeTextUpdate
+	return t.Value.Raw == MutationTypeTextUpdate
 }
 
 func IsDeleteQuery(field *ast.Field) bool {
-	d := field.Definition.Directives.ForName(mutationDirectiveName)
+	d := field.Definition.Directives.ForName(MutationDirectiveName)
 	if d == nil {
 		return false
 	}
@@ -129,11 +129,11 @@ func IsDeleteQuery(field *ast.Field) bool {
 	if t == nil {
 		return false
 	}
-	return t.Value.Raw == mutationTypeTextDelete
+	return t.Value.Raw == MutationTypeTextDelete
 }
 
 func IsDeleteQueryDefinition(def *ast.FieldDefinition) bool {
-	d := def.Directives.ForName(mutationDirectiveName)
+	d := def.Directives.ForName(MutationDirectiveName)
 	if d == nil {
 		return false
 	}
@@ -141,7 +141,7 @@ func IsDeleteQueryDefinition(def *ast.FieldDefinition) bool {
 	if t == nil {
 		return false
 	}
-	return t.Value.Raw == mutationTypeTextDelete
+	return t.Value.Raw == MutationTypeTextDelete
 }
 
 func IsReferencesSubquery(field *ast.FieldDefinition) bool {

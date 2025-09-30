@@ -113,7 +113,7 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		return fmt.Errorf("attach runtime sources: %w", err)
 	}
 
-	s.planner = planner.New(s.catalog)
+	s.planner = planner.New(s.catalog, s)
 
 	if s.config.AdminUIFetchPath == "" {
 		s.config.AdminUIFetchPath = "/query"

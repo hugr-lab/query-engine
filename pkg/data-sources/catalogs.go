@@ -93,6 +93,9 @@ func (s *Service) loadCatalogSource(ctx context.Context, t types.CatalogSourceTy
 	case sources.URIFileSourceType:
 		s := sources.NewURISource(s.db, path, true)
 		return s, s.Reload(ctx)
+	case sources.TextSourceType:
+		s := sources.NewStringSource(path)
+		return s, nil
 	default:
 		return nil, fmt.Errorf("unknown source type %s", t)
 	}

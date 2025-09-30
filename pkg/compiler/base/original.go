@@ -38,13 +38,20 @@ func SqlFieldDirective(sql string) *ast.Directive {
 	}
 }
 
-func ExtraFieldDirective(name, baseType string) *ast.Directive {
+func ExtraFieldDirective(name, baseField, baseType string) *ast.Directive {
 	return &ast.Directive{
 		Name: FieldExtraFieldDirectiveName,
 		Arguments: []*ast.Argument{
 			{
 				Name: "name", Value: &ast.Value{
 					Raw: name, Kind: ast.StringValue,
+					Position: &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},
+				},
+				Position: &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},
+			},
+			{
+				Name: "base_field", Value: &ast.Value{
+					Raw: baseField, Kind: ast.StringValue,
 					Position: &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},
 				},
 				Position: &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}},

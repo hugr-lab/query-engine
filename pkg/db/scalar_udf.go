@@ -74,6 +74,9 @@ func (f *ScalarFunctionWithArgs[I, O]) Executor() func(ctx context.Context, args
 				Msg:  err.Error(),
 			}
 		}
+		if f.ConvertOutput == nil {
+			return out, nil
+		}
 		co, err := f.ConvertOutput(out)
 		if err != nil {
 			return nil, &duckdb.Error{
@@ -120,6 +123,9 @@ func (f *ScalarFunctionNoArgs[O]) Executor() func(ctx context.Context, args []dr
 				Type: duckdb.ErrorTypeInternal,
 				Msg:  err.Error(),
 			}
+		}
+		if f.ConvertOutput == nil {
+			return out, nil
 		}
 		co, err := f.ConvertOutput(out)
 		if err != nil {

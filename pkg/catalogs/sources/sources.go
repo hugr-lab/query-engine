@@ -11,6 +11,7 @@ const (
 	FileSourceType    types.CatalogSourceType = "localFS"
 	URISourceType     types.CatalogSourceType = "uri"
 	URIFileSourceType types.CatalogSourceType = "uriFile"
+	TextSourceType    types.CatalogSourceType = "text"
 )
 
 type Source interface {

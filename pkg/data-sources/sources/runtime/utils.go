@@ -176,4 +176,5 @@ var duckdbTypeNameMap = map[string]duckdb.Type{
 	"DATE":      duckdb.TYPE_DATE,
 	"TIME":      duckdb.TYPE_TIME,
 	"TIMESTAMP": duckdb.TYPE_TIMESTAMP,
+	"JSON":      duckdb.TYPE_VARCHAR,
 }

@@ -163,8 +163,9 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 	def := defs.ForName(query.Definition.Type.Name())
 	def = compiler.AggregatedObjectDef(defs, def)
 	catalog := ""
+	var info *compiler.Object
 	if compiler.IsDataObject(def) {
-		info := compiler.DataObjectInfo(def)
+		info = compiler.DataObjectInfo(def)
 		if info == nil {
 			return nil, false, errors.New("data object info not found")
 		}
@@ -277,6 +278,13 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 				if aggArg != nil {
 					baseQuery.Arguments = append(baseQuery.Arguments, aggArg)
 				}
+			}
+			// similarity and semantic search arguments
+			if a := query.Arguments.ForName(base.SemanticSearchArgumentName); a != nil {
+				baseQuery.Arguments = append(baseQuery.Arguments, a)
+			}
+			if a := query.Arguments.ForName(base.SimilaritySearchArgumentName); a != nil {
+				baseQuery.Arguments = append(baseQuery.Arguments, a)
 			}
 
 			queries[f.Alias] = baseQuery
@@ -549,12 +557,12 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 	if err != nil {
 		return nil, false, err
 	}
-	paramNodes, err := selectQueryParamsNodes(ctx, defs, qe, nil, "", query, queryArg, true)
+	paramNodes, err := selectQueryParamsNodes(ctx, defs, qe, info, "", query, queryArg, true)
 	if err != nil {
 		return nil, false, err
 	}
 	paramNodes = slices.DeleteFunc(paramNodes, func(n *QueryPlanNode) bool {
-		return n.Name == "where"
+		return n.Name == "where" || n.Name == vectorDistanceNodeName || n.Name == vectorSearchLimitNodeName
 	})
 	if len(paramNodes) == 0 {
 		return node, !isInCatalog, nil

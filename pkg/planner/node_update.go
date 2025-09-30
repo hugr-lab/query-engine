@@ -43,18 +43,32 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		return nil, err
 	}
 
+	s := queryArg.ForName(base.SummaryForEmbeddedArgumentName)
 	v := queryArg.ForName("data")
-	if v == nil {
+	if v == nil && s == nil {
 		return nil, compiler.ErrorPosf(query.Position, "missing data argument")
 	}
-	data, ok := v.Value.(map[string]interface{})
-	if !ok || len(data) == 0 {
-		return nil, compiler.ErrorPosf(query.Position, "invalid data argument type")
+	var data map[string]any
+	var ok bool
+	if v != nil {
+		data, ok = v.Value.(map[string]any)
+		if !ok || len(data) == 0 && s == nil {
+			return nil, compiler.ErrorPosf(query.Position, "invalid data argument type")
+		}
+		data, err = checkMutationData(ctx, compiler.SchemaDefs(schema), query, v.Type, data)
+		if err != nil {
+			return nil, err
+		}
 	}
-
-	data, err = checkMutationData(ctx, compiler.SchemaDefs(schema), query, v.Type, data)
-	if err != nil {
-		return nil, err
+	if s != nil {
+		summary, ok := s.Value.(string)
+		if !ok || summary == "" {
+			return nil, compiler.ErrorPosf(query.Position, "invalid summary argument type")
+		}
+		if data == nil {
+			data = make(map[string]any)
+		}
+		data["__summary"] = summary
 	}
 
 	prefix := ""
@@ -65,6 +79,10 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 
 	updates := make(map[string]string)
 	for fn, v := range data {
+		if fn == "__summary" {
+			updates[fn] = v.(string)
+			continue
+		}
 		fi := info.FieldForName(fn)
 		if fi == nil {
 			return nil, compiler.ErrorPosf(query.Position, "unknown field %s", fn)
@@ -89,12 +107,33 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		Name:  "set",
 		Query: query,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+			if s, ok := updates["__summary"]; ok {
+				delete(updates, "__summary")
+				fn, vec, err := createEmbeddingForTable(ctx, node.Querier(), info, s)
+				if err != nil {
+					return "", nil, err
+				}
+				if fn != "" && len(vec) > 0 {
+					fv, err := e.SQLValue(vec)
+					if err != nil {
+						return "", nil, err
+					}
+					updates[fn] = fv
+				}
+			}
 			var sets []string
 			for k, v := range updates {
 				fi := info.FieldForName(k)
+				fn := fi.FieldSourceName("", true)
+				if fn == "-" {
+					continue
+				}
 				sets = append(sets,
-					fmt.Sprintf("%s = %s", fi.FieldSourceName("", true), v),
+					fmt.Sprintf("%s = %s", fn, v),
 				)
+			}
+			if len(sets) == 0 {
+				return "", nil, fmt.Errorf("no fields to update")
 			}
 			return strings.Join(sets, ","), params, nil
 		},

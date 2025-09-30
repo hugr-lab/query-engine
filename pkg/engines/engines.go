@@ -1,6 +1,7 @@
 package engines
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -29,7 +30,7 @@ type Engine interface {
 	PackFieldsToObject(prefix string, field *ast.Field) string
 	MakeObject(fields map[string]string) string
 	AddObjectFields(sqlName string, fields map[string]string) string
-	ApplyFieldTransforms(sql string, field *ast.Field, args compiler.FieldQueryArguments) string
+	ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args compiler.FieldQueryArguments, params []any) (string, []any, error)
 	ExtractJSONStruct(sql string, jsonStruct map[string]any) string
 	TimestampTransform(sql string, field *ast.Field, args compiler.FieldQueryArguments) string
 	// ExtractNestedTypedValue extracts value from nested field by path and cast it to type
@@ -56,6 +57,10 @@ type EngineTypeCaster interface {
 	Engine
 	ToIntermediateType(*ast.Field) (string, error)
 	CastFromIntermediateType(field *ast.Field, toJSON bool) (string, error)
+}
+
+type EngineVectorDistanceCalculator interface {
+	VectorDistanceSQL(sql, distMetric string, vector types.Vector, params []any) (string, []any, error)
 }
 
 type EngineKeyWordExtender interface {

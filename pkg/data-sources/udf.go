@@ -12,6 +12,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/marcboeker/go-duckdb/v2"
 
 	_ "embed"
@@ -69,6 +70,38 @@ func (s *Service) RegisterUDF(ctx context.Context) error {
 	})
 	if err != nil {
 		return fmt.Errorf("register http_data_source_request_scalar function: %w", err)
+	}
+
+	type embeddingArgs struct {
+		source string // source (model)
+		input  string // input text
+	}
+
+	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[embeddingArgs, types.Vector]{
+		Name: "create_embedding",
+		Execute: func(ctx context.Context, args embeddingArgs) (types.Vector, error) {
+			return s.CreateEmbedding(ctx, args.source, args.input)
+		},
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"), // source (catalog)
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"), // input text
+		},
+		ConvertInput: func(args []driver.Value) (embeddingArgs, error) {
+			if len(args) != 2 {
+				return embeddingArgs{}, errors.New("invalid number of arguments")
+			}
+			return embeddingArgs{
+				source: args[0].(string), // source (catalog)
+				input:  args[1].(string), // input text
+			}, nil
+		},
+		ConvertOutput: func(out types.Vector) (any, error) {
+			return out, nil
+		},
+		OutputType: runtime.DuckDBListInfoByNameMust("FLOAT"),
+	})
+	if err != nil {
+		return fmt.Errorf("register create_embedding function: %w", err)
 	}
 
 	return s.registerUDFCatalog(ctx)

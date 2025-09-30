@@ -131,7 +131,7 @@ func TestMain(m *testing.M) {
 	testService = New(testCatalog{
 		"test":    &engines.DuckDB{},
 		"pg_test": &engines.Postgres{},
-	})
+	}, nil)
 
 	os.Exit(m.Run())
 }

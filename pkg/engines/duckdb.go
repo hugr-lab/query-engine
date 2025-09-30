@@ -1,6 +1,7 @@
 package engines
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -44,8 +45,12 @@ func (e *DuckDB) SQLValue(v any) (string, error) {
 		return "NULL", nil
 	}
 	switch v := v.(type) {
-	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return fmt.Sprintf("%v", v), nil
+	case float64:
+		return strconv.FormatFloat(v, 'f', 15, 64), nil
+	case float32:
+		return strconv.FormatFloat(float64(v), 'f', 6, 32), nil
 	case []bool:
 		return SQLValueArrayFormatter(e, v)
 	case []int:
@@ -91,6 +96,15 @@ func (e *DuckDB) SQLValue(v any) (string, error) {
 	case h3.Cell:
 		// Convert H3 cell to UBIGINT
 		return fmt.Sprintf("h3_string_to_h3('%s')", v.String()), nil
+	case types.Vector:
+		if v == nil {
+			return "NULL", nil
+		}
+		sql, err := SQLValueArrayFormatter(e, []float64(v))
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%s::FLOAT[%d]", sql, len(v)), nil
 	}
 
 	return "", fmt.Errorf("unsupported value type: %T", v)
@@ -294,24 +308,26 @@ func (e DuckDB) ExtractJSONStruct(sql string, jsonStruct map[string]any) string 
 	return "json_transform(" + sql + ",'" + str + "')"
 }
 
-func (e DuckDB) ApplyFieldTransforms(sql string, field *ast.Field, args compiler.FieldQueryArguments) string {
+func (e DuckDB) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args compiler.FieldQueryArguments, params []any) (string, []any, error) {
 	switch compiler.TransformBaseFieldType(field.Definition) {
 	case compiler.GeometryTypeName:
-		return e.GeometryTransform(sql, field, args)
+		return e.GeometryTransform(sql, field, args), params, nil
 	case compiler.JSONTypeName:
 		sa := args.ForName("struct")
 		if sa == nil {
-			return sql
+			return sql, params, nil
 		}
 		s, ok := sa.Value.(map[string]any)
 		if !ok {
-			return sql
+			return sql, params, nil
 		}
-		return e.ExtractJSONStruct(sql, s)
+		return e.ExtractJSONStruct(sql, s), params, nil
 	case compiler.TimestampTypeName:
-		return e.TimestampTransform(sql, field, args)
+		return e.TimestampTransform(sql, field, args), params, nil
+	case base.VectorTypeName:
+		return e.VectorTransform(ctx, qe, sql, field, args, params)
 	}
-	return sql
+	return sql, params, nil
 }
 
 func (e DuckDB) GeometryTransform(sql string, field *ast.Field, args compiler.FieldQueryArguments) string {
@@ -763,7 +779,7 @@ func resolveJsonDuckDBType(t string) string {
 		return "FLOAT"
 	case "bool":
 		return "BOOLEAN"
-	case "time":
+	case "timestamp":
 		return "TIMESTAMP"
 	case "json":
 		return "JSON"
@@ -899,4 +915,25 @@ func jsonStructRecursive(field *ast.Field, useNativeTypes bool, byFieldSource bo
 		)
 	}
 	return "{" + strings.Join(fields, ",") + "}"
+}
+
+var _ EngineVectorDistanceCalculator = (*DuckDB)(nil)
+
+func (e *DuckDB) VectorDistanceSQL(sql, distMetric string, vector types.Vector, params []any) (string, []any, error) {
+	val := "$" + strconv.Itoa(len(params)+1)
+	params = append(params, vector)
+	switch distMetric {
+	case base.VectorSearchDistanceL2:
+		return fmt.Sprintf("array_distance(%s, %s)", sql, val), params, nil
+	case base.VectorSearchDistanceCosine:
+		return fmt.Sprintf("array_cosine_distance(%s, %s)", sql, val), params, nil
+	case base.VectorSearchDistanceIP:
+		return fmt.Sprintf("array_negative_inner_product(%s, %s)", sql, val), params, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported distance metric: %s", distMetric)
+	}
+}
+
+func (e *DuckDB) VectorTransform(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args compiler.FieldQueryArguments, params []any) (string, []any, error) {
+	return commonVectorTransform(ctx, e, qe, sql, field, args, params)
 }

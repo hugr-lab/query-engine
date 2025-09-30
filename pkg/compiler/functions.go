@@ -184,13 +184,13 @@ func addModuleToFunctionCalls(schema *ast.SchemaDocument, function *ast.FieldDef
 }
 
 type FunctionCall struct {
-	referencesName   string
+	ReferencesName   string
 	argumentMap      map[string]string
 	IsTableFuncJoin  bool
 	sourceFields     []string
 	referencesFields []string
 	sql              string
-	module           string
+	Module           string
 
 	query     *ast.Field
 	directive *ast.Directive
@@ -199,9 +199,9 @@ type FunctionCall struct {
 func FunctionCallInfo(field *ast.Field) *FunctionCall {
 	if d := field.Definition.Directives.ForName(functionDirectiveName); d != nil {
 		return &FunctionCall{
-			referencesName: field.Name,
+			ReferencesName: field.Name,
 			query:          field,
-			module:         functionModule(field.Definition),
+			Module:         functionModule(field.Definition),
 		}
 	}
 	var directive *ast.Directive
@@ -219,6 +219,18 @@ func FunctionCallInfo(field *ast.Field) *FunctionCall {
 	return info
 }
 
+func FunctionCallDefinitionInfo(def *ast.FieldDefinition) *FunctionCall {
+	d := def.Directives.ForName(functionCallDirectiveName)
+	if d != nil {
+		return functionCallInfo(d)
+	}
+	d = def.Directives.ForName(functionCallTableJoinDirectiveName)
+	if d != nil {
+		return functionCallInfo(d)
+	}
+	return nil
+}
+
 func functionCallInfo(def *ast.Directive) *FunctionCall {
 	if def == nil {
 		return nil
@@ -231,11 +243,11 @@ func functionCallInfo(def *ast.Directive) *FunctionCall {
 		argumentMap: make(map[string]string),
 		IsTableFuncJoin: def.Name == functionCallTableJoinDirectiveName ||
 			directiveArgValue(def, "is_table_func_join") == "true",
-		referencesName:   directiveArgValue(def, "references_name"),
+		ReferencesName:   directiveArgValue(def, "references_name"),
 		sql:              directiveArgValue(def, "sql"),
 		sourceFields:     directiveArgChildValues(def, "source_fields"),
 		referencesFields: directiveArgChildValues(def, "references_fields"),
-		module:           directiveArgValue(def, "module"),
+		Module:           directiveArgValue(def, "module"),
 		directive:        def,
 	}
 	if a := def.Arguments.ForName("args"); a != nil {
@@ -251,17 +263,17 @@ func (f *FunctionCall) FunctionInfo(defs Definitions) (*Function, error) {
 	if f.query != nil && f.query.Definition.Directives.ForName(functionDirectiveName) != nil {
 		return FunctionInfo(f.query.Definition)
 	}
-	module := defs.ForName(ModuleTypeName(f.module, ModuleFunction))
+	module := defs.ForName(ModuleTypeName(f.Module, ModuleFunction))
 	if module == nil {
-		return nil, ErrorPosf(f.directive.Position, "module root object %s for function is not defined", f.module)
+		return nil, ErrorPosf(f.directive.Position, "module root object %s for function is not defined", f.Module)
 	}
 
-	function := module.Fields.ForName(f.referencesName)
+	function := module.Fields.ForName(f.ReferencesName)
 	if function != nil {
 		return FunctionInfo(function)
 	}
 
-	return nil, ErrorPosf(nil, "unknown function %s", f.referencesName)
+	return nil, ErrorPosf(nil, "unknown function %s", f.ReferencesName)
 }
 
 func (f *FunctionCall) ArgumentMap() map[string]string {
@@ -281,10 +293,10 @@ func (f *FunctionCall) validate(defs Definitions, def *ast.Definition, field *as
 
 	// check types
 	if !f.IsTableFuncJoin && !IsEqualTypes(function.field.Type, field.Type) {
-		return ErrorPosf(field.Position, "function %s return type should be %s the same as in the function definition", f.referencesName, field.Type.Name())
+		return ErrorPosf(field.Position, "function %s return type should be %s the same as in the function definition", f.ReferencesName, field.Type.Name())
 	}
 	if f.IsTableFuncJoin && (function.field.Type.Name() != field.Type.Name() || function.field.Type.NamedType != "") {
-		return ErrorPosf(field.Position, "function %s return type should be %s the same as in the function definition", f.referencesName, field.Type.Name())
+		return ErrorPosf(field.Position, "function %s return type should be %s the same as in the function definition", f.ReferencesName, field.Type.Name())
 	}
 
 	// check catalog
@@ -300,28 +312,28 @@ func (f *FunctionCall) validate(defs Definitions, def *ast.Definition, field *as
 	for _, arg := range field.Arguments {
 		a := function.field.Arguments.ForName(arg.Name)
 		if a == nil {
-			return ErrorPosf(field.Position, "function %s doesn't have argument %s", f.referencesName, arg.Name)
+			return ErrorPosf(field.Position, "function %s doesn't have argument %s", f.ReferencesName, arg.Name)
 		}
 		if _, ok := f.argumentMap[arg.Name]; ok {
 			return ErrorPosf(field.Position, "function argument %s is redefined in args", arg.Name)
 		}
 		// check types
 		if !IsEqualTypes(a.Type, arg.Type) {
-			return ErrorPosf(field.Position, "function %s argument %s type should be %s the same as in the function definition", f.referencesName, arg.Name, arg.Type.Name())
+			return ErrorPosf(field.Position, "function %s argument %s type should be %s the same as in the function definition", f.ReferencesName, arg.Name, arg.Type.Name())
 		}
 		usedArgs[arg.Name] = struct{}{}
 	}
 	for an, fn := range f.argumentMap {
 		if function.field.Arguments.ForName(an) == nil {
-			return ErrorPosf(field.Position, "function %s doesn't have argument %s", f.referencesName, an)
+			return ErrorPosf(field.Position, "function %s doesn't have argument %s", f.ReferencesName, an)
 		}
 		if checkArgsMap {
 			fv := objectFieldByPath(defs, def.Name, fn, true, true)
 			if fv == nil {
-				return ErrorPosf(field.Position, "function %s argument %s is not used", f.referencesName, an)
+				return ErrorPosf(field.Position, "function %s argument %s is not used", f.ReferencesName, an)
 			}
 			if !IsEqualTypes(fv.Type, function.field.Arguments.ForName(an).Type) {
-				return ErrorPosf(field.Position, "function %s argument %s type should be %s the same as in the function definition", f.referencesName, an, fv.Type.Name())
+				return ErrorPosf(field.Position, "function %s argument %s type should be %s the same as in the function definition", f.ReferencesName, an, fv.Type.Name())
 			}
 		}
 		usedArgs[an] = struct{}{}
@@ -330,7 +342,7 @@ func (f *FunctionCall) validate(defs Definitions, def *ast.Definition, field *as
 	// check that all required function arguments are used
 	for _, arg := range function.field.Arguments {
 		if _, ok := usedArgs[arg.Name]; !ok && arg.DefaultValue == nil {
-			return ErrorPosf(field.Position, "function %s argument %s is not used", f.referencesName, arg.Name)
+			return ErrorPosf(field.Position, "function %s argument %s is not used", f.ReferencesName, arg.Name)
 		}
 	}
 	return nil
@@ -483,6 +495,10 @@ func FunctionInfo(field *ast.FieldDefinition) (*Function, error) {
 	}, nil
 }
 
+func (f *Function) Definition() *ast.FieldDefinition {
+	return f.field
+}
+
 func (f *Function) SQL() string {
 	sql := f.sql
 	if sql != "" {
@@ -588,6 +604,39 @@ func (f *Function) validate(defs Definitions, opt *Options) error {
 	}
 
 	return nil
+}
+
+func (f *Function) ResultAggregationType(defs Definitions) string {
+	if f == nil {
+		return ""
+	}
+	name := buildObjectAggregationTypeName(f.field.Type.Name(), false, false)
+	if defs.ForName(name) == nil {
+		return ""
+	}
+	return name
+}
+
+func (f *Function) ResultSubAggregationType(defs Definitions) string {
+	if f == nil {
+		return ""
+	}
+	name := buildObjectAggregationTypeName(f.field.Type.Name(), true, false)
+	if defs.ForName(name) == nil {
+		return ""
+	}
+	return name
+}
+
+func (f *Function) ResultBucketAggregationType(defs Definitions) string {
+	if f == nil {
+		return ""
+	}
+	name := buildObjectAggregationTypeName(f.field.Type.Name(), false, true)
+	if defs.ForName(name) == nil {
+		return ""
+	}
+	return name
 }
 
 type FieldQueryArgument struct {

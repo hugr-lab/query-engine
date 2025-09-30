@@ -20,4 +20,10 @@ extend type Function {
     jq: String!
   ):JSON @module(name: "core")
     @function(name: "http_data_source_request_scalar")
+
+  create_embedding(
+    model: String!
+    input: String!
+  ): Vector @module(name: "core")
+    @function(name: "create_embedding")
 }

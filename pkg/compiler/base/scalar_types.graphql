@@ -1,16 +1,171 @@
-scalar any 
-scalar BigInt 
+
+"""
+`Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, sum, avg, min, max, list, any, last
+"""
+scalar Int
+
+"""
+The `Float` scalar type represents signed double-precision fractional values as specified by [IEEE 754](http://en.wikipedia.org/wiki/IEEE_floating_point).
+Filter operators: eq, ne, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, sum, avg, min, max, list, any, last
+"""
+scalar Float
+
+"""
+The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.
+Filter operators: eq, in, like, ilike, regex, is_null
+Aggregation functions: count, string_agg, list, any, last
+"""
+scalar String
+
+"""
+The `Boolean` scalar type represents `true` or `false`.
+Filter operators: eq, is_null
+Aggregation functions: count, bool_and, bool_or, list, any, last
+"""
+scalar Boolean
+
+"any - represents any type, can be used for fields with mixed types, doesn't support filtering, aggregation, transformations and extra fields"
+scalar any
+
+"""
+BigInt - represents big integer type (64 bit), supports filtering, aggregation.
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, sum, avg, min, max, list, any, last
+"""
+scalar BigInt
+
+"""
+Timestamp - represents timestamp type, supports filtering, aggregation.
+Input formats:
+- RFC 3339 timestamp string, e.g. "2023-01-01T12:00:00Z+00:00"
+- Unix epoch in seconds, e.g. "1672531200" or "1672531200.123456"
+- Year string for the beginning of the year, e.g. "2023"
+- Year and month string for the beginning of the month, e.g. "2023-01"
+- Year, month and day string for the beginning of the day, e.g. "2023-01-01"
+- Year, month, day, hours and minutes string for the beginning of the minute, e.g. "2023-01-01 12:00"
+- Year, month, day and time string with out time zone, e.g. "2023-01-01 12:00:00"
+Output format: RFC 3339 timestamp string, e.g. "2023-01-01T12:00:00Z+00:00"
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, min, max, list, any, last
+Supports arguments:
+- bucket: TimeBucket - to aggregate by time bucket, e.g. day, month, year
+- bucket_interval: Interval - to aggregate by custom time interval, e.g. "15 minutes", "2 hours", "3 days"
+- gapfill: Boolean - to fill gaps in time series data, default is false (only for hypertables)
+Extra field: For type field with Timestamp type, generated extra field BigInt field with prefix "_" and suffix "_part" to extract part of the timestamp, e.g. _created_at_part(extract: dow) to extract day of week.
+Arguments:
+- extract: TimeExtract! - part to extract, e.g. year, month, day, dow (day of week), doy (day of year), week, quarter, iso_year, iso_dow, iso_week
+- extract_divide: Int - divide the extracted value by the specified number, e.g. to get decade from year, use extract: year, extract_divide
+"""
 scalar Timestamp 
-scalar Date 
+
+"""
+Time - represents time type, supports filtering, aggregation.
+Input formats:
+- Time string, e.g. "12:00:00"
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, min, max, list, any, last
+"""
 scalar Time 
+
+"""
+Date - represents date type, supports filtering, aggregation.
+Input formats:
+- ISO 8601 date string, e.g. "2023-01-01"
+- Year and day of year string, e.g. "2023"
+- Year, month and day string, e.g. "2023-01"
+- Year, month, day and time string, e.g. "2023-01-01T12:00:00Z"
+Output format: RFC 3339 timestamp string, e.g. "2023-01-01T00:00:00Z+00:00"
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, min, max, list, any, last
+Supports arguments:
+- bucket: TimeBucket - to aggregate by time bucket, e.g. day, month, year
+Extra field: For type field with Date type, generated extra field BigInt field with prefix "_" and suffix "_part" to extract part of the date, e.g. _created_at_part(extract: dow) to extract day of week.
+Arguments:
+- extract: TimeExtract! - part to extract, e.g. year, month, day, dow (day of week), doy (day of year), week, quarter, iso_year, iso_dow, iso_week
+- extract_divide: Int - divide the extracted value by the specified number, e.g. to get decade from year, use extract: year, extract_divide: 10
+"""
+scalar Date
+
+"""
+Interval - represents time interval type, supports filtering, aggregation.
+Input format: string the same as PostgreSQL or DuckDB interval, e.g. "1 day", "2 hours 30 minutes", supports months, days, hours, minutes, seconds
+Filter operators: eq, gt, gte, lt, lte, is_null
+Aggregation functions: count, min, max, list, any, last
+"""
 scalar Interval 
-scalar Geometry 
-scalar JSON 
-scalar IntRange 
+
+"""
+Geometry - represents geometry type, supports filtering, aggregation.
+Input formats:
+- WKT string, e.g. "POINT(30 10)"
+- WKB hex string, e.g. "01010000000000000000003E400000000000002440"
+- GeoJSON object, e.g. '{"type": "Point", "coordinates": [30, 10]}'
+Output format: GeoJSON object
+Filter operators: eq, intersects, contains, is_null
+Aggregation functions: count, list, any, last, intersection, union, extent
+Supports arguments:
+- transforms: [GeometryTransform!] - to apply transforms to geometry, e.g. Transform (reproject), Centroid, Buffer, Simplify, StartPoint, EndPoint, Reverse, FlipCoordinates, ConvexHull, Envelope
+- from: Int - to reproject from the spatial reference system identifier, e.g. 4326
+- to: Int - to reproject to the spatial reference system identifier, e.g. 3857
+- buffer: Float - to create buffer around geometry, e.g. 10.0
+- simplify_factor: Float - to simplify geometry, e.g. 0.1
+Extra fields: For type field with Geometry type, generated extra fields:
+- BigInt field with prefix "_" and suffix "_measurement" to calculate measurement of the geometry, e.g. _geom_measurement(type: Area). 
+Arguments:
+  - type: GeometryMeasurementTypes! - type of measurement, e.g. Area, Length, Perimeter, AreaSpheroid, LengthSpheroid, PerimeterSpheroid
+  - transform: Boolean - whether to transform geometry to other projection for measurement, default is false
+  - from: Int - to reproject from the spatial reference system identifier, e.g. 4326
+  - to: Int - to reproject to the spatial reference system identifier, e.g. 3857
+"""
+scalar Geometry
+
+"""
+JSON - represents JSON type, supports filtering, aggregation.
+Input format: valid JSON string, e.g. '{"key": "value"}'
+Filter operators: eq, has, has_all, contains, is_null
+Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or. The many aggregation functions accept argument 'path' to aggregate by path, e.g. count(path: 'key'), sum(path: 'key.subkey')
+Supports argument `struct: JSON` - to extract object field, e.g. '{"key": "String", "field2": {"key": "Int"}, "array_field": ["Bool"]}'. Supported types: String, Int, BigInt, Float, Boolean, JSON, Time (Timestamp), JSON, H3String
+"""
+scalar JSON
+
+"""
+IntRange - represents range of integers, supports filtering.
+Input format: string with range, e.g. "[1,10)" or "(,100]"
+Filter operators: eq, contains, intersects, includes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
+"""
+scalar IntRange
+
+"""
+TimestampRange - represents range of timestamps, supports filtering.
+Input format: string with range, e.g. "[2023-01-01T00:00:00Z,2023-12-31T23:59:59Z)" or "(,2023-12-31T23:59:59Z]"
+Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
+"""
 scalar TimestampRange
+
+"""
+BigIntRange - represents range of big integers, supports filtering.
+Input format: string with range, e.g. "[1,10)" or "(,100]"
+Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
+"""
 scalar BigIntRange
+
+"""
+H3Cell - represents H3 cell index, doesn't support filtering, aggregation.
+Input format: string with H3 cell index, e.g. "8928308280fffff"
+"""
 scalar H3Cell
 
+"""
+Represents embeddings vectors, should use with @dim directive to set dimensionality.
+Input format: formatted string with comma separated float values, e.g. "[0.1,0.2,0.3564,0.123]"
+Filter operators: is_null
+"""
+scalar Vector
+
+directive @dim(len: Int!) on INPUT_FIELD_DEFINITION | FIELD_DEFINITION | ARGUMENT_DEFINITION
 directive @base(name: String!) on INPUT_FIELD_DEFINITION | FIELD_DEFINITION | OBJECT | INPUT_OBJECT | ENUM
 
 enum FilterOperator @system {
@@ -289,6 +444,37 @@ input GeometryFilter @system {
 input BooleanFilter @system {
   eq: Boolean
   is_null: Boolean
+}
+
+input VectorFilter @system {
+  is_null: Boolean
+}
+
+input VectorSearchInput @system {
+  "The name of vector field"
+  name: String!
+  "The vector to search"
+  vector: Vector!
+  "Distance type"
+  distance: VectorDistanceType!
+  "Limit to results"
+  limit: Int!
+}
+
+enum VectorDistanceType @system {
+  "L2 distance"
+  L2
+  "Cosine similarity"
+  Cosine
+  "Inner product"
+  Inner
+}
+
+input SemanticSearchInput @system {
+  "The text to search"
+  query: String!
+  "Limit to results"
+  limit: Int!
 }
 
 type IntAggregation @system {

@@ -18,7 +18,8 @@ type DataSource struct {
 }
 
 type CatalogSource struct {
-	Name string            `json:"name"`
-	Type CatalogSourceType `json:"type"`
-	Path string            `json:"path"`
+	Name        string            `json:"name"`
+	Type        CatalogSourceType `json:"type"`
+	Path        string            `json:"path"`
+	Description string            `json:"description"`
 }

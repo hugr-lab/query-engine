@@ -115,6 +115,8 @@ func IntervalToSQLValue(v any) (string, error) {
 	minutes := int(math.Floor(d.Minutes())) % 60
 	seconds := int(d.Seconds()) % 60
 	switch {
+	case hours == 24 && minutes == 0 && seconds == 0:
+		return fmt.Sprintf("'%d days'::INTERVAL", hours/24), nil
 	case hours != 0 && minutes != 0 && seconds != 0:
 		return fmt.Sprintf("'%d hours %d minutes %d seconds'::INTERVAL", hours, minutes, seconds), nil
 	case hours != 0 && minutes != 0:

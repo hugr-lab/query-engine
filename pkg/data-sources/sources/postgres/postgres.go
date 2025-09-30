@@ -62,28 +62,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 		return err
 	}
 
-	if s.ds.Path != "" { // add secret if dsn is provided
-		dsn, err := sources.ParseDSN(s.ds.Path)
-		if err != nil {
-			return err
-		}
-		_, err = db.Exec(ctx, fmt.Sprintf(`
-			CREATE OR REPLACE PERSISTENT SECRET %s_secret (
-				TYPE POSTGRES,
-				HOST '%s',
-				PORT '%s',
-				USER '%s',
-				PASSWORD '%s',
-				DATABASE '%s'
-			); 
-		`, engines.Ident(s.ds.Name), dsn.Host, dsn.Port, dsn.User, dsn.Password, dsn.DBName,
-		))
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err = db.Exec(ctx, fmt.Sprintf("ATTACH '' AS %s (TYPE POSTGRES, SECRET %s);", engines.Ident(s.ds.Name), engines.Ident(s.ds.Name+"_secret")))
+	_, err = db.Exec(ctx, fmt.Sprintf("ATTACH '%s' AS %s (TYPE POSTGRES);", s.ds.Path, engines.Ident(s.ds.Name)))
 	if err != nil {
 		return err
 	}

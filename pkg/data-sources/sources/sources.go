@@ -16,6 +16,7 @@ const (
 	Http      types.DataSourceType = "http"
 	Runtime   types.DataSourceType = "runtime"
 	Extension types.DataSourceType = "extension"
+	Embedding types.DataSourceType = "embedding"
 )
 
 type Source interface {
@@ -49,4 +50,9 @@ type RuntimeSource interface {
 
 type RuntimeSourceQuerier interface {
 	QueryEngineSetup(querier types.Querier)
+}
+
+type EmbeddingSource interface {
+	CreateEmbedding(ctx context.Context, input string) (types.Vector, error)
+	CreateEmbeddings(ctx context.Context, input []string) ([]types.Vector, error)
 }

@@ -29,7 +29,7 @@ func (s *Service) attachRuntimeSources(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("attach data source: %w", err)
 	}
-	err = s.ds.AttachRuntimeSource(ctx, metainfo.New())
+	err = s.ds.AttachRuntimeSource(ctx, metainfo.New(s))
 	if err != nil {
 		return fmt.Errorf("attach meta info source: %w", err)
 	}

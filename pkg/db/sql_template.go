@@ -15,7 +15,7 @@ const (
 	SDBAttachedPostgres ScriptDBType = "attached_postgres"
 )
 
-func ParseSQLScriptTemplate(dbType ScriptDBType, script string) (string, error) {
+func ParseSQLScriptTemplate(dbType ScriptDBType, script string, data ...any) (string, error) {
 	t, err := template.New("script").Funcs(
 		template.FuncMap{
 			"isPostgres": func() bool {
@@ -35,8 +35,12 @@ func ParseSQLScriptTemplate(dbType ScriptDBType, script string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template: %w", err)
 	}
+	var params any
+	if len(data) > 0 {
+		params = data[0]
+	}
 	var fw bytes.Buffer
-	err = t.Execute(&fw, nil)
+	err = t.Execute(&fw, params)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute template: %w", err)
 	}
