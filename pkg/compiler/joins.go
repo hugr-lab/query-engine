@@ -133,12 +133,6 @@ func addObjectQueryToJoinsObject(catalog *ast.Directive, schema *ast.SchemaDocum
 				Type:        ast.NonNullNamedType("String", compiledPos()),
 				Position:    compiledPos(),
 			},
-			&ast.ArgumentDefinition{
-				Name:        "inner",
-				Description: "inner join data",
-				Type:        ast.NamedType("Boolean", compiledPos()),
-				Position:    compiledPos(),
-			},
 		)
 
 		spatial.Fields = append(spatial.Fields, &ast.FieldDefinition{

@@ -54,18 +54,32 @@ func insertRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 	if len(queryArg) == 0 {
 		return nil, compiler.ErrorPosf(query.Position, "no arguments provided for mutation")
 	}
+	summary := queryArg.ForName(base.SummaryForEmbeddedArgumentName)
 	d := queryArg.ForName("data")
-	if d == nil {
-		return nil, compiler.ErrorPosf(query.Position, "data argument is not provided for mutation")
+	if d == nil && summary == nil {
+		return nil, compiler.ErrorPosf(query.Position, "data or summary argument is not provided for mutation")
 	}
-	data, ok := d.Value.(map[string]any)
-	if !ok || len(data) == 0 {
-		return nil, compiler.ErrorPosf(query.Position, "data argument should be an object")
+	var data map[string]any
+	var ok bool
+	if d != nil {
+		data, ok = d.Value.(map[string]any)
+		if !ok || len(data) == 0 {
+			return nil, compiler.ErrorPosf(query.Position, "data argument should be an object")
+		}
+		data, err = checkMutationData(ctx, compiler.SchemaDefs(schema), query, d.Type, data)
+		if err != nil {
+			return nil, err
+		}
 	}
-
-	data, err = checkMutationData(ctx, compiler.SchemaDefs(schema), query, d.Type, data)
-	if err != nil {
-		return nil, err
+	if summary != nil {
+		if data == nil {
+			data = map[string]any{}
+		}
+		s, ok := summary.Value.(string)
+		if !ok || s == "" {
+			return nil, compiler.ErrorPosf(query.Position, "summary argument should be a non-empty string")
+		}
+		data["__summary"] = s
 	}
 
 	catalog := base.FieldCatalogName(query.Definition)
@@ -324,10 +338,14 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 		})
 		fv[fieldInfo.Name] = "[" + sn + strconv.Itoa(len(sv)) + "]"
 	}
+	if s, ok := data["__summary"]; ok {
+		fv["__summary"] = s.(string)
+	}
 	err = m.AppendInsertSQLExpression(fv, perm.AuthVars(ctx), e)
 	if err != nil {
 		return nil, nil, err
 	}
+	// add embeddings text field if needed
 	if len(fv) == 0 {
 		return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "no values provided for insert")
 	}
@@ -469,6 +487,22 @@ func insertNode(ctx context.Context, info *compiler.Object, fieldValues map[stri
 			if _, ok := e.(engines.EngineQueryScanner); !ok {
 				prefix = info.Catalog
 			}
+			summary, ok := fieldValues["__summary"]
+			if ok {
+				delete(fieldValues, "__summary")
+				fn, vec, err := createEmbeddingForTable(ctx, node.Querier(), info, summary)
+				if err != nil {
+					return "", nil, err
+				}
+				if fn != "" && len(vec) > 0 {
+					fv, err := e.SQLValue(vec)
+					if err != nil {
+						return "", nil, err
+					}
+					fieldValues[fn] = fv
+				}
+			}
+
 			sql := "INSERT INTO " + info.SQL(ctx, engines.Ident(prefix))
 			var fields, values []string
 			for fn, fv := range fieldValues {
@@ -476,7 +510,11 @@ func insertNode(ctx context.Context, info *compiler.Object, fieldValues map[stri
 				if fi == nil {
 					return "", nil, compiler.ErrorPosf(node.Query.Position, "field %s is not defined in object %s", fn, info.Name)
 				}
-				fields = append(fields, fi.SQL(""))
+				fn = fi.FieldSourceName("", true)
+				if fn == "-" {
+					continue
+				}
+				fields = append(fields, fn)
 				values = append(values, fv)
 			}
 			sql += "(" + strings.Join(fields, ",") + ") VALUES(" + strings.Join(values, ",") + ")"

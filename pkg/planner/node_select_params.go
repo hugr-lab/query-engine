@@ -18,6 +18,8 @@ func selectQueryParamsNodes(ctx context.Context, defs compiler.DefinitionsSource
 	offset := args.ForName("offset")
 	distinctOn := args.ForName("distinct_on")
 	orderBy := args.ForName("order_by")
+	similarity := args.ForName(base.SimilaritySearchArgumentName)
+	semantic := args.ForName(base.SemanticSearchArgumentName)
 	if info != nil {
 		selectDeleted := info.SoftDelete && query.Directives.ForName(base.WithDeletedDirectiveName) != nil
 		if filter == nil && !selectDeleted && info.SoftDelete {
@@ -79,6 +81,25 @@ func selectQueryParamsNodes(ctx context.Context, defs compiler.DefinitionsSource
 			nodes = append(nodes, node)
 		}
 	}
+	if semantic != nil && similarity != nil {
+		return nil, compiler.ErrorPosf(query.Position, "only one of semantic or similarity search can be specified")
+	}
+	// add vector search nodes (vector limit and vector order)
+	if similarity != nil {
+		simNodes, err := vectorSearchNodes(e, info, query, prefix, similarity.Value)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, simNodes...)
+	}
+	// add semantic search nodes (vector limit and vector order)
+	if semantic != nil {
+		semNodes, err := semanticSearchNodes(e, info, query, prefix, semantic.Value)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, semNodes...)
+	}
 	return nodes, nil
 }
 
@@ -124,6 +145,7 @@ func selectStatementNode(query *ast.Field, nodes QueryPlanNodes, alias string, a
 			if fields == nil {
 				return "", nil, errors.New("fields definition is required")
 			}
+			simOrderBy := children.ForName(vectorDistanceNodeName)
 			if fields.Result != "" {
 				sql += fields.Result
 			}
@@ -161,16 +183,25 @@ func selectStatementNode(query *ast.Field, nodes QueryPlanNodes, alias string, a
 			if groupBy != nil {
 				sql += " GROUP BY " + groupBy.Result
 			}
+			if simOrderBy != nil {
+				sql += " ORDER BY " + simOrderBy.Result
+			}
+			// use vector order by to add as a first element
 			orderBy := children.ForName("orderBy")
-			if orderBy != nil {
+			if orderBy != nil && simOrderBy == nil {
 				sql += " ORDER BY " + orderBy.Result
 			}
+			// use vector limit instead of regular limit if exists
+			simVectorLimit := children.ForName(vectorSearchLimitNodeName)
+			if simVectorLimit != nil {
+				sql += " LIMIT " + simVectorLimit.Result
+			}
 			limit := children.ForName("limit")
-			if limit != nil {
+			if limit != nil && simVectorLimit == nil {
 				sql += " LIMIT " + limit.Result
 			}
 			offset := children.ForName("offset")
-			if offset != nil && limit != nil {
+			if offset != nil && limit != nil && simVectorLimit == nil {
 				sql += " OFFSET " + offset.Result
 			}
 			with := children.ForName("with")
@@ -286,11 +317,16 @@ func orderByFieldNode(e engines.Engine, info *compiler.Object, query *ast.Field,
 					fieldName = prefix + "." + engines.Ident(fieldName)
 				}
 				if !byAlias && info != nil {
-					fieldInfo = info.FieldForName(queryField.Field.Name)
-					if fieldInfo == nil {
-						return "", nil, fmt.Errorf("field %s not found", queryField.Field.Name)
+					if compiler.IsExtraField(queryField.Field.Definition) {
+						fieldName = queryField.Field.Alias
 					}
-					fieldName = fieldInfo.SQL(prefix)
+					if !compiler.IsExtraField(queryField.Field.Definition) {
+						fieldInfo = info.FieldForName(queryField.Field.Name)
+						if fieldInfo == nil {
+							return "", nil, fmt.Errorf("field %s not found", queryField.Field.Name)
+						}
+						fieldName = fieldInfo.SQL(prefix)
+					}
 				}
 				if !byAlias && info == nil {
 					return "", params, nil

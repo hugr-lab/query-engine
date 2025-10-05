@@ -23,14 +23,16 @@ const (
 )
 
 const (
-	JoinDirectiveName      = "join"
-	queryDirectiveName     = "query"
-	queryTypeTextSelect    = "SELECT"
-	queryTypeTextSelectOne = "SELECT_ONE"
-	mutationDirectiveName  = "mutation"
-	mutationTypeTextInsert = "INSERT"
-	mutationTypeTextUpdate = "UPDATE"
-	mutationTypeTextDelete = "DELETE"
+	JoinDirectiveName            = "join"
+	QueryDirectiveName           = "query"
+	queryTypeTextSelect          = "SELECT"
+	queryTypeTextSelectOne       = "SELECT_ONE"
+	queryTypeTextAggregate       = "AGGREGATE"
+	queryTypeTextAggregateBucket = "AGGREGATE_BUCKET"
+	MutationDirectiveName        = "mutation"
+	MutationTypeTextInsert       = "INSERT"
+	MutationTypeTextUpdate       = "UPDATE"
+	MutationTypeTextDelete       = "DELETE"
 )
 
 func addJoinsFilter(schema *ast.SchemaDocument, def *ast.Definition) {
@@ -43,11 +45,8 @@ func addJoinsFilter(schema *ast.SchemaDocument, def *ast.Definition) {
 }
 
 func objectQueryDirective(name string, queryType ObjectQueryType) *ast.Directive {
-	query := queryTypeTextSelect
-	if queryType == QueryTypeSelectOne {
-		query = queryTypeTextSelectOne
-	}
-	return &ast.Directive{Name: queryDirectiveName,
+	query := queryTypeToText(queryType)
+	return &ast.Directive{Name: QueryDirectiveName,
 		Arguments: []*ast.Argument{
 			{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue}, Position: compiledPos()},
 			{Name: "type", Value: &ast.Value{Raw: query, Kind: ast.EnumValue}, Position: compiledPos()},
@@ -62,6 +61,10 @@ func queryTypeToText(queryType ObjectQueryType) string {
 		return queryTypeTextSelect
 	case QueryTypeSelectOne:
 		return queryTypeTextSelectOne
+	case QueryTypeAggregate:
+		return queryTypeTextAggregate
+	case QueryTypeAggregateBucket:
+		return queryTypeTextAggregateBucket
 	}
 	return ""
 }
@@ -72,7 +75,7 @@ func ObjectQueryDefinition(defs Definitions, def *ast.Definition, queryType Obje
 	}
 	qt := queryTypeToText(queryType)
 	var d *ast.Directive
-	for _, d = range def.Directives.ForNames(queryDirectiveName) {
+	for _, d = range def.Directives.ForNames(QueryDirectiveName) {
 		if directiveArgValue(d, "type") != qt {
 			continue
 		}
@@ -97,18 +100,19 @@ const (
 	MutationTypeDelete
 )
 
-func objectMutationDirective(name string, mutationType ObjectMutationType) *ast.Directive {
-	mutation := mutationTypeTextInsert
+func objectMutationDirective(name string, mutationType ObjectMutationType, dataInput string) *ast.Directive {
+	mutation := MutationTypeTextInsert
 	if mutationType == MutationTypeUpdate {
-		mutation = mutationTypeTextUpdate
+		mutation = MutationTypeTextUpdate
 	}
 	if mutationType == MutationTypeDelete {
-		mutation = mutationTypeTextDelete
+		mutation = MutationTypeTextDelete
 	}
-	return &ast.Directive{Name: mutationDirectiveName,
+	return &ast.Directive{Name: MutationDirectiveName,
 		Arguments: []*ast.Argument{
 			{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue}, Position: compiledPos()},
 			{Name: "type", Value: &ast.Value{Raw: mutation, Kind: ast.EnumValue}, Position: compiledPos()},
+			{Name: DataInputDirectiveName, Value: &ast.Value{Raw: dataInput, Kind: ast.StringValue}, Position: compiledPos()},
 		},
 		Position: compiledPos(),
 	}
@@ -117,11 +121,11 @@ func objectMutationDirective(name string, mutationType ObjectMutationType) *ast.
 func mutationTypeToText(mutationType ObjectMutationType) string {
 	switch mutationType {
 	case MutationTypeInsert:
-		return mutationTypeTextInsert
+		return MutationTypeTextInsert
 	case MutationTypeUpdate:
-		return mutationTypeTextUpdate
+		return MutationTypeTextUpdate
 	case MutationTypeDelete:
-		return mutationTypeTextDelete
+		return MutationTypeTextDelete
 	}
 	return ""
 }
@@ -132,7 +136,7 @@ func ObjectMutationDefinition(defs Definitions, def *ast.Definition, mutationTyp
 	}
 	mt := mutationTypeToText(mutationType)
 	var d *ast.Directive
-	for _, d = range def.Directives.ForNames(mutationDirectiveName) {
+	for _, d = range def.Directives.ForNames(MutationDirectiveName) {
 		if directiveArgValue(d, "type") != mt {
 			continue
 		}
@@ -187,6 +191,19 @@ func JoinInfo(field *ast.Field) *Join {
 	ref.IsQueryTime = field.Directives.ForName(JoinDirectiveName) != nil
 
 	return ref
+}
+
+func JoinDefinitionInfo(def *ast.FieldDefinition) *Join {
+	d := def.Directives.ForName(JoinDirectiveName)
+	if d == nil {
+		return nil
+	}
+	info := joinInfoFromDirective(d)
+	if info == nil {
+		return nil
+	}
+	info.field = def
+	return info
 }
 
 func (j *Join) Catalog(defs Definitions) string {
@@ -428,7 +445,7 @@ func QueryRequestInfo(ss ast.SelectionSet) ([]QueryRequest, QueryType) {
 		}
 		switch {
 		case info.Type == ModuleQuery && fd.Directives.ForName("query") != nil ||
-			fd.Directives.ForName(fieldAggregationQueryDirectiveName) != nil:
+			fd.Directives.ForName(FieldAggregationQueryDirectiveName) != nil:
 			resolvers = append(resolvers, QueryRequest{
 				Name:      field.Alias,
 				Field:     field,
@@ -525,7 +542,7 @@ func MutationInfo(defs Definitions, query *ast.FieldDefinition) *Mutation {
 	if query == nil {
 		return nil
 	}
-	d := query.Directives.ForName(mutationDirectiveName)
+	d := query.Directives.ForName(MutationDirectiveName)
 	if d == nil {
 		return nil
 	}
@@ -543,11 +560,11 @@ func MutationInfo(defs Definitions, query *ast.FieldDefinition) *Mutation {
 		return nil
 	}
 	switch t {
-	case mutationTypeTextInsert:
+	case MutationTypeTextInsert:
 		m.Type = MutationTypeInsert
-	case mutationTypeTextUpdate:
+	case MutationTypeTextUpdate:
 		m.Type = MutationTypeUpdate
-	case mutationTypeTextDelete:
+	case MutationTypeTextDelete:
 		m.Type = MutationTypeDelete
 	default:
 		return nil
@@ -578,7 +595,7 @@ func (m *Mutation) Fields() []*Field {
 		if of == nil {
 			continue
 		}
-		fi := fieldInfo(of, m.ObjectDefinition)
+		fi := FieldDefinitionInfo(of, m.ObjectDefinition)
 		if fi.IsNotDBField() {
 			continue
 		}
@@ -610,7 +627,7 @@ func (m *Mutation) ReferencesFields() []string {
 		if of == nil {
 			continue
 		}
-		fi := fieldInfo(of, m.ObjectDefinition)
+		fi := FieldDefinitionInfo(of, m.ObjectDefinition)
 		if fi.IsReferencesSubquery() {
 			out = append(out, fi.Name)
 		}
@@ -637,7 +654,7 @@ func (m *Mutation) M2MReferencesFields() []string {
 		if of == nil {
 			continue
 		}
-		fi := fieldInfo(of, m.ObjectDefinition)
+		fi := FieldDefinitionInfo(of, m.ObjectDefinition)
 		if !fi.IsReferencesSubquery() {
 			continue
 		}
@@ -708,12 +725,12 @@ func (m *Mutation) ReferencesMutation(name string) *Mutation {
 		return nil
 	}
 
-	for _, d := range rt.Directives.ForNames(mutationDirectiveName) {
+	for _, d := range rt.Directives.ForNames(MutationDirectiveName) {
 		t := directiveArgValue(d, "type")
-		if t != mutationTypeTextInsert {
+		if t != MutationTypeTextInsert {
 			continue
 		}
-		mn := objectDirectiveArgValue(rt, mutationDirectiveName, "name")
+		mn := objectDirectiveArgValue(rt, MutationDirectiveName, "name")
 		if mn == "" {
 			return nil
 		}
@@ -848,7 +865,7 @@ func (m *Mutation) SelectByPKQuery(query *ast.Field) *ast.Field {
 		return nil
 	}
 	var qn string
-	for _, d := range m.ObjectDefinition.Directives.ForNames(queryDirectiveName) {
+	for _, d := range m.ObjectDefinition.Directives.ForNames(QueryDirectiveName) {
 		if directiveArgValue(d, "type") != queryTypeTextSelectOne {
 			continue
 		}

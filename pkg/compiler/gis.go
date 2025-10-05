@@ -66,7 +66,7 @@ func wfsCollectionField(schema *ast.SchemaDocument, def *ast.Definition) (*ast.F
 	d := def.Directives.ForName(base.GisWFSDirectiveName)
 	// arguments from original query
 	var qtn string
-	for _, d := range def.Directives.ForNames(queryDirectiveName) {
+	for _, d := range def.Directives.ForNames(QueryDirectiveName) {
 		if directiveArgValue(d, "type") == queryTypeTextSelect {
 			qtn = d.Arguments.ForName("name").Value.Raw
 			break

@@ -239,7 +239,7 @@ var ScalarTypes = map[string]ScalarType{
 				},
 				Directives: ast.DirectiveList{
 					base.SqlFieldDirective(sql),
-					base.ExtraFieldDirective(TimestampExtractExtraFieldName, TimestampTypeName),
+					base.ExtraFieldDirective(TimestampExtractExtraFieldName, field.Name, TimestampTypeName),
 				},
 				Type:     ast.NamedType("BigInt", compiledPos()),
 				Position: compiledPos(),
@@ -273,7 +273,7 @@ var ScalarTypes = map[string]ScalarType{
 			},
 			{
 				Name:        "bucket_interval",
-				Description: "Extracts the specified part of the timestamp",
+				Description: "Truncate the specified part of the timestamp",
 				Type:        ast.NamedType("Interval", compiledPos()),
 				Position:    compiledPos(),
 			},
@@ -305,7 +305,7 @@ var ScalarTypes = map[string]ScalarType{
 				},
 				Directives: ast.DirectiveList{
 					base.SqlFieldDirective(sql),
-					base.ExtraFieldDirective(TimestampExtractExtraFieldName, TimestampTypeName),
+					base.ExtraFieldDirective(TimestampExtractExtraFieldName, field.Name, TimestampTypeName),
 				},
 				Type:     ast.NamedType("BigInt", compiledPos()),
 				Position: compiledPos(),
@@ -528,7 +528,7 @@ var ScalarTypes = map[string]ScalarType{
 					},
 					{
 						Name:        "transform",
-						Description: "Reproject geometry (parameters from and to is required)",
+						Description: "Reproject geometry (parameters from and to are required)",
 						Type:        ast.NamedType("Boolean", compiledPos()),
 						Position:    compiledPos(),
 					},
@@ -547,7 +547,7 @@ var ScalarTypes = map[string]ScalarType{
 				},
 				Directives: ast.DirectiveList{
 					base.SqlFieldDirective(sql),
-					base.ExtraFieldDirective(GeometryMeasurementExtraFieldName, GeometryTypeName),
+					base.ExtraFieldDirective(GeometryMeasurementExtraFieldName, field.Name, GeometryTypeName),
 				},
 				Type:     ast.NamedType("Float", compiledPos()),
 				Position: compiledPos(),
@@ -605,6 +605,59 @@ var ScalarTypes = map[string]ScalarType{
 			return "h3_h3_to_string(" + sql + ")"
 		},
 		OpenAPISchema: openapi3.NewStringSchema().WithFormat("h3string"),
+	},
+	"Vector": {
+		Name:             "Vector",
+		Description:      "Vector type (embeddings vector)",
+		JSONType:         "VARCHAR",
+		JSONToStructType: "VARCHAR",
+		JSONNativeType:   "VARCHAR",
+		FilterInput:      "VectorFilter",
+		ParseValue: func(value any) (any, error) {
+			if value == nil {
+				return nil, nil
+			}
+			return types.ParseVector(value)
+		},
+		ToOutputTypeSQL: func(sql string, raw bool) string {
+			return "(" + sql + ")::VARCHAR"
+		},
+		ToStructFieldSQL: func(sql string) string {
+			return "(" + sql + ")::VARCHAR"
+		},
+		OpenAPISchema: openapi3.NewStringSchema().WithFormat("vector"),
+		ExtraField: func(field *ast.FieldDefinition) *ast.FieldDefinition {
+			fieldName := field.Name + "_" + base.DistanceFieldNameSuffix
+			if !strings.HasPrefix(field.Name, "_") {
+				fieldName = "_" + fieldName
+			}
+			sql := "[" + field.Name + "]"
+
+			return &ast.FieldDefinition{
+				Name:        fieldName,
+				Description: "Calculate vector distance to the specified vector for field " + field.Name,
+				Arguments: ast.ArgumentDefinitionList{
+					{
+						Name:        "vector",
+						Description: "Vector to calculate distance to",
+						Type:        ast.NonNullNamedType(base.VectorTypeName, compiledPos()),
+						Position:    compiledPos(),
+					},
+					{
+						Name:        "distance",
+						Description: "Distance metric to use",
+						Type:        ast.NonNullNamedType(base.VectorDistanceTypeEnumName, compiledPos()),
+						Position:    compiledPos(),
+					},
+				},
+				Directives: ast.DirectiveList{
+					base.SqlFieldDirective(sql),
+					base.ExtraFieldDirective(base.VectorDistanceExtraFieldName, field.Name, base.VectorTypeName),
+				},
+				Type:     ast.NamedType("Float", compiledPos()),
+				Position: compiledPos(),
+			}
+		},
 	},
 }
 
@@ -730,7 +783,13 @@ func ParseArgumentValue(defs Definitions, arg *ast.ArgumentDefinition, value *as
 	}
 	if arg.Type.NamedType != "" {
 		if t.ParseValue != nil {
-			return t.ParseValue(val)
+			val, err = t.ParseValue(val)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := checkDim(val, arg.Directives.ForName(base.FieldDimDirectiveName)); err != nil {
+			return nil, err
 		}
 		return val, nil
 	}
@@ -741,6 +800,9 @@ func ParseArgumentValue(defs Definitions, arg *ast.ArgumentDefinition, value *as
 }
 
 func ParseDataAsInputObject(defs Definitions, inputType *ast.Type, data any, checkRequired bool) (any, error) {
+	if data == nil {
+		return nil, nil
+	}
 	if inputType.NamedType == "" {
 		vv, ok := data.([]any)
 		if !ok {
@@ -756,13 +818,6 @@ func ParseDataAsInputObject(defs Definitions, inputType *ast.Type, data any, che
 		}
 		return out, nil
 	}
-	if IsScalarType(inputType.NamedType) {
-		t := ScalarTypes[inputType.NamedType]
-		if t.ParseValue == nil {
-			return data, nil
-		}
-		return t.ParseValue(data)
-	}
 	def := defs.ForName(inputType.Name())
 	vv, ok := data.(map[string]any)
 	if !ok {
@@ -777,11 +832,40 @@ func ParseDataAsInputObject(defs Definitions, inputType *ast.Type, data any, che
 		if !ok {
 			continue
 		}
-		val, err := ParseDataAsInputObject(defs, f.Type, v, checkRequired)
-		if err != nil {
+		if !IsScalarType(f.Type.Name()) {
+			if v == nil {
+				continue
+			}
+			val, err := ParseDataAsInputObject(defs, f.Type, v, checkRequired)
+			if err != nil {
+				return nil, err
+			}
+			out[f.Name] = val
+			continue
+		}
+		t := ScalarTypes[f.Type.Name()]
+		var err error
+		parsed := v
+		if f.Type.NamedType != "" {
+			if t.ParseValue != nil {
+				parsed, err = t.ParseValue(parsed)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		if f.Type.NamedType == "" {
+			if t.ParseArray != nil {
+				parsed, err = t.ParseArray(parsed)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		if err := checkDim(parsed, f.Directives.ForName(base.FieldDimDirectiveName)); err != nil {
 			return nil, err
 		}
-		out[f.Name] = val
+		out[f.Name] = parsed
 	}
 	return out, nil
 }
@@ -856,4 +940,45 @@ func shrunkScalarFilterType(object, field, typeName string, isList bool, exclude
 	}
 
 	return filter
+}
+
+func checkDim(val any, dim *ast.Directive) error {
+	if dim == nil {
+		return nil
+	}
+	if dim.Arguments.ForName("len").Value.Raw == "" {
+		return ErrorPosf(dim.Position, "missing length argument")
+	}
+	d, err := dim.Arguments.ForName("len").Value.Value(nil)
+	if err != nil {
+		return err
+	}
+	di, ok := d.(int64)
+	if !ok || di <= 0 {
+		return ErrorPosf(dim.Position, "invalid length argument: %v", d)
+	}
+	switch v := val.(type) {
+	case types.Dimensional:
+		if v.Len() != d {
+			return ErrorPosf(dim.Position, "invalid vector length: %d, expected: %d", v.Len(), d)
+		}
+	case []any:
+		if len(v) != int(di) {
+			return ErrorPosf(dim.Position, "invalid vector length: %d, expected: %d", len(v), di)
+		}
+	case []float64:
+		if len(v) != int(di) {
+			return ErrorPosf(dim.Position, "invalid vector length: %d, expected: %d", len(v), di)
+		}
+	case []string:
+		if len(v) != int(di) {
+			return ErrorPosf(dim.Position, "invalid vector length: %d, expected: %d", len(v), di)
+		}
+	case []int64:
+		if len(v) != int(di) {
+			return ErrorPosf(dim.Position, "invalid vector length: %d, expected: %d", len(v), di)
+		}
+	default:
+	}
+	return nil
 }

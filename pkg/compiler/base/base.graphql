@@ -94,6 +94,19 @@ directive @exclude_filter(
 # define that the by filter is required
 directive @filter_required on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 
+# exclude field or table to use in MCP client
+directive @exclude_mcp on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+# define the embeddings model and vector field to use semantic search in the data object.
+directive @embeddings(
+	"The name of the data source type `embedding`"
+	model: String!
+	"The name of the field that contains embeddings vector"
+	vector: String!
+	"The distance metric to use for the vector search"
+	distance: VectorDistanceType!
+) on OBJECT
+
 """
 Mark data object (table, view, cube) as PostgreSQL TimescaleDB Hypertable
 """
@@ -144,7 +157,7 @@ directive @field_references(
 
 # define field as join result from the other data object
 directive @join(
-	references_name: String
+	references_name: String!
 	source_fields: [String!]
 	references_fields: [String!]
 	sql: String # sql for join to indicate tables use source and dest names in field path, all fields path should in [source.field] or [dest.field] format

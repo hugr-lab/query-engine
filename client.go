@@ -107,9 +107,23 @@ func WithToken(token string) Option {
 	}
 }
 
+func WithHttpUrl(httpUrl string) Option {
+	return func(c *ClientConfig) {
+		c.HttpUrl = httpUrl
+	}
+}
+
+func WithJQQueryUrl(jq string) Option {
+	return func(c *ClientConfig) {
+		c.JQQueryUrl = jq
+	}
+}
+
 type ClientConfig struct {
-	Timeout   time.Duration
-	Transport http.RoundTripper
+	Timeout    time.Duration
+	HttpUrl    string
+	JQQueryUrl string
+	Transport  http.RoundTripper
 }
 
 type Client struct {
@@ -128,6 +142,12 @@ func NewClient(url string, opts ...Option) *Client {
 	}
 	if config.Transport == nil {
 		config.Transport = http.DefaultTransport
+	}
+	if config.HttpUrl == "" {
+		config.HttpUrl = strings.TrimSuffix(url, "/ipc") + "/query"
+	}
+	if config.JQQueryUrl == "" {
+		config.JQQueryUrl = strings.TrimSuffix(url, "/ipc") + "/jq-query"
 	}
 	return &Client{
 		c: &http.Client{
@@ -292,6 +312,45 @@ func (c *Client) DescribeDataSource(ctx context.Context, name string, self bool)
 	return desc, nil
 }
 
+func (c *Client) QueryJSON(ctx context.Context, req JQRequest) (*db.JsonValue, error) {
+	var buf bytes.Buffer
+	url := c.config.HttpUrl
+	if req.JQ != "" {
+		url = c.config.JQQueryUrl
+		err := json.NewEncoder(&buf).Encode(req)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if req.JQ == "" {
+		err := json.NewEncoder(&buf).Encode(req.Query)
+		if err != nil {
+			return nil, err
+		}
+	}
+	reqHttp, err := http.NewRequestWithContext(ctx, "POST", url, &buf)
+	if err != nil {
+		return nil, err
+	}
+	reqHttp.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.c.Do(reqHttp)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, errors.New(string(b))
+	}
+	var out db.JsonValue
+	out = db.JsonValue(b)
+	return &out, nil
+}
+
 func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error) {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(map[string]any{
@@ -301,7 +360,13 @@ func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.c.Post(c.url, "application/json", &buf)
+	req, err := http.NewRequestWithContext(ctx, "POST", c.url, &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.c.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -361,6 +426,13 @@ func (c *Client) parseMultipartResponse(resp *http.Response) (*types.Response, e
 			b, err := io.ReadAll(p)
 			if err != nil {
 				return nil, fmt.Errorf("decoding json value: %w", err)
+			}
+			if strings.HasPrefix(string(b), "null") {
+				err = addResponseData(r, part, path, nil)
+				if err != nil {
+					return nil, fmt.Errorf("adding null value: %w", err)
+				}
+				continue
 			}
 			val := db.JsonValue(b)
 			err = addResponseData(r, part, path, &val)

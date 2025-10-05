@@ -90,6 +90,7 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 		}
 		data, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
 		if err != nil {
+			types.DataClose(data)
 			return writeErrorsToIPC(mw, op.Name, types.WarpGraphQLError(err))
 		}
 		for path, q := range qm {
@@ -110,7 +111,9 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 			if len(query.Operations) > 1 && req.OperationName == "" {
 				path = op.Name + "." + path
 			}
-			return writeExtensionsToIPC(mw, path, ext)
+			if err := writeExtensionsToIPC(mw, path, ext); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -145,6 +148,9 @@ func writeArrowTableToIPC(w *multipart.Writer, path string, query compiler.Query
 	rr, err := data.Reader(false)
 	if err != nil {
 		return err
+	}
+	if rr == nil {
+		return nil
 	}
 	defer rr.Release()
 	i := 0

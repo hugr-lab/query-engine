@@ -9,9 +9,12 @@ import (
 )
 
 const (
-	filterInputDirectiveName        = "filter_input"
-	filterListInputDirectiveName    = "filter_list_input"
+	FilterInputDirectiveName        = "filter_input"
+	FilterListInputDirectiveName    = "filter_list_input"
+	DataInputDirectiveName          = "data_input"
 	inputFieldNamedArgDirectiveName = "named"
+	ListFilterInputSuffix           = "_list_filter"
+	FilterInputSuffix               = "_filter"
 )
 
 func addInputPrefix(defs Definitions, def *ast.Definition, opt *Options, addOriginal bool) {
@@ -144,17 +147,39 @@ func inputObjectQueryArgs(schema *ast.SchemaDocument, def *ast.Definition, forSu
 			},
 		)
 	}
+	if IsVectorSearcheble(def) {
+		args = append(args,
+			&ast.ArgumentDefinition{
+				Name:        base.SimilaritySearchArgumentName,
+				Description: "Search for vector similarity",
+				Type:        ast.NamedType(base.VectorSearchInputName, compiledPos()),
+				Position:    compiledPos(),
+			},
+		)
+	}
+	if IsEmbeddedObject(def) {
+		args = append(args,
+			&ast.ArgumentDefinition{
+				Name: base.SemanticSearchArgumentName,
+				Description: "Search for semantic similarity, works only for single object queries. " +
+					"Uses the OpenAI API to compute embeddings and find the most relevant object.",
+				Type:     ast.NamedType(base.SemanticSearchInputName, compiledPos()),
+				Position: compiledPos(),
+			},
+		)
+	}
+
 	return args
 }
 
 func inputObjectFilterName(schema *ast.SchemaDocument, def *ast.Definition, isList bool) string {
-	inputName := def.Name + "_filter"
-	if d := def.Directives.ForName(filterInputDirectiveName); d != nil {
+	inputName := def.Name + FilterInputSuffix
+	if d := def.Directives.ForName(FilterInputDirectiveName); d != nil {
 		inputName = directiveArgValue(d, "name")
 	}
 	if isList {
-		inputName = def.Name + "_list_filter"
-		if d := def.Directives.ForName(filterListInputDirectiveName); d != nil {
+		inputName = def.Name + ListFilterInputSuffix
+		if d := def.Directives.ForName(FilterListInputDirectiveName); d != nil {
 			inputName = directiveArgValue(d, "name")
 		}
 	}
@@ -294,12 +319,29 @@ func inputObjectMutationInsertArgs(schema *ast.SchemaDocument, def *ast.Definiti
 	if !IsDataObject(def) {
 		return nil
 	}
+	dataInputName := inputObjectMutationInsertName(schema, def)
+
+	if IsEmbeddedObject(def) {
+		return ast.ArgumentDefinitionList{
+			&ast.ArgumentDefinition{
+				Name:     "data",
+				Type:     ast.NamedType(dataInputName, compiledPos()),
+				Position: compiledPos(),
+			},
+			&ast.ArgumentDefinition{
+				Name:        base.SummaryForEmbeddedArgumentName,
+				Description: "Insert summary embedding",
+				Type:        ast.NamedType("String", compiledPos()),
+				Position:    compiledPos(),
+			},
+		}
+	}
+
 	return ast.ArgumentDefinitionList{
-		{
-			Name:        "data",
-			Description: "Inserted data",
-			Type:        ast.NonNullNamedType(inputObjectMutationInsertName(schema, def), nil),
-			Position:    compiledPos(),
+		&ast.ArgumentDefinition{
+			Name:     "data",
+			Type:     ast.NonNullNamedType(dataInputName, compiledPos()),
+			Position: compiledPos(),
 		},
 	}
 }
@@ -397,6 +439,43 @@ func inputObjectUniquesArgs(def *ast.Definition) map[string]ast.ArgumentDefiniti
 	return uniques
 }
 
+func inputObjectMutationUpdateArgs(schema *ast.SchemaDocument, def *ast.Definition) ast.ArgumentDefinitionList {
+	if !IsDataObject(def) {
+		return nil
+	}
+	dataInputName := inputObjectMutationDataName(schema, def)
+	args := ast.ArgumentDefinitionList{
+		{
+			Name:     "filter",
+			Type:     ast.NamedType(inputObjectFilterName(schema, def, false), compiledPos()),
+			Position: compiledPos(),
+		},
+	}
+
+	if IsEmbeddedObject(def) {
+		return append(args,
+			&ast.ArgumentDefinition{
+				Name:        "data",
+				Description: "Field values",
+				Type:        ast.NamedType(dataInputName, compiledPos()),
+				Position:    compiledPos(),
+			},
+			&ast.ArgumentDefinition{
+				Name:        base.SummaryForEmbeddedArgumentName,
+				Description: "Update summary embedding",
+				Type:        ast.NamedType("String", compiledPos()),
+				Position:    compiledPos(),
+			},
+		)
+	}
+
+	return append(args, &ast.ArgumentDefinition{
+		Name:     "data",
+		Type:     ast.NonNullNamedType(dataInputName, compiledPos()),
+		Position: compiledPos(),
+	})
+}
+
 func inputObjectMutationDataName(schema *ast.SchemaDocument, def *ast.Definition) string {
 	inputName := def.Name + "_mut_data"
 	if t := schema.Definitions.ForName(inputName); t != nil {
@@ -442,14 +521,14 @@ func inputObjectMutationDataName(schema *ast.SchemaDocument, def *ast.Definition
 
 func objectFilterInputDirective(name string, isList bool) *ast.Directive {
 	if isList {
-		return &ast.Directive{Name: filterListInputDirectiveName,
+		return &ast.Directive{Name: FilterListInputDirectiveName,
 			Arguments: []*ast.Argument{
 				{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue}, Position: compiledPos()},
 			},
 			Position: compiledPos(),
 		}
 	}
-	return &ast.Directive{Name: filterInputDirectiveName,
+	return &ast.Directive{Name: FilterInputDirectiveName,
 		Arguments: []*ast.Argument{
 			{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue}, Position: compiledPos()},
 		},
@@ -458,7 +537,7 @@ func objectFilterInputDirective(name string, isList bool) *ast.Directive {
 }
 
 func objectDataInputDirective(name string) *ast.Directive {
-	return &ast.Directive{Name: "data_input",
+	return &ast.Directive{Name: DataInputDirectiveName,
 		Arguments: []*ast.Argument{
 			{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue}, Position: compiledPos()},
 		},

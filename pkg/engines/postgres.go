@@ -1,6 +1,7 @@
 package engines
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -114,6 +115,22 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 			valueStrings = append(valueStrings, s)
 		}
 		return fmt.Sprintf("ARRAY[%s]", strings.Join(valueStrings, ",")), nil
+	case types.Vector:
+		if v == nil {
+			return "NULL", nil
+		}
+		var sql string
+		for i, v := range v {
+			s, err := e.SQLValue(v)
+			if err != nil {
+				return "", err
+			}
+			if i > 0 {
+				sql += ","
+			}
+			sql += s
+		}
+		return fmt.Sprintf("'[%s]'", sql), nil
 	}
 
 	return "", fmt.Errorf("unsupported value type: %T", v)
@@ -624,24 +641,26 @@ func (e Postgres) ExtractJSONStruct(sql string, jsonStruct map[string]any) strin
 	return "jsonb_build_object(" + strings.Join(fields, ",") + ")"
 }
 
-func (e Postgres) ApplyFieldTransforms(sql string, field *ast.Field, args compiler.FieldQueryArguments) string {
+func (e Postgres) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args compiler.FieldQueryArguments, params []any) (string, []any, error) {
 	switch compiler.TransformBaseFieldType(field.Definition) {
 	case compiler.GeometryTypeName:
-		return e.GeometryTransform(sql, field, args)
+		return e.GeometryTransform(sql, field, args), params, nil
 	case compiler.JSONTypeName:
 		sa := args.ForName("struct")
 		if sa == nil {
-			return sql
+			return sql, params, nil
 		}
 		s, ok := sa.Value.(map[string]any)
 		if !ok {
-			return sql
+			return sql, params, nil
 		}
-		return e.ExtractJSONStruct(sql, s)
+		return e.ExtractJSONStruct(sql, s), params, nil
 	case compiler.TimestampTypeName:
-		return e.TimestampTransform(sql, field, args)
+		return e.TimestampTransform(sql, field, args), params, nil
+	case base.VectorTypeName:
+		return e.VectorTransform(ctx, qe, sql, field, args, params)
 	}
-	return sql
+	return sql, params, nil
 }
 
 func (e Postgres) GeometryTransform(sql string, field *ast.Field, args compiler.FieldQueryArguments) string {
@@ -785,7 +804,7 @@ func (e Postgres) TimestampTransform(sql string, field *ast.Field, args compiler
 		if err != nil {
 			return "NULL"
 		}
-		return fmt.Sprintf("to_timestamp((extract(epoch from %s)::INTEGER / extract(epoch from %s)::INTEGER) * extract(epoch from %[2]s)::INTEGER)", sql, iSQL)
+		return fmt.Sprintf("to_timestamp((extract(epoch from %s)::BIGINT / extract(epoch from %s)::BIGINT) * extract(epoch from %[2]s)::BIGINT)", sql, iSQL)
 	}
 	if extract := args.ForName("extract"); extract != nil {
 		part := extract.Value.(string)
@@ -797,7 +816,7 @@ func (e Postgres) TimestampTransform(sql string, field *ast.Field, args compiler
 		}
 		sql := fmt.Sprintf("EXTRACT(%s FROM %s)", part, sql)
 		if div := args.ForName("extract_divide"); div != nil {
-			sql = fmt.Sprintf("(%s::INTEGER / %v)", sql, div.Value)
+			sql = fmt.Sprintf("(%s::BIGINT / %v)", sql, div.Value)
 		}
 		return sql
 	}
@@ -835,7 +854,7 @@ func (e *Postgres) extractJsonTypedValue(field, typeName string) string {
 		return fmt.Sprintf(bigIntExtractJSONTemplate, field)
 	case "float":
 		return fmt.Sprintf(floatExtractJSONTemplate, field)
-	case "string":
+	case "string", "h3string":
 		return fmt.Sprintf(stringExtractJSONTemplate, field)
 	case "bool":
 		return fmt.Sprintf(boolExtractJSONTemplate, field)
@@ -1056,7 +1075,7 @@ func (e Postgres) JSONTypeCast(sql string) string {
 }
 
 func (e Postgres) LateralJoin(sql, alias string) string {
-	return ", LATERAL (" + sql + ") AS " + alias
+	return "LEFT JOIN LATERAL (" + sql + ") AS " + alias + " ON TRUE"
 }
 
 func repackPGJsonRecursive(sql string, field *ast.Field, path string) string {
@@ -1144,4 +1163,25 @@ func extractPGJsonFieldByPath(path string, asText bool) string {
 		return fmt.Sprintf("->%s->>%s", strings.Join(parts[:len(parts)-1], "->"), parts[len(parts)-1])
 	}
 	return "->" + strings.Join(parts, "->")
+}
+
+var _ EngineVectorDistanceCalculator = (*Postgres)(nil)
+
+func (e *Postgres) VectorDistanceSQL(sql, distMetric string, vector types.Vector, params []any) (string, []any, error) {
+	val := "$" + strconv.Itoa(len(params)+1)
+	params = append(params, vector)
+	switch distMetric {
+	case base.VectorSearchDistanceL2:
+		return fmt.Sprintf("%s <-> %s", sql, val), params, nil
+	case base.VectorSearchDistanceCosine:
+		return fmt.Sprintf("%s <=> %s", sql, val), params, nil
+	case base.VectorSearchDistanceIP:
+		return fmt.Sprintf("%s <#> %s", sql, val), params, nil
+	default:
+		return "", nil, fmt.Errorf("unsupported distance metric: %s", distMetric)
+	}
+}
+
+func (e *Postgres) VectorTransform(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args compiler.FieldQueryArguments, params []any) (string, []any, error) {
+	return commonVectorTransform(ctx, e, qe, sql, field, args, params)
 }

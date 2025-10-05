@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	fieldAggregationQueryDirectiveName = "aggregation_query"
+	FieldAggregationQueryDirectiveName = "aggregation_query"
 	objectAggregationDirectiveName     = "aggregation"
 	objectFieldAggregationDirective    = "field_aggregation"
 	AggregateKeyFieldName              = "key"
@@ -59,6 +59,24 @@ func addAggregationQueryField(schema *ast.SchemaDocument, def *ast.Definition, f
 		Directives:  ast.DirectiveList{aggQueryDirective(field, false), opt.catalog},
 		Position:    compiledPos(),
 	})
+	// if add query directive to data object
+	if IsDataObject(ft) && ModuleRootInfo(def) != nil {
+		found := false
+		for _, d := range ft.Directives.ForNames(QueryDirectiveName) {
+			if directiveArgValue(d, "type") == queryTypeTextAggregate {
+				found = true
+				break
+			}
+		}
+		if !found {
+			ft.Directives = append(ft.Directives,
+				objectQueryDirective(field.Name+AggregationSuffix,
+					QueryTypeAggregate,
+				),
+			)
+		}
+	}
+
 	typeName = objectAggregationTypeName(schema, opt, ft, true)
 	def.Fields = append(def.Fields, &ast.FieldDefinition{
 		Name:        field.Name + BucketAggregationSuffix,
@@ -68,11 +86,28 @@ func addAggregationQueryField(schema *ast.SchemaDocument, def *ast.Definition, f
 		Directives:  ast.DirectiveList{aggQueryDirective(field, true), opt.catalog},
 		Position:    compiledPos(),
 	})
+	// if add query directive to data object
+	if IsDataObject(ft) && ModuleRootInfo(def) != nil {
+		found := false
+		for _, d := range ft.Directives.ForNames(QueryDirectiveName) {
+			if directiveArgValue(d, "type") == queryTypeTextAggregateBucket {
+				found = true
+				break
+			}
+		}
+		if !found {
+			ft.Directives = append(ft.Directives,
+				objectQueryDirective(field.Name+BucketAggregationSuffix,
+					QueryTypeAggregateBucket,
+				),
+			)
+		}
+	}
 }
 
 func aggQueryDirective(def *ast.FieldDefinition, isBucket bool) *ast.Directive {
 	return &ast.Directive{
-		Name: fieldAggregationQueryDirectiveName,
+		Name: FieldAggregationQueryDirectiveName,
 		Arguments: ast.ArgumentList{
 			{
 				Name: "name",
@@ -163,11 +198,19 @@ func aggObjectFieldAggregationDirective(def *ast.FieldDefinition) *ast.Directive
 }
 
 func AggregatedQueryDef(field *ast.Field) *ast.FieldDefinition {
-	refField := fieldDirectiveArgValue(field.Definition, fieldAggregationQueryDirectiveName, "name")
+	refField := fieldDirectiveArgValue(field.Definition, FieldAggregationQueryDirectiveName, "name")
 	if refField == "" {
 		return nil
 	}
 	return field.ObjectDefinition.Fields.ForName(refField)
+}
+
+func AggregatedQueryFieldName(def *ast.FieldDefinition) (string, bool) {
+	if def == nil {
+		return "", false
+	}
+	return fieldDirectiveArgValue(def, FieldAggregationQueryDirectiveName, "name"),
+		fieldDirectiveArgValue(def, FieldAggregationQueryDirectiveName, "is_bucket") == "true"
 }
 
 func AggregatedObjectDef(defs Definitions, def *ast.Definition) *ast.Definition {
@@ -190,15 +233,23 @@ func AggregatedObjectDef(defs Definitions, def *ast.Definition) *ast.Definition 
 	return defs.ForName(refName)
 }
 
+func buildObjectAggregationTypeName(name string, isSub, isBucket bool) string {
+	typeName := "_" + name + AggregationSuffix
+	if isSub {
+		return typeName + "_sub_aggregation"
+	}
+	if isBucket {
+		typeName += "_bucket"
+	}
+	return typeName
+}
+
 func objectAggregationTypeName(schema *ast.SchemaDocument, opt *Options, def *ast.Definition, isBucket bool) string {
-	typeName := "_" + def.Name + AggregationSuffix
+	typeName := buildObjectAggregationTypeName(def.Name, false, isBucket)
 	level := 1
 	if def.Directives.ForName(objectAggregationDirectiveName) != nil {
 		typeName = def.Name + "_sub_aggregation"
 		level = aggObjectLevel(def) + 1
-	}
-	if isBucket {
-		typeName += "_bucket"
 	}
 	if def.Name == base.QueryTimeJoinsTypeName {
 		typeName = base.QueryTimeJoinsTypeName + AggregationSuffix

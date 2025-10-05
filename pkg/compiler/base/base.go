@@ -6,7 +6,6 @@ import (
 
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/validator"
 )
 
 //go:embed "base.graphql"
@@ -20,6 +19,9 @@ var systemTypesDef string
 
 //go:embed "query_directives.graphql"
 var queryDirectivesDef string
+
+//go:embed "prelude.graphql"
+var preludeDef string
 
 var Schema *ast.Schema
 
@@ -62,6 +64,9 @@ const (
 	FieldDefaultDirectiveUpdateExprArgName = "update_exp"
 	FieldMeasurementDirectiveName          = "measurement"
 	FieldMeasurementFuncArgName            = "measurement_func"
+	FieldDimDirectiveName                  = "dim"
+
+	FieldExcludeMCPDirectiveName = "exclude_mcp"
 )
 
 const (
@@ -74,7 +79,8 @@ func Init() {
 
 func Sources() []*ast.Source {
 	return []*ast.Source{
-		validator.Prelude,
+		// The copy of prelude.graphql is included first to override any definitions if needed.
+		{Name: "prelude.graphql", Input: preludeDef, BuiltIn: true},
 		{Name: "system_types.graphql", Input: systemTypesDef},
 		{Name: "scalar_types.graphql", Input: scalarTypesDef},
 		{Name: "base.graphql", Input: baseSchemaData},

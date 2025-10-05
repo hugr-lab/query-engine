@@ -6,6 +6,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -21,11 +22,13 @@ type Catalog interface {
 
 type Service struct {
 	engines Catalog
+	querier types.Querier
 }
 
-func New(c Catalog) *Service {
+func New(c Catalog, q types.Querier) *Service {
 	return &Service{
 		engines: c,
+		querier: q,
 	}
 }
 
@@ -57,6 +60,7 @@ func (s *Service) Plan(ctx context.Context, schema *ast.Schema, query *ast.Field
 	}
 	node.schema = schema
 	node.engines = s.engines
+	node.querier = s.querier
 
 	return &QueryPlan{Query: query, RootNode: node}, nil
 }

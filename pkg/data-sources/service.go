@@ -9,6 +9,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/extension"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/http"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
@@ -216,6 +217,8 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 		return http.New(ds, attached)
 	case Extension:
 		return extension.New(ds, attached)
+	case Embedding:
+		return embedding.New(ds, attached)
 	default:
 		return nil, ErrUnknownDataSourceType
 	}
@@ -261,4 +264,38 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 		}
 	}
 	return data, nil
+}
+
+func (s *Service) CreateEmbedding(ctx context.Context, source, input string) (types.Vector, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ds, ok := s.dataSources[source]
+	if !ok {
+		return nil, ErrDataSourceNotFound
+	}
+	if !ds.IsAttached() {
+		return nil, ErrDataSourceNotAttached
+	}
+	embeddingDs, ok := ds.(EmbeddingSource)
+	if !ok {
+		return nil, errors.New("data source is not embedding source")
+	}
+	return embeddingDs.CreateEmbedding(ctx, input)
+}
+
+func (s *Service) CreateEmbeddings(ctx context.Context, source string, input []string) ([]types.Vector, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ds, ok := s.dataSources[source]
+	if !ok {
+		return nil, ErrDataSourceNotFound
+	}
+	if !ds.IsAttached() {
+		return nil, ErrDataSourceNotAttached
+	}
+	embeddingDs, ok := ds.(EmbeddingSource)
+	if !ok {
+		return nil, errors.New("data source is not embedding source")
+	}
+	return embeddingDs.CreateEmbeddings(ctx, input)
 }

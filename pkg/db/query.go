@@ -157,7 +157,7 @@ func (db *Pool) QueryScalarValue(ctx context.Context, q string, params ...any) (
 		return nil, err
 	}
 
-	return &val, nil
+	return val, nil
 }
 
 func (db *Pool) QueryRowToData(ctx context.Context, data any, q string, params ...any) error {

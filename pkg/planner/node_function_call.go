@@ -42,7 +42,7 @@ func functionCallRootNode(ctx context.Context, schema *ast.Schema, planer Catalo
 	return selectFromFunctionCallNode(ctx, defs, node), nil
 }
 
-func functionCallNode(_ context.Context, defs compiler.DefinitionsSource, planner Catalog, prefix string, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+func functionCallNode(ctx context.Context, defs compiler.DefinitionsSource, planner Catalog, prefix string, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
 	call := compiler.FunctionCallInfo(query)
 	if call == nil {
 		return nil, ErrInternalPlanner
@@ -75,7 +75,7 @@ func functionCallNode(_ context.Context, defs compiler.DefinitionsSource, planne
 			}
 		}
 		nodes = append(nodes,
-			fieldsNode(query, funcFieldsNodes(e, prefix, ff, vars)),
+			fieldsNode(query, funcFieldsNodes(ctx, e, prefix, ff, vars)),
 		)
 	}
 	if !info.ReturnsTable && len(query.SelectionSet) != 0 {
@@ -189,7 +189,7 @@ func unpackObject(sqlName string) string {
 	return sqlName + ".*"
 }
 
-func funcFieldsNodes(e engines.Engine, prefix string, fields []*ast.Field, vars map[string]any) QueryPlanNodes {
+func funcFieldsNodes(ctx context.Context, e engines.Engine, prefix string, fields []*ast.Field, vars map[string]any) QueryPlanNodes {
 	var nodes QueryPlanNodes
 	for _, field := range fields {
 		nodes = append(nodes, &QueryPlanNode{
@@ -210,7 +210,10 @@ func funcFieldsNodes(e engines.Engine, prefix string, fields []*ast.Field, vars 
 					if err != nil {
 						return "", nil, err
 					}
-					sql = e.ApplyFieldTransforms(sql, field, args)
+					sql, params, err = e.ApplyFieldTransforms(ctx, node.Querier(), sql, field, args, params)
+					if err != nil {
+						return "", nil, err
+					}
 				}
 				if len(field.SelectionSet) != 0 {
 					sql = e.RepackObject(sql, field)

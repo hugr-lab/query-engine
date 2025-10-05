@@ -279,7 +279,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		}
 	}
 
-	fieldNodes := fieldsNodes(e, info, "_objects",
+	fieldNodes := fieldsNodes(ctx, e, info, "_objects",
 		append(qp.fields, qp.extraSourceFields...), // add selected fields and extra fields that are required for joins
 		vars,
 		false,
@@ -330,10 +330,18 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		nodes = append(nodes, paramNodes...)
 	}
 	if len(joinCatalogNodes) != 0 || len(joinGeneralNodes) != 0 {
-		// if there are joins, we push down only where node
+		// if there are joins, we push down only where and vector search nodes
 		whereNode := paramNodes.ForName("where")
 		if whereNode != nil {
 			nodes = append(nodes, whereNode)
+		}
+		vectorSearchNode := paramNodes.ForName(vectorDistanceNodeName)
+		if vectorSearchNode != nil {
+			nodes = append(nodes, vectorSearchNode)
+		}
+		vectorLimitNode := paramNodes.ForName(vectorSearchLimitNodeName)
+		if vectorLimitNode != nil {
+			nodes = append(nodes, vectorLimitNode)
 		}
 	}
 
@@ -342,7 +350,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	if len(joinGeneralNodes) == 0 &&
 		len(joinCatalogNodes) == 0 &&
 		qp.h3 == nil &&
-		!compiler.IsNoJoinPushdown(query) {
+		!compiler.IsNoJoinPushdown(query) && paramNodes.ForName(vectorSearchLimitNodeName) == nil {
 		return baseData, false, nil
 	}
 
@@ -399,7 +407,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			withNode(withCatalogNodes),
 			fieldsNode(query,
 				append(
-					fieldsNodes(e, info, "_objects",
+					fieldsNodes(ctx, e, info, "_objects",
 						append(
 							append(qp.fields, qp.extraSourceFields...), // add selected fields and extra fields that are required for joins
 							generalSourceFields...,                     // add general fields that are required for joins in general catalog query
@@ -490,7 +498,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	}
 	cast.Name = "_objects"
 
-	ff = fieldsNodes(e, info, "_objects", qp.fields, vars, true)
+	ff = fieldsNodes(ctx, e, info, "_objects", qp.fields, vars, true)
 	for _, j := range joinCatalogNodes {
 		if _, ok := qJoinNodeNames[j.Name]; ok {
 			continue
@@ -1251,7 +1259,7 @@ func fieldsNode(query *ast.Field, fields QueryPlanNodes) *QueryPlanNode {
 	}
 }
 
-func fieldsNodes(e engines.Engine, info *compiler.Object, prefix string, fields []*ast.Field, vars map[string]any, aliases bool) QueryPlanNodes {
+func fieldsNodes(ctx context.Context, e engines.Engine, info *compiler.Object, prefix string, fields []*ast.Field, vars map[string]any, aliases bool) QueryPlanNodes {
 	var nodes QueryPlanNodes
 	for _, field := range fields {
 		if fn := nodes.ForName(field.Alias); fn != nil {
@@ -1286,7 +1294,10 @@ func fieldsNodes(e engines.Engine, info *compiler.Object, prefix string, fields 
 					}
 					if compiler.ScalarTypes[typeName].Arguments != nil ||
 						compiler.IsExtraField(fi.Definition()) {
-						sql = e.ApplyFieldTransforms(sql, field, args)
+						sql, params, err = e.ApplyFieldTransforms(ctx, node.Querier(), sql, field, args, params)
+						if err != nil {
+							return "", nil, err
+						}
 					}
 					if info.IsCube &&
 						fi.Definition().Directives.ForName(base.FieldMeasurementDirectiveName) != nil &&

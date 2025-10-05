@@ -3,6 +3,7 @@ package compiler
 import (
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
@@ -74,7 +75,7 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 			if ScalarTypes[field.Type.Name()].MeasurementAggs == "" {
 				return ErrorPosf(d.Position, "measurement field %s of object %s should be a valid scalar type", field.Name, def.Name)
 			}
-		case base.DeprecatedDirectiveName, base.FieldSqlDirectiveName:
+		case base.DeprecatedDirectiveName, base.FieldSqlDirectiveName, base.FieldDimDirectiveName:
 		case base.GisWFSFieldDirectiveName, base.GisWFSExcludeDirectiveName:
 			if !IsDataObject(def) {
 				return ErrorPosf(d.Position, "field %s of object %s can't have directive %s", field.Name, def.Name, d.Name)
@@ -90,7 +91,9 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 		return ErrorPosf(field.Position, "field %s of object %s has unknown type %s", field.Name, def.Name, field.Type.Name())
 	}
 
-	if !IsScalarType(field.Type.Name()) {
+	if !IsScalarType(field.Type.Name()) ||
+		// ignore no output fields
+		fieldDirectiveArgValue(field, base.FieldSourceDirectiveName, "field") == "-" {
 		return nil
 	}
 	// add field transformation parameters
@@ -106,7 +109,8 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 			})
 		}
 		if efFunc := ScalarTypes[field.Type.Name()].ExtraField; efFunc != nil {
-			if ef := efFunc(field); ef != nil {
+			if ef := efFunc(field); ef != nil &&
+				def.Fields.ForName(ef.Name) == nil {
 				def.Fields = append(def.Fields, ef)
 			}
 		}
@@ -150,16 +154,18 @@ type Field struct {
 
 	geometrySRID string
 	geometryType string
+	Dim          int
 }
 
 func FieldInfo(field *ast.Field) *Field {
-	info := fieldInfo(field.Definition, field.ObjectDefinition)
+	info := FieldDefinitionInfo(field.Definition, field.ObjectDefinition)
 	info.field = field
 
 	return info
 }
 
-func fieldInfo(field *ast.FieldDefinition, object *ast.Definition) *Field {
+func FieldDefinitionInfo(field *ast.FieldDefinition, object *ast.Definition) *Field {
+	dim, _ := strconv.Atoi(fieldDirectiveArgValue(field, base.FieldDimDirectiveName, "len"))
 	return &Field{
 		Name:         field.Name,
 		dbName:       fieldDirectiveArgValue(field, base.FieldSourceDirectiveName, "field"),
@@ -167,6 +173,7 @@ func fieldInfo(field *ast.FieldDefinition, object *ast.Definition) *Field {
 		geometrySRID: fieldDirectiveArgValue(field, base.FieldGeometryInfoDirectiveName, "srid"),
 		geometryType: fieldDirectiveArgValue(field, base.FieldGeometryInfoDirectiveName, "type"),
 		sequence:     fieldDirectiveArgValue(field, base.FieldDefaultDirectiveName, "sequence"),
+		Dim:          dim,
 		def:          field,
 		object:       object,
 	}
@@ -213,6 +220,9 @@ func (f *Field) FieldSourceName(prefix string, ident bool) string {
 	if fs == "" {
 		fs = f.Name
 	}
+	if fs == "-" { // special case to ignore field in output
+		return "-"
+	}
 	if ident {
 		fs = base.Ident(fs)
 	}
@@ -231,6 +241,9 @@ func (f *Field) SQL(prefix string) string {
 	if fs == "" {
 		fs = f.Name
 	}
+	if fs == "-" { // special case to ignore field in output
+		return "NULL"
+	}
 	if f.sql == "" {
 		return sp + base.Ident(fs)
 	}
@@ -246,7 +259,7 @@ func (f *Field) SQL(prefix string) string {
 			f.sql = strings.ReplaceAll(f.sql, "["+field+"]", "NULL")
 			continue
 		}
-		info := fieldInfo(fd, f.object)
+		info := FieldDefinitionInfo(fd, f.object)
 		fs := info.SQL(prefix)
 		sql = strings.ReplaceAll(sql, "["+field+"]", fs)
 	}
@@ -286,7 +299,7 @@ func (f *Field) validate() error {
 			if fd == nil {
 				return ErrorPosf(f.def.Position, "field %s has unknown field %s in SQL expression", f.Name, dep)
 			}
-			info := fieldInfo(fd, f.object)
+			info := FieldDefinitionInfo(fd, f.object)
 			newDeps = append(newDeps, info.UsingFields()...)
 		}
 		if len(newDeps) == 0 {
@@ -342,4 +355,13 @@ func TransformBaseFieldType(field *ast.FieldDefinition) string {
 
 func IsExtraField(def *ast.FieldDefinition) bool {
 	return def.Directives.ForName(base.FieldExtraFieldDirectiveName) != nil
+}
+
+func ExtraFieldName(def *ast.FieldDefinition) string {
+	if d := def.Directives.ForName(base.FieldExtraFieldDirectiveName); d != nil {
+		if t := directiveArgValue(d, "name"); t != "" {
+			return t
+		}
+	}
+	return ""
 }

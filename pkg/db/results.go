@@ -214,12 +214,12 @@ func RecordToJSON(rec arrow.Record, asArray bool, w io.Writer) error {
 
 	fields := rec.Schema().Fields()
 
-	cols := make(map[string]interface{})
+	cols := make(map[string]any)
 	for i := 0; int64(i) < rec.NumRows(); i++ {
 		if i > 0 {
 			w.Write([]byte(","))
 		}
-		outArr := make([]interface{}, len(fields))
+		outArr := make([]any, len(fields))
 		for j, c := range rec.Columns() {
 			if asArray {
 				outArr[j] = c.GetOneForMarshal(i)

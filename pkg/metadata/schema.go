@@ -23,6 +23,9 @@ var (
 
 func processSchemaQuery(ctx context.Context, schema *ast.Schema, field *ast.Field, maxDepth int) (map[string]any, error) {
 	return processSelectionSet(ctx, field.SelectionSet, map[string]fieldResolverFunc{
+		"description": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			return schema.Description, nil
+		},
 		"queryType": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			data, err := typeResolver(ctx, schema, ast.NamedType(schema.Query.Name, schema.Query.Position), field.SelectionSet, maxDepth)
 			if err != nil {
@@ -257,6 +260,53 @@ func typeResolver(ctx context.Context, schema *ast.Schema, typeDef *ast.Type, ss
 			}
 			return url, nil
 		},
+		"hugr_type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			if mi := compiler.ModuleRootInfo(def); mi != nil {
+				return base.HugrTypeModule, nil
+			}
+			switch compiler.DataObjectType(def) {
+			case compiler.Table:
+				return base.HugrTypeTable, nil
+			case compiler.View:
+				return base.HugrTypeView, nil
+			}
+			switch {
+			case def.Kind == ast.InputObject && def.Directives.ForName(compiler.FilterInputDirectiveName) != nil:
+				return base.HugrTypeFilter, nil
+			case def.Kind == ast.InputObject && def.Directives.ForName(compiler.FilterListInputDirectiveName) != nil:
+				return base.HugrTypeFilterList, nil
+			case def.Kind == ast.InputObject && def.Directives.ForName(compiler.DataInputDirectiveName) != nil:
+				return base.HugrTypeDataInput, nil
+			case def.Kind == ast.Object && def.Name == base.QueryTimeJoinsTypeName:
+				return base.HugrTypeJoin, nil
+			case def.Kind == ast.Object && def.Name == base.QueryTimeSpatialTypeName:
+				return base.HugrTypeSpatial, nil
+			case def.Kind == ast.Object && def.Name == base.H3QueryTypeName:
+				return base.HugrTypeH3Agg, nil
+			case def.Kind == ast.Object && def.Name == base.H3DataQueryTypeName:
+				return base.HugrTypeH3Data, nil
+			}
+			return "", nil
+		},
+		"module": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			if mi := compiler.ModuleRootInfo(def); mi != nil {
+				return mi.Name, nil
+			}
+			if compiler.IsDataObject(def) {
+				return compiler.ObjectModule(def), nil
+			}
+			return "", nil
+		},
+		"catalog": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			if compiler.IsDataObject(def) {
+				info := compiler.DataObjectInfo(def)
+				if info != nil {
+					return info.Catalog, nil
+				}
+				return "", nil
+			}
+			return "", nil
+		},
 	}, "__Type")
 }
 
@@ -295,6 +345,67 @@ func fieldResolver(ctx context.Context, schema *ast.Schema, def *ast.FieldDefini
 				return nil, nil
 			}
 			return di.Reason, nil
+		},
+		"hugr_type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			td := schema.Types[def.Type.Name()]
+			if td == nil {
+				return "", nil
+			}
+			if mi := compiler.ModuleRootInfo(td); mi != nil && def.Type.NamedType != "" {
+				return base.HugrTypeFieldSubmodule, nil
+			}
+			switch {
+			case compiler.IsAggregateQueryDefinition(def):
+				return base.HugrTypeFieldAgg, nil
+			case compiler.IsSelectOneQueryDefinition(def):
+				return base.HugrTypeFieldSelectOne, nil
+			case compiler.IsSelectQueryDefinition(def):
+				return base.HugrTypeFieldSelect, nil
+			case compiler.IsAggregateQueryDefinition(def):
+				return base.HugrTypeFieldAgg, nil
+			case compiler.IsBucketAggregateQueryDefinition(def):
+				return base.HugrTypeFieldBucketAgg, nil
+			case compiler.IsFunctionCall(def):
+				return base.HugrTypeFieldFunction, nil
+			case compiler.IsFunction(def):
+				return base.HugrTypeFieldFunction, nil
+			case compiler.IsJoinSubqueryDefinition(def):
+				return base.HugrTypeFieldSelect, nil
+			case compiler.IsReferencesSubquery(def):
+				return base.HugrTypeFieldSelect, nil
+			case compiler.IsInsertQueryDefinition(def):
+				return base.HugrTypeFieldMutationInsert, nil
+			case compiler.IsUpdateQueryDefinition(def):
+				return base.HugrTypeFieldMutationUpdate, nil
+			case compiler.IsDeleteQueryDefinition(def):
+				return base.HugrTypeFieldMutationDelete, nil
+			}
+			if def.Name == base.QueryTimeJoinsFieldName && td.Name == base.QueryBaseName {
+				return base.HugrTypeFieldJoin, nil
+			}
+			if def.Name == base.QueryTimeSpatialFieldName && td.Name == base.QueryBaseName {
+				return base.HugrTypeFieldSpatial, nil
+			}
+			if def.Name == compiler.JQTransformQueryName && td.Name == base.QueryBaseName {
+				return base.HugrTypeFieldJQ, nil
+			}
+			if def.Name == base.H3QueryFieldName && td.Name == base.H3QueryTypeName {
+				return base.HugrTypeFieldH3Agg, nil
+			}
+			return "", nil
+		},
+		"catalog": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			if compiler.IsFunction(def) {
+				info, err := compiler.FunctionInfo(def)
+				if err != nil {
+					return nil, err
+				}
+				return info.Catalog, nil
+			}
+			return "", nil
+		},
+		"mcp_exclude": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			return def.Directives.ForName(base.FieldExcludeMCPDirectiveName) != nil, nil
 		},
 	}, "__Field")
 }
@@ -348,6 +459,9 @@ func argumentResolver(ctx context.Context, schema *ast.Schema, def *ast.Argument
 			}
 			return def.DefaultValue.Raw, nil
 		},
+		"hugr_type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			return "test", nil
+		},
 	}, "__InputValue")
 }
 
@@ -371,6 +485,9 @@ func inputValueResolver(ctx context.Context, schema *ast.Schema, def *ast.FieldD
 				return nil, nil
 			}
 			return def.DefaultValue.Raw, nil
+		},
+		"hugr_type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			return "test", nil
 		},
 	}, "__InputValue")
 }
