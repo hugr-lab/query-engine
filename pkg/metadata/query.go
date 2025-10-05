@@ -43,8 +43,8 @@ func processTypeQuery(ctx context.Context, schema *ast.Schema, field *ast.Field,
 	if !ok {
 		return nil, ErrInvalidTypeQuery
 	}
-	tn := typeName.(string)
-	if tn == "" {
+	tn, ok := typeName.(string)
+	if !ok || tn == "" {
 		return nil, ErrInvalidTypeQuery
 	}
 

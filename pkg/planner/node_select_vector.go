@@ -101,10 +101,6 @@ func vectorSearchNodes(e engines.Engine, info *compiler.Object, query *ast.Field
 	return nodes, nil
 }
 
-func vectorDistanceFieldsNode(e engines.Engine, info *compiler.Object, query *ast.Field, prefix string) (*QueryPlanNode, error) {
-	return nil, nil
-}
-
 // vector similarity search nodes
 func semanticSearchNodes(e engines.Engine, info *compiler.Object, query *ast.Field, prefix string, param any) (QueryPlanNodes, error) {
 	if param == nil && info == nil {

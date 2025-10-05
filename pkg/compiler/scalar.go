@@ -958,7 +958,7 @@ func checkDim(val any, dim *ast.Directive) error {
 		return ErrorPosf(dim.Position, "invalid length argument: %v", d)
 	}
 	switch v := val.(type) {
-	case types.Dimentional:
+	case types.Dimensional:
 		if v.Len() != d {
 			return ErrorPosf(dim.Position, "invalid vector length: %d, expected: %d", v.Len(), d)
 		}
