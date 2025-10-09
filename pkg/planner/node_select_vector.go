@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/queries"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
-	"gopkg.in/errgo.v2/fmt/errors"
 )
 
 const (

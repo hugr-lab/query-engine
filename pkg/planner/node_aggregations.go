@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 
@@ -9,7 +10,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/vektah/gqlparser/v2/ast"
-	"gopkg.in/errgo.v2/fmt/errors"
 )
 
 func aggregateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
@@ -252,6 +252,20 @@ func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, pla
 			// filter arguments
 			if qa := query.Arguments.ForName("filter"); qa != nil {
 				if a := f.Arguments.ForName("filter"); a != nil {
+					qa := &ast.Argument{
+						Name:     qa.Name,
+						Position: qa.Position,
+						Comment:  qa.Comment,
+						Value: &ast.Value{
+							Kind:               qa.Value.Kind,
+							Position:           qa.Value.Position,
+							Comment:            qa.Value.Comment,
+							Definition:         qa.Value.Definition,
+							ExpectedType:       qa.Value.ExpectedType,
+							VariableDefinition: qa.Value.VariableDefinition,
+							Children:           append(ast.ChildValueList{}, qa.Value.Children...),
+						},
+					}
 					baseQuery.Arguments = append(baseQuery.Arguments, qa)
 					if and := qa.Value.Children.ForName("_and"); and != nil {
 						and.Children = append(and.Children,

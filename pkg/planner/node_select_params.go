@@ -2,6 +2,7 @@ package planner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,7 +10,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/vektah/gqlparser/v2/ast"
-	"gopkg.in/errgo.v2/fmt/errors"
 )
 
 func selectQueryParamsNodes(ctx context.Context, defs compiler.DefinitionsSource, e engines.Engine, info *compiler.Object, prefix string, query *ast.Field, args compiler.FieldQueryArguments, byAlias bool) (nodes QueryPlanNodes, err error) {
