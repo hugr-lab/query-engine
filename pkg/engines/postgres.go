@@ -593,7 +593,7 @@ const (
 	intExtractJSONTemplate    = "(CASE WHEN jsonb_typeof(%s) = 'number' THEN (%[1]s)::INTEGER ELSE NULL END)"
 	bigIntExtractJSONTemplate = "(CASE WHEN jsonb_typeof(%s) = 'number' THEN (%[1]s)::BIGINT ELSE NULL END)"
 	floatExtractJSONTemplate  = "(CASE WHEN jsonb_typeof(%s) = 'number' THEN (%[1]s)::float ELSE NULL END)"
-	stringExtractJSONTemplate = "(CASE WHEN jsonb_typeof(%s) = 'string' THEN (%[1]s)::TEXT ELSE NULL END)"
+	stringExtractJSONTemplate = `(CASE WHEN jsonb_typeof(%s) = 'string' THEN trim(both '"' from (%[1]s)::TEXT) ELSE NULL END)`
 	boolExtractJSONTemplate   = "(CASE WHEN jsonb_typeof(%s) = 'boolean' THEN (%[1]s)::BOOL ELSE NULL END)"
 	timeExtractJSONTemplate   = "jsonb_path_query_first(%s, '$.datetime()', silent=>true)::TEXT"
 )
