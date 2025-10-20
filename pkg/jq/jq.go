@@ -71,7 +71,7 @@ func (t *Transformer) Transform(ctx context.Context, in any, vars map[string]any
 	var vv []any
 	for _, name := range t.opt.varNames {
 		if vars == nil {
-			vv = append(vv, t.opt.vars[name])
+			vv = append(vv, t.opt.vars[strings.TrimPrefix(name, "$")])
 			continue
 		}
 		vv = append(vv, vars[strings.TrimPrefix(name, "$")])

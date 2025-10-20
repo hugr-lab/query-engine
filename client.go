@@ -448,7 +448,7 @@ func (c *Client) parseMultipartResponse(resp *http.Response) (*types.Response, e
 					return nil, fmt.Errorf("creating arrow reader: %w", err)
 				}
 				for reader.Next() {
-					rec := reader.Record()
+					rec := reader.RecordBatch()
 					if rec == nil {
 						continue
 					}

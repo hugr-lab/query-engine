@@ -175,7 +175,7 @@ func writeArrowTableToIPC(w *multipart.Writer, path string, query compiler.Query
 	if err != nil {
 		return err
 	}
-	chunk := rr.Record()
+	chunk := rr.RecordBatch()
 	if rr.Err() != nil {
 		return rr.Err()
 	}
@@ -195,7 +195,7 @@ func writeArrowTableToIPC(w *multipart.Writer, path string, query compiler.Query
 
 	// write remaining chunks
 	for rr.Next() {
-		chunk = rr.Record()
+		chunk = rr.RecordBatch()
 		if rr.Err() != nil {
 			return rr.Err()
 		}

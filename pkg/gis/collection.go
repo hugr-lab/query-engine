@@ -442,7 +442,7 @@ func encodeArrowTable(ctx context.Context, w io.Writer, data db.ArrowTable, fd f
 	defer reader.Release()
 	firstRec := true
 	for reader.Next() {
-		rec := reader.Record()
+		rec := reader.RecordBatch()
 		if reader.Err() != nil {
 			return 0, reader.Err()
 		}
@@ -466,7 +466,7 @@ func encodeArrowTable(ctx context.Context, w io.Writer, data db.ArrowTable, fd f
 	return n, nil
 }
 
-func encodeRecord(ctx context.Context, w io.Writer, rec arrow.Record, fd featureDefinition, writeFunc encodeFeatureFunc, sep string) (int64, error) {
+func encodeRecord(ctx context.Context, w io.Writer, rec arrow.RecordBatch, fd featureDefinition, writeFunc encodeFeatureFunc, sep string) (int64, error) {
 	data := make(map[string]any)
 	for i := 0; i < int(rec.NumRows()); i++ {
 		for j := 0; j < int(rec.NumCols()); j++ {

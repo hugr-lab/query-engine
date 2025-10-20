@@ -24,7 +24,7 @@ func TestDBJsonTable_MarshalJSON(t *testing.T) {
 	b.Field(1).(*array.StringBuilder).AppendValues([]string{"test"}, nil)
 	b.Field(1).(*array.StringBuilder).AppendValues([]string{"test"}, nil)
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	table := NewArrowTable()
@@ -52,7 +52,7 @@ func TestDBJsonTableOne_MarshalJSON(t *testing.T) {
 	b.Field(0).(*array.StringBuilder).AppendValues([]string{"{\"test\":\"val\", \"val\":21}"}, nil)
 	b.Field(0).(*array.StringBuilder).AppendValues([]string{"{\"test\":\"val\", \"val\":22}"}, nil)
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	table := NewArrowTable()
@@ -82,7 +82,7 @@ func TestDBJsonTable_EncodeMsgpack(t *testing.T) {
 	b.Field(0).(*array.Int32Builder).AppendValues([]int32{1, 2}, nil)
 	b.Field(1).(*array.StringBuilder).AppendValues([]string{"test1", "test2"}, nil)
 
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	table := NewArrowTable()

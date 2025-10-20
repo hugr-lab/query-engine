@@ -171,7 +171,7 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 			stream.sendStreamError(fmt.Errorf("stream cancelled: %w", ctx.Err()))
 			return
 		default:
-			chunk := reader.Record()
+			chunk := reader.RecordBatch()
 			if reader.Err() != nil {
 				stream.sendStreamError(fmt.Errorf("error reading IPC stream: %w", reader.Err()))
 				return

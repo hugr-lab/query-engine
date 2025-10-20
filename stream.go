@@ -19,7 +19,7 @@ import (
 
 var ErrEmptyRequest = errors.New("empty request")
 
-type ChunkProcessFunc func(ctx context.Context, path string, field *ast.Field, rec arrow.Record) error
+type ChunkProcessFunc func(ctx context.Context, path string, field *ast.Field, rec arrow.RecordBatch) error
 
 func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map[string]any) (db.ArrowTable, func(), error) {
 	ctx, err := s.perm.ContextWithPermissions(ctx)

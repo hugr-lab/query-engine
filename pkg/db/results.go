@@ -22,14 +22,14 @@ type ArrowTable interface {
 	MarshalJSON() ([]byte, error)
 	DecodeMsgpack(dec *msgpack.Decoder) error
 	EncodeMsgpack(enc *msgpack.Encoder) error
-	Records() ([]arrow.Record, error)
+	Records() ([]arrow.RecordBatch, error)
 	Reader(retain bool) (array.RecordReader, error)
 }
 
 var _ ArrowTable = (*ArrowTableChunked)(nil)
 
 type ArrowTableChunked struct {
-	chunks  []arrow.Record
+	chunks  []arrow.RecordBatch
 	wrapped bool
 	asArray bool
 }
@@ -50,7 +50,7 @@ func NewArrowTableFromReader(reader array.RecordReader) (*ArrowTableChunked, err
 			reader.Release()
 			return nil, reader.Err()
 		}
-		rec := reader.Record()
+		rec := reader.RecordBatch()
 		t.Append(rec)
 	}
 	return t, nil
@@ -72,7 +72,7 @@ func (t *ArrowTableChunked) Info() string {
 	return strings.Join(info, ",")
 }
 
-func (t *ArrowTableChunked) Append(rec arrow.Record) {
+func (t *ArrowTableChunked) Append(rec arrow.RecordBatch) {
 	rec.Retain()
 	t.chunks = append(t.chunks, rec)
 }
@@ -89,11 +89,11 @@ func (t *ArrowTableChunked) Release() {
 	}
 }
 
-func (t *ArrowTableChunked) Records() ([]arrow.Record, error) {
+func (t *ArrowTableChunked) Records() ([]arrow.RecordBatch, error) {
 	if len(t.chunks) == 0 {
 		return nil, nil
 	}
-	records := make([]arrow.Record, len(t.chunks))
+	records := make([]arrow.RecordBatch, len(t.chunks))
 	for i, rec := range t.chunks {
 		rec.Retain()
 		records[i] = rec
@@ -142,7 +142,7 @@ func (t *ArrowTableChunked) NumChunks() int {
 	return len(t.chunks)
 }
 
-func (t *ArrowTableChunked) Chunk(i int) arrow.Record {
+func (t *ArrowTableChunked) Chunk(i int) arrow.RecordBatch {
 	return t.chunks[i]
 }
 
@@ -209,7 +209,7 @@ func (t *ArrowTableChunked) MarshalJSON() ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func RecordToJSON(rec arrow.Record, asArray bool, w io.Writer) error {
+func RecordToJSON(rec arrow.RecordBatch, asArray bool, w io.Writer) error {
 	enc := json.NewEncoder(w)
 
 	fields := rec.Schema().Fields()
@@ -409,14 +409,14 @@ func (t *ArrowTableChunked) DecodeMsgpack(dec *msgpack.Decoder) error {
 	return err
 }
 
-func decodeRecordsFromIPC(b []byte) ([]arrow.Record, error) {
+func decodeRecordsFromIPC(b []byte) ([]arrow.RecordBatch, error) {
 	buf := bytes.NewReader(b)
 	fr, err := ipc.NewFileReader(buf)
 	if err != nil {
 		return nil, err
 	}
 	defer fr.Close()
-	rr := make([]arrow.Record, fr.NumRecords())
+	rr := make([]arrow.RecordBatch, fr.NumRecords())
 	for i := 0; i < fr.NumRecords(); i++ {
 		rr[i], err = fr.Read()
 		if errors.Is(err, io.EOF) {
@@ -456,7 +456,7 @@ func (t *ArrowTableChunked) EncodeMsgpack(enc *msgpack.Encoder) error {
 	return enc.Encode(encoded)
 }
 
-func encodeRecordsToIPC(rr []arrow.Record) ([]byte, error) {
+func encodeRecordsToIPC(rr []arrow.RecordBatch) ([]byte, error) {
 	if len(rr) == 0 {
 		return nil, nil
 	}
@@ -522,7 +522,7 @@ func (t *ArrowTableStream) Retain() {
 	t.reader.Retain()
 }
 
-func (t *ArrowTableStream) Records() ([]arrow.Record, error) {
+func (t *ArrowTableStream) Records() ([]arrow.RecordBatch, error) {
 	if t.reader == nil {
 		return nil, nil
 	}
@@ -636,11 +636,11 @@ func (t *ArrowTableStream) MarshalJSON() ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-func (t *ArrowTableStream) readAll() ([]arrow.Record, error) {
+func (t *ArrowTableStream) readAll() ([]arrow.RecordBatch, error) {
 	if t.reader == nil {
 		return nil, nil
 	}
-	var rr []arrow.Record
+	var rr []arrow.RecordBatch
 	for t.reader.Next() {
 		if t.reader.Err() != nil {
 			t.reader.Release()
@@ -649,7 +649,7 @@ func (t *ArrowTableStream) readAll() ([]arrow.Record, error) {
 			}
 			return nil, t.reader.Err()
 		}
-		rec := t.reader.Record()
+		rec := t.reader.RecordBatch()
 		rr = append(rr, rec)
 		rec.Retain()
 	}
@@ -726,14 +726,14 @@ func (t *ArrowTableStream) EncodeMsgpack(enc *msgpack.Encoder) error {
 	return enc.Encode(encoded)
 }
 
-func RecordsColNums(rr []arrow.Record) int64 {
+func RecordsColNums(rr []arrow.RecordBatch) int64 {
 	if len(rr) == 0 {
 		return 0
 	}
 	return rr[0].NumCols()
 }
 
-func RecordsRowNums(rr []arrow.Record) int64 {
+func RecordsRowNums(rr []arrow.RecordBatch) int64 {
 	if len(rr) == 0 {
 		return 0
 	}
@@ -744,13 +744,13 @@ func RecordsRowNums(rr []arrow.Record) int64 {
 	return numRows
 }
 
-func ReleaseRecords(rr []arrow.Record) {
+func ReleaseRecords(rr []arrow.RecordBatch) {
 	for _, rec := range rr {
 		rec.Release()
 	}
 }
 
-func RetainRecords(rr []arrow.Record) {
+func RetainRecords(rr []arrow.RecordBatch) {
 	for _, rec := range rr {
 		rec.Retain()
 	}
