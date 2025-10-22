@@ -712,6 +712,9 @@ func filterSQLValue(e engines.Engine, defs compiler.Definitions, field *ast.Fiel
 	}
 	var filters []string
 	for op, v := range value {
+		if v == nil {
+			continue
+		}
 		filter, p, err := e.FilterOperationSQLValue(sqlName, path, op, v, params)
 		if err != nil {
 			return "", nil, err

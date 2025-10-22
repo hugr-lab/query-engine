@@ -69,6 +69,9 @@ var ScalarTypes = map[string]ScalarType{
 		FilterInput:      "IntFilter",
 		ListFilterInput:  "IntListFilter",
 		ParseValue: func(value any) (any, error) {
+			if value == nil {
+				return nil, nil
+			}
 			switch v := value.(type) {
 			case int:
 				return int64(v), nil
@@ -118,6 +121,9 @@ var ScalarTypes = map[string]ScalarType{
 		FilterInput:      "BigIntFilter",
 		ListFilterInput:  "BigIntListFilter",
 		ParseValue: func(value any) (any, error) {
+			if value == nil {
+				return nil, nil
+			}
 			switch v := value.(type) {
 			case int:
 				return int64(v), nil
@@ -167,6 +173,9 @@ var ScalarTypes = map[string]ScalarType{
 		FilterInput:      "FloatFilter",
 		ListFilterInput:  "FloatListFilter",
 		ParseValue: func(value any) (any, error) {
+			if value == nil {
+				return nil, nil
+			}
 			switch v := value.(type) {
 			case int:
 				return float64(v), nil
