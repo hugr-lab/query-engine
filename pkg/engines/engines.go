@@ -244,17 +244,33 @@ func (ss SelectionSet) AsSelectionSet() ast.SelectionSet {
 
 func SelectedFields(ss ast.SelectionSet) SelectionSet {
 	var fields SelectionSet
+	// deduplicate fields by alias, keeping last one (to handle overrides in inline fragments)
+	seen := map[string]struct{}{}
 	for _, s := range ss {
 		switch s := s.(type) {
 		case *ast.FragmentSpread:
-			fields = append(fields, SelectedFields(s.Definition.SelectionSet)...)
+			for _, f := range SelectedFields(s.Definition.SelectionSet) {
+				if _, ok := seen[f.Field.Alias]; ok {
+					continue
+				}
+				seen[f.Field.Alias] = struct{}{}
+				fields = append(fields, f)
+			}
 		case *ast.InlineFragment:
 			ff := SelectedFields(s.SelectionSet)
 			for _, f := range ff {
 				f.OnType = s.TypeCondition
+				if _, ok := seen[f.Field.Alias]; ok {
+					continue
+				}
+				seen[f.Field.Alias] = struct{}{}
 				fields = append(fields, f)
 			}
 		case *ast.Field:
+			if _, ok := seen[s.Alias]; ok {
+				continue
+			}
+			seen[s.Alias] = struct{}{}
 			fields = append(fields, SelectedField{Field: s})
 		}
 	}

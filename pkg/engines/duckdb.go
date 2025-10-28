@@ -812,7 +812,13 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 		if path != "" {
 			fieldName = path + "." + fieldName
 		}
-		extractValue := sql + extractStructFieldByPath(fieldName)
+		extractValue := ""
+		if !fi.IsCalcField() {
+			extractValue = sql + extractStructFieldByPath(fieldName)
+		}
+		if fi.IsCalcField() {
+			extractValue = fi.SQLFieldFunc("", func(s string) string { return sql + extractStructFieldByPath(s) })
+		}
 		if fi.IsTransformed() {
 			extractValue = fi.TransformSQL(extractValue)
 		}

@@ -240,7 +240,10 @@ func functionCallSQL(defs compiler.Definitions, e engines.Engine, field *ast.Fie
 	sql := info.SQL()
 	_, isScanner := e.(engines.EngineQueryScanner)
 	// json cast work only in duckdb base engines (with out scanner)
-	if info.JsonCast && !isScanner {
+	if info.JsonCast && isScanner {
+		return "", nil, fmt.Errorf("function %s json cast is not supported for this engine", info.Name)
+	}
+	if info.JsonCast {
 		if len(field.SelectionSet) != 0 {
 			sql = "(SELECT " + engines.JsonToStruct(field, "", true, true) +
 				" FROM (SELECT " + sql + " AS " + engines.Ident(field.Alias) + "))"

@@ -96,6 +96,17 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 		fieldDirectiveArgValue(field, base.FieldSourceDirectiveName, "field") == "-" {
 		return nil
 	}
+	fieldInfo := FieldDefinitionInfo(field, def)
+	if fieldInfo == nil {
+		return ErrorPosf(field.Position, "field %s of object %s not found", field.Name, def.Name)
+	}
+	// check runtime calculations
+	if err := fieldInfo.validate(); err != nil {
+		return err
+	}
+	if !IsDataObject(def) {
+		return nil
+	}
 	// add field transformation parameters
 	if field.Type.NamedType != "" {
 		field.Arguments = ScalarTypes[field.Type.Name()].Arguments
@@ -124,16 +135,7 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 			Position:    compiledPos(),
 		})
 	}
-	info := DataObjectInfo(def)
-	if info == nil {
-		return nil
-	}
-	fieldInfo := info.FieldForName(field.Name)
-	if fieldInfo == nil {
-		return ErrorPosf(field.Position, "field %s of object %s not found", field.Name, def.Name)
-	}
-	// check runtime calculations
-	return fieldInfo.validate()
+	return nil
 }
 
 func IsTimescaleKey(def *ast.FieldDefinition) bool {
@@ -233,6 +235,10 @@ func (f *Field) FieldSourceName(prefix string, ident bool) string {
 }
 
 func (f *Field) SQL(prefix string) string {
+	return f.SQLFieldFunc(prefix, func(s string) string { return base.Ident(s) })
+}
+
+func (f *Field) SQLFieldFunc(prefix string, fn func(string) string) string {
 	sp := prefix
 	if prefix != "" {
 		sp += "."
@@ -245,13 +251,13 @@ func (f *Field) SQL(prefix string) string {
 		return "NULL"
 	}
 	if f.sql == "" {
-		return sp + base.Ident(fs)
+		return sp + fn(fs)
 	}
 	fields := f.UsingFields()
 	sql := f.sql
 	for _, field := range fields {
 		if field == f.Name {
-			sql = strings.ReplaceAll(sql, "["+field+"]", sp+base.Ident(fs))
+			sql = strings.ReplaceAll(sql, "["+field+"]", sp+fn(fs))
 			continue
 		}
 		fd := f.object.Fields.ForName(field)
@@ -260,7 +266,7 @@ func (f *Field) SQL(prefix string) string {
 			continue
 		}
 		info := FieldDefinitionInfo(fd, f.object)
-		fs := info.SQL(prefix)
+		fs := info.SQLFieldFunc(prefix, fn)
 		sql = strings.ReplaceAll(sql, "["+field+"]", fs)
 	}
 	return sql

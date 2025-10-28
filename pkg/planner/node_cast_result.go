@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 )
@@ -125,23 +126,26 @@ func castScalarResultsNode(_ context.Context, caster engines.EngineTypeCaster, n
 			if node.Query.Definition.Type.NamedType == "" {
 				sql = "unnest(" + sql + ")"
 			}
-			sql = "(SELECT " + v + " FROM (SELECT " + sql + " AS " + engines.Ident(node.Query.Alias) + "))"
+			sql = "(SELECT " + v + " FROM (SELECT (" + sql + ") AS " + engines.Ident(node.Query.Alias) + "))"
 			if s, ok := caster.(engines.EngineQueryScanner); ok {
 				sql = s.WarpScann(
 					base.FieldCatalogName(node.Query.Definition),
 					sql,
 				)
 			}
-
 			c, err := caster.CastFromIntermediateType(node.Query, toJSON)
 			if err != nil {
 				return "", nil, err
 			}
-			if c != node.Query.Alias {
-				c = c + " AS " + engines.Ident(node.Query.Alias)
+			// if not scalar type - need to cast json to struct
+			if !compiler.IsScalarType(node.Query.Definition.Type.Name()) {
+				c = engines.JsonToStruct(node.Query, "", !toJSON, false)
 			}
 			if aggArray && node.Query.Definition.Type.NamedType == "" {
 				sql = "SELECT array_agg(" + c + ") FROM " + sql
+			}
+			if c != node.Query.Alias {
+				c = c + " AS " + engines.Ident(node.Query.Alias)
 			}
 			return "SELECT " + c + " FROM " + sql, params, nil
 		},

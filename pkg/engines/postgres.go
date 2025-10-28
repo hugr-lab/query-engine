@@ -1093,14 +1093,20 @@ func repackPGJsonRecursive(sql string, field *ast.Field, path string) string {
 			fields = append(fields, "'"+Ident(f.Field.Alias)+"','"+f.Field.ObjectDefinition.Name+"'")
 			continue
 		}
-		extractValue := compiler.FieldInfo(f.Field).SQL("")
-		if extractValue != f.Field.Name { // need to full repack this level
+		info := compiler.FieldInfo(f.Field)
+		extractValue := info.FieldSourceName("", false)
+		if extractValue != f.Field.Name || info.IsCalcField() { // need to full repack this level
 			check[f.Field.ObjectDefinition.Name]++
 		}
 		if path != "" {
 			extractValue = path + "." + f.Field.Name
 		}
-		extractValue = sql + extractPGJsonFieldByPath(extractValue, false)
+		if !info.IsCalcField() {
+			extractValue = sql + extractPGJsonFieldByPath(extractValue, false)
+		}
+		if info.IsCalcField() {
+			extractValue = info.SQLFieldFunc("", func(s string) string { return sql + extractPGJsonFieldByPath(s, false) })
+		}
 		newPath := f.Field.Name
 		if path != "" {
 			newPath = path + "." + f.Field.Name

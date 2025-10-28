@@ -741,9 +741,17 @@ func nestedFieldFilterSQLValue(e engines.Engine, defs compiler.Definitions, def 
 		}
 		var q string
 		var err error
-		p := fieldName
+		fi := compiler.FieldDefinitionInfo(field, def)
+		p := fi.FieldSourceName("", false)
 		if path != "" {
-			p = path + "." + fieldName
+			p = path + "." + p
+		}
+		// check if it is a calculated field than replace sqlName and path)
+		if fi.IsCalcField() {
+			sqlName = fi.SQLFieldFunc("", func(s string) string {
+				return e.FieldValueByPath(sqlName, p)
+			})
+			p = ""
 		}
 		q, params, err = filterSQLValue(e, defs, field, sqlName, p, v, params)
 		if err != nil {
