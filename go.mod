@@ -20,7 +20,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.30
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	golang.org/x/crypto v0.43.0
-	golang.org/x/exp v0.0.0-20251017212417-90e834f514db
+	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
 	golang.org/x/oauth2 v0.32.0
 	golang.org/x/sync v0.17.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -39,7 +39,7 @@ require (
 	github.com/woodsbury/decimal128 v1.4.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/telemetry v0.0.0-20251014153721-24f779f6aaef // indirect
+	golang.org/x/telemetry v0.0.0-20251022145735-5be28d707443 // indirect
 )
 
 require (
@@ -49,7 +49,7 @@ require (
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/uber/h3-go/v4 v4.3.0
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	go.mongodb.org/mongo-driver v1.17.4 // indirect
+	go.mongodb.org/mongo-driver v1.17.6 // indirect
 )
 
 require (
@@ -79,8 +79,8 @@ require (
 	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.67.1 // indirect
-	github.com/prometheus/procfs v0.17.0 // indirect
-	github.com/redis/go-redis/v9 v9.14.1
+	github.com/prometheus/procfs v0.19.1 // indirect
+	github.com/redis/go-redis/v9 v9.16.0
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
