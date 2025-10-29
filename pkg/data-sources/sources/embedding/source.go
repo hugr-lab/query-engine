@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"slices"
@@ -175,6 +176,7 @@ func (s *Source) CreateEmbeddings(ctx context.Context, input []string) ([]types.
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("embedding request for source %s failed: %s", s.Name(), resp.Status)
 		return nil, errors.New("failed to create embedding")
 	}
 
