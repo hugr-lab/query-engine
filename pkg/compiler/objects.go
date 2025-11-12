@@ -258,6 +258,14 @@ func addObjectReferencesQuery(schema *ast.SchemaDocument, def *ast.Definition, o
 			t = ast.ListType(t, compiledPos())
 			args = inputObjectQueryArgs(schema, references, true)
 		}
+		if !info.IsM2M {
+			args = append(args, &ast.ArgumentDefinition{
+				Name:        "inner",
+				Description: "Apply inner join to reference record",
+				Type:        ast.NamedType("Boolean", compiledPos()),
+				Position:    compiledPos(),
+			})
+		}
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
 			Name:        info.Query,
 			Description: info.Description,

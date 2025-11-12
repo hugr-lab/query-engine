@@ -170,7 +170,13 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		for _, selected := range engines.SelectedFields(qj.SelectionSet) {
 			sq := selected.Field
 			rAlias := "_" + qj.Alias + "_" + sq.Alias + "_join_sub_node"
-			isInner := sq.Arguments.ForName("inner")
+			isInner := false
+			if !compiler.IsFunctionCall(sq.Definition) {
+				am := sq.ArgumentMap(vars)
+				if iv, ok := am["inner"]; ok {
+					isInner, _ = iv.(bool)
+				}
+			}
 			node, isGeneral, err := subDataQueryNode(ctx, defs, planer, info, !catQuery, sq, rAlias, vars)
 			if err != nil {
 				return nil, false, err
@@ -198,7 +204,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 					withGeneralNodes = append(withGeneralNodes, node)
 				}
 				joinGeneralNodes = append(joinGeneralNodes, joinNode)
-				if isInner != nil && isInner.Value != nil && isInner.Value.Raw == "true" {
+				if isInner {
 					innerGeneral = append(innerGeneral, joinNode.Name+"._selection IS NOT NULL")
 				}
 				generalFields[sq.Alias] = joinNode.Name + "._selection"
@@ -209,7 +215,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 					withCatalogNodes = append(withCatalogNodes, node)
 				}
 				joinCatalogNodes = append(joinCatalogNodes, joinNode)
-				if isInner != nil && isInner.Value != nil && isInner.Value.Raw == "true" {
+				if isInner {
 					innerCatalog = append(innerCatalog, joinNode.Name+"._selection IS NOT NULL")
 				}
 				catalogFields[sq.Alias] = joinNode.Name + "._selection"
