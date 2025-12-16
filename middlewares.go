@@ -2,6 +2,7 @@ package hugr
 
 import (
 	"compress/gzip"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -55,6 +56,10 @@ func buildMW(middlewares ...func(next http.Handler) http.Handler) func(next http
 func (s *Service) checkEndpointPermissionsMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		perm, err := s.perm.RolePermissions(r.Context())
+		if errors.Is(err, auth.ErrForbidden) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

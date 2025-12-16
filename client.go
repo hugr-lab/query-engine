@@ -351,11 +351,33 @@ func (c *Client) QueryJSON(ctx context.Context, req JQRequest) (*db.JsonValue, e
 	return &out, nil
 }
 
+func (c *Client) ValidateQueryJSON(ctx context.Context, req JQRequest) error {
+	req.Query.ValidateOnly = true
+	res, err := c.QueryJSON(ctx, req)
+	if err != nil {
+		return err
+	}
+	if res == nil {
+		return errors.New("no response")
+	}
+	var data types.Response
+	err = json.Unmarshal([]byte(*res), &data)
+	if err != nil {
+		return err
+	}
+	if data.Err() != nil {
+		return data.Err()
+	}
+
+	return nil
+}
+
 func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error) {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(map[string]any{
-		"query":     query,
-		"variables": vars,
+		"query":         query,
+		"variables":     vars,
+		"validate_only": types.IsValidateOnlyContext(ctx),
 	})
 	if err != nil {
 		return nil, err
@@ -380,6 +402,11 @@ func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (
 	}
 
 	return c.parseMultipartResponse(resp)
+}
+
+func (c *Client) ValidateQuery(ctx context.Context, query string, vars map[string]any) error {
+	_, err := c.Query(types.ContextWithValidateOnly(ctx), query, vars)
+	return err
 }
 
 func (c *Client) parseMultipartResponse(resp *http.Response) (*types.Response, error) {

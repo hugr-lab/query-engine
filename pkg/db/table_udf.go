@@ -3,7 +3,7 @@ package db
 import (
 	"context"
 
-	"github.com/marcboeker/go-duckdb/v2"
+	"github.com/duckdb/duckdb-go/v2"
 )
 
 func RegisterTableRowFunction(ctx context.Context, db *Pool, function TableRowFunction) error {
