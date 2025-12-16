@@ -6,7 +6,7 @@ import (
 	"database/sql/driver"
 	"sync"
 
-	"github.com/marcboeker/go-duckdb/v2"
+	"github.com/duckdb/duckdb-go/v2"
 )
 
 type Config struct {
@@ -117,15 +117,14 @@ func (p *Pool) release() {
 	p.openConns--
 }
 
-func (p *Pool) Exec(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (p *Pool) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	conn, err := p.Conn(ctx)
-	defer conn.Close()
 	if err != nil {
 		return nil, err
 	}
-	res, err := conn.Exec(ctx, query, args...)
+	defer conn.Close()
 
-	return res, err
+	return conn.Exec(ctx, query, args...)
 }
 
 func (p *Pool) Conn(ctx context.Context) (*Connection, error) {

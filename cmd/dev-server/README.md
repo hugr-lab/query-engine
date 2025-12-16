@@ -19,7 +19,7 @@ go build -o hugr cmd/qe-server/main.go
 
 It used the following packages:
 
-- [github.com/marcboeker/go-duckdb/v2](https://github.com/marcboeker/go-duckdb)
+- [github.com/duckdb/duckdb-go/v2](https://github.com/marcboeker/go-duckdb)
 - [github.com/apache/arrow-go/v18](https://github.com/apache/arrow-go)
 - [github.com/paulmach/orb](https://github.com/paulmach/orb)
 - [github.com/vektah/gqlparser/v2](https://github.com/vektah/gqlparser)

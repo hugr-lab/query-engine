@@ -78,6 +78,9 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 	}
 
 	ctx = planner.ContextWithRawResultsFlag(ctx)
+	if req.ValidateOnly {
+		ctx = types.ContextWithValidateOnly(ctx)
+	}
 
 	for _, op := range query.Operations {
 		if req.OperationName != "" && req.OperationName != op.Name {

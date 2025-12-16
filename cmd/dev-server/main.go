@@ -9,9 +9,9 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/duckdb/duckdb-go/v2"
 	hugr "github.com/hugr-lab/query-engine"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
-	"github.com/marcboeker/go-duckdb/v2"
 )
 
 var (

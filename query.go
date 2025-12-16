@@ -323,6 +323,9 @@ func (s *Service) processDataQuery(ctx context.Context, schema *ast.Schema, quer
 				)
 			}
 		}
+		if types.IsValidateOnlyContext(ctx) {
+			return nil, nil
+		}
 		// execute query
 		return plan.Execute(ctx, s.db)
 	}
@@ -413,6 +416,9 @@ func (s *Service) processJQTransformation(ctx context.Context, schema *ast.Schem
 		}, vars)
 		if err != nil {
 			return nil, err
+		}
+		if types.IsValidateOnlyContext(ctx) {
+			return map[string]any{"ext": map[string]any{}}, nil
 		}
 		if !includeResults {
 			defer types.DataClose(data)

@@ -49,7 +49,7 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 			return nil, res.Err()
 		}
 
-		if req.JQ == "" {
+		if req.JQ == "" || req.Query.ValidateOnly {
 			return json.Marshal(res)
 		}
 		// handle jq request

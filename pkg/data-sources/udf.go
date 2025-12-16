@@ -7,13 +7,13 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/duckdb/duckdb-go/v2"
 	"github.com/hugr-lab/query-engine/pkg/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"
-	"github.com/marcboeker/go-duckdb/v2"
 
 	_ "embed"
 )

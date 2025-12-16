@@ -3,7 +3,7 @@ package types
 import (
 	"database/sql"
 
-	"github.com/marcboeker/go-duckdb/v2"
+	"github.com/duckdb/duckdb-go/v2"
 )
 
 func DuckDBOperationResult() duckdb.TypeInfo {

@@ -256,6 +256,7 @@ func (s *Service) parseRequest(r *http.Request) (req types.Request, err error) {
 			Query:         query.Get("query"),
 			Variables:     make(map[string]any),
 			OperationName: query.Get("operationName"),
+			ValidateOnly:  query.Has("validate_only") && query.Get("validate_only") == "true",
 		}
 		vars := query.Get("variables")
 		if vars != "" {
@@ -291,7 +292,9 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req types.Re
 	if len(qd.Operations) == 0 {
 		return types.Response{Errors: gqlerror.List{gqlerror.Errorf("no operations found")}}
 	}
-
+	if req.ValidateOnly {
+		ctx = types.ContextWithValidateOnly(ctx)
+	}
 	var res types.Response
 	if len(qd.Operations) == 1 || req.OperationName != "" {
 		op := qd.Operations[0]
