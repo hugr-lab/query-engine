@@ -61,8 +61,16 @@ func (p ParsedDSN) String() string {
 	u := &url.URL{
 		Scheme: p.Proto,
 		Host:   p.Host,
-		User:   url.UserPassword(p.User, p.Password),
-		Path:   "/" + p.DBName,
+	}
+	if p.User != "" && p.Password != "" {
+		u.User = url.UserPassword(p.User, p.Password)
+	}
+	if p.User != "" && p.Password == "" {
+		u.User = url.User(p.User)
+	}
+
+	if p.DBName != "" {
+		u.Path = "/" + p.DBName
 	}
 	if p.Port != "" {
 		u.Host = fmt.Sprintf("%s:%s", p.Host, p.Port)
@@ -99,6 +107,11 @@ func ParseDSN(dsn string) (ParsedDSN, error) {
 	}
 
 	if password, ok := u.User.Password(); ok {
+		// if the password is enclosed in single quotes, remove them (to allow for special characters like '@' in passwords)
+		if strings.HasPrefix(password, "'") && strings.HasSuffix(password, "'") {
+			password = strings.TrimPrefix(password, "'")
+			password = strings.TrimSuffix(password, "'")
+		}
 		parsed.Password = password
 	}
 

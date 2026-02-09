@@ -17,6 +17,13 @@ type Settings struct {
 	// POSTGRESQL
 	PGConnectionLimit int `json:"pg_connection_limit"`
 	PGPagesPerTask    int `json:"pg_pages_per_task"`
+
+	// MSSQL
+	MSSQLConnectionLimit   int `json:"mssql_connection_limit"`
+	MSSQLConnectionTimeout int `json:"mssql_connection_timeout"`
+	MSSQLIdleTimeout       int `json:"mssql_idle_timeout"`
+	MSSQLQueryTimeout      int `json:"mssql_query_timeout"`
+	MSSQLCatalogCacheTTL   int `json:"mssql_catalog_cache_ttl"`
 }
 
 func (s Settings) applySQL() string {
@@ -55,6 +62,24 @@ func (s Settings) applySQL() string {
 	if s.PGPagesPerTask != 0 {
 		sql = append(sql, fmt.Sprintf("SET pg_pages_per_task = %d;", s.PGPagesPerTask))
 	}
+
+	// MSSQL
+	if s.MSSQLConnectionLimit != 0 {
+		sql = append(sql, fmt.Sprintf("SET mssql_connection_limit = %d;", s.MSSQLConnectionLimit))
+	}
+	if s.MSSQLConnectionTimeout != 0 {
+		sql = append(sql, fmt.Sprintf("SET mssql_connection_timeout = %d;", s.MSSQLConnectionTimeout))
+	}
+	if s.MSSQLIdleTimeout != 0 {
+		sql = append(sql, fmt.Sprintf("SET mssql_idle_timeout = %d;", s.MSSQLIdleTimeout))
+	}
+	if s.MSSQLQueryTimeout != 0 {
+		sql = append(sql, fmt.Sprintf("SET mssql_query_timeout = %d;", s.MSSQLQueryTimeout))
+	}
+	if s.MSSQLCatalogCacheTTL != 0 {
+		sql = append(sql, fmt.Sprintf("SET mssql_catalog_cache_ttl = %d;", s.MSSQLCatalogCacheTTL))
+	}
+
 	if s.HomeDirectory != "" {
 		sql = append(sql, fmt.Sprintf("SET home_directory = '%s';", s.HomeDirectory))
 		sql = append(sql, fmt.Sprintf("SET secret_directory = '%s/.stored_secrets';", s.HomeDirectory))

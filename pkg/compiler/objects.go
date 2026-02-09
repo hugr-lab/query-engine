@@ -90,6 +90,10 @@ func validateObject(defs Definitions, def *ast.Definition, opt *Options) error {
 		switch d.Name {
 		case base.ModuleDirectiveName:
 		case base.ObjectTableDirectiveName, base.ObjectViewDirectiveName:
+			if d.Name == base.ObjectTableDirectiveName &&
+				!opt.IsTablesSupported() {
+				return ErrorPosf(d.Position, "engine %s doesn't support tables", opt.EngineType)
+			}
 			if objectType != "" {
 				return ErrorPosf(d.Position, "object %s can't have multiple type directives", def.Name)
 			}
@@ -190,7 +194,7 @@ func validateObject(defs Definitions, def *ast.Definition, opt *Options) error {
 	}
 
 	for _, field := range def.Fields {
-		err := validateObjectField(defs, def, field)
+		err := validateObjectField(defs, def, field, opt)
 		if err != nil {
 			return err
 		}
@@ -359,8 +363,8 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 		return nil
 	}
 	// add insert mutation
-	dataInputName := inputObjectMutationInsertName(schema, def)
-	insertArgs := inputObjectMutationInsertArgs(schema, def)
+	dataInputName := inputObjectMutationInsertName(schema, def, opt)
+	insertArgs := inputObjectMutationInsertArgs(schema, def, opt)
 	if len(insertArgs) == 0 {
 		return ErrorPosf(def.Position, "object %s should have at least one insertable field to create insert mutation", def.Name)
 	}
@@ -372,7 +376,7 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 		dd = append(dd, cacheDirective)
 	}
 	outType := ast.NamedType(def.Name, compiledPos())
-	if len(objectPrimaryKeys(def)) == 0 || isM2M {
+	if !opt.SupportInsertReturning() || len(objectPrimaryKeys(def)) == 0 || isM2M {
 		outType = ast.NamedType(OperationResultTypeName, compiledPos())
 	}
 
@@ -391,48 +395,52 @@ func addObjectQuery(schema *ast.SchemaDocument, def *ast.Definition, opt *Option
 	def.Directives = append(def.Directives, objectMutationDirective(mutationInsertPrefix+name, MutationTypeInsert, dataInputName))
 
 	// add update mutation
-	dataInputName = inputObjectMutationDataName(schema, def)
-	updateArgs := inputObjectMutationUpdateArgs(schema, def)
-	dd = ast.DirectiveList{
-		objectMutationDirective(def.Name, MutationTypeUpdate, dataInputName),
-		opt.catalog,
+	if opt.SupportUpdateWithoutPKs() || len(objectPrimaryKeys(def)) != 0 {
+		dataInputName = inputObjectMutationDataName(schema, def, opt)
+		updateArgs := inputObjectMutationUpdateArgs(schema, def, opt)
+		dd = ast.DirectiveList{
+			objectMutationDirective(def.Name, MutationTypeUpdate, dataInputName),
+			opt.catalog,
+		}
+		if cacheDirective != nil {
+			dd = append(dd, cacheDirective)
+		}
+		moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
+			Name:        mutationUpdatePrefix + name,
+			Description: def.Description,
+			Arguments:   updateArgs,
+			Type:        ast.NamedType(OperationResultTypeName, compiledPos()),
+			Directives:  dd,
+			Position:    compiledPos(),
+		})
+		def.Directives = append(def.Directives, objectMutationDirective(mutationUpdatePrefix+name, MutationTypeUpdate, dataInputName))
 	}
-	if cacheDirective != nil {
-		dd = append(dd, cacheDirective)
-	}
-	moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
-		Name:        mutationUpdatePrefix + name,
-		Description: def.Description,
-		Arguments:   updateArgs,
-		Type:        ast.NamedType(OperationResultTypeName, compiledPos()),
-		Directives:  dd,
-		Position:    compiledPos(),
-	})
-	def.Directives = append(def.Directives, objectMutationDirective(mutationUpdatePrefix+name, MutationTypeUpdate, dataInputName))
 
 	// add delete mutation
-	dd = ast.DirectiveList{
-		objectMutationDirective(def.Name, MutationTypeDelete, ""),
-		opt.catalog,
-	}
-	if cacheDirective != nil {
-		dd = append(dd, cacheDirective)
-	}
-	moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
-		Name:        mutationDeletePrefix + name,
-		Description: def.Description,
-		Arguments: ast.ArgumentDefinitionList{
-			{
-				Name:     "filter",
-				Type:     ast.NamedType(inputObjectFilterName(schema, def, false), nil),
-				Position: compiledPos(),
+	if opt.SupportDeleteWithoutPKs() || len(objectPrimaryKeys(def)) != 0 {
+		dd = ast.DirectiveList{
+			objectMutationDirective(def.Name, MutationTypeDelete, ""),
+			opt.catalog,
+		}
+		if cacheDirective != nil {
+			dd = append(dd, cacheDirective)
+		}
+		moduleObject.Fields = append(moduleObject.Fields, &ast.FieldDefinition{
+			Name:        mutationDeletePrefix + name,
+			Description: def.Description,
+			Arguments: ast.ArgumentDefinitionList{
+				{
+					Name:     "filter",
+					Type:     ast.NamedType(inputObjectFilterName(schema, def, false), nil),
+					Position: compiledPos(),
+				},
 			},
-		},
-		Type:       ast.NamedType(OperationResultTypeName, compiledPos()),
-		Directives: dd,
-		Position:   compiledPos(),
-	})
-	def.Directives = append(def.Directives, objectMutationDirective(mutationDeletePrefix+name, MutationTypeDelete, ""))
+			Type:       ast.NamedType(OperationResultTypeName, compiledPos()),
+			Directives: dd,
+			Position:   compiledPos(),
+		})
+		def.Directives = append(def.Directives, objectMutationDirective(mutationDeletePrefix+name, MutationTypeDelete, ""))
+	}
 	return nil
 }
 

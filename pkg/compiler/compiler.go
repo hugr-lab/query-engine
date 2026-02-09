@@ -12,16 +12,6 @@ import (
 	_ "embed"
 )
 
-type Options struct {
-	Name       string
-	ReadOnly   bool
-	Prefix     string
-	EngineType string
-	AsModule   bool
-
-	catalog *ast.Directive
-}
-
 // Compile compiles the source schema document with the given prefix.
 func Compile(source *ast.SchemaDocument, opt Options) (*ast.Schema, error) {
 	opt.catalog = base.CatalogDirective(opt.Name, opt.EngineType)

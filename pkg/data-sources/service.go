@@ -8,10 +8,12 @@ import (
 	"sync"
 
 	"github.com/hugr-lab/query-engine/pkg/catalogs"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/airport"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/extension"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/http"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mssql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/postgres"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -213,8 +215,12 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 		return duckdb.New(ds, attached)
 	case MySQL:
 		return mysql.New(ds, attached)
+	case MSSQL:
+		return mssql.New(ds, attached)
 	case Http:
 		return http.New(ds, attached)
+	case Airport:
+		return airport.New(ds, attached)
 	case Extension:
 		return extension.New(ds, attached)
 	case Embedding:

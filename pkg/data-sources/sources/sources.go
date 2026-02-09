@@ -13,10 +13,13 @@ const (
 	Postgres  types.DataSourceType = "postgres"
 	DuckDB    types.DataSourceType = "duckdb"
 	MySQL     types.DataSourceType = "mysql"
+	MSSQL     types.DataSourceType = "mssql"
 	Http      types.DataSourceType = "http"
 	Runtime   types.DataSourceType = "runtime"
 	Extension types.DataSourceType = "extension"
 	Embedding types.DataSourceType = "embedding"
+
+	Airport types.DataSourceType = "airport"
 )
 
 type Source interface {

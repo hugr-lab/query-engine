@@ -67,11 +67,12 @@ func (c *Catalog) baseSchema(ctx context.Context) (*ast.Schema, error) {
 	}
 
 	return compiler.Compile(sd, compiler.Options{
-		Name:       c.name,
-		ReadOnly:   c.readOnly,
-		Prefix:     c.prefix,
-		EngineType: string(c.engine.Type()),
-		AsModule:   c.asModule,
+		Name:         c.name,
+		ReadOnly:     c.readOnly,
+		Prefix:       c.prefix,
+		EngineType:   string(c.engine.Type()),
+		AsModule:     c.asModule,
+		Capabilities: c.engine.Capabilities(),
 	})
 }
 
