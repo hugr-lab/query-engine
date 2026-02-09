@@ -17,10 +17,13 @@ const (
 	TypePostgres Type = "postgres"
 	TypeDuckDB   Type = "duckdb"
 	TypeHttp     Type = "http"
+	TypeMssql    Type = "mssql"
+	TypeMySql    Type = "mysql"
 )
 
 type Engine interface {
 	Type() Type
+	Capabilities() *compiler.EngineCapabilities
 	SQLValue(any) (string, error)
 	FunctionCall(name string, positional []any, named map[string]any) (string, error)
 	RepackObject(sqlName string, field *ast.Field) string

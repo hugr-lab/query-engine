@@ -315,12 +315,11 @@ func appendFilterInputObject(schema *ast.SchemaDocument, def *ast.Definition, fi
 	})
 }
 
-func inputObjectMutationInsertArgs(schema *ast.SchemaDocument, def *ast.Definition) ast.ArgumentDefinitionList {
+func inputObjectMutationInsertArgs(schema *ast.SchemaDocument, def *ast.Definition, opt *Options) ast.ArgumentDefinitionList {
 	if !IsDataObject(def) {
 		return nil
 	}
-	dataInputName := inputObjectMutationInsertName(schema, def)
-
+	dataInputName := inputObjectMutationInsertName(schema, def, opt)
 	if IsEmbeddedObject(def) {
 		return ast.ArgumentDefinitionList{
 			&ast.ArgumentDefinition{
@@ -346,7 +345,7 @@ func inputObjectMutationInsertArgs(schema *ast.SchemaDocument, def *ast.Definiti
 	}
 }
 
-func inputObjectMutationInsertName(schema *ast.SchemaDocument, def *ast.Definition) string {
+func inputObjectMutationInsertName(schema *ast.SchemaDocument, def *ast.Definition, opt *Options) string {
 	inputName := def.Name + "_mut_input_data"
 	if d := def.Directives.ForName("insert_input"); d != nil {
 		inputName = directiveArgValue(d, "name")
@@ -368,6 +367,10 @@ func inputObjectMutationInsertName(schema *ast.SchemaDocument, def *ast.Definiti
 		if IsFunctionCall(field) {
 			continue
 		}
+		if IsReferencesSubquery(field) &&
+			!opt.SupportInsertReferences() {
+			continue
+		}
 		if field.Directives.ForName(JoinDirectiveName) != nil ||
 			field.Directives.ForName(base.FieldSqlDirectiveName) != nil ||
 			IsExtraField(field) {
@@ -383,7 +386,7 @@ func inputObjectMutationInsertName(schema *ast.SchemaDocument, def *ast.Definiti
 			if td.Directives.ForName(base.ObjectViewDirectiveName) != nil {
 				continue
 			}
-			tn := inputObjectMutationInsertName(schema, td)
+			tn := inputObjectMutationInsertName(schema, td, opt)
 			isList := t.NamedType == ""
 			t = ast.NamedType(tn, compiledPos())
 			if isList {
@@ -439,11 +442,11 @@ func inputObjectUniquesArgs(def *ast.Definition) map[string]ast.ArgumentDefiniti
 	return uniques
 }
 
-func inputObjectMutationUpdateArgs(schema *ast.SchemaDocument, def *ast.Definition) ast.ArgumentDefinitionList {
+func inputObjectMutationUpdateArgs(schema *ast.SchemaDocument, def *ast.Definition, opt *Options) ast.ArgumentDefinitionList {
 	if !IsDataObject(def) {
 		return nil
 	}
-	dataInputName := inputObjectMutationDataName(schema, def)
+	dataInputName := inputObjectMutationDataName(schema, def, opt)
 	args := ast.ArgumentDefinitionList{
 		{
 			Name:     "filter",
@@ -476,7 +479,7 @@ func inputObjectMutationUpdateArgs(schema *ast.SchemaDocument, def *ast.Definiti
 	})
 }
 
-func inputObjectMutationDataName(schema *ast.SchemaDocument, def *ast.Definition) string {
+func inputObjectMutationDataName(schema *ast.SchemaDocument, def *ast.Definition, opt *Options) string {
 	inputName := def.Name + "_mut_data"
 	if t := schema.Definitions.ForName(inputName); t != nil {
 		return inputName
@@ -500,9 +503,13 @@ func inputObjectMutationDataName(schema *ast.SchemaDocument, def *ast.Definition
 			IsExtraField(field) {
 			continue
 		}
+		if !opt.SupportUpdatePKs() &&
+			field.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil {
+			continue
+		}
 		t := copyType(field.Type)
 		if !IsScalarType(field.Type.Name()) {
-			t = ast.NamedType(inputObjectMutationDataName(schema, schema.Definitions.ForName(field.Type.Name())), compiledPos())
+			t = ast.NamedType(inputObjectMutationDataName(schema, schema.Definitions.ForName(field.Type.Name()), opt), compiledPos())
 			if field.Type.NamedType == "" {
 				t = ast.ListType(t, compiledPos())
 			}

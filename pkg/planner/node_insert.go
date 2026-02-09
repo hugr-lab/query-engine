@@ -171,7 +171,7 @@ func insertBeforeExec(e engines.Engine, m *compiler.Mutation, query *ast.Field, 
 		return nil, compiler.ErrorPosf(query.Position, "no query by primary key for object %s", m.ObjectName)
 	}
 
-	return func(ctx context.Context, db *db.Pool, node *QueryPlanNode) error {
+	return func(ctx context.Context, pool *db.Pool, node *QueryPlanNode) error {
 		// 1. get sequences values
 		type seqVal struct {
 			Name string `json:"name"`
@@ -183,7 +183,7 @@ func insertBeforeExec(e engines.Engine, m *compiler.Mutation, query *ast.Field, 
 			if s, ok := e.(engines.EngineQueryScanner); ok {
 				sql = "FROM " + s.WarpScann(base.FieldCatalogName(query.Definition), sql)
 			}
-			err := db.QueryTableToSlice(ctx, &vals, sql)
+			err := pool.QueryTableToSlice(db.ClearTxContext(ctx), &vals, sql)
 			if err != nil {
 				return err
 			}
@@ -197,7 +197,7 @@ func insertBeforeExec(e engines.Engine, m *compiler.Mutation, query *ast.Field, 
 			}
 		}
 		// 3. execute insert query
-		res, err := db.Exec(ctx, sql)
+		res, err := pool.Exec(ctx, sql)
 		if err != nil {
 			return err
 		}

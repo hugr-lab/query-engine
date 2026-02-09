@@ -33,6 +33,29 @@ func (e *DuckDB) Type() Type {
 	return TypeDuckDB
 }
 
+func (e *DuckDB) Capabilities() *compiler.EngineCapabilities {
+	return &compiler.EngineCapabilities{
+		General: compiler.EngineGeneralCapabilities{
+			SupportDefaultSequences: true,
+			UnsupportedTypes:        []string{"IntRange", "BigIntRange", "TimestampRange"},
+		},
+		Insert: compiler.EngineInsertCapabilities{
+			Insert:           true,
+			Returning:        true,
+			InsertReferences: true,
+		},
+		Update: compiler.EngineUpdateCapabilities{
+			Update:           true,
+			UpdatePKColumns:  true,
+			UpdateWithoutPKs: true,
+		},
+		Delete: compiler.EngineDeleteCapabilities{
+			Delete:           true,
+			DeleteWithoutPKs: true,
+		},
+	}
+}
+
 func (e *DuckDB) FieldValueByPath(sqlName, path string) string {
 	if path == "" {
 		return sqlName

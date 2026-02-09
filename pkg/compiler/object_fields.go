@@ -17,7 +17,7 @@ const (
 	fieldTimescaleKeyDirectiveName   = "timescale_key"
 )
 
-func validateObjectField(defs Definitions, def *ast.Definition, field *ast.FieldDefinition) error {
+func validateObjectField(defs Definitions, def *ast.Definition, field *ast.FieldDefinition, opt *Options) error {
 	if IsFunctionCall(field) {
 		return validateFunctionCall(defs, def, field, false)
 	}
@@ -44,6 +44,11 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 			if !IsScalarType(field.Type.Name()) &&
 				field.Type.Name() != JSONTypeName {
 				return ErrorPosf(d.Position, "field %s of object %s should be a scalar type", field.Name, def.Name)
+			}
+			if d.Name == base.FieldDefaultDirectiveName &&
+				!opt.IsSequenceDefaultSupported() &&
+				directiveArgValue(d, "sequence") != "" {
+				return ErrorPosf(d.Position, "engine %s doesn't support default sequence", opt.EngineType)
 			}
 		case base.FieldPrimaryKeyDirectiveName, fieldExcludeFilterDirectiveName,
 			fieldFilterRequiredDirectiveName, base.FieldSourceDirectiveName:
@@ -86,6 +91,9 @@ func validateObjectField(defs Definitions, def *ast.Definition, field *ast.Field
 		default:
 			return ErrorPosf(d.Position, "field %s of object %s has unknown directive %s", field.Name, def.Name, d.Name)
 		}
+	}
+	if err := opt.CheckFieldType(field.Type); err != nil {
+		return ErrorPosf(field.Position, "field %s of object %s has unsupported type: %v", field.Name, def.Name, err)
 	}
 	if td := defs.ForName(field.Type.Name()); td == nil && !IsScalarType(field.Type.Name()) {
 		return ErrorPosf(field.Position, "field %s of object %s has unknown type %s", field.Name, def.Name, field.Type.Name())

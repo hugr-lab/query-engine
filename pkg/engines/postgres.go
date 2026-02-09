@@ -35,6 +35,28 @@ func (e *Postgres) Type() Type {
 	return TypePostgres
 }
 
+func (e *Postgres) Capabilities() *compiler.EngineCapabilities {
+	return &compiler.EngineCapabilities{
+		General: compiler.EngineGeneralCapabilities{
+			SupportDefaultSequences: true,
+		},
+		Insert: compiler.EngineInsertCapabilities{
+			Insert:           true,
+			Returning:        true,
+			InsertReferences: true,
+		},
+		Update: compiler.EngineUpdateCapabilities{
+			Update:           true,
+			UpdatePKColumns:  true,
+			UpdateWithoutPKs: true,
+		},
+		Delete: compiler.EngineDeleteCapabilities{
+			Delete:           true,
+			DeleteWithoutPKs: true,
+		},
+	}
+}
+
 func (e *Postgres) FieldValueByPath(sqlName, path string) string {
 	if path == "" {
 		return sqlName

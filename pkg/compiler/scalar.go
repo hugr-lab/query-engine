@@ -571,7 +571,7 @@ var ScalarTypes = map[string]ScalarType{
 		AggType: "GeometryAggregation",
 		ToOutputTypeSQL: func(sql string, raw bool) string {
 			if raw {
-				return fmt.Sprintf("ST_AsWKB(%s)", sql)
+				return sql
 			}
 			return fmt.Sprintf("ST_AsGeoJSON(%s)", sql)
 		},

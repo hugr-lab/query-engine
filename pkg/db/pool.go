@@ -23,18 +23,21 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		return nil, err
 	}
 
-	pool.SetMaxOpenConns(config.MaxOpenConns)
-	pool.SetMaxIdleConns(config.MaxIdleConns)
-
 	// load extensions
 	_, err = pool.Exec(ctx, `
+		INSTALL azure; LOAD azure;
 		INSTALL postgres; LOAD postgres;
 		INSTALL spatial; LOAD spatial;
 		INSTALL httpfs; LOAD httpfs;
+		INSTALL h3 FROM community; LOAD h3;
+		INSTALL mssql FROM community; LOAD mssql;
 	`)
 	if err != nil {
 		return nil, err
 	}
+
+	pool.SetMaxOpenConns(config.MaxOpenConns)
+	pool.SetMaxIdleConns(config.MaxIdleConns)
 
 	// set settings
 	sql := config.Settings.applySQL()
@@ -43,6 +46,15 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	// post settings extension loads
+	_, err = pool.Exec(ctx, `
+		INSTALL airport FROM community; LOAD airport;
+		FROM register_geoarrow_extensions();
+	`)
+	if err != nil {
+		return nil, err
 	}
 
 	return pool, nil

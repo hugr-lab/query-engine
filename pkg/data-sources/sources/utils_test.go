@@ -24,6 +24,11 @@ func TestParseDSN(t *testing.T) {
 			dsn:      "postgres://user:password@localhost:5432/dbname?sslmode=disable",
 			expected: "postgres://user:password@localhost:5432/dbname?sslmode=disable",
 		},
+		{
+			name:     "valid dsn with params",
+			dsn:      "grpc+tls://localhost:50432?auth_token=test",
+			expected: "grpc+tls://localhost:50432?auth_token=test",
+		},
 	}
 
 	for _, test := range tests {
