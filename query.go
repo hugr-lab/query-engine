@@ -30,8 +30,10 @@ type result struct {
 }
 
 func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (map[string]any, map[string]any, error) {
+	start := time.Now()
 	// find all requested queries (top level query fields)
 	queries, qtt := compiler.QueryRequestInfo(op.SelectionSet)
+	queryListTime := time.Since(start)
 	// authorize queries
 	p := perm.PermissionsFromCtx(ctx)
 	if p != nil {
@@ -41,8 +43,8 @@ func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.
 			}
 		}
 	}
+	permissionsDuration := time.Since(start) - queryListTime
 
-	start := time.Now()
 	// create response data structure
 	dataCh := make(chan result)
 	eg, ctx := errgroup.WithContext(ctx)
@@ -108,10 +110,15 @@ func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.
 	}
 	ext := map[string]any{}
 	if op.Directives.ForName(base.StatsDirectiveName) != nil {
-		ext["stats"] = map[string]any{
-			"name":       op.Name,
-			"total_time": time.Since(start).String(),
+		opStats := map[string]any{
+			"query_list_time":        queryListTime.String(),
+			"permissions_check_time": permissionsDuration.String(),
+			"total_time":             time.Since(start).String(),
 		}
+		if op.Name != "" {
+			opStats["name"] = op.Name
+		}
+		ext["stats"] = opStats
 	}
 	if len(ext) != 0 {
 		ext["children"] = extensions
