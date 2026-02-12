@@ -69,6 +69,11 @@ func (s *Service) RolePermissions(ctx context.Context) (RolePermissions, error) 
 	}
 	var role RolePermissions
 	err = res.ScanData("core.info", &role)
-
-	return role, err
+	if err != nil {
+		return RolePermissions{}, err
+	}
+	if role.Disabled {
+		return RolePermissions{}, auth.ErrForbidden
+	}
+	return role, nil
 }

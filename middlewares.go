@@ -9,6 +9,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 )
 
 func (s *Service) middlewares() func(next http.Handler) http.Handler {
@@ -55,13 +56,18 @@ func buildMW(middlewares ...func(next http.Handler) http.Handler) func(next http
 
 func (s *Service) checkEndpointPermissionsMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		perm, err := s.perm.RolePermissions(r.Context())
+		ctx, err := s.perm.ContextWithPermissions(r.Context())
 		if errors.Is(err, auth.ErrForbidden) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		perm := perm.PermissionsFromCtx(ctx)
+		if perm == nil {
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 		pp := strings.Split(r.URL.Path, "/")
@@ -79,7 +85,7 @@ func (s *Service) checkEndpointPermissionsMW(next http.Handler) http.Handler {
 				return
 			}
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/pprof"
+	"time"
 
 	adminui "github.com/hugr-lab/query-engine/pkg/admin-ui"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	"github.com/hugr-lab/query-engine/pkg/catalogs"
+	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
@@ -24,7 +26,6 @@ import (
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"golang.org/x/sync/errgroup"
 )
 
 type Service struct {
@@ -275,19 +276,24 @@ func (s *Service) parseRequest(r *http.Request) (req types.Request, err error) {
 
 func (s *Service) ProcessQuery(ctx context.Context, catalog string, req types.Request) types.Response {
 	// add permissions to context
-	ctx, err := s.perm.ContextWithPermissions(ctx)
-	if err != nil {
-		return types.ErrResponse(err)
-	}
+	start := time.Now()
 	schema, err := s.catalog.CatalogSchema(catalog)
 	if err != nil {
 		return types.ErrResponse(err)
 	}
+	catalogDuration := time.Since(start)
+	var transformedVars bool
+	req.Variables, transformedVars, err = s.transformVariables(ctx, req.Variables)
+	if err != nil {
+		return types.ErrResponse(err)
+	}
+	variablesDuration := time.Since(start) - catalogDuration
 
 	qd, errs := gqlparser.LoadQueryWithRules(schema, req.Query, types.GraphQLQueryRules)
 	if len(errs) > 0 {
 		return types.ErrResponse(errs)
 	}
+	queryDuration := time.Since(start) - catalogDuration - variablesDuration
 
 	if len(qd.Operations) == 0 {
 		return types.Response{Errors: gqlerror.List{gqlerror.Errorf("no operations found")}}
@@ -296,69 +302,44 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req types.Re
 		ctx = types.ContextWithValidateOnly(ctx)
 	}
 	var res types.Response
-	if len(qd.Operations) == 1 || req.OperationName != "" {
-		op := qd.Operations[0]
-		if req.OperationName != "" {
-			for _, o := range qd.Operations {
-				if o.Name == req.OperationName {
-					op = o
-					break
-				}
-			}
-			if op.Name != req.OperationName {
-				return types.ErrResponse(gqlerror.Errorf("operation %s not found", req.OperationName))
-			}
-		}
-		data, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
-		if err != nil {
-			types.DataClose(data)
-			return types.ErrResponse(err)
-		}
-		if data != nil {
-			res.Data = data
-		}
-		if ext != nil {
-			res.Extensions = ext
-		}
-		return res
+	if len(qd.Operations) != 1 && req.OperationName == "" {
+		return types.ErrResponse(gqlerror.Errorf("multiple operations found, operationName is required"))
 	}
-
-	data := make(map[string]any, len(qd.Operations))
-	extensions := make(map[string]any)
-	for _, op := range qd.Operations {
-		data[op.Name] = nil
-		extensions[op.Name] = nil
-	}
-	eg, ctx := errgroup.WithContext(ctx)
-	for _, op := range qd.Operations {
-		op := op
-		eg.Go(func() error {
-			d, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
-			data[op.Name] = d
-			if ext != nil {
-				extensions[op.Name] = ext
+	op := qd.Operations[0]
+	if req.OperationName != "" {
+		for _, o := range qd.Operations {
+			if o.Name == req.OperationName {
+				op = o
+				break
 			}
-			if err != nil {
-				types.DataClose(data)
-				return err
-			}
-			return nil
-		})
+		}
+		if op.Name != req.OperationName {
+			return types.ErrResponse(gqlerror.Errorf("operation %s not found", req.OperationName))
+		}
 	}
-	err = eg.Wait()
+	data, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
 	if err != nil {
+		types.DataClose(data)
 		return types.ErrResponse(err)
 	}
-	res.Data = data
-	exists := false
-	for _, v := range extensions {
-		if v != nil {
-			exists = true
-			break
-		}
+	if data != nil {
+		res.Data = data
 	}
-	if exists {
-		res.Extensions = extensions
+	if ext != nil {
+		if op.Directives.ForName(base.StatsDirectiveName) != nil {
+			opStats, ok := ext["stats"].(map[string]any)
+			if !ok {
+				opStats = make(map[string]any)
+			}
+			opStats["catalog_load_time"] = catalogDuration.String()
+			opStats["query_parse_time"] = queryDuration.String()
+			if transformedVars {
+				opStats["variables_transform_time"] = variablesDuration.String()
+			}
+			opStats["total_time"] = time.Since(start).String()
+			ext["stats"] = opStats
+		}
+		res.Extensions = ext
 	}
 	return res
 }
