@@ -18,7 +18,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/pkg/types"
-	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -67,14 +66,13 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 	if err != nil {
 		return err
 	}
-	schema := s.catalog.Schema()
-	query, errs := gqlparser.LoadQueryWithRules(schema, req.Query, types.GraphQLQueryRules)
-	if len(errs) != 0 {
-		// write errors to IPC
-		return writeErrorsToIPC(mw, "", errs)
-	}
-	if len(query.Operations) == 0 {
-		return gqlerror.Errorf("no operations found")
+
+	op, err := s.schema.ParseQuery(ctx, req.Query, req.Variables, req.OperationName)
+	if err != nil {
+		if errs, ok := err.(gqlerror.List); ok {
+			return writeErrorsToIPC(mw, "", errs)
+		}
+		return writeErrorsToIPC(mw, "", gqlerror.List{gqlerror.Errorf("%v", err)})
 	}
 
 	ctx = planner.ContextWithRawResultsFlag(ctx)
@@ -82,41 +80,30 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 		ctx = types.ContextWithValidateOnly(ctx)
 	}
 
-	for _, op := range query.Operations {
-		if req.OperationName != "" && req.OperationName != op.Name {
-			continue
-		}
-		qq, _ := compiler.QueryRequestInfo(op.SelectionSet)
-		qm := compiler.FlatQuery(qq)
-		if len(qm) == 0 {
-			return nil
-		}
-		data, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
+	qm := compiler.FlatQuery(op.Queries)
+	if len(qm) == 0 {
+		return nil
+	}
+
+	provider := s.schema.Provider()
+	data, ext, err := s.ProcessOperation(ctx, provider, op)
+	if err != nil {
+		types.DataClose(data)
+		return writeErrorsToIPC(mw, op.Definition.Name, types.WarpGraphQLError(err))
+	}
+	for path, q := range qm {
+		qd := types.ExtractResponseData(path, data)
+		err = writeDataIPC(mw, "data."+path, q, qd)
 		if err != nil {
 			types.DataClose(data)
-			return writeErrorsToIPC(mw, op.Name, types.WarpGraphQLError(err))
+			return err
 		}
-		for path, q := range qm {
-			qd := types.ExtractResponseData(path, data)
-			if len(query.Operations) > 1 && req.OperationName == "" {
-				path = op.Name + "." + path
-			}
-			err = writeDataIPC(mw, "data."+path, q, qd)
-			if err != nil {
-				types.DataClose(data)
-				return err
-			}
-		}
-		types.DataClose(data)
-		// write extensions to IPC
-		if len(ext) != 0 {
-			path := "extensions"
-			if len(query.Operations) > 1 && req.OperationName == "" {
-				path = op.Name + "." + path
-			}
-			if err := writeExtensionsToIPC(mw, path, ext); err != nil {
-				return err
-			}
+	}
+	types.DataClose(data)
+	// write extensions to IPC
+	if len(ext) != 0 {
+		if err := writeExtensionsToIPC(mw, "extensions", ext); err != nil {
+			return err
 		}
 	}
 

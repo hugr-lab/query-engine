@@ -9,23 +9,25 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func deleteRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+func deleteRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+	defs := base.NewDefsAdapter(ctx, provider)
 	catalog := base.FieldCatalogName(query.Definition)
 	e, err := planner.Engine(catalog)
 	if err != nil {
 		return nil, err
 	}
-	m := compiler.MutationInfo(compiler.SchemaDefs(schema), query.Definition)
+	m := compiler.MutationInfo(defs, query.Definition)
 	if m == nil {
 		return nil, ErrInternalPlanner
 	}
 	if m.Type != compiler.MutationTypeDelete {
 		return nil, compiler.ErrorPosf(query.Position, "mutation type is not delete")
 	}
-	def := schema.Types[m.ObjectName]
+	def := provider.ForName(ctx, m.ObjectName)
 	if def == nil {
 		return nil, ErrInternalPlanner
 	}
@@ -36,7 +38,7 @@ func deleteRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 	if info.Type != compiler.TableDataObject {
 		return nil, compiler.ErrorPosf(query.Position, "unsupported data object type %s", info.Type)
 	}
-	queryArg, err := compiler.ArgumentValues(compiler.SchemaDefs(schema), query, vars, true)
+	queryArg, err := compiler.ArgumentValues(defs, query, vars, true)
 	if err != nil {
 		return nil, err
 	}
@@ -54,14 +56,14 @@ func deleteRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		if !ok {
 			return nil, compiler.ErrorPosf(query.Position, "invalid filter argument type")
 		}
-		whereNode, err := whereNode(ctx, compiler.SchemaDefs(schema), info, v, "_object", false, false)
+		whereNode, err := whereNode(ctx, defs, info, v, "_object", false, false)
 		if err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, whereNode)
 	}
 
-	pf, err := permissionFilterNode(ctx, compiler.SchemaDefs(schema), info, query, "_object", false)
+	pf, err := permissionFilterNode(ctx, defs, info, query, "_object", false)
 	if err != nil {
 		return nil, err
 	}

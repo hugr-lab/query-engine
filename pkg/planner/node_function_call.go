@@ -9,13 +9,14 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // functionCallRootNode is a root node for function call query.
-func functionCallRootNode(ctx context.Context, schema *ast.Schema, planer Catalog, query *ast.Field, vars map[string]interface{}) (*QueryPlanNode, error) {
+func functionCallRootNode(ctx context.Context, provider schema.Provider, planer Catalog, query *ast.Field, vars map[string]interface{}) (*QueryPlanNode, error) {
 	catalog := base.FieldCatalogName(query.Definition)
-	defs := compiler.SchemaDefs(schema)
+	defs := base.NewDefsAdapter(ctx, provider)
 	node, err := functionCallNode(ctx, defs, planer, "", query, vars)
 	if err != nil {
 		return nil, err
@@ -28,7 +29,7 @@ func functionCallRootNode(ctx context.Context, schema *ast.Schema, planer Catalo
 	tc, isTypeCaster := e.(engines.EngineTypeCaster)
 	if !isTypeCaster {
 		return finalResultNode(ctx,
-			schema, planer, query,
+			provider, planer, query,
 			selectFromFunctionCallNode(ctx, defs, node),
 			true,
 		), nil

@@ -14,7 +14,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/metadata"
-	"github.com/hugr-lab/query-engine/pkg/perm"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
@@ -29,21 +29,11 @@ type result struct {
 	path       []string
 }
 
-func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (map[string]any, map[string]any, error) {
+func (s *Service) processQuery(ctx context.Context, provider schema.Provider, op *schema.Operation) (map[string]any, map[string]any, error) {
 	start := time.Now()
-	// find all requested queries (top level query fields)
-	queries, qtt := compiler.QueryRequestInfo(op.SelectionSet)
-	queryListTime := time.Since(start)
-	// authorize queries
-	p := perm.PermissionsFromCtx(ctx)
-	if p != nil {
-		for _, q := range queries {
-			if err := p.CheckQuery(q.Field); err != nil {
-				return nil, nil, err
-			}
-		}
-	}
-	permissionsDuration := time.Since(start) - queryListTime
+	queries := op.Queries
+	qtt := op.QueryType
+	vars := op.Variables
 
 	// create response data structure
 	dataCh := make(chan result)
@@ -53,12 +43,12 @@ func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.
 	}
 	wg := sync.WaitGroup{}
 	// if requested at least one mutation query need to run in a transaction and sequentially
-	if !s.config.AllowParallel || qtt&(compiler.QueryTypeMutation|compiler.QueryTypeFunctionMutation) != 0 {
+	if !s.config.AllowParallel || qtt&(base.QueryTypeMutation|base.QueryTypeFunctionMutation) != 0 {
 		wg.Add(1)
 		eg.Go(func() error {
 			defer wg.Done()
-			if qtt&(compiler.QueryTypeMutation|compiler.QueryTypeFunctionMutation) == 0 {
-				return s.processQuerySequential(ctx, schema, queries, vars, nil, dataCh)
+			if qtt&(base.QueryTypeMutation|base.QueryTypeFunctionMutation) == 0 {
+				return s.processQuerySequential(ctx, provider, queries, vars, nil, dataCh)
 			}
 
 			ctx, err := s.db.WithTx(ctx)
@@ -66,7 +56,7 @@ func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.
 				return err
 			}
 			defer s.db.Rollback(ctx)
-			err = s.processQuerySequential(ctx, schema, queries, vars, nil, dataCh)
+			err = s.processQuerySequential(ctx, provider, queries, vars, nil, dataCh)
 			if err != nil {
 				return err
 			}
@@ -74,7 +64,7 @@ func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.
 		})
 	} else {
 		// if requested only query queries can run in parallel
-		s.processQueryParallel(ctx, &wg, eg, schema, queries, vars, nil, dataCh)
+		s.processQueryParallel(ctx, &wg, eg, provider, queries, vars, nil, dataCh)
 	}
 	data := map[string]any{}
 	extensions := map[string]any{}
@@ -105,18 +95,16 @@ func (s *Service) processQuery(ctx context.Context, schema *ast.Schema, op *ast.
 			}
 		}
 	}
-	if len(extensions) == 0 && op.Directives.ForName(base.StatsDirectiveName) == nil {
+	if len(extensions) == 0 && op.Definition.Directives.ForName(base.StatsDirectiveName) == nil {
 		return data, nil, nil
 	}
 	ext := map[string]any{}
-	if op.Directives.ForName(base.StatsDirectiveName) != nil {
+	if op.Definition.Directives.ForName(base.StatsDirectiveName) != nil {
 		opStats := map[string]any{
-			"query_list_time":        queryListTime.String(),
-			"permissions_check_time": permissionsDuration.String(),
-			"total_time":             time.Since(start).String(),
+			"total_time": time.Since(start).String(),
 		}
-		if op.Name != "" {
-			opStats["name"] = op.Name
+		if op.Definition.Name != "" {
+			opStats["name"] = op.Definition.Name
 		}
 		ext["stats"] = opStats
 	}
@@ -176,8 +164,8 @@ func collectResult(data, extensions map[string]any, res result) (map[string]any,
 }
 
 func (s *Service) processQuerySequential(ctx context.Context,
-	schema *ast.Schema,
-	queries []compiler.QueryRequest,
+	provider schema.Provider,
+	queries []base.QueryRequest,
 	vars map[string]any,
 	path []string,
 	dataCh chan<- result,
@@ -187,10 +175,10 @@ func (s *Service) processQuerySequential(ctx context.Context,
 		var res any
 		var ext map[string]any
 		switch query.QueryType {
-		case compiler.QueryTypeNone:
+		case base.QueryTypeNone:
 			start := time.Now()
 			if query.Subset != nil {
-				err = s.processQuerySequential(ctx, schema, query.Subset, vars, append(path, query.Name), dataCh)
+				err = s.processQuerySequential(ctx, provider, query.Subset, vars, append(path, query.Name), dataCh)
 				if err != nil {
 					return err
 				}
@@ -203,14 +191,14 @@ func (s *Service) processQuerySequential(ctx context.Context,
 					},
 				}
 			}
-		case compiler.QueryTypeMeta:
-			res, err = metadata.ProcessQuery(ctx, schema, query, s.config.MaxDepth, vars)
-		case compiler.QueryTypeQuery, compiler.QueryTypeFunction, compiler.QueryTypeH3Aggregation:
-			res, ext, err = s.processDataQuery(ctx, schema, query, vars)
-		case compiler.QueryTypeMutation, compiler.QueryTypeFunctionMutation:
-			res, ext, err = s.processDataQuery(ctx, schema, query, vars)
-		case compiler.QueryTypeJQTransform:
-			res, ext, err = s.processJQTransformation(ctx, schema, query, vars)
+		case base.QueryTypeMeta:
+			res, err = metadata.ProcessQuery(ctx, provider, query, s.config.MaxDepth, vars)
+		case base.QueryTypeQuery, base.QueryTypeFunction, base.QueryTypeH3Aggregation:
+			res, ext, err = s.processDataQuery(ctx, provider, query, vars)
+		case base.QueryTypeMutation, base.QueryTypeFunctionMutation:
+			res, ext, err = s.processDataQuery(ctx, provider, query, vars)
+		case base.QueryTypeJQTransform:
+			res, ext, err = s.processJQTransformation(ctx, provider, query, vars)
 		}
 		if err != nil {
 			return err
@@ -231,21 +219,21 @@ func (s *Service) processQueryParallel(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	eg *errgroup.Group,
-	schema *ast.Schema,
-	queries []compiler.QueryRequest,
+	provider schema.Provider,
+	queries []base.QueryRequest,
 	vars map[string]any,
 	path []string,
 	dataCh chan<- result,
 ) {
 	for _, query := range queries {
 		switch query.QueryType {
-		case compiler.QueryTypeNone:
-			s.processQueryParallel(ctx, wg, eg, schema, query.Subset, vars, append(path, query.Name), dataCh)
-		case compiler.QueryTypeJQTransform:
+		case base.QueryTypeNone:
+			s.processQueryParallel(ctx, wg, eg, provider, query.Subset, vars, append(path, query.Name), dataCh)
+		case base.QueryTypeJQTransform:
 			wg.Add(1)
 			eg.Go(func() error {
 				defer wg.Done()
-				res, ext, err := s.processJQTransformation(ctx, schema, query, vars)
+				res, ext, err := s.processJQTransformation(ctx, provider, query, vars)
 				if err != nil {
 					return err
 				}
@@ -256,11 +244,11 @@ func (s *Service) processQueryParallel(
 				}
 				return nil
 			})
-		case compiler.QueryTypeMeta:
+		case base.QueryTypeMeta:
 			wg.Add(1)
 			eg.Go(func() error {
 				defer wg.Done()
-				res, err := metadata.ProcessQuery(ctx, schema, query, s.config.MaxDepth, vars)
+				res, err := metadata.ProcessQuery(ctx, provider, query, s.config.MaxDepth, vars)
 				if err != nil {
 					return err
 				}
@@ -271,11 +259,11 @@ func (s *Service) processQueryParallel(
 				}
 				return nil
 			})
-		case compiler.QueryTypeQuery, compiler.QueryTypeFunction, compiler.QueryTypeH3Aggregation:
+		case base.QueryTypeQuery, base.QueryTypeFunction, base.QueryTypeH3Aggregation:
 			wg.Add(1)
 			eg.Go(func() error {
 				defer wg.Done()
-				res, ext, err := s.processDataQuery(ctx, schema, query, vars)
+				res, ext, err := s.processDataQuery(ctx, provider, query, vars)
 				if err != nil {
 					return err
 				}
@@ -286,7 +274,7 @@ func (s *Service) processQueryParallel(
 				}
 				return nil
 			})
-		case compiler.QueryTypeMutation, compiler.QueryTypeFunctionMutation:
+		case base.QueryTypeMutation, base.QueryTypeFunctionMutation:
 			wg.Add(1)
 			eg.Go(func() error {
 				defer wg.Done()
@@ -296,11 +284,11 @@ func (s *Service) processQueryParallel(
 	}
 }
 
-func (s *Service) processDataQuery(ctx context.Context, schema *ast.Schema, query compiler.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
+func (s *Service) processDataQuery(ctx context.Context, provider schema.Provider, query base.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
 	start := time.Now()
 	var plannerTime, compileTime time.Duration
 	dataFunc := func() (any, error) {
-		plan, err := s.planner.Plan(ctx, schema, query.Field, vars)
+		plan, err := s.planner.Plan(ctx, provider, query.Field, vars)
 		if err != nil {
 			return nil, err
 		}
@@ -386,7 +374,7 @@ func (s *Service) processDataQuery(ctx context.Context, schema *ast.Schema, quer
 	return data, ext, nil
 }
 
-func (s *Service) processJQTransformation(ctx context.Context, schema *ast.Schema, query compiler.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
+func (s *Service) processJQTransformation(ctx context.Context, provider schema.Provider, query base.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
 	start := time.Now()
 	var dataTime, compilerTime, serializationTime, execTime time.Duration
 	var rn, tn int
@@ -414,13 +402,20 @@ func (s *Service) processJQTransformation(ctx context.Context, schema *ast.Schem
 				return nil, compiler.ErrorPosf(query.Field.Position, "includeResults argument should be boolean")
 			}
 		}
-		data, ext, err := s.processQuery(ctx, schema, &ast.OperationDefinition{
-			Operation:    ast.Query,
-			Name:         query.Field.Alias,
-			SelectionSet: query.Field.SelectionSet,
-			Position:     query.Field.Position,
-			Comment:      query.Field.Comment,
-		}, vars)
+		subQueries, subQtt := schema.QueryRequestInfo(query.Field.SelectionSet)
+		subOp := &schema.Operation{
+			Definition: &ast.OperationDefinition{
+				Operation:    ast.Query,
+				Name:         query.Field.Alias,
+				SelectionSet: query.Field.SelectionSet,
+				Position:     query.Field.Position,
+				Comment:      query.Field.Comment,
+			},
+			Variables: vars,
+			Queries:   subQueries,
+			QueryType: subQtt,
+		}
+		data, ext, err := s.processQuery(ctx, provider, subOp)
 		if err != nil {
 			return nil, err
 		}

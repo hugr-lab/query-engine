@@ -114,7 +114,7 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 			// in the future we can support mutations across IPC to allow for streaming updates, and inserts
 			case "query_object":
 				// Handle data_object streaming
-				req.Query, err = s.dataObjectStreamQuery(req.DataObject, req.SelectedFields, req.Variables)
+				req.Query, err = s.dataObjectStreamQuery(ctx, req.DataObject, req.SelectedFields, req.Variables)
 				if err != nil {
 					stream.sendStreamError(fmt.Errorf("failed to process data object query: %w", err))
 					continue
@@ -202,24 +202,24 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 	}
 }
 
-func (s *Service) dataObjectStreamQuery(dataObject string, fields []string, variables map[string]interface{}) (string, error) {
-	schema := s.Schema()
+func (s *Service) dataObjectStreamQuery(ctx context.Context, dataObject string, fields []string, variables map[string]interface{}) (string, error) {
+	provider := s.schema.Provider()
 	if !strings.Contains(dataObject, ".") {
 		// If no dot notation, assume it's a data object name without module
-		def := schema.Types[dataObject]
+		def := provider.ForName(ctx, dataObject)
 		if def == nil {
 			return "", fmt.Errorf("data object %s not found in schema", dataObject)
 		}
 		if !compiler.IsDataObject(def) {
 			return "", fmt.Errorf("data object %s is not a valid data object", dataObject)
 		}
-		path, field := compiler.ObjectQueryDefinition(compiler.SchemaDefs(schema), def, compiler.QueryTypeSelect)
+		path, field := compiler.ObjectQueryDefinition(base.NewDefsAdapter(ctx, provider), def, compiler.QueryTypeSelect)
 		if path != "" {
 			dataObject = path + "." + field.Name
 		}
 	}
 	var query *ast.FieldDefinition
-	queryDef := schema.Types[base.QueryBaseName]
+	queryDef := provider.ForName(ctx, base.QueryBaseName)
 	if queryDef == nil {
 		return "", fmt.Errorf("query base type not found in schema")
 	}
@@ -230,7 +230,7 @@ func (s *Service) dataObjectStreamQuery(dataObject string, fields []string, vari
 		if field == nil {
 			return "", fmt.Errorf("data object %s not found in schema", part)
 		}
-		def = schema.Types[field.Type.Name()]
+		def = provider.ForName(ctx, field.Type.Name())
 		query = field
 	}
 	if !compiler.IsDataObject(def) || query == nil {

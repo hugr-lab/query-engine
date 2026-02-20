@@ -9,17 +9,18 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-func h3RootNode(ctx context.Context, schema *ast.Schema, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
-	node, err := h3DataNode(ctx, compiler.SchemaDefs(schema), planner, query, vars)
+func h3RootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+	node, err := h3DataNode(ctx, base.NewDefsAdapter(ctx, provider), planner, query, vars)
 	if err != nil {
 		return nil, err
 	}
 
-	return finalResultNode(ctx, schema, planner, query, node, true), nil
+	return finalResultNode(ctx, provider, planner, query, node, true), nil
 }
 
 // Create a node that provides SQL query for h3 analytical query.

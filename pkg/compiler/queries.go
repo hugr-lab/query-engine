@@ -366,33 +366,27 @@ func validateFieldsForSubQuery(defs Definitions, def *ast.Definition, fields []s
 	return nil
 }
 
-type QueryRequest struct {
-	Name      string
-	OrderNum  int
-	QueryType QueryType
-	Field     *ast.Field
-	Subset    []QueryRequest
-}
-
-type QueryType int
+// Type aliases for backward compatibility — canonical definitions in base.
+type QueryRequest = base.QueryRequest
+type QueryType = base.QueryType
 
 const (
-	QueryTypeNone QueryType = 0
-	QueryTypeMeta QueryType = 1 << iota
-	QueryTypeQuery
-	QueryTypeJQTransform
-	QueryTypeMutation
-	QueryTypeFunction
-	QueryTypeFunctionMutation
-	QueryTypeH3Aggregation
+	QueryTypeNone             = base.QueryTypeNone
+	QueryTypeMeta             = base.QueryTypeMeta
+	QueryTypeQuery            = base.QueryTypeQuery
+	QueryTypeJQTransform      = base.QueryTypeJQTransform
+	QueryTypeMutation         = base.QueryTypeMutation
+	QueryTypeFunction         = base.QueryTypeFunction
+	QueryTypeFunctionMutation = base.QueryTypeFunctionMutation
+	QueryTypeH3Aggregation    = base.QueryTypeH3Aggregation
 )
 
 const (
-	MetadataSchemaQuery   = "__schema"
-	MetadataTypeQuery     = "__type"
-	MetadataTypeNameQuery = "__typename"
+	MetadataSchemaQuery   = base.MetadataSchemaQuery
+	MetadataTypeQuery     = base.MetadataTypeQuery
+	MetadataTypeNameQuery = base.MetadataTypeNameQuery
 
-	JQTransformQueryName = "jq"
+	JQTransformQueryName = base.JQTransformQueryName
 )
 
 func QueryRequestInfo(ss ast.SelectionSet) ([]QueryRequest, QueryType) {

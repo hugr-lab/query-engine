@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -110,7 +111,7 @@ func Test_functionCallNode(t *testing.T) {
 			if err != nil {
 				t.Fatal("functionCallNode", err)
 			}
-			funcNode.schema = testCats.Schema()
+			funcNode.provider = static.New(testCats.Schema())
 			funcNode.engines = testService.engines
 			res, err := funcNode.Compile(funcNode, nil)
 			if err != nil {
@@ -126,7 +127,7 @@ func Test_functionCallNode(t *testing.T) {
 				return
 			}
 			selectNode := selectFromFunctionCallNode(context.Background(), compiler.SchemaDefs(testCats.Schema()), funcNode)
-			selectNode.schema = testCats.Schema()
+			selectNode.provider = static.New(testCats.Schema())
 			selectNode.engines = testService.engines
 			res, err = selectNode.Compile(selectNode, nil)
 			if err != nil {

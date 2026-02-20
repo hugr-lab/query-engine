@@ -72,9 +72,10 @@ func (s *Service) collections(ctx context.Context) ([]*Collection, error) {
 func (s *Service) wfsSchemaFeatures(ctx context.Context, name string) (collections []*Collection, err error) {
 	// This method should return the schema for WFS features
 	// It fetches the schema from the _wfs_features data object
-	schema := s.schema.Schema()
+	provider := s.schema.Provider()
+	defs := base.NewDefsAdapter(ctx, provider)
 
-	wfsType := schema.Types[base.GisWFSTypeName]
+	wfsType := provider.ForName(ctx, base.GisWFSTypeName)
 	if wfsType == nil {
 		return nil, nil // No WFS features defined
 	}
@@ -85,7 +86,7 @@ func (s *Service) wfsSchemaFeatures(ctx context.Context, name string) (collectio
 		if !ok {
 			continue
 		}
-		collection, err := s.wfsCollectionField(ctx, compiler.SchemaDefs(schema), field, name)
+		collection, err := s.wfsCollectionField(ctx, defs, field, name)
 		if err != nil {
 			return nil, err
 		}

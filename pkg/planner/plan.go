@@ -5,8 +5,10 @@ import (
 	"errors"
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -86,9 +88,9 @@ type QueryPlanNode struct {
 
 	Before NodeBeforeExecFunc
 
-	schema  *ast.Schema
-	engines Catalog
-	querier types.Querier
+	provider schema.Provider
+	engines  Catalog
+	querier  types.Querier
 
 	plan *QueryPlan
 }
@@ -177,18 +179,18 @@ func (r *Results) FirstResult() *Result {
 	return (*r)[0]
 }
 
-func (n *QueryPlanNode) Schema() *ast.Schema {
-	if n.schema != nil {
-		return n.schema
+func (n *QueryPlanNode) SchemaProvider() schema.Provider {
+	if n.provider != nil {
+		return n.provider
 	}
 	if n.Parent != nil {
-		return n.Parent.Schema()
+		return n.Parent.SchemaProvider()
 	}
 	return nil
 }
 
 func (n *QueryPlanNode) TypeDefs() compiler.DefinitionsSource {
-	return compiler.SchemaDefs(n.Schema())
+	return base.NewDefsAdapter(context.TODO(), n.SchemaProvider())
 }
 
 func (n *QueryPlanNode) Engine(name string) (engines.Engine, error) {

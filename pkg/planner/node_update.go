@@ -11,23 +11,25 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+func updateRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+	defs := base.NewDefsAdapter(ctx, provider)
 	catalog := base.FieldCatalogName(query.Definition)
 	e, err := planner.Engine(catalog)
 	if err != nil {
 		return nil, err
 	}
-	m := compiler.MutationInfo(compiler.SchemaDefs(schema), query.Definition)
+	m := compiler.MutationInfo(defs, query.Definition)
 	if m == nil {
 		return nil, ErrInternalPlanner
 	}
 	if m.Type != compiler.MutationTypeUpdate {
 		return nil, compiler.ErrorPosf(query.Position, "mutation type is not update")
 	}
-	def := schema.Types[m.ObjectName]
+	def := provider.ForName(ctx, m.ObjectName)
 	if def == nil {
 		return nil, ErrInternalPlanner
 	}
@@ -38,7 +40,7 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 	if info.Type != compiler.TableDataObject {
 		return nil, compiler.ErrorPosf(query.Position, "unsupported data object type %s", info.Type)
 	}
-	queryArg, err := compiler.ArgumentValues(compiler.SchemaDefs(schema), query, vars, false)
+	queryArg, err := compiler.ArgumentValues(defs, query, vars, false)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +57,7 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		if !ok || len(data) == 0 && s == nil {
 			return nil, compiler.ErrorPosf(query.Position, "invalid data argument type")
 		}
-		data, err = checkMutationData(ctx, compiler.SchemaDefs(schema), query, v.Type, data)
+		data, err = checkMutationData(ctx, defs, query, v.Type, data)
 		if err != nil {
 			return nil, err
 		}
@@ -146,14 +148,14 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		if !ok {
 			return nil, compiler.ErrorPosf(query.Position, "invalid filter argument type")
 		}
-		whereNode, err := whereNode(ctx, compiler.SchemaDefs(schema), info, v, "objects", false, false)
+		whereNode, err := whereNode(ctx, defs, info, v, "objects", false, false)
 		if err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, whereNode)
 	}
 
-	pf, err := permissionFilterNode(ctx, compiler.SchemaDefs(schema), info, query, "objects", false)
+	pf, err := permissionFilterNode(ctx, defs, info, query, "objects", false)
 	if err != nil {
 		return nil, err
 	}

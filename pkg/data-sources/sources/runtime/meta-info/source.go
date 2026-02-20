@@ -8,8 +8,8 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	schemalib "github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/hugr-lab/query-engine/pkg/types"
-	"github.com/vektah/gqlparser/v2/ast"
 
 	_ "embed" // for embedding the schema
 )
@@ -17,7 +17,7 @@ import (
 // The runtime meta-info source provides access to the metadata of DuckDB attached databases, their schemas, relations, and columns.
 type Engine interface {
 	types.Querier
-	Schema() *ast.Schema
+	SchemaProvider() schemalib.Provider
 }
 
 //go:embed schema.graphql

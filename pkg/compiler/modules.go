@@ -7,17 +7,19 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type ModuleObjectType int
+// Type aliases for backward compatibility — canonical definitions in base.
+type ModuleObjectType = base.ModuleObjectType
+type ModuleRoot = base.ModuleRoot
 
 const (
-	ModuleQuery ModuleObjectType = iota + 1
-	ModuleMutation
-	ModuleFunction
-	ModuleMutationFunction
+	ModuleQuery            = base.ModuleQuery
+	ModuleMutation         = base.ModuleMutation
+	ModuleFunction         = base.ModuleFunction
+	ModuleMutationFunction = base.ModuleMutationFunction
 )
 
 const (
-	moduleRootDirectiveName = "module_root"
+	moduleRootDirectiveName = base.ModuleRootDirectiveName
 
 	queryBaseFunctionFieldName = "function"
 
@@ -146,59 +148,5 @@ func moduleRootDirective(name string, objectType ModuleObjectType) *ast.Directiv
 	}
 }
 
-type ModuleRoot struct {
-	Name string
-	Type ModuleObjectType
-}
-
-func ModuleRootInfo(def *ast.Definition) *ModuleRoot {
-	if def == nil {
-		return nil
-	}
-	d := def.Directives.ForName(moduleRootDirectiveName)
-	if d == nil {
-		switch def.Name {
-		case base.QueryBaseName:
-			return &ModuleRoot{
-				Name: "",
-				Type: ModuleQuery,
-			}
-		case base.MutationBaseName:
-			return &ModuleRoot{
-				Name: "",
-				Type: ModuleMutation,
-			}
-		case base.FunctionTypeName:
-			return &ModuleRoot{
-				Name: "",
-				Type: ModuleFunction,
-			}
-		case base.FunctionMutationTypeName:
-			return &ModuleRoot{
-				Name: "",
-				Type: ModuleMutationFunction,
-			}
-		default:
-			return nil
-		}
-	}
-	module := &ModuleRoot{}
-	if a := d.Arguments.ForName("name"); a != nil {
-		module.Name = a.Value.Raw
-	}
-
-	if a := d.Arguments.ForName("type"); a != nil {
-		switch a.Value.Raw {
-		case "QUERY":
-			module.Type = ModuleQuery
-		case "MUTATION":
-			module.Type = ModuleMutation
-		case "FUNCTION":
-			module.Type = ModuleFunction
-		case "MUT_FUNCTION":
-			module.Type = ModuleMutationFunction
-		}
-	}
-
-	return module
-}
+// ModuleRootInfo is re-exported from base for backward compatibility.
+var ModuleRootInfo = base.ModuleRootInfo

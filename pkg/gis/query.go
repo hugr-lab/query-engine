@@ -1,6 +1,7 @@
 package gis
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,9 +15,9 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/planner"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/paulmach/orb/geojson"
-	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 )
@@ -55,7 +56,7 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 	if feature != "" {
 		features = strings.Split(feature, ",")
 	}
-	fm, err := parseRequest(s.schema.Schema(), &req, features)
+	fm, err := parseRequest(r.Context(), s.schema, &req, features)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -187,10 +188,10 @@ func parseContentType(contentType string) (string, string, error) {
 }
 
 // parseRequest parses the GraphQL request, filter it if feature list provided and returns the feature definitions and any errors.
-func parseRequest(schema *ast.Schema, req *types.Request, features []string) (featureMap map[string]featureDefinition, err error) {
-	qd, errs := gqlparser.LoadQueryWithRules(schema, req.Query, types.GraphQLQueryRules)
-	if len(errs) != 0 {
-		return nil, errs
+func parseRequest(ctx context.Context, schemaSvc *schema.Service, req *types.Request, features []string) (featureMap map[string]featureDefinition, err error) {
+	qd, err := schemaSvc.ValidateQuery(ctx, req.Query)
+	if err != nil {
+		return nil, err
 	}
 	if len(qd.Operations) == 0 {
 		return nil, ErrEmptyRequest

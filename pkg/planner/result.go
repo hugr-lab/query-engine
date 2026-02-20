@@ -7,13 +7,14 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func finalResultNode(ctx context.Context, schema *ast.Schema, planner Catalog, field *ast.Field, node *QueryPlanNode, transformTypes bool) *QueryPlanNode {
+func finalResultNode(ctx context.Context, provider schema.Provider, planner Catalog, field *ast.Field, node *QueryPlanNode, transformTypes bool) *QueryPlanNode {
 	node = applyAllParametersNode(node)
 	node.engines = planner
-	node.schema = schema
+	node.provider = provider
 
 	return &QueryPlanNode{
 		Name:    field.Name,

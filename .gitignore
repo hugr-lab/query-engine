@@ -1,2 +1,6 @@
 .DS*
 .local
+.claude/
+.specify/
+specs/
+design/

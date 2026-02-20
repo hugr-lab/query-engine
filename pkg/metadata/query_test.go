@@ -8,6 +8,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/vektah/gqlparser/v2"
 
 	_ "embed"
@@ -143,7 +144,7 @@ func TestProcessQuery(t *testing.T) {
 	rqt, _ := compiler.QueryRequestInfo(qd.Operations[0].SelectionSet)
 
 	for _, r := range rqt {
-		data, err := ProcessQuery(t.Context(), cat.Schema(), r, 10, nil)
+		data, err := ProcessQuery(t.Context(), static.New(cat.Schema()), r, 10, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

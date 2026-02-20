@@ -12,6 +12,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -42,12 +43,13 @@ func (sv seqValues) IsExists(seqName string) bool {
 	return false
 }
 
-func insertRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+func insertRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+	defs := base.NewDefsAdapter(ctx, provider)
 	// define request sequences values
 	var sv []seqValue
 
 	// get values from variables
-	queryArg, err := compiler.ArgumentValues(compiler.SchemaDefs(schema), query, vars, false)
+	queryArg, err := compiler.ArgumentValues(defs, query, vars, false)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +68,7 @@ func insertRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		if !ok || len(data) == 0 {
 			return nil, compiler.ErrorPosf(query.Position, "data argument should be an object")
 		}
-		data, err = checkMutationData(ctx, compiler.SchemaDefs(schema), query, d.Type, data)
+		data, err = checkMutationData(ctx, defs, query, d.Type, data)
 		if err != nil {
 			return nil, err
 		}
@@ -91,7 +93,7 @@ func insertRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		return nil, err
 	}
 
-	m := compiler.MutationInfo(compiler.SchemaDefs(schema), query.Definition)
+	m := compiler.MutationInfo(defs, query.Definition)
 	if m == nil {
 		return nil, compiler.ErrorPosf(query.Position, "mutation %s is not defined", query.Alias)
 	}
@@ -99,7 +101,7 @@ func insertRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		return nil, compiler.ErrorPosf(query.Position, "mutation %s type is not insert", query.Alias)
 	}
 
-	node, sv, err := insertDataObjectNode(ctx, schema, e, m, data, "", sv, map[string]string{})
+	node, sv, err := insertDataObjectNode(ctx, provider, e, m, data, "", sv, map[string]string{})
 	if err != nil {
 		return nil, err
 	}
@@ -204,11 +206,11 @@ func insertBeforeExec(e engines.Engine, m *compiler.Mutation, query *ast.Field, 
 
 		// 4. returning select statement
 		if sq != nil {
-			sn, err := selectDataObjectRootNode(ctx, node.schema, node.engines, sq, sqVars)
+			sn, err := selectDataObjectRootNode(ctx, node.SchemaProvider(), node.engines, sq, sqVars)
 			if err != nil {
 				return err
 			}
-			sn.schema = node.schema
+			sn.provider = node.SchemaProvider()
 			sn.engines = node.engines
 			r, err := sn.Compile(sn, nil)
 			if err != nil {
@@ -243,7 +245,7 @@ func insertBeforeExec(e engines.Engine, m *compiler.Mutation, query *ast.Field, 
 	}, nil
 }
 
-func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Engine, m *compiler.Mutation, data map[string]any, path string, sv seqValues, parentSeqVal map[string]string) (*QueryPlanNode, seqValues, error) {
+func insertDataObjectNode(ctx context.Context, provider schema.Provider, e engines.Engine, m *compiler.Mutation, data map[string]any, path string, sv seqValues, parentSeqVal map[string]string) (*QueryPlanNode, seqValues, error) {
 	refs := m.ReferencesFields()
 	m2mRefs := m.M2MReferencesFields()
 	// define queries nodes of that current query is depended (references data that should be inserted before)
@@ -273,7 +275,7 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 		if subMut == nil {
 			return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "references mutation for field %s.%s is not defined", path, f)
 		}
-		node, ssv, err := insertDataObjectNode(ctx, schema, e, subMut, refData, sp, sv, map[string]string{})
+		node, ssv, err := insertDataObjectNode(ctx, provider, e, subMut, refData, sp, sv, map[string]string{})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -383,7 +385,7 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 		sp += f
 		refFields := m.ReferencesFieldsReferences(f)
 		sourceFields := m.ReferencesFieldsSource(f)
-		ref := info.ReferencesQueryInfo(compiler.SchemaDefs(schema), f)
+		ref := info.ReferencesQueryInfo(base.NewDefsAdapter(ctx, provider), f)
 		if ref == nil {
 			return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "references query for field %s.%s is not defined", path, f)
 		}
@@ -410,7 +412,7 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 				}
 			}
 
-			node, ssv, err := insertDataObjectNode(ctx, schema, e, subMut, refData, sp+"["+strconv.Itoa(i)+"]", sv, psv)
+			node, ssv, err := insertDataObjectNode(ctx, provider, e, subMut, refData, sp+"["+strconv.Itoa(i)+"]", sv, psv)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -421,12 +423,12 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 				continue
 			}
 			// add m2m links
-			m2m := schema.Types[ref.M2MName]
+			m2m := provider.ForName(ctx, ref.M2MName)
 			m2mInfo := compiler.DataObjectInfo(m2m)
 			if m2mInfo == nil {
 				return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "object %s is not defined", ref.M2MName)
 			}
-			m2mRef := m2mInfo.M2MReferencesQueryInfo(compiler.SchemaDefs(schema), ref.Name)
+			m2mRef := m2mInfo.M2MReferencesQueryInfo(base.NewDefsAdapter(ctx, provider), ref.Name)
 			m2mSourceFields := m2mRef.SourceFields()
 			m2mRefFields := m2mRef.ReferencesFields()
 			m2mData := map[string]string{}

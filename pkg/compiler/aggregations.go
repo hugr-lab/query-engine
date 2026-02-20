@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	FieldAggregationQueryDirectiveName = "aggregation_query"
+	FieldAggregationQueryDirectiveName = base.FieldAggregationQueryDirectiveName
 	objectAggregationDirectiveName     = "aggregation"
 	objectFieldAggregationDirective    = "field_aggregation"
 	AggregateKeyFieldName              = "key"

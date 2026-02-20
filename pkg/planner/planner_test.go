@@ -105,7 +105,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	cs := catalogs.New()
+	cs := catalogs.New(nil)
 	c, err := catalogs.NewCatalog(context.Background(), "test", "", &engines.DuckDB{}, sources.NewStringSource(testSchemaData), false, false)
 	if err != nil {
 		fmt.Printf("Failed to create catalog: %v", err)

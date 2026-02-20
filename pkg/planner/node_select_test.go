@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -143,7 +144,7 @@ func TestWhereFieldNode(t *testing.T) {
 				t.Fatalf("whereFieldNode() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if node != nil {
-				node.schema = testSchema
+				node.provider = static.New(testSchema)
 				node.engines = testCats
 				sql, params, err := node.CollectFunc(node, nil, nil)
 				if (err != nil) != tt.wantErr {

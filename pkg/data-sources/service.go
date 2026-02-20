@@ -19,8 +19,8 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
+	schemalib "github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/hugr-lab/query-engine/pkg/types"
-	"github.com/vektah/gqlparser/v2/ast"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
 	. "github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -78,8 +78,8 @@ func (s *Service) Engine(name string) (engines.Engine, error) {
 	return ds.Engine(), nil
 }
 
-func (s *Service) Schema() *ast.Schema {
-	return s.catalogs.Schema()
+func (s *Service) SchemaProvider() schemalib.Provider {
+	return s.catalogs.SchemaProvider()
 }
 
 func (s *Service) Register(ctx context.Context, name string, ds Source) error {

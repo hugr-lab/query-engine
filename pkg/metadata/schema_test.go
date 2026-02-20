@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -76,7 +77,7 @@ func Test_directiveResolver(t *testing.T) {
 		"isRepeatable": true,
 	}
 
-	result, err := directiveResolver(t.Context(), schema, directiveDef, selectionSet, 10)
+	result, err := directiveResolver(t.Context(), static.New(schema), directiveDef, selectionSet, 10)
 	if err != nil {
 		t.Fatalf("directiveResolver() error = %v", err)
 	}
@@ -134,7 +135,7 @@ func Test_inputValueResolver(t *testing.T) {
 		"defaultValue": "defaultValue",
 	}
 
-	result, err := inputValueResolver(t.Context(), schema, fieldDef, selectionSet, 10)
+	result, err := inputValueResolver(t.Context(), static.New(schema), fieldDef, selectionSet, 10)
 	if err != nil {
 		t.Fatalf("inputValueResolver() error = %v", err)
 	}
@@ -192,7 +193,7 @@ func Test_argumentResolver(t *testing.T) {
 		"defaultValue": "defaultValue",
 	}
 
-	result, err := argumentResolver(t.Context(), schema, argDef, selectionSet, 10)
+	result, err := argumentResolver(t.Context(), static.New(schema), argDef, selectionSet, 10)
 	if err != nil {
 		t.Fatalf("argumentResolver() error = %v", err)
 	}
@@ -371,7 +372,7 @@ func Test_fieldResolver(t *testing.T) {
 		"deprecationReason": nil,
 	}
 
-	result, err := fieldResolver(t.Context(), schema, fieldDef, selectionSet, 10)
+	result, err := fieldResolver(t.Context(), static.New(schema), fieldDef, selectionSet, 10)
 	if err != nil {
 		t.Fatalf("fieldResolver() error = %v", err)
 	}
@@ -461,7 +462,7 @@ func Test_fieldResolver_withDeprecation(t *testing.T) {
 		"deprecationReason": "Deprecated for testing",
 	}
 
-	result, err := fieldResolver(t.Context(), schema, fieldDef, selectionSet, 10)
+	result, err := fieldResolver(t.Context(), static.New(schema), fieldDef, selectionSet, 10)
 	if err != nil {
 		t.Fatalf("fieldResolver() error = %v", err)
 	}
@@ -684,7 +685,7 @@ func Test_typeResolver(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := typeResolver(t.Context(), schema, tt.typeDef, tt.selectionSet, 10)
+			result, err := typeResolver(t.Context(), static.New(schema), tt.typeDef, tt.selectionSet, 10)
 			if err != tt.expectedErr {
 				t.Fatalf("typeResolver() error = %v, expectedErr %v", err, tt.expectedErr)
 			}

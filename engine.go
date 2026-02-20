@@ -21,9 +21,10 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/gis"
 	permissions "github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/planner"
+	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
-	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -34,6 +35,7 @@ type Service struct {
 	router  *http.ServeMux
 	adminUI http.HandlerFunc
 	catalog *catalogs.Service
+	schema  *schema.Service
 	ds      *datasources.Service
 	planner *planner.Service
 	db      *db.Pool
@@ -74,10 +76,17 @@ type Info struct {
 }
 
 func New(config Config) *Service {
+	// Initialize schema service with an empty schema (queries won't validate
+	// until the first rebuildSchema populates it via SetProvider).
+	ss := schema.NewService(static.New(&ast.Schema{
+		Types:      make(map[string]*ast.Definition),
+		Directives: make(map[string]*ast.DirectiveDefinition),
+	}))
 	return &Service{
 		config:  config,
 		router:  http.NewServeMux(),
-		catalog: catalogs.New(),
+		schema:  ss,
+		catalog: catalogs.New(ss),
 		cache:   cache.New(config.Cache),
 		s3:      storage.New(),
 	}
@@ -114,6 +123,7 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		return fmt.Errorf("attach runtime sources: %w", err)
 	}
 
+	s.schema.SetVariableTransformer(schema.NewJQVariableTransformer(s))
 	s.planner = planner.New(s.catalog, s)
 
 	if s.config.AdminUIFetchPath == "" {
@@ -132,7 +142,7 @@ func (s *Service) Init(ctx context.Context) (err error) {
 
 	s.gis = gis.New(gis.Config{
 		Querier: s,
-		Schema:  s,
+		Schema:  s.schema,
 	})
 
 	s.endpoints()
@@ -190,8 +200,8 @@ func (s *Service) Close() error {
 	return nil
 }
 
-func (s *Service) Schema() *ast.Schema {
-	return s.catalog.Schema()
+func (s *Service) SchemaProvider() schema.Provider {
+	return s.schema.Provider()
 }
 
 func (s *Service) endpoints() {
@@ -202,7 +212,7 @@ func (s *Service) endpoints() {
 	s.router.Handle("/jq-query", mw(http.HandlerFunc(s.jqHandler)))
 	s.router.Handle("/ipc", mw(http.HandlerFunc(s.ipcHandler)))
 
-	s.router.Handle("/schema", mw(http.HandlerFunc(s.schemaHandler)))
+	// s.router.Handle("/schema", mw(http.HandlerFunc(s.schemaHandler))) // disabled: schemaHandler blocked on gqlparser requiring *ast.Schema
 
 	if s.config.AdminUI {
 		s.router.Handle("/admin", mw(http.HandlerFunc(s.adminUI)))
@@ -274,68 +284,35 @@ func (s *Service) parseRequest(r *http.Request) (req types.Request, err error) {
 	return req, err
 }
 
-func (s *Service) ProcessQuery(ctx context.Context, catalog string, req types.Request) types.Response {
-	// add permissions to context
+func (s *Service) ProcessQuery(ctx context.Context, _ string, req types.Request) types.Response {
 	start := time.Now()
-	schema, err := s.catalog.CatalogSchema(catalog)
+	op, err := s.schema.ParseQuery(ctx, req.Query, req.Variables, req.OperationName)
 	if err != nil {
 		return types.ErrResponse(err)
 	}
-	catalogDuration := time.Since(start)
-	var transformedVars bool
-	req.Variables, transformedVars, err = s.transformVariables(ctx, req.Variables)
-	if err != nil {
-		return types.ErrResponse(err)
-	}
-	variablesDuration := time.Since(start) - catalogDuration
+	parseDuration := time.Since(start)
 
-	qd, errs := gqlparser.LoadQueryWithRules(schema, req.Query, types.GraphQLQueryRules)
-	if len(errs) > 0 {
-		return types.ErrResponse(errs)
-	}
-	queryDuration := time.Since(start) - catalogDuration - variablesDuration
-
-	if len(qd.Operations) == 0 {
-		return types.Response{Errors: gqlerror.List{gqlerror.Errorf("no operations found")}}
-	}
 	if req.ValidateOnly {
 		ctx = types.ContextWithValidateOnly(ctx)
 	}
-	var res types.Response
-	if len(qd.Operations) != 1 && req.OperationName == "" {
-		return types.ErrResponse(gqlerror.Errorf("multiple operations found, operationName is required"))
-	}
-	op := qd.Operations[0]
-	if req.OperationName != "" {
-		for _, o := range qd.Operations {
-			if o.Name == req.OperationName {
-				op = o
-				break
-			}
-		}
-		if op.Name != req.OperationName {
-			return types.ErrResponse(gqlerror.Errorf("operation %s not found", req.OperationName))
-		}
-	}
-	data, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
+
+	provider := s.schema.Provider()
+	data, ext, err := s.ProcessOperation(ctx, provider, op)
 	if err != nil {
 		types.DataClose(data)
 		return types.ErrResponse(err)
 	}
+	var res types.Response
 	if data != nil {
 		res.Data = data
 	}
 	if ext != nil {
-		if op.Directives.ForName(base.StatsDirectiveName) != nil {
+		if op.Definition.Directives.ForName(base.StatsDirectiveName) != nil {
 			opStats, ok := ext["stats"].(map[string]any)
 			if !ok {
 				opStats = make(map[string]any)
 			}
-			opStats["catalog_load_time"] = catalogDuration.String()
-			opStats["query_parse_time"] = queryDuration.String()
-			if transformedVars {
-				opStats["variables_transform_time"] = variablesDuration.String()
-			}
+			opStats["parse_time"] = parseDuration.String()
 			opStats["total_time"] = time.Since(start).String()
 			ext["stats"] = opStats
 		}
@@ -344,15 +321,15 @@ func (s *Service) ProcessQuery(ctx context.Context, catalog string, req types.Re
 	return res
 }
 
-func (s *Service) ProcessOperation(ctx context.Context, schema *ast.Schema, op *ast.OperationDefinition, vars map[string]any) (map[string]any, map[string]any, error) {
-	switch op.Operation {
+func (s *Service) ProcessOperation(ctx context.Context, provider schema.Provider, op *schema.Operation) (map[string]any, map[string]any, error) {
+	switch op.Definition.Operation {
 	case ast.Query, ast.Mutation:
-		return s.processQuery(ctx, schema, op, vars)
+		return s.processQuery(ctx, provider, op)
 	case ast.Subscription:
 		// operation should be handled by another endpoint (websocket)
-		return nil, nil, gqlerror.ErrorPosf(op.Position, "operation %s not supported", op.Operation)
+		return nil, nil, gqlerror.ErrorPosf(op.Definition.Position, "operation %s not supported", op.Definition.Operation)
 	default:
-		return nil, nil, gqlerror.ErrorPosf(op.Position, "operation %s not supported", op.Operation)
+		return nil, nil, gqlerror.ErrorPosf(op.Definition.Position, "operation %s not supported", op.Definition.Operation)
 	}
 }
 

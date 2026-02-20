@@ -9,6 +9,8 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -20,12 +22,14 @@ type Service struct {
 	schema     *ast.Schema
 	catalogs   map[string]*Catalog
 	extensions map[string]*Extension
+	ss         *schema.Service
 }
 
-func New() *Service {
+func New(ss *schema.Service) *Service {
 	return &Service{
 		catalogs:   make(map[string]*Catalog),
 		extensions: make(map[string]*Extension),
+		ss:         ss,
 	}
 }
 
@@ -127,20 +131,6 @@ func (s *Service) RemoveExtension(ctx context.Context, name string) error {
 	return nil
 }
 
-func (s *Service) CatalogSchema(name string) (*ast.Schema, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if name == "" {
-		return s.schema, nil
-	}
-
-	c, ok := s.catalogs[name]
-	if !ok {
-		return nil, ErrCatalogNotFound
-	}
-	return c.schema, nil
-}
-
 func (s *Service) Engine(name string) (engines.Engine, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -160,6 +150,10 @@ func (s *Service) Schema() *ast.Schema {
 	defer s.mu.RUnlock()
 
 	return s.schema
+}
+
+func (s *Service) SchemaProvider() schema.Provider {
+	return s.ss.Provider()
 }
 
 func (s *Service) Reload(ctx context.Context, name string) error {
@@ -228,12 +222,17 @@ func (s *Service) rebuildSchema(ctx context.Context) (*ast.Schema, error) {
 		return nil, err
 	}
 
-	schema, err := s.loadExtensions(ctx, schemaDoc)
+	astSchema, err := s.loadExtensions(ctx, schemaDoc)
 	if err != nil {
 		return nil, err
 	}
 
-	return schema, nil
+	// Update the Provider in the schema service
+	if s.ss != nil {
+		s.ss.SetProvider(static.New(astSchema))
+	}
+
+	return astSchema, nil
 }
 
 func (s *Service) loadExtensions(ctx context.Context, schemaDoc *ast.SchemaDocument) (*ast.Schema, error) {

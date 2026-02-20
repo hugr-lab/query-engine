@@ -11,17 +11,19 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func selectDataObjectRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, query *ast.Field, vars map[string]interface{}) (*QueryPlanNode, error) {
-	node, inGeneral, err := selectDataObjectNode(ctx, compiler.SchemaDefs(schema), planner, query, vars)
+func selectDataObjectRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]interface{}) (*QueryPlanNode, error) {
+	defs := base.NewDefsAdapter(ctx, provider)
+	node, inGeneral, err := selectDataObjectNode(ctx, defs, planner, query, vars)
 	if err != nil {
 		return nil, err
 	}
 
-	dataObject, ok := schema.Types[query.Definition.Type.Name()]
-	if !ok || !compiler.IsDataObject(dataObject) {
+	dataObject := provider.ForName(ctx, query.Definition.Type.Name())
+	if dataObject == nil || !compiler.IsDataObject(dataObject) {
 		return nil, errors.New("data object for query not found")
 	}
 	info := compiler.DataObjectInfo(dataObject)
@@ -39,7 +41,7 @@ func selectDataObjectRootNode(ctx context.Context, schema *ast.Schema, planner C
 			return nil, err
 		}
 	}
-	return finalResultNode(ctx, schema, planner, query, node, inGeneral || !isTypeCast), nil
+	return finalResultNode(ctx, provider, planner, query, node, inGeneral || !isTypeCast), nil
 }
 
 // selectDataObjectNode creates a select statement node for data object query

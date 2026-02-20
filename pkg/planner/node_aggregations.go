@@ -9,11 +9,12 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func aggregateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
-	node, inGeneral, err := aggregateDataNode(ctx, compiler.SchemaDefs(schema), planner, false, query, vars)
+func aggregateRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+	node, inGeneral, err := aggregateDataNode(ctx, base.NewDefsAdapter(ctx, provider), planner, false, query, vars)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +31,7 @@ func aggregateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog,
 		}
 	}
 
-	return finalResultNode(ctx, schema, planner, query, node, inGeneral), nil
+	return finalResultNode(ctx, provider, planner, query, node, inGeneral), nil
 }
 
 // returns nodes: fields, from, where, group by (if bucket aggregation)
