@@ -2,6 +2,7 @@ package static
 
 import (
 	"context"
+	"iter"
 	"slices"
 
 	"github.com/hugr-lab/query-engine/pkg/schema"
@@ -68,64 +69,89 @@ func (p *docProvider) SubscriptionType(_ context.Context) *ast.Definition {
 	return p.doc.Definitions.ForName(name)
 }
 
-func (p *docProvider) PossibleTypes(_ context.Context, def *ast.Definition) []*ast.Definition {
+func (p *docProvider) PossibleTypes(_ context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
 	if def == nil {
 		return nil
 	}
 	switch def.Kind {
 	case ast.Object:
-		return []*ast.Definition{def}
+		return func(yield func(*ast.Definition) bool) {
+			if !yield(def) {
+				return
+			}
+		}
 	case ast.Interface:
-		var result []*ast.Definition
-		for _, d := range p.doc.Definitions {
-			if d.Kind != ast.Object {
-				continue
-			}
-			if slices.Contains(d.Interfaces, def.Name) {
-				result = append(result, d)
+		return func(yield func(*ast.Definition) bool) {
+			for _, d := range p.doc.Definitions {
+				if d.Kind != ast.Object {
+					continue
+				}
+				if !slices.Contains(d.Interfaces, def.Name) {
+					continue
+				}
+				if !yield(d) {
+					return
+				}
 			}
 		}
-		return result
 	case ast.Union:
-		var result []*ast.Definition
-		for _, typeName := range def.Types {
-			if d := p.doc.Definitions.ForName(typeName); d != nil {
-				result = append(result, d)
+		return func(yield func(*ast.Definition) bool) {
+			for _, typeName := range def.Types {
+				if d := p.doc.Definitions.ForName(typeName); d != nil {
+					if !yield(d) {
+						return
+					}
+				}
 			}
 		}
-		return result
 	}
 	return nil
 }
 
-func (p *docProvider) Implements(_ context.Context, def *ast.Definition) []*ast.Definition {
+func (p *docProvider) Implements(_ context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
 	if def == nil {
 		return nil
 	}
-	var result []*ast.Definition
-	for _, d := range p.doc.Definitions {
-		if d.Kind != ast.Interface {
-			continue
-		}
-		if def.Kind == ast.Object && slices.Contains(def.Interfaces, d.Name) {
-			result = append(result, d)
-		}
-	}
-	return result
-}
-
-func (p *docProvider) Types(_ context.Context, yield func(string, *ast.Definition) bool) {
-	for _, def := range p.doc.Definitions {
-		if !yield(def.Name, def) {
-			return
+	return func(yield func(*ast.Definition) bool) {
+		for _, d := range p.doc.Definitions {
+			if d.Kind != ast.Interface {
+				continue
+			}
+			if def.Kind == ast.Object && slices.Contains(def.Interfaces, d.Name) {
+				if !yield(d) {
+					return
+				}
+			}
 		}
 	}
 }
 
-func (p *docProvider) DirectiveDefinitions(_ context.Context, yield func(string, *ast.DirectiveDefinition) bool) {
-	for _, dir := range p.doc.Directives {
-		if !yield(dir.Name, dir) {
-			return
+func (p *docProvider) Definitions(_ context.Context) iter.Seq[*ast.Definition] {
+	return func(yield func(*ast.Definition) bool) {
+		for _, def := range p.doc.Definitions {
+			if !yield(def) {
+				return
+			}
+		}
+	}
+}
+
+func (p *docProvider) Types(_ context.Context) iter.Seq2[string, *ast.Definition] {
+	return func(yield func(string, *ast.Definition) bool) {
+		for _, def := range p.doc.Definitions {
+			if !yield(def.Name, def) {
+				return
+			}
+		}
+	}
+}
+
+func (p *docProvider) DirectiveDefinitions(_ context.Context) iter.Seq2[string, *ast.DirectiveDefinition] {
+	return func(yield func(string, *ast.DirectiveDefinition) bool) {
+		for _, dir := range p.doc.Directives {
+			if !yield(dir.Name, dir) {
+				return
+			}
 		}
 	}
 }

@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"iter"
 	"sync"
 
 	"github.com/hugr-lab/query-engine/pkg/schema/validator"
@@ -110,20 +111,24 @@ func (s *Service) SubscriptionType(ctx context.Context) *ast.Definition {
 	return s.Provider().SubscriptionType(ctx)
 }
 
-func (s *Service) PossibleTypes(ctx context.Context, def *ast.Definition) []*ast.Definition {
+func (s *Service) PossibleTypes(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
 	return s.Provider().PossibleTypes(ctx, def)
 }
 
-func (s *Service) Implements(ctx context.Context, def *ast.Definition) []*ast.Definition {
+func (s *Service) Implements(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
 	return s.Provider().Implements(ctx, def)
 }
 
-func (s *Service) Types(ctx context.Context, yield func(name string, def *ast.Definition) bool) {
-	s.Provider().Types(ctx, yield)
+func (s *Service) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {
+	return s.Provider().Definitions(ctx)
 }
 
-func (s *Service) DirectiveDefinitions(ctx context.Context, yield func(name string, def *ast.DirectiveDefinition) bool) {
-	s.Provider().DirectiveDefinitions(ctx, yield)
+func (s *Service) Types(ctx context.Context) iter.Seq2[string, *ast.Definition] {
+	return s.Provider().Types(ctx)
+}
+
+func (s *Service) DirectiveDefinitions(ctx context.Context) iter.Seq2[string, *ast.DirectiveDefinition] {
+	return s.Provider().DirectiveDefinitions(ctx)
 }
 
 func (s *Service) Description(ctx context.Context) string {

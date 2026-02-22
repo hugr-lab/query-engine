@@ -62,14 +62,13 @@ func processSchemaQuery(ctx context.Context, provider schema.Provider, field *as
 		},
 		"types": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			var res []map[string]any
-			provider.Types(ctx, func(name string, t *ast.Definition) bool {
+			for _, t := range provider.Types(ctx) {
 				data, err := typeResolver(ctx, provider, ast.NamedType(t.Name, &ast.Position{}), field.SelectionSet, maxDepth)
 				if err != nil {
-					return false
+					return nil, err
 				}
 				res = append(res, data)
-				return true
-			})
+			}
 			return res, nil
 		},
 		"directives": func(ctx context.Context, field *ast.Field, onType string) (any, error) {

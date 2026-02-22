@@ -2,6 +2,7 @@ package static_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/schema/static"
@@ -124,7 +125,7 @@ func TestStaticProvider_PossibleTypes(t *testing.T) {
 	nodeDef := p.ForName(context.Background(), "Node")
 	require.NotNil(t, nodeDef)
 
-	possibles := p.PossibleTypes(context.Background(), nodeDef)
+	possibles := slices.Collect(p.PossibleTypes(context.Background(), nodeDef))
 	require.Len(t, possibles, 2)
 
 	names := make(map[string]bool)
@@ -146,7 +147,7 @@ func TestStaticProvider_Implements(t *testing.T) {
 	userDef := p.ForName(context.Background(), "User")
 	require.NotNil(t, userDef)
 
-	impls := p.Implements(context.Background(), userDef)
+	impls := slices.Collect(p.Implements(context.Background(), userDef))
 	require.Len(t, impls, 1)
 	assert.Equal(t, "Node", impls[0].Name)
 }
@@ -159,10 +160,9 @@ func TestStaticProvider_Types(t *testing.T) {
 	p := static.New(s)
 
 	var names []string
-	p.Types(context.Background(), func(name string, def *ast.Definition) bool {
+	for name := range p.Types(context.Background()) {
 		names = append(names, name)
-		return true
-	})
+	}
 	assert.Contains(t, names, "Query")
 	assert.Contains(t, names, "User")
 }
@@ -175,10 +175,9 @@ func TestStaticProvider_DirectiveDefinitions(t *testing.T) {
 	p := static.New(s)
 
 	var names []string
-	p.DirectiveDefinitions(context.Background(), func(name string, dir *ast.DirectiveDefinition) bool {
+	for name := range p.DirectiveDefinitions(context.Background()) {
 		names = append(names, name)
-		return true
-	})
+	}
 	assert.Contains(t, names, "cached")
 }
 

@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	"iter"
 
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -15,6 +16,6 @@ type TypeResolver interface {
 	QueryType(ctx context.Context) *ast.Definition
 	MutationType(ctx context.Context) *ast.Definition
 	SubscriptionType(ctx context.Context) *ast.Definition
-	PossibleTypes(ctx context.Context, def *ast.Definition) []*ast.Definition
-	Implements(ctx context.Context, def *ast.Definition) []*ast.Definition
+	PossibleTypes(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition]
+	Implements(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition]
 }

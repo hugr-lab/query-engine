@@ -2,6 +2,7 @@ package static_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/schema/static"
@@ -85,7 +86,7 @@ func TestDocProvider_PossibleTypes_Interface(t *testing.T) {
 	nodeDef := p.ForName(context.Background(), "Node")
 	require.NotNil(t, nodeDef)
 
-	possibles := p.PossibleTypes(context.Background(), nodeDef)
+	possibles := slices.Collect(p.PossibleTypes(context.Background(), nodeDef))
 	require.Len(t, possibles, 2)
 
 	names := make(map[string]bool)
@@ -108,7 +109,7 @@ func TestDocProvider_PossibleTypes_Union(t *testing.T) {
 	unionDef := p.ForName(context.Background(), "SearchResult")
 	require.NotNil(t, unionDef)
 
-	possibles := p.PossibleTypes(context.Background(), unionDef)
+	possibles := slices.Collect(p.PossibleTypes(context.Background(), unionDef))
 	require.Len(t, possibles, 2)
 
 	names := make(map[string]bool)
@@ -124,7 +125,7 @@ func TestDocProvider_PossibleTypes_Object(t *testing.T) {
 	p := static.NewDocumentProvider(doc)
 
 	qDef := p.ForName(context.Background(), "Query")
-	possibles := p.PossibleTypes(context.Background(), qDef)
+	possibles := slices.Collect(p.PossibleTypes(context.Background(), qDef))
 	require.Len(t, possibles, 1)
 	assert.Equal(t, "Query", possibles[0].Name)
 }
@@ -146,7 +147,7 @@ func TestDocProvider_Implements(t *testing.T) {
 	userDef := p.ForName(context.Background(), "User")
 	require.NotNil(t, userDef)
 
-	impls := p.Implements(context.Background(), userDef)
+	impls := slices.Collect(p.Implements(context.Background(), userDef))
 	require.Len(t, impls, 1)
 	assert.Equal(t, "Node", impls[0].Name)
 }
@@ -159,10 +160,9 @@ func TestDocProvider_Types_Iterator(t *testing.T) {
 	p := static.NewDocumentProvider(doc)
 
 	var names []string
-	p.Types(context.Background(), func(name string, def *ast.Definition) bool {
+	for name := range p.Types(context.Background()) {
 		names = append(names, name)
-		return true
-	})
+	}
 	assert.Contains(t, names, "Query")
 	assert.Contains(t, names, "User")
 }
@@ -175,10 +175,9 @@ func TestDocProvider_DirectiveDefinitions_Iterator(t *testing.T) {
 	p := static.NewDocumentProvider(doc)
 
 	var names []string
-	p.DirectiveDefinitions(context.Background(), func(name string, dir *ast.DirectiveDefinition) bool {
+	for name := range p.DirectiveDefinitions(context.Background()) {
 		names = append(names, name)
-		return true
-	})
+	}
 	assert.Contains(t, names, "cached")
 }
 

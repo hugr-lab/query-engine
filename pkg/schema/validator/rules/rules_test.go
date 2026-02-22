@@ -2,6 +2,7 @@ package rules_test
 
 import (
 	"context"
+	"iter"
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
@@ -1050,12 +1051,24 @@ func (p *testProvider) SubscriptionType(_ context.Context) *ast.Definition {
 	return p.schema.Subscription
 }
 
-func (p *testProvider) PossibleTypes(_ context.Context, def *ast.Definition) []*ast.Definition {
-	return p.schema.GetPossibleTypes(def)
+func (p *testProvider) PossibleTypes(_ context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
+	return func(yield func(*ast.Definition) bool) {
+		for _, t := range p.schema.PossibleTypes[def.Name] {
+			if !yield(t) {
+				return
+			}
+		}
+	}
 }
 
-func (p *testProvider) Implements(_ context.Context, def *ast.Definition) []*ast.Definition {
-	return p.schema.GetImplements(def)
+func (p *testProvider) Implements(_ context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
+	return func(yield func(*ast.Definition) bool) {
+		for _, iface := range p.schema.Implements[def.Name] {
+			if !yield(iface) {
+				return
+			}
+		}
+	}
 }
 
 var _ validator.TypeResolver = (*testProvider)(nil)
