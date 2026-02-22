@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"iter"
 
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -12,35 +13,19 @@ import (
 type DefinitionsSource interface {
 	ForName(ctx context.Context, name string) *ast.Definition
 	DirectiveForName(ctx context.Context, name string) *ast.DirectiveDefinition
+
+	// iteration
+	Definitions(ctx context.Context) iter.Seq[*ast.Definition]
+	DirectiveDefinitions(ctx context.Context) iter.Seq2[string, *ast.DirectiveDefinition]
 }
 
-// Source is a mutable container for schema definitions of a single data source.
-type Source interface {
+// ExtensionsSource extends DefinitionsSource with support for definition extensions.
+type ExtensionsSource interface {
 	DefinitionsSource
 
-	// Iteration
-	Definitions(yield func(def *ast.Definition) bool)
-	Extensions(yield func(def *ast.Definition) bool)
-
-	// Write
-	AddDefinition(def *ast.Definition)
-	RemoveDefinitions(filter func(def *ast.Definition) bool)
-	AddExtension(ext *ast.Definition)
-	ClearExtensions()
-
-	// Directive definitions
-	DirectiveDefinitions(yield func(dir *ast.DirectiveDefinition) bool)
-	AddDirectiveDefinition(dir *ast.DirectiveDefinition)
-
-	// Schema operation types (Query, Mutation root type names)
-	OperationType(operation string) string
-	SetOperationType(operation string, typeName string)
-
-	// Merge base types
-	MergeFrom(other *ast.SchemaDocument)
-
-	// Read-only snapshot
-	Provider(ctx context.Context) Provider
+	// Extensions
+	DefinitionExtensions(ctx context.Context, name string) iter.Seq[*ast.Definition]
+	Extensions(ctx context.Context) iter.Seq[*ast.Definition]
 }
 
 // Provider is a read-only interface to a compiled schema.
@@ -48,21 +33,30 @@ type Source interface {
 type Provider interface {
 	DefinitionsSource
 
+	Description(ctx context.Context) string
+
 	// Root operation types
 	QueryType(ctx context.Context) *ast.Definition
 	MutationType(ctx context.Context) *ast.Definition
 	SubscriptionType(ctx context.Context) *ast.Definition
 
 	// Type relationships (for validator: fragment spreading, interface checks)
-	PossibleTypes(ctx context.Context, def *ast.Definition) []*ast.Definition
-	Implements(ctx context.Context, def *ast.Definition) []*ast.Definition
+	PossibleTypes(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition]
+	Implements(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition]
 
-	// Enumeration (for introspection, meta-info)
-	Types(ctx context.Context, yield func(name string, def *ast.Definition) bool)
-	DirectiveDefinitions(ctx context.Context, yield func(name string, def *ast.DirectiveDefinition) bool)
+	// types iteration (for introspection, meta-info)
+	Types(ctx context.Context) iter.Seq2[string, *ast.Definition]
+}
 
-	// Schema metadata
-	Description(ctx context.Context) string
+// MutableProvider is a mutable container for schema definitions.
+type MutableProvider interface {
+	Provider
+
+	// Merge base types
+	MergeFrom(ctx context.Context, other DefinitionsSource) error
+
+	// Change the definition description
+	SetDefinitionDescription(ctx context.Context, name, desc string) error
 }
 
 // VariableTransformer transforms query variables before parsing.

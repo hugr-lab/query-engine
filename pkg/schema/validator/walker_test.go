@@ -2,6 +2,7 @@ package validator_test
 
 import (
 	"context"
+	"iter"
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/schema/validator"
@@ -281,12 +282,24 @@ func (p *testProvider) SubscriptionType(_ context.Context) *ast.Definition {
 	return p.schema.Subscription
 }
 
-func (p *testProvider) PossibleTypes(_ context.Context, def *ast.Definition) []*ast.Definition {
-	return p.schema.GetPossibleTypes(def)
+func (p *testProvider) PossibleTypes(_ context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
+	return func(yield func(*ast.Definition) bool) {
+		for _, t := range p.schema.GetPossibleTypes(def) {
+			if !yield(t) {
+				return
+			}
+		}
+	}
 }
 
-func (p *testProvider) Implements(_ context.Context, def *ast.Definition) []*ast.Definition {
-	return p.schema.GetImplements(def)
+func (p *testProvider) Implements(_ context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
+	return func(yield func(*ast.Definition) bool) {
+		for _, iface := range p.schema.GetImplements(def) {
+			if !yield(iface) {
+				return
+			}
+		}
+	}
 }
 
 const builtinSchema = `
