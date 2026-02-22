@@ -19,8 +19,8 @@ type DefinitionsSource interface {
 	DirectiveDefinitions(ctx context.Context) iter.Seq2[string, *ast.DirectiveDefinition]
 }
 
-// ExtensibleDefinitionsSource extends DefinitionsSource with support for definition extensions.
-type ExtensibleDefinitionsSource interface {
+// ExtensionsSource extends DefinitionsSource with support for definition extensions.
+type ExtensionsSource interface {
 	DefinitionsSource
 
 	// Extensions

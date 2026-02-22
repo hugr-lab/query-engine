@@ -11,6 +11,8 @@ import (
 
 // Compile-time check that docProvider implements schema.Provider.
 var _ schema.Provider = (*docProvider)(nil)
+var _ schema.DefinitionsSource = (*docProvider)(nil)
+var _ schema.ExtensionsSource = (*docProvider)(nil)
 
 type docProvider struct {
 	doc *ast.SchemaDocument
@@ -161,4 +163,26 @@ func (p *docProvider) Description(_ context.Context) string {
 		return p.doc.Schema[0].Description
 	}
 	return ""
+}
+
+func (p *docProvider) Extensions(_ context.Context) iter.Seq[*ast.Definition] {
+	return func(yield func(*ast.Definition) bool) {
+		for _, def := range p.doc.Extensions {
+			if !yield(def) {
+				return
+			}
+		}
+	}
+}
+
+func (p *docProvider) DefinitionExtensions(_ context.Context, name string) iter.Seq[*ast.Definition] {
+	return func(yield func(*ast.Definition) bool) {
+		for _, ext := range p.doc.Extensions {
+			if ext.Name == name {
+				if !yield(ext) {
+					return
+				}
+			}
+		}
+	}
 }
