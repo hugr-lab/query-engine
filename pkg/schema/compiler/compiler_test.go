@@ -117,36 +117,46 @@ func TestCompile_BasicTable(t *testing.T) {
 	}
 
 	// Check filter input type
-	filterDef, ok := defs["UserFilter"]
+	filterDef, ok := defs["User_filter"]
 	if !ok {
-		t.Error("expected UserFilter definition in output")
+		t.Error("expected User_filter definition in output")
 	} else {
 		if filterDef.Kind != ast.InputObject {
-			t.Errorf("expected UserFilter to be InputObject, got %v", filterDef.Kind)
+			t.Errorf("expected User_filter to be InputObject, got %v", filterDef.Kind)
 		}
 		// Should have id, name, email filter fields + _and, _or, _not
 		if !hasFieldNamed(filterDef.Fields, "id") {
-			t.Error("expected id field in UserFilter")
+			t.Error("expected id field in User_filter")
 		}
 		if !hasFieldNamed(filterDef.Fields, "_and") {
-			t.Error("expected _and field in UserFilter")
+			t.Error("expected _and field in User_filter")
 		}
 	}
 
-	// Check data input type
-	inputDef, ok := defs["UserInput"]
+	// Check list filter input type
+	if _, ok := defs["User_list_filter"]; !ok {
+		t.Error("expected User_list_filter definition in output")
+	}
+
+	// Check insert data input type
+	insertInputDef, ok := defs["User_mut_input_data"]
 	if !ok {
-		t.Error("expected UserInput definition in output")
+		t.Error("expected User_mut_input_data definition in output")
 	} else {
-		if inputDef.Kind != ast.InputObject {
-			t.Errorf("expected UserInput to be InputObject, got %v", inputDef.Kind)
+		if insertInputDef.Kind != ast.InputObject {
+			t.Errorf("expected User_mut_input_data to be InputObject, got %v", insertInputDef.Kind)
 		}
-		if !hasFieldNamed(inputDef.Fields, "id") {
-			t.Error("expected id field in UserInput")
+		if !hasFieldNamed(insertInputDef.Fields, "id") {
+			t.Error("expected id field in User_mut_input_data")
 		}
-		if !hasFieldNamed(inputDef.Fields, "name") {
-			t.Error("expected name field in UserInput")
+		if !hasFieldNamed(insertInputDef.Fields, "name") {
+			t.Error("expected name field in User_mut_input_data")
 		}
+	}
+
+	// Check update data input type
+	if _, ok := defs["User_mut_data"]; !ok {
+		t.Error("expected User_mut_data definition in output")
 	}
 
 	// Check aggregation type
@@ -173,8 +183,11 @@ func TestCompile_BasicTable(t *testing.T) {
 	if !hasFieldNamed(queryExt.Fields, "User_by_pk") {
 		t.Error("expected User_by_pk query field on Query")
 	}
-	if !hasFieldNamed(queryExt.Fields, "User_aggregate") {
-		t.Error("expected User_aggregate query field on Query")
+	if !hasFieldNamed(queryExt.Fields, "User_aggregation") {
+		t.Error("expected User_aggregation query field on Query")
+	}
+	if !hasFieldNamed(queryExt.Fields, "User_bucket_aggregation") {
+		t.Error("expected User_bucket_aggregation query field on Query")
 	}
 
 	// Check Mutation type and extension
@@ -185,14 +198,14 @@ func TestCompile_BasicTable(t *testing.T) {
 	if !ok {
 		t.Fatal("expected Mutation extension in output")
 	}
-	if !hasFieldNamed(mutExt.Fields, "User_insert") {
-		t.Error("expected User_insert mutation field on Mutation")
+	if !hasFieldNamed(mutExt.Fields, "insert_User") {
+		t.Error("expected insert_User mutation field on Mutation")
 	}
-	if !hasFieldNamed(mutExt.Fields, "User_update") {
-		t.Error("expected User_update mutation field on Mutation")
+	if !hasFieldNamed(mutExt.Fields, "update_User") {
+		t.Error("expected update_User mutation field on Mutation")
 	}
-	if !hasFieldNamed(mutExt.Fields, "User_delete") {
-		t.Error("expected User_delete mutation field on Mutation")
+	if !hasFieldNamed(mutExt.Fields, "delete_User") {
+		t.Error("expected delete_User mutation field on Mutation")
 	}
 }
 
@@ -302,14 +315,23 @@ func TestCompile_View(t *testing.T) {
 	exts := collectExts(ctx, result)
 
 	// View should produce filter + aggregation but NOT input type
-	if _, ok := defs["ActiveUsersFilter"]; !ok {
-		t.Error("expected ActiveUsersFilter definition")
+	if _, ok := defs["ActiveUsers_filter"]; !ok {
+		t.Error("expected ActiveUsers_filter definition")
+	}
+	if _, ok := defs["ActiveUsers_list_filter"]; !ok {
+		t.Error("expected ActiveUsers_list_filter definition")
 	}
 	if _, ok := defs["_ActiveUsers_aggregation"]; !ok {
 		t.Error("expected _ActiveUsers_aggregation definition")
 	}
-	if _, ok := defs["ActiveUsersInput"]; ok {
-		t.Error("view should NOT produce input type")
+	if _, ok := defs["_ActiveUsers_aggregation_bucket"]; !ok {
+		t.Error("expected _ActiveUsers_aggregation_bucket definition")
+	}
+	if _, ok := defs["ActiveUsers_mut_input_data"]; ok {
+		t.Error("view should NOT produce insert input type")
+	}
+	if _, ok := defs["ActiveUsers_mut_data"]; ok {
+		t.Error("view should NOT produce update input type")
 	}
 
 	// Query should have fields
@@ -320,8 +342,11 @@ func TestCompile_View(t *testing.T) {
 	if !hasFieldNamed(queryExt.Fields, "ActiveUsers") {
 		t.Error("expected ActiveUsers list query")
 	}
-	if !hasFieldNamed(queryExt.Fields, "ActiveUsers_aggregate") {
-		t.Error("expected ActiveUsers_aggregate query")
+	if !hasFieldNamed(queryExt.Fields, "ActiveUsers_aggregation") {
+		t.Error("expected ActiveUsers_aggregation query")
+	}
+	if !hasFieldNamed(queryExt.Fields, "ActiveUsers_bucket_aggregation") {
+		t.Error("expected ActiveUsers_bucket_aggregation query")
 	}
 
 	// No Mutation for views
@@ -449,8 +474,8 @@ func TestCompile_Unique(t *testing.T) {
 	if !ok {
 		t.Fatal("expected Query extension")
 	}
-	if !hasFieldNamed(queryExt.Fields, "User_by_email") {
-		t.Error("expected User_by_email unique query field on Query")
+	if !hasFieldNamed(queryExt.Fields, "User_email") {
+		t.Error("expected User_email unique query field on Query")
 	}
 }
 
@@ -522,7 +547,7 @@ func TestCompile_Prefix(t *testing.T) {
 
 	result, err := c.Compile(ctx, nil, source, base.Options{
 		Name:   "test",
-		Prefix: "pfx_",
+		Prefix: "pfx",
 	})
 	if err != nil {
 		t.Fatalf("Compile failed: %v", err)
@@ -530,18 +555,27 @@ func TestCompile_Prefix(t *testing.T) {
 
 	defs := collectDefs(ctx, result)
 
-	// All types should have prefix
+	// All types should have prefix with underscore separator
 	if _, ok := defs["pfx_Item"]; !ok {
 		t.Error("expected pfx_Item definition (prefixed)")
 	}
-	if _, ok := defs["pfx_ItemFilter"]; !ok {
-		t.Error("expected pfx_ItemFilter definition (prefixed)")
+	if _, ok := defs["pfx_Item_filter"]; !ok {
+		t.Error("expected pfx_Item_filter definition (prefixed)")
 	}
-	if _, ok := defs["pfx_ItemInput"]; !ok {
-		t.Error("expected pfx_ItemInput definition (prefixed)")
+	if _, ok := defs["pfx_Item_list_filter"]; !ok {
+		t.Error("expected pfx_Item_list_filter definition (prefixed)")
+	}
+	if _, ok := defs["pfx_Item_mut_input_data"]; !ok {
+		t.Error("expected pfx_Item_mut_input_data definition (prefixed)")
+	}
+	if _, ok := defs["pfx_Item_mut_data"]; !ok {
+		t.Error("expected pfx_Item_mut_data definition (prefixed)")
 	}
 	if _, ok := defs["_pfx_Item_aggregation"]; !ok {
 		t.Error("expected _pfx_Item_aggregation definition (prefixed)")
+	}
+	if _, ok := defs["_pfx_Item_aggregation_bucket"]; !ok {
+		t.Error("expected _pfx_Item_aggregation_bucket definition (prefixed)")
 	}
 
 	// Original unprefixed should not exist
@@ -584,9 +618,12 @@ func TestCompile_ReadOnly(t *testing.T) {
 	defs := collectDefs(ctx, result)
 	exts := collectExts(ctx, result)
 
-	// ReadOnly should not produce input type
-	if _, ok := defs["RecordInput"]; ok {
-		t.Error("ReadOnly mode should NOT produce input type")
+	// ReadOnly should not produce input types
+	if _, ok := defs["Record_mut_input_data"]; ok {
+		t.Error("ReadOnly mode should NOT produce insert input type")
+	}
+	if _, ok := defs["Record_mut_data"]; ok {
+		t.Error("ReadOnly mode should NOT produce update input type")
 	}
 
 	// No Mutation
@@ -702,8 +739,8 @@ func TestCompile_Replace(t *testing.T) {
 	if _, ok := defs["Widget"]; !ok {
 		t.Error("expected Widget definition after first compile")
 	}
-	if _, ok := defs["WidgetFilter"]; !ok {
-		t.Error("expected WidgetFilter after first compile")
+	if _, ok := defs["Widget_filter"]; !ok {
+		t.Error("expected Widget_filter after first compile")
 	}
 }
 
@@ -930,8 +967,8 @@ func TestCompile_SequentialMultiCatalog(t *testing.T) {
 	if _, ok := defs["Y"]; !ok {
 		t.Error("expected Y definition from catalog B")
 	}
-	if _, ok := defs["YFilter"]; !ok {
-		t.Error("expected YFilter from catalog B")
+	if _, ok := defs["Y_filter"]; !ok {
+		t.Error("expected Y_filter from catalog B")
 	}
 
 	// References should work: Y → X forward reference

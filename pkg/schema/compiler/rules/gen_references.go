@@ -94,8 +94,8 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		ctx.AddExtension(forwardExt)
 
 		// Generate back-reference field on target object
-		// The target filter name follows the convention: <TargetName>Filter
-		filterName := def.Name + "Filter"
+		// The target filter name follows the convention: <TargetName>_filter
+		filterName := def.Name + "_filter"
 		backRefExt := &ast.Definition{
 			Kind:     ast.Object,
 			Name:     refName,

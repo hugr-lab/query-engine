@@ -34,7 +34,7 @@ func (r *TableRule) Process(ctx base.CompilationContext, def *ast.Definition) er
 	addDef(def)
 
 	// 2. Generate filter input type
-	filterName := def.Name + "Filter"
+	filterName := def.Name + "_filter"
 	filterDef := generateFilterInput(ctx, def, filterName, pos)
 	addDef(filterDef)
 	def.Directives = append(def.Directives, &ast.Directive{
@@ -45,15 +45,27 @@ func (r *TableRule) Process(ctx base.CompilationContext, def *ast.Definition) er
 		Position: pos,
 	})
 
-	// 3. Generate data input type (unless ReadOnly)
+	// 2b. Generate list filter input type
+	listFilterName := def.Name + "_list_filter"
+	listFilterDef := generateListFilterInput(filterName, listFilterName, pos)
+	addDef(listFilterDef)
+
+	// 3. Generate data input types (unless ReadOnly)
 	if !opts.ReadOnly {
-		inputName := def.Name + "Input"
-		inputDef := generateDataInput(ctx, def, inputName, info.PrimaryKey, pos)
-		addDef(inputDef)
+		// Insert input: includes all table fields
+		insertInputName := def.Name + "_mut_input_data"
+		insertInputDef := generateMutInputData(ctx, def, insertInputName, pos)
+		addDef(insertInputDef)
+
+		// Update input: includes all table fields (including non-scalar)
+		updateInputName := def.Name + "_mut_data"
+		updateInputDef := generateMutData(ctx, def, updateInputName, pos)
+		addDef(updateInputDef)
+
 		def.Directives = append(def.Directives, &ast.Directive{
 			Name: "data_input",
 			Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: inputName, Kind: ast.StringValue, Position: pos}, Position: pos},
+				{Name: "name", Value: &ast.Value{Raw: insertInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
 			},
 			Position: pos,
 		})
@@ -63,6 +75,11 @@ func (r *TableRule) Process(ctx base.CompilationContext, def *ast.Definition) er
 	aggName := "_" + def.Name + "_aggregation"
 	aggDef := generateAggregationType(ctx, def, aggName, pos)
 	addDef(aggDef)
+
+	// 4b. Generate bucket aggregation type
+	bucketAggName := "_" + def.Name + "_aggregation_bucket"
+	bucketAggDef := generateBucketAggregationType(def, aggName, filterName, bucketAggName, pos)
+	addDef(bucketAggDef)
 
 	// 5. Register query fields
 	queryFields := generateQueryFields(def, info, filterName, pos)
@@ -124,19 +141,14 @@ func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name 
 	return filterDef
 }
 
-// generateDataInput creates a <Name>Input input object for mutation data.
-// PK fields are nullable (for updates); computed (@sql) fields are skipped.
-func generateDataInput(_ base.CompilationContext, def *ast.Definition, name string, pks []string, pos *ast.Position) *ast.Definition {
+// generateMutInputData creates a <Name>_mut_input_data input object for insert mutation.
+// Includes all table fields. Computed (@sql) fields are skipped.
+func generateMutInputData(_ base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
 	inputDef := &ast.Definition{
 		Kind:       ast.InputObject,
 		Name:       name,
 		Position:   pos,
 		Directives: ast.DirectiveList{{Name: "system", Position: pos}},
-	}
-
-	pkSet := make(map[string]bool, len(pks))
-	for _, pk := range pks {
-		pkSet[pk] = true
 	}
 
 	for _, f := range def.Fields {
@@ -148,7 +160,6 @@ func generateDataInput(_ base.CompilationContext, def *ast.Definition, name stri
 		}
 
 		typeName := f.Type.Name()
-		// All input fields are nullable (PK fields optional for update)
 		inputDef.Fields = append(inputDef.Fields, &ast.FieldDefinition{
 			Name:     f.Name,
 			Type:     ast.NamedType(typeName, pos),
@@ -157,6 +168,50 @@ func generateDataInput(_ base.CompilationContext, def *ast.Definition, name stri
 	}
 
 	return inputDef
+}
+
+// generateMutData creates a <Name>_mut_data input object for update mutation.
+// Includes all table fields (including non-scalar). Computed (@sql) fields are skipped.
+func generateMutData(_ base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
+	inputDef := &ast.Definition{
+		Kind:       ast.InputObject,
+		Name:       name,
+		Position:   pos,
+		Directives: ast.DirectiveList{{Name: "system", Position: pos}},
+	}
+
+	for _, f := range def.Fields {
+		if f.Name == "_stub" {
+			continue
+		}
+		if f.Directives.ForName("sql") != nil {
+			continue // skip computed fields
+		}
+
+		typeName := f.Type.Name()
+		inputDef.Fields = append(inputDef.Fields, &ast.FieldDefinition{
+			Name:     f.Name,
+			Type:     ast.NamedType(typeName, pos),
+			Position: pos,
+		})
+	}
+
+	return inputDef
+}
+
+// generateListFilterInput creates a <Name>_list_filter input with any_of, all_of, none_of fields.
+func generateListFilterInput(filterName, listFilterName string, pos *ast.Position) *ast.Definition {
+	return &ast.Definition{
+		Kind:       ast.InputObject,
+		Name:       listFilterName,
+		Position:   pos,
+		Directives: ast.DirectiveList{{Name: "system", Position: pos}},
+		Fields: ast.FieldList{
+			{Name: "any_of", Type: ast.NamedType(filterName, pos), Position: pos},
+			{Name: "all_of", Type: ast.NamedType(filterName, pos), Position: pos},
+			{Name: "none_of", Type: ast.NamedType(filterName, pos), Position: pos},
+		},
+	}
 }
 
 // generateAggregationType creates a _<Name>_aggregation object with _rows_count
@@ -199,6 +254,40 @@ func generateAggregationType(ctx base.CompilationContext, def *ast.Definition, n
 	}
 
 	return aggDef
+}
+
+// generateBucketAggregationType creates a _<Name>_aggregation_bucket object
+// with key (typed as the base object) and aggregations (typed as the aggregation type).
+func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName, bucketName string, pos *ast.Position) *ast.Definition {
+	return &ast.Definition{
+		Kind:     ast.Object,
+		Name:     bucketName,
+		Position: pos,
+		Directives: ast.DirectiveList{
+			{Name: "system", Position: pos},
+			{Name: "aggregation", Arguments: ast.ArgumentList{
+				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+				{Name: "is_bucket", Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+				{Name: "level", Value: &ast.Value{Raw: "0", Kind: ast.IntValue, Position: pos}, Position: pos},
+			}, Position: pos},
+		},
+		Fields: ast.FieldList{
+			{
+				Name:     "key",
+				Type:     ast.NamedType(def.Name, pos),
+				Position: pos,
+			},
+			{
+				Name: "aggregations",
+				Type: ast.NamedType(aggTypeName, pos),
+				Arguments: ast.ArgumentDefinitionList{
+					{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
+					{Name: "order_by", Type: ast.ListType(ast.NonNullNamedType("OrderByField", pos), pos), Position: pos},
+				},
+				Position: pos,
+			},
+		},
+	}
 }
 
 // generateQueryFields produces the list query (with filter/order/limit/offset)
@@ -263,21 +352,22 @@ func generateQueryFields(def *ast.Definition, info *base.ObjectInfo, filterName 
 func generateMutationFields(ctx base.CompilationContext, def *ast.Definition, info *base.ObjectInfo, pos *ast.Position) []*ast.FieldDefinition {
 	var fields []*ast.FieldDefinition
 	opts := ctx.CompileOptions()
-	inputName := def.Name + "Input"
+	insertInputName := def.Name + "_mut_input_data"
+	updateInputName := def.Name + "_mut_data"
 
 	// Insert
 	if opts.SupportInsert() {
 		insertField := &ast.FieldDefinition{
-			Name: def.Name + "_insert",
+			Name: "insert_" + def.Name,
 			Type: ast.NamedType("OperationResult", pos),
 			Arguments: ast.ArgumentDefinitionList{
-				{Name: "data", Type: ast.NonNullListType(ast.NonNullNamedType(inputName, pos), pos), Position: pos},
+				{Name: "data", Type: ast.NonNullListType(ast.NonNullNamedType(insertInputName, pos), pos), Position: pos},
 			},
 			Directives: ast.DirectiveList{
 				{Name: "mutation", Arguments: ast.ArgumentList{
 					{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
 					{Name: "type", Value: &ast.Value{Raw: "INSERT", Kind: ast.EnumValue, Position: pos}, Position: pos},
-					{Name: "data_input", Value: &ast.Value{Raw: inputName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "data_input", Value: &ast.Value{Raw: insertInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
 				}, Position: pos},
 			},
 			Position: pos,
@@ -288,16 +378,16 @@ func generateMutationFields(ctx base.CompilationContext, def *ast.Definition, in
 	// Update
 	if opts.SupportUpdate() && len(info.PrimaryKey) > 0 {
 		updateField := &ast.FieldDefinition{
-			Name: def.Name + "_update",
+			Name: "update_" + def.Name,
 			Type: ast.NamedType("OperationResult", pos),
 			Arguments: ast.ArgumentDefinitionList{
-				{Name: "data", Type: ast.NonNullNamedType(inputName, pos), Position: pos},
+				{Name: "data", Type: ast.NonNullNamedType(updateInputName, pos), Position: pos},
 			},
 			Directives: ast.DirectiveList{
 				{Name: "mutation", Arguments: ast.ArgumentList{
 					{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
 					{Name: "type", Value: &ast.Value{Raw: "UPDATE", Kind: ast.EnumValue, Position: pos}, Position: pos},
-					{Name: "data_input", Value: &ast.Value{Raw: inputName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "data_input", Value: &ast.Value{Raw: updateInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
 				}, Position: pos},
 			},
 			Position: pos,
@@ -308,13 +398,13 @@ func generateMutationFields(ctx base.CompilationContext, def *ast.Definition, in
 	// Delete
 	if opts.SupportDelete() && len(info.PrimaryKey) > 0 {
 		deleteField := &ast.FieldDefinition{
-			Name: def.Name + "_delete",
+			Name: "delete_" + def.Name,
 			Type: ast.NamedType("OperationResult", pos),
 			Directives: ast.DirectiveList{
 				{Name: "mutation", Arguments: ast.ArgumentList{
 					{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
 					{Name: "type", Value: &ast.Value{Raw: "DELETE", Kind: ast.EnumValue, Position: pos}, Position: pos},
-					{Name: "data_input", Value: &ast.Value{Raw: inputName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "data_input", Value: &ast.Value{Raw: insertInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
 				}, Position: pos},
 			},
 			Position: pos,

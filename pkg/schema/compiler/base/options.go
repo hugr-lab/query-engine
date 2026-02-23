@@ -12,12 +12,12 @@ type Options struct {
 	Capabilities *EngineCapabilities
 }
 
-// ApplyPrefix prepends the prefix to a name if set.
+// ApplyPrefix prepends the prefix to a name with underscore separator if set.
 func (o *Options) ApplyPrefix(name string) string {
 	if o.Prefix == "" {
 		return name
 	}
-	return o.Prefix + name
+	return o.Prefix + "_" + name
 }
 
 func (o *Options) IsSequenceDefaultSupported() bool {

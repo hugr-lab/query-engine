@@ -34,10 +34,12 @@ func (r *AggregationRule) Process(ctx base.CompilationContext, def *ast.Definiti
 		return nil
 	}
 
-	filterName := def.Name + "Filter"
+	filterName := def.Name + "_filter"
+	bucketAggTypeName := "_" + def.Name + "_aggregation_bucket"
 
+	// Single-row aggregation query: Type_aggregation
 	aggField := &ast.FieldDefinition{
-		Name: def.Name + "_aggregate",
+		Name: def.Name + "_aggregation",
 		Type: ast.NamedType(aggTypeName, pos),
 		Arguments: ast.ArgumentDefinitionList{
 			{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
@@ -51,7 +53,26 @@ func (r *AggregationRule) Process(ctx base.CompilationContext, def *ast.Definiti
 		Position: pos,
 	}
 
-	ctx.RegisterQueryFields(def.Name, []*ast.FieldDefinition{aggField})
+	// Bucket aggregation query: Type_bucket_aggregation
+	bucketAggField := &ast.FieldDefinition{
+		Name: def.Name + "_bucket_aggregation",
+		Type: ast.NonNullListType(ast.NamedType(bucketAggTypeName, pos), pos),
+		Arguments: ast.ArgumentDefinitionList{
+			{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
+			{Name: "order_by", Type: ast.ListType(ast.NonNullNamedType("OrderByField", pos), pos), Position: pos},
+			{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos},
+			{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos},
+		},
+		Directives: ast.DirectiveList{
+			{Name: "query", Arguments: ast.ArgumentList{
+				{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
+				{Name: "type", Value: &ast.Value{Raw: "BUCKET_AGGREGATE", Kind: ast.EnumValue, Position: pos}, Position: pos},
+			}, Position: pos},
+		},
+		Position: pos,
+	}
+
+	ctx.RegisterQueryFields(def.Name, []*ast.FieldDefinition{aggField, bucketAggField})
 
 	return nil
 }

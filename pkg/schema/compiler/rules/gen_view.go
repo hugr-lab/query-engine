@@ -37,7 +37,7 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 	addDef(def)
 
 	// 2. Generate filter input type
-	filterName := def.Name + "Filter"
+	filterName := def.Name + "_filter"
 	filterDef := generateFilterInput(ctx, def, filterName, pos)
 	addDef(filterDef)
 	def.Directives = append(def.Directives, &ast.Directive{
@@ -48,10 +48,20 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 		Position: pos,
 	})
 
+	// 2b. Generate list filter input type
+	listFilterName := def.Name + "_list_filter"
+	listFilterDef := generateListFilterInput(filterName, listFilterName, pos)
+	addDef(listFilterDef)
+
 	// 3. Generate aggregation type
 	aggName := "_" + def.Name + "_aggregation"
 	aggDef := generateAggregationType(ctx, def, aggName, pos)
 	addDef(aggDef)
+
+	// 3b. Generate bucket aggregation type
+	bucketAggName := "_" + def.Name + "_aggregation_bucket"
+	bucketAggDef := generateBucketAggregationType(def, aggName, filterName, bucketAggName, pos)
+	addDef(bucketAggDef)
 
 	// 4. Register query fields (views are read-only -- no mutation fields)
 	queryFields := generateQueryFields(def, info, filterName, pos)

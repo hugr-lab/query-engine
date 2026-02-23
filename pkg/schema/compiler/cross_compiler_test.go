@@ -400,8 +400,8 @@ func TestCrossCompiler_ReadOnly(t *testing.T) {
 
 func TestCrossCompiler_WithPrefix(t *testing.T) {
 	sdl := complexTestSchema
-	oldOpts := oldcompiler.Options{Name: "test", Prefix: "air_", EngineType: "duckdb"}
-	newOpts := base.Options{Name: "test", Prefix: "air_", EngineType: "duckdb"}
+	oldOpts := oldcompiler.Options{Name: "test", Prefix: "air", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", Prefix: "air", EngineType: "duckdb"}
 
 	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
 	newResult := buildNewCompilerResult(t, sdl, newOpts)

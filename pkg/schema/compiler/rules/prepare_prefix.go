@@ -130,6 +130,6 @@ func renameTypeRefs(t *ast.Type, prefix string, sourceNames map[string]bool) {
 		return
 	}
 	if sourceNames[t.NamedType] {
-		t.NamedType = prefix + t.NamedType
+		t.NamedType = prefix + "_" + t.NamedType
 	}
 }

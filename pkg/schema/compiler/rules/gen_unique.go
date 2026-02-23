@@ -47,8 +47,8 @@ func (r *UniqueRule) Process(ctx base.CompilationContext, def *ast.Definition) e
 			continue
 		}
 
-		// Generate query field: <defName>_by_<suffix>
-		fieldName := def.Name + "_by_" + suffix
+		// Generate query field: <defName>_<suffix>
+		fieldName := def.Name + "_" + suffix
 		selectOneField := &ast.FieldDefinition{
 			Name: fieldName,
 			Type: ast.NamedType(def.Name, pos),
