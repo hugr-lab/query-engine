@@ -13,25 +13,21 @@ type ScalarType interface {
 // Filterable indicates the scalar supports single-value filtering.
 type Filterable interface {
 	FilterTypeName() string
-	FilterSDL() string
 }
 
 // ListFilterable indicates the scalar supports list-value filtering.
 type ListFilterable interface {
 	ListFilterTypeName() string
-	ListFilterSDL() string
 }
 
 // Aggregatable indicates the scalar supports aggregation.
 type Aggregatable interface {
 	AggregationTypeName() string
-	AggregationSDL() string
 }
 
 // MeasurementAggregatable indicates the scalar supports measurement aggregation.
 type MeasurementAggregatable interface {
 	MeasurementAggregationTypeName() string
-	MeasurementAggregationSDL() string
 }
 
 // FieldArgumentsProvider indicates the scalar has field-level arguments

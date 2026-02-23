@@ -19,16 +19,14 @@ The ` + "`Vector`" + ` scalar type represents a fixed-length array of floating-p
 Filter operators: is_null
 Extra field: VectorDistance (calculates distance between vectors using a specified metric)
 """
-scalar Vector`
-}
+scalar Vector
 
-func (s *vectorScalar) FilterTypeName() string { return "VectorFilter" }
-
-func (s *vectorScalar) FilterSDL() string {
-	return `input VectorFilter @system {
+input VectorFilter @system {
   is_null: Boolean
 }`
 }
+
+func (s *vectorScalar) FilterTypeName() string { return "VectorFilter" }
 
 func (s *vectorScalar) ExtraFieldName() string { return "VectorDistance" }
 

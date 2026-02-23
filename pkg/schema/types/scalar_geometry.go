@@ -22,24 +22,16 @@ Filter operators: eq, intersects, contains, is_null
 Aggregation functions: count, list, any, last, intersection, union, extent
 Extra field: Measurement (calculates area, length, perimeter, etc.)
 """
-scalar Geometry`
-}
+scalar Geometry
 
-func (s *geometryScalar) FilterTypeName() string { return "GeometryFilter" }
-
-func (s *geometryScalar) FilterSDL() string {
-	return `input GeometryFilter @system {
+input GeometryFilter @system {
   eq: Geometry
   intersects: Geometry
   contains: Geometry
   is_null: Boolean
-}`
 }
 
-func (s *geometryScalar) AggregationTypeName() string { return "GeometryAggregation" }
-
-func (s *geometryScalar) AggregationSDL() string {
-	return `type GeometryAggregation @system {
+type GeometryAggregation @system {
   count: BigInt
   list(distinct: Boolean = false): [Geometry!]
   any: Geometry
@@ -56,6 +48,10 @@ type GeometrySubAggregation @system {
   extent: GeometryAggregation
 }`
 }
+
+func (s *geometryScalar) FilterTypeName() string { return "GeometryFilter" }
+
+func (s *geometryScalar) AggregationTypeName() string { return "GeometryAggregation" }
 
 func (s *geometryScalar) FieldArguments() ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{

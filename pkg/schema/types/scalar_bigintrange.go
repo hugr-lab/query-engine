@@ -15,13 +15,9 @@ func (s *bigIntRangeScalar) SDL() string {
 The ` + "`BigIntRange`" + ` scalar type represents a range of big integer values with inclusive/exclusive bounds.
 Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
 """
-scalar BigIntRange`
-}
+scalar BigIntRange
 
-func (s *bigIntRangeScalar) FilterTypeName() string { return "BigIntRangeFilter" }
-
-func (s *bigIntRangeScalar) FilterSDL() string {
-	return `input BigIntRangeFilter @system {
+input BigIntRangeFilter @system {
   eq: BigIntRange
   contains: BigInt
   intersects: BigIntRange
@@ -36,3 +32,5 @@ func (s *bigIntRangeScalar) FilterSDL() string {
   lower_inf: Boolean
 }`
 }
+
+func (s *bigIntRangeScalar) FilterTypeName() string { return "BigIntRangeFilter" }

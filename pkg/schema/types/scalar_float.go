@@ -2,10 +2,10 @@ package types
 
 // Compile-time interface assertions.
 var (
-	_ ScalarType             = (*floatScalar)(nil)
-	_ Filterable             = (*floatScalar)(nil)
-	_ ListFilterable         = (*floatScalar)(nil)
-	_ Aggregatable           = (*floatScalar)(nil)
+	_ ScalarType              = (*floatScalar)(nil)
+	_ Filterable              = (*floatScalar)(nil)
+	_ ListFilterable          = (*floatScalar)(nil)
+	_ Aggregatable            = (*floatScalar)(nil)
 	_ MeasurementAggregatable = (*floatScalar)(nil)
 )
 
@@ -19,13 +19,9 @@ The ` + "`Float`" + ` scalar type represents signed double-precision fractional 
 Filter operators: eq, ne, gt, gte, lt, lte, in, is_null
 Aggregation functions: count, sum, avg, min, max, list, any, last
 """
-scalar Float`
-}
+scalar Float
 
-func (s *floatScalar) FilterTypeName() string { return "FloatFilter" }
-
-func (s *floatScalar) FilterSDL() string {
-	return `input FloatFilter @system {
+input FloatFilter @system {
   eq: Float
   ne: Float
   gt: Float
@@ -34,24 +30,16 @@ func (s *floatScalar) FilterSDL() string {
   lte: Float
   in: [Float!]
   is_null: Boolean
-}`
 }
 
-func (s *floatScalar) ListFilterTypeName() string { return "FloatListFilter" }
-
-func (s *floatScalar) ListFilterSDL() string {
-	return `input FloatListFilter @system {
+input FloatListFilter @system {
   eq: [Float!]
   contains: [Float!]
   intersects: [Float!]
   is_null: Boolean
-}`
 }
 
-func (s *floatScalar) AggregationTypeName() string { return "FloatAggregation" }
-
-func (s *floatScalar) AggregationSDL() string {
-	return `type FloatAggregation @system {
+type FloatAggregation @system {
   count: BigInt
   sum: Float
   avg: Float
@@ -68,19 +56,23 @@ type FloatSubAggregation @system {
   avg: FloatAggregation
   min: FloatAggregation
   max: FloatAggregation
-}`
 }
 
-func (s *floatScalar) MeasurementAggregationTypeName() string {
-	return "FloatMeasurementAggregation"
-}
-
-func (s *floatScalar) MeasurementAggregationSDL() string {
-	return `enum FloatMeasurementAggregation @system {
+enum FloatMeasurementAggregation @system {
   SUM
   AVG
   MIN
   MAX
   ANY
 }`
+}
+
+func (s *floatScalar) FilterTypeName() string { return "FloatFilter" }
+
+func (s *floatScalar) ListFilterTypeName() string { return "FloatListFilter" }
+
+func (s *floatScalar) AggregationTypeName() string { return "FloatAggregation" }
+
+func (s *floatScalar) MeasurementAggregationTypeName() string {
+	return "FloatMeasurementAggregation"
 }

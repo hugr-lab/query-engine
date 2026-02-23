@@ -25,13 +25,9 @@ Filter operators: eq, gt, gte, lt, lte, in, is_null
 Aggregation functions: count, min, max, list, any, last
 Extra field: Extract (extracts date parts such as year, month, day)
 """
-scalar Date`
-}
+scalar Date
 
-func (s *dateScalar) FilterTypeName() string { return "DateFilter" }
-
-func (s *dateScalar) FilterSDL() string {
-	return `input DateFilter @system {
+input DateFilter @system {
   eq: Date
   gt: Date
   gte: Date
@@ -39,24 +35,16 @@ func (s *dateScalar) FilterSDL() string {
   lte: Date
   in: [Date!]
   is_null: Boolean
-}`
 }
 
-func (s *dateScalar) ListFilterTypeName() string { return "DateListFilter" }
-
-func (s *dateScalar) ListFilterSDL() string {
-	return `input DateListFilter @system {
+input DateListFilter @system {
   eq: [Date!]
   contains: [Date!]
   intersects: [Date!]
   is_null: Boolean
-}`
 }
 
-func (s *dateScalar) AggregationTypeName() string { return "DateAggregation" }
-
-func (s *dateScalar) AggregationSDL() string {
-	return `type DateAggregation @system {
+type DateAggregation @system {
   count: BigInt
   min: Date
   max: Date
@@ -69,19 +57,23 @@ type DateSubAggregation @system {
   count: BigIntAggregation
   min: DateAggregation
   max: DateAggregation
-}`
 }
 
-func (s *dateScalar) MeasurementAggregationTypeName() string {
-	return "DateMeasurementAggregation"
-}
-
-func (s *dateScalar) MeasurementAggregationSDL() string {
-	return `enum DateMeasurementAggregation @system {
+enum DateMeasurementAggregation @system {
   MIN
   MAX
   ANY
 }`
+}
+
+func (s *dateScalar) FilterTypeName() string { return "DateFilter" }
+
+func (s *dateScalar) ListFilterTypeName() string { return "DateListFilter" }
+
+func (s *dateScalar) AggregationTypeName() string { return "DateAggregation" }
+
+func (s *dateScalar) MeasurementAggregationTypeName() string {
+	return "DateMeasurementAggregation"
 }
 
 func (s *dateScalar) FieldArguments() ast.ArgumentDefinitionList {

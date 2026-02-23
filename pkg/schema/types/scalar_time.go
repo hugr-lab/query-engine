@@ -20,13 +20,9 @@ On input, values are parsed from ISO 8601 time strings. On output, values are fo
 Filter operators: eq, gt, gte, lt, lte, in, is_null
 Aggregation functions: count, min, max, list, any, last
 """
-scalar Time`
-}
+scalar Time
 
-func (s *timeScalar) FilterTypeName() string { return "TimeFilter" }
-
-func (s *timeScalar) FilterSDL() string {
-	return `input TimeFilter @system {
+input TimeFilter @system {
   eq: Time
   gt: Time
   gte: Time
@@ -34,24 +30,16 @@ func (s *timeScalar) FilterSDL() string {
   lte: Time
   in: [Time!]
   is_null: Boolean
-}`
 }
 
-func (s *timeScalar) ListFilterTypeName() string { return "TimeListFilter" }
-
-func (s *timeScalar) ListFilterSDL() string {
-	return `input TimeListFilter @system {
+input TimeListFilter @system {
   eq: [Time!]
   contains: [Time!]
   intersects: [Time!]
   is_null: Boolean
-}`
 }
 
-func (s *timeScalar) AggregationTypeName() string { return "TimeAggregation" }
-
-func (s *timeScalar) AggregationSDL() string {
-	return `type TimeAggregation @system {
+type TimeAggregation @system {
   count: BigInt
   min: Time
   max: Time
@@ -64,17 +52,21 @@ type TimeSubAggregation @system {
   count: BigIntAggregation
   min: TimeAggregation
   max: TimeAggregation
-}`
 }
 
-func (s *timeScalar) MeasurementAggregationTypeName() string {
-	return "TimeMeasurementAggregation"
-}
-
-func (s *timeScalar) MeasurementAggregationSDL() string {
-	return `enum TimeMeasurementAggregation @system {
+enum TimeMeasurementAggregation @system {
   MIN
   MAX
   ANY
 }`
+}
+
+func (s *timeScalar) FilterTypeName() string { return "TimeFilter" }
+
+func (s *timeScalar) ListFilterTypeName() string { return "TimeListFilter" }
+
+func (s *timeScalar) AggregationTypeName() string { return "TimeAggregation" }
+
+func (s *timeScalar) MeasurementAggregationTypeName() string {
+	return "TimeMeasurementAggregation"
 }

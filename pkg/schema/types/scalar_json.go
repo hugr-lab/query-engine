@@ -20,31 +20,17 @@ The ` + "`JSON`" + ` scalar type represents arbitrary JSON data, encoded as a JS
 Filter operators: eq, has, has_all, contains, is_null
 Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter)
 """
-scalar JSON`
-}
+scalar JSON
 
-func (s *jsonScalar) FilterTypeName() string { return "JSONFilter" }
-
-func (s *jsonScalar) FilterSDL() string {
-	return `input JSONFilter @system {
+input JSONFilter @system {
   eq: JSON
   has: String
   has_all: [String!]
   contains: JSON
   is_null: Boolean
-}`
 }
 
-func (s *jsonScalar) FieldArguments() ast.ArgumentDefinitionList {
-	return ast.ArgumentDefinitionList{
-		{Name: "struct", Type: ast.NamedType("JSON", nil)},
-	}
-}
-
-func (s *jsonScalar) AggregationTypeName() string { return "JSONAggregation" }
-
-func (s *jsonScalar) AggregationSDL() string {
-	return `type JSONAggregation @system {
+type JSONAggregation @system {
   count(path: String): BigInt
   list(path: String, distinct: Boolean = false): [JSON!]
   any(path: String): JSON
@@ -68,4 +54,14 @@ type JSONSubAggregation @system {
   bool_and(path: String!): BooleanAggregation
   bool_or(path: String!): BooleanAggregation
 }`
+}
+
+func (s *jsonScalar) FilterTypeName() string { return "JSONFilter" }
+
+func (s *jsonScalar) AggregationTypeName() string { return "JSONAggregation" }
+
+func (s *jsonScalar) FieldArguments() ast.ArgumentDefinitionList {
+	return ast.ArgumentDefinitionList{
+		{Name: "struct", Type: ast.NamedType("JSON", nil)},
+	}
 }

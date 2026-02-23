@@ -2,10 +2,10 @@ package types
 
 // Compile-time interface assertions.
 var (
-	_ ScalarType             = (*stringScalar)(nil)
-	_ Filterable             = (*stringScalar)(nil)
-	_ ListFilterable         = (*stringScalar)(nil)
-	_ Aggregatable           = (*stringScalar)(nil)
+	_ ScalarType              = (*stringScalar)(nil)
+	_ Filterable              = (*stringScalar)(nil)
+	_ ListFilterable          = (*stringScalar)(nil)
+	_ Aggregatable            = (*stringScalar)(nil)
 	_ MeasurementAggregatable = (*stringScalar)(nil)
 )
 
@@ -19,37 +19,25 @@ The ` + "`String`" + ` scalar type represents textual data, represented as UTF-8
 Filter operators: eq, in, like, ilike, regex, is_null
 Aggregation functions: count, string_agg, list, any, last
 """
-scalar String`
-}
+scalar String
 
-func (s *stringScalar) FilterTypeName() string { return "StringFilter" }
-
-func (s *stringScalar) FilterSDL() string {
-	return `input StringFilter @system {
+input StringFilter @system {
   eq: String
   in: [String!]
   like: String
   ilike: String
   regex: String
   is_null: Boolean
-}`
 }
 
-func (s *stringScalar) ListFilterTypeName() string { return "StringListFilter" }
-
-func (s *stringScalar) ListFilterSDL() string {
-	return `input StringListFilter @system {
+input StringListFilter @system {
   eq: [String!]
   contains: [String!]
   intersects: [String!]
   is_null: Boolean
-}`
 }
 
-func (s *stringScalar) AggregationTypeName() string { return "StringAggregation" }
-
-func (s *stringScalar) AggregationSDL() string {
-	return `type StringAggregation @system {
+type StringAggregation @system {
   count: BigInt
   string_agg(sep: String!, distinct: Boolean = false): String
   list(distinct: Boolean = false): [String!]
@@ -60,15 +48,19 @@ func (s *stringScalar) AggregationSDL() string {
 type StringSubAggregation @system {
   count: BigIntAggregation
   string_agg: StringAggregation
+}
+
+enum StringMeasurementAggregation @system {
+  ANY
 }`
 }
+
+func (s *stringScalar) FilterTypeName() string { return "StringFilter" }
+
+func (s *stringScalar) ListFilterTypeName() string { return "StringListFilter" }
+
+func (s *stringScalar) AggregationTypeName() string { return "StringAggregation" }
 
 func (s *stringScalar) MeasurementAggregationTypeName() string {
 	return "StringMeasurementAggregation"
-}
-
-func (s *stringScalar) MeasurementAggregationSDL() string {
-	return `enum StringMeasurementAggregation @system {
-  ANY
-}`
 }

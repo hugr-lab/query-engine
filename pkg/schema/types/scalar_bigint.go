@@ -2,10 +2,10 @@ package types
 
 // Compile-time interface assertions.
 var (
-	_ ScalarType             = (*bigIntScalar)(nil)
-	_ Filterable             = (*bigIntScalar)(nil)
-	_ ListFilterable         = (*bigIntScalar)(nil)
-	_ Aggregatable           = (*bigIntScalar)(nil)
+	_ ScalarType              = (*bigIntScalar)(nil)
+	_ Filterable              = (*bigIntScalar)(nil)
+	_ ListFilterable          = (*bigIntScalar)(nil)
+	_ Aggregatable            = (*bigIntScalar)(nil)
 	_ MeasurementAggregatable = (*bigIntScalar)(nil)
 )
 
@@ -19,13 +19,9 @@ BigInt - represents big integer type (64 bit), supports filtering, aggregation.
 Filter operators: eq, gt, gte, lt, lte, in, is_null
 Aggregation functions: count, sum, avg, min, max, list, any, last
 """
-scalar BigInt`
-}
+scalar BigInt
 
-func (s *bigIntScalar) FilterTypeName() string { return "BigIntFilter" }
-
-func (s *bigIntScalar) FilterSDL() string {
-	return `input BigIntFilter @system {
+input BigIntFilter @system {
   eq: BigInt
   gt: BigInt
   gte: BigInt
@@ -33,24 +29,16 @@ func (s *bigIntScalar) FilterSDL() string {
   lte: BigInt
   in: [BigInt!]
   is_null: Boolean
-}`
 }
 
-func (s *bigIntScalar) ListFilterTypeName() string { return "BigIntListFilter" }
-
-func (s *bigIntScalar) ListFilterSDL() string {
-	return `input BigIntListFilter @system {
+input BigIntListFilter @system {
   eq: [BigInt!]
   contains: [BigInt!]
   intersects: [BigInt!]
   is_null: Boolean
-}`
 }
 
-func (s *bigIntScalar) AggregationTypeName() string { return "BigIntAggregation" }
-
-func (s *bigIntScalar) AggregationSDL() string {
-	return `type BigIntAggregation @system {
+type BigIntAggregation @system {
   count: BigInt
   sum: BigInt
   avg: Float
@@ -67,19 +55,23 @@ type BigIntSubAggregation @system {
   avg: BigIntAggregation
   min: BigIntAggregation
   max: BigIntAggregation
-}`
 }
 
-func (s *bigIntScalar) MeasurementAggregationTypeName() string {
-	return "BigIntMeasurementAggregation"
-}
-
-func (s *bigIntScalar) MeasurementAggregationSDL() string {
-	return `enum BigIntMeasurementAggregation @system {
+enum BigIntMeasurementAggregation @system {
   SUM
   AVG
   MIN
   MAX
   ANY
 }`
+}
+
+func (s *bigIntScalar) FilterTypeName() string { return "BigIntFilter" }
+
+func (s *bigIntScalar) ListFilterTypeName() string { return "BigIntListFilter" }
+
+func (s *bigIntScalar) AggregationTypeName() string { return "BigIntAggregation" }
+
+func (s *bigIntScalar) MeasurementAggregationTypeName() string {
+	return "BigIntMeasurementAggregation"
 }

@@ -25,37 +25,25 @@ Filter operators: eq, gt, gte, lt, lte, is_null
 Aggregation functions: count, min, max, list, any, last
 Extra field: Extract (extracts date/time parts such as year, month, day, hour, minute, second)
 """
-scalar Timestamp`
-}
+scalar Timestamp
 
-func (s *timestampScalar) FilterTypeName() string { return "TimestampFilter" }
-
-func (s *timestampScalar) FilterSDL() string {
-	return `input TimestampFilter @system {
+input TimestampFilter @system {
   eq: Timestamp
   gt: Timestamp
   gte: Timestamp
   lt: Timestamp
   lte: Timestamp
   is_null: Boolean
-}`
 }
 
-func (s *timestampScalar) ListFilterTypeName() string { return "TimestampListFilter" }
-
-func (s *timestampScalar) ListFilterSDL() string {
-	return `input TimestampListFilter @system {
+input TimestampListFilter @system {
   eq: [Timestamp!]
   contains: [Timestamp!]
   intersects: [Timestamp!]
   is_null: Boolean
-}`
 }
 
-func (s *timestampScalar) AggregationTypeName() string { return "TimestampAggregation" }
-
-func (s *timestampScalar) AggregationSDL() string {
-	return `type TimestampAggregation @system {
+type TimestampAggregation @system {
   count: BigInt
   min: Timestamp
   max: Timestamp
@@ -68,19 +56,23 @@ type TimestampSubAggregation @system {
   count: BigIntAggregation
   min: TimestampAggregation
   max: TimestampAggregation
-}`
 }
 
-func (s *timestampScalar) MeasurementAggregationTypeName() string {
-	return "TimestampMeasurementAggregation"
-}
-
-func (s *timestampScalar) MeasurementAggregationSDL() string {
-	return `enum TimestampMeasurementAggregation @system {
+enum TimestampMeasurementAggregation @system {
   MIN
   MAX
   ANY
 }`
+}
+
+func (s *timestampScalar) FilterTypeName() string { return "TimestampFilter" }
+
+func (s *timestampScalar) ListFilterTypeName() string { return "TimestampListFilter" }
+
+func (s *timestampScalar) AggregationTypeName() string { return "TimestampAggregation" }
+
+func (s *timestampScalar) MeasurementAggregationTypeName() string {
+	return "TimestampMeasurementAggregation"
 }
 
 func (s *timestampScalar) FieldArguments() ast.ArgumentDefinitionList {

@@ -2,10 +2,10 @@ package types
 
 // Compile-time interface assertions.
 var (
-	_ ScalarType             = (*intScalar)(nil)
-	_ Filterable             = (*intScalar)(nil)
-	_ ListFilterable         = (*intScalar)(nil)
-	_ Aggregatable           = (*intScalar)(nil)
+	_ ScalarType              = (*intScalar)(nil)
+	_ Filterable              = (*intScalar)(nil)
+	_ ListFilterable          = (*intScalar)(nil)
+	_ Aggregatable            = (*intScalar)(nil)
 	_ MeasurementAggregatable = (*intScalar)(nil)
 )
 
@@ -19,13 +19,9 @@ func (s *intScalar) SDL() string {
 Filter operators: eq, gt, gte, lt, lte, in, is_null
 Aggregation functions: count, sum, avg, min, max, list, any, last
 """
-scalar Int`
-}
+scalar Int
 
-func (s *intScalar) FilterTypeName() string { return "IntFilter" }
-
-func (s *intScalar) FilterSDL() string {
-	return `input IntFilter @system {
+input IntFilter @system {
   eq: Int
   gt: Int
   gte: Int
@@ -33,24 +29,16 @@ func (s *intScalar) FilterSDL() string {
   lte: Int
   in: [Int!]
   is_null: Boolean
-}`
 }
 
-func (s *intScalar) ListFilterTypeName() string { return "IntListFilter" }
-
-func (s *intScalar) ListFilterSDL() string {
-	return `input IntListFilter @system {
+input IntListFilter @system {
   eq: [Int!]
   contains: [Int!]
   intersects: [Int!]
   is_null: Boolean
-}`
 }
 
-func (s *intScalar) AggregationTypeName() string { return "IntAggregation" }
-
-func (s *intScalar) AggregationSDL() string {
-	return `type IntAggregation @system {
+type IntAggregation @system {
   count: BigInt
   sum: Int
   avg: Float
@@ -67,19 +55,23 @@ type IntSubAggregation @system {
   avg: IntAggregation
   min: IntAggregation
   max: IntAggregation
-}`
 }
 
-func (s *intScalar) MeasurementAggregationTypeName() string {
-	return "IntMeasurementAggregation"
-}
-
-func (s *intScalar) MeasurementAggregationSDL() string {
-	return `enum IntMeasurementAggregation @system {
+enum IntMeasurementAggregation @system {
   SUM
   AVG
   MIN
   MAX
   ANY
 }`
+}
+
+func (s *intScalar) FilterTypeName() string { return "IntFilter" }
+
+func (s *intScalar) ListFilterTypeName() string { return "IntListFilter" }
+
+func (s *intScalar) AggregationTypeName() string { return "IntAggregation" }
+
+func (s *intScalar) MeasurementAggregationTypeName() string {
+	return "IntMeasurementAggregation"
 }

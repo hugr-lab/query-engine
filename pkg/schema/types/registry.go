@@ -61,22 +61,6 @@ func Sources() []*ast.Source {
 			b.WriteString(sdl)
 			b.WriteByte('\n')
 		}
-		if f, ok := s.(Filterable); ok {
-			b.WriteString(f.FilterSDL())
-			b.WriteByte('\n')
-		}
-		if lf, ok := s.(ListFilterable); ok {
-			b.WriteString(lf.ListFilterSDL())
-			b.WriteByte('\n')
-		}
-		if a, ok := s.(Aggregatable); ok {
-			b.WriteString(a.AggregationSDL())
-			b.WriteByte('\n')
-		}
-		if ma, ok := s.(MeasurementAggregatable); ok {
-			b.WriteString(ma.MeasurementAggregationSDL())
-			b.WriteByte('\n')
-		}
 	}
 	if b.Len() == 0 {
 		return nil

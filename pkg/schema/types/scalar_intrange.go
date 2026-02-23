@@ -15,13 +15,9 @@ func (s *intRangeScalar) SDL() string {
 The ` + "`IntRange`" + ` scalar type represents a range of integer values with inclusive/exclusive bounds.
 Filter operators: eq, contains, intersects, includes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
 """
-scalar IntRange`
-}
+scalar IntRange
 
-func (s *intRangeScalar) FilterTypeName() string { return "IntRangeFilter" }
-
-func (s *intRangeScalar) FilterSDL() string {
-	return `input IntRangeFilter @system {
+input IntRangeFilter @system {
   eq: IntRange
   contains: Int
   intersects: IntRange
@@ -35,3 +31,5 @@ func (s *intRangeScalar) FilterSDL() string {
   lower_inf: Boolean
 }`
 }
+
+func (s *intRangeScalar) FilterTypeName() string { return "IntRangeFilter" }

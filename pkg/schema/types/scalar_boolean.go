@@ -2,9 +2,9 @@ package types
 
 // Compile-time interface assertions.
 var (
-	_ ScalarType             = (*booleanScalar)(nil)
-	_ Filterable             = (*booleanScalar)(nil)
-	_ Aggregatable           = (*booleanScalar)(nil)
+	_ ScalarType              = (*booleanScalar)(nil)
+	_ Filterable              = (*booleanScalar)(nil)
+	_ Aggregatable            = (*booleanScalar)(nil)
 	_ MeasurementAggregatable = (*booleanScalar)(nil)
 )
 
@@ -20,22 +20,14 @@ The ` + "`Boolean`" + ` scalar type represents ` + "`true`" + ` or ` + "`false`"
 Filter operators: eq, is_null
 Aggregation functions: count, bool_and, bool_or, list, any, last
 """
-scalar Boolean`
-}
+scalar Boolean
 
-func (s *booleanScalar) FilterTypeName() string { return "BooleanFilter" }
-
-func (s *booleanScalar) FilterSDL() string {
-	return `input BooleanFilter @system {
+input BooleanFilter @system {
   eq: Boolean
   is_null: Boolean
-}`
 }
 
-func (s *booleanScalar) AggregationTypeName() string { return "BooleanAggregation" }
-
-func (s *booleanScalar) AggregationSDL() string {
-	return `type BooleanAggregation @system {
+type BooleanAggregation @system {
   count: BigInt
   bool_and: Boolean
   bool_or: Boolean
@@ -48,17 +40,19 @@ type BooleanSubAggregation @system {
   count: BigIntAggregation
   bool_and: BooleanAggregation
   bool_or: BooleanAggregation
-}`
 }
 
-func (s *booleanScalar) MeasurementAggregationTypeName() string {
-	return "BooleanMeasurementAggregation"
-}
-
-func (s *booleanScalar) MeasurementAggregationSDL() string {
-	return `enum BooleanMeasurementAggregation @system {
+enum BooleanMeasurementAggregation @system {
   ANY
   OR
   AND
 }`
+}
+
+func (s *booleanScalar) FilterTypeName() string { return "BooleanFilter" }
+
+func (s *booleanScalar) AggregationTypeName() string { return "BooleanAggregation" }
+
+func (s *booleanScalar) MeasurementAggregationTypeName() string {
+	return "BooleanMeasurementAggregation"
 }

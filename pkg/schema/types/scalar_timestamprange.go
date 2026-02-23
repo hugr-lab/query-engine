@@ -15,13 +15,9 @@ func (s *timestampRangeScalar) SDL() string {
 The ` + "`TimestampRange`" + ` scalar type represents a range of timestamp values with inclusive/exclusive bounds.
 Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
 """
-scalar TimestampRange`
-}
+scalar TimestampRange
 
-func (s *timestampRangeScalar) FilterTypeName() string { return "TimestampRangeFilter" }
-
-func (s *timestampRangeScalar) FilterSDL() string {
-	return `input TimestampRangeFilter @system {
+input TimestampRangeFilter @system {
   eq: TimestampRange
   contains: Timestamp
   intersects: TimestampRange
@@ -36,3 +32,5 @@ func (s *timestampRangeScalar) FilterSDL() string {
   lower_inf: Boolean
 }`
 }
+
+func (s *timestampRangeScalar) FilterTypeName() string { return "TimestampRangeFilter" }
