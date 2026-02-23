@@ -342,7 +342,15 @@ func addM2MReferenceSide(ctx base.CompilationContext, m2mDef *ast.Definition, si
 }
 
 // addReferenceToFilterInput adds a reference field to the filter input type.
+// Parameterized views are excluded from filter nesting — if the target is a
+// parameterized view (has @args / InputArgsName), the filter field is skipped.
 func addReferenceToFilterInput(ctx base.CompilationContext, objectName, fieldName, targetFilterName string, isList bool, refDir *ast.Directive, opts base.Options, pos *ast.Position) {
+	// Skip if target object is a parameterized view
+	targetObjName := targetFilterName[:len(targetFilterName)-len("_filter")]
+	if info := ctx.GetObject(targetObjName); info != nil && info.InputArgsName != "" {
+		return
+	}
+
 	filterName := objectName + "_filter"
 	filterTypeName := targetFilterName
 	if isList {

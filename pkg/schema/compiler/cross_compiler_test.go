@@ -1456,6 +1456,102 @@ func TestCatalogDirectivePlacement_Modules(t *testing.T) {
 	t.Log("Module @catalog placement checks passed")
 }
 
+// TestCatalogAbsence_ForFutureCatalogToggle comprehensively verifies that @catalog
+// is correctly absent from types that are shared/structural and should not be tied
+// to a specific catalog. This supports future catalog enable/disable functionality.
+//
+// Rationale: INPUT_OBJECT types (filters, mutation inputs, args inputs) and
+// aggregation type definitions are shared infrastructure. Only the query/mutation
+// fields that *return* data from a catalog should carry @catalog. The types
+// themselves must remain catalog-agnostic so they can be reused across catalogs.
+func TestCatalogAbsence_ForFutureCatalogToggle(t *testing.T) {
+	// Use parameterized view schema to also cover FlightLogArgs input type
+	sdl := parameterizedViewSchema
+	opts := base.Options{Name: "test", EngineType: "duckdb"}
+	result := buildNewCompilerResult(t, sdl, opts)
+
+	// 1. No INPUT_OBJECT definition should have @catalog
+	inputObjectCount := 0
+	for name, def := range result.defs {
+		if def.Kind != ast.InputObject {
+			continue
+		}
+		inputObjectCount++
+		if def.Directives.ForName("catalog") != nil {
+			t.Errorf("INPUT_OBJECT %q has @catalog — should not (shared/structural type)", name)
+		}
+	}
+	if inputObjectCount == 0 {
+		t.Error("no INPUT_OBJECT definitions found — expected filters and args inputs")
+	}
+
+	// 2. FlightLogArgs input type specifically must NOT have @catalog
+	flightLogArgs := result.defs["FlightLogArgs"]
+	if flightLogArgs == nil {
+		t.Fatal("FlightLogArgs not found in output")
+	}
+	if flightLogArgs.Kind != ast.InputObject {
+		t.Errorf("FlightLogArgs kind=%s, expected INPUT_OBJECT", flightLogArgs.Kind)
+	}
+	if flightLogArgs.Directives.ForName("catalog") != nil {
+		t.Error("FlightLogArgs has @catalog — parameterized view args input should not")
+	}
+
+	// 3. No aggregation type definition should have @catalog
+	// (only query fields that return them should carry @catalog)
+	aggTypeCount := 0
+	for name, def := range result.defs {
+		if def.Kind != ast.Object {
+			continue
+		}
+		if !strings.Contains(name, "_aggregation") {
+			continue
+		}
+		aggTypeCount++
+		if def.Directives.ForName("catalog") != nil {
+			t.Errorf("aggregation type %q has @catalog on definition — should not", name)
+		}
+	}
+	if aggTypeCount == 0 {
+		t.Error("no aggregation type definitions found — expected at least one")
+	}
+
+	// 4. Verify the same with the complex schema (tables, refs, m2m)
+	complexResult := buildNewCompilerResult(t, complexTestSchema, base.Options{Name: "air", EngineType: "duckdb"})
+
+	complexInputCount := 0
+	for name, def := range complexResult.defs {
+		if def.Kind != ast.InputObject {
+			continue
+		}
+		complexInputCount++
+		if def.Directives.ForName("catalog") != nil {
+			t.Errorf("[complex] INPUT_OBJECT %q has @catalog", name)
+		}
+	}
+
+	complexAggCount := 0
+	for name, def := range complexResult.defs {
+		if def.Kind != ast.Object {
+			continue
+		}
+		if !strings.Contains(name, "_aggregation") {
+			continue
+		}
+		// Skip _join_aggregation and _spatial_aggregation — those are system-level
+		if strings.HasPrefix(name, "_join") || strings.HasPrefix(name, "_spatial") {
+			continue
+		}
+		complexAggCount++
+		if def.Directives.ForName("catalog") != nil {
+			t.Errorf("[complex] aggregation type %q has @catalog on definition", name)
+		}
+	}
+
+	t.Logf("Checked: parameterized=%d INPUT_OBJECTs + %d agg types; complex=%d INPUT_OBJECTs + %d agg types",
+		inputObjectCount, aggTypeCount, complexInputCount, complexAggCount)
+}
+
 // --- Helper functions ---
 
 func fieldNames(def *ast.Definition) []string {
