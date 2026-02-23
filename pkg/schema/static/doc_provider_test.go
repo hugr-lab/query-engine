@@ -86,7 +86,7 @@ func TestDocProvider_PossibleTypes_Interface(t *testing.T) {
 	nodeDef := p.ForName(context.Background(), "Node")
 	require.NotNil(t, nodeDef)
 
-	possibles := slices.Collect(p.PossibleTypes(context.Background(), nodeDef))
+	possibles := slices.Collect(p.PossibleTypes(context.Background(), nodeDef.Name))
 	require.Len(t, possibles, 2)
 
 	names := make(map[string]bool)
@@ -109,7 +109,7 @@ func TestDocProvider_PossibleTypes_Union(t *testing.T) {
 	unionDef := p.ForName(context.Background(), "SearchResult")
 	require.NotNil(t, unionDef)
 
-	possibles := slices.Collect(p.PossibleTypes(context.Background(), unionDef))
+	possibles := slices.Collect(p.PossibleTypes(context.Background(), unionDef.Name))
 	require.Len(t, possibles, 2)
 
 	names := make(map[string]bool)
@@ -125,15 +125,9 @@ func TestDocProvider_PossibleTypes_Object(t *testing.T) {
 	p := static.NewDocumentProvider(doc)
 
 	qDef := p.ForName(context.Background(), "Query")
-	possibles := slices.Collect(p.PossibleTypes(context.Background(), qDef))
+	possibles := slices.Collect(p.PossibleTypes(context.Background(), qDef.Name))
 	require.Len(t, possibles, 1)
 	assert.Equal(t, "Query", possibles[0].Name)
-}
-
-func TestDocProvider_PossibleTypes_Nil(t *testing.T) {
-	doc := parseSchemaDoc(t, `type Query { id: ID }`)
-	p := static.NewDocumentProvider(doc)
-	assert.Nil(t, p.PossibleTypes(context.Background(), nil))
 }
 
 func TestDocProvider_Implements(t *testing.T) {
@@ -147,7 +141,7 @@ func TestDocProvider_Implements(t *testing.T) {
 	userDef := p.ForName(context.Background(), "User")
 	require.NotNil(t, userDef)
 
-	impls := slices.Collect(p.Implements(context.Background(), userDef))
+	impls := slices.Collect(p.Implements(context.Background(), userDef.Name))
 	require.Len(t, impls, 1)
 	assert.Equal(t, "Node", impls[0].Name)
 }

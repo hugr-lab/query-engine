@@ -6,13 +6,14 @@ import (
 	"slices"
 
 	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // Compile-time check that docProvider implements schema.Provider.
-var _ schema.Provider = (*docProvider)(nil)
-var _ schema.DefinitionsSource = (*docProvider)(nil)
-var _ schema.ExtensionsSource = (*docProvider)(nil)
+var _ base.Provider = (*docProvider)(nil)
+var _ base.DefinitionsSource = (*docProvider)(nil)
+var _ base.ExtensionsSource = (*docProvider)(nil)
 
 type docProvider struct {
 	doc *ast.SchemaDocument
@@ -71,7 +72,8 @@ func (p *docProvider) SubscriptionType(_ context.Context) *ast.Definition {
 	return p.doc.Definitions.ForName(name)
 }
 
-func (p *docProvider) PossibleTypes(_ context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
+func (p *docProvider) PossibleTypes(_ context.Context, name string) iter.Seq[*ast.Definition] {
+	def := p.doc.Definitions.ForName(name)
 	if def == nil {
 		return nil
 	}
@@ -110,7 +112,8 @@ func (p *docProvider) PossibleTypes(_ context.Context, def *ast.Definition) iter
 	return nil
 }
 
-func (p *docProvider) Implements(_ context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
+func (p *docProvider) Implements(_ context.Context, name string) iter.Seq[*ast.Definition] {
+	def := p.doc.Definitions.ForName(name)
 	if def == nil {
 		return nil
 	}

@@ -69,4 +69,3 @@ func (v *Validator) Validate(ctx context.Context, provider TypeResolver, documen
 
 	return errs
 }
-

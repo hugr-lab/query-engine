@@ -19,6 +19,7 @@ type Service struct {
 
 	mu       sync.RWMutex
 	provider Provider
+	manager  CatalogManager
 }
 
 // ServiceOption configures a Service.
@@ -40,7 +41,14 @@ func WithServiceVarTransformer(t VariableTransformer) ServiceOption {
 
 // NewService creates a Service with the given provider and options.
 func NewService(p Provider, opts ...ServiceOption) *Service {
-	s := &Service{provider: p}
+	m, ok := p.(CatalogManager)
+	if !ok {
+		m = newMemoryCatalogManager(p)
+	}
+	s := &Service{
+		provider: p,
+		manager:  m,
+	}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -70,6 +78,9 @@ func (s *Service) SetProvider(p Provider) {
 	defer s.mu.Unlock()
 
 	s.provider = p
+	if m, ok := s.manager.(*memoryCatalog); ok {
+		m.SetProvider(p)
+	}
 }
 
 // Provider returns the current Provider.
@@ -94,7 +105,6 @@ var _ Provider = (*Service)(nil)
 func (s *Service) ForName(ctx context.Context, name string) *ast.Definition {
 	return s.Provider().ForName(ctx, name)
 }
-
 func (s *Service) DirectiveForName(ctx context.Context, name string) *ast.DirectiveDefinition {
 	return s.Provider().DirectiveForName(ctx, name)
 }
@@ -111,12 +121,12 @@ func (s *Service) SubscriptionType(ctx context.Context) *ast.Definition {
 	return s.Provider().SubscriptionType(ctx)
 }
 
-func (s *Service) PossibleTypes(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
-	return s.Provider().PossibleTypes(ctx, def)
+func (s *Service) PossibleTypes(ctx context.Context, name string) iter.Seq[*ast.Definition] {
+	return s.Provider().PossibleTypes(ctx, name)
 }
 
-func (s *Service) Implements(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
-	return s.Provider().Implements(ctx, def)
+func (s *Service) Implements(ctx context.Context, name string) iter.Seq[*ast.Definition] {
+	return s.Provider().Implements(ctx, name)
 }
 
 func (s *Service) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {

@@ -87,7 +87,7 @@ func possibleTypeSet(ctx *validator.WalkContext, def *ast.Definition) map[string
 	case ast.Object:
 		result[def.Name] = true
 	case ast.Interface, ast.Union:
-		for t := range ctx.Provider.PossibleTypes(ctx.Context, def) {
+		for t := range ctx.Provider.PossibleTypes(ctx.Context, def.Name) {
 			result[t.Name] = true
 		}
 	}

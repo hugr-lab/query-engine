@@ -2,61 +2,48 @@ package schema
 
 import (
 	"context"
-	"iter"
 
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/types"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// DefinitionsSource resolves types and directives with context support.
-// A subset of Provider for functions that only need type resolution.
-type DefinitionsSource interface {
-	ForName(ctx context.Context, name string) *ast.Definition
-	DirectiveForName(ctx context.Context, name string) *ast.DirectiveDefinition
+type Provider base.Provider
 
-	// iteration
-	Definitions(ctx context.Context) iter.Seq[*ast.Definition]
-	DirectiveDefinitions(ctx context.Context) iter.Seq2[string, *ast.DirectiveDefinition]
+type Catalog interface {
+	compiler.Catalog
+
+	Name() string
+	Description() string
 }
 
-// ExtensionsSource extends DefinitionsSource with support for definition extensions.
-type ExtensionsSource interface {
-	DefinitionsSource
+type ReloadableCatalog interface {
+	Catalog
 
-	// Extensions
-	DefinitionExtensions(ctx context.Context, name string) iter.Seq[*ast.Definition]
-	Extensions(ctx context.Context) iter.Seq[*ast.Definition]
+	// Reload the catalog (e.g. after source changes). Returns an error if reloading fails.
+	Reload(ctx context.Context) error
 }
 
-// Provider is a read-only interface to a compiled schema.
-// All methods accept context.Context for future storage-backed implementations.
-type Provider interface {
-	DefinitionsSource
+// CatalogChanger is a Catalog that can produce a new Catalog with changes since a given version.
+type CatalogChanger interface {
+	Catalog
 
-	Description(ctx context.Context) string
-
-	// Root operation types
-	QueryType(ctx context.Context) *ast.Definition
-	MutationType(ctx context.Context) *ast.Definition
-	SubscriptionType(ctx context.Context) *ast.Definition
-
-	// Type relationships (for validator: fragment spreading, interface checks)
-	PossibleTypes(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition]
-	Implements(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition]
-
-	// types iteration (for introspection, meta-info)
-	Types(ctx context.Context) iter.Seq2[string, *ast.Definition]
+	Version() string
+	// Returns changes since the given version, or an error if the version is invalid.
+	Changes(ctx context.Context, version string) (Catalog, error)
 }
 
-// MutableProvider is a mutable container for schema definitions.
-type MutableProvider interface {
-	Provider
+type ExtensionCatalog interface {
+	Catalog
 
-	// Merge base types
-	MergeFrom(ctx context.Context, other DefinitionsSource) error
+	base.ExtensionsSource
+	Deps() []string // Names of other catalog extensions this extension depends on
+}
 
-	// Change the definition description
-	SetDefinitionDescription(ctx context.Context, name, desc string) error
+type CatalogManager interface {
+	// Load/Unload catalogs (for dynamic schema updates)
+	AddCatalog(ctx context.Context, name string, catalog Catalog) error
+	RemoveCatalog(ctx context.Context, name string) error
 }
 
 // VariableTransformer transforms query variables before parsing.

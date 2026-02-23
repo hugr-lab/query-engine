@@ -282,7 +282,11 @@ func (p *testProvider) SubscriptionType(_ context.Context) *ast.Definition {
 	return p.schema.Subscription
 }
 
-func (p *testProvider) PossibleTypes(_ context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
+func (p *testProvider) PossibleTypes(_ context.Context, name string) iter.Seq[*ast.Definition] {
+	def := p.schema.Types[name]
+	if def == nil {
+		return nil
+	}
 	return func(yield func(*ast.Definition) bool) {
 		for _, t := range p.schema.GetPossibleTypes(def) {
 			if !yield(t) {
@@ -292,7 +296,11 @@ func (p *testProvider) PossibleTypes(_ context.Context, def *ast.Definition) ite
 	}
 }
 
-func (p *testProvider) Implements(_ context.Context, def *ast.Definition) iter.Seq[*ast.Definition] {
+func (p *testProvider) Implements(_ context.Context, name string) iter.Seq[*ast.Definition] {
+	def := p.schema.Types[name]
+	if def == nil {
+		return nil
+	}
 	return func(yield func(*ast.Definition) bool) {
 		for _, iface := range p.schema.GetImplements(def) {
 			if !yield(iface) {

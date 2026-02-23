@@ -125,7 +125,7 @@ func TestStaticProvider_PossibleTypes(t *testing.T) {
 	nodeDef := p.ForName(context.Background(), "Node")
 	require.NotNil(t, nodeDef)
 
-	possibles := slices.Collect(p.PossibleTypes(context.Background(), nodeDef))
+	possibles := slices.Collect(p.PossibleTypes(context.Background(), nodeDef.Name))
 	require.Len(t, possibles, 2)
 
 	names := make(map[string]bool)
@@ -147,7 +147,7 @@ func TestStaticProvider_Implements(t *testing.T) {
 	userDef := p.ForName(context.Background(), "User")
 	require.NotNil(t, userDef)
 
-	impls := slices.Collect(p.Implements(context.Background(), userDef))
+	impls := slices.Collect(p.Implements(context.Background(), userDef.Name))
 	require.Len(t, impls, 1)
 	assert.Equal(t, "Node", impls[0].Name)
 }

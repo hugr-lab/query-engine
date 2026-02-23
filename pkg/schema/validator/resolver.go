@@ -16,6 +16,6 @@ type TypeResolver interface {
 	QueryType(ctx context.Context) *ast.Definition
 	MutationType(ctx context.Context) *ast.Definition
 	SubscriptionType(ctx context.Context) *ast.Definition
-	PossibleTypes(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition]
-	Implements(ctx context.Context, def *ast.Definition) iter.Seq[*ast.Definition]
+	PossibleTypes(ctx context.Context, name string) iter.Seq[*ast.Definition]
+	Implements(ctx context.Context, name string) iter.Seq[*ast.Definition]
 }
