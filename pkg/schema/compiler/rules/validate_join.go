@@ -1,12 +1,17 @@
 package rules
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
+
+// reSQLField matches bracket-notation field references in SQL strings:
+// [field], [$catalog], [source.field], [$table.field.nested]
+var reSQLField = regexp.MustCompile(`\[\$?[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\]`)
 
 var _ base.BatchRule = (*JoinValidator)(nil)
 
@@ -114,6 +119,10 @@ func validateJoinField(ctx base.CompilationContext, def *ast.Definition, field *
 	if sql != "" {
 		sqlFields := extractFieldsFromSQL(sql)
 		for _, sf := range sqlFields {
+			// Skip $-prefixed system vars (e.g. [$catalog])
+			if strings.HasPrefix(sf, "$") {
+				continue
+			}
 			parts := strings.SplitN(sf, ".", 2)
 			if len(parts) != 2 {
 				return gqlerror.ErrorPosf(field.Position,
@@ -192,25 +201,26 @@ func validateSubQueryField(ctx base.CompilationContext, def *ast.Definition, pat
 	return validateSubQueryField(ctx, nestedDef, parts[1], pos, objName, fieldName)
 }
 
-// extractFieldsFromSQL extracts [$field.path] references from SQL strings.
-// Matches patterns like [source.field] or [dest.field.nested].
+// extractFieldsFromSQL extracts [field.path] references from SQL strings.
+// Matches patterns like [source.field], [dest.field.nested], [$catalog].
+// Returns the field names with brackets stripped (e.g. "source.field", "$catalog").
 func extractFieldsFromSQL(sql string) []string {
+	if sql == "" {
+		return nil
+	}
+	matches := reSQLField.FindAllString(sql, -1)
+	if matches == nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(matches))
 	var fields []string
-	for {
-		start := strings.Index(sql, "[")
-		if start == -1 {
-			break
+	for _, m := range matches {
+		f := m[1 : len(m)-1] // strip surrounding []
+		if _, ok := seen[f]; ok {
+			continue
 		}
-		end := strings.Index(sql[start:], "]")
-		if end == -1 {
-			break
-		}
-		field := sql[start+1 : start+end]
-		// Skip $-prefixed fields (they reference query args, not fields)
-		if !strings.HasPrefix(field, "$") {
-			fields = append(fields, field)
-		}
-		sql = sql[start+end+1:]
+		seen[f] = struct{}{}
+		fields = append(fields, f)
 	}
 	return fields
 }

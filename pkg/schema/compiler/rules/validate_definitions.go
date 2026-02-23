@@ -1,6 +1,8 @@
 package rules
 
 import (
+	"strings"
+
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -19,6 +21,18 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 	for def := range ctx.Source().Definitions(ctx.Context()) {
 		if err := validateDefinition(ctx, def); err != nil {
 			return err
+		}
+		// Validate @function(sql:) parameter references on Function/MutationFunction types
+		if def.Name == "Function" || def.Name == "MutationFunction" {
+			if err := validateFunctionSQL(def); err != nil {
+				return err
+			}
+		}
+		// Validate @view + @args consistency
+		if def.Directives.ForName("view") != nil && def.Directives.ForName("args") != nil {
+			if err := validateViewArgs(ctx, def); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -247,4 +261,83 @@ func directiveKind(isTable bool) string {
 		return "@table"
 	}
 	return "@view"
+}
+
+// validateFunctionSQL validates [paramName] references in @function(sql: "...") strings.
+// Each non-$ reference must match a declared argument on the function field.
+func validateFunctionSQL(def *ast.Definition) error {
+	for _, field := range def.Fields {
+		funcDir := field.Directives.ForName("function")
+		if funcDir == nil {
+			continue
+		}
+		sql := base.DirectiveArgString(funcDir, "sql")
+		if sql == "" {
+			continue
+		}
+		refs := extractFieldsFromSQL(sql)
+		for _, ref := range refs {
+			// Skip $-prefixed system vars (e.g. [$catalog])
+			if strings.HasPrefix(ref, "$") {
+				continue
+			}
+			if field.Arguments.ForName(ref) == nil {
+				return gqlerror.ErrorPosf(field.Position,
+					"@function %q: sql references unknown argument %q",
+					field.Name, ref)
+			}
+		}
+	}
+	return nil
+}
+
+// validateViewArgs validates @view + @args consistency:
+// - The @args input type must exist and be INPUT_OBJECT
+// - If @view has sql: argument, [paramName] references must be either
+//   view fields, $-prefixed system vars, or input args fields
+func validateViewArgs(ctx base.CompilationContext, def *ast.Definition) error {
+	argsDir := def.Directives.ForName("args")
+	argInputName := base.DirectiveArgString(argsDir, "name")
+	if argInputName == "" {
+		return nil
+	}
+
+	// Validate input type exists
+	inputDef := ctx.Source().ForName(ctx.Context(), argInputName)
+	if inputDef == nil {
+		inputDef = ctx.LookupType(argInputName)
+	}
+	if inputDef == nil {
+		return gqlerror.ErrorPosf(argsDir.Position,
+			"@args on %q: input type %q not found", def.Name, argInputName)
+	}
+	if inputDef.Kind != ast.InputObject {
+		return gqlerror.ErrorPosf(argsDir.Position,
+			"@args on %q: type %q must be an input type", def.Name, argInputName)
+	}
+
+	// Validate SQL parameter references if @view has sql: argument
+	viewDir := def.Directives.ForName("view")
+	sql := base.DirectiveArgString(viewDir, "sql")
+	if sql == "" {
+		return nil
+	}
+
+	refs := extractFieldsFromSQL(sql)
+	for _, ref := range refs {
+		if strings.HasPrefix(ref, "$") {
+			continue
+		}
+		// Check if ref is a field of the view itself
+		if hasField(def, ref) {
+			continue
+		}
+		// Check if ref is a field of the args input type
+		if inputDef.Fields.ForName(ref) != nil {
+			continue
+		}
+		return gqlerror.ErrorPosf(viewDir.Position,
+			"@view on %q: sql references unknown field or argument %q", def.Name, ref)
+	}
+	return nil
 }

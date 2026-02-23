@@ -1506,3 +1506,171 @@ func stringIntersect(a, b []string) []string {
 	}
 	return common
 }
+
+// --- SQL parameter validation tests ---
+
+// compileNewOnly compiles a schema with only the new compiler and returns the error (if any).
+func compileNewOnly(t *testing.T, sdl string) error {
+	t.Helper()
+	sd := parseSourceSchemaDocument(t, sdl)
+	source := extractSourceDefs(sd)
+	ctx := context.Background()
+	c := newcompiler.New(rules.RegisterAll()...)
+	_, err := c.Compile(ctx, nil, source, base.Options{Name: "test", EngineType: "duckdb"})
+	return err
+}
+
+func TestValidate_FunctionSQL_ValidArgs(t *testing.T) {
+	sdl := `
+type Airport @table(name: "airports") {
+  iata_code: String! @pk
+  name: String!
+}
+
+extend type Function {
+  my_func(arg1: String!, arg2: Int): String
+    @function(name: "my_func", sql: "SELECT func([arg1], [arg2])")
+}
+`
+	if err := compileNewOnly(t, sdl); err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+func TestValidate_FunctionSQL_UnknownArg(t *testing.T) {
+	sdl := `
+type Airport @table(name: "airports") {
+  iata_code: String! @pk
+  name: String!
+}
+
+extend type Function {
+  my_func(arg1: String!): String
+    @function(name: "my_func", sql: "SELECT func([missing_arg])")
+}
+`
+	err := compileNewOnly(t, sdl)
+	if err == nil {
+		t.Fatal("expected error for unknown SQL argument reference, got nil")
+	}
+	if !strings.Contains(err.Error(), "missing_arg") {
+		t.Fatalf("expected error to mention 'missing_arg', got: %v", err)
+	}
+}
+
+func TestValidate_FunctionSQL_SystemVar(t *testing.T) {
+	sdl := `
+type Airport @table(name: "airports") {
+  iata_code: String! @pk
+  name: String!
+}
+
+extend type Function {
+  my_func(arg1: String!): String
+    @function(name: "my_func", sql: "SELECT func([arg1], [$catalog])")
+}
+`
+	if err := compileNewOnly(t, sdl); err != nil {
+		t.Fatalf("expected no error for [$catalog] system var, got: %v", err)
+	}
+}
+
+func TestValidate_ViewArgs_Valid(t *testing.T) {
+	sdl := `
+input FlightLogArgs {
+  airline_code: String!
+  year: Int
+}
+
+type FlightLog
+  @view(name: "flight_log_view")
+  @args(name: "FlightLogArgs") {
+  id: Int! @pk
+  flight_number: String!
+}
+`
+	if err := compileNewOnly(t, sdl); err != nil {
+		t.Fatalf("expected no error for valid @args, got: %v", err)
+	}
+}
+
+func TestValidate_ViewArgs_MissingInputType(t *testing.T) {
+	sdl := `
+type FlightLog
+  @view(name: "flight_log_view")
+  @args(name: "NonExistentInput") {
+  id: Int! @pk
+  flight_number: String!
+}
+`
+	err := compileNewOnly(t, sdl)
+	if err == nil {
+		t.Fatal("expected error for missing input type, got nil")
+	}
+	if !strings.Contains(err.Error(), "NonExistentInput") {
+		t.Fatalf("expected error to mention 'NonExistentInput', got: %v", err)
+	}
+}
+
+func TestValidate_ViewArgs_NotInputObject(t *testing.T) {
+	sdl := `
+type NotAnInput @table(name: "not_input") {
+  id: Int! @pk
+  name: String!
+}
+
+type FlightLog
+  @view(name: "flight_log_view")
+  @args(name: "NotAnInput") {
+  id: Int! @pk
+  flight_number: String!
+}
+`
+	err := compileNewOnly(t, sdl)
+	if err == nil {
+		t.Fatal("expected error for non-input type in @args, got nil")
+	}
+	if !strings.Contains(err.Error(), "must be an input type") {
+		t.Fatalf("expected error about input type, got: %v", err)
+	}
+}
+
+func TestValidate_ViewArgs_SQLWithValidRefs(t *testing.T) {
+	sdl := `
+input SearchArgs {
+  search_term: String!
+}
+
+type SearchResults
+  @view(name: "search_results", sql: "SELECT * FROM search WHERE term = [search_term] AND catalog = [$catalog]")
+  @args(name: "SearchArgs") {
+  id: Int! @pk
+  title: String!
+}
+`
+	if err := compileNewOnly(t, sdl); err != nil {
+		t.Fatalf("expected no error for valid SQL refs, got: %v", err)
+	}
+}
+
+func TestValidate_ViewArgs_SQLWithUnknownRef(t *testing.T) {
+	sdl := `
+input SearchArgs {
+  search_term: String!
+}
+
+type SearchResults
+  @view(name: "search_results", sql: "SELECT * FROM search WHERE x = [unknown_field]")
+  @args(name: "SearchArgs") {
+  id: Int! @pk
+  title: String!
+}
+`
+	err := compileNewOnly(t, sdl)
+	if err == nil {
+		t.Fatal("expected error for unknown SQL ref in view, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown_field") {
+		t.Fatalf("expected error to mention 'unknown_field', got: %v", err)
+	}
+}
