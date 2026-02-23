@@ -2,6 +2,7 @@ package static
 
 import (
 	"context"
+	"iter"
 	"slices"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -90,4 +91,31 @@ func (s *docSource) SetOperationType(operation string, typeName string) {
 
 func (s *docSource) MergeFrom(other *ast.SchemaDocument) {
 	s.doc.Merge(other)
+}
+
+// docSourceOnly wraps a docProvider but only exposes DefinitionsSource (no ExtensionsSource).
+// Used for testing the Update method with a DefinitionsSource-only input.
+type docSourceOnly struct {
+	p *docProvider
+}
+
+// NewDocSourceOnly creates a DefinitionsSource (not ExtensionsSource) backed by a SchemaDocument.
+func NewDocSourceOnly(doc *ast.SchemaDocument) *docSourceOnly {
+	return &docSourceOnly{p: &docProvider{doc: doc}}
+}
+
+func (s *docSourceOnly) ForName(ctx context.Context, name string) *ast.Definition {
+	return s.p.ForName(ctx, name)
+}
+
+func (s *docSourceOnly) DirectiveForName(ctx context.Context, name string) *ast.DirectiveDefinition {
+	return s.p.DirectiveForName(ctx, name)
+}
+
+func (s *docSourceOnly) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {
+	return s.p.Definitions(ctx)
+}
+
+func (s *docSourceOnly) DirectiveDefinitions(ctx context.Context) iter.Seq2[string, *ast.DirectiveDefinition] {
+	return s.p.DirectiveDefinitions(ctx)
 }
