@@ -178,45 +178,180 @@ func extractSourceDefs(sd *ast.SchemaDocument) *testSource {
 	return &testSource{defs: defs}
 }
 
+// --- AST serialization helpers ---
+
+// typeString serializes an ast.Type to a human-readable string like "String!", "[Int!]!", etc.
+func typeString(t *ast.Type) string {
+	if t == nil {
+		return "<nil>"
+	}
+	if t.Elem != nil {
+		s := "[" + typeString(t.Elem) + "]"
+		if t.NonNull {
+			s += "!"
+		}
+		return s
+	}
+	s := t.NamedType
+	if t.NonNull {
+		s += "!"
+	}
+	return s
+}
+
+// valueString serializes an ast.Value (including list values) to a string.
+func valueString(v *ast.Value) string {
+	if v == nil {
+		return ""
+	}
+	if len(v.Children) > 0 {
+		var parts []string
+		for _, child := range v.Children {
+			if child.Value != nil {
+				parts = append(parts, child.Value.Raw)
+			}
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	}
+	return v.Raw
+}
+
+// directiveSignature returns a comparable string for a single directive, e.g. "table(name=airports)".
+func directiveSignature(d *ast.Directive) string {
+	var args []string
+	for _, a := range d.Arguments {
+		args = append(args, a.Name+"="+valueString(a.Value))
+	}
+	sort.Strings(args)
+	if len(args) > 0 {
+		return d.Name + "(" + strings.Join(args, ", ") + ")"
+	}
+	return d.Name
+}
+
+// directiveSignatures returns sorted comparable strings for a directive list.
+func directiveSignatures(dirs ast.DirectiveList) []string {
+	var sigs []string
+	for _, d := range dirs {
+		sigs = append(sigs, directiveSignature(d))
+	}
+	sort.Strings(sigs)
+	return sigs
+}
+
+// argSignature returns a comparable string for a field argument, e.g. "filter: Airport_filter".
+func argSignature(a *ast.ArgumentDefinition) string {
+	s := a.Name + ": " + typeString(a.Type)
+	if a.DefaultValue != nil {
+		s += " = " + a.DefaultValue.Raw
+	}
+	return s
+}
+
+// argsSignatures returns sorted comparable strings for argument definitions.
+func argsSignatures(args ast.ArgumentDefinitionList) []string {
+	var sigs []string
+	for _, a := range args {
+		sigs = append(sigs, argSignature(a))
+	}
+	sort.Strings(sigs)
+	return sigs
+}
+
+// fieldSignature returns a full comparable string for a field definition, e.g.:
+// "Airport(filter: Airport_filter, limit: Int): [Airport!]! @query(name=Airport, type=SELECT)"
+func fieldSignature(f *ast.FieldDefinition) string {
+	var sb strings.Builder
+	sb.WriteString(f.Name)
+	if len(f.Arguments) > 0 {
+		args := argsSignatures(f.Arguments)
+		sb.WriteString("(")
+		sb.WriteString(strings.Join(args, ", "))
+		sb.WriteString(")")
+	}
+	sb.WriteString(": ")
+	sb.WriteString(typeString(f.Type))
+	dirs := directiveSignatures(f.Directives)
+	for _, d := range dirs {
+		sb.WriteString(" @")
+		sb.WriteString(d)
+	}
+	return sb.String()
+}
+
+// --- compileResult ---
+
 // compileResult holds comparison data for one compiler output.
 type compileResult struct {
 	name string
-	// definitions by name
+	// definitions by name (for NEW: extensions merged into definitions)
 	defs map[string]*ast.Definition
-	// extensions by target name → merged fields
-	extFields map[string][]string
-	// query fields on Query type
-	queryFields []string
-	// mutation fields on Mutation type
-	mutationFields []string
+	// query fields by name with full FieldDefinition
+	queryFieldDefs map[string]*ast.FieldDefinition
+	// mutation fields by name with full FieldDefinition
+	mutFieldDefs map[string]*ast.FieldDefinition
+}
+
+func (r *compileResult) queryFieldNames() []string {
+	names := make([]string, 0, len(r.queryFieldDefs))
+	for n := range r.queryFieldDefs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (r *compileResult) mutationFieldNames() []string {
+	names := make([]string, 0, len(r.mutFieldDefs))
+	for n := range r.mutFieldDefs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (r *compileResult) String() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "=== %s ===\n", r.name)
 
-	defNames := make([]string, 0, len(r.defs))
-	for n := range r.defs {
-		defNames = append(defNames, n)
-	}
-	sort.Strings(defNames)
+	defNames := sortedKeys(r.defs)
 	fmt.Fprintf(&sb, "Definitions (%d):\n", len(defNames))
 	for _, n := range defNames {
 		d := r.defs[n]
-		fields := make([]string, 0, len(d.Fields))
-		for _, f := range d.Fields {
-			fields = append(fields, f.Name)
+		dirs := directiveSignatures(d.Directives)
+		fmt.Fprintf(&sb, "  %s [%s]", n, d.Kind)
+		if len(dirs) > 0 {
+			fmt.Fprintf(&sb, " @%s", strings.Join(dirs, " @"))
 		}
-		fmt.Fprintf(&sb, "  %s [%s] fields=%v\n", n, d.Kind, fields)
+		fmt.Fprintf(&sb, "\n")
+		for _, f := range d.Fields {
+			fmt.Fprintf(&sb, "    %s\n", fieldSignature(f))
+		}
 	}
 
-	sort.Strings(r.queryFields)
-	fmt.Fprintf(&sb, "Query fields (%d): %v\n", len(r.queryFields), r.queryFields)
+	qNames := r.queryFieldNames()
+	fmt.Fprintf(&sb, "Query fields (%d):\n", len(qNames))
+	for _, n := range qNames {
+		fmt.Fprintf(&sb, "  %s\n", fieldSignature(r.queryFieldDefs[n]))
+	}
 
-	sort.Strings(r.mutationFields)
-	fmt.Fprintf(&sb, "Mutation fields (%d): %v\n", len(r.mutationFields), r.mutationFields)
+	mNames := r.mutationFieldNames()
+	fmt.Fprintf(&sb, "Mutation fields (%d):\n", len(mNames))
+	for _, n := range mNames {
+		fmt.Fprintf(&sb, "  %s\n", fieldSignature(r.mutFieldDefs[n]))
+	}
 
 	return sb.String()
+}
+
+// --- Builders ---
+
+func isSkipQueryField(name string) bool {
+	return name == "_stub" || name == "jq" || name == "__type" || name == "__schema" || name == "function"
+}
+
+func isSkipMutField(name string) bool {
+	return name == "_stub" || name == "function"
 }
 
 // buildOldCompilerResult compiles with old compiler and extracts comparison data.
@@ -229,8 +364,10 @@ func buildOldCompilerResult(t *testing.T, sdl string, opts oldcompiler.Options) 
 	}
 
 	result := &compileResult{
-		name: "OLD",
-		defs: make(map[string]*ast.Definition),
+		name:           "OLD",
+		defs:           make(map[string]*ast.Definition),
+		queryFieldDefs: make(map[string]*ast.FieldDefinition),
+		mutFieldDefs:   make(map[string]*ast.FieldDefinition),
 	}
 
 	// Collect all non-system types
@@ -244,20 +381,20 @@ func buildOldCompilerResult(t *testing.T, sdl string, opts oldcompiler.Options) 
 	// Extract Query fields
 	if schema.Query != nil {
 		for _, f := range schema.Query.Fields {
-			if f.Name == "_stub" || f.Name == "jq" || f.Name == "__type" || f.Name == "__schema" || f.Name == "function" {
+			if isSkipQueryField(f.Name) {
 				continue
 			}
-			result.queryFields = append(result.queryFields, f.Name)
+			result.queryFieldDefs[f.Name] = f
 		}
 	}
 
 	// Extract Mutation fields
 	if schema.Mutation != nil {
 		for _, f := range schema.Mutation.Fields {
-			if f.Name == "_stub" || f.Name == "function" {
+			if isSkipMutField(f.Name) {
 				continue
 			}
-			result.mutationFields = append(result.mutationFields, f.Name)
+			result.mutFieldDefs[f.Name] = f
 		}
 	}
 
@@ -265,6 +402,7 @@ func buildOldCompilerResult(t *testing.T, sdl string, opts oldcompiler.Options) 
 }
 
 // buildNewCompilerResult compiles with new compiler and extracts comparison data.
+// Extensions are merged into definitions for fair comparison with the old compiler.
 func buildNewCompilerResult(t *testing.T, sdl string, opts base.Options) *compileResult {
 	t.Helper()
 	sd := parseSourceSchemaDocument(t, sdl)
@@ -278,9 +416,10 @@ func buildNewCompilerResult(t *testing.T, sdl string, opts base.Options) *compil
 	}
 
 	result := &compileResult{
-		name:      "NEW",
-		defs:      make(map[string]*ast.Definition),
-		extFields: make(map[string][]string),
+		name:           "NEW",
+		defs:           make(map[string]*ast.Definition),
+		queryFieldDefs: make(map[string]*ast.FieldDefinition),
+		mutFieldDefs:   make(map[string]*ast.FieldDefinition),
 	}
 
 	// Collect definitions
@@ -292,19 +431,23 @@ func buildNewCompilerResult(t *testing.T, sdl string, opts base.Options) *compil
 		result.defs[def.Name] = def
 	}
 
-	// Collect extensions
+	// Merge extensions into definitions; extract query/mutation fields
 	for ext := range catalog.Extensions(ctx) {
-		var fieldNames []string
-		for _, f := range ext.Fields {
-			fieldNames = append(fieldNames, f.Name)
-		}
-		result.extFields[ext.Name] = append(result.extFields[ext.Name], fieldNames...)
-
 		if ext.Name == "Query" {
-			result.queryFields = append(result.queryFields, fieldNames...)
+			for _, f := range ext.Fields {
+				result.queryFieldDefs[f.Name] = f
+			}
+			continue
 		}
 		if ext.Name == "Mutation" {
-			result.mutationFields = append(result.mutationFields, fieldNames...)
+			for _, f := range ext.Fields {
+				result.mutFieldDefs[f.Name] = f
+			}
+			continue
+		}
+		// Merge extension fields into the definition
+		if def, ok := result.defs[ext.Name]; ok {
+			def.Fields = append(def.Fields, ext.Fields...)
 		}
 	}
 
@@ -375,7 +518,6 @@ func TestCrossCompiler_BasicTable(t *testing.T) {
 	t.Log(oldResult)
 	t.Log(newResult)
 
-	// Compare generated definition names (filter, input, aggregation types)
 	compareSummary(t, oldResult, newResult)
 }
 
@@ -390,11 +532,11 @@ func TestCrossCompiler_ReadOnly(t *testing.T) {
 	compareSummary(t, oldResult, newResult)
 
 	// Both should have zero mutation fields
-	if len(oldResult.mutationFields) != 0 {
-		t.Errorf("OLD: expected 0 mutation fields in ReadOnly, got %d: %v", len(oldResult.mutationFields), oldResult.mutationFields)
+	if len(oldResult.mutFieldDefs) != 0 {
+		t.Errorf("OLD: expected 0 mutation fields in ReadOnly, got %d", len(oldResult.mutFieldDefs))
 	}
-	if len(newResult.mutationFields) != 0 {
-		t.Errorf("NEW: expected 0 mutation fields in ReadOnly, got %d: %v", len(newResult.mutationFields), newResult.mutationFields)
+	if len(newResult.mutFieldDefs) != 0 {
+		t.Errorf("NEW: expected 0 mutation fields in ReadOnly, got %d", len(newResult.mutFieldDefs))
 	}
 }
 
@@ -420,13 +562,15 @@ func TestCrossCompiler_AsModule(t *testing.T) {
 	compareSummary(t, oldResult, newResult)
 }
 
-// compareSummary prints a detailed comparison between old and new compiler outputs
-// and reports differences as test errors.
+// --- Deep comparison ---
+
+// compareSummary prints a detailed comparison between old and new compiler outputs,
+// including field types, arguments, and directives.
 func compareSummary(t *testing.T, old, new *compileResult) {
 	t.Helper()
 
-	// 1. Compare user-generated definitions (filter, input, aggregation types)
-	t.Log("--- DEFINITION COMPARISON ---")
+	// 1. Compare definition names
+	t.Log("=== DEFINITION COMPARISON ===")
 	var onlyOld, onlyNew, common []string
 
 	for name := range old.defs {
@@ -453,33 +597,21 @@ func compareSummary(t *testing.T, old, new *compileResult) {
 		t.Logf("Only in NEW (%d): %v", len(onlyNew), onlyNew)
 	}
 
-	// 2. For common types, compare fields
-	var fieldDiffs int
+	// 2. Deep comparison of common definitions
+	t.Log("=== DEFINITION DETAIL COMPARISON ===")
+	var stats diffStats
 	for _, name := range common {
-		oldDef := old.defs[name]
-		newDef := new.defs[name]
-
-		oldFields := fieldNames(oldDef)
-		newFields := fieldNames(newDef)
-
-		if !stringSliceEqual(oldFields, newFields) {
-			onlyInOld := stringDiff(oldFields, newFields)
-			onlyInNew := stringDiff(newFields, oldFields)
-			if len(onlyInOld) > 0 || len(onlyInNew) > 0 {
-				t.Logf("  %s field diff: old-only=%v, new-only=%v", name, onlyInOld, onlyInNew)
-				fieldDiffs++
-			}
-		}
+		compareDefinitions(t, name, old.defs[name], new.defs[name], &stats)
 	}
 
 	// 3. Compare query fields
-	t.Log("--- QUERY FIELD COMPARISON ---")
-	sort.Strings(old.queryFields)
-	sort.Strings(new.queryFields)
+	t.Log("=== QUERY FIELD COMPARISON ===")
+	oldQNames := old.queryFieldNames()
+	newQNames := new.queryFieldNames()
 
-	oldOnlyQ := stringDiff(old.queryFields, new.queryFields)
-	newOnlyQ := stringDiff(new.queryFields, old.queryFields)
-	commonQ := stringIntersect(old.queryFields, new.queryFields)
+	oldOnlyQ := stringDiff(oldQNames, newQNames)
+	newOnlyQ := stringDiff(newQNames, oldQNames)
+	commonQ := stringIntersect(oldQNames, newQNames)
 
 	t.Logf("Common query fields: %d", len(commonQ))
 	if len(oldOnlyQ) > 0 {
@@ -489,14 +621,19 @@ func compareSummary(t *testing.T, old, new *compileResult) {
 		t.Logf("Only in NEW query (%d): %v", len(newOnlyQ), newOnlyQ)
 	}
 
-	// 4. Compare mutation fields
-	t.Log("--- MUTATION FIELD COMPARISON ---")
-	sort.Strings(old.mutationFields)
-	sort.Strings(new.mutationFields)
+	// Deep compare common query fields
+	for _, qname := range commonQ {
+		compareFieldDef(t, "Query."+qname, old.queryFieldDefs[qname], new.queryFieldDefs[qname], &stats)
+	}
 
-	oldOnlyM := stringDiff(old.mutationFields, new.mutationFields)
-	newOnlyM := stringDiff(new.mutationFields, old.mutationFields)
-	commonM := stringIntersect(old.mutationFields, new.mutationFields)
+	// 4. Compare mutation fields
+	t.Log("=== MUTATION FIELD COMPARISON ===")
+	oldMNames := old.mutationFieldNames()
+	newMNames := new.mutationFieldNames()
+
+	oldOnlyM := stringDiff(oldMNames, newMNames)
+	newOnlyM := stringDiff(newMNames, oldMNames)
+	commonM := stringIntersect(oldMNames, newMNames)
 
 	t.Logf("Common mutation fields: %d", len(commonM))
 	if len(oldOnlyM) > 0 {
@@ -506,18 +643,109 @@ func compareSummary(t *testing.T, old, new *compileResult) {
 		t.Logf("Only in NEW mutation (%d): %v", len(newOnlyM), newOnlyM)
 	}
 
+	// Deep compare common mutation fields
+	for _, mname := range commonM {
+		compareFieldDef(t, "Mutation."+mname, old.mutFieldDefs[mname], new.mutFieldDefs[mname], &stats)
+	}
+
 	// 5. Summary
-	t.Log("--- SUMMARY ---")
+	t.Log("=== SUMMARY ===")
 	t.Logf("Definitions: old=%d new=%d common=%d old-only=%d new-only=%d",
 		len(old.defs), len(new.defs), len(common), len(onlyOld), len(onlyNew))
 	t.Logf("Query fields: old=%d new=%d common=%d old-only=%d new-only=%d",
-		len(old.queryFields), len(new.queryFields), len(commonQ), len(oldOnlyQ), len(newOnlyQ))
+		len(oldQNames), len(newQNames), len(commonQ), len(oldOnlyQ), len(newOnlyQ))
 	t.Logf("Mutation fields: old=%d new=%d common=%d old-only=%d new-only=%d",
-		len(old.mutationFields), len(new.mutationFields), len(commonM), len(oldOnlyM), len(newOnlyM))
-	t.Logf("Field-level diffs in common types: %d", fieldDiffs)
+		len(oldMNames), len(newMNames), len(commonM), len(oldOnlyM), len(newOnlyM))
+	t.Logf("Detail diffs: field-names=%d field-types=%d field-args=%d field-directives=%d def-kind=%d def-directives=%d",
+		stats.fieldNameDiffs, stats.typeDiffs, stats.argDiffs, stats.fieldDirDiffs, stats.kindDiffs, stats.defDirDiffs)
 }
 
-// Helper functions
+// diffStats accumulates comparison counters.
+type diffStats struct {
+	fieldNameDiffs int
+	typeDiffs      int
+	argDiffs       int
+	fieldDirDiffs  int
+	kindDiffs      int
+	defDirDiffs    int
+}
+
+// compareDefinitions deeply compares two definitions: kind, directives, and per-field details.
+func compareDefinitions(t *testing.T, name string, oldDef, newDef *ast.Definition, stats *diffStats) {
+	t.Helper()
+
+	// Compare kind
+	if oldDef.Kind != newDef.Kind {
+		t.Logf("  %s kind: old=%s new=%s", name, oldDef.Kind, newDef.Kind)
+		stats.kindDiffs++
+	}
+
+	// Compare definition-level directives
+	oldDirs := directiveSignatures(oldDef.Directives)
+	newDirs := directiveSignatures(newDef.Directives)
+	dOld := stringDiff(oldDirs, newDirs)
+	dNew := stringDiff(newDirs, oldDirs)
+	if len(dOld) > 0 || len(dNew) > 0 {
+		t.Logf("  %s directives: old-only=%v new-only=%v", name, dOld, dNew)
+		stats.defDirDiffs++
+	}
+
+	// Compare field names
+	oldFieldNames := fieldNames(oldDef)
+	newFieldNames := fieldNames(newDef)
+	fOld := stringDiff(oldFieldNames, newFieldNames)
+	fNew := stringDiff(newFieldNames, oldFieldNames)
+	if len(fOld) > 0 || len(fNew) > 0 {
+		t.Logf("  %s fields: old-only=%v new-only=%v", name, fOld, fNew)
+		stats.fieldNameDiffs++
+	}
+
+	// Deep compare common fields
+	commonFields := stringIntersect(oldFieldNames, newFieldNames)
+	for _, fname := range commonFields {
+		oldF := oldDef.Fields.ForName(fname)
+		newF := newDef.Fields.ForName(fname)
+		if oldF == nil || newF == nil {
+			continue
+		}
+		compareFieldDef(t, name+"."+fname, oldF, newF, stats)
+	}
+}
+
+// compareFieldDef deeply compares two field definitions: return type, arguments, directives.
+func compareFieldDef(t *testing.T, prefix string, oldF, newF *ast.FieldDefinition, stats *diffStats) {
+	t.Helper()
+
+	// Compare return type
+	ot := typeString(oldF.Type)
+	nt := typeString(newF.Type)
+	if ot != nt {
+		t.Logf("    %s type: old=%s new=%s", prefix, ot, nt)
+		stats.typeDiffs++
+	}
+
+	// Compare arguments
+	oldArgs := argsSignatures(oldF.Arguments)
+	newArgs := argsSignatures(newF.Arguments)
+	aOld := stringDiff(oldArgs, newArgs)
+	aNew := stringDiff(newArgs, oldArgs)
+	if len(aOld) > 0 || len(aNew) > 0 {
+		t.Logf("    %s args: old-only=%v new-only=%v", prefix, aOld, aNew)
+		stats.argDiffs++
+	}
+
+	// Compare field-level directives
+	oldDirs := directiveSignatures(oldF.Directives)
+	newDirs := directiveSignatures(newF.Directives)
+	dOld := stringDiff(oldDirs, newDirs)
+	dNew := stringDiff(newDirs, oldDirs)
+	if len(dOld) > 0 || len(dNew) > 0 {
+		t.Logf("    %s directives: old-only=%v new-only=%v", prefix, dOld, dNew)
+		stats.fieldDirDiffs++
+	}
+}
+
+// --- Helper functions ---
 
 func fieldNames(def *ast.Definition) []string {
 	if def == nil {
@@ -529,6 +757,15 @@ func fieldNames(def *ast.Definition) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func stringDiff(a, b []string) []string {
@@ -557,16 +794,4 @@ func stringIntersect(a, b []string) []string {
 		}
 	}
 	return common
-}
-
-func stringSliceEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
