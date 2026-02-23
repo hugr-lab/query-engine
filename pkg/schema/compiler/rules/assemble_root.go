@@ -22,8 +22,18 @@ func (r *RootTypeAssembler) ProcessAll(ctx base.CompilationContext) error {
 	for _, fields := range ctx.QueryFields() {
 		queryFields = append(queryFields, fields...)
 	}
-	// Add function fields
+	// Add function fields registered by rules
 	queryFields = append(queryFields, ctx.FunctionFields()...)
+
+	// Add "function" gateway field on Query if Function type was emitted
+	if ctx.LookupType("Function") != nil {
+		queryFields = append(queryFields, &ast.FieldDefinition{
+			Name:        "function",
+			Description: "Functions",
+			Type:        ast.NamedType("Function", pos),
+			Position:    pos,
+		})
+	}
 
 	if len(queryFields) > 0 {
 		ext := &ast.Definition{
@@ -40,8 +50,18 @@ func (r *RootTypeAssembler) ProcessAll(ctx base.CompilationContext) error {
 	for _, fields := range ctx.MutationFields() {
 		mutFields = append(mutFields, fields...)
 	}
-	// Add function mutation fields
+	// Add function mutation fields registered by rules
 	mutFields = append(mutFields, ctx.FunctionMutationFields()...)
+
+	// Add "function" gateway field on Mutation if MutationFunction type was emitted
+	if ctx.LookupType("MutationFunction") != nil {
+		mutFields = append(mutFields, &ast.FieldDefinition{
+			Name:        "function",
+			Description: "Functions",
+			Type:        ast.NamedType("MutationFunction", pos),
+			Position:    pos,
+		})
+	}
 
 	if len(mutFields) > 0 {
 		// Create Mutation type if it doesn't exist

@@ -818,6 +818,84 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 	ctx.AddDefinition(subAgg)
 }
 
+// ensureSubAggregationTypeNoExtra creates a sub-aggregation type that includes only
+// scalar fields from the base aggregation (no ExtraFieldProvider extra fields).
+// This matches the old compiler's behavior for table_function_call_join-triggered sub-aggs,
+// which are created during field iteration before extra fields are added to the base agg type.
+func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, subAggTypeName string, depth int, pos *ast.Position) {
+	if ctx.LookupType(subAggTypeName) != nil {
+		return // already created
+	}
+
+	baseAggName := "_" + objectName + "_aggregation"
+	baseAgg := ctx.LookupType(baseAggName)
+	if baseAgg == nil {
+		return
+	}
+
+	parentAggName := aggTypeNameAtDepth(objectName, depth-1)
+	level := depth + 1
+
+	var fields ast.FieldList
+
+	rowsCountType := "BigIntAggregation"
+	if depth >= maxAggDepth {
+		rowsCountType = "BigIntSubAggregation"
+	}
+	fields = append(fields, &ast.FieldDefinition{
+		Name:     "_rows_count",
+		Type:     ast.NamedType(rowsCountType, pos),
+		Position: pos,
+		Directives: ast.DirectiveList{
+			{Name: "field_aggregation", Arguments: ast.ArgumentList{
+				{Name: "name", Value: &ast.Value{Raw: "_rows_count", Kind: ast.StringValue, Position: pos}, Position: pos},
+			}, Position: pos},
+		},
+	})
+
+	if depth < maxAggDepth {
+		for _, f := range baseAgg.Fields {
+			if f.Name == "_rows_count" {
+				continue
+			}
+			subTypeName := scalarSubAggTypeName(f.Type.Name())
+			if subTypeName == "" {
+				continue
+			}
+			subField := &ast.FieldDefinition{
+				Name:     f.Name,
+				Type:     ast.NamedType(subTypeName, pos),
+				Position: pos,
+			}
+			if len(f.Directives) > 0 {
+				subField.Directives = make(ast.DirectiveList, len(f.Directives))
+				copy(subField.Directives, f.Directives)
+			}
+			if len(f.Arguments) > 0 {
+				subField.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
+				copy(subField.Arguments, f.Arguments)
+			}
+			fields = append(fields, subField)
+		}
+		// No extra fields from ExtraFieldProvider — intentionally omitted
+	}
+
+	subAgg := &ast.Definition{
+		Kind:     ast.Object,
+		Name:     subAggTypeName,
+		Position: pos,
+		Directives: ast.DirectiveList{
+			{Name: "aggregation", Arguments: ast.ArgumentList{
+				{Name: "name", Value: &ast.Value{Raw: parentAggName, Kind: ast.StringValue, Position: pos}, Position: pos},
+				{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+				{Name: "level", Value: &ast.Value{Raw: fmt.Sprintf("%d", level), Kind: ast.IntValue, Position: pos}, Position: pos},
+			}, Position: pos},
+		},
+		Fields: fields,
+	}
+	ctx.AddDefinition(subAgg)
+}
+
 // scalarSubAggTypeName maps a scalar aggregation type to its SubAggregation variant.
 // Returns "" if the type is not a known scalar aggregation type.
 func scalarSubAggTypeName(aggTypeName string) string {

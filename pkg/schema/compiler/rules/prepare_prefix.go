@@ -60,6 +60,16 @@ func (r *PrefixPreparer) ProcessAll(ctx base.CompilationContext) error {
 			module := ""
 			if opts.AsModule {
 				module = opts.Name
+				// Concatenate with inline @module if present (e.g., "transport" + "air" → "transport.air")
+				// Also update the directive value to match the old compiler's behavior.
+				if modDir := def.Directives.ForName("module"); modDir != nil {
+					if arg := modDir.Arguments.ForName("name"); arg != nil {
+						if arg.Value.Raw != "" {
+							module = opts.Name + "." + arg.Value.Raw
+						}
+						arg.Value.Raw = module
+					}
+				}
 			} else if modDir := def.Directives.ForName("module"); modDir != nil {
 				if arg := modDir.Arguments.ForName("name"); arg != nil {
 					module = arg.Value.Raw

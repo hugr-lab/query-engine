@@ -33,6 +33,20 @@ func (r *TableRule) Process(ctx base.CompilationContext, def *ast.Definition) er
 	// 1. Add the definition itself to output
 	addDef(def)
 
+	// 1b. Add @catalog and @module to function_call and table_function_call_join fields
+	for _, f := range def.Fields {
+		if !isFunctionCallField(f) {
+			continue
+		}
+		if f.Directives.ForName("catalog") == nil {
+			f.Directives = append(f.Directives, catalogDirective(opts.Name, opts.EngineType))
+		}
+		// When AsModule, add module=<name> to the function_call/table_function_call_join directive
+		if opts.AsModule {
+			addModuleToFuncCallDirective(f, opts.Name)
+		}
+	}
+
 	// 2. Generate filter input type
 	filterName := def.Name + "_filter"
 	filterDef := generateFilterInput(ctx, def, filterName, pos)
@@ -90,6 +104,9 @@ func (r *TableRule) Process(ctx base.CompilationContext, def *ast.Definition) er
 	bucketAggName := "_" + def.Name + "_aggregation_bucket"
 	bucketAggDef := generateBucketAggregationType(def, aggName, filterName, bucketAggName, pos)
 	addDef(bucketAggDef)
+
+	// 4c. Add sub-aggregation fields for table_function_call_join list fields
+	addTableFuncJoinSubAggregations(ctx, def, aggName, pos)
 
 	// 5. Register query fields and add @query directives on def
 	queryFields := generateQueryFields(ctx, def, info, filterName, pos)
@@ -169,6 +186,31 @@ func compiledPos(name string) *ast.Position {
 	return &ast.Position{Src: &ast.Source{Name: src}}
 }
 
+// addModuleToFuncCallDirective adds module=<name> to a function_call or table_function_call_join directive.
+func addModuleToFuncCallDirective(f *ast.FieldDefinition, moduleName string) {
+	for _, dirName := range []string{"function_call", "table_function_call_join"} {
+		d := f.Directives.ForName(dirName)
+		if d == nil {
+			continue
+		}
+		if a := d.Arguments.ForName("module"); a != nil {
+			a.Value.Raw = moduleName
+		} else {
+			d.Arguments = append(d.Arguments, &ast.Argument{
+				Name:     "module",
+				Value:    &ast.Value{Kind: ast.StringValue, Raw: moduleName},
+				Position: d.Position,
+			})
+		}
+	}
+}
+
+// isFunctionCallField returns true for fields with @function_call or @table_function_call_join.
+// These are function call subquery fields that should be excluded from filters and mutation inputs.
+func isFunctionCallField(f *ast.FieldDefinition) bool {
+	return f.Directives.ForName("function_call") != nil || f.Directives.ForName("table_function_call_join") != nil
+}
+
 // generateFilterInput creates a <Name>_filter input object with scalar filter
 // fields and logical operators (_and, _or, _not).
 func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
@@ -185,6 +227,9 @@ func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name 
 
 	for _, f := range def.Fields {
 		if f.Name == "_stub" {
+			continue
+		}
+		if isFunctionCallField(f) {
 			continue
 		}
 		typeName := f.Type.Name()
@@ -239,6 +284,9 @@ func generateMutInputData(_ base.CompilationContext, def *ast.Definition, name s
 		if f.Directives.ForName("sql") != nil {
 			continue // skip computed fields
 		}
+		if isFunctionCallField(f) {
+			continue
+		}
 
 		typeName := f.Type.Name()
 		inputDef.Fields = append(inputDef.Fields, &ast.FieldDefinition{
@@ -271,6 +319,9 @@ func generateMutData(_ base.CompilationContext, def *ast.Definition, name string
 		}
 		if f.Directives.ForName("sql") != nil {
 			continue // skip computed fields
+		}
+		if isFunctionCallField(f) {
+			continue
 		}
 
 		typeName := f.Type.Name()
@@ -579,4 +630,48 @@ func generateMutationFields(ctx base.CompilationContext, def *ast.Definition, in
 	}
 
 	return fields
+}
+
+// addTableFuncJoinSubAggregations adds sub-aggregation fields for table_function_call_join
+// list fields on a data object. For each such field (that is a list), the old compiler
+// adds a {field}_aggregation sub-field on the aggregation type pointing to a sub-aggregation type.
+// Fields with bound args still get sub-aggregation (unlike main aggregation which is skipped).
+func addTableFuncJoinSubAggregations(ctx base.CompilationContext, def *ast.Definition, aggTypeName string, pos *ast.Position) {
+	for _, f := range def.Fields {
+		if f.Directives.ForName("table_function_call_join") == nil {
+			continue
+		}
+		// Only list fields (NamedType == "" means it's a list)
+		if f.Type.NamedType != "" {
+			continue
+		}
+		targetName := f.Type.Name()
+		targetAggName := "_" + targetName + "_aggregation"
+		if ctx.LookupType(targetAggName) == nil {
+			continue
+		}
+
+		// Create sub-aggregation type for the target (without extra fields,
+		// matching old compiler which creates this during field iteration
+		// before extra fields are added to the agg type).
+		subAggName := aggTypeNameAtDepth(targetName, 1)
+		ensureSubAggregationTypeNoExtra(ctx, targetName, subAggName, 1, pos)
+
+		// Add {field}_aggregation field to the aggregation type
+		ctx.AddExtension(&ast.Definition{
+			Kind:     ast.Object,
+			Name:     aggTypeName,
+			Position: pos,
+			Fields: ast.FieldList{
+				{
+					Name: f.Name + "_aggregation",
+					Type: ast.NamedType(subAggName, pos),
+					Directives: ast.DirectiveList{
+						fieldAggregationDirective(f.Name, pos),
+					},
+					Position: pos,
+				},
+			},
+		})
+	}
 }

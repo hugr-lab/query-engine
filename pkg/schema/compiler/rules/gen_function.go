@@ -13,30 +13,63 @@ func (r *FunctionRule) Name() string     { return "FunctionRule" }
 func (r *FunctionRule) Phase() base.Phase { return base.PhaseGenerate }
 
 func (r *FunctionRule) Match(def *ast.Definition) bool {
-	return def.Directives.ForName("function") != nil
+	// Match Function and MutationFunction type definitions.
+	// These come from "extend type Function { ... }" in user SDL,
+	// merged into definitions during source extraction.
+	return def.Name == "Function" || def.Name == "MutationFunction"
 }
 
 func (r *FunctionRule) Process(ctx base.CompilationContext, def *ast.Definition) error {
-	// Stub: function generation is complex and will be fleshed out
-	// incrementally. The full implementation will:
-	//   - Determine if this is a query function or mutation function
-	//   - Generate the appropriate return type wrapper
-	//   - Build argument lists from function parameters
-	//   - Register fields via ctx.RegisterFunctionFields or
-	//     ctx.RegisterFunctionMutationFields
-	//
-	// For now, add the definition to output so downstream rules can
-	// reference it.
-	info := ctx.GetObject(def.Name)
-	if info == nil {
-		info = &base.ObjectInfo{Name: def.Name, OriginalName: def.Name}
+	opts := ctx.CompileOptions()
+	pos := compiledPos("function")
+
+	for _, field := range def.Fields {
+		// Skip stub/placeholder fields
+		if field.Name == "_stub" || field.Name == "_placeholder" {
+			continue
+		}
+
+		funcDir := field.Directives.ForName("function")
+		if funcDir == nil {
+			continue
+		}
+
+		// Add @catalog directive
+		if field.Directives.ForName("catalog") == nil {
+			field.Directives = append(field.Directives, catalogDirective(opts.Name, opts.EngineType))
+		}
+
+		// Handle @module for AsModule option
+		if opts.AsModule {
+			if d := field.Directives.ForName("module"); d != nil {
+				if a := d.Arguments.ForName("name"); a != nil {
+					if a.Value.Raw == "" {
+						a.Value.Raw = opts.Name
+					} else {
+						a.Value.Raw = opts.Name + "." + a.Value.Raw
+					}
+				}
+			} else {
+				field.Directives = append(field.Directives, &ast.Directive{
+					Name: "module",
+					Arguments: ast.ArgumentList{
+						{Name: "name", Value: &ast.Value{Kind: ast.StringValue, Raw: opts.Name, Position: pos}, Position: pos},
+					},
+					Position: pos,
+				})
+			}
+		}
 	}
 
-	addDef := ctx.AddDefinition
-	if info.IsReplace {
-		addDef = ctx.AddDefinitionReplaceOrCreate
+	// Add @system if not present
+	if def.Directives.ForName("system") == nil {
+		def.Directives = append(def.Directives, &ast.Directive{Name: "system", Position: pos})
 	}
-	addDef(def)
+
+	// Emit the Function/MutationFunction definition to output.
+	// Function fields stay inside the type (not registered as query fields).
+	// The RootTypeAssembler adds a "function" gateway field on Query/Mutation.
+	ctx.AddDefinition(def)
 
 	return nil
 }

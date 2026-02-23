@@ -167,12 +167,34 @@ func parseSourceSchemaDocument(t *testing.T, sdl string) *ast.SchemaDocument {
 }
 
 // extractSourceDefs extracts user definitions from a SchemaDocument for the NEW compiler.
+// It also processes extensions (e.g. "extend type Function { ... }") by merging them
+// into definitions or creating new definitions.
 func extractSourceDefs(sd *ast.SchemaDocument) *testSource {
+	defMap := make(map[string]*ast.Definition)
 	var defs []*ast.Definition
 	for _, def := range sd.Definitions {
 		// Skip schema definition types, only take user objects
 		if def.Kind == ast.Object || def.Kind == ast.InputObject || def.Kind == ast.Enum {
 			defs = append(defs, def)
+			defMap[def.Name] = def
+		}
+	}
+	// Merge extensions into definitions (for "extend type Function { ... }" etc.)
+	for _, ext := range sd.Extensions {
+		if existing, ok := defMap[ext.Name]; ok {
+			existing.Fields = append(existing.Fields, ext.Fields...)
+			existing.Directives = append(existing.Directives, ext.Directives...)
+		} else {
+			// Create a new definition from the extension
+			def := &ast.Definition{
+				Kind:       ext.Kind,
+				Name:       ext.Name,
+				Fields:     ext.Fields,
+				Directives: ext.Directives,
+				Position:   ext.Position,
+			}
+			defs = append(defs, def)
+			defMap[def.Name] = def
 		}
 	}
 	return &testSource{defs: defs}
@@ -347,7 +369,7 @@ func (r *compileResult) String() string {
 // --- Builders ---
 
 func isSkipQueryField(name string) bool {
-	return name == "_stub" || name == "jq" || name == "__type" || name == "__schema" || name == "function"
+	return name == "_stub" || name == "jq" || name == "__type" || name == "__schema" || name == "function" || name == "h3"
 }
 
 func isSkipMutField(name string) bool {
@@ -422,10 +444,9 @@ func buildNewCompilerResult(t *testing.T, sdl string, opts base.Options) *compil
 		mutFieldDefs:   make(map[string]*ast.FieldDefinition),
 	}
 
-	// Collect definitions
+	// Collect definitions (filter base system types same as old compiler)
 	for def := range catalog.Definitions(ctx) {
-		if def.Name == "Mutation" {
-			// Mutation is a placeholder with _stub
+		if isBaseSystemType(def.Name) {
 			continue
 		}
 		result.defs[def.Name] = def
@@ -435,12 +456,18 @@ func buildNewCompilerResult(t *testing.T, sdl string, opts base.Options) *compil
 	for ext := range catalog.Extensions(ctx) {
 		if ext.Name == "Query" {
 			for _, f := range ext.Fields {
+				if isSkipQueryField(f.Name) {
+					continue
+				}
 				result.queryFieldDefs[f.Name] = f
 			}
 			continue
 		}
 		if ext.Name == "Mutation" {
 			for _, f := range ext.Fields {
+				if isSkipMutField(f.Name) {
+					continue
+				}
 				result.mutFieldDefs[f.Name] = f
 			}
 			continue
@@ -496,11 +523,23 @@ func isBaseSystemType(name string) bool {
 		"TimestampRangeFilter": true, "TimestampRangeListFilter": true,
 		"VectorFilter": true,
 		// GIS types
-		"GeometryMeasurementTypes": true, "TimestampPart": true,
-		"VectorDistanceMetric": true,
+		"GeometryMeasurementTypes": true, "GeometrySpatialQueryType": true,
+		"TimestampPart": true, "VectorDistanceMetric": true,
 		// Distribution types
 		"_distribution_by": true, "_distribution_by_aggregation": true,
 		"_distribution_by_bucket": true, "_distribution_by_bucket_aggregation": true,
+		// Sub-aggregation types (from scalar SDL)
+		"IntSubAggregation": true, "BigIntSubAggregation": true, "FloatSubAggregation": true,
+		"StringSubAggregation": true, "BooleanSubAggregation": true,
+		"DateSubAggregation": true, "TimestampSubAggregation": true, "TimeSubAggregation": true,
+		"JSONSubAggregation": true, "GeometrySubAggregation": true,
+		// System enums and types from old scalar_types.graphql
+		"FilterOperator": true, "TimeBucket": true, "TimeExtract": true,
+		"GeometryTransform": true, "UniqueRuleType": true,
+		"VectorDistanceType": true, "VectorSearchInput": true, "SemanticSearchInput": true,
+		"any": true,
+		// H3 types (generated from built-in templates)
+		"_h3_data_query": true, "_h3_query": true,
 	}
 	return sysTypes[name]
 }
@@ -558,6 +597,201 @@ func TestCrossCompiler_AsModule(t *testing.T) {
 
 	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
 	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+// functionTestSchema tests functions, function calls, and table_function_call_join.
+const functionTestSchema = `
+"""Airport with function call and table function call join fields"""
+type Airport
+  @table(name: "airports") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+  country: String!
+  geom: Geometry
+  status: String @function_call(references_name: "airport_status", args: {code: "iata_code"})
+  nearby: [Airport] @table_function_call_join(references_name: "find_nearby", args: {origin: "iata_code"})
+}
+
+extend type Function {
+  airport_status(code: String!): String
+    @function(name: "airport_status")
+
+  search_airports(country: String!, limit: Int): JSON
+    @function(name: "search_airports", json_cast: true)
+
+  find_nearby(origin: String!, radius: Float = 100): [Airport]
+    @function(name: "find_nearby")
+}
+`
+
+func TestCrossCompiler_Functions(t *testing.T) {
+	sdl := functionTestSchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+func TestCrossCompiler_FunctionsAsModule(t *testing.T) {
+	sdl := functionTestSchema
+	oldOpts := oldcompiler.Options{Name: "aviation", AsModule: true, EngineType: "duckdb"}
+	newOpts := base.Options{Name: "aviation", AsModule: true, EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+// nestedModuleSchema tests references, joins, and nested module hierarchy.
+// Uses inline @module directives for full module paths (no AsModule needed).
+// Hierarchy:
+//
+//	transport (level 1): Vehicle
+//	transport.air (level 2): Airport, Flight (with references to Airport)
+//	transport.ground (level 2): Station
+const nestedModuleSchema = `
+"""Generic vehicle"""
+type Vehicle
+  @table(name: "vehicles")
+  @module(name: "transport") {
+  id: Int! @pk
+  name: String!
+  type: String!
+}
+
+"""Airport"""
+type Airport
+  @table(name: "airports")
+  @module(name: "transport.air") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+  geom: Geometry
+}
+
+"""Flight with references to Airport"""
+type Flight
+  @table(name: "flights")
+  @module(name: "transport.air") {
+  id: Int! @pk
+  flight_number: String!
+  origin: String! @field_references(
+    references_name: "Airport"
+    field: "iata_code"
+    query: "origin_airport"
+    references_query: "departures"
+  )
+  arrival: String! @field_references(
+    references_name: "Airport"
+    field: "iata_code"
+    query: "dest_airport"
+    references_query: "arrivals"
+  )
+}
+
+"""Train or bus station"""
+type Station
+  @table(name: "stations")
+  @module(name: "transport.ground") {
+  id: Int! @pk
+  name: String!
+  city: String!
+}
+`
+
+func TestCrossCompiler_NestedModules(t *testing.T) {
+	sdl := nestedModuleSchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+// nestedModuleAsModuleSchema uses relative @module names combined with AsModule.
+// With AsModule name="transport":
+//
+//	Vehicle (no @module) → module "transport" (level 1)
+//	Airport (@module "air") → module "transport.air" (level 2)
+//	Flight (@module "air") → module "transport.air" (level 2)
+//	Station (@module "ground") → module "transport.ground" (level 2)
+const nestedModuleAsModuleSchema = `
+"""Generic vehicle at root module level"""
+type Vehicle
+  @table(name: "vehicles") {
+  id: Int! @pk
+  name: String!
+  type: String!
+}
+
+"""Airport in 'air' sub-module"""
+type Airport
+  @table(name: "airports")
+  @module(name: "air") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+  geom: Geometry
+}
+
+"""Flight in 'air' sub-module, references Airport"""
+type Flight
+  @table(name: "flights")
+  @module(name: "air") {
+  id: Int! @pk
+  flight_number: String!
+  origin: String! @field_references(
+    references_name: "Airport"
+    field: "iata_code"
+    query: "origin_airport"
+    references_query: "departures"
+  )
+  arrival: String! @field_references(
+    references_name: "Airport"
+    field: "iata_code"
+    query: "dest_airport"
+    references_query: "arrivals"
+  )
+}
+
+"""Station in 'ground' sub-module"""
+type Station
+  @table(name: "stations")
+  @module(name: "ground") {
+  id: Int! @pk
+  name: String!
+  city: String!
+}
+`
+
+func TestCrossCompiler_NestedModulesAsModule(t *testing.T) {
+	sdl := nestedModuleAsModuleSchema
+	oldOpts := oldcompiler.Options{Name: "transport", AsModule: true, EngineType: "duckdb"}
+	newOpts := base.Options{Name: "transport", AsModule: true, EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
 
 	compareSummary(t, oldResult, newResult)
 }
