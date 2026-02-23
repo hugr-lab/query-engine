@@ -1,97 +1,21 @@
 package compiler
 
-import "slices"
+import "github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 
-type Options struct {
-	Name         string
-	ReadOnly     bool
-	Prefix       string
-	EngineType   string
-	AsModule     bool
-	Capabilities *EngineCapabilities
-}
+// Options is an alias for base.Options for backward compatibility.
+type Options = base.Options
 
-func (o *Options) IsSequenceDefaultSupported() bool {
-	return o.Capabilities != nil && o.Capabilities.General.SupportDefaultSequences
-}
+// EngineCapabilities is an alias for base.EngineCapabilities.
+type EngineCapabilities = base.EngineCapabilities
 
-func (o *Options) IsTypeSupported(typ string) bool {
-	return o.Capabilities == nil || !slices.Contains(o.Capabilities.General.UnsupportedTypes, typ)
-}
+// EngineInsertCapabilities is an alias for base.EngineInsertCapabilities.
+type EngineInsertCapabilities = base.EngineInsertCapabilities
 
-func (o *Options) IsStructuredTypesSupported() bool {
-	return o.Capabilities == nil || !o.Capabilities.General.UnsupportStructuredTypes
-}
+// EngineUpdateCapabilities is an alias for base.EngineUpdateCapabilities.
+type EngineUpdateCapabilities = base.EngineUpdateCapabilities
 
-func (o *Options) IsArraysSupported() bool {
-	return o.Capabilities == nil || !o.Capabilities.General.UnsupportArrays
-}
+// EngineDeleteCapabilities is an alias for base.EngineDeleteCapabilities.
+type EngineDeleteCapabilities = base.EngineDeleteCapabilities
 
-func (o *Options) IsTablesSupported() bool {
-	return o.Capabilities == nil || !o.Capabilities.General.UnsupportTables
-}
-
-func (o *Options) SupportInsert() bool {
-	return !o.ReadOnly || o.Capabilities != nil && o.Capabilities.Insert.Insert
-}
-
-func (o *Options) SupportUpdate() bool {
-	return !o.ReadOnly || o.Capabilities != nil && o.Capabilities.Update.Update
-}
-
-func (o *Options) SupportDelete() bool {
-	return !o.ReadOnly || o.Capabilities != nil && o.Capabilities.Delete.Delete
-}
-
-func (o *Options) SupportDeleteWithoutPKs() bool {
-	return !o.ReadOnly || o.Capabilities != nil && o.Capabilities.Delete.DeleteWithoutPKs
-}
-
-func (o *Options) SupportUpdateWithoutPKs() bool {
-	return !o.ReadOnly || o.Capabilities != nil && o.Capabilities.Update.UpdateWithoutPKs
-}
-
-func (o *Options) SupportInsertReturning() bool {
-	return !o.ReadOnly || o.Capabilities != nil && o.Capabilities.Insert.Returning
-}
-
-func (o *Options) SupportInsertReferences() bool {
-	return !o.ReadOnly || o.Capabilities != nil && o.Capabilities.Insert.InsertReferences
-}
-
-func (o *Options) SupportUpdatePKs() bool {
-	return !o.ReadOnly || o.Capabilities != nil && o.Capabilities.Update.UpdatePKColumns
-}
-
-type EngineCapabilities struct {
-	General EngineGeneralCapabilities
-	Insert  EngineInsertCapabilities
-	Update  EngineUpdateCapabilities
-	Delete  EngineDeleteCapabilities
-}
-
-type EngineInsertCapabilities struct {
-	Insert           bool
-	Returning        bool
-	InsertReferences bool
-}
-
-type EngineUpdateCapabilities struct {
-	Update           bool
-	UpdatePKColumns  bool
-	UpdateWithoutPKs bool
-}
-
-type EngineDeleteCapabilities struct {
-	Delete           bool
-	DeleteWithoutPKs bool
-}
-
-type EngineGeneralCapabilities struct {
-	SupportDefaultSequences  bool
-	UnsupportedTypes         []string
-	UnsupportStructuredTypes bool
-	UnsupportArrays          bool
-
-	UnsupportTables bool
-}
+// EngineGeneralCapabilities is an alias for base.EngineGeneralCapabilities.
+type EngineGeneralCapabilities = base.EngineGeneralCapabilities
