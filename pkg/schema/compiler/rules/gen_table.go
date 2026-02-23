@@ -441,15 +441,36 @@ func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName,
 
 // queryArgs returns the standard query arguments for list queries.
 func queryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
-	return ast.ArgumentDefinitionList{
-		{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-		{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos,
-			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue}},
-		{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos,
-			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue}},
-		{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+	return queryArgsWithViewArgs(nil, filterName, pos)
+}
+
+// queryArgsWithViewArgs returns standard query arguments, optionally prepending
+// an "args" parameter for parameterized views (@args directive).
+func queryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+	var args ast.ArgumentDefinitionList
+	if info != nil && info.InputArgsName != "" {
+		var argType *ast.Type
+		if info.RequiredArgs {
+			argType = ast.NonNullNamedType(info.InputArgsName, pos)
+		} else {
+			argType = ast.NamedType(info.InputArgsName, pos)
+		}
+		args = append(args, &ast.ArgumentDefinition{
+			Name:     "args",
+			Type:     argType,
+			Position: pos,
+		})
 	}
+	args = append(args,
+		&ast.ArgumentDefinition{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
+		&ast.ArgumentDefinition{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		&ast.ArgumentDefinition{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos,
+			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue}},
+		&ast.ArgumentDefinition{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos,
+			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue}},
+		&ast.ArgumentDefinition{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+	)
+	return args
 }
 
 // subQueryArgs returns the standard query arguments for sub-queries (references).
@@ -503,7 +524,7 @@ func generateQueryFields(ctx base.CompilationContext, def *ast.Definition, info 
 	selectField := &ast.FieldDefinition{
 		Name:      queryName,
 		Type:      ast.ListType(ast.NamedType(def.Name, pos), pos),
-		Arguments: queryArgs(filterName, pos),
+		Arguments: queryArgsWithViewArgs(info, filterName, pos),
 		Directives: ast.DirectiveList{
 			{Name: "query", Arguments: ast.ArgumentList{
 				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
@@ -528,6 +549,20 @@ func generateQueryFields(ctx base.CompilationContext, def *ast.Definition, info 
 				optsCatalogDirective(opts),
 			},
 			Position: pos,
+		}
+		// Prepend view args to SELECT_ONE as well (fix: old compiler omitted this)
+		if info.InputArgsName != "" {
+			var argType *ast.Type
+			if info.RequiredArgs {
+				argType = ast.NonNullNamedType(info.InputArgsName, pos)
+			} else {
+				argType = ast.NamedType(info.InputArgsName, pos)
+			}
+			selectOneField.Arguments = append(selectOneField.Arguments, &ast.ArgumentDefinition{
+				Name:     "args",
+				Type:     argType,
+				Position: pos,
+			})
 		}
 		for _, pk := range info.PrimaryKey {
 			f := def.Fields.ForName(pk)

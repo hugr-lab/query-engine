@@ -3,6 +3,7 @@ package rules
 import (
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 var _ base.DefinitionRule = (*ViewRule)(nil)
@@ -27,6 +28,43 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 		}
 	}
 	pos := compiledPos(def.Name)
+
+	// Parse @args directive for parameterized views
+	if argsDir := def.Directives.ForName("args"); argsDir != nil {
+		argInputName := base.DirectiveArgString(argsDir, "name")
+		if argInputName == "" {
+			return gqlerror.ErrorPosf(argsDir.Position, "object %s: @args directive requires 'name' argument", def.Name)
+		}
+		// Validate input type exists in source
+		inputDef := ctx.Source().ForName(ctx.Context(), argInputName)
+		if inputDef == nil {
+			return gqlerror.ErrorPosf(argsDir.Position, "object %s: @args input type %q not found", def.Name, argInputName)
+		}
+		// Auto-compute required: true if any field in input type is NonNull
+		required := base.DirectiveArgString(argsDir, "required") == "true"
+		if !required {
+			for _, f := range inputDef.Fields {
+				if f.Type.NonNull {
+					required = true
+					break
+				}
+			}
+		}
+		info.InputArgsName = argInputName
+		info.RequiredArgs = required
+
+		// Propagate computed required to @args directive for downstream consumers
+		if required && base.DirectiveArgString(argsDir, "required") != "true" {
+			argsDir.Arguments = append(argsDir.Arguments, &ast.Argument{
+				Name:     "required",
+				Value:    &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos},
+				Position: pos,
+			})
+		}
+
+		// Pass the input type definition through to DDL feed
+		ctx.AddDefinition(inputDef)
+	}
 
 	addDef := ctx.AddDefinition
 	if info.IsReplace {

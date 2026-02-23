@@ -20,9 +20,11 @@ func RegisterAll() []base.Rule {
 		&UniqueRule{},
 		&ReferencesRule{},
 		&JoinSpatialRule{},
+		&H3Rule{},
 		&AggregationRule{},
 		&FunctionRule{},
 		&ExtraFieldRule{},
+		&VectorSearchRule{},
 		&EmbeddingsRule{},
 
 		// ASSEMBLE phase
@@ -31,6 +33,8 @@ func RegisterAll() []base.Rule {
 
 		// FINALIZE phase
 		&ReadOnlyFinalizer{},
+		&JoinValidator{},
+		&FunctionCallValidator{},
 		&PostValidator{},
 	}
 }

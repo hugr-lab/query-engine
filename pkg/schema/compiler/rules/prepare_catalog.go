@@ -19,6 +19,11 @@ func (r *CatalogTagger) ProcessAll(ctx base.CompilationContext) error {
 	}
 	catalogDir := catalogDirective(opts.Name, opts.EngineType)
 	for def := range ctx.Source().Definitions(ctx.Context()) {
+		// Only tag OBJECT types (tables/views); INPUT_OBJECT, ENUM, SCALAR etc.
+		// are supporting types that don't get @catalog in the DDL feed.
+		if def.Kind != ast.Object {
+			continue
+		}
 		def.Directives = append(def.Directives, catalogDir)
 	}
 	return nil

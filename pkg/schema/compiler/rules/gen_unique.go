@@ -63,6 +63,21 @@ func (r *UniqueRule) Process(ctx base.CompilationContext, def *ast.Definition) e
 			Position: pos,
 		}
 
+		// Prepend view args for parameterized views (fix: old compiler omitted this)
+		if info.InputArgsName != "" {
+			var argType *ast.Type
+			if info.RequiredArgs {
+				argType = ast.NonNullNamedType(info.InputArgsName, pos)
+			} else {
+				argType = ast.NamedType(info.InputArgsName, pos)
+			}
+			selectOneField.Arguments = append(selectOneField.Arguments, &ast.ArgumentDefinition{
+				Name:     "args",
+				Type:     argType,
+				Position: pos,
+			})
+		}
+
 		// Add unique fields as required arguments
 		for _, ufName := range uniqueFieldNames {
 			f := def.Fields.ForName(ufName)

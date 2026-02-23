@@ -7,11 +7,11 @@ func generateVectorExtraField(fieldName string) *ast.FieldDefinition {
 	return &ast.FieldDefinition{
 		Name:        "_" + fieldName + "_distance",
 		Description: "Calculate distance for vector field " + fieldName,
-		Type:        ast.NonNullNamedType("Float", pos),
+		Type:        ast.NamedType("Float", pos),
 		Arguments: ast.ArgumentDefinitionList{
 			{
 				Name:     "vector",
-				Type:     ast.NonNullListType(ast.NonNullNamedType("Float", pos), pos),
+				Type:     ast.NonNullNamedType("Vector", pos),
 				Position: pos,
 			},
 			{

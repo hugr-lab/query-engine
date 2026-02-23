@@ -40,7 +40,7 @@ func (r *AggregationRule) Process(ctx base.CompilationContext, def *ast.Definiti
 	aggField := &ast.FieldDefinition{
 		Name:      def.Name + "_aggregation",
 		Type:      ast.NamedType(aggTypeName, pos),
-		Arguments: queryArgs(filterName, pos),
+		Arguments: queryArgsWithViewArgs(info, filterName, pos),
 		Directives: ast.DirectiveList{
 			{Name: "aggregation_query", Arguments: ast.ArgumentList{
 				{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -55,7 +55,7 @@ func (r *AggregationRule) Process(ctx base.CompilationContext, def *ast.Definiti
 	bucketAggField := &ast.FieldDefinition{
 		Name:      def.Name + "_bucket_aggregation",
 		Type:      ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
-		Arguments: queryArgs(filterName, pos),
+		Arguments: queryArgsWithViewArgs(info, filterName, pos),
 		Directives: ast.DirectiveList{
 			{Name: "aggregation_query", Arguments: ast.ArgumentList{
 				{Name: "is_bucket", Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},

@@ -59,4 +59,8 @@ type ObjectInfo struct {
 	IsView       bool
 	IsM2M        bool
 	PrimaryKey   []string
+
+	// Parameterized views (@args)
+	InputArgsName string // input type name from @args(name: "...")
+	RequiredArgs  bool   // true if any field in input type is NonNull or @args(required: true)
 }

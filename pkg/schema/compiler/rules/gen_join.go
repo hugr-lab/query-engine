@@ -40,6 +40,22 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			filterName: filterName,
 			info:       info,
 		}
+
+		// Detect Vector fields and @embeddings for _join arg generation:
+		// - Plain Vector → similarity only on _join fields
+		// - @embeddings → similarity + semantic on _join fields
+		if def.Directives.ForName("embeddings") != nil {
+			entry.hasVector = true
+			entry.hasEmbeddings = true
+		} else {
+			for _, f := range def.Fields {
+				if f.Type.Name() == "Vector" {
+					entry.hasVector = true
+					break
+				}
+			}
+		}
+
 		dataObjects = append(dataObjects, entry)
 
 		// Check if this object has Geometry fields for _spatial
@@ -65,11 +81,14 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 		},
 	}
 	for _, obj := range dataObjects {
+		joinArgs := joinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
+		joinArgs = append(joinArgs, joinVectorArgs(obj, pos)...)
+
 		// Main query field
 		joinType.Fields = append(joinType.Fields, &ast.FieldDefinition{
 			Name:      obj.name,
 			Type:      ast.ListType(ast.NamedType(obj.name, pos), pos),
-			Arguments: joinObjectQueryArgs(obj.filterName, pos),
+			Arguments: joinArgs,
 			Directives: ast.DirectiveList{
 				{Name: "query", Arguments: ast.ArgumentList{
 					{Name: "name", Value: &ast.Value{Raw: obj.info.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
@@ -83,10 +102,13 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 		// Aggregation field
 		aggTypeName := "_" + obj.name + "_aggregation"
 		if ctx.LookupType(aggTypeName) != nil {
+			aggJoinArgs := joinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
+			aggJoinArgs = append(aggJoinArgs, joinVectorArgs(obj, pos)...)
+
 			joinType.Fields = append(joinType.Fields, &ast.FieldDefinition{
 				Name:      obj.name + "_aggregation",
 				Type:      ast.NamedType(aggTypeName, pos),
-				Arguments: joinObjectQueryArgs(obj.filterName, pos),
+				Arguments: aggJoinArgs,
 				Directives: ast.DirectiveList{
 					{Name: "aggregation_query", Arguments: ast.ArgumentList{
 						{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -99,10 +121,13 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 
 			// Bucket aggregation field
 			bucketAggTypeName := "_" + obj.name + "_aggregation_bucket"
+			bucketJoinArgs := joinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
+			bucketJoinArgs = append(bucketJoinArgs, joinVectorArgs(obj, pos)...)
+
 			joinType.Fields = append(joinType.Fields, &ast.FieldDefinition{
 				Name:      obj.name + "_bucket_aggregation",
 				Type:      ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
-				Arguments: joinObjectQueryArgs(obj.filterName, pos),
+				Arguments: bucketJoinArgs,
 				Directives: ast.DirectiveList{
 					{Name: "aggregation_query", Arguments: ast.ArgumentList{
 						{Name: "is_bucket", Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -134,10 +159,12 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 		if ctx.LookupType(aggTypeName) == nil {
 			continue
 		}
+		aggArgs := joinObjectAggArgsWithViewArgs(obj.info, obj.filterName, pos)
+		aggArgs = append(aggArgs, joinVectorArgs(obj, pos)...)
 		joinAggType.Fields = append(joinAggType.Fields, &ast.FieldDefinition{
 			Name:      obj.name,
 			Type:      ast.NamedType(aggTypeName, pos),
-			Arguments: joinObjectAggArgs(obj.filterName, pos),
+			Arguments: aggArgs,
 			Directives: ast.DirectiveList{
 				{Name: "aggregation_query", Arguments: ast.ArgumentList{
 					{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -206,11 +233,14 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			},
 		}
 		for _, obj := range spatialObjects {
+			spatialArgs := spatialObjectQueryArgs(obj.filterName, pos)
+			spatialArgs = append(spatialArgs, joinVectorArgs(obj, pos)...)
+
 			// Main query field
 			spatialType.Fields = append(spatialType.Fields, &ast.FieldDefinition{
 				Name:      obj.name,
 				Type:      ast.ListType(ast.NamedType(obj.name, pos), pos),
-				Arguments: spatialObjectQueryArgs(obj.filterName, pos),
+				Arguments: spatialArgs,
 				Directives: ast.DirectiveList{
 					{Name: "query", Arguments: ast.ArgumentList{
 						{Name: "name", Value: &ast.Value{Raw: obj.info.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
@@ -224,10 +254,13 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			// Aggregation field
 			aggTypeName := "_" + obj.name + "_aggregation"
 			if ctx.LookupType(aggTypeName) != nil {
+				aggSpatialArgs := spatialObjectQueryArgs(obj.filterName, pos)
+				aggSpatialArgs = append(aggSpatialArgs, joinVectorArgs(obj, pos)...)
+
 				spatialType.Fields = append(spatialType.Fields, &ast.FieldDefinition{
 					Name:      obj.name + "_aggregation",
 					Type:      ast.NamedType(aggTypeName, pos),
-					Arguments: spatialObjectQueryArgs(obj.filterName, pos),
+					Arguments: aggSpatialArgs,
 					Directives: ast.DirectiveList{
 						{Name: "aggregation_query", Arguments: ast.ArgumentList{
 							{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -240,10 +273,13 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 
 				// Bucket aggregation field
 				bucketAggTypeName := "_" + obj.name + "_aggregation_bucket"
+				bucketSpatialArgs := spatialObjectQueryArgs(obj.filterName, pos)
+				bucketSpatialArgs = append(bucketSpatialArgs, joinVectorArgs(obj, pos)...)
+
 				spatialType.Fields = append(spatialType.Fields, &ast.FieldDefinition{
 					Name:      obj.name + "_bucket_aggregation",
 					Type:      ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
-					Arguments: spatialObjectQueryArgs(obj.filterName, pos),
+					Arguments: bucketSpatialArgs,
 					Directives: ast.DirectiveList{
 						{Name: "aggregation_query", Arguments: ast.ArgumentList{
 							{Name: "is_bucket", Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -275,10 +311,12 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			if ctx.LookupType(aggTypeName) == nil {
 				continue
 			}
+			sAggArgs := spatialObjectAggArgs(obj.filterName, pos)
+			sAggArgs = append(sAggArgs, joinVectorArgs(obj, pos)...)
 			spatialAggType.Fields = append(spatialAggType.Fields, &ast.FieldDefinition{
 				Name:      obj.name,
 				Type:      ast.NamedType(aggTypeName, pos),
-				Arguments: spatialObjectAggArgs(obj.filterName, pos),
+				Arguments: sAggArgs,
 				Directives: ast.DirectiveList{
 					{Name: "aggregation_query", Arguments: ast.ArgumentList{
 						{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -345,9 +383,47 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 }
 
 type joinObjectEntry struct {
-	name       string
-	filterName string
-	info       *base.ObjectInfo
+	name          string
+	filterName    string
+	info          *base.ObjectInfo
+	hasVector     bool // has any Vector field → add similarity arg to _join fields
+	hasEmbeddings bool // has @embeddings → additionally add semantic arg to _join fields
+}
+
+// joinObjectQueryArgsWithViewArgs creates args for _join type fields, optionally
+// prepending view args for parameterized views.
+func joinObjectQueryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+	var args ast.ArgumentDefinitionList
+	if info != nil && info.InputArgsName != "" {
+		var argType *ast.Type
+		if info.RequiredArgs {
+			argType = ast.NonNullNamedType(info.InputArgsName, pos)
+		} else {
+			argType = ast.NamedType(info.InputArgsName, pos)
+		}
+		args = append(args, &ast.ArgumentDefinition{
+			Name: "args", Type: argType, Position: pos,
+		})
+	}
+	return append(args, joinObjectQueryArgs(filterName, pos)...)
+}
+
+// joinObjectAggArgsWithViewArgs creates args for _join_aggregation type fields,
+// optionally prepending view args for parameterized views.
+func joinObjectAggArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+	var args ast.ArgumentDefinitionList
+	if info != nil && info.InputArgsName != "" {
+		var argType *ast.Type
+		if info.RequiredArgs {
+			argType = ast.NonNullNamedType(info.InputArgsName, pos)
+		} else {
+			argType = ast.NamedType(info.InputArgsName, pos)
+		}
+		args = append(args, &ast.ArgumentDefinition{
+			Name: "args", Type: argType, Position: pos,
+		})
+	}
+	return append(args, joinObjectAggArgs(filterName, pos)...)
 }
 
 // joinObjectQueryArgs creates args for _join type fields (includes limit/offset).
@@ -416,6 +492,32 @@ func spatialObjectAggArgs(filterName string, pos *ast.Position) ast.ArgumentDefi
 		{Name: "nested_limit", Type: ast.NamedType("Int", pos), Position: pos},
 		{Name: "nested_offset", Type: ast.NamedType("Int", pos), Position: pos},
 	}
+}
+
+// joinVectorArgs returns the vector search arguments for a _join field entry:
+// - hasVector only → similarity
+// - hasEmbeddings → similarity + semantic
+func joinVectorArgs(obj *joinObjectEntry, pos *ast.Position) ast.ArgumentDefinitionList {
+	if !obj.hasVector {
+		return nil
+	}
+	args := ast.ArgumentDefinitionList{
+		{
+			Name:        "similarity",
+			Description: "Search for vector similarity",
+			Type:        ast.NamedType("VectorSearchInput", pos),
+			Position:    pos,
+		},
+	}
+	if obj.hasEmbeddings {
+		args = append(args, &ast.ArgumentDefinition{
+			Name:        "semantic",
+			Description: "Search for semantic similarity",
+			Type:        ast.NamedType("SemanticSearchInput", pos),
+			Position:    pos,
+		})
+	}
+	return args
 }
 
 // fieldAggregationDirective creates a @field_aggregation(name=X) directive.

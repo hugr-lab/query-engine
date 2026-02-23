@@ -369,7 +369,7 @@ func (r *compileResult) String() string {
 // --- Builders ---
 
 func isSkipQueryField(name string) bool {
-	return name == "_stub" || name == "jq" || name == "__type" || name == "__schema" || name == "function" || name == "h3"
+	return name == "_stub" || name == "jq" || name == "__type" || name == "__schema" || name == "function"
 }
 
 func isSkipMutField(name string) bool {
@@ -538,8 +538,6 @@ func isBaseSystemType(name string) bool {
 		"GeometryTransform": true, "UniqueRuleType": true,
 		"VectorDistanceType": true, "VectorSearchInput": true, "SemanticSearchInput": true,
 		"any": true,
-		// H3 types (generated from built-in templates)
-		"_h3_data_query": true, "_h3_query": true,
 	}
 	return sysTypes[name]
 }
@@ -796,6 +794,245 @@ func TestCrossCompiler_NestedModulesAsModule(t *testing.T) {
 	compareSummary(t, oldResult, newResult)
 }
 
+// parameterizedViewSchema tests @view with @args for parameterized views.
+const parameterizedViewSchema = `
+"""Input arguments for the flight_log view"""
+input FlightLogArgs {
+  airline_code: String!
+  year: Int
+}
+
+"""Parameterized view with required args (airline_code is NonNull)"""
+type FlightLog
+  @view(name: "flight_log_view")
+  @args(name: "FlightLogArgs") {
+  id: Int! @pk
+  flight_number: String!
+  departure_time: Timestamp
+  status: String
+}
+
+"""Regular table to verify coexistence"""
+type Airport
+  @table(name: "airports") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+}
+`
+
+func TestCrossCompiler_ParameterizedView(t *testing.T) {
+	sdl := parameterizedViewSchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+// vectorOnlySchema tests tables with Vector fields but WITHOUT @embeddings.
+// This validates that similarity search args are generated for plain vector fields.
+const vectorOnlySchema = `
+"""Table with a raw vector field (no embeddings)"""
+type ImageFeature
+  @table(name: "image_features") {
+  id: Int! @pk
+  image_url: String!
+  feature_vector: Vector
+  label: String
+}
+
+"""Regular table for comparison"""
+type Tag
+  @table(name: "tags") {
+  id: Int! @pk
+  name: String!
+}
+`
+
+func TestCrossCompiler_VectorOnly(t *testing.T) {
+	sdl := vectorOnlySchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+// embeddingsSchema tests @embeddings directive for vector/semantic search.
+const embeddingsSchema = `
+"""A document with vector embeddings for semantic search"""
+type Document
+  @table(name: "documents")
+  @embeddings(model: "text-embedding-3-small", vector: "embedding", distance: Cosine) {
+  id: Int! @pk
+  title: String!
+  content: String
+  embedding: Vector
+}
+
+"""Regular table without embeddings"""
+type Category
+  @table(name: "categories") {
+  id: Int! @pk
+  name: String!
+}
+`
+
+func TestCrossCompiler_Embeddings(t *testing.T) {
+	sdl := embeddingsSchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+// vectorAndEmbeddingsSchema tests both: table with plain Vector AND table with @embeddings.
+const vectorAndEmbeddingsSchema = `
+"""Table with plain vector field (similarity only, no semantic)"""
+type Product
+  @table(name: "products") {
+  id: Int! @pk
+  name: String!
+  price: Float
+  image_embedding: Vector
+}
+
+"""Table with @embeddings (similarity + semantic + summary)"""
+type Article
+  @table(name: "articles")
+  @embeddings(model: "text-embedding-ada-002", vector: "content_vector", distance: L2) {
+  id: Int! @pk
+  title: String!
+  body: String
+  content_vector: Vector
+}
+
+"""Plain table for baseline comparison"""
+type Author
+  @table(name: "authors") {
+  id: Int! @pk
+  name: String!
+  email: String
+}
+`
+
+func TestCrossCompiler_VectorAndEmbeddings(t *testing.T) {
+	sdl := vectorAndEmbeddingsSchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+// geometrySchema tests Geometry fields and _spatial type generation.
+const geometrySchema = `
+"""Table with Geometry field for spatial queries"""
+type Building
+  @table(name: "buildings") {
+  id: Int! @pk
+  name: String!
+  location: Geometry
+  height: Float
+}
+
+"""Table with multiple Geometry fields"""
+type Route
+  @table(name: "routes") {
+  id: Int! @pk
+  label: String!
+  start_point: Geometry
+  end_point: Geometry
+}
+
+"""Plain table (no geometry) for comparison"""
+type City
+  @table(name: "cities") {
+  id: Int! @pk
+  name: String!
+  population: BigInt
+}
+`
+
+func TestCrossCompiler_Geometry(t *testing.T) {
+	sdl := geometrySchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+// vectorGeometryEmbeddingsSchema tests all special field types together.
+const vectorGeometryEmbeddingsSchema = `
+"""Table with Geometry + Vector + @embeddings"""
+type Place
+  @table(name: "places")
+  @embeddings(model: "text-embedding-3-small", vector: "description_vector", distance: Cosine) {
+  id: Int! @pk
+  name: String!
+  location: Geometry
+  description_vector: Vector
+}
+
+"""Table with only Geometry (no Vector)"""
+type Region
+  @table(name: "regions") {
+  id: Int! @pk
+  name: String!
+  boundary: Geometry
+}
+
+"""Table with only Vector (no Geometry, no @embeddings)"""
+type Embedding
+  @table(name: "embeddings") {
+  id: Int! @pk
+  label: String
+  vector_data: Vector
+}
+`
+
+func TestCrossCompiler_VectorGeometryEmbeddings(t *testing.T) {
+	sdl := vectorGeometryEmbeddingsSchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+}
+
 // --- Deep comparison ---
 
 // compareSummary prints a detailed comparison between old and new compiler outputs,
@@ -977,6 +1214,246 @@ func compareFieldDef(t *testing.T, prefix string, oldF, newF *ast.FieldDefinitio
 		t.Logf("    %s directives: old-only=%v new-only=%v", prefix, dOld, dNew)
 		stats.fieldDirDiffs++
 	}
+}
+
+// TestCatalogDirectivePlacement verifies that @catalog(name, engine) is present
+// on all expected field categories in the compiled output. Uses the complexTestSchema
+// which includes tables, references, geometry, etc. with name="test", engine="duckdb".
+func TestCatalogDirectivePlacement(t *testing.T) {
+	sdl := complexTestSchema
+	opts := base.Options{Name: "test", EngineType: "duckdb"}
+	result := buildNewCompilerResult(t, sdl, opts)
+
+	hasCatalog := func(f *ast.FieldDefinition) bool {
+		d := f.Directives.ForName("catalog")
+		if d == nil {
+			return false
+		}
+		nameArg := d.Arguments.ForName("name")
+		engineArg := d.Arguments.ForName("engine")
+		return nameArg != nil && nameArg.Value.Raw == "test" &&
+			engineArg != nil && engineArg.Value.Raw == "duckdb"
+	}
+
+	// 1. Query fields must have @catalog (except system-level fields like "h3")
+	for name, f := range result.queryFieldDefs {
+		// h3 is a system-level query field, not tied to a catalog
+		if f.Directives.ForName("system") != nil {
+			continue
+		}
+		if !hasCatalog(f) {
+			t.Errorf("query field %q missing @catalog(name:test, engine:duckdb)", name)
+		}
+	}
+
+	// 2. Mutation fields must have @catalog
+	for name, f := range result.mutFieldDefs {
+		if !hasCatalog(f) {
+			t.Errorf("mutation field %q missing @catalog(name:test, engine:duckdb)", name)
+		}
+	}
+
+	// 3. _join fields must have @catalog
+	joinDef := result.defs["_join"]
+	if joinDef == nil {
+		t.Fatal("_join type not found in output")
+	}
+	for _, f := range joinDef.Fields {
+		if !hasCatalog(f) {
+			t.Errorf("_join field %q missing @catalog", f.Name)
+		}
+	}
+
+	// 4. _join_aggregation fields must have @catalog
+	joinAggDef := result.defs["_join_aggregation"]
+	if joinAggDef == nil {
+		t.Fatal("_join_aggregation type not found in output")
+	}
+	for _, f := range joinAggDef.Fields {
+		if !hasCatalog(f) {
+			t.Errorf("_join_aggregation field %q missing @catalog", f.Name)
+		}
+	}
+
+	// 5. _spatial fields must have @catalog (complexTestSchema has Geometry fields)
+	spatialDef := result.defs["_spatial"]
+	if spatialDef == nil {
+		t.Fatal("_spatial type not found in output")
+	}
+	for _, f := range spatialDef.Fields {
+		if !hasCatalog(f) {
+			t.Errorf("_spatial field %q missing @catalog", f.Name)
+		}
+	}
+
+	// 6. _spatial_aggregation fields must have @catalog
+	spatialAggDef := result.defs["_spatial_aggregation"]
+	if spatialAggDef == nil {
+		t.Fatal("_spatial_aggregation type not found in output")
+	}
+	for _, f := range spatialAggDef.Fields {
+		if !hasCatalog(f) {
+			t.Errorf("_spatial_aggregation field %q missing @catalog", f.Name)
+		}
+	}
+
+	// 7. Source object definitions must have @catalog on the definition itself
+	for _, objName := range []string{"Airport", "Route", "Airline"} {
+		def := result.defs[objName]
+		if def == nil {
+			t.Errorf("definition %q not found", objName)
+			continue
+		}
+		d := def.Directives.ForName("catalog")
+		if d == nil {
+			t.Errorf("definition %q missing @catalog directive", objName)
+			continue
+		}
+		nameArg := d.Arguments.ForName("name")
+		engineArg := d.Arguments.ForName("engine")
+		if nameArg == nil || nameArg.Value.Raw != "test" || engineArg == nil || engineArg.Value.Raw != "duckdb" {
+			t.Errorf("definition %q @catalog has wrong args", objName)
+		}
+	}
+
+	// 8. Reference subquery fields on objects must have @catalog
+	// Reference fields have @references_query directive
+	refFieldCount := 0
+	for objName, def := range result.defs {
+		if def.Kind != ast.Object {
+			continue
+		}
+		for _, f := range def.Fields {
+			if f.Directives.ForName("references_query") == nil {
+				continue
+			}
+			refFieldCount++
+			if !hasCatalog(f) {
+				t.Errorf("%s.%s (reference field) missing @catalog", objName, f.Name)
+			}
+		}
+	}
+	if refFieldCount == 0 {
+		t.Error("no reference fields found in output — expected at least one")
+	}
+
+	// 8b. Reference aggregation fields on aggregation types must have @catalog
+	refAggCount := 0
+	for objName, def := range result.defs {
+		if def.Kind != ast.Object {
+			continue
+		}
+		for _, f := range def.Fields {
+			if f.Directives.ForName("aggregation_query") == nil {
+				continue
+			}
+			// This is an aggregation query field on a type (e.g., aggregation reference)
+			refAggCount++
+			if !hasCatalog(f) {
+				t.Errorf("%s.%s (aggregation query field) missing @catalog", objName, f.Name)
+			}
+		}
+	}
+
+	// 9. INPUT_OBJECT types must NOT have @catalog
+	for name, def := range result.defs {
+		if def.Kind == ast.InputObject {
+			d := def.Directives.ForName("catalog")
+			if d != nil {
+				t.Errorf("INPUT_OBJECT %q should NOT have @catalog directive", name)
+			}
+		}
+	}
+
+	// 10. Aggregation types (_*_aggregation) must NOT have @catalog on their definition
+	// (only on query fields that return them)
+	for name, def := range result.defs {
+		if def.Kind == ast.Object && strings.HasSuffix(name, "_aggregation") && !strings.HasPrefix(name, "_join") && !strings.HasPrefix(name, "_spatial") {
+			d := def.Directives.ForName("catalog")
+			if d != nil {
+				t.Errorf("aggregation type %q should NOT have @catalog on definition", name)
+			}
+		}
+	}
+
+	t.Logf("Checked: %d query fields, %d mutation fields, %d _join fields, %d _join_agg fields, %d _spatial fields, %d _spatial_agg fields, %d ref fields, %d agg query fields",
+		len(result.queryFieldDefs), len(result.mutFieldDefs),
+		len(joinDef.Fields), len(joinAggDef.Fields),
+		len(spatialDef.Fields), len(spatialAggDef.Fields),
+		refFieldCount, refAggCount)
+}
+
+// TestCatalogDirectivePlacement_Modules verifies that module types and module
+// root fields on Query/Mutation do NOT have @catalog, since modules can be
+// shared across multiple catalogs.
+func TestCatalogDirectivePlacement_Modules(t *testing.T) {
+	sdl := nestedModuleSchema
+	opts := base.Options{Name: "test", EngineType: "duckdb"}
+	result := buildNewCompilerResult(t, sdl, opts)
+
+	hasCatalog := func(f *ast.FieldDefinition) bool {
+		return f.Directives.ForName("catalog") != nil
+	}
+
+	// 1. Module root fields on Query must NOT have @catalog
+	for name, f := range result.queryFieldDefs {
+		isModule := false
+		retType := f.Type.Name()
+		if def := result.defs[retType]; def != nil {
+			isModule = def.Directives.ForName("module_root") != nil
+		}
+		if isModule {
+			if hasCatalog(f) {
+				t.Errorf("query field %q (module root) should NOT have @catalog", name)
+			}
+		}
+	}
+
+	// 2. Module root fields on Mutation must NOT have @catalog
+	for name, f := range result.mutFieldDefs {
+		isModule := false
+		retType := f.Type.Name()
+		if def := result.defs[retType]; def != nil {
+			isModule = def.Directives.ForName("module_root") != nil
+		}
+		if isModule {
+			if hasCatalog(f) {
+				t.Errorf("mutation field %q (module root) should NOT have @catalog", name)
+			}
+		}
+	}
+
+	// 3. Module type definitions (_module_*) must NOT have @catalog
+	for name, def := range result.defs {
+		if def.Directives.ForName("module_root") != nil {
+			if def.Directives.ForName("catalog") != nil {
+				t.Errorf("module type %q should NOT have @catalog", name)
+			}
+		}
+	}
+
+	// 4. But individual query fields WITHIN modules must have @catalog
+	for name, def := range result.defs {
+		if def.Directives.ForName("module_root") == nil {
+			continue
+		}
+		for _, f := range def.Fields {
+			// Module navigation fields (pointing to child modules) don't have @catalog
+			retType := f.Type.Name()
+			if childDef := result.defs[retType]; childDef != nil && childDef.Directives.ForName("module_root") != nil {
+				continue
+			}
+			// Query/mutation fields within a module should have @catalog
+			if f.Directives.ForName("query") != nil || f.Directives.ForName("mutation") != nil ||
+				f.Directives.ForName("aggregation_query") != nil || f.Directives.ForName("references_query") != nil {
+				if !hasCatalog(f) {
+					t.Errorf("module type %s field %q (data field) missing @catalog", name, f.Name)
+				}
+			}
+		}
+	}
+
+	t.Log("Module @catalog placement checks passed")
 }
 
 // --- Helper functions ---
