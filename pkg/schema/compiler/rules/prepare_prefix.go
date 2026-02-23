@@ -109,15 +109,35 @@ func (r *PrefixPreparer) ProcessAll(ctx base.CompilationContext) error {
 			ctx.RegisterObject(def.Name, info)
 		}
 
-		// Rename type references in fields to use prefixed names
+		// Rename type references in fields and directives to use prefixed names
 		if opts.Prefix != "" {
 			for _, f := range def.Fields {
 				renameTypeRefs(f.Type, opts.Prefix, sourceNames)
+				// Rename references in field directives
+				for _, d := range f.Directives.ForNames("field_references") {
+					renameDirectiveArgIfSource(d, "references_name", opts.Prefix, sourceNames)
+				}
+			}
+			// Rename references in definition directives
+			for _, d := range def.Directives.ForNames("references") {
+				renameDirectiveArgIfSource(d, "references_name", opts.Prefix, sourceNames)
+				renameDirectiveArgIfSource(d, "m2m_name", opts.Prefix, sourceNames)
 			}
 		}
 	}
 
 	return nil
+}
+
+// renameDirectiveArgIfSource prefixes a directive argument value if it matches a source definition name.
+func renameDirectiveArgIfSource(d *ast.Directive, argName, prefix string, sourceNames map[string]bool) {
+	a := d.Arguments.ForName(argName)
+	if a == nil || a.Value == nil {
+		return
+	}
+	if sourceNames[a.Value.Raw] {
+		a.Value.Raw = prefix + "_" + a.Value.Raw
+	}
 }
 
 // renameTypeRefs prefixes type names that refer to source definitions.

@@ -45,10 +45,8 @@ func (r *TableRule) Process(ctx base.CompilationContext, def *ast.Definition) er
 		Position: pos,
 	})
 
-	// 2b. Generate list filter input type
-	listFilterName := def.Name + "_list_filter"
-	listFilterDef := generateListFilterInput(filterName, listFilterName, pos)
-	addDef(listFilterDef)
+	// Note: _list_filter types are created lazily by gen_references.go
+	// when a back-reference or M2M reference needs them.
 
 	// 3. Generate data input types (unless ReadOnly)
 	if !opts.ReadOnly {
@@ -62,14 +60,26 @@ func (r *TableRule) Process(ctx base.CompilationContext, def *ast.Definition) er
 		updateInputDef := generateMutData(ctx, def, updateInputName, pos)
 		addDef(updateInputDef)
 
-		def.Directives = append(def.Directives, &ast.Directive{
-			Name: "data_input",
-			Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: insertInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
+		def.Directives = append(def.Directives,
+			&ast.Directive{
+				Name: "data_input",
+				Arguments: ast.ArgumentList{
+					{Name: "name", Value: &ast.Value{Raw: insertInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
+				},
+				Position: pos,
 			},
-			Position: pos,
-		})
+			&ast.Directive{
+				Name: "data_input",
+				Arguments: ast.ArgumentList{
+					{Name: "name", Value: &ast.Value{Raw: updateInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
+				},
+				Position: pos,
+			},
+		)
 	}
+
+	// 3c. Set scalar-specific field arguments (bucket, transforms, struct, etc.)
+	setScalarFieldArguments(ctx, def)
 
 	// 4. Generate aggregation type
 	aggName := "_" + def.Name + "_aggregation"
@@ -81,14 +91,70 @@ func (r *TableRule) Process(ctx base.CompilationContext, def *ast.Definition) er
 	bucketAggDef := generateBucketAggregationType(def, aggName, filterName, bucketAggName, pos)
 	addDef(bucketAggDef)
 
-	// 5. Register query fields
-	queryFields := generateQueryFields(def, info, filterName, pos)
+	// 5. Register query fields and add @query directives on def
+	queryFields := generateQueryFields(ctx, def, info, filterName, pos)
 	ctx.RegisterQueryFields(def.Name, queryFields)
+	// Add @query directive for SELECT
+	def.Directives = append(def.Directives, &ast.Directive{
+		Name: "query",
+		Arguments: ast.ArgumentList{
+			{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+			{Name: "type", Value: &ast.Value{Raw: "SELECT", Kind: ast.EnumValue, Position: pos}, Position: pos},
+		},
+		Position: pos,
+	})
+	// Add @query for by_pk
+	if len(info.PrimaryKey) > 0 && !info.IsM2M {
+		def.Directives = append(def.Directives, &ast.Directive{
+			Name: "query",
+			Arguments: ast.ArgumentList{
+				{Name: "name", Value: &ast.Value{Raw: def.Name + "_by_pk", Kind: ast.StringValue, Position: pos}, Position: pos},
+				{Name: "type", Value: &ast.Value{Raw: "SELECT_ONE", Kind: ast.EnumValue, Position: pos}, Position: pos},
+			},
+			Position: pos,
+		})
+	}
 
 	// 6. Register mutation fields (unless ReadOnly)
 	if !opts.ReadOnly {
 		mutFields := generateMutationFields(ctx, def, info, pos)
 		ctx.RegisterMutationFields(def.Name, mutFields)
+		// Add @mutation directives on def
+		insertInputName := def.Name + "_mut_input_data"
+		updateInputName := def.Name + "_mut_data"
+		if opts.SupportInsert() {
+			def.Directives = append(def.Directives, &ast.Directive{
+				Name: "mutation",
+				Arguments: ast.ArgumentList{
+					{Name: "name", Value: &ast.Value{Raw: "insert_" + def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "type", Value: &ast.Value{Raw: "INSERT", Kind: ast.EnumValue, Position: pos}, Position: pos},
+					{Name: "data_input", Value: &ast.Value{Raw: insertInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
+				},
+				Position: pos,
+			})
+		}
+		if opts.SupportUpdate() && (opts.SupportUpdateWithoutPKs() || len(info.PrimaryKey) > 0) {
+			def.Directives = append(def.Directives, &ast.Directive{
+				Name: "mutation",
+				Arguments: ast.ArgumentList{
+					{Name: "name", Value: &ast.Value{Raw: "update_" + def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "type", Value: &ast.Value{Raw: "UPDATE", Kind: ast.EnumValue, Position: pos}, Position: pos},
+					{Name: "data_input", Value: &ast.Value{Raw: updateInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
+				},
+				Position: pos,
+			})
+		}
+		if opts.SupportDelete() && (opts.SupportDeleteWithoutPKs() || len(info.PrimaryKey) > 0) {
+			def.Directives = append(def.Directives, &ast.Directive{
+				Name: "mutation",
+				Arguments: ast.ArgumentList{
+					{Name: "name", Value: &ast.Value{Raw: "delete_" + def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "type", Value: &ast.Value{Raw: "DELETE", Kind: ast.EnumValue, Position: pos}, Position: pos},
+					{Name: "data_input", Value: &ast.Value{Raw: "", Kind: ast.StringValue, Position: pos}, Position: pos},
+				},
+				Position: pos,
+			})
+		}
 	}
 
 	return nil
@@ -103,14 +169,18 @@ func compiledPos(name string) *ast.Position {
 	return &ast.Position{Src: &ast.Source{Name: src}}
 }
 
-// generateFilterInput creates a <Name>Filter input object with scalar filter
+// generateFilterInput creates a <Name>_filter input object with scalar filter
 // fields and logical operators (_and, _or, _not).
 func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
 	filterDef := &ast.Definition{
-		Kind:       ast.InputObject,
-		Name:       name,
-		Position:   pos,
-		Directives: ast.DirectiveList{{Name: "system", Position: pos}},
+		Kind:     ast.InputObject,
+		Name:     name,
+		Position: pos,
+		Directives: ast.DirectiveList{
+			{Name: "filter_input", Arguments: ast.ArgumentList{
+				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+			}, Position: pos},
+		},
 	}
 
 	for _, f := range def.Fields {
@@ -122,19 +192,26 @@ func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name 
 		if s := ctx.ScalarLookup(typeName); s != nil {
 			if fi, ok := s.(types.Filterable); ok {
 				filterFieldType := fi.FilterTypeName()
-				filterDef.Fields = append(filterDef.Fields, &ast.FieldDefinition{
+				field := &ast.FieldDefinition{
 					Name:     f.Name,
 					Type:     ast.NamedType(filterFieldType, pos),
 					Position: pos,
-				})
+				}
+				// Copy directives from original field (pk, default, etc.)
+				for _, d := range f.Directives {
+					if d.Name == "pk" || d.Name == "default" {
+						field.Directives = append(field.Directives, d)
+					}
+				}
+				filterDef.Fields = append(filterDef.Fields, field)
 			}
 		}
 	}
 
-	// Logical operators
+	// Logical operators — old compiler uses nullable inner type
 	filterDef.Fields = append(filterDef.Fields,
-		&ast.FieldDefinition{Name: "_and", Type: ast.ListType(ast.NonNullNamedType(name, pos), pos), Position: pos},
-		&ast.FieldDefinition{Name: "_or", Type: ast.ListType(ast.NonNullNamedType(name, pos), pos), Position: pos},
+		&ast.FieldDefinition{Name: "_and", Type: ast.ListType(ast.NamedType(name, pos), pos), Position: pos},
+		&ast.FieldDefinition{Name: "_or", Type: ast.ListType(ast.NamedType(name, pos), pos), Position: pos},
 		&ast.FieldDefinition{Name: "_not", Type: ast.NamedType(name, pos), Position: pos},
 	)
 
@@ -145,10 +222,14 @@ func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name 
 // Includes all table fields. Computed (@sql) fields are skipped.
 func generateMutInputData(_ base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
 	inputDef := &ast.Definition{
-		Kind:       ast.InputObject,
-		Name:       name,
-		Position:   pos,
-		Directives: ast.DirectiveList{{Name: "system", Position: pos}},
+		Kind:     ast.InputObject,
+		Name:     name,
+		Position: pos,
+		Directives: ast.DirectiveList{
+			{Name: "data_input", Arguments: ast.ArgumentList{
+				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+			}, Position: pos},
+		},
 	}
 
 	for _, f := range def.Fields {
@@ -174,10 +255,14 @@ func generateMutInputData(_ base.CompilationContext, def *ast.Definition, name s
 // Includes all table fields (including non-scalar). Computed (@sql) fields are skipped.
 func generateMutData(_ base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
 	inputDef := &ast.Definition{
-		Kind:       ast.InputObject,
-		Name:       name,
-		Position:   pos,
-		Directives: ast.DirectiveList{{Name: "system", Position: pos}},
+		Kind:     ast.InputObject,
+		Name:     name,
+		Position: pos,
+		Directives: ast.DirectiveList{
+			{Name: "data_input", Arguments: ast.ArgumentList{
+				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+			}, Position: pos},
+		},
 	}
 
 	for _, f := range def.Fields {
@@ -200,12 +285,16 @@ func generateMutData(_ base.CompilationContext, def *ast.Definition, name string
 }
 
 // generateListFilterInput creates a <Name>_list_filter input with any_of, all_of, none_of fields.
-func generateListFilterInput(filterName, listFilterName string, pos *ast.Position) *ast.Definition {
+func generateListFilterInput(objectName, filterName, listFilterName string, pos *ast.Position) *ast.Definition {
 	return &ast.Definition{
-		Kind:       ast.InputObject,
-		Name:       listFilterName,
-		Position:   pos,
-		Directives: ast.DirectiveList{{Name: "system", Position: pos}},
+		Kind:     ast.InputObject,
+		Name:     listFilterName,
+		Position: pos,
+		Directives: ast.DirectiveList{
+			{Name: "filter_list_input", Arguments: ast.ArgumentList{
+				{Name: "name", Value: &ast.Value{Raw: objectName, Kind: ast.StringValue, Position: pos}, Position: pos},
+			}, Position: pos},
+		},
 		Fields: ast.FieldList{
 			{Name: "any_of", Type: ast.NamedType(filterName, pos), Position: pos},
 			{Name: "all_of", Type: ast.NamedType(filterName, pos), Position: pos},
@@ -222,11 +311,10 @@ func generateAggregationType(ctx base.CompilationContext, def *ast.Definition, n
 		Name:     name,
 		Position: pos,
 		Directives: ast.DirectiveList{
-			{Name: "system", Position: pos},
 			{Name: "aggregation", Arguments: ast.ArgumentList{
 				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 				{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
-				{Name: "level", Value: &ast.Value{Raw: "0", Kind: ast.IntValue, Position: pos}, Position: pos},
+				{Name: "level", Value: &ast.Value{Raw: "1", Kind: ast.IntValue, Position: pos}, Position: pos},
 			}, Position: pos},
 		},
 	}
@@ -244,11 +332,22 @@ func generateAggregationType(ctx base.CompilationContext, def *ast.Definition, n
 		typeName := f.Type.Name()
 		if s := ctx.ScalarLookup(typeName); s != nil {
 			if a, ok := s.(types.Aggregatable); ok {
-				aggDef.Fields = append(aggDef.Fields, &ast.FieldDefinition{
+				field := &ast.FieldDefinition{
 					Name:     f.Name,
 					Type:     ast.NamedType(a.AggregationTypeName(), pos),
 					Position: pos,
-				})
+					Directives: ast.DirectiveList{
+						{Name: "field_aggregation", Arguments: ast.ArgumentList{
+							{Name: "name", Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+						}, Position: pos},
+					},
+				}
+				// Copy arguments from original field (bucket, bucket_interval, struct, etc.)
+				if len(f.Arguments) > 0 {
+					field.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
+					copy(field.Arguments, f.Arguments)
+				}
+				aggDef.Fields = append(aggDef.Fields, field)
 			}
 		}
 	}
@@ -264,11 +363,10 @@ func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName,
 		Name:     bucketName,
 		Position: pos,
 		Directives: ast.DirectiveList{
-			{Name: "system", Position: pos},
 			{Name: "aggregation", Arguments: ast.ArgumentList{
 				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 				{Name: "is_bucket", Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
-				{Name: "level", Value: &ast.Value{Raw: "0", Kind: ast.IntValue, Position: pos}, Position: pos},
+				{Name: "level", Value: &ast.Value{Raw: "1", Kind: ast.IntValue, Position: pos}, Position: pos},
 			}, Position: pos},
 		},
 		Fields: ast.FieldList{
@@ -282,7 +380,7 @@ func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName,
 				Type: ast.NamedType(aggTypeName, pos),
 				Arguments: ast.ArgumentDefinitionList{
 					{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-					{Name: "order_by", Type: ast.ListType(ast.NonNullNamedType("OrderByField", pos), pos), Position: pos},
+					{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
 				},
 				Position: pos,
 			},
@@ -290,43 +388,93 @@ func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName,
 	}
 }
 
+// queryArgs returns the standard query arguments for list queries.
+func queryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+	return ast.ArgumentDefinitionList{
+		{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
+		{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos,
+			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue}},
+		{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos,
+			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue}},
+		{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+	}
+}
+
+// subQueryArgs returns the standard query arguments for sub-queries (references).
+func subQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+	args := queryArgs(filterName, pos)
+	args = append(args,
+		&ast.ArgumentDefinition{
+			Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos,
+			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue},
+		},
+		&ast.ArgumentDefinition{
+			Name: "nested_order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos,
+		},
+		&ast.ArgumentDefinition{
+			Name: "nested_limit", Type: ast.NamedType("Int", pos), Position: pos,
+		},
+		&ast.ArgumentDefinition{
+			Name: "nested_offset", Type: ast.NamedType("Int", pos), Position: pos,
+		},
+	)
+	return args
+}
+
+// setScalarFieldArguments sets field arguments from scalar type definitions
+// (e.g., bucket for Timestamp, transforms for Geometry, struct for JSON).
+// Must be called before generateAggregationType so args get copied.
+func setScalarFieldArguments(ctx base.CompilationContext, def *ast.Definition) {
+	for _, f := range def.Fields {
+		if f.Name == "_stub" || f.Type.NamedType == "" {
+			continue
+		}
+		s := ctx.ScalarLookup(f.Type.Name())
+		if s == nil {
+			continue
+		}
+		if fap, ok := s.(types.FieldArgumentsProvider); ok {
+			f.Arguments = fap.FieldArguments()
+		}
+	}
+}
+
 // generateQueryFields produces the list query (with filter/order/limit/offset)
 // and the by-PK query for a data object.
-func generateQueryFields(def *ast.Definition, info *base.ObjectInfo, filterName string, pos *ast.Position) []*ast.FieldDefinition {
+func generateQueryFields(ctx base.CompilationContext, def *ast.Definition, info *base.ObjectInfo, filterName string, pos *ast.Position) []*ast.FieldDefinition {
 	var fields []*ast.FieldDefinition
+	opts := ctx.CompileOptions()
 
 	queryName := def.Name
 
-	// Select query (list)
+	// Select query (list) — old compiler returns [Type] (nullable list)
 	selectField := &ast.FieldDefinition{
-		Name: queryName,
-		Type: ast.NonNullListType(ast.NamedType(def.Name, pos), pos),
-		Arguments: ast.ArgumentDefinitionList{
-			{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-			{Name: "order_by", Type: ast.ListType(ast.NonNullNamedType("OrderByField", pos), pos), Position: pos},
-			{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos},
-			{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos},
-		},
+		Name:      queryName,
+		Type:      ast.ListType(ast.NamedType(def.Name, pos), pos),
+		Arguments: queryArgs(filterName, pos),
 		Directives: ast.DirectiveList{
 			{Name: "query", Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
+				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 				{Name: "type", Value: &ast.Value{Raw: "SELECT", Kind: ast.EnumValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(opts),
 		},
 		Position: pos,
 	}
 	fields = append(fields, selectField)
 
 	// Select one by PK
-	if len(info.PrimaryKey) > 0 {
+	if len(info.PrimaryKey) > 0 && !info.IsM2M {
 		selectOneField := &ast.FieldDefinition{
 			Name: queryName + "_by_pk",
 			Type: ast.NamedType(def.Name, pos),
 			Directives: ast.DirectiveList{
 				{Name: "query", Arguments: ast.ArgumentList{
-					{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 					{Name: "type", Value: &ast.Value{Raw: "SELECT_ONE", Kind: ast.EnumValue, Position: pos}, Position: pos},
 				}, Position: pos},
+				optsCatalogDirective(opts),
 			},
 			Position: pos,
 		}
@@ -347,6 +495,11 @@ func generateQueryFields(def *ast.Definition, info *base.ObjectInfo, filterName 
 	return fields
 }
 
+// optsCatalogDirective creates a @catalog directive from compile options.
+func optsCatalogDirective(opts base.Options) *ast.Directive {
+	return catalogDirective(opts.Name, opts.EngineType)
+}
+
 // generateMutationFields produces insert, update, and delete mutation fields
 // for a data object based on engine capabilities.
 func generateMutationFields(ctx base.CompilationContext, def *ast.Definition, info *base.ObjectInfo, pos *ast.Position) []*ast.FieldDefinition {
@@ -354,71 +507,73 @@ func generateMutationFields(ctx base.CompilationContext, def *ast.Definition, in
 	opts := ctx.CompileOptions()
 	insertInputName := def.Name + "_mut_input_data"
 	updateInputName := def.Name + "_mut_data"
+	filterName := def.Name + "_filter"
 
 	// Insert
 	if opts.SupportInsert() {
+		// Old compiler: singular data arg, returns object type if SupportInsertReturning + has PKs + not M2M
+		outType := ast.NamedType(def.Name, pos)
+		if !opts.SupportInsertReturning() || len(info.PrimaryKey) == 0 || info.IsM2M {
+			outType = ast.NamedType("OperationResult", pos)
+		}
 		insertField := &ast.FieldDefinition{
 			Name: "insert_" + def.Name,
-			Type: ast.NamedType("OperationResult", pos),
+			Type: outType,
 			Arguments: ast.ArgumentDefinitionList{
-				{Name: "data", Type: ast.NonNullListType(ast.NonNullNamedType(insertInputName, pos), pos), Position: pos},
+				{Name: "data", Type: ast.NonNullNamedType(insertInputName, pos), Position: pos},
 			},
 			Directives: ast.DirectiveList{
 				{Name: "mutation", Arguments: ast.ArgumentList{
-					{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 					{Name: "type", Value: &ast.Value{Raw: "INSERT", Kind: ast.EnumValue, Position: pos}, Position: pos},
 					{Name: "data_input", Value: &ast.Value{Raw: insertInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
 				}, Position: pos},
+				optsCatalogDirective(opts),
 			},
 			Position: pos,
 		}
 		fields = append(fields, insertField)
 	}
 
-	// Update
-	if opts.SupportUpdate() && len(info.PrimaryKey) > 0 {
+	// Update — old compiler uses filter arg
+	if opts.SupportUpdate() && (opts.SupportUpdateWithoutPKs() || len(info.PrimaryKey) > 0) {
 		updateField := &ast.FieldDefinition{
 			Name: "update_" + def.Name,
 			Type: ast.NamedType("OperationResult", pos),
 			Arguments: ast.ArgumentDefinitionList{
+				{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
 				{Name: "data", Type: ast.NonNullNamedType(updateInputName, pos), Position: pos},
 			},
 			Directives: ast.DirectiveList{
 				{Name: "mutation", Arguments: ast.ArgumentList{
-					{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 					{Name: "type", Value: &ast.Value{Raw: "UPDATE", Kind: ast.EnumValue, Position: pos}, Position: pos},
 					{Name: "data_input", Value: &ast.Value{Raw: updateInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
 				}, Position: pos},
+				optsCatalogDirective(opts),
 			},
 			Position: pos,
 		}
 		fields = append(fields, updateField)
 	}
 
-	// Delete
-	if opts.SupportDelete() && len(info.PrimaryKey) > 0 {
+	// Delete — old compiler uses filter arg
+	if opts.SupportDelete() && (opts.SupportDeleteWithoutPKs() || len(info.PrimaryKey) > 0) {
 		deleteField := &ast.FieldDefinition{
 			Name: "delete_" + def.Name,
 			Type: ast.NamedType("OperationResult", pos),
+			Arguments: ast.ArgumentDefinitionList{
+				{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
+			},
 			Directives: ast.DirectiveList{
 				{Name: "mutation", Arguments: ast.ArgumentList{
-					{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 					{Name: "type", Value: &ast.Value{Raw: "DELETE", Kind: ast.EnumValue, Position: pos}, Position: pos},
-					{Name: "data_input", Value: &ast.Value{Raw: insertInputName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "data_input", Value: &ast.Value{Raw: "", Kind: ast.StringValue, Position: pos}, Position: pos},
 				}, Position: pos},
+				optsCatalogDirective(opts),
 			},
 			Position: pos,
-		}
-		for _, pk := range info.PrimaryKey {
-			f := def.Fields.ForName(pk)
-			if f == nil {
-				continue
-			}
-			deleteField.Arguments = append(deleteField.Arguments, &ast.ArgumentDefinition{
-				Name:     pk,
-				Type:     ast.NonNullNamedType(f.Type.Name(), pos),
-				Position: pos,
-			})
 		}
 		fields = append(fields, deleteField)
 	}

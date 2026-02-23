@@ -4,10 +4,11 @@ import "github.com/vektah/gqlparser/v2/ast"
 
 // Compile-time interface assertions.
 var (
-	_ ScalarType        = (*geometryScalar)(nil)
-	_ Filterable        = (*geometryScalar)(nil)
-	_ Aggregatable      = (*geometryScalar)(nil)
-	_ ExtraFieldProvider = (*geometryScalar)(nil)
+	_ ScalarType             = (*geometryScalar)(nil)
+	_ Filterable             = (*geometryScalar)(nil)
+	_ Aggregatable           = (*geometryScalar)(nil)
+	_ ExtraFieldProvider     = (*geometryScalar)(nil)
+	_ FieldArgumentsProvider = (*geometryScalar)(nil)
 )
 
 type geometryScalar struct{}
@@ -54,6 +55,16 @@ type GeometrySubAggregation @system {
   union: GeometryAggregation
   extent: GeometryAggregation
 }`
+}
+
+func (s *geometryScalar) FieldArguments() ast.ArgumentDefinitionList {
+	return ast.ArgumentDefinitionList{
+		{Name: "transforms", Type: ast.ListType(ast.NonNullNamedType("GeometryTransform", nil), nil)},
+		{Name: "from", Type: ast.NamedType("Int", nil)},
+		{Name: "to", Type: ast.NamedType("Int", nil)},
+		{Name: "buffer", Type: ast.NamedType("Float", nil)},
+		{Name: "simplify_factor", Type: ast.NamedType("Float", nil)},
+	}
 }
 
 func (s *geometryScalar) ExtraFieldName() string { return "Measurement" }

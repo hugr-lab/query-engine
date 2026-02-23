@@ -20,14 +20,6 @@ func (r *CatalogTagger) ProcessAll(ctx base.CompilationContext) error {
 	catalogDir := catalogDirective(opts.Name, opts.EngineType)
 	for def := range ctx.Source().Definitions(ctx.Context()) {
 		def.Directives = append(def.Directives, catalogDir)
-		// Tag fields too
-		for _, f := range def.Fields {
-			f.Directives = append(f.Directives, catalogDir)
-		}
-		// Tag enum values
-		for _, v := range def.EnumValues {
-			v.Directives = append(v.Directives, catalogDir)
-		}
 	}
 	return nil
 }

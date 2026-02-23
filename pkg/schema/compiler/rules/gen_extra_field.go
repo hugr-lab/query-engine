@@ -26,6 +26,7 @@ func (r *ExtraFieldRule) Process(ctx base.CompilationContext, def *ast.Definitio
 	pos := compiledPos(def.Name)
 
 	var extraFields ast.FieldList
+	var aggExtraFields ast.FieldList
 
 	for _, f := range def.Fields {
 		if f.Name == "_stub" {
@@ -46,6 +47,12 @@ func (r *ExtraFieldRule) Process(ctx base.CompilationContext, def *ast.Definitio
 			continue
 		}
 		extraFields = append(extraFields, extraField)
+
+		// For aggregation type: use AggregationType of the extra field's return type
+		aggField := extraFieldForAggregation(ctx, extraField, pos)
+		if aggField != nil {
+			aggExtraFields = append(aggExtraFields, aggField)
+		}
 	}
 
 	if len(extraFields) == 0 {
@@ -61,5 +68,48 @@ func (r *ExtraFieldRule) Process(ctx base.CompilationContext, def *ast.Definitio
 	}
 	ctx.AddExtension(ext)
 
+	// Also add extra fields to the aggregation type (with aggregation types)
+	aggName := "_" + def.Name + "_aggregation"
+	if ctx.LookupType(aggName) != nil && len(aggExtraFields) > 0 {
+		aggExt := &ast.Definition{
+			Kind:     ast.Object,
+			Name:     aggName,
+			Position: pos,
+			Fields:   aggExtraFields,
+		}
+		ctx.AddExtension(aggExt)
+	}
+
 	return nil
+}
+
+// extraFieldForAggregation creates an aggregation version of an extra field.
+// The return type is mapped to its aggregation type (e.g., BigInt → BigIntAggregation).
+func extraFieldForAggregation(ctx base.CompilationContext, field *ast.FieldDefinition, pos *ast.Position) *ast.FieldDefinition {
+	typeName := field.Type.Name()
+	s := ctx.ScalarLookup(typeName)
+	if s == nil {
+		return nil
+	}
+	a, ok := s.(types.Aggregatable)
+	if !ok {
+		return nil
+	}
+	aggTypeName := a.AggregationTypeName()
+
+	aggField := &ast.FieldDefinition{
+		Name:     field.Name,
+		Type:     ast.NamedType(aggTypeName, pos),
+		Position: pos,
+		Directives: ast.DirectiveList{
+			fieldAggregationDirective(field.Name, pos),
+		},
+	}
+	// Copy args from the original extra field
+	if len(field.Arguments) > 0 {
+		aggField.Arguments = make(ast.ArgumentDefinitionList, len(field.Arguments))
+		copy(aggField.Arguments, field.Arguments)
+	}
+	// Note: old compiler does NOT copy @extra_field/@sql directives to aggregation extra fields
+	return aggField
 }

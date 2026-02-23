@@ -48,10 +48,11 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 		Position: pos,
 	})
 
-	// 2b. Generate list filter input type
-	listFilterName := def.Name + "_list_filter"
-	listFilterDef := generateListFilterInput(filterName, listFilterName, pos)
-	addDef(listFilterDef)
+	// Note: _list_filter types are created lazily by gen_references.go
+	// when a back-reference or M2M reference needs them.
+
+	// 2c. Set scalar-specific field arguments
+	setScalarFieldArguments(ctx, def)
 
 	// 3. Generate aggregation type
 	aggName := "_" + def.Name + "_aggregation"
@@ -64,8 +65,28 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 	addDef(bucketAggDef)
 
 	// 4. Register query fields (views are read-only -- no mutation fields)
-	queryFields := generateQueryFields(def, info, filterName, pos)
+	queryFields := generateQueryFields(ctx, def, info, filterName, pos)
 	ctx.RegisterQueryFields(def.Name, queryFields)
+
+	// Add @query directives on def
+	def.Directives = append(def.Directives, &ast.Directive{
+		Name: "query",
+		Arguments: ast.ArgumentList{
+			{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+			{Name: "type", Value: &ast.Value{Raw: "SELECT", Kind: ast.EnumValue, Position: pos}, Position: pos},
+		},
+		Position: pos,
+	})
+	if len(info.PrimaryKey) > 0 {
+		def.Directives = append(def.Directives, &ast.Directive{
+			Name: "query",
+			Arguments: ast.ArgumentList{
+				{Name: "name", Value: &ast.Value{Raw: def.Name + "_by_pk", Kind: ast.StringValue, Position: pos}, Position: pos},
+				{Name: "type", Value: &ast.Value{Raw: "SELECT_ONE", Kind: ast.EnumValue, Position: pos}, Position: pos},
+			},
+			Position: pos,
+		})
+	}
 
 	return nil
 }

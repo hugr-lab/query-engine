@@ -10,6 +10,7 @@ var (
 	_ Aggregatable            = (*timestampScalar)(nil)
 	_ MeasurementAggregatable = (*timestampScalar)(nil)
 	_ ExtraFieldProvider      = (*timestampScalar)(nil)
+	_ FieldArgumentsProvider  = (*timestampScalar)(nil)
 )
 
 type timestampScalar struct{}
@@ -80,6 +81,13 @@ func (s *timestampScalar) MeasurementAggregationSDL() string {
   MAX
   ANY
 }`
+}
+
+func (s *timestampScalar) FieldArguments() ast.ArgumentDefinitionList {
+	return ast.ArgumentDefinitionList{
+		{Name: "bucket", Type: ast.NamedType("TimeBucket", nil)},
+		{Name: "bucket_interval", Type: ast.NamedType("Interval", nil)},
+	}
 }
 
 func (s *timestampScalar) ExtraFieldName() string { return "Extract" }

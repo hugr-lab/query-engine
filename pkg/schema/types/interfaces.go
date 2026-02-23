@@ -34,6 +34,12 @@ type MeasurementAggregatable interface {
 	MeasurementAggregationSDL() string
 }
 
+// FieldArgumentsProvider indicates the scalar has field-level arguments
+// (e.g., bucket for Timestamp, transforms for Geometry, struct for JSON).
+type FieldArgumentsProvider interface {
+	FieldArguments() ast.ArgumentDefinitionList
+}
+
 // ExtraFieldProvider indicates the scalar generates extra derived fields.
 type ExtraFieldProvider interface {
 	ExtraFieldName() string

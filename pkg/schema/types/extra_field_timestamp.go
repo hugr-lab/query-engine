@@ -7,7 +7,7 @@ func generateTimestampExtraField(fieldName, baseType string) *ast.FieldDefinitio
 	return &ast.FieldDefinition{
 		Name:        "_" + fieldName + "_part",
 		Description: "Extract part of " + baseType + " field " + fieldName,
-		Type:        ast.NonNullNamedType("BigInt", pos),
+		Type:        ast.NamedType("BigInt", pos),
 		Arguments: ast.ArgumentDefinitionList{
 			{
 				Name:     "extract",

@@ -133,10 +133,8 @@ func TestCompile_BasicTable(t *testing.T) {
 		}
 	}
 
-	// Check list filter input type
-	if _, ok := defs["User_list_filter"]; !ok {
-		t.Error("expected User_list_filter definition in output")
-	}
+	// Note: User_list_filter is only created lazily when back-references exist.
+	// BasicTable has no references, so no _list_filter is expected.
 
 	// Check insert data input type
 	insertInputDef, ok := defs["User_mut_input_data"]
@@ -318,9 +316,7 @@ func TestCompile_View(t *testing.T) {
 	if _, ok := defs["ActiveUsers_filter"]; !ok {
 		t.Error("expected ActiveUsers_filter definition")
 	}
-	if _, ok := defs["ActiveUsers_list_filter"]; !ok {
-		t.Error("expected ActiveUsers_list_filter definition")
-	}
+	// Note: ActiveUsers_list_filter is only created lazily when back-references exist.
 	if _, ok := defs["_ActiveUsers_aggregation"]; !ok {
 		t.Error("expected _ActiveUsers_aggregation definition")
 	}
@@ -562,9 +558,7 @@ func TestCompile_Prefix(t *testing.T) {
 	if _, ok := defs["pfx_Item_filter"]; !ok {
 		t.Error("expected pfx_Item_filter definition (prefixed)")
 	}
-	if _, ok := defs["pfx_Item_list_filter"]; !ok {
-		t.Error("expected pfx_Item_list_filter definition (prefixed)")
-	}
+	// Note: pfx_Item_list_filter is only created lazily when back-references exist.
 	if _, ok := defs["pfx_Item_mut_input_data"]; !ok {
 		t.Error("expected pfx_Item_mut_input_data definition (prefixed)")
 	}

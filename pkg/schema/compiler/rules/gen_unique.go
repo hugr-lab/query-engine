@@ -21,6 +21,7 @@ func (r *UniqueRule) Process(ctx base.CompilationContext, def *ast.Definition) e
 	if info == nil {
 		info = &base.ObjectInfo{Name: def.Name, OriginalName: def.Name}
 	}
+	opts := ctx.CompileOptions()
 	pos := compiledPos(def.Name)
 
 	var queryFields []*ast.FieldDefinition
@@ -54,9 +55,10 @@ func (r *UniqueRule) Process(ctx base.CompilationContext, def *ast.Definition) e
 			Type: ast.NamedType(def.Name, pos),
 			Directives: ast.DirectiveList{
 				{Name: "query", Arguments: ast.ArgumentList{
-					{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 					{Name: "type", Value: &ast.Value{Raw: "SELECT_ONE", Kind: ast.EnumValue, Position: pos}, Position: pos},
 				}, Position: pos},
+				optsCatalogDirective(opts),
 			},
 			Position: pos,
 		}
@@ -79,6 +81,17 @@ func (r *UniqueRule) Process(ctx base.CompilationContext, def *ast.Definition) e
 
 	if len(queryFields) > 0 {
 		ctx.RegisterQueryFields(def.Name, queryFields)
+		// Add @query directives on definition for each unique query
+		for _, qf := range queryFields {
+			def.Directives = append(def.Directives, &ast.Directive{
+				Name: "query",
+				Arguments: ast.ArgumentList{
+					{Name: "name", Value: &ast.Value{Raw: qf.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "type", Value: &ast.Value{Raw: "SELECT_ONE", Kind: ast.EnumValue, Position: pos}, Position: pos},
+				},
+				Position: pos,
+			})
+		}
 	}
 
 	return nil

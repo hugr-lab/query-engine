@@ -21,6 +21,7 @@ func (r *AggregationRule) Process(ctx base.CompilationContext, def *ast.Definiti
 	if info == nil {
 		info = &base.ObjectInfo{Name: def.Name, OriginalName: def.Name}
 	}
+	opts := ctx.CompileOptions()
 	pos := compiledPos(def.Name)
 
 	// The aggregation type was already created by TableRule or ViewRule as
@@ -29,8 +30,6 @@ func (r *AggregationRule) Process(ctx base.CompilationContext, def *ast.Definiti
 
 	// Verify the aggregation type exists in output
 	if ctx.LookupType(aggTypeName) == nil {
-		// If for some reason the aggregation type wasn't generated yet,
-		// skip silently. This can happen if ordering is not guaranteed.
 		return nil
 	}
 
@@ -39,38 +38,45 @@ func (r *AggregationRule) Process(ctx base.CompilationContext, def *ast.Definiti
 
 	// Single-row aggregation query: Type_aggregation
 	aggField := &ast.FieldDefinition{
-		Name: def.Name + "_aggregation",
-		Type: ast.NamedType(aggTypeName, pos),
-		Arguments: ast.ArgumentDefinitionList{
-			{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-		},
+		Name:      def.Name + "_aggregation",
+		Type:      ast.NamedType(aggTypeName, pos),
+		Arguments: queryArgs(filterName, pos),
 		Directives: ast.DirectiveList{
-			{Name: "query", Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
-				{Name: "type", Value: &ast.Value{Raw: "AGGREGATE", Kind: ast.EnumValue, Position: pos}, Position: pos},
+			{Name: "aggregation_query", Arguments: ast.ArgumentList{
+				{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(opts),
 		},
 		Position: pos,
 	}
 
 	// Bucket aggregation query: Type_bucket_aggregation
 	bucketAggField := &ast.FieldDefinition{
-		Name: def.Name + "_bucket_aggregation",
-		Type: ast.NonNullListType(ast.NamedType(bucketAggTypeName, pos), pos),
-		Arguments: ast.ArgumentDefinitionList{
-			{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-			{Name: "order_by", Type: ast.ListType(ast.NonNullNamedType("OrderByField", pos), pos), Position: pos},
-			{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos},
-			{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos},
-		},
+		Name:      def.Name + "_bucket_aggregation",
+		Type:      ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
+		Arguments: queryArgs(filterName, pos),
 		Directives: ast.DirectiveList{
-			{Name: "query", Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: info.OriginalName, Kind: ast.StringValue, Position: pos}, Position: pos},
-				{Name: "type", Value: &ast.Value{Raw: "BUCKET_AGGREGATE", Kind: ast.EnumValue, Position: pos}, Position: pos},
+			{Name: "aggregation_query", Arguments: ast.ArgumentList{
+				{Name: "is_bucket", Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(opts),
 		},
 		Position: pos,
 	}
+
+	// Add aggregation query directives to the object itself
+	def.Directives = append(def.Directives,
+		&ast.Directive{Name: "query", Arguments: ast.ArgumentList{
+			{Name: "name", Value: &ast.Value{Raw: def.Name + "_aggregation", Kind: ast.StringValue, Position: pos}, Position: pos},
+			{Name: "type", Value: &ast.Value{Raw: "AGGREGATE", Kind: ast.EnumValue, Position: pos}, Position: pos},
+		}, Position: pos},
+		&ast.Directive{Name: "query", Arguments: ast.ArgumentList{
+			{Name: "name", Value: &ast.Value{Raw: def.Name + "_bucket_aggregation", Kind: ast.StringValue, Position: pos}, Position: pos},
+			{Name: "type", Value: &ast.Value{Raw: "AGGREGATE_BUCKET", Kind: ast.EnumValue, Position: pos}, Position: pos},
+		}, Position: pos},
+	)
 
 	ctx.RegisterQueryFields(def.Name, []*ast.FieldDefinition{aggField, bucketAggField})
 

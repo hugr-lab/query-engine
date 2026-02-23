@@ -7,7 +7,7 @@ func generateGeometryExtraField(fieldName string) *ast.FieldDefinition {
 	return &ast.FieldDefinition{
 		Name:        "_" + fieldName + "_measurement",
 		Description: "Calculate measurement of geometry field " + fieldName,
-		Type:        ast.NonNullNamedType("Float", pos),
+		Type:        ast.NamedType("Float", pos),
 		Arguments: ast.ArgumentDefinitionList{
 			{
 				Name:     "type",

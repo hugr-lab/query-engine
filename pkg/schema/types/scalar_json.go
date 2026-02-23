@@ -1,10 +1,13 @@
 package types
 
+import "github.com/vektah/gqlparser/v2/ast"
+
 // Compile-time interface assertions.
 var (
-	_ ScalarType  = (*jsonScalar)(nil)
-	_ Filterable  = (*jsonScalar)(nil)
-	_ Aggregatable = (*jsonScalar)(nil)
+	_ ScalarType             = (*jsonScalar)(nil)
+	_ Filterable             = (*jsonScalar)(nil)
+	_ Aggregatable           = (*jsonScalar)(nil)
+	_ FieldArgumentsProvider = (*jsonScalar)(nil)
 )
 
 type jsonScalar struct{}
@@ -30,6 +33,12 @@ func (s *jsonScalar) FilterSDL() string {
   contains: JSON
   is_null: Boolean
 }`
+}
+
+func (s *jsonScalar) FieldArguments() ast.ArgumentDefinitionList {
+	return ast.ArgumentDefinitionList{
+		{Name: "struct", Type: ast.NamedType("JSON", nil)},
+	}
 }
 
 func (s *jsonScalar) AggregationTypeName() string { return "JSONAggregation" }

@@ -19,7 +19,7 @@ func RegisterAll() []base.Rule {
 		&ViewRule{},
 		&UniqueRule{},
 		&ReferencesRule{},
-		&JoinRule{},
+		&JoinSpatialRule{},
 		&AggregationRule{},
 		&FunctionRule{},
 		&ExtraFieldRule{},
