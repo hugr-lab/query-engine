@@ -270,7 +270,7 @@ func Test_repackStructRecursive(t *testing.T) {
 							},
 						},
 						Definition: &ast.FieldDefinition{
-							Name: "subfield1", Type: &ast.Type{NamedType: ""},
+							Name: "subfield1", Type: &ast.Type{NamedType: "", Elem: &ast.Type{NamedType: "test"}},
 						},
 					},
 				},

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/hugr-lab/query-engine/pkg/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/airport"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
@@ -19,7 +18,8 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
-	schemalib "github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/schema/sources"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
@@ -32,10 +32,10 @@ type Service struct {
 
 	db       *db.Pool
 	qe       types.Querier
-	catalogs *catalogs.Service
+	catalogs schema.Manager
 }
 
-func New(qe types.Querier, db *db.Pool, cs *catalogs.Service) *Service {
+func New(qe types.Querier, db *db.Pool, cs schema.Manager) *Service {
 	return &Service{
 		dataSources: make(map[string]Source),
 		catalogs:    cs,
@@ -54,17 +54,17 @@ func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource)
 		return err
 	}
 
-	c, err := catalogs.NewCatalog(ctx, source.Name(), "", source.Engine(), source.Catalog(ctx), source.AsModule(), source.IsReadonly())
-	if err != nil {
-		return err
-	}
-
-	err = s.catalogs.AddCatalog(ctx, source.Name(), c)
-	if err != nil {
-		return err
-	}
-
-	return s.catalogs.RebuildSchema(ctx)
+	return s.catalogs.AddCatalog(ctx,
+		source.Name(),
+		source.Engine(),
+		sources.NewCatalog(ctx,
+			types.DataSource{
+				Name:     source.Name(),
+				AsModule: source.AsModule(),
+				ReadOnly: source.IsReadonly(),
+			},
+			source.Engine(), source.Catalog(ctx), false),
+	)
 }
 
 func (s *Service) Engine(name string) (engines.Engine, error) {
@@ -76,10 +76,6 @@ func (s *Service) Engine(name string) (engines.Engine, error) {
 		return nil, ErrDataSourceNotFound
 	}
 	return ds.Engine(), nil
-}
-
-func (s *Service) SchemaProvider() schemalib.Provider {
-	return s.catalogs.SchemaProvider()
 }
 
 func (s *Service) Register(ctx context.Context, name string, ds Source) error {
@@ -134,24 +130,26 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 
 	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {
 		// add extension
-		source, err := s.extensionCatalog(ctx, name)
+		source, err := s.catalogSource(ctx, ds, false)
 		if err != nil {
 			return err
 		}
-		return s.catalogs.AddExtension(ctx, source)
+		def := ds.Definition()
+		e := engines.NewDuckDB()
+		return s.catalogs.AddCatalog(ctx, def.Name, e,
+			sources.NewCatalog(ctx, def, e, source, true))
 	}
 
 	// create data source catalog
-	c, err := s.dataSourceCatalog(ctx, name)
+	source, err := s.catalogSource(ctx, ds, false)
 	if err != nil {
 		return err
 	}
-	if c == nil {
+	if source == nil {
 		return nil
 	}
-
-	// add catalog
-	return s.catalogs.AddCatalog(ctx, name, c)
+	def := ds.Definition()
+	return s.catalogs.AddCatalog(ctx, def.Name, ds.Engine(), sources.NewCatalog(ctx, def, ds.Engine(), source, false))
 }
 
 func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
@@ -164,19 +162,12 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 	}
 
 	if !ds.IsAttached() {
-		return ErrDataSourceAttached
+		return ErrDataSourceNotAttached
 	}
 
 	// remove catalog
-	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {
-		err := s.catalogs.RemoveExtension(ctx, name)
-		if err != nil && !errors.Is(err, catalogs.ErrCatalogNotFound) {
-			return err
-		}
-		return ds.Detach(ctx, db)
-	}
 	err := s.catalogs.RemoveCatalog(ctx, name)
-	if !errors.Is(err, catalogs.ErrCatalogNotFound) && err != nil {
+	if !errors.Is(err, schema.ErrCatalogNotFound) && err != nil {
 		return err
 	}
 

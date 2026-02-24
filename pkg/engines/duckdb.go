@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	oldcomp "github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkt"
@@ -196,7 +197,7 @@ func (e DuckDB) PackFieldsToObject(prefix string, field *ast.Field) string {
 		prefix += "."
 	}
 	for _, f := range SelectedFields(field.SelectionSet) {
-		if st, ok := compiler.ScalarTypes[f.Field.Definition.Type.Name()]; ok && st.ToStructFieldSQL != nil {
+		if st, ok := oldcomp.ScalarTypes[f.Field.Definition.Type.Name()]; ok && st.ToStructFieldSQL != nil {
 			fields = append(fields, Ident(f.Field.Alias)+": "+prefix+st.ToStructFieldSQL(Ident(f.Field.Alias)))
 			continue
 		}
@@ -331,11 +332,11 @@ func (e DuckDB) ExtractJSONStruct(sql string, jsonStruct map[string]any) string 
 	return "json_transform(" + sql + ",'" + str + "')"
 }
 
-func (e DuckDB) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args compiler.FieldQueryArguments, params []any) (string, []any, error) {
-	switch compiler.TransformBaseFieldType(field.Definition) {
-	case compiler.GeometryTypeName:
+func (e DuckDB) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args oldcomp.FieldQueryArguments, params []any) (string, []any, error) {
+	switch oldcomp.TransformBaseFieldType(field.Definition) {
+	case oldcomp.GeometryTypeName:
 		return e.GeometryTransform(sql, field, args), params, nil
-	case compiler.JSONTypeName:
+	case oldcomp.JSONTypeName:
 		sa := args.ForName("struct")
 		if sa == nil {
 			return sql, params, nil
@@ -345,7 +346,7 @@ func (e DuckDB) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql 
 			return sql, params, nil
 		}
 		return e.ExtractJSONStruct(sql, s), params, nil
-	case compiler.TimestampTypeName:
+	case oldcomp.TimestampTypeName:
 		return e.TimestampTransform(sql, field, args), params, nil
 	case base.VectorTypeName:
 		return e.VectorTransform(ctx, qe, sql, field, args, params)
@@ -353,8 +354,8 @@ func (e DuckDB) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql 
 	return sql, params, nil
 }
 
-func (e DuckDB) GeometryTransform(sql string, field *ast.Field, args compiler.FieldQueryArguments) string {
-	if compiler.IsExtraField(field.Definition) {
+func (e DuckDB) GeometryTransform(sql string, field *ast.Field, args oldcomp.FieldQueryArguments) string {
+	if oldcomp.IsExtraField(field.Definition) {
 		if a := args.ForName("Transform"); a != nil && a.Value != nil && a.Value.(bool) {
 			from := args.ForName("from")
 			to := args.ForName("to")
@@ -462,7 +463,7 @@ func (e DuckDB) GeometryTransform(sql string, field *ast.Field, args compiler.Fi
 	return sql
 }
 
-func (e DuckDB) TimestampTransform(sql string, field *ast.Field, args compiler.FieldQueryArguments) string {
+func (e DuckDB) TimestampTransform(sql string, field *ast.Field, args oldcomp.FieldQueryArguments) string {
 	if len(args) == 0 {
 		return sql
 	}
@@ -539,7 +540,7 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		if field == nil {
 			return "COUNT(*)", params, nil
 		}
-		if field.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == oldcomp.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -550,10 +551,10 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		}
 		return "COUNT(DISTINCT " + sql + ")", params, nil
 	case "sum":
-		if field.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == oldcomp.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -565,7 +566,7 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		}
 		if factor != "" {
 			switch field.Type.Name() {
-			case compiler.JSONTypeName, "Float":
+			case oldcomp.JSONTypeName, "Float":
 				return "SUM(" + sql + " * " + factor + ")", params, nil
 			case "Int", "BigInt":
 				return "SUM(" + sql + " * " + factor + ")::BIGINT", params, nil
@@ -573,10 +574,10 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		}
 		return "SUM(" + sql + ")", params, nil
 	case "avg":
-		if field.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == oldcomp.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -588,7 +589,7 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		}
 		if factor != "" {
 			switch field.Type.Name() {
-			case compiler.JSONTypeName, "Float":
+			case oldcomp.JSONTypeName, "Float":
 				return "AVG(" + sql + " * " + factor + ")", params, nil
 			case "Int", "BigInt":
 				return "AVG(" + sql + " * " + factor + ")::BIGINT", params, nil
@@ -596,10 +597,10 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		}
 		return "AVG(" + sql + ")", params, nil
 	case "min":
-		if field.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == oldcomp.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -607,9 +608,9 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 			path += jp.(string)
 		}
 		if path != "" {
-			jt, ok := compiler.FieldJSONTypes[field.Type.Name()]
+			jt, ok := oldcomp.FieldJSONTypes[field.Type.Name()]
 			if !ok {
-				return "", nil, compiler.ErrorPosf(field.Position, "unsupported type for min aggregate function")
+				return "", nil, oldcomp.ErrorPosf(field.Position, "unsupported type for min aggregate function")
 			}
 			if jt == "" {
 				jt = "number"
@@ -618,10 +619,10 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		}
 		return "MIN(" + sql + ")", params, nil
 	case "max":
-		if field.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == oldcomp.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -629,9 +630,9 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 			path += jp.(string)
 		}
 		if path != "" {
-			jt, ok := compiler.FieldJSONTypes[field.Type.Name()]
+			jt, ok := oldcomp.FieldJSONTypes[field.Type.Name()]
 			if !ok {
-				return "", nil, compiler.ErrorPosf(field.Position, "unsupported type for min aggregate function")
+				return "", nil, oldcomp.ErrorPosf(field.Position, "unsupported type for min aggregate function")
 			}
 			if jt == "" {
 				jt = "number"
@@ -640,7 +641,7 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		}
 		return "MAX(" + sql + ")", params, nil
 	case "list":
-		if field.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == oldcomp.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -649,7 +650,7 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		if path != "" {
 			sql = e.ExtractNestedTypedValue(sql, path, "")
 		}
-		if field.Type.NamedType == compiler.GeometryAggregationTypeName && path == "" {
+		if field.Type.NamedType == oldcomp.GeometryAggregationTypeName && path == "" {
 			sql = "ST_AsGeoJSON(" + sql + ")"
 		}
 		if args != nil && args["distinct"] != nil && args["distinct"].(bool) {
@@ -657,7 +658,7 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		}
 		return "ARRAY_AGG(" + sql + ")", params, nil
 	case "any":
-		if field.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == oldcomp.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -666,12 +667,12 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		if path != "" {
 			sql = e.ExtractNestedTypedValue(sql, path, "")
 		}
-		if field.Type.NamedType == compiler.GeometryAggregationTypeName && path == "" {
+		if field.Type.NamedType == oldcomp.GeometryAggregationTypeName && path == "" {
 			return "ST_AsGeoJSON(ANY_VALUE(" + sql + "))", params, nil
 		}
 		return "ANY_VALUE(" + sql + ")", params, nil
 	case "last":
-		if field.Type.Name() == compiler.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == oldcomp.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -680,15 +681,15 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		if path != "" {
 			sql = e.ExtractNestedTypedValue(sql, path, "")
 		}
-		if field.Type.NamedType == compiler.GeometryAggregationTypeName && path == "" {
+		if field.Type.NamedType == oldcomp.GeometryAggregationTypeName && path == "" {
 			return "ST_AsGeoJSON(LAST(" + sql + "))", params, nil
 		}
 		return "LAST(" + sql + ")", params, nil
 	case "bool_and":
-		if field.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == oldcomp.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -700,10 +701,10 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 		}
 		return "BOOL_AND(" + sql + ")", params, nil
 	case "bool_or":
-		if field.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == oldcomp.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -717,12 +718,12 @@ func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.
 	case "string_agg":
 		sep := args["sep"]
 		if sep == nil {
-			return "", nil, compiler.ErrorPosf(field.Position, "separator argument is required")
+			return "", nil, oldcomp.ErrorPosf(field.Position, "separator argument is required")
 		}
-		if field.Type.Name() == compiler.JSONTypeName {
+		if field.Type.Name() == oldcomp.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, compiler.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -827,7 +828,7 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 			fields = append(fields, Ident(f.Field.Alias)+":'"+f.Field.ObjectDefinition.Name+"'")
 			continue
 		}
-		fi := compiler.FieldInfo(f.Field)
+		fi := oldcomp.FieldInfo(f.Field)
 		fieldName := fi.FieldSourceName("", false)
 		if fieldName != f.Field.Name { // need to full repack this level
 			check[f.Field.ObjectDefinition.Name]++
@@ -845,7 +846,10 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 		if fi.IsTransformed() {
 			extractValue = fi.TransformSQL(extractValue)
 		}
-		if st, ok := compiler.ScalarTypes[f.Field.Definition.Type.Name()]; ok && st.ToStructFieldSQL != nil {
+		if f.Field.Definition.Type.NamedType == "" && f.Field.Definition.Type.Elem == nil {
+			continue
+		}
+		if st, ok := oldcomp.ScalarTypes[f.Field.Definition.Type.Name()]; ok && st.ToStructFieldSQL != nil {
 			extractValue = st.ToStructFieldSQL(extractValue)
 		}
 		switch {
@@ -922,14 +926,14 @@ func jsonStructRecursive(field *ast.Field, useNativeTypes bool, byFieldSource bo
 		}
 		fn := f.Field.Alias
 		if byFieldSource {
-			fi := compiler.FieldInfo(f.Field)
+			fi := oldcomp.FieldInfo(f.Field)
 			if fi != nil {
 				fn = fi.FieldSourceName("", false)
 			} else {
 				fn = f.Field.Name
 			}
 		}
-		if t, ok := compiler.ScalarTypes[f.Field.Definition.Type.Name()]; ok {
+		if t, ok := oldcomp.ScalarTypes[f.Field.Definition.Type.Name()]; ok {
 			tn := t.JSONToStructType
 			if useNativeTypes {
 				tn = t.JSONNativeType
@@ -963,6 +967,6 @@ func (e *DuckDB) VectorDistanceSQL(sql, distMetric string, vector types.Vector, 
 	}
 }
 
-func (e *DuckDB) VectorTransform(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args compiler.FieldQueryArguments, params []any) (string, []any, error) {
+func (e *DuckDB) VectorTransform(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args oldcomp.FieldQueryArguments, params []any) (string, []any, error) {
 	return commonVectorTransform(ctx, e, qe, sql, field, args, params)
 }
