@@ -17,6 +17,7 @@ func RegisterAll() []base.Rule {
 		// GENERATE phase
 		&TableRule{},
 		&ViewRule{},
+		&CubeHypertableRule{},
 		&UniqueRule{},
 		&ReferencesRule{},
 		&JoinSpatialRule{},

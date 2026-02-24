@@ -86,6 +86,8 @@ func (r *PrefixPreparer) ProcessAll(ctx base.CompilationContext) error {
 				IsReplace:    base.IsReplaceDefinition(def),
 				IsView:       isView,
 				IsM2M:        isM2M,
+				IsCube:       def.Directives.ForName("cube") != nil,
+				IsHypertable: def.Directives.ForName("hypertable") != nil,
 				PrimaryKey:   pks,
 			}
 			ctx.RegisterObject(prefixedName, info)

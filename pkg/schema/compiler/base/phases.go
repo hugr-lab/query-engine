@@ -58,6 +58,8 @@ type ObjectInfo struct {
 	IsReplace    bool
 	IsView       bool
 	IsM2M        bool
+	IsCube       bool
+	IsHypertable bool
 	PrimaryKey   []string
 
 	// Parameterized views (@args)

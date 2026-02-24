@@ -1770,3 +1770,315 @@ type SearchResults
 		t.Fatalf("expected error to mention 'unknown_field', got: %v", err)
 	}
 }
+
+// --- @cube cross-compiler tests ---
+
+const cubeTestSchema = `
+"""Sensor data table with cube directive for measurement aggregation"""
+type SensorReading
+  @table(name: "sensor_readings")
+  @cube {
+  id: Int! @pk
+  sensor_id: String!
+  temperature: Float @measurement
+  humidity: Float @measurement
+  pressure: Int @measurement
+  reading_time: Timestamp
+}
+
+"""Simple table without cube for comparison"""
+type Sensor
+  @table(name: "sensors") {
+  id: Int! @pk
+  name: String!
+  location: String
+}
+`
+
+func TestCrossCompiler_Cube(t *testing.T) {
+	sdl := cubeTestSchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+
+	// Verify that @measurement fields on the cube object have measurement_func argument
+	newSR := newResult.defs["SensorReading"]
+	if newSR == nil {
+		t.Fatal("SensorReading not found in new compiler output")
+	}
+	for _, fieldName := range []string{"temperature", "humidity"} {
+		f := newSR.Fields.ForName(fieldName)
+		if f == nil {
+			t.Errorf("SensorReading.%s not found", fieldName)
+			continue
+		}
+		hasMF := false
+		for _, arg := range f.Arguments {
+			if arg.Name == "measurement_func" {
+				hasMF = true
+				break
+			}
+		}
+		if !hasMF {
+			t.Errorf("SensorReading.%s: expected measurement_func argument (cube)", fieldName)
+		}
+	}
+
+	// Verify non-measurement fields do NOT have measurement_func
+	nonMeasurementFields := []string{"id", "sensor_id", "reading_time"}
+	for _, fieldName := range nonMeasurementFields {
+		f := newSR.Fields.ForName(fieldName)
+		if f == nil {
+			continue
+		}
+		for _, arg := range f.Arguments {
+			if arg.Name == "measurement_func" {
+				t.Errorf("SensorReading.%s: should NOT have measurement_func argument (not @measurement)", fieldName)
+			}
+		}
+	}
+}
+
+func TestCrossCompiler_CubeWithPrefix(t *testing.T) {
+	sdl := cubeTestSchema
+	oldOpts := oldcompiler.Options{Name: "test", Prefix: "iot", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", Prefix: "iot", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+// --- @hypertable cross-compiler tests ---
+
+const hypertableTestSchema = `
+"""Time-series data with hypertable and timescale_key"""
+type MetricLog
+  @table(name: "metric_logs")
+  @hypertable {
+  id: Int! @pk
+  metric_name: String!
+  value: Float
+  recorded_at: Timestamp @timescale_key
+}
+
+"""Simple table for comparison"""
+type MetricType
+  @table(name: "metric_types") {
+  id: Int! @pk
+  name: String!
+  unit: String
+}
+`
+
+func TestCrossCompiler_Hypertable(t *testing.T) {
+	sdl := hypertableTestSchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+
+	// Verify that @timescale_key Timestamp field has gapfill argument
+	newML := newResult.defs["MetricLog"]
+	if newML == nil {
+		t.Fatal("MetricLog not found in new compiler output")
+	}
+	recordedAt := newML.Fields.ForName("recorded_at")
+	if recordedAt == nil {
+		t.Fatal("MetricLog.recorded_at not found")
+	}
+	hasGapfill := false
+	for _, arg := range recordedAt.Arguments {
+		if arg.Name == "gapfill" {
+			hasGapfill = true
+			if arg.Type.Name() != "Boolean" {
+				t.Errorf("MetricLog.recorded_at gapfill type: expected Boolean, got %s", arg.Type.Name())
+			}
+			break
+		}
+	}
+	if !hasGapfill {
+		t.Error("MetricLog.recorded_at: expected gapfill argument (hypertable + timescale_key)")
+	}
+
+	// Verify non-timescale_key fields do NOT have gapfill
+	for _, fieldName := range []string{"id", "metric_name", "value"} {
+		f := newML.Fields.ForName(fieldName)
+		if f == nil {
+			continue
+		}
+		for _, arg := range f.Arguments {
+			if arg.Name == "gapfill" {
+				t.Errorf("MetricLog.%s: should NOT have gapfill argument", fieldName)
+			}
+		}
+	}
+}
+
+func TestCrossCompiler_HypertableWithPrefix(t *testing.T) {
+	sdl := hypertableTestSchema
+	oldOpts := oldcompiler.Options{Name: "test", Prefix: "ts", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", Prefix: "ts", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	compareSummary(t, oldResult, newResult)
+}
+
+// --- @cube + @hypertable combined test ---
+
+const cubeHypertableTestSchema = `
+"""Combined cube and hypertable on same table"""
+type TimeSeries
+  @table(name: "time_series")
+  @cube
+  @hypertable {
+  id: Int! @pk
+  metric_name: String!
+  value: Float @measurement
+  count: Int @measurement
+  recorded_at: Timestamp @timescale_key
+}
+`
+
+func TestCrossCompiler_CubeAndHypertable(t *testing.T) {
+	sdl := cubeHypertableTestSchema
+	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
+	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	t.Log(oldResult)
+	t.Log(newResult)
+
+	compareSummary(t, oldResult, newResult)
+
+	// Verify measurement_func on @measurement fields
+	newTS := newResult.defs["TimeSeries"]
+	if newTS == nil {
+		t.Fatal("TimeSeries not found in new compiler output")
+	}
+	for _, fieldName := range []string{"value", "count"} {
+		f := newTS.Fields.ForName(fieldName)
+		if f == nil {
+			t.Errorf("TimeSeries.%s not found", fieldName)
+			continue
+		}
+		hasMF := false
+		for _, arg := range f.Arguments {
+			if arg.Name == "measurement_func" {
+				hasMF = true
+				break
+			}
+		}
+		if !hasMF {
+			t.Errorf("TimeSeries.%s: expected measurement_func argument", fieldName)
+		}
+	}
+
+	// Verify gapfill on @timescale_key Timestamp field
+	recordedAt := newTS.Fields.ForName("recorded_at")
+	if recordedAt == nil {
+		t.Fatal("TimeSeries.recorded_at not found")
+	}
+	hasGapfill := false
+	for _, arg := range recordedAt.Arguments {
+		if arg.Name == "gapfill" {
+			hasGapfill = true
+			break
+		}
+	}
+	if !hasGapfill {
+		t.Error("TimeSeries.recorded_at: expected gapfill argument")
+	}
+}
+
+// --- Validation tests for @cube and @hypertable ---
+
+func TestValidate_MeasurementWithoutCube(t *testing.T) {
+	sdl := `
+type BadTable @table(name: "bad_table") {
+  id: Int! @pk
+  value: Float @measurement
+}
+`
+	err := compileNewOnly(t, sdl)
+	if err == nil {
+		t.Fatal("expected error for @measurement without @cube, got nil")
+	}
+	if !strings.Contains(err.Error(), "@cube") {
+		t.Fatalf("expected error to mention '@cube', got: %v", err)
+	}
+}
+
+func TestValidate_TimescaleKeyWithoutHypertable(t *testing.T) {
+	sdl := `
+type BadTable @table(name: "bad_table") {
+  id: Int! @pk
+  ts: Timestamp @timescale_key
+}
+`
+	err := compileNewOnly(t, sdl)
+	if err == nil {
+		t.Fatal("expected error for @timescale_key without @hypertable, got nil")
+	}
+	if !strings.Contains(err.Error(), "@hypertable") {
+		t.Fatalf("expected error to mention '@hypertable', got: %v", err)
+	}
+}
+
+func TestValidate_CubeWithoutTableOrView(t *testing.T) {
+	sdl := `
+type BadType @cube {
+  id: Int! @pk
+  value: Float @measurement
+}
+
+type Dummy @table(name: "d") {
+  id: Int! @pk
+}
+`
+	err := compileNewOnly(t, sdl)
+	if err == nil {
+		t.Fatal("expected error for @cube without @table/@view, got nil")
+	}
+	if !strings.Contains(err.Error(), "@cube") {
+		t.Fatalf("expected error to mention '@cube', got: %v", err)
+	}
+}
+
+func TestValidate_HypertableWithoutTableOrView(t *testing.T) {
+	sdl := `
+type BadType @hypertable {
+  id: Int! @pk
+  ts: Timestamp @timescale_key
+}
+
+type Dummy @table(name: "d") {
+  id: Int! @pk
+}
+`
+	err := compileNewOnly(t, sdl)
+	if err == nil {
+		t.Fatal("expected error for @hypertable without @table/@view, got nil")
+	}
+	if !strings.Contains(err.Error(), "@hypertable") {
+		t.Fatalf("expected error to mention '@hypertable', got: %v", err)
+	}
+}

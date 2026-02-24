@@ -29,6 +29,10 @@ type CompilationContext interface {
 	LookupType(name string) *ast.Definition
 	LookupDirective(name string) *ast.DirectiveDefinition
 
+	// LookupExtension returns the accumulated extension for a given type name,
+	// or nil if no extensions have been added for that type.
+	LookupExtension(name string) *ast.Definition
+
 	// Shared state management
 	RegisterObject(name string, info *ObjectInfo)
 	GetObject(name string) *ObjectInfo

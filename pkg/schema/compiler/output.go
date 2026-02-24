@@ -70,6 +70,14 @@ func (o *indexedOutput) LookupDefinition(name string) *ast.Definition {
 	return nil
 }
 
+// LookupExtension returns the accumulated extension for a given type name, or nil.
+func (o *indexedOutput) LookupExtension(name string) *ast.Definition {
+	if idx, ok := o.extIndex[name]; ok {
+		return o.exts[idx]
+	}
+	return nil
+}
+
 // LookupDirective returns a directive definition by name, or nil.
 func (o *indexedOutput) LookupDirective(name string) *ast.DirectiveDefinition {
 	if idx, ok := o.dirIndex[name]; ok {

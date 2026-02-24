@@ -71,5 +71,78 @@ func (r *FunctionRule) Process(ctx base.CompilationContext, def *ast.Definition)
 	// The RootTypeAssembler adds a "function" gateway field on Query/Mutation.
 	ctx.AddDefinition(def)
 
+	// Add aggregation/bucket_aggregation fields for table-returning functions.
+	// The old compiler adds these for functions that return list types pointing
+	// to data objects (e.g., find_nearby: [Airport] → find_nearby_aggregation).
+	addFunctionAggregationFields(ctx, def, opts, pos)
+
 	return nil
+}
+
+// addFunctionAggregationFields adds _aggregation and _bucket_aggregation fields
+// to the Function/MutationFunction type for each function that returns a list of
+// a data object. This matches the old compiler's addAggregationQueryField behavior.
+func addFunctionAggregationFields(ctx base.CompilationContext, def *ast.Definition, opts base.Options, pos *ast.Position) {
+	var aggFields ast.FieldList
+
+	for _, field := range def.Fields {
+		if field.Name == "_stub" || field.Name == "_placeholder" {
+			continue
+		}
+		if field.Directives.ForName("function") == nil {
+			continue
+		}
+		// Skip fields that have @module — the ModuleAssembler's
+		// addModuleFuncAggregations handles agg fields for module function types.
+		if field.Directives.ForName("module") != nil {
+			continue
+		}
+		// Only table-returning functions (list type)
+		if field.Type.NamedType != "" {
+			continue
+		}
+		targetName := field.Type.Name()
+		if ctx.IsScalar(targetName) {
+			continue
+		}
+		// Check that target has an aggregation type
+		aggTypeName := "_" + targetName + "_aggregation"
+		bucketAggTypeName := "_" + targetName + "_aggregation_bucket"
+		if ctx.LookupType(aggTypeName) == nil {
+			continue
+		}
+
+		// Aggregation field
+		aggFields = append(aggFields, &ast.FieldDefinition{
+			Name:      field.Name + "_aggregation",
+			Type:      ast.NamedType(aggTypeName, pos),
+			Arguments: cloneArgDefs(field.Arguments, pos),
+			Directives: ast.DirectiveList{
+				{Name: "aggregation_query", Arguments: ast.ArgumentList{
+					{Name: "name", Value: &ast.Value{Raw: field.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+				}, Position: pos},
+				optsCatalogDirective(opts),
+			},
+			Position: pos,
+		})
+
+		// Bucket aggregation field
+		aggFields = append(aggFields, &ast.FieldDefinition{
+			Name:      field.Name + "_bucket_aggregation",
+			Type:      ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
+			Arguments: cloneArgDefs(field.Arguments, pos),
+			Directives: ast.DirectiveList{
+				{Name: "aggregation_query", Arguments: ast.ArgumentList{
+					{Name: "name", Value: &ast.Value{Raw: field.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "is_bucket", Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+				}, Position: pos},
+				optsCatalogDirective(opts),
+			},
+			Position: pos,
+		})
+	}
+
+	// Add directly to the definition so fields stay on the Function type.
+	def.Fields = append(def.Fields, aggFields...)
 }

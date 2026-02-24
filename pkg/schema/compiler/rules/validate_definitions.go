@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -48,12 +49,66 @@ func validateDefinition(ctx base.CompilationContext, def *ast.Definition) error 
 		}
 	}
 
+	// Validate @cube and @hypertable require @table or @view
+	if def.Directives.ForName("cube") != nil && !isTable && !isView {
+		return gqlerror.ErrorPosf(def.Position,
+			"object %q: @cube requires @table or @view directive", def.Name)
+	}
+	if def.Directives.ForName("hypertable") != nil && !isTable && !isView {
+		return gqlerror.ErrorPosf(def.Position,
+			"object %q: @hypertable requires @table or @view directive", def.Name)
+	}
+
 	if err := validateFieldTypes(ctx, def); err != nil {
+		return err
+	}
+
+	// Validate @measurement and @timescale_key field directives
+	if err := validateCubeHypertableFields(ctx, def); err != nil {
 		return err
 	}
 
 	if err := validateReferences(ctx, def); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// validateCubeHypertableFields validates @measurement and @timescale_key field directives.
+func validateCubeHypertableFields(ctx base.CompilationContext, def *ast.Definition) error {
+	isCube := def.Directives.ForName("cube") != nil
+	isHypertable := def.Directives.ForName("hypertable") != nil
+
+	for _, f := range def.Fields {
+		// @measurement requires @cube on parent object
+		if mDir := f.Directives.ForName("measurement"); mDir != nil {
+			if !isCube {
+				return gqlerror.ErrorPosf(mDir.Position,
+					"field %q of %q: @measurement requires @cube directive on the object", f.Name, def.Name)
+			}
+			// Must be a named scalar type
+			if f.Type.NamedType == "" || !ctx.IsScalar(f.Type.Name()) {
+				return gqlerror.ErrorPosf(mDir.Position,
+					"field %q of %q: @measurement field must be a scalar type", f.Name, def.Name)
+			}
+			// Must support measurement aggregation
+			s := ctx.ScalarLookup(f.Type.Name())
+			if s != nil {
+				if _, ok := s.(types.MeasurementAggregatable); !ok {
+					return gqlerror.ErrorPosf(mDir.Position,
+						"field %q of %q: scalar type %q does not support measurement aggregation", f.Name, def.Name, f.Type.Name())
+				}
+			}
+		}
+
+		// @timescale_key requires @hypertable on parent object
+		if tsDir := f.Directives.ForName("timescale_key"); tsDir != nil {
+			if !isHypertable {
+				return gqlerror.ErrorPosf(tsDir.Position,
+					"field %q of %q: @timescale_key requires @hypertable directive on the object", f.Name, def.Name)
+			}
+		}
 	}
 
 	return nil

@@ -242,9 +242,9 @@ func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name 
 					Type:     ast.NamedType(filterFieldType, pos),
 					Position: pos,
 				}
-				// Copy directives from original field (pk, default, etc.)
+				// Copy directives from original field (pk, default, measurement, timescale_key)
 				for _, d := range f.Directives {
-					if d.Name == "pk" || d.Name == "default" {
+					if d.Name == "pk" || d.Name == "default" || d.Name == "measurement" || d.Name == "timescale_key" {
 						field.Directives = append(field.Directives, d)
 					}
 				}
@@ -691,6 +691,11 @@ func addTableFuncJoinSubAggregations(ctx base.CompilationContext, def *ast.Defin
 		// before extra fields are added to the agg type).
 		subAggName := aggTypeNameAtDepth(targetName, 1)
 		ensureSubAggregationTypeNoExtra(ctx, targetName, subAggName, 1, pos)
+
+		// Propagate any reference fields that were already added to the target's
+		// base aggregation type as extensions. This handles the case where references
+		// were processed BEFORE this table_function_call_join created the sub-agg type.
+		propagateRefFieldsToSubAgg(ctx, targetName, subAggName, 1, pos)
 
 		// Add {field}_aggregation field to the aggregation type
 		ctx.AddExtension(&ast.Definition{

@@ -96,6 +96,10 @@ func (c *compilationContext) LookupType(name string) *ast.Definition {
 	return nil
 }
 
+func (c *compilationContext) LookupExtension(name string) *ast.Definition {
+	return c.output.LookupExtension(name)
+}
+
 func (c *compilationContext) LookupDirective(name string) *ast.DirectiveDefinition {
 	if dir := c.output.LookupDirective(name); dir != nil {
 		return dir
