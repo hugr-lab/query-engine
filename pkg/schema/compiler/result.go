@@ -9,6 +9,7 @@ import (
 )
 
 var _ base.CompiledCatalog = (*compiledCatalog)(nil)
+var _ base.DependentCompiledCatalog = (*compiledCatalog)(nil)
 
 // compiledCatalog implements base.CompiledCatalog as a DDL feed
 // consumable by static.Provider.Update().
@@ -52,4 +53,8 @@ func (c *compiledCatalog) DefinitionExtensions(_ context.Context, name string) i
 
 func (c *compiledCatalog) Extensions(_ context.Context) iter.Seq[*ast.Definition] {
 	return c.output.Extensions()
+}
+
+func (c *compiledCatalog) Dependencies() []string {
+	return c.output.dependencies
 }

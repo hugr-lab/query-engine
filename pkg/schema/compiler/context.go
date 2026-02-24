@@ -78,7 +78,22 @@ func (c *compilationContext) AddDefinition(def *ast.Definition) {
 }
 
 func (c *compilationContext) AddExtension(ext *ast.Definition) {
+	if c.opts.IsExtension && c.opts.Name != "" {
+		for _, f := range ext.Fields {
+			f.Directives = append(f.Directives, dependencyDirective(c.opts.Name, f.Position))
+		}
+	}
 	c.output.AddExtension(ext)
+}
+
+func dependencyDirective(name string, pos *ast.Position) *ast.Directive {
+	return &ast.Directive{
+		Name: "dependency",
+		Arguments: ast.ArgumentList{
+			{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue, Position: pos}, Position: pos},
+		},
+		Position: pos,
+	}
 }
 
 func (c *compilationContext) AddDefinitionReplaceOrCreate(def *ast.Definition) {
@@ -148,6 +163,10 @@ func (c *compilationContext) FunctionFields() []*ast.FieldDefinition {
 
 func (c *compilationContext) FunctionMutationFields() []*ast.FieldDefinition {
 	return c.functionMutFields
+}
+
+func (c *compilationContext) RegisterDependency(name string) {
+	c.output.AddDependency(name)
 }
 
 func (c *compilationContext) Objects() iter.Seq2[string, *base.ObjectInfo] {

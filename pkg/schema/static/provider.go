@@ -107,6 +107,11 @@ func (p *Provider) Description(_ context.Context) string {
 	return p.schema.Description
 }
 
+// Schema returns the underlying ast.Schema for direct access (e.g., comparison tests).
+func (p *Provider) Schema() *ast.Schema {
+	return p.schema
+}
+
 // MutableProvider implementation
 var _ base.MutableProvider = (*Provider)(nil)
 

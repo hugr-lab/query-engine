@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"iter"
+	"slices"
 
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -13,8 +14,9 @@ type indexedOutput struct {
 	defIndex  map[string]int // name → index in defs
 	exts      []*ast.Definition
 	extIndex  map[string]int // target type name → index in exts (for merging)
-	dirDefs   []*ast.DirectiveDefinition
-	dirIndex  map[string]int
+	dirDefs      []*ast.DirectiveDefinition
+	dirIndex     map[string]int
+	dependencies []string
 }
 
 func newIndexedOutput(cap int) *indexedOutput {
@@ -60,6 +62,13 @@ func (o *indexedOutput) AddExtension(ext *ast.Definition) {
 	}
 	o.extIndex[ext.Name] = len(o.exts)
 	o.exts = append(o.exts, ext)
+}
+
+// AddDependency adds a dependency name, deduplicating.
+func (o *indexedOutput) AddDependency(name string) {
+	if !slices.Contains(o.dependencies, name) {
+		o.dependencies = append(o.dependencies, name)
+	}
 }
 
 // LookupDefinition returns a definition by name, or nil.

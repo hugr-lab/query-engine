@@ -949,7 +949,14 @@ func TestCompile_SequentialMultiCatalog(t *testing.T) {
 		},
 	}
 
-	resultB, err := c.Compile(ctx, providerA, sourceB, base.Options{Name: "catB"})
+	resultB, err := c.Compile(ctx, providerA, sourceB, base.Options{
+		Name: "catB",
+		Capabilities: &base.EngineCapabilities{
+			General: base.EngineGeneralCapabilities{
+				SupportCrossCatalogReferences: true,
+			},
+		},
+	})
 	if err != nil {
 		t.Fatalf("Catalog B compile failed: %v", err)
 	}

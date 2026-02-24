@@ -70,16 +70,17 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 		}
 	}
 
-	// Also collect function fields by module from Function/MutationFunction types
+	// Also collect function fields by module from Function/MutationFunction extensions.
+	// Function fields are emitted as extensions (not on the definition) for multi-catalog support.
 	type funcModuleFields struct {
 		queryFuncFields ast.FieldList
 		mutFuncFields   ast.FieldList
 	}
 	funcModules := make(map[string]*funcModuleFields)
 
-	if funcDef := ctx.LookupType("Function"); funcDef != nil {
+	if funcExt := ctx.LookupExtension("Function"); funcExt != nil {
 		var remaining ast.FieldList
-		for _, f := range funcDef.Fields {
+		for _, f := range funcExt.Fields {
 			if f.Name == "_stub" || f.Name == "_placeholder" {
 				continue
 			}
@@ -95,12 +96,12 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 			}
 			fm.queryFuncFields = append(fm.queryFuncFields, f)
 		}
-		funcDef.Fields = remaining
+		funcExt.Fields = remaining
 	}
 
-	if mutFuncDef := ctx.LookupType("MutationFunction"); mutFuncDef != nil {
+	if mutFuncExt := ctx.LookupExtension("MutationFunction"); mutFuncExt != nil {
 		var remaining ast.FieldList
-		for _, f := range mutFuncDef.Fields {
+		for _, f := range mutFuncExt.Fields {
 			if f.Name == "_stub" || f.Name == "_placeholder" {
 				continue
 			}
@@ -116,7 +117,7 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 			}
 			fm.mutFuncFields = append(fm.mutFuncFields, f)
 		}
-		mutFuncDef.Fields = remaining
+		mutFuncExt.Fields = remaining
 	}
 
 	if len(modules) == 0 && len(funcModules) == 0 {
@@ -299,17 +300,22 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 			}
 			ctx.RegisterMutationFields("_module_"+mod, []*ast.FieldDefinition{mutField})
 
-			// Wire function module type on Function/MutationFunction
+			// Wire function module type on Function via extension
 			if funcType := createdFuncTypes[mod]; funcType != nil {
 				funcTypeName := modTypeName + "_function"
-				if funcDef := ctx.LookupType("Function"); funcDef != nil {
-					funcDef.Fields = append(funcDef.Fields, &ast.FieldDefinition{
-						Name:        mod,
-						Description: "The root query object of the module " + mod,
-						Type:        ast.NamedType(funcTypeName, pos),
-						Position:    pos,
-					})
-				}
+				ctx.AddExtension(&ast.Definition{
+					Kind:     ast.Object,
+					Name:     "Function",
+					Position: pos,
+					Fields: ast.FieldList{
+						{
+							Name:        mod,
+							Description: "The root query object of the module " + mod,
+							Type:        ast.NamedType(funcTypeName, pos),
+							Position:    pos,
+						},
+					},
+				})
 			}
 		}
 	}
