@@ -271,19 +271,9 @@ func TestCompare_Functions(t *testing.T) {
 	assertCompilersMatch(t, functionTestSchema,
 		oldcompiler.Options{Name: "test", EngineType: "duckdb"},
 		base.Options{Name: "test", EngineType: "duckdb"},
-		// Known gaps: function aggregation fields, sub-aggregation reference fields,
-		// nested sub-aggregation types, extra @catalog directive
+		// Known gap: new compiler adds extra @catalog directive to Function type
 		compare.KnownIssues(
 			"types.Function.directives.catalog",
-			"types.Function.fields.find_nearby_aggregation",
-			"types.Function.fields.find_nearby_bucket_aggregation",
-			"types._Airport_aggregation_sub_aggregation.fields._geom_measurement",
-			"types._Airport_aggregation_sub_aggregation.fields._updated_at_part",
-			"types._Airport_aggregation_sub_aggregation.fields.arriving_routes",
-			"types._Airport_aggregation_sub_aggregation.fields.arriving_routes_aggregation",
-			"types._Airport_aggregation_sub_aggregation.fields.departing_routes",
-			"types._Airport_aggregation_sub_aggregation.fields.departing_routes_aggregation",
-			"types._Route_aggregation_sub_aggregation_sub_aggregation",
 		),
 	)
 }
@@ -292,20 +282,9 @@ func TestCompare_FunctionsAsModule(t *testing.T) {
 	assertCompilersMatch(t, functionTestSchema,
 		oldcompiler.Options{Name: "aviation", EngineType: "duckdb", AsModule: true},
 		base.Options{Name: "aviation", EngineType: "duckdb", AsModule: true},
-		// Known gaps: same as Functions plus module function field and placeholder
+		// Known gap: new compiler adds extra @catalog directive to Function type
 		compare.KnownIssues(
 			"types.Function.directives.catalog",
-			"types.Function.fields._placeholder",
-			"types.Function.fields.aviation",
-			"types.Function.fields.find_nearby_aggregation",
-			"types.Function.fields.find_nearby_bucket_aggregation",
-			"types._Airport_aggregation_sub_aggregation.fields._geom_measurement",
-			"types._Airport_aggregation_sub_aggregation.fields._updated_at_part",
-			"types._Airport_aggregation_sub_aggregation.fields.arriving_routes",
-			"types._Airport_aggregation_sub_aggregation.fields.arriving_routes_aggregation",
-			"types._Airport_aggregation_sub_aggregation.fields.departing_routes",
-			"types._Airport_aggregation_sub_aggregation.fields.departing_routes_aggregation",
-			"types._Route_aggregation_sub_aggregation_sub_aggregation",
 		),
 	)
 }
@@ -314,8 +293,6 @@ func TestCompare_NestedModules(t *testing.T) {
 	assertCompilersMatch(t, nestedModuleSchema,
 		oldcompiler.Options{Name: "test", EngineType: "duckdb"},
 		base.Options{Name: "test", EngineType: "duckdb"},
-		// Known gap: @references missing description/references_description args
-		compare.IgnoreDirectiveArgs("references"),
 	)
 }
 
@@ -323,8 +300,6 @@ func TestCompare_NestedModulesAsModule(t *testing.T) {
 	assertCompilersMatch(t, nestedModuleAsModuleSchema,
 		oldcompiler.Options{Name: "transport", EngineType: "duckdb", AsModule: true},
 		base.Options{Name: "transport", EngineType: "duckdb", AsModule: true},
-		// Known gap: @references missing description/references_description args
-		compare.IgnoreDirectiveArgs("references"),
 	)
 }
 

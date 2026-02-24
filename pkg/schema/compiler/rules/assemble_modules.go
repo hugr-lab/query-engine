@@ -158,6 +158,7 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 	// Track created module types for adding child fields on parents.
 	createdQueryTypes := make(map[string]*ast.Definition)
 	createdMutTypes := make(map[string]*ast.Definition)
+	createdFuncTypes := make(map[string]*ast.Definition)
 
 	for _, mod := range sortedModules {
 		modTypeName := "_module_" + strings.ReplaceAll(mod, ".", "_")
@@ -242,6 +243,7 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 					Fields: fm.queryFuncFields,
 				}
 				ctx.AddDefinition(funcModType)
+				createdFuncTypes[mod] = funcModType
 				addModuleFuncAggregations(ctx, funcModType, pos)
 			}
 			delete(funcModules, mod)
@@ -270,6 +272,17 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 					Position:    pos,
 				})
 			}
+			if funcType := createdFuncTypes[mod]; funcType != nil {
+				funcTypeName := modTypeName + "_function"
+				if parentFunc := createdFuncTypes[parentMod]; parentFunc != nil {
+					parentFunc.Fields = append(parentFunc.Fields, &ast.FieldDefinition{
+						Name:        childName,
+						Description: "The root query object of the module " + mod,
+						Type:        ast.NamedType(funcTypeName, pos),
+						Position:    pos,
+					})
+				}
+			}
 		} else {
 			// Top-level module — register on root Query/Mutation
 			modField := &ast.FieldDefinition{
@@ -285,6 +298,19 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 				Position: pos,
 			}
 			ctx.RegisterMutationFields("_module_"+mod, []*ast.FieldDefinition{mutField})
+
+			// Wire function module type on Function/MutationFunction
+			if funcType := createdFuncTypes[mod]; funcType != nil {
+				funcTypeName := modTypeName + "_function"
+				if funcDef := ctx.LookupType("Function"); funcDef != nil {
+					funcDef.Fields = append(funcDef.Fields, &ast.FieldDefinition{
+						Name:        mod,
+						Description: "The root query object of the module " + mod,
+						Type:        ast.NamedType(funcTypeName, pos),
+						Position:    pos,
+					})
+				}
+			}
 		}
 	}
 

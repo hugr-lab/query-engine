@@ -74,12 +74,16 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 					Name: "m2m_name", Value: &ast.Value{Raw: "", Kind: ast.StringValue, Position: pos}, Position: pos,
 				})
 			}
-			if dir.Arguments.ForName("description") == nil && targetDef != nil && targetDef.Description != "" {
+			if dir.Arguments.ForName("description") == nil {
+				descVal := ""
+				if targetDef != nil {
+					descVal = targetDef.Description
+				}
 				dir.Arguments = append(dir.Arguments, &ast.Argument{
-					Name: "description", Value: &ast.Value{Raw: targetDef.Description, Kind: ast.StringValue, Position: pos}, Position: pos,
+					Name: "description", Value: &ast.Value{Raw: descVal, Kind: ast.StringValue, Position: pos}, Position: pos,
 				})
 			}
-			if dir.Arguments.ForName("references_description") == nil && def.Description != "" {
+			if dir.Arguments.ForName("references_description") == nil {
 				dir.Arguments = append(dir.Arguments, &ast.Argument{
 					Name: "references_description", Value: &ast.Value{Raw: def.Description, Kind: ast.StringValue, Position: pos}, Position: pos,
 				})
@@ -146,12 +150,12 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 				Name: "m2m_name", Value: &ast.Value{Raw: "", Kind: ast.StringValue, Position: pos}, Position: pos,
 			})
 		}
-		if dir.Arguments.ForName("description") == nil && targetDef.Description != "" {
+		if dir.Arguments.ForName("description") == nil {
 			dir.Arguments = append(dir.Arguments, &ast.Argument{
 				Name: "description", Value: &ast.Value{Raw: targetDef.Description, Kind: ast.StringValue, Position: pos}, Position: pos,
 			})
 		}
-		if dir.Arguments.ForName("references_description") == nil && def.Description != "" {
+		if dir.Arguments.ForName("references_description") == nil {
 			dir.Arguments = append(dir.Arguments, &ast.Argument{
 				Name: "references_description", Value: &ast.Value{Raw: def.Description, Kind: ast.StringValue, Position: pos}, Position: pos,
 			})
@@ -483,7 +487,16 @@ func fieldReferencesToReferences(fieldName string, dir *ast.Directive, def *ast.
 		name = refName + "_" + fieldName
 	}
 
-	return referencesDirective(name, refName, []string{fieldName}, []string{field}, query, refQuery, false, "", pos)
+	// Look up target description for the @references directive
+	targetDesc := ""
+	refTargetDef := ctx.LookupType(refName)
+	if refTargetDef == nil {
+		refTargetDef = ctx.Source().ForName(ctx.Context(), refName)
+	}
+	if refTargetDef != nil {
+		targetDesc = refTargetDef.Description
+	}
+	return referencesDirective(name, refName, []string{fieldName}, []string{field}, query, refQuery, false, "", pos, targetDesc, def.Description)
 }
 
 // referencesDirective builds a @references directive.
@@ -509,13 +522,17 @@ func referencesDirective(name, refName string, sourceFields, refFields []string,
 		{Name: "is_m2m", Value: &ast.Value{Raw: isM2MStr, Kind: ast.BooleanValue, Position: pos}, Position: pos},
 		{Name: "m2m_name", Value: &ast.Value{Raw: m2mName, Kind: ast.StringValue, Position: pos}, Position: pos},
 	}
-	// Add description args if provided
-	if len(descriptions) > 0 && descriptions[0] != "" {
-		args = append(args, &ast.Argument{Name: "description", Value: &ast.Value{Raw: descriptions[0], Kind: ast.StringValue, Position: pos}, Position: pos})
+	// Always include description and references_description (old compiler always includes them)
+	desc := ""
+	if len(descriptions) > 0 {
+		desc = descriptions[0]
 	}
-	if len(descriptions) > 1 && descriptions[1] != "" {
-		args = append(args, &ast.Argument{Name: "references_description", Value: &ast.Value{Raw: descriptions[1], Kind: ast.StringValue, Position: pos}, Position: pos})
+	refDesc := ""
+	if len(descriptions) > 1 {
+		refDesc = descriptions[1]
 	}
+	args = append(args, &ast.Argument{Name: "description", Value: &ast.Value{Raw: desc, Kind: ast.StringValue, Position: pos}, Position: pos})
+	args = append(args, &ast.Argument{Name: "references_description", Value: &ast.Value{Raw: refDesc, Kind: ast.StringValue, Position: pos}, Position: pos})
 	return &ast.Directive{
 		Name:      "references",
 		Arguments: args,
@@ -931,6 +948,212 @@ func scalarSubAggTypeName(aggTypeName string) string {
 	default:
 		return ""
 	}
+}
+
+// propagateRefFieldsToSubAgg copies reference fields from a parent aggregation
+// type's extension into an already-created sub-aggregation type. This handles
+// the timing issue where references are processed before a sub-agg type exists
+// (e.g., table_function_call_join creates the sub-agg type after references were
+// already added to the parent agg).
+func propagateRefFieldsToSubAgg(ctx base.CompilationContext, objectName, subAggTypeName string, depth int, pos *ast.Position) {
+	if depth >= maxAggDepth {
+		return
+	}
+	parentAggName := aggTypeNameAtDepth(objectName, depth-1)
+	parentAggExt := ctx.LookupExtension(parentAggName)
+	if parentAggExt == nil {
+		return
+	}
+
+	opts := ctx.CompileOptions()
+	var fields ast.FieldList
+
+	for _, f := range parentAggExt.Fields {
+		// Skip scalar aggregation fields — only propagate reference fields.
+		// Reference fields on agg types come in pairs: {ref} and {ref}_aggregation.
+		// They point to agg types like _Route_aggregation or sub-agg types.
+		typeName := f.Type.Name()
+		if scalarSubAggTypeName(typeName) != "" {
+			continue // scalar aggregation type, skip
+		}
+		if typeName == "" {
+			continue
+		}
+
+		// Check if this looks like a reference field on an aggregation type.
+		// Reference fields have @field_aggregation directive.
+		if f.Directives.ForName("field_aggregation") == nil {
+			continue
+		}
+
+		// Get the reference field name from the @field_aggregation directive
+		fieldAggDir := f.Directives.ForName("field_aggregation")
+		refFieldName := base.DirectiveArgString(fieldAggDir, "name")
+		if refFieldName == "" {
+			continue
+		}
+
+		// Determine if this is a reference field or a reference _aggregation field
+		isAggSuffix := len(f.Name) > len("_aggregation") && f.Name[len(f.Name)-len("_aggregation"):] == "_aggregation"
+
+		if isAggSuffix {
+			// This is a {ref}_aggregation field — it points to a sub-agg type.
+			// For the new sub-agg level, we need to create the deeper sub-agg type.
+			// Extract the target object name from the agg type name.
+			targetSubAggName := f.Type.Name()
+			// The target object's sub-agg at this depth should already exist
+			// (created by the {ref} field's ensureSubAggregationType call).
+			if ctx.LookupType(targetSubAggName) == nil {
+				continue
+			}
+
+			// Create the deeper sub-agg for the target if needed
+			// targetSubAggName is at depth, we need depth+1
+			// Extract target object name
+			targetObjName := extractObjectNameFromAggType(targetSubAggName)
+			if targetObjName == "" {
+				continue
+			}
+			deeperSubAggName := aggTypeNameAtDepth(targetObjName, depth+1)
+			parentTargetAgg := aggTypeNameAtDepth(targetObjName, depth)
+			ensureSubAggregationType(ctx, targetObjName, deeperSubAggName, parentTargetAgg, depth+1, pos)
+
+			// Use the deeper sub-agg name for the field at this depth
+			aggFieldDirectiveName := refFieldName
+			if depth > 0 {
+				aggFieldDirectiveName = refFieldName + "_aggregation"
+			}
+
+			fields = append(fields, &ast.FieldDefinition{
+				Name:      f.Name,
+				Type:      ast.NamedType(deeperSubAggName, pos),
+				Arguments: cloneArgDefs(f.Arguments, pos),
+				Directives: ast.DirectiveList{
+					fieldAggregationDirective(aggFieldDirectiveName, pos),
+				},
+				Position: pos,
+			})
+		} else {
+			// This is a direct reference field — it points to an agg type at the same depth.
+			// For the sub-agg level, point to the target's agg at this depth.
+			targetObjName := extractObjectNameFromAggType(f.Type.Name())
+			if targetObjName == "" {
+				continue
+			}
+			targetAggAtDepth := aggTypeNameAtDepth(targetObjName, depth)
+			// Ensure target's sub-agg exists
+			if depth > 0 {
+				baseTargetAgg := "_" + targetObjName + "_aggregation"
+				ensureSubAggregationType(ctx, targetObjName, targetAggAtDepth, baseTargetAgg, depth, pos)
+			}
+
+			fields = append(fields, &ast.FieldDefinition{
+				Name:      f.Name,
+				Type:      ast.NamedType(targetAggAtDepth, pos),
+				Arguments: cloneArgDefs(f.Arguments, pos),
+				Directives: ast.DirectiveList{
+					fieldAggregationDirective(refFieldName, pos),
+				},
+				Position: pos,
+			})
+		}
+	}
+
+	if len(fields) > 0 {
+		ctx.AddExtension(&ast.Definition{
+			Kind:     ast.Object,
+			Name:     subAggTypeName,
+			Position: pos,
+			Fields:   fields,
+		})
+	}
+
+	// Also propagate extra fields (measurement, part) from the parent agg extension
+	propagateExtraFieldsToSubAgg(ctx, objectName, subAggTypeName, depth, parentAggExt, opts, pos)
+}
+
+// propagateExtraFieldsToSubAgg copies extra fields (@measurement, @part) from the
+// parent aggregation type's extension to a sub-aggregation type.
+func propagateExtraFieldsToSubAgg(ctx base.CompilationContext, objectName, subAggTypeName string, depth int, parentAggExt *ast.Definition, _ base.Options, pos *ast.Position) {
+	if depth >= maxAggDepth {
+		return
+	}
+
+	var extraFields ast.FieldList
+	for _, f := range parentAggExt.Fields {
+		typeName := f.Type.Name()
+		subTypeName := scalarSubAggTypeName(typeName)
+		if subTypeName == "" {
+			continue // not a scalar aggregation type
+		}
+		// Only copy extra fields that have @field_aggregation
+		if f.Directives.ForName("field_aggregation") == nil {
+			continue
+		}
+
+		// Check if the base aggregation definition already has this field
+		baseAgg := ctx.LookupType(aggTypeNameAtDepth(objectName, 0))
+		if baseAgg != nil && baseAgg.Fields.ForName(f.Name) != nil {
+			continue // Already on the base agg, will be picked up by ensureSubAggregationType
+		}
+
+		subField := &ast.FieldDefinition{
+			Name:     f.Name,
+			Type:     ast.NamedType(subTypeName, pos),
+			Position: pos,
+		}
+		if len(f.Directives) > 0 {
+			subField.Directives = make(ast.DirectiveList, len(f.Directives))
+			copy(subField.Directives, f.Directives)
+		}
+		if len(f.Arguments) > 0 {
+			subField.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
+			copy(subField.Arguments, f.Arguments)
+		}
+		extraFields = append(extraFields, subField)
+	}
+
+	if len(extraFields) > 0 {
+		ctx.AddExtension(&ast.Definition{
+			Kind:     ast.Object,
+			Name:     subAggTypeName,
+			Position: pos,
+			Fields:   extraFields,
+		})
+	}
+}
+
+// extractObjectNameFromAggType extracts the object name from an aggregation type name.
+// E.g., "_Route_aggregation" → "Route", "_Route_aggregation_sub_aggregation" → "Route"
+func extractObjectNameFromAggType(aggTypeName string) string {
+	if len(aggTypeName) < 2 || aggTypeName[0] != '_' {
+		return ""
+	}
+	name := aggTypeName[1:] // strip leading _
+	if idx := indexOf(name, "_aggregation"); idx >= 0 {
+		return name[:idx]
+	}
+	return ""
+}
+
+// indexOf returns the index of the first occurrence of substr in s, or -1.
+func indexOf(s, substr string) int {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
+}
+
+// cloneArgDefs creates a shallow copy of an argument definition list.
+func cloneArgDefs(args ast.ArgumentDefinitionList, _ *ast.Position) ast.ArgumentDefinitionList {
+	if len(args) == 0 {
+		return nil
+	}
+	out := make(ast.ArgumentDefinitionList, len(args))
+	copy(out, args)
+	return out
 }
 
 // cloneASTType creates a shallow copy of an ast.Type tree.
