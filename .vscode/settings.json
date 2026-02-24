@@ -5,4 +5,7 @@
         "CGO_CFLAGS":"-O1 -g"
     },
     "go.testTags": "duckdb_arrow",
+    "gopls": {
+        "buildFlags": ["-tags=duckdb_arrow,duckdb_use_static_lib"]
+    },
 }

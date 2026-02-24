@@ -4,3 +4,5 @@
 .specify/
 specs/
 design/
+internal/airport_test_service/
+internal/duckdb-air/
