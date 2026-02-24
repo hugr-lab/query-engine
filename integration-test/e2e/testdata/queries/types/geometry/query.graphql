@@ -1,0 +1,10 @@
+{
+  pg_store {
+    locations(order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+      point
+      area
+    }
+  }
+}

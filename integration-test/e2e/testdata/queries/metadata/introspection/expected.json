@@ -1,0 +1,12 @@
+{
+  "data": {
+    "__schema": {
+      "mutationType": {
+        "name": "Mutation"
+      },
+      "queryType": {
+        "name": "Query"
+      }
+    }
+  }
+}

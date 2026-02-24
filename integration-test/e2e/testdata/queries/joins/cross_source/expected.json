@@ -1,0 +1,21 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "_join": {
+            "pg_store_categories": [
+              {
+                "id": 2,
+                "name": "Computers"
+              }
+            ]
+          },
+          "category_id": 2,
+          "id": 1,
+          "name": "Laptop Pro"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  function {
+    rest_api {
+      test {
+        test_get(name: "hello", value: 42) {
+          name
+          value
+        }
+      }
+    }
+  }
+}

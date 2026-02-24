@@ -1,0 +1,26 @@
+{
+  "data": {
+    "core": {
+      "meta": {
+        "databases": [
+          {
+            "name": "core",
+            "type": "duckdb"
+          },
+          {
+            "name": "local_db",
+            "type": "duckdb"
+          },
+          {
+            "name": "memory",
+            "type": "duckdb"
+          },
+          {
+            "name": "pg_store",
+            "type": "postgres"
+          }
+        ]
+      }
+    }
+  }
+}

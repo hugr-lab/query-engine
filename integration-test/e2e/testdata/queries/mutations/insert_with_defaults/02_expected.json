@@ -1,0 +1,15 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "id": 7,
+          "is_active": true,
+          "name": "Default Test",
+          "price": 10.0,
+          "quantity": 1
+        }
+      ]
+    }
+  }
+}

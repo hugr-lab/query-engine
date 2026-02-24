@@ -1,0 +1,9 @@
+{
+  pg_store {
+    products(filter: { tags: { is_null: false } }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+      tags
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "id": 1,
+          "name": "Laptop Pro"
+        },
+        {
+          "id": 2,
+          "name": "Wireless Mouse"
+        },
+        {
+          "id": 3,
+          "name": "USB-C Hub"
+        },
+        {
+          "id": 4,
+          "name": "Old Keyboard"
+        },
+        {
+          "id": 5,
+          "name": "Gaming Desktop"
+        }
+      ]
+    }
+  }
+}

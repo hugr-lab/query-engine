@@ -1,0 +1,8 @@
+{
+  pg_store {
+    products(filter: { updated_at: { is_null: true } }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+    }
+  }
+}

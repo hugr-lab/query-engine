@@ -29,6 +29,19 @@
             "buildFlags": ["-tags=duckdb_arrow"]
         },
         {
+            "name": "Launch server with db new compiler",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "env": {
+                "CGO_CFLAGS":"-O1 -g",
+                "USE_NEW_COMPILER":"true"
+            },
+            "envFile": "${workspaceFolder}/.local/.env",
+            "program": "${workspaceFolder}/cmd/dev-server",
+            "buildFlags": ["-tags=duckdb_arrow"]
+        },
+        {
             "name": "Launch server with auth and db",
             "type": "go",
             "request": "launch",

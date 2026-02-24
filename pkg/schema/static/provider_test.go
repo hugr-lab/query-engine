@@ -57,7 +57,7 @@ func TestStaticProvider_ForName(t *testing.T) {
 		type Query { user: User }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 
 	def := p.ForName(context.Background(), "User")
 	require.NotNil(t, def)
@@ -71,7 +71,7 @@ func TestStaticProvider_DirectiveForName(t *testing.T) {
 		type Query { id: ID }
 		directive @cached(ttl: Int!) on FIELD
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 
 	dir := p.DirectiveForName(context.Background(), "cached")
 	require.NotNil(t, dir)
@@ -82,7 +82,7 @@ func TestStaticProvider_DirectiveForName(t *testing.T) {
 
 func TestStaticProvider_QueryType(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 
 	q := p.QueryType(context.Background())
 	require.NotNil(t, q)
@@ -94,7 +94,7 @@ func TestStaticProvider_MutationType(t *testing.T) {
 		type Query { id: ID }
 		type Mutation { create: Boolean }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 
 	m := p.MutationType(context.Background())
 	require.NotNil(t, m)
@@ -106,7 +106,7 @@ func TestStaticProvider_SubscriptionType(t *testing.T) {
 		type Query { id: ID }
 		type Subscription { event: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 
 	sub := p.SubscriptionType(context.Background())
 	require.NotNil(t, sub)
@@ -120,7 +120,7 @@ func TestStaticProvider_PossibleTypes(t *testing.T) {
 		type User implements Node { id: ID!, name: String }
 		type Post implements Node { id: ID!, title: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 
 	nodeDef := p.ForName(context.Background(), "Node")
 	require.NotNil(t, nodeDef)
@@ -142,7 +142,7 @@ func TestStaticProvider_Implements(t *testing.T) {
 		interface Node { id: ID! }
 		type User implements Node { id: ID!, name: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 
 	userDef := p.ForName(context.Background(), "User")
 	require.NotNil(t, userDef)
@@ -157,7 +157,7 @@ func TestStaticProvider_Types(t *testing.T) {
 		type Query { user: User }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 
 	var names []string
 	for name := range p.Types(context.Background()) {
@@ -172,7 +172,7 @@ func TestStaticProvider_DirectiveDefinitions(t *testing.T) {
 		type Query { id: ID }
 		directive @cached(ttl: Int!) on FIELD
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 
 	var names []string
 	for name := range p.DirectiveDefinitions(context.Background()) {
@@ -183,6 +183,6 @@ func TestStaticProvider_DirectiveDefinitions(t *testing.T) {
 
 func TestStaticProvider_Description(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	assert.Equal(t, "test schema", p.Description(context.Background()))
 }

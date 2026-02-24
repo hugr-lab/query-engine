@@ -1,0 +1,24 @@
+{
+  "data": {
+    "pg_store": {
+      "products_bucket_aggregation": [
+        {
+          "aggregations": {
+            "_rows_count": 2
+          },
+          "key": {
+            "category_id": 3
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 2
+          },
+          "key": {
+            "category_id": 2
+          }
+        }
+      ]
+    }
+  }
+}

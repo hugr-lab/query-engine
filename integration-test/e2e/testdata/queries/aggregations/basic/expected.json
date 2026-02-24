@@ -1,0 +1,15 @@
+{
+  "data": {
+    "pg_store": {
+      "products_aggregation": {
+        "_rows_count": 5,
+        "price": {
+          "avg": 779.99,
+          "max": 2499.99,
+          "min": 19.99,
+          "sum": 3899.95
+        }
+      }
+    }
+  }
+}

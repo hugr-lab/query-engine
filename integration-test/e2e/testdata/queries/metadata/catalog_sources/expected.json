@@ -1,0 +1,23 @@
+{
+  "data": {
+    "core": {
+      "catalog_sources": [
+        {
+          "name": "local_db",
+          "path": "/workspace/schemas/local_db",
+          "type": "localFS"
+        },
+        {
+          "name": "pg_store",
+          "path": "/workspace/schemas/pg_store",
+          "type": "localFS"
+        },
+        {
+          "name": "rest_api",
+          "path": "/workspace/schemas/rest_api",
+          "type": "localFS"
+        }
+      ]
+    }
+  }
+}

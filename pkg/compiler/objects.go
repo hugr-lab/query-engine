@@ -924,7 +924,7 @@ func (info *Object) ApplyArguments(defs Definitions, args map[string]any, builde
 			if err != nil {
 				return ErrorPosf(field.Position, "wrong argument %s value: %s", field.Name, err.Error())
 			}
-			info.sql = strings.ReplaceAll(info.sql, "[$"+field.Name+"]", sv)
+			info.sql = strings.ReplaceAll(info.sql, "["+field.Name+"]", sv)
 			continue
 		}
 		if d := field.Directives.ForName(inputFieldNamedArgDirectiveName); d != nil {

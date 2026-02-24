@@ -1,0 +1,32 @@
+{
+  "data": {
+    "pg_store": {
+      "products_bucket_aggregation": [
+        {
+          "aggregations": {
+            "_rows_count": 3,
+            "price": {
+              "avg": 33.32333333333333,
+              "sum": 99.97
+            }
+          },
+          "key": {
+            "category_id": 3
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 2,
+            "price": {
+              "avg": 1899.9899999999998,
+              "sum": 3799.9799999999996
+            }
+          },
+          "key": {
+            "category_id": 2
+          }
+        }
+      ]
+    }
+  }
+}

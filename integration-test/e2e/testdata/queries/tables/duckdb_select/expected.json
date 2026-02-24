@@ -1,0 +1,14 @@
+{
+  "data": {
+    "local_db": {
+      "events": [
+        {
+          "event_date": "2025-03-15",
+          "id": 1,
+          "name": "Conference",
+          "value": 100.5
+        }
+      ]
+    }
+  }
+}

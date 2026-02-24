@@ -1,0 +1,20 @@
+{
+  "data": {
+    "pg_store": {
+      "locations": [
+        {
+          "_spatial": {
+            "pg_store_locations": [
+              {
+                "id": 1,
+                "name": "Store A"
+              }
+            ]
+          },
+          "id": 1,
+          "name": "Store A"
+        }
+      ]
+    }
+  }
+}

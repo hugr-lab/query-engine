@@ -1,0 +1,20 @@
+{
+  "extensions": {
+    "jq": {
+      "jq": [
+        {
+          "name": "Laptop Pro",
+          "price": 1299.99
+        },
+        {
+          "name": "Wireless Mouse",
+          "price": 29.99
+        },
+        {
+          "name": "USB-C Hub",
+          "price": 49.99
+        }
+      ]
+    }
+  }
+}

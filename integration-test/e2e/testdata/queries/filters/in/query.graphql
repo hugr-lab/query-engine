@@ -1,0 +1,8 @@
+{
+  pg_store {
+    products(filter: { id: { in: [1, 2, 3] } }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+    }
+  }
+}

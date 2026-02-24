@@ -1,0 +1,9 @@
+{
+  pg_store {
+    products_in_price_range(args: { min_price: 10.0, max_price: 50.0 }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+      price
+    }
+  }
+}

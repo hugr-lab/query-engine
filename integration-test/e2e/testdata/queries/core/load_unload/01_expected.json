@@ -1,0 +1,12 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "unload_data_source": {
+          "message": "Datasource was unloaded",
+          "success": true
+        }
+      }
+    }
+  }
+}

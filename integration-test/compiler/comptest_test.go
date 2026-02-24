@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	oldbase "github.com/hugr-lab/query-engine/pkg/compiler/base"
-	oldcompiler "github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/integration-test/compare"
+	oldcompiler "github.com/hugr-lab/query-engine/pkg/compiler"
+	oldbase "github.com/hugr-lab/query-engine/pkg/compiler/base"
 	newcompiler "github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/rules"
@@ -566,7 +566,7 @@ func setupMultiCatalogProvider(t *testing.T) (*static.Provider, *newcompiler.Com
 		t.Fatalf("validate base schema: %v", errs)
 	}
 
-	return static.New(baseSchema), newcompiler.New(rules.RegisterAll()...)
+	return static.NewWithSchema(baseSchema), newcompiler.New(rules.RegisterAll()...)
 }
 
 // compileNewCatalog compiles a single catalog SDL with the new compiler.
@@ -1286,7 +1286,7 @@ func buildNewMultiCatalogSchema(t *testing.T, catalogs []catalogDef) *ast.Schema
 		t.Fatalf("validate base schema: %v", errs)
 	}
 
-	provider := static.New(baseSchema)
+	provider := static.NewWithSchema(baseSchema)
 	c := newcompiler.New(rules.RegisterAll()...)
 	ctx := context.Background()
 

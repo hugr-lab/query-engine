@@ -1,0 +1,45 @@
+{
+  "data": {
+    "pg_store": {
+      "categories": [
+        {
+          "id": 2,
+          "name": "Computers",
+          "products": [
+            {
+              "id": 1,
+              "name": "Laptop Pro",
+              "price": 1299.99
+            },
+            {
+              "id": 5,
+              "name": "Gaming Desktop",
+              "price": 2499.99
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "name": "Accessories",
+          "products": [
+            {
+              "id": 2,
+              "name": "Wireless Mouse",
+              "price": 29.99
+            },
+            {
+              "id": 3,
+              "name": "USB-C Hub",
+              "price": 49.99
+            },
+            {
+              "id": 4,
+              "name": "Old Keyboard",
+              "price": 19.99
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

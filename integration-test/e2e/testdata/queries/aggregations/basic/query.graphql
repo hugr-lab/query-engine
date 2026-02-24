@@ -1,0 +1,13 @@
+{
+  pg_store {
+    products_aggregation {
+      _rows_count
+      price {
+        sum
+        avg
+        min
+        max
+      }
+    }
+  }
+}

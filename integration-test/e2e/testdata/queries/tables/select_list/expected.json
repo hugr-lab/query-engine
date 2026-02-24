@@ -1,0 +1,23 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "id": 1,
+          "name": "Laptop Pro",
+          "price": 1299.99
+        },
+        {
+          "id": 2,
+          "name": "Wireless Mouse",
+          "price": 29.99
+        },
+        {
+          "id": 3,
+          "name": "USB-C Hub",
+          "price": 49.99
+        }
+      ]
+    }
+  }
+}

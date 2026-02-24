@@ -229,7 +229,7 @@ func (s *Service) rebuildSchema(ctx context.Context) (*ast.Schema, error) {
 
 	// Update the Provider in the schema service
 	if s.ss != nil {
-		s.ss.SetProvider(static.New(astSchema))
+		s.ss.SetProvider(static.NewWithSchema(astSchema))
 	}
 
 	return astSchema, nil

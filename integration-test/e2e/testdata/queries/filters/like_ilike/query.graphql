@@ -1,0 +1,8 @@
+{
+  pg_store {
+    products(filter: { name: { like: "%Mouse%" } }) {
+      id
+      name
+    }
+  }
+}

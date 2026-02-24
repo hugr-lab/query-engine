@@ -54,7 +54,7 @@ func newStaticProvider(t *testing.T, sdl string) schema.Provider {
 			}
 		}
 	}
-	return static.New(s)
+	return static.NewWithSchema(s)
 }
 
 const builtinSDL = `

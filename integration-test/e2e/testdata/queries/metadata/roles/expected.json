@@ -1,0 +1,20 @@
+{
+  "data": {
+    "core": {
+      "roles": [
+        {
+          "description": "Admin role",
+          "name": "admin"
+        },
+        {
+          "description": "Public role",
+          "name": "public"
+        },
+        {
+          "description": "Readonly role",
+          "name": "readonly"
+        }
+      ]
+    }
+  }
+}

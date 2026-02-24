@@ -1,0 +1,17 @@
+{
+  "data": {
+    "pg_store": {
+      "categories": [
+        {
+          "children": null,
+          "id": 2,
+          "name": "Computers",
+          "parent": {
+            "id": 1,
+            "name": "Electronics"
+          }
+        }
+      ]
+    }
+  }
+}

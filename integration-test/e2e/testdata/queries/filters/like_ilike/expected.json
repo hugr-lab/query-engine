@@ -1,0 +1,12 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "id": 2,
+          "name": "Wireless Mouse"
+        }
+      ]
+    }
+  }
+}

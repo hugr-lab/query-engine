@@ -1,0 +1,13 @@
+{
+  "errors": [
+    {
+      "locations": [
+        {
+          "column": 11,
+          "line": 10
+        }
+      ],
+      "message": "Field \"avg\" of type \"FloatAggregation\" must have a selection of subfields. Did you mean \"avg { ... }\"?"
+    }
+  ]
+}

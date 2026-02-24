@@ -1,0 +1,23 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "id": 2,
+          "name": "Wireless Mouse",
+          "price": 29.99
+        },
+        {
+          "id": 4,
+          "name": "Old Keyboard",
+          "price": 19.99
+        },
+        {
+          "id": 5,
+          "name": "Gaming Desktop",
+          "price": 2499.99
+        }
+      ]
+    }
+  }
+}

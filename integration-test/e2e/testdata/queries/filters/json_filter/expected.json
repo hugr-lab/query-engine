@@ -1,0 +1,38 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "id": 1,
+          "name": "Laptop Pro",
+          "tags": {
+            "color": "silver",
+            "weight": 1.5
+          }
+        },
+        {
+          "id": 2,
+          "name": "Wireless Mouse",
+          "tags": {
+            "color": "black"
+          }
+        },
+        {
+          "id": 4,
+          "name": "Old Keyboard",
+          "tags": {
+            "color": "white"
+          }
+        },
+        {
+          "id": 5,
+          "name": "Gaming Desktop",
+          "tags": {
+            "color": "black",
+            "rgb": true
+          }
+        }
+      ]
+    }
+  }
+}
