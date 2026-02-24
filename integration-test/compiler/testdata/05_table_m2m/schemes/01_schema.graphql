@@ -1,0 +1,31 @@
+type Student @table(name: "students") {
+  id: Int! @pk
+  name: String!
+}
+
+type Course @table(name: "courses") {
+  id: Int! @pk
+  title: String!
+  credits: Int
+}
+
+type StudentCourse @table(name: "student_courses", is_m2m: true)
+  @references(
+    name: "sc_student"
+    references_name: "Student"
+    source_fields: ["student_id"]
+    references_fields: ["id"]
+    query: "student"
+    references_query: "courses"
+  )
+  @references(
+    name: "sc_course"
+    references_name: "Course"
+    source_fields: ["course_id"]
+    references_fields: ["id"]
+    query: "course"
+    references_query: "students"
+  ) {
+  student_id: Int! @pk
+  course_id: Int! @pk
+}

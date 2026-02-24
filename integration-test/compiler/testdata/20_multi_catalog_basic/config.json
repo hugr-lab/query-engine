@@ -1,0 +1,16 @@
+{
+  "catalogs": [
+    {
+      "file": "01_cache.graphql",
+      "name": "cache",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "02_meta.graphql",
+      "name": "meta",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    }
+  ]
+}

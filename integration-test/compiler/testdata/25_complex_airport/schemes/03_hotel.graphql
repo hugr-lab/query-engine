@@ -1,0 +1,19 @@
+type Hotel @table(name: "hotels") @module(name: "hospitality") {
+  id: Int! @pk
+  name: String!
+  city: String!
+  geom: Geometry
+  stars: Int
+}
+
+type Review @table(name: "reviews") @module(name: "hospitality") {
+  id: Int! @pk
+  hotel_id: Int! @field_references(
+    references_name: "Hotel"
+    field: "id"
+    query: "hotel"
+    references_query: "reviews"
+  )
+  rating: Float!
+  comment: String
+}

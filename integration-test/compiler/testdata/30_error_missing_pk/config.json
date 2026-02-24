@@ -1,0 +1,10 @@
+{
+  "catalogs": [
+    {
+      "file": "01_schema.graphql",
+      "name": "bad",
+      "engine": "duckdb"
+    }
+  ],
+  "expected_error": "@pk"
+}

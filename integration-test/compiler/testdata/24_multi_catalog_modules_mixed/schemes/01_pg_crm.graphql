@@ -1,0 +1,5 @@
+type Customer @table(name: "customers") @module(name: "crm") {
+  id: Int! @pk
+  name: String!
+  email: String!
+}

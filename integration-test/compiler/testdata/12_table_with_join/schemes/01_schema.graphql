@@ -1,0 +1,20 @@
+type Airport @table(name: "airports") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+}
+
+type Route @table(name: "routes") {
+  id: Int! @pk
+  src_airport: String!
+  dst_airport: String!
+  distance: Float
+}
+
+extend type Airport {
+  outbound_routes: [Route] @join(
+    references_name: "Route"
+    source_fields: ["iata_code"]
+    references_fields: ["src_airport"]
+  )
+}

@@ -1,0 +1,19 @@
+type Department @table(name: "departments") {
+  id: Int! @pk
+  name: String!
+}
+
+type Employee @table(name: "employees")
+  @references(
+    name: "emp_dept"
+    references_name: "Department"
+    source_fields: ["dept_id"]
+    references_fields: ["id"]
+    query: "department"
+    references_query: "employees"
+  ) {
+  id: Int! @pk
+  dept_id: Int!
+  name: String!
+  salary: Float
+}

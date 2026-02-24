@@ -1,0 +1,8 @@
+type User @table(name: "users")
+  @unique(fields: ["email"], query_suffix: "email")
+  @unique(fields: ["username"], query_suffix: "username") {
+  id: Int! @pk
+  email: String!
+  username: String!
+  name: String
+}

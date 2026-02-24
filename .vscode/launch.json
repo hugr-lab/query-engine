@@ -57,7 +57,24 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${fileDirname}"
-        }
+            "program": "${fileDirname}",
+            "buildFlags": ["-tags=duckdb_arrow"]
+        },
+                {
+            "name": "Launch air server multi",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "env": {
+                "CGO_CFLAGS":"-O1 -g"
+            },
+            "program": "${workspaceFolder}/internal/airport_test_service",
+            "args": [
+                "--addr", ":50433",
+                "--token", "test-token",
+                "--multi",
+            ],
+            "buildFlags": ["-tags=duckdb_arrow"]
+        },
     ]
 }

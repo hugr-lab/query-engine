@@ -63,7 +63,7 @@ directive @data_input(name: String!) on OBJECT | INPUT_OBJECT
 
 directive @query(name: String, type: QueryType) on OBJECT | FIELD_DEFINITION
 directive @mutation(name: String, type: MutationType, data_input: String!) on OBJECT | FIELD_DEFINITION
-directive @catalog(name: String!, engine: String!) on OBJECT | FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+directive @catalog(name: String!, engine: String!) on OBJECT | INPUT_OBJECT | FIELD_DEFINITION | INPUT_FIELD_DEFINITION
 directive @aggregation(name: String!, is_bucket: Boolean, level: Int) on OBJECT
 directive @field_aggregation(name: String!) on OBJECT | FIELD_DEFINITION
 directive @aggregation_query(name: String!, is_bucket: Boolean) on FIELD_DEFINITION

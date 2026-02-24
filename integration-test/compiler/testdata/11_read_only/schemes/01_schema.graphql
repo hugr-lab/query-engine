@@ -1,0 +1,6 @@
+type LogEntry @table(name: "log_entries") {
+  id: BigInt! @pk
+  level: String!
+  message: String!
+  timestamp: Timestamp
+}

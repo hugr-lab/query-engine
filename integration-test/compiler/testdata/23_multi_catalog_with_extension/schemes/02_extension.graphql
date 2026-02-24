@@ -1,0 +1,5 @@
+type RouteMetrics @view(name: "route_metrics_view", sql: "SELECT src_airport, count(*) as route_count FROM routes GROUP BY src_airport")
+  @dependency(name: "base") {
+  src_airport: String! @pk
+  route_count: Int!
+}

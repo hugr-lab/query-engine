@@ -1,0 +1,3 @@
+extend type Function {
+  bad_func(x: Int): String @function(name: "bad_func", type: QUERY)
+}

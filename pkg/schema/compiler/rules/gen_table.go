@@ -102,7 +102,7 @@ func (r *TableRule) Process(ctx base.CompilationContext, def *ast.Definition) er
 
 	// 4b. Generate bucket aggregation type
 	bucketAggName := "_" + def.Name + "_aggregation_bucket"
-	bucketAggDef := generateBucketAggregationType(def, aggName, filterName, bucketAggName, pos)
+	bucketAggDef := generateBucketAggregationType(def, aggName, filterName, bucketAggName, opts, pos)
 	addDef(bucketAggDef)
 
 	// 4c. Add sub-aggregation fields for table_function_call_join list fields
@@ -214,6 +214,7 @@ func isFunctionCallField(f *ast.FieldDefinition) bool {
 // generateFilterInput creates a <Name>_filter input object with scalar filter
 // fields and logical operators (_and, _or, _not).
 func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
+	opts := ctx.CompileOptions()
 	filterDef := &ast.Definition{
 		Kind:     ast.InputObject,
 		Name:     name,
@@ -222,6 +223,7 @@ func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name 
 			{Name: "filter_input", Arguments: ast.ArgumentList{
 				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(opts),
 		},
 	}
 
@@ -265,7 +267,8 @@ func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name 
 
 // generateMutInputData creates a <Name>_mut_input_data input object for insert mutation.
 // Includes all table fields. Computed (@sql) fields are skipped.
-func generateMutInputData(_ base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
+func generateMutInputData(ctx base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
+	opts := ctx.CompileOptions()
 	inputDef := &ast.Definition{
 		Kind:     ast.InputObject,
 		Name:     name,
@@ -274,6 +277,7 @@ func generateMutInputData(_ base.CompilationContext, def *ast.Definition, name s
 			{Name: "data_input", Arguments: ast.ArgumentList{
 				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(opts),
 		},
 	}
 
@@ -301,7 +305,8 @@ func generateMutInputData(_ base.CompilationContext, def *ast.Definition, name s
 
 // generateMutData creates a <Name>_mut_data input object for update mutation.
 // Includes all table fields (including non-scalar). Computed (@sql) fields are skipped.
-func generateMutData(_ base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
+func generateMutData(ctx base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
+	opts := ctx.CompileOptions()
 	inputDef := &ast.Definition{
 		Kind:     ast.InputObject,
 		Name:     name,
@@ -310,6 +315,7 @@ func generateMutData(_ base.CompilationContext, def *ast.Definition, name string
 			{Name: "data_input", Arguments: ast.ArgumentList{
 				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(opts),
 		},
 	}
 
@@ -336,7 +342,7 @@ func generateMutData(_ base.CompilationContext, def *ast.Definition, name string
 }
 
 // generateListFilterInput creates a <Name>_list_filter input with any_of, all_of, none_of fields.
-func generateListFilterInput(objectName, filterName, listFilterName string, pos *ast.Position) *ast.Definition {
+func generateListFilterInput(objectName, filterName, listFilterName string, opts base.Options, pos *ast.Position) *ast.Definition {
 	return &ast.Definition{
 		Kind:     ast.InputObject,
 		Name:     listFilterName,
@@ -345,6 +351,7 @@ func generateListFilterInput(objectName, filterName, listFilterName string, pos 
 			{Name: "filter_list_input", Arguments: ast.ArgumentList{
 				{Name: "name", Value: &ast.Value{Raw: objectName, Kind: ast.StringValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(opts),
 		},
 		Fields: ast.FieldList{
 			{Name: "any_of", Type: ast.NamedType(filterName, pos), Position: pos},
@@ -357,6 +364,7 @@ func generateListFilterInput(objectName, filterName, listFilterName string, pos 
 // generateAggregationType creates a _<Name>_aggregation object with _rows_count
 // and per-field aggregation type fields.
 func generateAggregationType(ctx base.CompilationContext, def *ast.Definition, name string, pos *ast.Position) *ast.Definition {
+	opts := ctx.CompileOptions()
 	aggDef := &ast.Definition{
 		Kind:     ast.Object,
 		Name:     name,
@@ -367,6 +375,7 @@ func generateAggregationType(ctx base.CompilationContext, def *ast.Definition, n
 				{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
 				{Name: "level", Value: &ast.Value{Raw: "1", Kind: ast.IntValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(opts),
 		},
 	}
 
@@ -408,7 +417,7 @@ func generateAggregationType(ctx base.CompilationContext, def *ast.Definition, n
 
 // generateBucketAggregationType creates a _<Name>_aggregation_bucket object
 // with key (typed as the base object) and aggregations (typed as the aggregation type).
-func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName, bucketName string, pos *ast.Position) *ast.Definition {
+func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName, bucketName string, opts base.Options, pos *ast.Position) *ast.Definition {
 	return &ast.Definition{
 		Kind:     ast.Object,
 		Name:     bucketName,
@@ -419,6 +428,7 @@ func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName,
 				{Name: "is_bucket", Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
 				{Name: "level", Value: &ast.Value{Raw: "1", Kind: ast.IntValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(opts),
 		},
 		Fields: ast.FieldList{
 			{

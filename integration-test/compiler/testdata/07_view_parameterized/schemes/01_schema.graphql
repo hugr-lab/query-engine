@@ -1,0 +1,12 @@
+input SalesReportArgs {
+  from_date: Timestamp! @field_source(field: "from_date")
+  to_date: Timestamp! @field_source(field: "to_date")
+  region: String @field_source(field: "region")
+}
+
+type SalesReport @view(name: "sales_report_view", sql: "SELECT * FROM sales WHERE date >= [from_date] AND date <= [to_date]")
+  @args(name: "SalesReportArgs") {
+  product_id: Int! @pk
+  total_sales: Float
+  order_count: BigInt
+}

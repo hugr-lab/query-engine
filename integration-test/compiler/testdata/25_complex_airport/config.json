@@ -1,0 +1,23 @@
+{
+  "catalogs": [
+    {
+      "file": "01_airport_base.graphql",
+      "name": "base",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "02_functions.graphql",
+      "name": "fn_transport",
+      "engine": "duckdb",
+      "as_module": true,
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "03_hotel.graphql",
+      "name": "hotels",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    }
+  ]
+}
