@@ -1,0 +1,12 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "load_data_source": {
+          "message": "Datasource was loaded",
+          "success": true
+        }
+      }
+    }
+  }
+}

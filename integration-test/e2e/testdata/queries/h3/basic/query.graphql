@@ -1,0 +1,12 @@
+{
+  h3(resolution: 4) {
+    cell
+    resolution
+    geom
+    data {
+      pg_store_locations_aggregation(field: "point") {
+        _rows_count
+      }
+    }
+  }
+}

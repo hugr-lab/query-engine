@@ -9,6 +9,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag) (004-compiler-integration-tests)
 - N/A (all in-memory schema compilation) (004-compiler-integration-tests)
 - Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `pkg/schema/compiler` (rule-based compiler), `pkg/schema/static` (Provider with `Update()`/`DropCatalog()`) (005-source-adapters)
+- Go 1.25 (query engine), Bash (test runner scripts) + Docker, Docker Compose, curl, jq, duckdb CLI (006-docker-e2e-testing)
+- PostgreSQL 16 (PostGIS), DuckDB (in-process, file-based), in-memory CoreDB (006-docker-e2e-testing)
 
 - Go 1.25 + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag), `apache/arrow-go/v18` (001-compiler-generators-decouple)
 
@@ -28,9 +30,9 @@ tests/
 Go 1.25: Follow standard conventions
 
 ## Recent Changes
+- 006-docker-e2e-testing: Added Go 1.25 (query engine), Bash (test runner scripts) + Docker, Docker Compose, curl, jq, duckdb CLI
 - 005-source-adapters: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `pkg/schema/compiler` (rule-based compiler), `pkg/schema/static` (Provider with `Update()`/`DropCatalog()`)
 - 004-compiler-integration-tests: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag)
-- 003-multi-catalog-compilation: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag for tests)
 
 
 <!-- MANUAL ADDITIONS START -->

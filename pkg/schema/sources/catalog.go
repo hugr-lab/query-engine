@@ -24,14 +24,18 @@ type Catalog struct {
 	provider schema.Provider
 }
 
-func NewCatalog(ctx context.Context, def types.DataSource, engine engines.Engine, source Source, isExtension bool) *Catalog {
-	return &Catalog{
+func NewCatalog(ctx context.Context, def types.DataSource, engine engines.Engine, source Source, isExtension bool) (*Catalog, error) {
+	c := &Catalog{
 		def:    def,
 		source: source,
 		cap:    engine.Capabilities(),
 		et:     engine.Type(),
 		isExt:  isExtension,
 	}
+	if err := c.Reload(ctx); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // Source implements [Source].

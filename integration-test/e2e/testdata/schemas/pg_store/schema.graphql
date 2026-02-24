@@ -1,0 +1,79 @@
+type products @table(name: "products") {
+    id: Int! @pk @default(sequence: "products_id_seq")
+    name: String!
+    price: Float!
+    quantity: Int! @default(value: "0")
+    is_active: Boolean @default(value: "true")
+    tags: JSON
+    created_at: Timestamp @default(value: "now()")
+    updated_at: Timestamp
+    description: String
+    category_id: Int @field_references(
+        field: "id"
+        references_name: "categories"
+        query: "category"
+        references_query: "products"
+    )
+}
+
+type categories @table(name: "categories") {
+    id: Int! @pk @default(sequence: "categories_id_seq")
+    name: String!
+    parent_id: Int @field_references(
+        field: "id"
+        references_name: "categories"
+        query: "parent"
+        references_query: "children"
+    )
+}
+
+type tags @table(name: "tags") {
+    id: Int! @pk @default(sequence: "tags_id_seq")
+    name: String!
+}
+
+type product_tags @table(name: "product_tags", is_m2m: true) {
+    product_id: Int! @pk @field_references(
+        field: "id"
+        references_name: "products"
+        query: "product"
+        references_query: "product_tags"
+    )
+    tag_id: Int! @pk @field_references(
+        field: "id"
+        references_name: "tags"
+        query: "tag"
+        references_query: "tagged_products"
+    )
+}
+
+type locations @table(name: "locations") {
+    id: Int! @pk @default(sequence: "locations_id_seq")
+    name: String!
+    point: Geometry @geometry_info(srid: 4326, type: POINT)
+    area: Geometry @geometry_info(srid: 4326, type: POLYGON)
+}
+
+type active_products @view(
+    name: "active_products"
+    sql: "SELECT id, name, price, quantity FROM products WHERE is_active = true"
+) {
+    id: Int! @pk
+    name: String!
+    price: Float!
+    quantity: Int!
+}
+
+type products_in_price_range @view(
+    name: "products_in_price_range"
+    sql: "SELECT id, name, price FROM products WHERE price >= [min_price] AND price <= [max_price]"
+) @args(name: "price_range_args") {
+    id: Int! @pk
+    name: String!
+    price: Float!
+}
+
+input price_range_args {
+    min_price: Float!
+    max_price: Float!
+}

@@ -1,0 +1,10 @@
+{
+  "data": {
+    "pg_store": {
+      "update_products": {
+        "message": "success",
+        "success": true
+      }
+    }
+  }
+}

@@ -6,3 +6,6 @@ specs/
 design/
 internal/airport_test_service/
 internal/duckdb-air/
+*.duckdb
+*.duckdb.wal
+/dev-server

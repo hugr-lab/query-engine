@@ -144,7 +144,7 @@ func TestWhereFieldNode(t *testing.T) {
 				t.Fatalf("whereFieldNode() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if node != nil {
-				node.provider = static.New(testSchema)
+				node.provider = static.NewWithSchema(testSchema)
 				node.engines = testCats
 				sql, params, err := node.CollectFunc(node, nil, nil)
 				if (err != nil) != tt.wantErr {

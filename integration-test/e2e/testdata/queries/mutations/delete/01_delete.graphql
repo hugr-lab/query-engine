@@ -1,0 +1,8 @@
+mutation {
+  pg_store {
+    delete_products(filter: { name: { eq: "Test Product" } }) {
+      success
+      message
+    }
+  }
+}

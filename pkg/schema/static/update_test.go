@@ -24,7 +24,7 @@ func newDDL(t *testing.T, sdl string) *ast.SchemaDocument {
 
 func TestUpdate_AddDefinition(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `type User { id: ID!, name: String! }`)
@@ -40,7 +40,7 @@ func TestUpdate_AddDefinition(t *testing.T) {
 
 func TestUpdate_AddDefinition_AlreadyExists(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `type Query { id: ID }`)
@@ -56,7 +56,7 @@ func TestUpdate_DropDefinition(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `type User @drop { _: Boolean }`)
@@ -69,7 +69,7 @@ func TestUpdate_DropDefinition(t *testing.T) {
 
 func TestUpdate_DropDefinition_NotFound(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `type Missing @drop { _: Boolean }`)
@@ -82,7 +82,7 @@ func TestUpdate_DropDefinition_NotFound(t *testing.T) {
 
 func TestUpdate_DropDefinition_IfExists(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `type Missing @drop(if_exists: true) { _: Boolean }`)
@@ -96,7 +96,7 @@ func TestUpdate_ReplaceDefinition(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `type User @replace { id: ID!, name: String!, email: String }`)
@@ -113,7 +113,7 @@ func TestUpdate_ReplaceDefinition(t *testing.T) {
 
 func TestUpdate_ReplaceDefinition_NotFound(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `type Missing @replace { id: ID! }`)
@@ -129,7 +129,7 @@ func TestUpdate_IfNotExists_TypeExists(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `type User @if_not_exists { id: ID!, name: String! }`)
@@ -144,7 +144,7 @@ func TestUpdate_IfNotExists_TypeExists(t *testing.T) {
 
 func TestUpdate_IfNotExists_TypeNew(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `type User @if_not_exists { id: ID!, name: String! }`)
@@ -163,7 +163,7 @@ func TestUpdate_DropAndReaddSameName(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// Drop User then add new User in same DDL
@@ -189,7 +189,7 @@ func TestUpdate_ExtendAddField(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User { name: String! }`)
@@ -207,7 +207,7 @@ func TestUpdate_ExtendDropField(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID!, name: String!, email: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User { email: String @drop }`)
@@ -225,7 +225,7 @@ func TestUpdate_ExtendDropField_NotFound(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User { missing: String @drop }`)
@@ -241,7 +241,7 @@ func TestUpdate_ExtendReplaceField(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID!, name: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User { name: String! @replace }`)
@@ -261,7 +261,7 @@ func TestUpdate_ExtendUpdateDescription(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// gqlparser doesn't support block strings on extend, so we set description
@@ -282,7 +282,7 @@ func TestUpdate_ExtendAddDirective(t *testing.T) {
 		directive @cached(ttl: Int!) on OBJECT
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User @cached(ttl: 60) { _: Boolean }`)
@@ -302,7 +302,7 @@ func TestUpdate_ExtendDropDirective_All(t *testing.T) {
 		directive @tag(name: String!) repeatable on OBJECT
 		type User @tag(name: "a") @tag(name: "b") { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User @drop_directive(name: "tag") { _: Boolean }`)
@@ -320,7 +320,7 @@ func TestUpdate_ExtendDropDirective_Match(t *testing.T) {
 		directive @tag(name: String!) repeatable on OBJECT
 		type User @tag(name: "keep") @tag(name: "remove") { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User @drop_directive(name: "tag", match: {name: "remove"}) { _: Boolean }`)
@@ -340,7 +340,7 @@ func TestUpdate_ExtendMergeFieldDirectives(t *testing.T) {
 		directive @default(value: String) on FIELD_DEFINITION
 		type User { id: ID!, name: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User { name: String @default(value: "Anonymous") }`)
@@ -361,7 +361,7 @@ func TestUpdate_ExtendAddEnumValue(t *testing.T) {
 		type Query { id: ID }
 		enum Status { ACTIVE INACTIVE }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend enum Status { ARCHIVED }`)
@@ -379,7 +379,7 @@ func TestUpdate_ExtendDropEnumValue(t *testing.T) {
 		type Query { id: ID }
 		enum Status { ACTIVE INACTIVE ARCHIVED }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend enum Status { ARCHIVED @drop }`)
@@ -394,7 +394,7 @@ func TestUpdate_ExtendDropEnumValue(t *testing.T) {
 
 func TestUpdate_ExtendNotFound(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type Missing { name: String }`)
@@ -412,7 +412,7 @@ func TestUpdate_RelationshipsOnAdd(t *testing.T) {
 		type Query { id: ID }
 		interface Node { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `type User implements Node { id: ID!, name: String! }`)
@@ -437,7 +437,7 @@ func TestUpdate_RelationshipsOnDrop(t *testing.T) {
 		interface Node { id: ID! }
 		type User implements Node { id: ID!, name: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// Verify relationships exist before drop
@@ -460,7 +460,7 @@ func TestUpdate_ExtendAddInterface(t *testing.T) {
 		interface Node { id: ID! }
 		type User { id: ID!, name: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User implements Node { _: Boolean }`)
@@ -484,7 +484,7 @@ func TestUpdate_DefinitionsSourceOnly(t *testing.T) {
 	s := newTestSchema(t, `
 		type Query { id: ID }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// Use a source that only implements DefinitionsSource, not ExtensionsSource
@@ -501,7 +501,7 @@ func TestUpdate_DefinitionsSourceOnly(t *testing.T) {
 
 func TestUpdate_MultipleDefinitions(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `
@@ -520,7 +520,7 @@ func TestUpdate_MixedDefinitionsAndExtensions(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `
@@ -544,7 +544,7 @@ func TestUpdate_ExtendFieldAddDirective(t *testing.T) {
 		directive @deprecated(reason: String) on FIELD_DEFINITION
 		type User { id: ID!, name: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User { name: String @deprecated(reason: "use full_name") }`)
@@ -569,7 +569,7 @@ func TestUpdate_ExtendFieldDropDirective(t *testing.T) {
 			name: String @default(value: "Anonymous")
 		}
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User { name: String @drop_directive(name: "default") }`)
@@ -592,7 +592,7 @@ func TestUpdate_ExtendFieldDropDirective_Match(t *testing.T) {
 			name: String @tag(name: "keep") @tag(name: "remove")
 		}
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User { name: String @drop_directive(name: "tag", match: {name: "remove"}) }`)
@@ -617,7 +617,7 @@ func TestUpdate_ExtendFieldChangeDirective(t *testing.T) {
 			name: String @default(value: "Old")
 		}
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// Drop existing @default, then add new @default in same extension
@@ -641,7 +641,7 @@ func TestUpdate_DirectiveValidation_UndefinedDirectiveOnType(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User @nonexistent(foo: "bar") { _: Boolean }`)
@@ -658,7 +658,7 @@ func TestUpdate_DirectiveValidation_UndefinedDirectiveOnField(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// New field with undefined directive
@@ -676,7 +676,7 @@ func TestUpdate_DirectiveValidation_UndefinedDirectiveOnFieldMerge(t *testing.T)
 		type Query { id: ID }
 		type User { id: ID!, name: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// Merge directive on existing field — undefined
@@ -695,7 +695,7 @@ func TestUpdate_DirectiveValidation_MissingRequiredArg(t *testing.T) {
 		directive @cached(ttl: Int!) on OBJECT
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// @cached requires ttl argument, but we omit it
@@ -715,7 +715,7 @@ func TestUpdate_DirectiveValidation_MissingRequiredArgOnField(t *testing.T) {
 		directive @constraint(min: Int!) on FIELD_DEFINITION
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// New field with @constraint missing required min arg
@@ -734,7 +734,7 @@ func TestUpdate_DirectiveValidation_OptionalArgOmitted(t *testing.T) {
 		directive @cached(ttl: Int!, tags: [String]) on OBJECT
 		type User { id: ID! }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// @cached with required ttl provided, optional tags omitted — should pass
@@ -752,7 +752,7 @@ func TestUpdate_DirectiveValidation_ReplaceFieldUndefined(t *testing.T) {
 		type Query { id: ID }
 		type User { id: ID!, name: String }
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// Replace field with undefined directive
@@ -774,7 +774,7 @@ func TestUpdate_ExtendFieldUpdateDescription(t *testing.T) {
 			name: String
 		}
 	`)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	ddl := newDDL(t, `extend type User {
@@ -870,7 +870,7 @@ func TestUpdate_RealWorldSequential(t *testing.T) {
 		}
 	`
 	s := newTestSchema(t, baseSDL)
-	p := static.New(s)
+	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
 	// Verify base state

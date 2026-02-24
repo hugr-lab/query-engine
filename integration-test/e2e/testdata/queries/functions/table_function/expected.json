@@ -1,0 +1,9 @@
+{
+  "data": {
+    "function": {
+      "local_db": {
+        "generate_series": null
+      }
+    }
+  }
+}

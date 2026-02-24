@@ -1,0 +1,15 @@
+{
+  pg_store {
+    products(filter: { id: { eq: 1 } }) {
+      id
+      name
+      category_id
+      _join(fields: ["category_id"]) {
+        pg_store_categories(fields: ["id"]) {
+          id
+          name
+        }
+      }
+    }
+  }
+}

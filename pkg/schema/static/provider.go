@@ -20,8 +20,16 @@ type Provider struct {
 	schema *ast.Schema
 }
 
-// New creates a Provider wrapping the given compiled schema.
-func New(s *ast.Schema) *Provider {
+func New() *Provider {
+	// TODO Initialize Schema with built-in scalars and directives, and system types!!!!!
+	return &Provider{schema: &ast.Schema{
+		Types:      make(map[string]*ast.Definition),
+		Directives: make(map[string]*ast.DirectiveDefinition),
+	}}
+}
+
+// NewWithSchema creates a Provider wrapping the given compiled schema.
+func NewWithSchema(s *ast.Schema) *Provider {
 	return &Provider{schema: s}
 }
 
@@ -247,7 +255,6 @@ func (p *Provider) DropCatalog(ctx context.Context, name string, cascade bool) e
 
 	return nil
 }
-
 
 func (p *Provider) DropDefinition(ctx context.Context, name string) error {
 	if _, exists := p.schema.Types[name]; exists {

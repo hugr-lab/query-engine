@@ -1,0 +1,13 @@
+{
+  pg_store {
+    products(filter: { name: { eq: "Test Product" } }) {
+      id
+      name
+      price
+      quantity
+      is_active
+      description
+      category_id
+    }
+  }
+}

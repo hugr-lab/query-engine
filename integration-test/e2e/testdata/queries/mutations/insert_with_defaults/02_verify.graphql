@@ -1,0 +1,11 @@
+{
+  pg_store {
+    products(filter: { name: { eq: "Default Test" } }) {
+      id
+      name
+      price
+      quantity
+      is_active
+    }
+  }
+}

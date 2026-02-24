@@ -1,0 +1,8 @@
+{
+  core {
+    data_sources(order_by: [{field: "name", direction: ASC}]) {
+      name
+      type
+    }
+  }
+}

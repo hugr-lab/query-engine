@@ -1,0 +1,14 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "id": 4,
+          "is_active": true,
+          "name": "Old Keyboard",
+          "price": 24.99
+        }
+      ]
+    }
+  }
+}

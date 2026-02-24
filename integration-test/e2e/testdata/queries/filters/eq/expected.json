@@ -1,0 +1,13 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "id": 1,
+          "name": "Laptop Pro",
+          "price": 1299.99
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,230 @@
+{
+  "data": {
+    "core": {
+      "meta": {
+        "tables": [
+          {
+            "database_name": "pg_store",
+            "name": "addr",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "addrfeat",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "bg",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "categories",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "county",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "county_lookup",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "countysub_lookup",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "cousub",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "direction_lookup",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "edges",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "faces",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "featnames",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "geocode_settings",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "geocode_settings_default",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "geography_columns",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "geometry_columns",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "layer",
+            "schema_name": "topology"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "loader_lookuptables",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "loader_platform",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "loader_variables",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "locations",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "pagc_gaz",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "pagc_lex",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "pagc_rules",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "place",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "place_lookup",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "product_tags",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "products",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "secondary_unit_lookup",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "spatial_ref_sys",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "state",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "state_lookup",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "street_type_lookup",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "tabblock",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "tabblock20",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "tags",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "topology",
+            "schema_name": "topology"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "tract",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "zcta5",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "zip_lookup",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "zip_lookup_all",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "zip_lookup_base",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "zip_state",
+            "schema_name": "tiger"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "zip_state_loc",
+            "schema_name": "tiger"
+          }
+        ]
+      }
+    }
+  }
+}

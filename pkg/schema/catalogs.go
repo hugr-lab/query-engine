@@ -47,12 +47,12 @@ var (
 func (c *memoryCatalog) AddCatalog(ctx context.Context, name string, catalog Catalog) (err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	cat, ok := c.catalogs[name]
+	_, ok := c.catalogs[name]
 	if ok {
 		return ErrCatalogAlreadyExists
 	}
 
-	c.catalogs[name] = cat
+	c.catalogs[name] = registeredCatalog{source: catalog}
 	err = c.incrementalUpdate(ctx, catalog)
 	if err != nil {
 		delete(c.catalogs, name)

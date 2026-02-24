@@ -1,0 +1,8 @@
+mutation {
+  pg_store {
+    update_products(filter: { id: { eq: 4 } }, data: { price: 24.99, is_active: true }) {
+      success
+      message
+    }
+  }
+}

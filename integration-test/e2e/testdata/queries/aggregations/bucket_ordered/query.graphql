@@ -1,0 +1,12 @@
+{
+  pg_store {
+    products_bucket_aggregation(filter: { is_active: { eq: true } }) {
+      key {
+        category_id
+      }
+      aggregations {
+        _rows_count
+      }
+    }
+  }
+}

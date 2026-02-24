@@ -54,17 +54,17 @@ func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource)
 		return err
 	}
 
-	return s.catalogs.AddCatalog(ctx,
-		source.Name(),
-		source.Engine(),
-		sources.NewCatalog(ctx,
-			types.DataSource{
-				Name:     source.Name(),
-				AsModule: source.AsModule(),
-				ReadOnly: source.IsReadonly(),
-			},
-			source.Engine(), source.Catalog(ctx), false),
-	)
+	cat, err := sources.NewCatalog(ctx,
+		types.DataSource{
+			Name:     source.Name(),
+			AsModule: source.AsModule(),
+			ReadOnly: source.IsReadonly(),
+		},
+		source.Engine(), source.Catalog(ctx), false)
+	if err != nil {
+		return err
+	}
+	return s.catalogs.AddCatalog(ctx, source.Name(), source.Engine(), cat)
 }
 
 func (s *Service) Engine(name string) (engines.Engine, error) {
@@ -136,8 +136,11 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 		}
 		def := ds.Definition()
 		e := engines.NewDuckDB()
-		return s.catalogs.AddCatalog(ctx, def.Name, e,
-			sources.NewCatalog(ctx, def, e, source, true))
+		cat, err := sources.NewCatalog(ctx, def, e, source, true)
+		if err != nil {
+			return err
+		}
+		return s.catalogs.AddCatalog(ctx, def.Name, e, cat)
 	}
 
 	// create data source catalog
@@ -149,7 +152,11 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 		return nil
 	}
 	def := ds.Definition()
-	return s.catalogs.AddCatalog(ctx, def.Name, ds.Engine(), sources.NewCatalog(ctx, def, ds.Engine(), source, false))
+	cat, err := sources.NewCatalog(ctx, def, ds.Engine(), source, false)
+	if err != nil {
+		return err
+	}
+	return s.catalogs.AddCatalog(ctx, def.Name, ds.Engine(), cat)
 }
 
 func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {

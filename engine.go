@@ -83,7 +83,7 @@ type Info struct {
 func New(config Config) *Service {
 	// Initialize schema service with an empty schema (queries won't validate
 	// until the first rebuildSchema populates it via SetProvider).
-	ss := schema.NewService(static.New(&ast.Schema{
+	ss := schema.NewService(static.NewWithSchema(&ast.Schema{
 		Types:      make(map[string]*ast.Definition),
 		Directives: make(map[string]*ast.DirectiveDefinition),
 	}))

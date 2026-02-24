@@ -1,0 +1,13 @@
+{
+  pg_store {
+    categories(filter: { products: { any_of: { price: { gt: 40 } } } }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+      products(order_by: [{field: "id", direction: ASC}]) {
+        id
+        name
+        price
+      }
+    }
+  }
+}

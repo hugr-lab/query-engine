@@ -1,0 +1,16 @@
+{
+  pg_store {
+    categories(filter: { id: { eq: 2 } }) {
+      id
+      name
+      parent {
+        id
+        name
+      }
+      children {
+        id
+        name
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "id": 1,
+          "name": "Laptop Pro",
+          "tags": {
+            "color": "silver",
+            "weight": 1.5
+          }
+        }
+      ]
+    }
+  }
+}

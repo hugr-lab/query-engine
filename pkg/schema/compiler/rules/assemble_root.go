@@ -11,7 +11,7 @@ var _ base.BatchRule = (*RootTypeAssembler)(nil)
 // from the remaining collected fields after module assembly.
 type RootTypeAssembler struct{}
 
-func (r *RootTypeAssembler) Name() string     { return "RootTypeAssembler" }
+func (r *RootTypeAssembler) Name() string      { return "RootTypeAssembler" }
 func (r *RootTypeAssembler) Phase() base.Phase { return base.PhaseAssemble }
 
 func (r *RootTypeAssembler) ProcessAll(ctx base.CompilationContext) error {

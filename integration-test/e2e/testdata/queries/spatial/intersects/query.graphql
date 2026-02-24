@@ -1,0 +1,14 @@
+{
+  pg_store {
+    locations(filter: { id: { eq: 1 } }) {
+      id
+      name
+      _spatial(field: "point", type: INTERSECTS) {
+        pg_store_locations(field: "area") {
+          id
+          name
+        }
+      }
+    }
+  }
+}

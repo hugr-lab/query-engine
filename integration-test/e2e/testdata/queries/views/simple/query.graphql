@@ -1,0 +1,10 @@
+{
+  pg_store {
+    active_products(order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+      price
+      quantity
+    }
+  }
+}

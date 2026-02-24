@@ -1,0 +1,15 @@
+{
+  pg_store {
+    categories_aggregation(order_by: [{field: "id", direction: ASC}]) {
+      _rows_count
+      products_aggregation {
+        _rows_count{
+          sum
+        }
+        price {
+          avg
+        }
+      }
+    }
+  }
+}

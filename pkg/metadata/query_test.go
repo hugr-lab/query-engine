@@ -144,7 +144,7 @@ func TestProcessQuery(t *testing.T) {
 	rqt, _ := compiler.QueryRequestInfo(qd.Operations[0].SelectionSet)
 
 	for _, r := range rqt {
-		data, err := ProcessQuery(t.Context(), static.New(cat.Schema()), r, 10, nil)
+		data, err := ProcessQuery(t.Context(), static.NewWithSchema(cat.Schema()), r, 10, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -108,11 +108,14 @@ func (s *Service) RegisterUDF(ctx context.Context) error {
 
 func (s *Service) registerUDFCatalog(ctx context.Context) error {
 	e := engines.NewDuckDB()
-	cat := sources.NewCatalog(ctx, types.DataSource{Name: "data_sources"},
+	cat, err := sources.NewCatalog(ctx, types.DataSource{Name: "data_sources"},
 		e, sources.NewStringSource(gqlSchema), false,
 	)
+	if err != nil {
+		return fmt.Errorf("create data_sources catalog: %w", err)
+	}
 
-	err := s.catalogs.AddCatalog(ctx, "data_sources", e, cat)
+	err = s.catalogs.AddCatalog(ctx, "data_sources", e, cat)
 	if err != nil {
 		return fmt.Errorf("register data_sources catalog: %w", err)
 	}

@@ -1,0 +1,11 @@
+{
+  core {
+    meta {
+      tables(filter: { database_name: { eq: "pg_store" } }, order_by: [{field: "name", direction: ASC}]) {
+        name
+        schema_name
+        database_name
+      }
+    }
+  }
+}

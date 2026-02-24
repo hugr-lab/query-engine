@@ -13,7 +13,7 @@ func Test_castResultsNode(t *testing.T) {
 	caster := &engines.Postgres{}
 	node := &QueryPlanNode{
 		engines:  testService.engines,
-		provider: static.New(testCats.Schema()),
+		provider: static.NewWithSchema(testCats.Schema()),
 	}
 
 	tests := []struct {
@@ -88,7 +88,7 @@ func Test_castResultsNode(t *testing.T) {
 			node.Query = tc.field
 			node.Name = tc.field.Name
 			node.engines = testService.engines
-			node.provider = static.New(testCats.Schema())
+			node.provider = static.NewWithSchema(testCats.Schema())
 			cast, err := castResultsNode(context.Background(), caster, node, false, false)
 			if err != nil {
 				t.Fatalf("castResultsNode: %v", err)
@@ -110,8 +110,8 @@ func Test_castResultsNode(t *testing.T) {
 func Test_castScalarResultsNode(t *testing.T) {
 	caster := &engines.Postgres{}
 	node := &QueryPlanNode{
-		engines: testService.engines,
-		provider: static.New(testCats.Schema()),
+		engines:  testService.engines,
+		provider: static.NewWithSchema(testCats.Schema()),
 	}
 
 	tests := []struct {
@@ -191,7 +191,7 @@ func Test_castScalarResultsNode(t *testing.T) {
 			node.Query = tc.field
 			node.Name = tc.field.Name
 			node.engines = testService.engines
-			node.provider = static.New(testCats.Schema())
+			node.provider = static.NewWithSchema(testCats.Schema())
 			cast, err := castScalarResultsNode(context.Background(), caster, node, true, false)
 			if err != nil {
 				t.Fatalf("castResultsNode: %v", err)

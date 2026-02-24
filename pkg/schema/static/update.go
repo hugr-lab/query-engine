@@ -45,10 +45,10 @@ type extensionChangeset struct {
 }
 
 type fieldMerge struct {
-	fieldName       string
-	directivesToAdd ast.DirectiveList
+	fieldName        string
+	directivesToAdd  ast.DirectiveList
 	directivesToDrop []base.DropDirectiveSpec
-	newDescription  string
+	newDescription   string
 }
 
 // Update applies DDL changes to the provider's schema.

@@ -1,0 +1,8 @@
+{
+  core {
+    roles {
+      name
+      description
+    }
+  }
+}
