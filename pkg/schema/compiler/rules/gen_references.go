@@ -394,7 +394,7 @@ func addReferenceToFilterInput(ctx base.CompilationContext, objectName, fieldNam
 
 		// Lazily create the _list_filter type if it doesn't exist
 		if ctx.LookupType(filterTypeName) == nil {
-			listFilterDef := generateListFilterInput(targetObjName, targetFilterName, filterTypeName, pos)
+			listFilterDef := generateListFilterInput(targetObjName, targetFilterName, filterTypeName, opts, pos)
 			ctx.AddDefinition(listFilterDef)
 
 			// Add @filter_list_input directive to the target object's definition
@@ -867,6 +867,7 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 				{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
 				{Name: "level", Value: &ast.Value{Raw: fmt.Sprintf("%d", level), Kind: ast.IntValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(ctx.CompileOptions()),
 		},
 		Fields: fields,
 	}
@@ -945,6 +946,7 @@ func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, su
 				{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
 				{Name: "level", Value: &ast.Value{Raw: fmt.Sprintf("%d", level), Kind: ast.IntValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			optsCatalogDirective(ctx.CompileOptions()),
 		},
 		Fields: fields,
 	}

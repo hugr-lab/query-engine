@@ -63,6 +63,10 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 		}
 
 		// Pass the input type definition through to DDL feed
+		// Add @catalog directive to the input type if this is a named catalog
+		if viewOpts := ctx.CompileOptions(); viewOpts.Name != "" {
+			inputDef.Directives = append(inputDef.Directives, optsCatalogDirective(viewOpts))
+		}
 		ctx.AddDefinition(inputDef)
 	}
 
@@ -99,7 +103,8 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 
 	// 3b. Generate bucket aggregation type
 	bucketAggName := "_" + def.Name + "_aggregation_bucket"
-	bucketAggDef := generateBucketAggregationType(def, aggName, filterName, bucketAggName, pos)
+	opts := ctx.CompileOptions()
+	bucketAggDef := generateBucketAggregationType(def, aggName, filterName, bucketAggName, opts, pos)
 	addDef(bucketAggDef)
 
 	// 4. Register query fields (views are read-only -- no mutation fields)
