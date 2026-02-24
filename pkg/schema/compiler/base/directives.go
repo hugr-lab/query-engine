@@ -22,3 +22,21 @@ func DirectiveArgString(dir *ast.Directive, name string) string {
 	}
 	return arg.Value.Raw
 }
+
+// DirectiveArgStrings extracts a list of string values from a directive argument.
+func DirectiveArgStrings(dir *ast.Directive, name string) []string {
+	if dir == nil {
+		return nil
+	}
+	arg := dir.Arguments.ForName(name)
+	if arg == nil || arg.Value == nil {
+		return nil
+	}
+	var result []string
+	for _, child := range arg.Value.Children {
+		if child.Value != nil {
+			result = append(result, child.Value.Raw)
+		}
+	}
+	return result
+}

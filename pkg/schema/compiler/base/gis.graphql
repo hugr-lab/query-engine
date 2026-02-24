@@ -1,0 +1,64 @@
+"""
+Mark query results as a GIS features
+It is used in:
+- the geojson endpoint to return features in the geojson format.
+- the OpenAPI schema to define the feature type for saved collections.
+- the wfs endpoint to return features in the WFS format.
+"""
+directive @feature(
+    "name of the feature type (collection name), used for feature collection"
+    name: String!
+    "description of the feature type"
+    description: String
+    "name of the geometry field, used for feature geometry"
+    geometry: String!
+    "name of the feature id field, used for feature id"
+    id: String
+    "geometry type of the feature, used for feature geometry type"
+    geometry_type: GeometryType
+    "if not set, the geometry will be treated as WGS84 (SRID)"
+    geometry_srid: Int
+    "jq transformation that returns the feature properties"
+    properties: String
+    "property feature definition in OpenAPI format"
+    definition: JSON
+    "variables definition for the feature properties in OpenAPI format"
+    variables: JSON
+    "support pagination"
+    pagination: Boolean = false
+    "if true, the bbox will be written to the feature"
+    write_bbox: Boolean = false
+    "meta query name, used for feature collection extent and count"
+    summary: String
+    "bbox data extent path, used for collection extent"
+    extent_path: String
+    "matched features count path, used for collection count"
+    count_path: String
+) on FIELD
+
+"Directive that makes the Data Object accessible via WFS (Web Feature Service 1.2)"
+directive @wfs(
+    "name of the feature type (collection name), used for feature collection"
+    name: String!
+    "description of the feature type"
+    description: String
+    "name of the geometry field, used for feature geometry"
+    geometry: String
+    "read-only mode, if true, the WFS service will not allow to modify the data"
+    read_only: Boolean = false
+)  repeatable on OBJECT
+
+"Make a nested object field (type) flat in WFS response."
+directive @wfs_field(
+    "name of the field in the WFS response, if not set, the field name will be used"
+    name: String
+    "description of the field in the WFS response"
+    description: String
+    "if true, the nested field will be flatted in the WFS response, else it will be returned as a stringified JSON"
+    flatted: Boolean
+    "separator used to flatten the field in the WFS response"
+    flatted_sep: String
+) on FIELD_DEFINITION
+
+"Exclude field from WFS response, it will not be returned in the WFS response."
+directive @wfs_exclude on FIELD_DEFINITION
