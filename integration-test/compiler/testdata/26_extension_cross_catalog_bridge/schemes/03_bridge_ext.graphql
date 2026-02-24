@@ -1,0 +1,18 @@
+type OrderProduct @view(name: "order_product_view", sql: "SELECT op.order_id, op.product_id, o.customer_id, op.quantity FROM order_products op JOIN orders o ON op.order_id = o.id")
+  @dependency(name: "customers")
+  @dependency(name: "products") {
+  order_id: Int! @pk
+  product_id: Int! @field_references(
+    references_name: "Product"
+    field: "id"
+    query: "product"
+    references_query: "order_products"
+  )
+  customer_id: Int! @field_references(
+    references_name: "Customer"
+    field: "id"
+    query: "customer"
+    references_query: "order_products"
+  )
+  quantity: Int!
+}

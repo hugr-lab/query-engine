@@ -1,0 +1,7 @@
+type SalesCube @cube @table(name: "sales_cube") {
+  id: Int! @pk
+  region: String!
+  product: String!
+  revenue: Float @measurement
+  quantity: Int @measurement
+}

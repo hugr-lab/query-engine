@@ -1,0 +1,18 @@
+{
+  "catalogs": [
+    {
+      "file": "01_region_us.graphql",
+      "name": "us_region",
+      "engine": "duckdb",
+      "prefix": "us",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "02_region_eu.graphql",
+      "name": "eu_region",
+      "engine": "duckdb",
+      "prefix": "eu",
+      "capabilities": "duckdb"
+    }
+  ]
+}

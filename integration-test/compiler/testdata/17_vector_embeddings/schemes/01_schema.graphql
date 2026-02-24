@@ -1,0 +1,6 @@
+type Article @table(name: "articles") @embeddings(model: "openai", vector: "embedding", distance: Cosine) {
+  id: Int! @pk
+  title: String!
+  body: String
+  embedding: Vector @dim(len: 1536)
+}

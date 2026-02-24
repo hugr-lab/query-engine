@@ -1,0 +1,10 @@
+{
+  "catalogs": [
+    {
+      "file": "01_schema.graphql",
+      "name": "metrics",
+      "engine": "postgres",
+      "capabilities": "postgres"
+    }
+  ]
+}

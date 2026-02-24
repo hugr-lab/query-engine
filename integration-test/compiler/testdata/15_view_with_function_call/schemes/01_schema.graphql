@@ -1,0 +1,12 @@
+type City @view(name: "cities_view") {
+  id: Int! @pk
+  name: String!
+  country: String!
+  population: Int
+  weather: String @function_call(references_name: "get_weather", args: {city_name: "name"})
+}
+
+extend type Function {
+  get_weather(city_name: String!): String
+    @function(name: "get_weather")
+}
