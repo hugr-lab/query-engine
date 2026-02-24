@@ -9,6 +9,7 @@ type Options struct {
 	Prefix       string
 	EngineType   string
 	AsModule     bool
+	IsExtension  bool
 	Capabilities *EngineCapabilities
 }
 
@@ -72,6 +73,10 @@ func (o *Options) SupportUpdatePKs() bool {
 	return !o.ReadOnly || o.Capabilities != nil && o.Capabilities.Update.UpdatePKColumns
 }
 
+func (o *Options) IsCrossCatalogReferencesSupported() bool {
+	return o.Capabilities != nil && o.Capabilities.General.SupportCrossCatalogReferences
+}
+
 // EngineCapabilities declares what an engine supports.
 type EngineCapabilities struct {
 	General EngineGeneralCapabilities
@@ -98,9 +103,10 @@ type EngineDeleteCapabilities struct {
 }
 
 type EngineGeneralCapabilities struct {
-	SupportDefaultSequences  bool
-	UnsupportedTypes         []string
-	UnsupportStructuredTypes bool
-	UnsupportArrays          bool
-	UnsupportTables          bool
+	SupportDefaultSequences       bool
+	UnsupportedTypes              []string
+	UnsupportStructuredTypes      bool
+	UnsupportArrays               bool
+	UnsupportTables               bool
+	SupportCrossCatalogReferences bool
 }

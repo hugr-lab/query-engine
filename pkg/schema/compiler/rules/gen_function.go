@@ -61,20 +61,31 @@ func (r *FunctionRule) Process(ctx base.CompilationContext, def *ast.Definition)
 		}
 	}
 
-	// Add @system if not present
-	if def.Directives.ForName("system") == nil {
-		def.Directives = append(def.Directives, &ast.Directive{Name: "system", Position: pos})
-	}
+	// Emit empty Function/MutationFunction definition with @if_not_exists
+	// (multi-catalog: type may already exist from a previous catalog)
+	ctx.AddDefinition(&ast.Definition{
+		Kind:     ast.Object,
+		Name:     def.Name,
+		Position: pos,
+		Directives: ast.DirectiveList{
+			{Name: "system", Position: pos},
+			{Name: "if_not_exists", Position: pos},
+		},
+	})
 
-	// Emit the Function/MutationFunction definition to output.
-	// Function fields stay inside the type (not registered as query fields).
-	// The RootTypeAssembler adds a "function" gateway field on Query/Mutation.
-	ctx.AddDefinition(def)
+	// Emit function fields as extension (merged into existing type by provider.Update)
+	ext := &ast.Definition{
+		Kind:     ast.Object,
+		Name:     def.Name,
+		Position: pos,
+		Fields:   def.Fields,
+	}
+	ctx.AddExtension(ext)
 
 	// Add aggregation/bucket_aggregation fields for table-returning functions.
 	// The old compiler adds these for functions that return list types pointing
 	// to data objects (e.g., find_nearby: [Airport] → find_nearby_aggregation).
-	addFunctionAggregationFields(ctx, def, opts, pos)
+	addFunctionAggregationFields(ctx, ext, opts, pos)
 
 	return nil
 }

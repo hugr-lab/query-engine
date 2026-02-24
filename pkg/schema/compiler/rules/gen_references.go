@@ -6,6 +6,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/types"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 var _ base.DefinitionRule = (*ReferencesRule)(nil)
@@ -51,6 +52,7 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 
 	// Check if this is an M2M table
 	isM2M := isM2MObject(def)
+	sourceCatalog := base.DefinitionCatalog(def)
 
 	if isM2M {
 		// Enrich M2M table's @references directives with descriptions and default args
@@ -63,6 +65,17 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 			if targetDef == nil {
 				targetDef = ctx.Source().ForName(ctx.Context(), refName)
 			}
+
+			// Cross-catalog check for M2M references
+			if targetDef != nil {
+				targetCatalog := base.DefinitionCatalog(targetDef)
+				if sourceCatalog != targetCatalog && !opts.IsCrossCatalogReferencesSupported() {
+					return gqlerror.ErrorPosf(def.Position,
+						"cross-catalog @references from %q (catalog %q) to %q (catalog %q) is not supported; enable SupportCrossCatalogReferences capability",
+						def.Name, sourceCatalog, refName, targetCatalog)
+				}
+			}
+
 			// Add default args
 			if dir.Arguments.ForName("is_m2m") == nil {
 				dir.Arguments = append(dir.Arguments, &ast.Argument{
@@ -108,6 +121,16 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		if targetDef == nil {
 			continue
 		}
+
+		// Cross-catalog check: gate on capability when source and target catalogs differ
+		targetCatalog := base.DefinitionCatalog(targetDef)
+		isCrossCatalog := sourceCatalog != targetCatalog
+		if isCrossCatalog && !opts.IsCrossCatalogReferencesSupported() {
+			return gqlerror.ErrorPosf(def.Position,
+				"cross-catalog @references from %q (catalog %q) to %q (catalog %q) is not supported; enable SupportCrossCatalogReferences capability",
+				def.Name, sourceCatalog, refName, targetCatalog)
+		}
+
 		targetInfo := ctx.GetObject(refName)
 		if targetInfo == nil {
 			targetInfo = &base.ObjectInfo{Name: refName, OriginalName: refName}
@@ -200,7 +223,8 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		addReferenceToFilterInput(ctx, def.Name, query, targetFilterName, isM2MRef, refQueryDir, opts, pos)
 
 		// Add reference subquery field to mutation insert input
-		if opts.SupportInsertReferences() && !isM2MRef {
+		// Skip for cross-catalog references — inserts only work within a single catalog
+		if opts.SupportInsertReferences() && !isM2MRef && !isCrossCatalog {
 			addReferenceToMutInput(ctx, def.Name, query, refName, pos)
 		}
 
@@ -235,7 +259,8 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 			addReferenceToFilterInput(ctx, refName, refQuery, sourceFilterName, true, backRefQueryDir, opts, pos)
 
 			// Add back-reference subquery to mutation insert input (list)
-			if opts.SupportInsertReferences() {
+			// Skip for cross-catalog references — inserts only work within a single catalog
+			if opts.SupportInsertReferences() && !isCrossCatalog {
 				addReferenceToMutInput(ctx, refName, refQuery, def.Name, pos, true)
 			}
 
@@ -328,7 +353,12 @@ func addM2MReferenceSide(ctx base.CompilationContext, m2mDef *ast.Definition, si
 	addReferenceAggregationFields(ctx, sourceObj, fieldName, targetObj, targetFilterName, opts, pos)
 
 	// Add M2M reference subquery field to mutation insert input (list)
-	if opts.SupportInsertReferences() {
+	// Skip for cross-catalog references — inserts only work within a single catalog
+	sourceDef := ctx.LookupType(sourceObj)
+	targetDef := ctx.LookupType(targetObj)
+	isCrossCatalog := sourceDef != nil && targetDef != nil &&
+		base.DefinitionCatalog(sourceDef) != base.DefinitionCatalog(targetDef)
+	if opts.SupportInsertReferences() && !isCrossCatalog {
 		addReferenceToMutInput(ctx, sourceObj, fieldName, targetObj, pos, true)
 	}
 

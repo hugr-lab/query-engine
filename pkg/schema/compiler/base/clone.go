@@ -54,10 +54,29 @@ func CloneFieldDefinition(field *ast.FieldDefinition) *ast.FieldDefinition {
 	return &ast.FieldDefinition{
 		Name:        field.Name,
 		Description: field.Description,
+		Arguments:   CloneArgumentDefinitionList(field.Arguments),
 		Type:        field.Type,
 		Position:    field.Position,
 		Directives:  CloneDirectiveList(field.Directives),
 	}
+}
+
+func CloneArgumentDefinitionList(args ast.ArgumentDefinitionList) ast.ArgumentDefinitionList {
+	if args == nil {
+		return nil
+	}
+	cloned := make(ast.ArgumentDefinitionList, len(args))
+	for i, a := range args {
+		cloned[i] = &ast.ArgumentDefinition{
+			Description:  a.Description,
+			Name:         a.Name,
+			DefaultValue: CloneValue(a.DefaultValue),
+			Type:         a.Type,
+			Directives:   CloneDirectiveList(a.Directives),
+			Position:     a.Position,
+		}
+	}
+	return cloned
 }
 
 func CloneDirectiveList(dirs ast.DirectiveList) ast.DirectiveList {

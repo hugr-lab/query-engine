@@ -144,6 +144,7 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 }
 
 // resolveFunctionField looks up a function field in Function or module function types.
+// Checks both type definitions and extensions (function fields are emitted as extensions).
 func resolveFunctionField(ctx base.CompilationContext, refName, moduleName string) *ast.FieldDefinition {
 	// If module specified, look in module function type
 	if moduleName != "" {
@@ -156,18 +157,26 @@ func resolveFunctionField(ctx base.CompilationContext, refName, moduleName strin
 		}
 	}
 
-	// Look in root Function type
-	funcDef := ctx.LookupType("Function")
-	if funcDef != nil {
+	// Look in root Function type (definition + extension)
+	if funcDef := ctx.LookupType("Function"); funcDef != nil {
 		if f := funcDef.Fields.ForName(refName); f != nil {
 			return f
 		}
 	}
+	if funcExt := ctx.LookupExtension("Function"); funcExt != nil {
+		if f := funcExt.Fields.ForName(refName); f != nil {
+			return f
+		}
+	}
 
-	// Look in MutationFunction type
-	mutFuncDef := ctx.LookupType("MutationFunction")
-	if mutFuncDef != nil {
+	// Look in MutationFunction type (definition + extension)
+	if mutFuncDef := ctx.LookupType("MutationFunction"); mutFuncDef != nil {
 		if f := mutFuncDef.Fields.ForName(refName); f != nil {
+			return f
+		}
+	}
+	if mutFuncExt := ctx.LookupExtension("MutationFunction"); mutFuncExt != nil {
+		if f := mutFuncExt.Fields.ForName(refName); f != nil {
 			return f
 		}
 	}

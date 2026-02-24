@@ -51,6 +51,9 @@ type CompilationContext interface {
 
 	// Object iteration
 	Objects() iter.Seq2[string, *ObjectInfo]
+
+	// Dependency registration (extension compilation)
+	RegisterDependency(name string)
 }
 
 // CompiledCatalog is the DDL feed output of compilation,
@@ -58,4 +61,10 @@ type CompilationContext interface {
 type CompiledCatalog interface {
 	DefinitionsSource
 	ExtensionsSource
+}
+
+// DependentCompiledCatalog extends CompiledCatalog with dependency information
+// collected from @dependency directives during extension compilation.
+type DependentCompiledCatalog interface {
+	Dependencies() []string
 }

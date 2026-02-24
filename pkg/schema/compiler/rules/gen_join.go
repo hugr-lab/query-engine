@@ -71,21 +71,28 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 		return nil
 	}
 
-	// Create _join type
-	joinType := &ast.Definition{
+	// Create _join type with @if_not_exists (multi-catalog: may already exist)
+	ctx.AddDefinition(&ast.Definition{
 		Kind:     ast.Object,
 		Name:     "_join",
 		Position: pos,
 		Directives: ast.DirectiveList{
 			{Name: "system", Position: pos},
+			{Name: "if_not_exists", Position: pos},
 		},
+	})
+	// Add fields as extension so they merge into existing _join
+	joinExt := &ast.Definition{
+		Kind:     ast.Object,
+		Name:     "_join",
+		Position: pos,
 	}
 	for _, obj := range dataObjects {
 		joinArgs := joinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
 		joinArgs = append(joinArgs, joinVectorArgs(obj, pos)...)
 
 		// Main query field
-		joinType.Fields = append(joinType.Fields, &ast.FieldDefinition{
+		joinExt.Fields = append(joinExt.Fields, &ast.FieldDefinition{
 			Name:      obj.name,
 			Type:      ast.ListType(ast.NamedType(obj.name, pos), pos),
 			Arguments: joinArgs,
@@ -105,7 +112,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			aggJoinArgs := joinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
 			aggJoinArgs = append(aggJoinArgs, joinVectorArgs(obj, pos)...)
 
-			joinType.Fields = append(joinType.Fields, &ast.FieldDefinition{
+			joinExt.Fields = append(joinExt.Fields, &ast.FieldDefinition{
 				Name:      obj.name + "_aggregation",
 				Type:      ast.NamedType(aggTypeName, pos),
 				Arguments: aggJoinArgs,
@@ -124,7 +131,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			bucketJoinArgs := joinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
 			bucketJoinArgs = append(bucketJoinArgs, joinVectorArgs(obj, pos)...)
 
-			joinType.Fields = append(joinType.Fields, &ast.FieldDefinition{
+			joinExt.Fields = append(joinExt.Fields, &ast.FieldDefinition{
 				Name:      obj.name + "_bucket_aggregation",
 				Type:      ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
 				Arguments: bucketJoinArgs,
@@ -139,10 +146,10 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			})
 		}
 	}
-	ctx.AddDefinition(joinType)
+	ctx.AddExtension(joinExt)
 
-	// Create _join_aggregation type
-	joinAggType := &ast.Definition{
+	// Create _join_aggregation type with @if_not_exists
+	ctx.AddDefinition(&ast.Definition{
 		Kind:     ast.Object,
 		Name:     "_join_aggregation",
 		Position: pos,
@@ -152,7 +159,13 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 				{Name: "level", Value: &ast.Value{Raw: "1", Kind: ast.IntValue, Position: pos}, Position: pos},
 				{Name: "name", Value: &ast.Value{Raw: "_join", Kind: ast.StringValue, Position: pos}, Position: pos},
 			}, Position: pos},
+			{Name: "if_not_exists", Position: pos},
 		},
+	})
+	joinAggExt := &ast.Definition{
+		Kind:     ast.Object,
+		Name:     "_join_aggregation",
+		Position: pos,
 	}
 	for _, obj := range dataObjects {
 		aggTypeName := "_" + obj.name + "_aggregation"
@@ -161,7 +174,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 		}
 		aggArgs := joinObjectAggArgsWithViewArgs(obj.info, obj.filterName, pos)
 		aggArgs = append(aggArgs, joinVectorArgs(obj, pos)...)
-		joinAggType.Fields = append(joinAggType.Fields, &ast.FieldDefinition{
+		joinAggExt.Fields = append(joinAggExt.Fields, &ast.FieldDefinition{
 			Name:      obj.name,
 			Type:      ast.NamedType(aggTypeName, pos),
 			Arguments: aggArgs,
@@ -176,7 +189,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			Position: pos,
 		})
 	}
-	ctx.AddDefinition(joinAggType)
+	ctx.AddExtension(joinAggExt)
 
 	// Add _join field to every non-M2M data object and its aggregation type
 	for _, obj := range dataObjects {
@@ -222,22 +235,28 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 		}
 	}
 
-	// Create _spatial type (only if there are spatial objects)
+	// Create _spatial type with @if_not_exists (only if there are spatial objects)
 	if len(spatialObjects) > 0 {
-		spatialType := &ast.Definition{
+		ctx.AddDefinition(&ast.Definition{
 			Kind:     ast.Object,
 			Name:     "_spatial",
 			Position: pos,
 			Directives: ast.DirectiveList{
 				{Name: "system", Position: pos},
+				{Name: "if_not_exists", Position: pos},
 			},
+		})
+		spatialExt := &ast.Definition{
+			Kind:     ast.Object,
+			Name:     "_spatial",
+			Position: pos,
 		}
 		for _, obj := range spatialObjects {
 			spatialArgs := spatialObjectQueryArgs(obj.filterName, pos)
 			spatialArgs = append(spatialArgs, joinVectorArgs(obj, pos)...)
 
 			// Main query field
-			spatialType.Fields = append(spatialType.Fields, &ast.FieldDefinition{
+			spatialExt.Fields = append(spatialExt.Fields, &ast.FieldDefinition{
 				Name:      obj.name,
 				Type:      ast.ListType(ast.NamedType(obj.name, pos), pos),
 				Arguments: spatialArgs,
@@ -257,7 +276,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 				aggSpatialArgs := spatialObjectQueryArgs(obj.filterName, pos)
 				aggSpatialArgs = append(aggSpatialArgs, joinVectorArgs(obj, pos)...)
 
-				spatialType.Fields = append(spatialType.Fields, &ast.FieldDefinition{
+				spatialExt.Fields = append(spatialExt.Fields, &ast.FieldDefinition{
 					Name:      obj.name + "_aggregation",
 					Type:      ast.NamedType(aggTypeName, pos),
 					Arguments: aggSpatialArgs,
@@ -276,7 +295,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 				bucketSpatialArgs := spatialObjectQueryArgs(obj.filterName, pos)
 				bucketSpatialArgs = append(bucketSpatialArgs, joinVectorArgs(obj, pos)...)
 
-				spatialType.Fields = append(spatialType.Fields, &ast.FieldDefinition{
+				spatialExt.Fields = append(spatialExt.Fields, &ast.FieldDefinition{
 					Name:      obj.name + "_bucket_aggregation",
 					Type:      ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
 					Arguments: bucketSpatialArgs,
@@ -291,10 +310,10 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 				})
 			}
 		}
-		ctx.AddDefinition(spatialType)
+		ctx.AddExtension(spatialExt)
 
-		// Create _spatial_aggregation type
-		spatialAggType := &ast.Definition{
+		// Create _spatial_aggregation type with @if_not_exists
+		ctx.AddDefinition(&ast.Definition{
 			Kind:     ast.Object,
 			Name:     "_spatial_aggregation",
 			Position: pos,
@@ -304,7 +323,13 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 					{Name: "level", Value: &ast.Value{Raw: "1", Kind: ast.IntValue, Position: pos}, Position: pos},
 					{Name: "name", Value: &ast.Value{Raw: "_spatial", Kind: ast.StringValue, Position: pos}, Position: pos},
 				}, Position: pos},
+				{Name: "if_not_exists", Position: pos},
 			},
+		})
+		spatialAggExt := &ast.Definition{
+			Kind:     ast.Object,
+			Name:     "_spatial_aggregation",
+			Position: pos,
 		}
 		for _, obj := range spatialObjects {
 			aggTypeName := "_" + obj.name + "_aggregation"
@@ -313,7 +338,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			}
 			sAggArgs := spatialObjectAggArgs(obj.filterName, pos)
 			sAggArgs = append(sAggArgs, joinVectorArgs(obj, pos)...)
-			spatialAggType.Fields = append(spatialAggType.Fields, &ast.FieldDefinition{
+			spatialAggExt.Fields = append(spatialAggExt.Fields, &ast.FieldDefinition{
 				Name:      obj.name,
 				Type:      ast.NamedType(aggTypeName, pos),
 				Arguments: sAggArgs,
@@ -328,7 +353,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 				Position: pos,
 			})
 		}
-		ctx.AddDefinition(spatialAggType)
+		ctx.AddExtension(spatialAggExt)
 
 		// Add _spatial field to spatial objects and their aggregation types
 		for _, obj := range spatialObjects {

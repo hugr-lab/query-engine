@@ -25,8 +25,9 @@ func (r *RootTypeAssembler) ProcessAll(ctx base.CompilationContext) error {
 	// Add function fields registered by rules
 	queryFields = append(queryFields, ctx.FunctionFields()...)
 
-	// Add "function" gateway field on Query if Function type was emitted
-	if ctx.LookupType("Function") != nil {
+	// Add "function" gateway field on Query if Function has extension fields
+	// (check extension, not type — Function def is emitted with @if_not_exists)
+	if ext := ctx.LookupExtension("Function"); ext != nil && len(ext.Fields) > 0 {
 		queryFields = append(queryFields, &ast.FieldDefinition{
 			Name:        "function",
 			Description: "Functions",
@@ -53,8 +54,8 @@ func (r *RootTypeAssembler) ProcessAll(ctx base.CompilationContext) error {
 	// Add function mutation fields registered by rules
 	mutFields = append(mutFields, ctx.FunctionMutationFields()...)
 
-	// Add "function" gateway field on Mutation if MutationFunction type was emitted
-	if ctx.LookupType("MutationFunction") != nil {
+	// Add "function" gateway field on Mutation if MutationFunction has extension fields
+	if ext := ctx.LookupExtension("MutationFunction"); ext != nil && len(ext.Fields) > 0 {
 		mutFields = append(mutFields, &ast.FieldDefinition{
 			Name:        "function",
 			Description: "Functions",

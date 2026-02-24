@@ -7,6 +7,8 @@ import "github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 func RegisterAll() []base.Rule {
 	return []base.Rule{
 		// VALIDATE phase
+		&ExtensionValidator{},
+		&DependencyCollector{},
 		&SourceValidator{},
 		&DefinitionValidator{},
 
