@@ -1,0 +1,5 @@
+type ActiveUser @view(name: "active_users_view") {
+  id: Int! @pk
+  name: String!
+  last_login: Timestamp
+}

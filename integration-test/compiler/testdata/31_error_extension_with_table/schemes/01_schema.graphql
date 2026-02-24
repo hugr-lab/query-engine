@@ -1,0 +1,4 @@
+type BadExt @table(name: "bad_ext") {
+  id: Int! @pk
+  name: String!
+}

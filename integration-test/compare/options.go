@@ -4,18 +4,20 @@ package compare
 type CompareOption func(*compareConfig)
 
 type compareConfig struct {
-	skipSystemTypes   bool
-	skipTypes         map[string]bool
-	ignoreDescriptions bool
+	skipSystemTypes     bool
+	skipTypes           map[string]bool
+	ignoreDescriptions  bool
 	ignoreDirectiveArgs map[string]bool
-	allowExtraTypes   bool
-	knownIssues       map[string]bool // paths to move to KnownIssues
+	ignoreDirectives    map[string]bool
+	allowExtraTypes     bool
+	knownIssues         map[string]bool // paths to move to KnownIssues
 }
 
 func defaultConfig() *compareConfig {
 	return &compareConfig{
 		skipTypes:           make(map[string]bool),
 		ignoreDirectiveArgs: make(map[string]bool),
+		ignoreDirectives:    make(map[string]bool),
 		knownIssues:         make(map[string]bool),
 	}
 }
@@ -48,6 +50,16 @@ func IgnoreDirectiveArgs(directives ...string) CompareOption {
 	return func(c *compareConfig) {
 		for _, d := range directives {
 			c.ignoreDirectiveArgs[d] = true
+		}
+	}
+}
+
+// IgnoreDirectives skips named directives entirely during comparison.
+// Both missing and extra occurrences of these directives are ignored.
+func IgnoreDirectives(names ...string) CompareOption {
+	return func(c *compareConfig) {
+		for _, n := range names {
+			c.ignoreDirectives[n] = true
 		}
 	}
 }

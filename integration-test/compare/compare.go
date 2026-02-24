@@ -195,6 +195,9 @@ func compareDirectives(basePath string, old, new ast.DirectiveList, cfg *compare
 	newMap := directiveMap(new)
 
 	for name, oldDir := range oldMap {
+		if cfg.ignoreDirectives[name] {
+			continue
+		}
 		newDir, ok := newMap[name]
 		if !ok {
 			diffs = append(diffs, Diff{
@@ -209,6 +212,9 @@ func compareDirectives(basePath string, old, new ast.DirectiveList, cfg *compare
 		}
 	}
 	for name := range newMap {
+		if cfg.ignoreDirectives[name] {
+			continue
+		}
 		if _, ok := oldMap[name]; !ok {
 			diffs = append(diffs, Diff{
 				Path:    basePath + "." + name,

@@ -1,0 +1,16 @@
+{
+  "catalogs": [
+    {
+      "file": "01_customers.graphql",
+      "name": "pg_crm",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "02_support.graphql",
+      "name": "support",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    }
+  ]
+}

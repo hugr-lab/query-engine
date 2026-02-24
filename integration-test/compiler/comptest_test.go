@@ -1,4 +1,4 @@
-package comptest
+package compiler_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 
 	oldbase "github.com/hugr-lab/query-engine/pkg/compiler/base"
 	oldcompiler "github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/schema/compare"
+	"github.com/hugr-lab/query-engine/integration-test/compare"
 	newcompiler "github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/rules"
@@ -839,6 +839,7 @@ func assertCompilersMatch(t *testing.T, sdl string, oldOpts oldcompiler.Options,
 		compare.SkipSystemTypes(),
 		compare.IgnoreDescriptions(),
 		compare.IgnoreDirectiveArgs("if_not_exists"),
+		compare.IgnoreDirectives("catalog"),
 		compare.SkipTypes(systemTypesToSkip()...),
 	}
 	opts = append(opts, extraOpts...)
@@ -1329,6 +1330,7 @@ func assertMultiCatalogMatch(t *testing.T, catalogs []catalogDef, extraOpts ...c
 		compare.SkipSystemTypes(),
 		compare.IgnoreDescriptions(),
 		compare.IgnoreDirectiveArgs("if_not_exists"),
+		compare.IgnoreDirectives("catalog"),
 		compare.SkipTypes(systemTypesToSkip()...),
 	}
 	opts = append(opts, extraOpts...)

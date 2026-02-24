@@ -16,146 +16,6 @@ import (
 	"github.com/vektah/gqlparser/v2/parser"
 )
 
-// complexTestSchema covers all compilation variants:
-// - @table with @pk (single and composite)
-// - @table with @references (foreign keys)
-// - @table with @unique constraints
-// - @view (read-only)
-// - @table with is_m2m (many-to-many join table)
-// - @module (module hierarchy)
-// - Field types: Int, String, Float, Boolean, BigInt, Timestamp, Date, JSON, Geometry
-// - @field_references (field-level references)
-// - @sql computed fields
-// - @default directives
-const complexTestSchema = `
-"""Airport database - comprehensive test schema"""
-type Airport
-  @table(name: "airports") {
-  """Airport IATA code"""
-  iata_code: String! @pk
-  """Airport name"""
-  name: String!
-  """City name"""
-  city: String!
-  """Country ISO code"""
-  country: String!
-  """Geographic location"""
-  geom: Geometry
-  """Latitude"""
-  latitude: Float
-  """Longitude"""
-  longitude: Float
-  """Elevation in feet"""
-  elevation: Int
-  """Timezone"""
-  timezone: String
-  """Last updated"""
-  updated_at: Timestamp
-}
-
-"""Flight routes between airports"""
-type Route
-  @table(name: "routes")
-  @unique(fields: ["src_airport", "dst_airport", "airline"], query_suffix: "route") {
-  """Route ID"""
-  id: Int! @pk
-  """Airline code"""
-  airline: String!
-  """Source airport IATA"""
-  src_airport: String! @field_references(
-    references_name: "Airport"
-    field: "iata_code"
-    query: "source_airport"
-    references_query: "departing_routes"
-  )
-  """Destination airport IATA"""
-  dst_airport: String! @field_references(
-    references_name: "Airport"
-    field: "iata_code"
-    query: "destination_airport"
-    references_query: "arriving_routes"
-  )
-  """Number of stops"""
-  stops: Int!
-  """Active flag"""
-  is_active: Boolean @default(value: true)
-}
-
-"""Airline companies"""
-type Airline
-  @table(name: "airlines") {
-  """ICAO code"""
-  icao: String! @pk
-  """Airline name"""
-  name: String!
-  """Country of registration"""
-  country: String
-  """Active flag"""
-  active: Boolean @default(value: true)
-  """Founded date"""
-  founded: Date
-  """Fleet size"""
-  fleet_size: BigInt
-  """Extra data"""
-  metadata: JSON
-}
-
-"""Passenger records"""
-type Passenger
-  @table(name: "passengers")
-  @unique(fields: ["email"], query_suffix: "email") {
-  id: Int! @pk
-  first_name: String!
-  last_name: String!
-  email: String!
-  booking_time: Timestamp
-}
-
-"""Flight schedule — read-only view"""
-type FlightSchedule
-  @view(name: "flight_schedule_view") {
-  id: Int! @pk
-  flight_number: String!
-  departure_time: Timestamp
-  arrival_time: Timestamp
-  airline: String
-  status: String
-}
-
-"""Airport statistics — read-only view with aggregation-friendly types"""
-type AirportStats
-  @view(name: "airport_stats_view") {
-  airport_code: String! @pk
-  total_departures: BigInt
-  total_arrivals: BigInt
-  avg_delay: Float
-  last_updated: Timestamp
-}
-
-"""Booking ↔ Passenger join table (M2M)"""
-type BookingPassenger
-  @table(name: "booking_passengers", is_m2m: true)
-  @references(
-    name: "booking_airline"
-    references_name: "Airline"
-    source_fields: ["airline_icao"]
-    references_fields: ["icao"]
-    query: "airline"
-    references_query: "booking_passengers"
-  )
-  @references(
-    name: "booking_passenger"
-    references_name: "Passenger"
-    source_fields: ["passenger_id"]
-    references_fields: ["id"]
-    query: "passenger"
-    references_query: "bookings"
-  ) {
-  airline_icao: String! @pk
-  passenger_id: Int! @pk
-}
-`
-
 // parseSourceSchemaDocument parses SDL into a SchemaDocument for the OLD compiler.
 func parseSourceSchemaDocument(t *testing.T, sdl string) *ast.SchemaDocument {
 	t.Helper()
@@ -164,40 +24,6 @@ func parseSourceSchemaDocument(t *testing.T, sdl string) *ast.SchemaDocument {
 		t.Fatalf("failed to parse schema: %v", err)
 	}
 	return sd
-}
-
-// extractSourceDefs extracts user definitions from a SchemaDocument for the NEW compiler.
-// It also processes extensions (e.g. "extend type Function { ... }") by merging them
-// into definitions or creating new definitions.
-func extractSourceDefs(sd *ast.SchemaDocument) *testSource {
-	defMap := make(map[string]*ast.Definition)
-	var defs []*ast.Definition
-	for _, def := range sd.Definitions {
-		// Skip schema definition types, only take user objects
-		if def.Kind == ast.Object || def.Kind == ast.InputObject || def.Kind == ast.Enum {
-			defs = append(defs, def)
-			defMap[def.Name] = def
-		}
-	}
-	// Merge extensions into definitions (for "extend type Function { ... }" etc.)
-	for _, ext := range sd.Extensions {
-		if existing, ok := defMap[ext.Name]; ok {
-			existing.Fields = append(existing.Fields, ext.Fields...)
-			existing.Directives = append(existing.Directives, ext.Directives...)
-		} else {
-			// Create a new definition from the extension
-			def := &ast.Definition{
-				Kind:       ext.Kind,
-				Name:       ext.Name,
-				Fields:     ext.Fields,
-				Directives: ext.Directives,
-				Position:   ext.Position,
-			}
-			defs = append(defs, def)
-			defMap[def.Name] = def
-		}
-	}
-	return &testSource{defs: defs}
 }
 
 // --- AST serialization helpers ---
@@ -599,8 +425,8 @@ func TestCrossCompiler_AsModule(t *testing.T) {
 	compareSummary(t, oldResult, newResult)
 }
 
-// functionTestSchema tests functions, function calls, and table_function_call_join.
-const functionTestSchema = `
+// crossFunctionTestSchema tests functions, function calls, and table_function_call_join.
+const crossFunctionTestSchema = `
 """Airport with function call and table function call join fields"""
 type Airport
   @table(name: "airports") {
@@ -626,7 +452,7 @@ extend type Function {
 `
 
 func TestCrossCompiler_Functions(t *testing.T) {
-	sdl := functionTestSchema
+	sdl := crossFunctionTestSchema
 	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
@@ -640,7 +466,7 @@ func TestCrossCompiler_Functions(t *testing.T) {
 }
 
 func TestCrossCompiler_FunctionsAsModule(t *testing.T) {
-	sdl := functionTestSchema
+	sdl := crossFunctionTestSchema
 	oldOpts := oldcompiler.Options{Name: "aviation", AsModule: true, EngineType: "duckdb"}
 	newOpts := base.Options{Name: "aviation", AsModule: true, EngineType: "duckdb"}
 
@@ -652,63 +478,6 @@ func TestCrossCompiler_FunctionsAsModule(t *testing.T) {
 
 	compareSummary(t, oldResult, newResult)
 }
-
-// nestedModuleSchema tests references, joins, and nested module hierarchy.
-// Uses inline @module directives for full module paths (no AsModule needed).
-// Hierarchy:
-//
-//	transport (level 1): Vehicle
-//	transport.air (level 2): Airport, Flight (with references to Airport)
-//	transport.ground (level 2): Station
-const nestedModuleSchema = `
-"""Generic vehicle"""
-type Vehicle
-  @table(name: "vehicles")
-  @module(name: "transport") {
-  id: Int! @pk
-  name: String!
-  type: String!
-}
-
-"""Airport"""
-type Airport
-  @table(name: "airports")
-  @module(name: "transport.air") {
-  iata_code: String! @pk
-  name: String!
-  city: String!
-  geom: Geometry
-}
-
-"""Flight with references to Airport"""
-type Flight
-  @table(name: "flights")
-  @module(name: "transport.air") {
-  id: Int! @pk
-  flight_number: String!
-  origin: String! @field_references(
-    references_name: "Airport"
-    field: "iata_code"
-    query: "origin_airport"
-    references_query: "departures"
-  )
-  arrival: String! @field_references(
-    references_name: "Airport"
-    field: "iata_code"
-    query: "dest_airport"
-    references_query: "arrivals"
-  )
-}
-
-"""Train or bus station"""
-type Station
-  @table(name: "stations")
-  @module(name: "transport.ground") {
-  id: Int! @pk
-  name: String!
-  city: String!
-}
-`
 
 func TestCrossCompiler_NestedModules(t *testing.T) {
 	sdl := nestedModuleSchema
@@ -723,62 +492,6 @@ func TestCrossCompiler_NestedModules(t *testing.T) {
 
 	compareSummary(t, oldResult, newResult)
 }
-
-// nestedModuleAsModuleSchema uses relative @module names combined with AsModule.
-// With AsModule name="transport":
-//
-//	Vehicle (no @module) → module "transport" (level 1)
-//	Airport (@module "air") → module "transport.air" (level 2)
-//	Flight (@module "air") → module "transport.air" (level 2)
-//	Station (@module "ground") → module "transport.ground" (level 2)
-const nestedModuleAsModuleSchema = `
-"""Generic vehicle at root module level"""
-type Vehicle
-  @table(name: "vehicles") {
-  id: Int! @pk
-  name: String!
-  type: String!
-}
-
-"""Airport in 'air' sub-module"""
-type Airport
-  @table(name: "airports")
-  @module(name: "air") {
-  iata_code: String! @pk
-  name: String!
-  city: String!
-  geom: Geometry
-}
-
-"""Flight in 'air' sub-module, references Airport"""
-type Flight
-  @table(name: "flights")
-  @module(name: "air") {
-  id: Int! @pk
-  flight_number: String!
-  origin: String! @field_references(
-    references_name: "Airport"
-    field: "iata_code"
-    query: "origin_airport"
-    references_query: "departures"
-  )
-  arrival: String! @field_references(
-    references_name: "Airport"
-    field: "iata_code"
-    query: "dest_airport"
-    references_query: "arrivals"
-  )
-}
-
-"""Station in 'ground' sub-module"""
-type Station
-  @table(name: "stations")
-  @module(name: "ground") {
-  id: Int! @pk
-  name: String!
-  city: String!
-}
-`
 
 func TestCrossCompiler_NestedModulesAsModule(t *testing.T) {
 	sdl := nestedModuleAsModuleSchema
@@ -1355,23 +1068,23 @@ func TestCatalogDirectivePlacement(t *testing.T) {
 		}
 	}
 
-	// 9. INPUT_OBJECT types must NOT have @catalog
+	// 9. INPUT_OBJECT types must have @catalog (so DropCatalog can clean them up)
 	for name, def := range result.defs {
 		if def.Kind == ast.InputObject {
 			d := def.Directives.ForName("catalog")
-			if d != nil {
-				t.Errorf("INPUT_OBJECT %q should NOT have @catalog directive", name)
+			if d == nil {
+				t.Errorf("INPUT_OBJECT %q missing @catalog directive", name)
 			}
 		}
 	}
 
-	// 10. Aggregation types (_*_aggregation) must NOT have @catalog on their definition
-	// (only on query fields that return them)
+	// 10. Aggregation types (_*_aggregation, _*_aggregation_bucket) must have @catalog
+	// on their definition (so DropCatalog can clean them up)
 	for name, def := range result.defs {
-		if def.Kind == ast.Object && strings.HasSuffix(name, "_aggregation") && !strings.HasPrefix(name, "_join") && !strings.HasPrefix(name, "_spatial") {
+		if def.Kind == ast.Object && strings.Contains(name, "_aggregation") && !strings.HasPrefix(name, "_join") && !strings.HasPrefix(name, "_spatial") {
 			d := def.Directives.ForName("catalog")
-			if d != nil {
-				t.Errorf("aggregation type %q should NOT have @catalog on definition", name)
+			if d == nil {
+				t.Errorf("aggregation type %q missing @catalog on definition", name)
 			}
 		}
 	}
@@ -1456,36 +1169,40 @@ func TestCatalogDirectivePlacement_Modules(t *testing.T) {
 	t.Log("Module @catalog placement checks passed")
 }
 
-// TestCatalogAbsence_ForFutureCatalogToggle comprehensively verifies that @catalog
-// is correctly absent from types that are shared/structural and should not be tied
-// to a specific catalog. This supports future catalog enable/disable functionality.
-//
-// Rationale: INPUT_OBJECT types (filters, mutation inputs, args inputs) and
-// aggregation type definitions are shared infrastructure. Only the query/mutation
-// fields that *return* data from a catalog should carry @catalog. The types
-// themselves must remain catalog-agnostic so they can be reused across catalogs.
-func TestCatalogAbsence_ForFutureCatalogToggle(t *testing.T) {
+// TestCatalogPresence_ForDropCatalogSupport comprehensively verifies that @catalog
+// is present on all generated types (INPUT_OBJECT and aggregation) so that
+// DropCatalog can cleanly remove an entire catalog including generated types.
+func TestCatalogPresence_ForDropCatalogSupport(t *testing.T) {
+	hasCatalogWithName := func(def *ast.Definition, catalogName string) bool {
+		d := def.Directives.ForName("catalog")
+		if d == nil {
+			return false
+		}
+		nameArg := d.Arguments.ForName("name")
+		return nameArg != nil && nameArg.Value.Raw == catalogName
+	}
+
 	// Use parameterized view schema to also cover FlightLogArgs input type
 	sdl := parameterizedViewSchema
 	opts := base.Options{Name: "test", EngineType: "duckdb"}
 	result := buildNewCompilerResult(t, sdl, opts)
 
-	// 1. No INPUT_OBJECT definition should have @catalog
+	// 1. All INPUT_OBJECT definitions should have @catalog
 	inputObjectCount := 0
 	for name, def := range result.defs {
 		if def.Kind != ast.InputObject {
 			continue
 		}
 		inputObjectCount++
-		if def.Directives.ForName("catalog") != nil {
-			t.Errorf("INPUT_OBJECT %q has @catalog — should not (shared/structural type)", name)
+		if !hasCatalogWithName(def, "test") {
+			t.Errorf("INPUT_OBJECT %q missing @catalog(name:test)", name)
 		}
 	}
 	if inputObjectCount == 0 {
 		t.Error("no INPUT_OBJECT definitions found — expected filters and args inputs")
 	}
 
-	// 2. FlightLogArgs input type specifically must NOT have @catalog
+	// 2. FlightLogArgs input type specifically should have @catalog
 	flightLogArgs := result.defs["FlightLogArgs"]
 	if flightLogArgs == nil {
 		t.Fatal("FlightLogArgs not found in output")
@@ -1493,12 +1210,12 @@ func TestCatalogAbsence_ForFutureCatalogToggle(t *testing.T) {
 	if flightLogArgs.Kind != ast.InputObject {
 		t.Errorf("FlightLogArgs kind=%s, expected INPUT_OBJECT", flightLogArgs.Kind)
 	}
-	if flightLogArgs.Directives.ForName("catalog") != nil {
-		t.Error("FlightLogArgs has @catalog — parameterized view args input should not")
+	if !hasCatalogWithName(flightLogArgs, "test") {
+		t.Error("FlightLogArgs missing @catalog(name:test)")
 	}
 
-	// 3. No aggregation type definition should have @catalog
-	// (only query fields that return them should carry @catalog)
+	// 3. All aggregation type definitions should have @catalog
+	// (skip _join_aggregation and _spatial_aggregation — those are system-level)
 	aggTypeCount := 0
 	for name, def := range result.defs {
 		if def.Kind != ast.Object {
@@ -1507,9 +1224,12 @@ func TestCatalogAbsence_ForFutureCatalogToggle(t *testing.T) {
 		if !strings.Contains(name, "_aggregation") {
 			continue
 		}
+		if strings.HasPrefix(name, "_join") || strings.HasPrefix(name, "_spatial") {
+			continue
+		}
 		aggTypeCount++
-		if def.Directives.ForName("catalog") != nil {
-			t.Errorf("aggregation type %q has @catalog on definition — should not", name)
+		if !hasCatalogWithName(def, "test") {
+			t.Errorf("aggregation type %q missing @catalog(name:test)", name)
 		}
 	}
 	if aggTypeCount == 0 {
@@ -1525,8 +1245,8 @@ func TestCatalogAbsence_ForFutureCatalogToggle(t *testing.T) {
 			continue
 		}
 		complexInputCount++
-		if def.Directives.ForName("catalog") != nil {
-			t.Errorf("[complex] INPUT_OBJECT %q has @catalog", name)
+		if !hasCatalogWithName(def, "air") {
+			t.Errorf("[complex] INPUT_OBJECT %q missing @catalog(name:air)", name)
 		}
 	}
 
@@ -1543,8 +1263,8 @@ func TestCatalogAbsence_ForFutureCatalogToggle(t *testing.T) {
 			continue
 		}
 		complexAggCount++
-		if def.Directives.ForName("catalog") != nil {
-			t.Errorf("[complex] aggregation type %q has @catalog on definition", name)
+		if !hasCatalogWithName(def, "air") {
+			t.Errorf("[complex] aggregation type %q missing @catalog(name:air)", name)
 		}
 	}
 

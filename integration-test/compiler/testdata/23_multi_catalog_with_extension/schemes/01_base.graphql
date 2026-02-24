@@ -1,0 +1,20 @@
+type Airport @table(name: "airports") {
+  iata_code: String! @pk
+  name: String!
+  geom: Geometry
+}
+
+type Route @table(name: "routes")
+  @references(
+    name: "route_src"
+    references_name: "Airport"
+    source_fields: ["src_airport"]
+    references_fields: ["iata_code"]
+    query: "source_airport"
+    references_query: "departing_routes"
+  ) {
+  id: Int! @pk
+  src_airport: String!
+  dst_airport: String!
+  distance: Float
+}

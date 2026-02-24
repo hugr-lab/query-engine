@@ -1,0 +1,4 @@
+type NoPK @table(name: "no_pk") {
+  name: String!
+  value: Int
+}

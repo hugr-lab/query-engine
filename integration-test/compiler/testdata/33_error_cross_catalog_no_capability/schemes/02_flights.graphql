@@ -1,0 +1,12 @@
+type Flight @table(name: "flights")
+  @references(
+    name: "flight_origin"
+    references_name: "Airport"
+    source_fields: ["origin_code"]
+    references_fields: ["iata_code"]
+    query: "origin_airport"
+    references_query: "departing_flights"
+  ) {
+  id: Int! @pk
+  origin_code: String!
+}

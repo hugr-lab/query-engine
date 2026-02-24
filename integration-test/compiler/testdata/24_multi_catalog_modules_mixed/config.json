@@ -1,0 +1,18 @@
+{
+  "catalogs": [
+    {
+      "file": "01_pg_crm.graphql",
+      "name": "pg_crm",
+      "engine": "postgres",
+      "as_module": true,
+      "capabilities": "postgres"
+    },
+    {
+      "file": "02_analytics.graphql",
+      "name": "analytics",
+      "engine": "duckdb",
+      "as_module": true,
+      "capabilities": "duckdb"
+    }
+  ]
+}

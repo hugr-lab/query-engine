@@ -1,0 +1,18 @@
+type Parent @table(name: "parents") {
+  id: Int! @pk
+  code: String!
+}
+
+type Child @table(name: "children")
+  @references(
+    name: "bad_ref"
+    references_name: "Parent"
+    source_fields: ["parent_id", "extra"]
+    references_fields: ["id"]
+    query: "parent"
+    references_query: "children"
+  ) {
+  id: Int! @pk
+  parent_id: Int!
+  extra: String
+}

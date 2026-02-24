@@ -1,0 +1,18 @@
+type FnAirport @table(name: "fn_airports") {
+  iata_code: String! @pk
+  name: String!
+  geom: Geometry
+  status: String @function_call(references_name: "airport_status", args: {code: "iata_code"})
+  nearby: [FnAirport] @table_function_call_join(references_name: "find_nearby", args: {origin: "iata_code"})
+}
+
+extend type Function {
+  airport_status(code: String!): String
+    @function(name: "airport_status")
+
+  search_airports(country: String!, limit: Int): JSON
+    @function(name: "search_airports", json_cast: true)
+
+  find_nearby(origin: String!, radius: Float = 100): [FnAirport]
+    @function(name: "find_nearby")
+}
