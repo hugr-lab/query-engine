@@ -22,6 +22,7 @@ import (
 	permissions "github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/pkg/schema"
+	schemacatalogs "github.com/hugr-lab/query-engine/pkg/schema/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
@@ -34,7 +35,7 @@ type Service struct {
 
 	router  *http.ServeMux
 	adminUI http.HandlerFunc
-	catalog *catalogs.Service
+	catalog schema.Manager
 	schema  *schema.Service
 	ds      *datasources.Service
 	planner *planner.Service
@@ -59,6 +60,10 @@ type Config struct {
 	CoreDB *coredb.Source
 	Auth   *auth.Config
 	Cache  cache.Config
+
+	// UseNewCompiler selects the new rule-based compiler and catalog service
+	// instead of the legacy catalogs.Service. Default false (legacy).
+	UseNewCompiler bool
 }
 
 type Info struct {
@@ -82,11 +87,16 @@ func New(config Config) *Service {
 		Types:      make(map[string]*ast.Definition),
 		Directives: make(map[string]*ast.DirectiveDefinition),
 	}))
+	var cat schema.Manager = ss
+	if !config.UseNewCompiler {
+		cat = schemacatalogs.NewAdapter(catalogs.New(ss))
+	}
+
 	return &Service{
 		config:  config,
 		router:  http.NewServeMux(),
 		schema:  ss,
-		catalog: catalogs.New(ss),
+		catalog: cat,
 		cache:   cache.New(config.Cache),
 		s3:      storage.New(),
 	}

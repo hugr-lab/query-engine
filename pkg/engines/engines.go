@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	oldcomp "github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -33,9 +34,9 @@ type Engine interface {
 	PackFieldsToObject(prefix string, field *ast.Field) string
 	MakeObject(fields map[string]string) string
 	AddObjectFields(sqlName string, fields map[string]string) string
-	ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args compiler.FieldQueryArguments, params []any) (string, []any, error)
+	ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args oldcomp.FieldQueryArguments, params []any) (string, []any, error)
 	ExtractJSONStruct(sql string, jsonStruct map[string]any) string
-	TimestampTransform(sql string, field *ast.Field, args compiler.FieldQueryArguments) string
+	TimestampTransform(sql string, field *ast.Field, args oldcomp.FieldQueryArguments) string
 	// ExtractNestedTypedValue extracts value from nested field by path and cast it to type
 	// type can be one of: number, string, bool, "" (empty string) - for extract json as is
 	ExtractNestedTypedValue(sql, path, t string) string
@@ -222,7 +223,7 @@ func (ss SelectionSet) ScalarForPath(path string) *SelectedField {
 		if s.Field.Alias == pp[0] {
 			if len(pp) == 1 {
 				if s.Field.Definition.Type.NamedType == "" ||
-					!compiler.IsScalarType(s.Field.Definition.Type.NamedType) {
+					!oldcomp.IsScalarType(s.Field.Definition.Type.NamedType) {
 					return nil
 				}
 				return &s

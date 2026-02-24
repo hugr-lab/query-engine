@@ -5,6 +5,7 @@ import (
 	"iter"
 	"sync"
 
+	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/schema/validator"
 	"github.com/hugr-lab/query-engine/pkg/schema/validator/rules"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -20,6 +21,7 @@ type Service struct {
 	mu       sync.RWMutex
 	provider Provider
 	manager  CatalogManager
+	engines  map[string]engines.Engine
 }
 
 // ServiceOption configures a Service.
@@ -48,6 +50,7 @@ func NewService(p Provider, opts ...ServiceOption) *Service {
 	s := &Service{
 		provider: p,
 		manager:  m,
+		engines:  make(map[string]engines.Engine),
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -143,4 +146,49 @@ func (s *Service) DirectiveDefinitions(ctx context.Context) iter.Seq2[string, *a
 
 func (s *Service) Description(ctx context.Context) string {
 	return s.Provider().Description(ctx)
+}
+
+func (s *Service) Engine(name string) (engines.Engine, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if engine, ok := s.engines[name]; ok {
+		return engine, nil
+	}
+
+	return nil, ErrCatalogNotFound
+}
+
+func (s *Service) AddCatalog(ctx context.Context, name string, engine engines.Engine, catalog Catalog) error {
+	if s.ExistsCatalog(name) {
+		return ErrCatalogAlreadyExists
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.engines[name] = engine
+	return s.manager.AddCatalog(ctx, name, catalog)
+}
+
+func (s *Service) RemoveCatalog(ctx context.Context, name string) error {
+	if !s.ExistsCatalog(name) {
+		return ErrCatalogNotFound
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.engines, name)
+	return s.manager.RemoveCatalog(ctx, name)
+}
+
+func (s *Service) ExistsCatalog(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.manager.ExistsCatalog(name)
+}
+
+// Schema access
+func (s *Service) SchemaProvider() Provider {
+	return s
 }

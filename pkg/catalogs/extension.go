@@ -6,7 +6,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -17,17 +16,15 @@ type Extension struct {
 	schema    *ast.Schema
 	ext       *ast.SchemaDocument
 	source    sources.Source
-	def       types.DataSource
 	depends   []string
 	s         *Service
 }
 
-func (s *Service) NewExtension(ctx context.Context, def types.DataSource, source sources.Source) (*Extension, error) {
+func (s *Service) NewExtension(ctx context.Context, name string, source sources.Source) (*Extension, error) {
 	e := &Extension{
-		name:   def.Name,
+		name:   name,
 		engine: generalEngine,
 		source: source,
-		def:    def,
 		s:      s,
 	}
 	err := e.Reload(ctx, s.Schema())

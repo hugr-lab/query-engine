@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 
+	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -44,6 +45,7 @@ type CatalogManager interface {
 	// Load/Unload catalogs (for dynamic schema updates)
 	AddCatalog(ctx context.Context, name string, catalog Catalog) error
 	RemoveCatalog(ctx context.Context, name string) error
+	ExistsCatalog(name string) bool
 }
 
 // VariableTransformer transforms query variables before parsing.
@@ -56,4 +58,12 @@ type VariableTransformer interface {
 // Used by VariableTransformer for the jq queryHugr function.
 type Querier interface {
 	Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error)
+}
+
+type Manager interface {
+	// Catalog lifecycle
+	AddCatalog(ctx context.Context, name string, engine engines.Engine, catalog Catalog) error
+	RemoveCatalog(ctx context.Context, name string) error
+	ExistsCatalog(name string) bool
+	Engine(name string) (engines.Engine, error)
 }

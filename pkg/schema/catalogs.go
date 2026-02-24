@@ -76,6 +76,13 @@ func (c *memoryCatalog) RemoveCatalog(ctx context.Context, name string) error {
 	return nil
 }
 
+func (c *memoryCatalog) ExistsCatalog(name string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	_, ok := c.catalogs[name]
+	return ok
+}
+
 func (c *memoryCatalog) incrementalUpdate(ctx context.Context, catalog Catalog) error {
 	p, ok := c.provider.(base.MutableProvider)
 	if !ok {

@@ -21,6 +21,30 @@ var queryDirectivesDef string
 //go:embed "gis.graphql"
 var gisDirectives string
 
+const FieldSourceDirectiveName = "field_source"
+
+// CompiledPos creates a position marker for compiled/generated AST elements.
+func CompiledPos(name string) *ast.Position {
+	if name != "" {
+		name = "compiled-instruction-" + name
+	}
+	return &ast.Position{
+		Src: &ast.Source{Name: name},
+	}
+}
+
+// FieldSourceDirective creates a @field_source directive for renamed fields.
+func FieldSourceDirective(name string) *ast.Directive {
+	pos := &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}}
+	return &ast.Directive{
+		Name: FieldSourceDirectiveName,
+		Arguments: []*ast.Argument{
+			{Name: "field", Value: &ast.Value{Kind: ast.StringValue, Raw: name, Position: pos}, Position: pos},
+		},
+		Position: pos,
+	}
+}
+
 // Sources returns the base system type SDL sources.
 // Scalar type SDL is provided separately by the types package.
 func Sources() []*ast.Source {

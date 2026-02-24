@@ -8,18 +8,17 @@ import (
 	"fmt"
 
 	"github.com/duckdb/duckdb-go/v2"
-	"github.com/hugr-lab/query-engine/pkg/catalogs"
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema/sources"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	_ "embed"
 )
 
 //go:embed udf.graphql
-var schema string
+var gqlSchema string
 
 func (s *Service) RegisterUDF(ctx context.Context) error {
 	type httpDataSourceRequestArgs struct {
@@ -108,19 +107,14 @@ func (s *Service) RegisterUDF(ctx context.Context) error {
 }
 
 func (s *Service) registerUDFCatalog(ctx context.Context) error {
-	c, err := catalogs.NewCatalog(ctx, "data_sources",
-		"",
-		&engines.DuckDB{},
-		sources.NewStringSource(schema),
-		false,
-		false,
+	e := engines.NewDuckDB()
+	cat := sources.NewCatalog(ctx, types.DataSource{Name: "data_sources"},
+		e, sources.NewStringSource(gqlSchema), false,
 	)
-	if err != nil {
-		return err
-	}
-	err = s.catalogs.AddCatalog(ctx, "data_sources", c)
+
+	err := s.catalogs.AddCatalog(ctx, "data_sources", e, cat)
 	if err != nil {
 		return fmt.Errorf("register data_sources catalog: %w", err)
 	}
-	return s.catalogs.RebuildSchema(ctx)
+	return nil
 }

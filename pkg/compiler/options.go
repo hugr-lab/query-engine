@@ -3,6 +3,7 @@ package compiler
 import (
 	"slices"
 
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -12,7 +13,7 @@ type Options struct {
 	Prefix       string
 	EngineType   string
 	AsModule     bool
-	Capabilities *EngineCapabilities
+	Capabilities *compiler.EngineCapabilities
 
 	catalog *ast.Directive
 }
@@ -81,37 +82,4 @@ func (o *Options) SupportInsertReferences() bool {
 
 func (o *Options) SupportUpdatePKs() bool {
 	return !o.ReadOnly || o.Capabilities != nil && o.Capabilities.Update.UpdatePKColumns
-}
-
-type EngineCapabilities struct {
-	General EngineGeneralCapabilities
-	Insert  EngineInsertCapabilities
-	Update  EngineUpdateCapabilities
-	Delete  EngineDeleteCapabilities
-}
-
-type EngineInsertCapabilities struct {
-	Insert           bool
-	Returning        bool
-	InsertReferences bool
-}
-
-type EngineUpdateCapabilities struct {
-	Update           bool
-	UpdatePKColumns  bool
-	UpdateWithoutPKs bool
-}
-
-type EngineDeleteCapabilities struct {
-	Delete           bool
-	DeleteWithoutPKs bool
-}
-
-type EngineGeneralCapabilities struct {
-	SupportDefaultSequences  bool
-	UnsupportedTypes         []string
-	UnsupportStructuredTypes bool
-	UnsupportArrays          bool
-
-	UnsupportTables bool
 }
