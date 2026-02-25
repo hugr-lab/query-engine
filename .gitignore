@@ -9,3 +9,4 @@ internal/duckdb-air/
 *.duckdb
 *.duckdb.wal
 /dev-server
+integration-test/compiler/testdata/*/actual.graphql
