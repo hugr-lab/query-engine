@@ -14,13 +14,12 @@ import (
 )
 
 func deleteRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
-	defs := sdl.NewDefsAdapter(ctx, provider)
 	catalog := base.FieldDefCatalog(query.Definition)
 	e, err := planner.Engine(catalog)
 	if err != nil {
 		return nil, err
 	}
-	m := sdl.MutationInfo(defs, query.Definition)
+	m := sdl.MutationInfo(ctx, provider, query.Definition)
 	if m == nil {
 		return nil, ErrInternalPlanner
 	}
@@ -38,7 +37,7 @@ func deleteRootNode(ctx context.Context, provider schema.Provider, planner Catal
 	if info.Type != sdl.TableDataObject {
 		return nil, sdl.ErrorPosf(query.Position, "unsupported data object type %s", info.Type)
 	}
-	queryArg, err := sdl.ArgumentValues(defs, query, vars, true)
+	queryArg, err := sdl.ArgumentValues(ctx, provider, query, vars, true)
 	if err != nil {
 		return nil, err
 	}
@@ -56,14 +55,14 @@ func deleteRootNode(ctx context.Context, provider schema.Provider, planner Catal
 		if !ok {
 			return nil, sdl.ErrorPosf(query.Position, "invalid filter argument type")
 		}
-		whereNode, err := whereNode(ctx, defs, info, v, "_object", false, false)
+		whereNode, err := whereNode(ctx, provider, info, v, "_object", false, false)
 		if err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, whereNode)
 	}
 
-	pf, err := permissionFilterNode(ctx, defs, info, query, "_object", false)
+	pf, err := permissionFilterNode(ctx, provider, info, query, "_object", false)
 	if err != nil {
 		return nil, err
 	}

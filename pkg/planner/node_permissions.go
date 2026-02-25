@@ -11,7 +11,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func permissionFilterNode(ctx context.Context, defs sdl.Definitions, info *sdl.Object, query *ast.Field, prefix string, byAlias bool) (*QueryPlanNode, error) {
+func permissionFilterNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Object, query *ast.Field, prefix string, byAlias bool) (*QueryPlanNode, error) {
 	p := perm.PermissionsFromCtx(ctx)
 	if p == nil {
 		return nil, nil
@@ -27,7 +27,7 @@ func permissionFilterNode(ctx context.Context, defs sdl.Definitions, info *sdl.O
 	if ftn == "" {
 		return nil, nil
 	}
-	data, err := sdl.ParseDataAsInputObject(defs, &ast.Type{
+	data, err := sdl.ParseDataAsInputObject(ctx, defs, &ast.Type{
 		NamedType: ftn,
 		Position:  base.CompiledPos("permissionFilterNode"),
 	}, arg, false)
@@ -51,7 +51,7 @@ func permissionFilterNode(ctx context.Context, defs sdl.Definitions, info *sdl.O
 	}, nil
 }
 
-func checkMutationData(ctx context.Context, defs sdl.Definitions, query *ast.Field, inputType *ast.Type, data map[string]any) (map[string]any, error) {
+func checkMutationData(ctx context.Context, defs base.DefinitionsSource, query *ast.Field, inputType *ast.Type, data map[string]any) (map[string]any, error) {
 	// check permission
 	p := perm.PermissionsFromCtx(ctx)
 	if p == nil {
@@ -59,7 +59,7 @@ func checkMutationData(ctx context.Context, defs sdl.Definitions, query *ast.Fie
 	}
 
 	inputTypeName := inputType.Name()
-	if err := p.CheckMutationInput(defs, inputTypeName, data); err != nil {
+	if err := p.CheckMutationInput(ctx, defs, inputTypeName, data); err != nil {
 		return nil, err
 	}
 
@@ -68,7 +68,7 @@ func checkMutationData(ctx context.Context, defs sdl.Definitions, query *ast.Fie
 		return data, nil
 	}
 
-	values, err := sdl.ParseDataAsInputObject(defs, inputType, arg, false)
+	values, err := sdl.ParseDataAsInputObject(ctx, defs, inputType, arg, false)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package sdl
 
 import (
+	"context"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
@@ -156,7 +157,7 @@ func FlatQuery(queries []QueryRequest) map[string]QueryRequest {
 	return flat
 }
 
-func ObjectQueryDefinition(defs Definitions, def *ast.Definition, queryType ObjectQueryType) (string, *ast.FieldDefinition) {
+func ObjectQueryDefinition(ctx context.Context, defs base.DefinitionsSource, def *ast.Definition, queryType ObjectQueryType) (string, *ast.FieldDefinition) {
 	if def == nil {
 		return "", nil
 	}
@@ -172,13 +173,13 @@ func ObjectQueryDefinition(defs Definitions, def *ast.Definition, queryType Obje
 		if queryType == QueryTypeSelectOne && !strings.HasSuffix(qn, base.ObjectQueryByPKSuffix) {
 			continue
 		}
-		module := defs.ForName(ModuleTypeName(ObjectModule(def), ModuleQuery))
+		module := defs.ForName(ctx, ModuleTypeName(ObjectModule(def), ModuleQuery))
 		return ObjectModule(def), module.Fields.ForName(qn)
 	}
 	return "", nil
 }
 
-func ObjectMutationDefinition(defs Definitions, def *ast.Definition, mutationType ObjectMutationType) (string, *ast.FieldDefinition) {
+func ObjectMutationDefinition(ctx context.Context, defs base.DefinitionsSource, def *ast.Definition, mutationType ObjectMutationType) (string, *ast.FieldDefinition) {
 	if def == nil {
 		return "", nil
 	}
@@ -191,7 +192,7 @@ func ObjectMutationDefinition(defs Definitions, def *ast.Definition, mutationTyp
 		if mn == "" {
 			return "", nil
 		}
-		module := defs.ForName(ModuleTypeName(ObjectModule(def), ModuleMutation))
+		module := defs.ForName(ctx, ModuleTypeName(ObjectModule(def), ModuleMutation))
 		return ObjectModule(def), module.Fields.ForName(mn)
 	}
 	return "", nil
@@ -230,10 +231,11 @@ type Mutation struct {
 	ObjectDefinition *ast.Definition
 
 	query *ast.FieldDefinition
-	defs  Definitions
+	ctx   context.Context
+	defs  base.DefinitionsSource
 }
 
-func MutationInfo(defs Definitions, query *ast.FieldDefinition) *Mutation {
+func MutationInfo(ctx context.Context, defs base.DefinitionsSource, query *ast.FieldDefinition) *Mutation {
 	if query == nil {
 		return nil
 	}
@@ -245,6 +247,7 @@ func MutationInfo(defs Definitions, query *ast.FieldDefinition) *Mutation {
 		ObjectName: directiveArgValue(d, "name"),
 		Catalog:    fieldDirectiveArgValue(query, base.CatalogDirectiveName, "name"),
 		query:      query,
+		ctx:        ctx,
 		defs:       defs,
 	}
 	if m.ObjectName == "" {
@@ -264,7 +267,7 @@ func MutationInfo(defs Definitions, query *ast.FieldDefinition) *Mutation {
 	default:
 		return nil
 	}
-	m.ObjectDefinition = defs.ForName(m.ObjectName)
+	m.ObjectDefinition = defs.ForName(ctx, m.ObjectName)
 	if m.ObjectDefinition == nil {
 		return nil
 	}
@@ -280,7 +283,7 @@ func (m *Mutation) Fields() []*Field {
 	if arg == nil {
 		return out
 	}
-	dt := m.defs.ForName(arg.Type.Name())
+	dt := m.defs.ForName(m.ctx, arg.Type.Name())
 	if dt == nil || IsScalarType(dt.Name) {
 		return out
 	}
@@ -311,7 +314,7 @@ func (m *Mutation) ReferencesFields() []string {
 	if arg == nil {
 		return out
 	}
-	dt := m.defs.ForName(arg.Type.Name())
+	dt := m.defs.ForName(m.ctx, arg.Type.Name())
 	if dt == nil || IsScalarType(dt.Name) {
 		return out
 	}
@@ -337,7 +340,7 @@ func (m *Mutation) M2MReferencesFields() []string {
 	if arg == nil {
 		return out
 	}
-	dt := m.defs.ForName(arg.Type.Name())
+	dt := m.defs.ForName(m.ctx, arg.Type.Name())
 	if dt == nil || IsScalarType(dt.Name) {
 		return out
 	}
@@ -350,7 +353,7 @@ func (m *Mutation) M2MReferencesFields() []string {
 		if !fi.IsReferencesSubquery() {
 			continue
 		}
-		ref := FieldReferencesInfo(m.defs, m.ObjectDefinition, f)
+		ref := FieldReferencesInfo(m.ctx, m.defs, m.ObjectDefinition, f)
 		if ref == nil || !ref.IsM2M {
 			continue
 		}
@@ -364,7 +367,7 @@ func (m Mutation) ReferencesFieldsSource(name string) []string {
 	if f == nil {
 		return nil
 	}
-	ref := FieldReferencesInfo(m.defs, m.ObjectDefinition, f)
+	ref := FieldReferencesInfo(m.ctx, m.defs, m.ObjectDefinition, f)
 	if ref == nil {
 		return nil
 	}
@@ -379,7 +382,7 @@ func (m Mutation) ReferencesFieldsReferences(name string) []string {
 	if f == nil {
 		return nil
 	}
-	ref := FieldReferencesInfo(m.defs, m.ObjectDefinition, f)
+	ref := FieldReferencesInfo(m.ctx, m.defs, m.ObjectDefinition, f)
 	if ref == nil {
 		return nil
 	}
@@ -400,12 +403,12 @@ func (m *Mutation) ReferencesMutation(name string) *Mutation {
 	if f == nil {
 		return nil
 	}
-	ref := FieldReferencesInfo(m.defs, m.ObjectDefinition, f)
-	rt := ref.ReferencesObjectDef(m.defs)
+	ref := FieldReferencesInfo(m.ctx, m.defs, m.ObjectDefinition, f)
+	rt := ref.ReferencesObjectDef(m.ctx, m.defs)
 	if rt == nil {
 		return nil
 	}
-	moduleObject := m.defs.ForName(ModuleTypeName(ObjectModule(rt), ModuleMutation))
+	moduleObject := m.defs.ForName(m.ctx,ModuleTypeName(ObjectModule(rt), ModuleMutation))
 	if moduleObject == nil {
 		return nil
 	}
@@ -418,7 +421,7 @@ func (m *Mutation) ReferencesMutation(name string) *Mutation {
 		if mn == "" {
 			return nil
 		}
-		return MutationInfo(m.defs, moduleObject.Fields.ForName(mn))
+		return MutationInfo(m.ctx, m.defs, moduleObject.Fields.ForName(mn))
 	}
 	return nil
 }
@@ -541,7 +544,7 @@ func (m *Mutation) DBFieldName(name string) string {
 }
 
 func (m *Mutation) SelectByPKQuery(query *ast.Field) *ast.Field {
-	qm := m.defs.ForName(ModuleTypeName(ObjectModule(m.ObjectDefinition), ModuleQuery))
+	qm := m.defs.ForName(m.ctx, ModuleTypeName(ObjectModule(m.ObjectDefinition), ModuleQuery))
 	if qm == nil {
 		return nil
 	}
@@ -591,7 +594,7 @@ func (a FieldQueryArguments) ForName(name string) *FieldQueryArgument {
 	return nil
 }
 
-func ArgumentValues(defs Definitions, field *ast.Field, vars map[string]any, checkRequired bool) (FieldQueryArguments, error) {
+func ArgumentValues(ctx context.Context, defs base.DefinitionsSource, field *ast.Field, vars map[string]any, checkRequired bool) (FieldQueryArguments, error) {
 	args := make([]FieldQueryArgument, 0, len(field.Arguments))
 	for _, arg := range field.Arguments {
 		def := field.Definition.Arguments.ForName(arg.Name)
@@ -602,7 +605,7 @@ func ArgumentValues(defs Definitions, field *ast.Field, vars map[string]any, che
 		if value == nil {
 			value = def.DefaultValue
 		}
-		v, err := ParseArgumentValue(defs, def, value, vars, checkRequired)
+		v, err := ParseArgumentValue(ctx, defs, def, value, vars, checkRequired)
 		if err != nil {
 			return nil, err
 		}

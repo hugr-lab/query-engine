@@ -1,6 +1,7 @@
 package sdl
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -60,13 +61,13 @@ func joinInfoFromDirective(def *ast.Directive) *Join {
 	}
 }
 
-func (j *Join) Catalog(defs Definitions) string {
+func (j *Join) Catalog(ctx context.Context, defs base.DefinitionsSource) string {
 	cat := fieldDirectiveArgValue(j.field, base.CatalogDirectiveName, "name")
 	if cat != "" {
 		return cat
 	}
 	return objectDirectiveArgValue(
-		defs.ForName(j.field.Type.Name()),
+		defs.ForName(ctx, j.field.Type.Name()),
 		base.CatalogDirectiveName, "name",
 	)
 }

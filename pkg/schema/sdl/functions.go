@@ -1,6 +1,7 @@
 package sdl
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -69,34 +70,34 @@ func (f *Function) ArgumentByName(name string) *ast.ArgumentDefinition {
 	return f.field.Arguments.ForName(name)
 }
 
-func (f *Function) ResultAggregationType(defs Definitions) string {
+func (f *Function) ResultAggregationType(ctx context.Context, defs base.DefinitionsSource) string {
 	if f == nil {
 		return ""
 	}
 	name := buildObjectAggregationTypeName(f.field.Type.Name(), false, false)
-	if defs.ForName(name) == nil {
+	if defs.ForName(ctx, name) == nil {
 		return ""
 	}
 	return name
 }
 
-func (f *Function) ResultSubAggregationType(defs Definitions) string {
+func (f *Function) ResultSubAggregationType(ctx context.Context, defs base.DefinitionsSource) string {
 	if f == nil {
 		return ""
 	}
 	name := buildObjectAggregationTypeName(f.field.Type.Name(), true, false)
-	if defs.ForName(name) == nil {
+	if defs.ForName(ctx, name) == nil {
 		return ""
 	}
 	return name
 }
 
-func (f *Function) ResultBucketAggregationType(defs Definitions) string {
+func (f *Function) ResultBucketAggregationType(ctx context.Context, defs base.DefinitionsSource) string {
 	if f == nil {
 		return ""
 	}
 	name := buildObjectAggregationTypeName(f.field.Type.Name(), false, true)
-	if defs.ForName(name) == nil {
+	if defs.ForName(ctx, name) == nil {
 		return ""
 	}
 	return name
@@ -216,11 +217,11 @@ func parseFunctionCallDirective(def *ast.Directive) *FunctionCall {
 	return ref
 }
 
-func (f *FunctionCall) FunctionInfo(defs Definitions) (*Function, error) {
+func (f *FunctionCall) FunctionInfo(ctx context.Context, defs base.DefinitionsSource) (*Function, error) {
 	if f.query != nil && f.query.Definition.Directives.ForName(base.FunctionDirectiveName) != nil {
 		return FunctionInfo(f.query.Definition)
 	}
-	module := defs.ForName(ModuleTypeName(f.Module, ModuleFunction))
+	module := defs.ForName(ctx, ModuleTypeName(f.Module, ModuleFunction))
 	if module == nil {
 		return nil, ErrorPosf(f.directive.Position, "module root object %s for function is not defined", f.Module)
 	}
@@ -293,7 +294,7 @@ func (f *FunctionCall) JoinConditionsTemplate() string {
 	return strings.Join(conditions, " AND ")
 }
 
-func (f *FunctionCall) ArgumentValues(defs Definitions, vars map[string]any) (FieldQueryArguments, error) {
+func (f *FunctionCall) ArgumentValues(ctx context.Context, defs base.DefinitionsSource, vars map[string]any) (FieldQueryArguments, error) {
 	args := make([]FieldQueryArgument, 0, len(f.query.Definition.Arguments))
 	for _, def := range f.query.Definition.Arguments {
 		arg := f.query.Arguments.ForName(def.Name)
@@ -319,7 +320,7 @@ func (f *FunctionCall) ArgumentValues(defs Definitions, vars map[string]any) (Fi
 		if value == nil {
 			value = def.DefaultValue
 		}
-		v, err := ParseArgumentValue(defs, def, value, vars, false)
+		v, err := ParseArgumentValue(ctx, defs, def, value, vars, false)
 		if err != nil {
 			return nil, err
 		}

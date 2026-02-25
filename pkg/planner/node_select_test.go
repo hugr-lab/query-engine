@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -139,7 +140,7 @@ func TestWhereFieldNode(t *testing.T) {
 				t.Fatalf("object %s not found", tt.objectName)
 			}
 			info := sdl.DataObjectInfo(def)
-			node, err := whereFieldNode(info, tt.prefix, tt.field, tt.value, false)
+			node, err := whereFieldNode(context.Background(), info, tt.prefix, tt.field, tt.value, false)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("whereFieldNode() error = %v, wantErr %v", err, tt.wantErr)
 			}

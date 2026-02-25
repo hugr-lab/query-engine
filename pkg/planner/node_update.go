@@ -16,13 +16,12 @@ import (
 )
 
 func updateRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
-	defs := sdl.NewDefsAdapter(ctx, provider)
 	catalog := base.FieldDefCatalog(query.Definition)
 	e, err := planner.Engine(catalog)
 	if err != nil {
 		return nil, err
 	}
-	m := sdl.MutationInfo(defs, query.Definition)
+	m := sdl.MutationInfo(ctx, provider, query.Definition)
 	if m == nil {
 		return nil, ErrInternalPlanner
 	}
@@ -40,7 +39,7 @@ func updateRootNode(ctx context.Context, provider schema.Provider, planner Catal
 	if info.Type != sdl.TableDataObject {
 		return nil, sdl.ErrorPosf(query.Position, "unsupported data object type %s", info.Type)
 	}
-	queryArg, err := sdl.ArgumentValues(defs, query, vars, false)
+	queryArg, err := sdl.ArgumentValues(ctx, provider, query, vars, false)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +56,7 @@ func updateRootNode(ctx context.Context, provider schema.Provider, planner Catal
 		if !ok || len(data) == 0 && s == nil {
 			return nil, sdl.ErrorPosf(query.Position, "invalid data argument type")
 		}
-		data, err = checkMutationData(ctx, defs, query, v.Type, data)
+		data, err = checkMutationData(ctx, provider, query, v.Type, data)
 		if err != nil {
 			return nil, err
 		}
@@ -148,14 +147,14 @@ func updateRootNode(ctx context.Context, provider schema.Provider, planner Catal
 		if !ok {
 			return nil, sdl.ErrorPosf(query.Position, "invalid filter argument type")
 		}
-		whereNode, err := whereNode(ctx, defs, info, v, "objects", false, false)
+		whereNode, err := whereNode(ctx, provider, info, v, "objects", false, false)
 		if err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, whereNode)
 	}
 
-	pf, err := permissionFilterNode(ctx, defs, info, query, "objects", false)
+	pf, err := permissionFilterNode(ctx, provider, info, query, "objects", false)
 	if err != nil {
 		return nil, err
 	}

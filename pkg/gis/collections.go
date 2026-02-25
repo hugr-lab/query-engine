@@ -73,7 +73,7 @@ func (s *Service) wfsSchemaFeatures(ctx context.Context, name string) (collectio
 	// This method should return the schema for WFS features
 	// It fetches the schema from the _wfs_features data object
 	provider := s.schema.Provider()
-	defs := sdl.NewDefsAdapter(ctx, provider)
+	var defs base.DefinitionsSource = provider
 
 	wfsType := provider.ForName(ctx, base.GisWFSTypeName)
 	if wfsType == nil {
@@ -99,13 +99,13 @@ func (s *Service) wfsSchemaFeatures(ctx context.Context, name string) (collectio
 	return collections, nil
 }
 
-func (s *Service) wfsCollectionField(ctx context.Context, defs sdl.Definitions, field *ast.FieldDefinition, name string) (collection *Collection, err error) {
+func (s *Service) wfsCollectionField(ctx context.Context, defs base.DefinitionsSource, field *ast.FieldDefinition, name string) (collection *Collection, err error) {
 	wfsd := field.Directives.ForName(base.GisWFSDirectiveName)
 	if wfsd == nil {
 		return nil, nil // Not a WFS field
 	}
 
-	def := defs.ForName(field.Type.Name())
+	def := defs.ForName(ctx, field.Type.Name())
 	if def == nil || !sdl.IsDataObject(def) {
 		return nil, nil // No definition found
 	}
@@ -169,7 +169,7 @@ func (s *Service) wfsCollectionField(ctx context.Context, defs sdl.Definitions, 
 		}
 	}
 
-	qp, query := sdl.ObjectQueryDefinition(defs, def, sdl.QueryTypeSelect)
+	qp, query := sdl.ObjectQueryDefinition(ctx, defs, def, sdl.QueryTypeSelect)
 	if query == nil {
 		return nil, sdl.ErrorPosf(field.Position, "query definition not found for collection %s", def.Name)
 	}
@@ -180,7 +180,7 @@ func (s *Service) wfsCollectionField(ctx context.Context, defs sdl.Definitions, 
 	}
 	if len(pks) == 1 { // If there is a single primary key, use it for the feature query
 		collection.feature.IdField = pks[0]
-		qp, query = sdl.ObjectQueryDefinition(defs, def, sdl.QueryTypeSelectOne)
+		qp, query = sdl.ObjectQueryDefinition(ctx, defs, def, sdl.QueryTypeSelectOne)
 		if query != nil {
 			collection.QueryFeature, collection.QueryFeatureIdType, err = s.wfsFeatureQuery(ctx, defs, qp, query)
 		}
@@ -188,7 +188,7 @@ func (s *Service) wfsCollectionField(ctx context.Context, defs sdl.Definitions, 
 
 	// add mutations
 	if !collection.IsReadOnly {
-		mp, mutation := sdl.ObjectMutationDefinition(defs, def, sdl.MutationTypeInsert)
+		mp, mutation := sdl.ObjectMutationDefinition(ctx, defs, def, sdl.MutationTypeInsert)
 		if mutation == nil {
 			return nil, sdl.ErrorPosf(field.Position, "insert mutation definition not found for collection %s", def.Name)
 		}
@@ -196,7 +196,7 @@ func (s *Service) wfsCollectionField(ctx context.Context, defs sdl.Definitions, 
 		if err != nil {
 			return nil, err
 		}
-		mp, mutation = sdl.ObjectMutationDefinition(defs, def, sdl.MutationTypeUpdate)
+		mp, mutation = sdl.ObjectMutationDefinition(ctx, defs, def, sdl.MutationTypeUpdate)
 		if mutation == nil {
 			return nil, sdl.ErrorPosf(field.Position, "update mutation definition not found for collection %s", def.Name)
 		}
@@ -204,7 +204,7 @@ func (s *Service) wfsCollectionField(ctx context.Context, defs sdl.Definitions, 
 		if err != nil {
 			return nil, err
 		}
-		mp, mutation = sdl.ObjectMutationDefinition(defs, def, sdl.MutationTypeDelete)
+		mp, mutation = sdl.ObjectMutationDefinition(ctx, defs, def, sdl.MutationTypeDelete)
 		if mutation == nil {
 			return nil, sdl.ErrorPosf(field.Position, "delete mutation definition not found for collection %s", def.Name)
 		}
@@ -222,7 +222,7 @@ type wfsFieldDefinition struct {
 	JQConvert string
 }
 
-func wfsFieldDef(ctx context.Context, field *ast.FieldDefinition, defs sdl.Definitions, depth int) []wfsFieldDefinition {
+func wfsFieldDef(ctx context.Context, field *ast.FieldDefinition, defs base.DefinitionsSource, depth int) []wfsFieldDefinition {
 	if field.Type.NamedType != "" || field.Directives.ForName(base.GisWFSExcludeDirectiveName) != nil {
 		return nil
 	}
@@ -240,7 +240,7 @@ func wfsFieldDef(ctx context.Context, field *ast.FieldDefinition, defs sdl.Defin
 			JQConvert: "." + field.Name,
 		}}
 	}
-	def := defs.ForName(field.Type.Name())
+	def := defs.ForName(ctx, field.Type.Name())
 	if def == nil && depth > 10 {
 		return nil // No definition found, return empty slice
 	}
@@ -274,7 +274,7 @@ func wfsFieldDef(ctx context.Context, field *ast.FieldDefinition, defs sdl.Defin
 	return result
 }
 
-func wfsFieldSchema(ctx context.Context, field *ast.FieldDefinition, defs sdl.Definitions, depth int) *openapi3.Schema {
+func wfsFieldSchema(ctx context.Context, field *ast.FieldDefinition, defs base.DefinitionsSource, depth int) *openapi3.Schema {
 	switch {
 	case sdl.IsScalarType(field.Type.Name()):
 		if field.Type.NamedType != "" {
@@ -286,7 +286,7 @@ func wfsFieldSchema(ctx context.Context, field *ast.FieldDefinition, defs sdl.De
 			return nil // Prevent deep recursion
 		}
 		obj := openapi3.NewObjectSchema()
-		def := defs.ForName(field.Type.Name())
+		def := defs.ForName(ctx, field.Type.Name())
 		if def == nil {
 			if field.Type.NamedType != "" {
 				return obj // No definition found, return empty object schema
@@ -315,31 +315,31 @@ func wfsFieldSchema(ctx context.Context, field *ast.FieldDefinition, defs sdl.De
 }
 
 // Returns the WFS collection GraphQL query and OpenAPI schema for parameters.
-func (s *Service) wfsFeaturesQuery(ctx context.Context, defs sdl.Definitions, path string, def *ast.FieldDefinition) (string, *openapi3.Schema, error) {
+func (s *Service) wfsFeaturesQuery(ctx context.Context, defs base.DefinitionsSource, path string, def *ast.FieldDefinition) (string, *openapi3.Schema, error) {
 	return "", nil, nil
 }
 
 // Returns the WFS feature GraphQL query and OpenAPI schema for parameters.
-func (s *Service) wfsFeatureQuery(ctx context.Context, defs sdl.Definitions, path string, def *ast.FieldDefinition) (string, *openapi3.Schema, error) {
+func (s *Service) wfsFeatureQuery(ctx context.Context, defs base.DefinitionsSource, path string, def *ast.FieldDefinition) (string, *openapi3.Schema, error) {
 	return "", nil, nil
 }
 
 // Returns the WFS feature GraphQL insert mutation and OpenAPI schema for parameters.
-func (s *Service) wfsFeatureInsert(ctx context.Context, defs sdl.Definitions, path string, def *ast.FieldDefinition) (string, *openapi3.Schema, error) {
+func (s *Service) wfsFeatureInsert(ctx context.Context, defs base.DefinitionsSource, path string, def *ast.FieldDefinition) (string, *openapi3.Schema, error) {
 	// This method should return the insert mutation for WFS features
 	// It fetches the insert mutation from the _wfs_features data object
 	return "", nil, nil // Placeholder implementation
 }
 
 // Returns the WFS feature GraphQL update mutation and OpenAPI schema for parameters.
-func (s *Service) wfsFeatureUpdate(ctx context.Context, defs sdl.Definitions, path string, def *ast.FieldDefinition) (string, *openapi3.Schema, error) {
+func (s *Service) wfsFeatureUpdate(ctx context.Context, defs base.DefinitionsSource, path string, def *ast.FieldDefinition) (string, *openapi3.Schema, error) {
 	// This method should return the update mutation for WFS features
 	// It fetches the update mutation from the _wfs_features data object
 	return "", nil, nil // Placeholder implementation
 }
 
 // Returns the WFS feature GraphQL delete mutation and OpenAPI schema for parameters.
-func (s *Service) wfsFeatureDelete(ctx context.Context, defs sdl.Definitions, path string, def *ast.FieldDefinition) (string, *openapi3.Schema, error) {
+func (s *Service) wfsFeatureDelete(ctx context.Context, defs base.DefinitionsSource, path string, def *ast.FieldDefinition) (string, *openapi3.Schema, error) {
 	// This method should return the delete mutation for WFS features
 	// It fetches the delete mutation from the _wfs_features data object
 	return "", nil, nil // Placeholder implementation

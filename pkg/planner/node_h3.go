@@ -15,7 +15,7 @@ import (
 )
 
 func h3RootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
-	node, err := h3DataNode(ctx, sdl.NewDefsAdapter(ctx, provider), planner, query, vars)
+	node, err := h3DataNode(ctx, provider, planner, query, vars)
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +25,7 @@ func h3RootNode(ctx context.Context, provider schema.Provider, planner Catalog, 
 
 // Create a node that provides SQL query for h3 analytical query.
 // This node will use the parent query to create sub queries for each data field with H3 cell.
-func h3DataNode(ctx context.Context, defs sdl.Definitions, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+func h3DataNode(ctx context.Context, defs base.DefinitionsSource, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
 	subCount, err := validateH3Query(query, vars)
 	if err != nil {
 		return nil, err
@@ -265,7 +265,7 @@ func h3DataNode(ctx context.Context, defs sdl.Definitions, planner Catalog, quer
 // - "_" + query.Alias + "_" + f.Field.Alias + "_data" - for each data query
 // - "_" + query.Alias + "_" + f.Field.Alias + "_data_final" - for the final result of each data query
 // - "_" + query.Alias + "_data" - for the final result for the data field
-func h3DataSubQueryNodes(ctx context.Context, defs sdl.Definitions, planner Catalog, query *ast.Field, res int, vars map[string]any) (out QueryPlanNodes, inner []string, err error) {
+func h3DataSubQueryNodes(ctx context.Context, defs base.DefinitionsSource, planner Catalog, query *ast.Field, res int, vars map[string]any) (out QueryPlanNodes, inner []string, err error) {
 	// 1. create sub query nodes for each data field with H3 cell (split or/and aggregate query)
 	if query == nil || len(query.SelectionSet) == 0 {
 		return nil, nil, ErrInternalPlanner
@@ -451,7 +451,7 @@ func h3DataSubQueryNodes(ctx context.Context, defs sdl.Definitions, planner Cata
 }
 
 // h3distributionByNode creates a sub query nodes for H3 distribution by query.
-func h3distributionByNode(ctx context.Context, defs sdl.Definitions, planner Catalog, h3Query, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+func h3distributionByNode(ctx context.Context, defs base.DefinitionsSource, planner Catalog, h3Query, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
 	if h3Query == nil || query == nil {
 		return nil, ErrInternalPlanner
 	}

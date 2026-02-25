@@ -107,7 +107,7 @@ func Test_functionCallNode(t *testing.T) {
 			if sdl.IsDataObject(call.ObjectDefinition) {
 				prefix = "_objects"
 			}
-			funcNode, err := functionCallNode(context.Background(), sdl.SchemaDefs(testCats.Schema()), testService.engines, prefix, call, vars)
+			funcNode, err := functionCallNode(context.Background(), static.NewWithSchema(testCats.Schema()), testService.engines, prefix, call, vars)
 			if err != nil {
 				t.Fatal("functionCallNode", err)
 			}
@@ -126,7 +126,7 @@ func Test_functionCallNode(t *testing.T) {
 			if sdl.IsDataObject(call.ObjectDefinition) {
 				return
 			}
-			selectNode := selectFromFunctionCallNode(context.Background(), sdl.SchemaDefs(testCats.Schema()), funcNode)
+			selectNode := selectFromFunctionCallNode(context.Background(), static.NewWithSchema(testCats.Schema()), funcNode)
 			selectNode.provider = static.NewWithSchema(testCats.Schema())
 			selectNode.engines = testService.engines
 			res, err = selectNode.Compile(selectNode, nil)

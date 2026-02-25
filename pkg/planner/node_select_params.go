@@ -12,7 +12,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func selectQueryParamsNodes(ctx context.Context, defs sdl.Definitions, e engines.Engine, info *sdl.Object, prefix string, query *ast.Field, args sdl.FieldQueryArguments, byAlias bool) (nodes QueryPlanNodes, err error) {
+func selectQueryParamsNodes(ctx context.Context, defs base.DefinitionsSource, e engines.Engine, info *sdl.Object, prefix string, query *ast.Field, args sdl.FieldQueryArguments, byAlias bool) (nodes QueryPlanNodes, err error) {
 	filter := args.ForName("filter")
 	limit := args.ForName("limit")
 	offset := args.ForName("offset")
@@ -429,12 +429,12 @@ func whereUniqueNode(_ context.Context, info *sdl.Object, filter sdl.FieldQueryA
 	}, nil
 }
 
-func whereNode(ctx context.Context, defs sdl.Definitions, info *sdl.Object, filter map[string]any, prefix string, byAlias, selectDeleted bool) (*QueryPlanNode, error) {
+func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Object, filter map[string]any, prefix string, byAlias, selectDeleted bool) (*QueryPlanNode, error) {
 	if len(filter) == 0 {
 		return nil, nil
 	}
 	// find input definition
-	input := defs.ForName(info.InputFilterName())
+	input := defs.ForName(ctx, info.InputFilterName())
 	if input == nil {
 		return nil, errors.New("input filter definition not found")
 	}
@@ -502,7 +502,7 @@ func whereNode(ctx context.Context, defs sdl.Definitions, info *sdl.Object, filt
 			if info.FieldForName(fn) == nil {
 				return nil, errors.New("field not found in input filter")
 			}
-			node, err := whereFieldNode(info, prefix, fn, fv, byAlias)
+			node, err := whereFieldNode(ctx, info, prefix, fn, fv, byAlias)
 			if err != nil {
 				return nil, err
 			}
@@ -529,7 +529,7 @@ func whereNode(ctx context.Context, defs sdl.Definitions, info *sdl.Object, filt
 	}, nil
 }
 
-func whereReferencesObjectNode(ctx context.Context, defs sdl.Definitions, info *sdl.Object, op, prefix, name string, value map[string]any, byAlias, selectDeleted bool) (*QueryPlanNode, error) {
+func whereReferencesObjectNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Object, op, prefix, name string, value map[string]any, byAlias, selectDeleted bool) (*QueryPlanNode, error) {
 	if len(value) == 0 {
 		return nil, nil
 	}
@@ -571,7 +571,7 @@ func whereReferencesObjectNode(ctx context.Context, defs sdl.Definitions, info *
 
 	var nodes QueryPlanNodes
 	// from node
-	def := defs.ForName(field.Definition().Type.Name())
+	def := defs.ForName(ctx, field.Definition().Type.Name())
 	if def == nil {
 		return nil, fmt.Errorf("references object %s not found", field.Definition().Type.Name())
 	}
@@ -580,7 +580,7 @@ func whereReferencesObjectNode(ctx context.Context, defs sdl.Definitions, info *
 		return nil, ErrInternalPlanner
 	}
 	nodes = append(nodes, fromDataObjectNode(ctx, refObjectInfo))
-	refInfo := info.ReferencesQueryInfo(defs, name)
+	refInfo := info.ReferencesQueryInfo(ctx, defs, name)
 	if refInfo == nil {
 		return nil, fmt.Errorf("references query info for %s not found", name)
 	}
@@ -588,7 +588,7 @@ func whereReferencesObjectNode(ctx context.Context, defs sdl.Definitions, info *
 	joinObjectAlias := sqlObjectAlias
 	if refInfo.IsM2M {
 		// add from and join nodes for m2m references
-		m2mDef := defs.ForName(refInfo.M2MName)
+		m2mDef := defs.ForName(ctx, refInfo.M2MName)
 		if m2mDef == nil {
 			return nil, fmt.Errorf("m2m object %s not found", refInfo.M2MName)
 		}
@@ -600,7 +600,7 @@ func whereReferencesObjectNode(ctx context.Context, defs sdl.Definitions, info *
 			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 				sql := children.ForName("from").Result
 				sql += " AS " + joinObjectAlias
-				on, err := refInfo.FromM2MJoinConditions(node.TypeDefs(), joinObjectAlias, sqlObjectAlias, true, true)
+				on, err := refInfo.FromM2MJoinConditions(ctx, node.TypeDefs(), joinObjectAlias, sqlObjectAlias, true, true)
 				if err != nil {
 					return "", nil, err
 				}
@@ -646,10 +646,10 @@ func whereReferencesObjectNode(ctx context.Context, defs sdl.Definitions, info *
 			// join
 			var addSQL string
 			if !refInfo.IsM2M {
-				addSQL, err = refInfo.JoinConditions(node.TypeDefs(), prefix, joinObjectAlias, true, true)
+				addSQL, err = refInfo.JoinConditions(ctx, node.TypeDefs(), prefix, joinObjectAlias, true, true)
 			}
 			if refInfo.IsM2M {
-				addSQL, err = refInfo.ToM2MJoinConditions(node.TypeDefs(), prefix, joinObjectAlias, true, true)
+				addSQL, err = refInfo.ToM2MJoinConditions(ctx, node.TypeDefs(), prefix, joinObjectAlias, true, true)
 			}
 			if err != nil {
 				return "", nil, err
@@ -669,7 +669,7 @@ func whereReferencesObjectNode(ctx context.Context, defs sdl.Definitions, info *
 	}, nil
 }
 
-func whereFieldNode(info *sdl.Object, prefix, name string, value any, byAlias bool) (*QueryPlanNode, error) {
+func whereFieldNode(ctx context.Context, info *sdl.Object, prefix, name string, value any, byAlias bool) (*QueryPlanNode, error) {
 	vals := value.(map[string]any)
 	if len(vals) == 0 {
 		return nil, nil
@@ -693,14 +693,14 @@ func whereFieldNode(info *sdl.Object, prefix, name string, value any, byAlias bo
 					sqlName = prefix + "." + sqlName
 				}
 			}
-			return filterSQLValue(e, node.TypeDefs(), field.Definition(), sqlName, "", vals, params)
+			return filterSQLValue(ctx, e, node.TypeDefs(), field.Definition(), sqlName, "", vals, params)
 		},
 	}, nil
 }
 
-func filterSQLValue(e engines.Engine, defs sdl.Definitions, field *ast.FieldDefinition, sqlName, path string, value map[string]any, params []any) (string, []any, error) {
+func filterSQLValue(ctx context.Context, e engines.Engine, defs base.DefinitionsSource, field *ast.FieldDefinition, sqlName, path string, value map[string]any, params []any) (string, []any, error) {
 	if !sdl.IsScalarType(field.Type.Name()) {
-		def := defs.ForName(field.Type.Name())
+		def := defs.ForName(ctx, field.Type.Name())
 		if def == nil {
 			return "", nil, fmt.Errorf("type %s not found", field.Type.Name())
 		}
@@ -708,7 +708,7 @@ func filterSQLValue(e engines.Engine, defs sdl.Definitions, field *ast.FieldDefi
 			// ops - any_of, all_of, none_of arrays of objects
 			return "", nil, errors.New("filtering by non scalar arrays are not supported yet")
 		}
-		return nestedFieldFilterSQLValue(e, defs, def, sqlName, path, value, params)
+		return nestedFieldFilterSQLValue(ctx, e, defs, def, sqlName, path, value, params)
 	}
 	var filters []string
 	for op, v := range value {
@@ -728,7 +728,7 @@ func filterSQLValue(e engines.Engine, defs sdl.Definitions, field *ast.FieldDefi
 	return strings.Join(filters, " AND "), params, nil
 }
 
-func nestedFieldFilterSQLValue(e engines.Engine, defs sdl.Definitions, def *ast.Definition, sqlName, path string, value map[string]any, params []any) (string, []any, error) {
+func nestedFieldFilterSQLValue(ctx context.Context, e engines.Engine, defs base.DefinitionsSource, def *ast.Definition, sqlName, path string, value map[string]any, params []any) (string, []any, error) {
 	var nestedFilters []string
 	for fieldName, fieldValue := range value {
 		field := def.Fields.ForName(fieldName)
@@ -753,7 +753,7 @@ func nestedFieldFilterSQLValue(e engines.Engine, defs sdl.Definitions, def *ast.
 			})
 			p = ""
 		}
-		q, params, err = filterSQLValue(e, defs, field, sqlName, p, v, params)
+		q, params, err = filterSQLValue(ctx, e, defs, field, sqlName, p, v, params)
 		if err != nil {
 			return "", nil, err
 		}

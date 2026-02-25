@@ -1,6 +1,7 @@
 package sdl
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -49,7 +50,7 @@ func ReferencesInfo(def *ast.Directive) *References {
 	return ref
 }
 
-func FieldReferencesInfo(defs Definitions, def *ast.Definition, field *ast.FieldDefinition) *References {
+func FieldReferencesInfo(ctx context.Context, defs base.DefinitionsSource, def *ast.Definition, field *ast.FieldDefinition) *References {
 	fieldRefName := fieldDirectiveArgValue(field, base.FieldReferencesQueryDirectiveName, "name")
 	for _, d := range def.Directives.ForNames(base.ReferencesDirectiveName) {
 		name := directiveArgValue(d, "name")
@@ -62,7 +63,7 @@ func FieldReferencesInfo(defs Definitions, def *ast.Definition, field *ast.Field
 			return ref
 		}
 	}
-	refDef := defs.ForName(field.Type.Name())
+	refDef := defs.ForName(ctx, field.Type.Name())
 	if refDef == nil {
 		return nil
 	}
@@ -88,7 +89,7 @@ func referencesInfo(ref *ast.Directive, sourceName string, isBackRef bool) *Refe
 	return info
 }
 
-func (info *References) JoinConditions(defs Definitions, leftAlias, rightAlias string, isDBLeft, isDBRight bool) (string, error) {
+func (info *References) JoinConditions(ctx context.Context, defs base.DefinitionsSource, leftAlias, rightAlias string, isDBLeft, isDBRight bool) (string, error) {
 	left := info.sourceName
 	right := info.ReferencesName
 	leftFields := info.sourceFields
@@ -100,12 +101,12 @@ func (info *References) JoinConditions(defs Definitions, leftAlias, rightAlias s
 		rightFields = info.sourceFields
 	}
 
-	leftObject := defs.ForName(left)
+	leftObject := defs.ForName(ctx, left)
 	if leftObject == nil {
 		return "", ErrorPosf(base.CompiledPos(""), "object %s has unknown references object %s", left, right)
 	}
 	leftInfo := DataObjectInfo(leftObject)
-	rightObject := defs.ForName(right)
+	rightObject := defs.ForName(ctx, right)
 	if rightObject == nil {
 		return "", ErrorPosf(base.CompiledPos(""), "object %s has unknown references object %s", right, left)
 	}
@@ -114,16 +115,16 @@ func (info *References) JoinConditions(defs Definitions, leftAlias, rightAlias s
 	return joinConditions(leftInfo, rightInfo, leftAlias, rightAlias, leftFields, rightFields, isDBLeft, isDBRight)
 }
 
-func (info *References) ToM2MJoinConditions(defs Definitions, leftAlias, m2mAlias string, isDBLeft, isDBRight bool) (string, error) {
+func (info *References) ToM2MJoinConditions(ctx context.Context, defs base.DefinitionsSource, leftAlias, m2mAlias string, isDBLeft, isDBRight bool) (string, error) {
 	if !info.IsM2M {
 		return "", ErrorPosf(base.CompiledPos(""), "object %s is not m2m relation", info.Name)
 	}
-	leftObject := defs.ForName(info.sourceName)
+	leftObject := defs.ForName(ctx, info.sourceName)
 	if leftObject == nil {
 		return "", ErrorPosf(base.CompiledPos(""), "object %s has unknown references object %s", info.sourceName, info.M2MName)
 	}
 	leftInfo := DataObjectInfo(leftObject)
-	rightObject := defs.ForName(info.M2MName)
+	rightObject := defs.ForName(ctx, info.M2MName)
 	if rightObject == nil {
 		return "", ErrorPosf(base.CompiledPos(""), "object %s has unknown references object %s", info.M2MName, info.sourceName)
 	}
@@ -131,17 +132,17 @@ func (info *References) ToM2MJoinConditions(defs Definitions, leftAlias, m2mAlia
 	return joinConditions(leftInfo, rightInfo, leftAlias, m2mAlias, info.sourceFields, info.referencesFields, isDBLeft, isDBRight)
 }
 
-func (info *References) FromM2MJoinConditions(defs Definitions, m2mAlias, rightAlias string, isDBLeft, isDBRight bool) (string, error) {
+func (info *References) FromM2MJoinConditions(ctx context.Context, defs base.DefinitionsSource, m2mAlias, rightAlias string, isDBLeft, isDBRight bool) (string, error) {
 	if !info.IsM2M {
 		return "", ErrorPosf(base.CompiledPos(""), "object %s is not m2m relation", info.Name)
 	}
-	leftObject := defs.ForName(info.M2MName)
+	leftObject := defs.ForName(ctx, info.M2MName)
 	if leftObject == nil {
 		return "", ErrorPosf(base.CompiledPos(""), "object %s has unknown references object %s", info.M2MName, info.sourceName)
 	}
 	leftInfo := DataObjectInfo(leftObject)
-	refObjectInfo := leftInfo.M2MReferencesQueryInfo(defs, info.Name)
-	return refObjectInfo.JoinConditions(defs, m2mAlias, rightAlias, isDBLeft, isDBRight)
+	refObjectInfo := leftInfo.M2MReferencesQueryInfo(ctx, defs, info.Name)
+	return refObjectInfo.JoinConditions(ctx, defs, m2mAlias, rightAlias, isDBLeft, isDBRight)
 }
 
 func joinConditions(left, right *Object, leftAlias, rightAlias string, leftFields, rightFields []string, isDBLeft, isDBRight bool) (string, error) {
@@ -191,9 +192,9 @@ func (info *References) SourceFields() []string {
 	return info.sourceFields
 }
 
-func (info *References) ReferencesObjectDef(defs Definitions) *ast.Definition {
+func (info *References) ReferencesObjectDef(ctx context.Context, defs base.DefinitionsSource) *ast.Definition {
 	if !info.isBackRef {
-		return defs.ForName(info.ReferencesName)
+		return defs.ForName(ctx, info.ReferencesName)
 	}
-	return defs.ForName(info.sourceName)
+	return defs.ForName(ctx, info.sourceName)
 }

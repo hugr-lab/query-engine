@@ -1,6 +1,8 @@
 package sdl
 
 import (
+	"context"
+
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -22,19 +24,19 @@ func AggregatedQueryFieldName(def *ast.FieldDefinition) (string, bool) {
 		fieldDirectiveArgValue(def, base.FieldAggregationQueryDirectiveName, "is_bucket") == "true"
 }
 
-func AggregatedObjectDef(defs Definitions, def *ast.Definition) *ast.Definition {
+func AggregatedObjectDef(ctx context.Context, defs base.DefinitionsSource, def *ast.Definition) *ast.Definition {
 	if def == nil {
 		return nil
 	}
 	// Check if this is a scalar sub-aggregation type (e.g. FloatSubAggregation → FloatAggregation)
 	if parentAgg := types.AggregationTypeFromSub(def.Name); parentAgg != "" {
-		return defs.ForName(parentAgg)
+		return defs.ForName(ctx, parentAgg)
 	}
 	refName := objectDirectiveArgValue(def, base.ObjectAggregationDirectiveName, "name")
 	if refName == "" {
 		return nil
 	}
-	return defs.ForName(refName)
+	return defs.ForName(ctx, refName)
 }
 
 func buildObjectAggregationTypeName(name string, isSub, isBucket bool) string {

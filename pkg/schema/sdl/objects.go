@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	TableDataObject = "table"
-	ViewDataObject  = "view"
+	TableDataObject = base.TableDataObject
+	ViewDataObject  = base.ViewDataObject
 )
 
 type Object struct {
@@ -116,18 +116,18 @@ func (info *Object) HasArguments() bool {
 	return info.InputArgsName != ""
 }
 
-type ObjectQueryType int
+// Type aliases re-exported from base.
+type ObjectQueryType = base.ObjectQueryType
 
 const (
-	QueryTypeSelect ObjectQueryType = iota
-	QueryTypeSelectOne
-	QueryTypeAggregate
-	QueryTypeAggregateBucket
-
-	SubQueryTypeReferencesData
-	SubQueryTypeJoinData
-	SubQueryTypeFunctionCallData
-	SubQueryTypeFunctionCallTableJoinData
+	QueryTypeSelect                      = base.QueryTypeSelect
+	QueryTypeSelectOne                   = base.QueryTypeSelectOne
+	QueryTypeAggregate                   = base.QueryTypeAggregate
+	QueryTypeAggregateBucket             = base.QueryTypeAggregateBucket
+	SubQueryTypeReferencesData           = base.SubQueryTypeReferencesData
+	SubQueryTypeJoinData                 = base.SubQueryTypeJoinData
+	SubQueryTypeFunctionCallData         = base.SubQueryTypeFunctionCallData
+	SubQueryTypeFunctionCallTableJoinData = base.SubQueryTypeFunctionCallTableJoinData
 )
 
 type ObjectQuery struct {
@@ -157,18 +157,11 @@ type sqlBuilder interface {
 	FunctionCall(name string, positional []any, named map[string]any) (string, error)
 }
 
-// Definitions is a local alias for types that need to resolve definitions
-// without requiring full context.Context (e.g. methods on Object, Mutation, etc.).
-// Callers construct this via DefinitionsAdapter.
-type Definitions interface {
-	ForName(name string) *ast.Definition
-}
-
-func (info *Object) ApplyArguments(defs Definitions, args map[string]any, builder sqlBuilder) (err error) {
+func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSource, args map[string]any, builder sqlBuilder) (err error) {
 	if !info.HasArguments() || len(args) == 0 {
 		return nil
 	}
-	it := defs.ForName(info.InputArgsName)
+	it := defs.ForName(ctx, info.InputArgsName)
 	if it == nil {
 		return ErrorPosf(info.def.Position, "input object %s not found", info.InputArgsName)
 	}
@@ -232,25 +225,25 @@ func (info *Object) SQL(ctx context.Context, prefix string) string {
 	return prefix + info.Name
 }
 
-func (info *Object) AggregationTypeName(defs Definitions) string {
+func (info *Object) AggregationTypeName(ctx context.Context, defs base.DefinitionsSource) string {
 	name := buildObjectAggregationTypeName(info.def.Name, false, false)
-	if defs.ForName(name) == nil {
+	if defs.ForName(ctx, name) == nil {
 		return ""
 	}
 	return name
 }
 
-func (info *Object) BucketAggregationTypeName(defs Definitions) string {
+func (info *Object) BucketAggregationTypeName(ctx context.Context, defs base.DefinitionsSource) string {
 	name := buildObjectAggregationTypeName(info.def.Name, false, true)
-	if defs.ForName(name) == nil {
+	if defs.ForName(ctx, name) == nil {
 		return ""
 	}
 	return name
 }
 
-func (info *Object) SubAggregationTypeName(defs Definitions) string {
+func (info *Object) SubAggregationTypeName(ctx context.Context, defs base.DefinitionsSource) string {
 	name := buildObjectAggregationTypeName(info.def.Name, true, false)
-	if defs.ForName(name) == nil {
+	if defs.ForName(ctx, name) == nil {
 		return ""
 	}
 	return name
@@ -260,12 +253,12 @@ func (info *Object) InputFilterName() string {
 	return objectDirectiveArgValue(info.def, base.FilterInputDirectiveName, "name")
 }
 
-type ObjectMutationType int
+type ObjectMutationType = base.ObjectMutationType
 
 const (
-	MutationTypeInsert ObjectMutationType = iota
-	MutationTypeUpdate
-	MutationTypeDelete
+	MutationTypeInsert = base.MutationTypeInsert
+	MutationTypeUpdate = base.MutationTypeUpdate
+	MutationTypeDelete = base.MutationTypeDelete
 )
 
 func (info *Object) InputInsertDataName() string {
@@ -326,7 +319,7 @@ func (info *Object) Definition() *ast.Definition {
 	return info.def
 }
 
-func (info *Object) ReferencesQueryInfo(defs Definitions, name string) *References {
+func (info *Object) ReferencesQueryInfo(ctx context.Context, defs base.DefinitionsSource, name string) *References {
 	field := info.FieldForName(name)
 	if field == nil {
 		return nil
@@ -342,7 +335,7 @@ func (info *Object) ReferencesQueryInfo(defs Definitions, name string) *Referenc
 		}
 	}
 	refObject := fieldDirectiveArgValue(field.def, base.FieldReferencesQueryDirectiveName, "references_name")
-	def = defs.ForName(refObject)
+	def = defs.ForName(ctx, refObject)
 	if def == nil {
 		return nil
 	}
@@ -354,7 +347,7 @@ func (info *Object) ReferencesQueryInfo(defs Definitions, name string) *Referenc
 	return nil
 }
 
-func (info *Object) ReferencesQueryInfoByName(defs Definitions, name string) *References {
+func (info *Object) ReferencesQueryInfoByName(ctx context.Context, defs base.DefinitionsSource, name string) *References {
 	for _, ref := range info.def.Directives.ForNames(base.ReferencesDirectiveName) {
 		if ReferencesInfo(ref).Name == name {
 			return referencesInfo(ref, info.def.Name, false)
@@ -363,7 +356,7 @@ func (info *Object) ReferencesQueryInfoByName(defs Definitions, name string) *Re
 	return nil
 }
 
-func (info *Object) M2MReferencesQueryInfo(defs Definitions, name string) *References {
+func (info *Object) M2MReferencesQueryInfo(ctx context.Context, defs base.DefinitionsSource, name string) *References {
 	for _, ref := range info.def.Directives.ForNames(base.ReferencesDirectiveName) {
 		if ReferencesInfo(ref).Name != name {
 			return referencesInfo(ref, info.def.Name, false)

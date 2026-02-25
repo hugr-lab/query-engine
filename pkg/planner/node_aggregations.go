@@ -14,7 +14,7 @@ import (
 )
 
 func aggregateRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
-	node, inGeneral, err := aggregateDataNode(ctx, sdl.NewDefsAdapter(ctx, provider), planner, false, query, vars)
+	node, inGeneral, err := aggregateDataNode(ctx, provider, planner, false, query, vars)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func aggregateRootNode(ctx context.Context, provider schema.Provider, planner Ca
 }
 
 // returns nodes: fields, from, where, group by (if bucket aggregation)
-func joinAggregateNodes(_ context.Context, defs sdl.Definitions, planner Catalog, inGeneral bool, right *ast.Field, prefix, rAlias string) (nodes QueryPlanNodes, err error) {
+func joinAggregateNodes(ctx context.Context, defs base.DefinitionsSource, planner Catalog, inGeneral bool, right *ast.Field, prefix, rAlias string) (nodes QueryPlanNodes, err error) {
 	nodes.Add(&QueryPlanNode{
 		Name:  "fields",
 		Query: right,
@@ -89,7 +89,7 @@ func joinAggregateNodes(_ context.Context, defs sdl.Definitions, planner Catalog
 	return nodes, nil
 }
 
-func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalog, inGeneral bool, query *ast.Field, vars map[string]any) (*QueryPlanNode, bool, error) {
+func aggregateDataNode(ctx context.Context, defs base.DefinitionsSource, planner Catalog, inGeneral bool, query *ast.Field, vars map[string]any) (*QueryPlanNode, bool, error) {
 	// 1. get references data object
 	aggregated := sdl.AggregatedQueryDef(query)
 	if aggregated == nil {
@@ -100,7 +100,7 @@ func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalo
 	// split by aggregate and bucket key fields
 	if !sdl.IsBucketAggregateQuery(query) {
 		var err error
-		aggFields, err = aggSelectedFieldsForAggregation(defs, query)
+		aggFields, err = aggSelectedFieldsForAggregation(ctx, defs, query)
 		if err != nil {
 			return nil, false, err
 		}
@@ -118,7 +118,7 @@ func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalo
 	}
 	splitByH3 := sdl.DirectiveArgValue(query.Directives.ForName(base.AddH3DirectiveName), "divide_values", vars) == "true"
 	// if keys is not empty create group by fields (merge selected fields)
-	refFields, err := referencesFields(defs, &ast.Field{
+	refFields, err := referencesFields(ctx, defs, &ast.Field{
 		Alias:            query.Alias,
 		Name:             aggregated.Name,
 		Arguments:        query.Arguments,
@@ -164,8 +164,8 @@ func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalo
 	// create base queries for each aggregations fields (with out sub query fields)
 	queries := map[string]*ast.Field{}
 	queryNodes := map[string]*QueryPlanNode{}
-	def := defs.ForName(query.Definition.Type.Name())
-	def = sdl.AggregatedObjectDef(defs, def)
+	def := defs.ForName(ctx, query.Definition.Type.Name())
+	def = sdl.AggregatedObjectDef(ctx, defs, def)
 	catalog := ""
 	var info *sdl.Object
 	if sdl.IsDataObject(def) {
@@ -239,7 +239,7 @@ func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalo
 				Directives:       query.Directives,
 				SelectionSet:     groupByFields.AsSelectionSet(),
 			}
-			ff, err := aggSelectedFieldsForAggregation(defs, f)
+			ff, err := aggSelectedFieldsForAggregation(ctx, defs, f)
 			if err != nil {
 				return nil, false, err
 			}
@@ -387,7 +387,7 @@ func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalo
 		// 1.3. add aggregation fields
 		// 1.3.1. add aggregation fields for non bucket aggregation (as is with out sub query fields)
 		if !sdl.IsBucketAggregateQuery(query) {
-			ff, err := aggAggregationFieldNodes(aggregator, defs, query, vars, node.Name, "", splitByH3)
+			ff, err := aggAggregationFieldNodes(ctx, aggregator, defs, query, vars, node.Name, "", splitByH3)
 			if err != nil {
 				return nil, false, err
 			}
@@ -409,7 +409,7 @@ func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalo
 			if f == nil {
 				return nil, false, sdl.ErrorPosf(query.Position, "field %s not found in query", alias)
 			}
-			ff, err := aggAggregationFieldNodes(aggregator, defs, f.Field, vars, node.Name, "", splitByH3)
+			ff, err := aggAggregationFieldNodes(ctx, aggregator, defs, f.Field, vars, node.Name, "", splitByH3)
 			if err != nil {
 				return nil, false, err
 			}
@@ -457,10 +457,10 @@ func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalo
 				joinNodes.Add(&QueryPlanNode{
 					Name: "m2m",
 					CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-						m2m := node.TypeDefs().ForName(ri.M2MName)
+						m2m := node.TypeDefs().ForName(ctx, ri.M2MName)
 						m2mInfo := sdl.DataObjectInfo(m2m)
-						refInfo := m2mInfo.M2MReferencesQueryInfo(defs, ri.Name)
-						jc, err := refInfo.JoinConditions(node.TypeDefs(), "_join_m2m", "_"+alias, true, false)
+						refInfo := m2mInfo.M2MReferencesQueryInfo(ctx, defs, ri.Name)
+						jc, err := refInfo.JoinConditions(ctx, node.TypeDefs(), "_join_m2m", "_"+alias, true, false)
 						if err != nil {
 							return "", nil, err
 						}
@@ -477,7 +477,7 @@ func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalo
 			if ri != nil && ri.IsM2M {
 				rAlias = "_join_m2m"
 			}
-			joinConditionNode := aggregationWhereJoinNode(defs, query, "_root_objects", rAlias)
+			joinConditionNode := aggregationWhereJoinNode(ctx, defs, query, "_root_objects", rAlias)
 			joinNodes.Add(&QueryPlanNode{
 				Name:  "join",
 				Nodes: QueryPlanNodes{joinConditionNode},
@@ -571,7 +571,7 @@ func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalo
 	if !isInCatalog {
 		qe = defaultEngine
 	}
-	queryArg, err := sdl.ArgumentValues(defs, query, vars, false)
+	queryArg, err := sdl.ArgumentValues(ctx, defs, query, vars, false)
 	if err != nil {
 		return nil, false, err
 	}
@@ -605,10 +605,10 @@ func aggregateDataNode(ctx context.Context, defs sdl.Definitions, planner Catalo
 	return selectStatementNode(query, extraNodes, "", false), !isInCatalog, nil
 }
 
-func aggSelectedFieldsForAggregation(defs sdl.Definitions, query *ast.Field) (fieldList, error) {
+func aggSelectedFieldsForAggregation(ctx context.Context, defs base.DefinitionsSource, query *ast.Field) (fieldList, error) {
 	var fields fieldList
-	def := defs.ForName(query.Definition.Type.Name())
-	def = sdl.AggregatedObjectDef(defs, def)
+	def := defs.ForName(ctx, query.Definition.Type.Name())
+	def = sdl.AggregatedObjectDef(ctx, defs, def)
 	if def == nil {
 		return nil, sdl.ErrorPosf(query.Definition.Position, "aggregated object %s not found", query.Definition.Type.Name())
 	}
@@ -644,7 +644,7 @@ func aggSelectedFieldsForAggregation(defs sdl.Definitions, query *ast.Field) (fi
 				Name: base.UnnestDirectiveName,
 			})
 		}
-		ff, err := aggSelectedFieldsForAggregation(defs, f.Field)
+		ff, err := aggSelectedFieldsForAggregation(ctx, defs, f.Field)
 		if err != nil {
 			return nil, err
 		}
@@ -653,9 +653,9 @@ func aggSelectedFieldsForAggregation(defs sdl.Definitions, query *ast.Field) (fi
 	return fields, nil
 }
 
-func aggAggregationFieldNodes(e engines.EngineAggregator, defs sdl.Definitions, query *ast.Field, vars map[string]any, prefix, path string, splitByH3 bool) (QueryPlanNodes, error) {
-	def := defs.ForName(query.Definition.Type.Name())
-	def = sdl.AggregatedObjectDef(defs, def)
+func aggAggregationFieldNodes(ctx context.Context, e engines.EngineAggregator, defs base.DefinitionsSource, query *ast.Field, vars map[string]any, prefix, path string, splitByH3 bool) (QueryPlanNodes, error) {
+	def := defs.ForName(ctx, query.Definition.Type.Name())
+	def = sdl.AggregatedObjectDef(ctx, defs, def)
 	if def == nil {
 		return nil, sdl.ErrorPosf(query.Definition.Position, "aggregated object %s not found", query.Definition.Type.Name())
 	}
@@ -763,7 +763,7 @@ func aggAggregationFieldNodes(e engines.EngineAggregator, defs sdl.Definitions, 
 			subPath += "."
 		}
 		subPath += f.Field.Alias
-		ff, err := aggAggregationFieldNodes(e, defs, f.Field, vars, prefix, subPath, splitByH3)
+		ff, err := aggAggregationFieldNodes(ctx, e, defs, f.Field, vars, prefix, subPath, splitByH3)
 		if err != nil {
 			return nil, err
 		}
@@ -783,7 +783,7 @@ func aggAggregationFieldNodes(e engines.EngineAggregator, defs sdl.Definitions, 
 	return nodes, nil
 }
 
-func aggregationWhereJoinNode(defs sdl.Definitions, right *ast.Field, prefix, rAlias string) *QueryPlanNode {
+func aggregationWhereJoinNode(ctx context.Context, defs base.DefinitionsSource, right *ast.Field, prefix, rAlias string) *QueryPlanNode {
 	aggregated := sdl.AggregatedQueryDef(right)
 	aggregatedQuery := &ast.Field{
 		Alias:            right.Alias,
@@ -826,22 +826,22 @@ func aggregationWhereJoinNode(defs sdl.Definitions, right *ast.Field, prefix, rA
 				return sql, params, nil
 			case sdl.IsReferencesSubquery(aggregated):
 				info := sdl.DataObjectInfo(right.ObjectDefinition)
-				ri := info.ReferencesQueryInfo(defs, aggregated.Name)
+				ri := info.ReferencesQueryInfo(ctx, defs, aggregated.Name)
 				if ri == nil {
 					return "", nil, errors.New("references query info not found")
 				}
 
 				fields := ri.ReferencesFields()
 				if ri.IsM2M {
-					m2m := defs.ForName(ri.M2MName)
+					m2m := defs.ForName(ctx, ri.M2MName)
 					m2mInfo := sdl.DataObjectInfo(m2m)
-					ri = m2mInfo.ReferencesQueryInfoByName(defs, ri.Name)
+					ri = m2mInfo.ReferencesQueryInfoByName(ctx, defs, ri.Name)
 					if ri == nil {
 						return "", nil, errors.New("references query info not found")
 					}
 					fields = ri.ReferencesFields()
 				}
-				jc, err := ri.JoinConditions(defs, prefix, rAlias, false, false)
+				jc, err := ri.JoinConditions(ctx, defs, prefix, rAlias, false, false)
 				if err != nil {
 					return "", nil, err
 				}

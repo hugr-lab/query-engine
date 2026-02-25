@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -188,8 +189,8 @@ func (n *QueryPlanNode) SchemaProvider() schema.Provider {
 	return nil
 }
 
-func (n *QueryPlanNode) TypeDefs() sdl.Definitions {
-	return sdl.NewDefsAdapter(context.TODO(), n.SchemaProvider())
+func (n *QueryPlanNode) TypeDefs() base.DefinitionsSource {
+	return n.SchemaProvider()
 }
 
 func (n *QueryPlanNode) Engine(name string) (engines.Engine, error) {

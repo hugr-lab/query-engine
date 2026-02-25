@@ -12,7 +12,7 @@ import (
 // create cast result node to translate query result from TypeCaster QueryEngine to the original duckdb types.
 // Objects casts to JSON and scalars casts to natural duckdb types trough intermediate representation.
 // receive node that should generate a valid SQL query and a TypeCaster QueryEngine.
-func castResultsNode(_ context.Context, caster engines.EngineTypeCaster, node *QueryPlanNode, toJSON, withRowNum bool) (*QueryPlanNode, error) {
+func castResultsNode(ctx context.Context, caster engines.EngineTypeCaster, node *QueryPlanNode, toJSON, withRowNum bool) (*QueryPlanNode, error) {
 	return &QueryPlanNode{
 		Name:    node.Name,
 		Query:   node.Query,
@@ -38,7 +38,7 @@ func castResultsNode(_ context.Context, caster engines.EngineTypeCaster, node *Q
 				sql = "(" + sql + ")"
 			}
 			var intermediateSelection, castingSelection []string
-			refFields, err := referencesFields(node.TypeDefs(), node.Query)
+			refFields, err := referencesFields(ctx, node.TypeDefs(), node.Query)
 			if err != nil {
 				return "", nil, err
 			}

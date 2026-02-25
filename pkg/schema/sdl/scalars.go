@@ -1,6 +1,8 @@
 package sdl
 
 import (
+	"context"
+
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/types"
 	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
@@ -77,7 +79,7 @@ func ToStructFieldSQL(typeName, sql string) string {
 
 // ParseArgumentValue resolves and parses a GraphQL argument value,
 // handling scalars, input objects, enums, lists, and variables.
-func ParseArgumentValue(defs Definitions, arg *ast.ArgumentDefinition, value *ast.Value, vars map[string]any, checkRequired bool) (any, error) {
+func ParseArgumentValue(ctx context.Context, defs base.DefinitionsSource, arg *ast.ArgumentDefinition, value *ast.Value, vars map[string]any, checkRequired bool) (any, error) {
 	if arg.Type.NonNull {
 		if value == nil {
 			return nil, ErrorPosf(arg.Position, "argument %s is required", arg.Name)
@@ -87,12 +89,12 @@ func ParseArgumentValue(defs Definitions, arg *ast.ArgumentDefinition, value *as
 		return nil, nil
 	}
 	if !IsScalarType(arg.Type.Name()) {
-		def := defs.ForName(arg.Type.Name())
+		def := defs.ForName(ctx, arg.Type.Name())
 		if def == nil || (def.Kind != ast.InputObject && def.Kind != ast.Enum) {
 			return nil, ErrorPosf(arg.Position, "unsupported argument type %s", arg.Type.Name())
 		}
 		if value.Kind == ast.Variable {
-			return ParseDataAsInputObject(defs, arg.Type, vars[value.Raw], checkRequired)
+			return ParseDataAsInputObject(ctx, defs, arg.Type, vars[value.Raw], checkRequired)
 		}
 		if value.Kind == ast.EnumValue {
 			return value.Raw, nil
@@ -100,7 +102,7 @@ func ParseArgumentValue(defs Definitions, arg *ast.ArgumentDefinition, value *as
 		if value.Kind == ast.ListValue {
 			var vv []any
 			for _, v := range value.Children {
-				v, err := ParseArgumentValue(defs, &ast.ArgumentDefinition{
+				v, err := ParseArgumentValue(ctx, defs, &ast.ArgumentDefinition{
 					Name:     arg.Name,
 					Type:     v.Value.ExpectedType,
 					Position: v.Position,
@@ -116,7 +118,7 @@ func ParseArgumentValue(defs Definitions, arg *ast.ArgumentDefinition, value *as
 		}
 		vv := map[string]any{}
 		for _, f := range def.Fields {
-			v, err := ParseArgumentValue(defs, &ast.ArgumentDefinition{
+			v, err := ParseArgumentValue(ctx, defs, &ast.ArgumentDefinition{
 				Name:     f.Name,
 				Type:     f.Type,
 				Position: f.Position,
@@ -149,7 +151,7 @@ func ParseArgumentValue(defs Definitions, arg *ast.ArgumentDefinition, value *as
 
 // ParseDataAsInputObject recursively parses map data into a validated input object,
 // resolving scalar types along the way.
-func ParseDataAsInputObject(defs Definitions, inputType *ast.Type, data any, checkRequired bool) (any, error) {
+func ParseDataAsInputObject(ctx context.Context, defs base.DefinitionsSource, inputType *ast.Type, data any, checkRequired bool) (any, error) {
 	if data == nil {
 		return nil, nil
 	}
@@ -160,7 +162,7 @@ func ParseDataAsInputObject(defs Definitions, inputType *ast.Type, data any, che
 		}
 		var out []any
 		for _, v := range vv {
-			o, err := ParseDataAsInputObject(defs, inputType.Elem, v, checkRequired)
+			o, err := ParseDataAsInputObject(ctx, defs, inputType.Elem, v, checkRequired)
 			if err != nil {
 				return nil, err
 			}
@@ -168,7 +170,7 @@ func ParseDataAsInputObject(defs Definitions, inputType *ast.Type, data any, che
 		}
 		return out, nil
 	}
-	def := defs.ForName(inputType.Name())
+	def := defs.ForName(ctx, inputType.Name())
 	vv, ok := data.(map[string]any)
 	if !ok {
 		return nil, ErrorPosf(inputType.Position, "expected object")
@@ -186,7 +188,7 @@ func ParseDataAsInputObject(defs Definitions, inputType *ast.Type, data any, che
 			if v == nil {
 				continue
 			}
-			val, err := ParseDataAsInputObject(defs, f.Type, v, checkRequired)
+			val, err := ParseDataAsInputObject(ctx, defs, f.Type, v, checkRequired)
 			if err != nil {
 				return nil, err
 			}

@@ -213,7 +213,7 @@ func (s *Service) dataObjectStreamQuery(ctx context.Context, dataObject string, 
 		if !sdl.IsDataObject(def) {
 			return "", fmt.Errorf("data object %s is not a valid data object", dataObject)
 		}
-		path, field := sdl.ObjectQueryDefinition(sdl.NewDefsAdapter(ctx, provider), def, sdl.QueryTypeSelect)
+		path, field := sdl.ObjectQueryDefinition(ctx, provider, def, sdl.QueryTypeSelect)
 		if path != "" {
 			dataObject = path + "." + field.Name
 		}

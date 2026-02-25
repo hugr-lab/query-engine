@@ -44,12 +44,11 @@ func (sv seqValues) IsExists(seqName string) bool {
 }
 
 func insertRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
-	defs := sdl.NewDefsAdapter(ctx, provider)
 	// define request sequences values
 	var sv []seqValue
 
 	// get values from variables
-	queryArg, err := sdl.ArgumentValues(defs, query, vars, false)
+	queryArg, err := sdl.ArgumentValues(ctx, provider, query, vars, false)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +67,7 @@ func insertRootNode(ctx context.Context, provider schema.Provider, planner Catal
 		if !ok || len(data) == 0 {
 			return nil, sdl.ErrorPosf(query.Position, "data argument should be an object")
 		}
-		data, err = checkMutationData(ctx, defs, query, d.Type, data)
+		data, err = checkMutationData(ctx, provider, query, d.Type, data)
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +92,7 @@ func insertRootNode(ctx context.Context, provider schema.Provider, planner Catal
 		return nil, err
 	}
 
-	m := sdl.MutationInfo(defs, query.Definition)
+	m := sdl.MutationInfo(ctx, provider, query.Definition)
 	if m == nil {
 		return nil, sdl.ErrorPosf(query.Position, "mutation %s is not defined", query.Alias)
 	}
@@ -385,7 +384,7 @@ func insertDataObjectNode(ctx context.Context, provider schema.Provider, e engin
 		sp += f
 		refFields := m.ReferencesFieldsReferences(f)
 		sourceFields := m.ReferencesFieldsSource(f)
-		ref := info.ReferencesQueryInfo(sdl.NewDefsAdapter(ctx, provider), f)
+		ref := info.ReferencesQueryInfo(ctx, provider, f)
 		if ref == nil {
 			return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "references query for field %s.%s is not defined", path, f)
 		}
@@ -428,7 +427,7 @@ func insertDataObjectNode(ctx context.Context, provider schema.Provider, e engin
 			if m2mInfo == nil {
 				return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "object %s is not defined", ref.M2MName)
 			}
-			m2mRef := m2mInfo.M2MReferencesQueryInfo(sdl.NewDefsAdapter(ctx, provider), ref.Name)
+			m2mRef := m2mInfo.M2MReferencesQueryInfo(ctx, provider, ref.Name)
 			m2mSourceFields := m2mRef.SourceFields()
 			m2mRefFields := m2mRef.ReferencesFields()
 			m2mData := map[string]string{}
