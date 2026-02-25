@@ -23,6 +23,19 @@ func DirectiveArgString(dir *ast.Directive, name string) string {
 	return arg.Value.Raw
 }
 
+// SetDirectiveArg sets or adds a string argument on a directive.
+func SetDirectiveArg(dir *ast.Directive, name, value string) {
+	if a := dir.Arguments.ForName(name); a != nil {
+		a.Value = &ast.Value{Kind: ast.StringValue, Raw: value, Position: dir.Position}
+	} else {
+		dir.Arguments = append(dir.Arguments, &ast.Argument{
+			Name:     name,
+			Value:    &ast.Value{Kind: ast.StringValue, Raw: value, Position: dir.Position},
+			Position: dir.Position,
+		})
+	}
+}
+
 // DirectiveArgStrings extracts a list of string values from a directive argument.
 func DirectiveArgStrings(dir *ast.Directive, name string) []string {
 	if dir == nil {

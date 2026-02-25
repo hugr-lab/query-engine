@@ -144,6 +144,13 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 		}
 	}
 
+	// 3b. Propagate module from function's @module directive to the function_call/
+	// table_function_call_join directive. Skip for extension fields (@dependency)
+	// since they may reference functions from a different catalog.
+	if funcModule := funcModuleName(funcField); funcModule != "" && field.Directives.ForName("dependency") == nil {
+		base.SetDirectiveArg(dir, "module", funcModule)
+	}
+
 	// 4. Validate field arguments that correspond to function arguments.
 	// Field arguments may also include compiler-added args (e.g., geometry transforms,
 	// subquery filter/limit) which are not function arguments and should be skipped.
@@ -215,4 +222,9 @@ func extractArgsMap(dir *ast.Directive) map[string]string {
 		result[child.Name] = child.Value.Raw
 	}
 	return result
+}
+
+// funcModuleName returns the module name from a function field's @module directive.
+func funcModuleName(funcField *ast.FieldDefinition) string {
+	return base.DirectiveArgString(funcField.Directives.ForName("module"), "name")
 }
