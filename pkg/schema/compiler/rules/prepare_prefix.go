@@ -107,6 +107,50 @@ func (r *PrefixPreparer) ProcessAll(ctx base.CompilationContext) error {
 			}
 		}
 
+		// Apply prefix to non-data definitions (plain Object, InputObject, Interface, Union, Enum)
+		// Data objects (table/view) are handled above; functions skip renaming.
+		// Also skip Function/MutationFunction types — they're system-level containers
+		// processed by FunctionRule which matches on exact name.
+		if opts.Prefix != "" && !isTable && !isView && !isFunc &&
+			def.Name != "Function" && def.Name != "MutationFunction" {
+			switch def.Kind {
+			case ast.Object, ast.InputObject, ast.Interface, ast.Enum:
+				originalName := def.Name
+				def.Name = ctx.ApplyPrefix(def.Name)
+				pos := &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}}
+				def.Directives = append(def.Directives, &ast.Directive{
+					Name: "original_name",
+					Arguments: ast.ArgumentList{
+						{Name: "name", Value: &ast.Value{Raw: originalName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					},
+					Position: pos,
+				})
+				// Rename interface references
+				for i, iface := range def.Interfaces {
+					if sourceNames[iface] {
+						def.Interfaces[i] = opts.Prefix + "_" + iface
+					}
+				}
+			case ast.Union:
+				originalName := def.Name
+				def.Name = ctx.ApplyPrefix(def.Name)
+				pos := &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}}
+				def.Directives = append(def.Directives, &ast.Directive{
+					Name: "original_name",
+					Arguments: ast.ArgumentList{
+						{Name: "name", Value: &ast.Value{Raw: originalName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					},
+					Position: pos,
+				})
+				// Rename union member types
+				for i, typeName := range def.Types {
+					if sourceNames[typeName] {
+						def.Types[i] = opts.Prefix + "_" + typeName
+					}
+				}
+			}
+		}
+
 		// For functions, register info but skip renaming
 		if isFunc {
 			module := ""
@@ -129,11 +173,45 @@ func (r *PrefixPreparer) ProcessAll(ctx base.CompilationContext) error {
 				for _, d := range f.Directives.ForNames("field_references") {
 					renameDirectiveArgIfSource(d, "references_name", opts.Prefix, sourceNames)
 				}
+				// Rename references_name in @join directives
+				for _, d := range f.Directives.ForNames("join") {
+					renameDirectiveArgIfSource(d, "references_name", opts.Prefix, sourceNames)
+				}
+				// Rename references_name in function call directives
+				if !opts.AsModule {
+					for _, d := range f.Directives.ForNames("function_call") {
+						renameDirectiveArgIfSource(d, "references_name", opts.Prefix, sourceNames)
+					}
+					for _, d := range f.Directives.ForNames("table_function_call_join") {
+						renameDirectiveArgIfSource(d, "references_name", opts.Prefix, sourceNames)
+					}
+				}
 			}
 			// Rename references in definition directives
 			for _, d := range def.Directives.ForNames("references") {
 				renameDirectiveArgIfSource(d, "references_name", opts.Prefix, sourceNames)
 				renameDirectiveArgIfSource(d, "m2m_name", opts.Prefix, sourceNames)
+			}
+			// Rename @args name argument
+			if d := def.Directives.ForName("args"); d != nil {
+				renameDirectiveArgIfSource(d, "name", opts.Prefix, sourceNames)
+			}
+		}
+	}
+
+	// Also rename type references in promoted definitions (e.g. Function from
+	// InternalExtensionMerger). Their field return types may reference source
+	// definitions that were just prefixed.
+	if opts.Prefix != "" {
+		for _, def := range ctx.PromotedDefinitions() {
+			for _, f := range def.Fields {
+				renameTypeRefs(f.Type, opts.Prefix, sourceNames)
+				for _, d := range f.Directives.ForNames("field_references") {
+					renameDirectiveArgIfSource(d, "references_name", opts.Prefix, sourceNames)
+				}
+				for _, d := range f.Directives.ForNames("table_function_call_join") {
+					renameDirectiveArgIfSource(d, "references_name", opts.Prefix, sourceNames)
+				}
 			}
 		}
 	}

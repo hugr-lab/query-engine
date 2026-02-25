@@ -20,12 +20,12 @@ type Provider struct {
 	schema *ast.Schema
 }
 
-func New() *Provider {
-	// TODO Initialize Schema with built-in scalars and directives, and system types!!!!!
-	return &Provider{schema: &ast.Schema{
-		Types:      make(map[string]*ast.Definition),
-		Directives: make(map[string]*ast.DirectiveDefinition),
-	}}
+func New() (*Provider, error) {
+	schema, err := initSystemSchema()
+	if err != nil {
+		return nil, err
+	}
+	return &Provider{schema: schema}, nil
 }
 
 // NewWithSchema creates a Provider wrapping the given compiled schema.

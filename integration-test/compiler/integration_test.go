@@ -2,6 +2,7 @@ package compiler_test
 
 import (
 	"context"
+	_ "embed"
 	"strings"
 	"testing"
 
@@ -799,7 +800,7 @@ func TestIntegration_EdgeCases(t *testing.T) {
 			t.Fatalf("parse empty SDL: %v", err)
 		}
 		source := extractSourceDefs(sd)
-		compiled, err := c.Compile(ctx, nil, source, base.Options{Name: "empty", EngineType: "duckdb"})
+		compiled, err := c.Compile(ctx, provider, source, base.Options{Name: "empty", EngineType: "duckdb"})
 		if err != nil {
 			t.Fatalf("expected no error for empty catalog, got: %v", err)
 		}
@@ -886,7 +887,7 @@ type BadRef
   ref_id: Int!
 }
 `
-		_, c := setupMultiCatalogProvider(t)
+		provider, c := setupMultiCatalogProvider(t)
 		ctx := context.Background()
 
 		sd, err := parser.ParseSchema(&ast.Source{Name: "bad_ref.graphql", Input: badRefSDL})
@@ -895,7 +896,7 @@ type BadRef
 		}
 		source := extractSourceDefs(sd)
 
-		_, err = c.Compile(ctx, nil, source, base.Options{Name: "bad", EngineType: "duckdb"})
+		_, err = c.Compile(ctx, provider, source, base.Options{Name: "bad", EngineType: "duckdb"})
 		if err == nil {
 			t.Fatal("expected error for nonexistent reference target, got nil")
 		}
@@ -947,6 +948,155 @@ func postgresCapabilities() *base.EngineCapabilities {
 			DeleteWithoutPKs: true,
 		},
 	}
+}
+
+// --- Test: Runtime Source Schema Compilation ---
+// Verifies that all real runtime source schemas (core-db, cache, storage,
+// data-sources, meta-info, gis) compile successfully against the static provider,
+// simulating the bootstrap sequence of the engine.
+
+//go:embed testdata/runtime_schemas/core-db.graphql
+var coreDBSchema string
+
+//go:embed testdata/runtime_schemas/cache.graphql
+var cacheSchema string
+
+//go:embed testdata/runtime_schemas/storage.graphql
+var storageSchema string
+
+//go:embed testdata/runtime_schemas/data-sources.graphql
+var dataSourcesSchema string
+
+//go:embed testdata/runtime_schemas/meta-info.graphql
+var metaInfoSchema string
+
+//go:embed testdata/runtime_schemas/gis.graphql
+var gisSchema string
+
+func TestIntegration_RuntimeSourceBootstrap(t *testing.T) {
+	ctx := context.Background()
+	provider, c := setupMultiCatalogProvider(t)
+
+	duckdbCaps := &base.EngineCapabilities{
+		General: base.EngineGeneralCapabilities{
+			SupportDefaultSequences: true,
+			UnsupportedTypes:        []string{"IntRange", "BigIntRange", "TimestampRange"},
+		},
+		Insert: base.EngineInsertCapabilities{
+			Insert:           true,
+			Returning:        true,
+			InsertReferences: true,
+		},
+		Update: base.EngineUpdateCapabilities{
+			Update:           true,
+			UpdatePKColumns:  true,
+			UpdateWithoutPKs: true,
+		},
+		Delete: base.EngineDeleteCapabilities{
+			Delete:           true,
+			DeleteWithoutPKs: true,
+		},
+	}
+
+	// Runtime sources in bootstrap order (mirrors engine.Init + attachRuntimeSources)
+	sources := []struct {
+		name     string
+		sdl      string
+		asModule bool
+		readOnly bool
+	}{
+		{"core", coreDBSchema, false, false},
+		{"cache", cacheSchema, false, false},
+		{"core.storage", storageSchema, true, false},
+		{"storage", dataSourcesSchema, false, false},
+		{"core.meta", metaInfoSchema, true, false},
+		{"core.gis", gisSchema, true, false},
+	}
+
+	for _, src := range sources {
+		t.Run("compile_"+src.name, func(t *testing.T) {
+			compiled := compileNewCatalog(t, c, provider, src.sdl, base.Options{
+				Name:         src.name,
+				EngineType:   "duckdb",
+				AsModule:     src.asModule,
+				ReadOnly:     src.readOnly,
+				Capabilities: duckdbCaps,
+			})
+			if err := provider.Update(ctx, compiled); err != nil {
+				t.Fatalf("Update %s: %v", src.name, err)
+			}
+		})
+	}
+
+	// Verify key types from each source are present
+	schema := provider.Schema()
+
+	t.Run("verify_core_types", func(t *testing.T) {
+		for _, name := range []string{"catalog_sources", "data_sources", "roles", "api_keys"} {
+			if schema.Types[name] == nil {
+				t.Errorf("core type %q missing", name)
+			}
+		}
+	})
+
+	t.Run("verify_meta_types", func(t *testing.T) {
+		for _, name := range []string{"databases", "tables", "columns", "log_entries"} {
+			if schema.Types[name] == nil {
+				t.Errorf("meta type %q missing", name)
+			}
+		}
+	})
+
+	t.Run("verify_query_root", func(t *testing.T) {
+		q := schema.Query
+		if q == nil {
+			t.Fatal("Query root type missing")
+		}
+		if len(q.Fields) == 0 {
+			t.Error("Query root has no fields")
+		}
+		t.Logf("Query root has %d fields", len(q.Fields))
+	})
+
+	t.Run("verify_mutation_root", func(t *testing.T) {
+		m := schema.Mutation
+		if m == nil {
+			t.Fatal("Mutation root type missing after registering all runtime sources")
+		}
+		if len(m.Fields) == 0 {
+			t.Error("Mutation root has no fields")
+		}
+		t.Logf("Mutation root has %d fields", len(m.Fields))
+	})
+
+	t.Run("verify_system_types_preserved", func(t *testing.T) {
+		// System types must survive all catalog registrations
+		for _, name := range []string{"String", "Int", "Boolean", "BigInt", "Timestamp", "JSON", "Geometry"} {
+			if schema.Types[name] == nil {
+				t.Errorf("system type %q missing after bootstrap", name)
+			}
+		}
+	})
+
+	// Test catalog removal preserves other catalogs and system types
+	t.Run("drop_and_verify", func(t *testing.T) {
+		if err := provider.DropCatalog(ctx, "core.meta", true); err != nil {
+			t.Fatalf("DropCatalog core.meta: %v", err)
+		}
+
+		schema = provider.Schema()
+		if schema.Types["databases"] != nil {
+			t.Error("databases should be gone after dropping core.meta")
+		}
+		// Core types should remain
+		if schema.Types["data_sources"] == nil {
+			t.Error("data_sources should remain after dropping core.meta")
+		}
+		// System types should remain
+		if schema.Types["String"] == nil {
+			t.Error("system type String missing after drop")
+		}
+	})
 }
 
 // compileNewCatalogWithError is like compileNewCatalog but returns the error instead of calling t.Fatal.

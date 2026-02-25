@@ -1,4 +1,9 @@
-type NoPK @table(name: "no_pk") {
+type Helper @table(name: "helpers") {
+  id: Int! @pk
   name: String!
-  value: Int
+}
+
+type BadPK @table(name: "bad_pk") {
+  info: Helper @pk
+  name: String!
 }

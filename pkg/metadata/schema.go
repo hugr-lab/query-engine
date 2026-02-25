@@ -146,6 +146,10 @@ func typeResolver(ctx context.Context, provider schema.Provider, typeDef *ast.Ty
 				if strings.HasPrefix(f.Name, "__") {
 					continue
 				}
+				// Show _stub only when it's the sole field; hide it when real fields exist
+				if isPlaceholderField(f.Name) && len(def.Fields) > 1 {
+					continue
+				}
 				di := compiler.FieldDeprecatedInfo(f)
 				if !includeDeprecated && di.IsDeprecated {
 					continue
@@ -497,6 +501,13 @@ func inputValueResolver(ctx context.Context, provider schema.Provider, def *ast.
 		},
 	}, "__InputValue")
 }
+
+// isPlaceholderField returns true for stub/placeholder field names used as
+// parser placeholders in shared system types.
+func isPlaceholderField(name string) bool {
+	return name == "_stub" || name == "_placeholder"
+}
+
 
 func directiveResolver(ctx context.Context, provider schema.Provider, def *ast.DirectiveDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{

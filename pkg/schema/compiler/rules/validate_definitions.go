@@ -43,8 +43,9 @@ func validateDefinition(ctx base.CompilationContext, def *ast.Definition) error 
 	isTable := def.Directives.ForName("table") != nil
 	isView := def.Directives.ForName("view") != nil
 
+	// Validate @pk fields are scalar types (if present)
 	if isTable || isView {
-		if err := validatePrimaryKey(def, isTable); err != nil {
+		if err := validatePrimaryKeyTypes(ctx, def); err != nil {
 			return err
 		}
 	}
@@ -114,15 +115,18 @@ func validateCubeHypertableFields(ctx base.CompilationContext, def *ast.Definiti
 	return nil
 }
 
-// validatePrimaryKey ensures that @table/@view definitions have at least one @pk field.
-func validatePrimaryKey(def *ast.Definition, isTable bool) error {
+// validatePrimaryKeyTypes checks that all @pk fields (if any) are scalar types.
+func validatePrimaryKeyTypes(ctx base.CompilationContext, def *ast.Definition) error {
 	for _, f := range def.Fields {
 		if f.Directives.ForName("pk") != nil {
-			return nil
+			typeName := f.Type.Name()
+			if typeName == "" || !ctx.IsScalar(typeName) {
+				return gqlerror.ErrorPosf(f.Position,
+					"field %q of %q: @pk field must be a scalar type, got %s", f.Name, def.Name, typeString(f.Type))
+			}
 		}
 	}
-	return gqlerror.ErrorPosf(def.Position, "%s %q must have at least one @pk field",
-		directiveKind(isTable), def.Name)
+	return nil
 }
 
 // validateFieldTypes checks that every field's named type is either a known scalar
@@ -236,7 +240,7 @@ func validateReferencesDirective(ctx base.CompilationContext, def *ast.Definitio
 				"@references on %q: references field %q not found in %q",
 				def.Name, rfn, refName)
 		}
-		if !equalTypes(sf.Type, rf.Type) {
+		if !equalTypesIgnoreNull(sf.Type, rf.Type) {
 			return gqlerror.ErrorPosf(dir.Position,
 				"@references on %q: field %q (%s) and references field %q (%s) in %q must have the same type",
 				def.Name, sfn, typeString(sf.Type), rfn, typeString(rf.Type), refName)
@@ -273,14 +277,29 @@ func validateFieldReferences(ctx base.CompilationContext, def *ast.Definition, f
 			def.Name, field.Name, refField, refName)
 	}
 
-	// Types match
-	if !equalTypes(field.Type, rf.Type) {
+	// Types match (ignoring nullability — nullable FK to non-null PK is valid)
+	if !equalTypesIgnoreNullability(field.Type, rf.Type) {
 		return gqlerror.ErrorPosf(dir.Position,
 			"@field_references on %s.%s: type %s doesn't match referenced field %s.%s type %s",
 			def.Name, field.Name, typeString(field.Type), refName, refField, typeString(rf.Type))
 	}
 
 	return nil
+}
+
+// equalTypesIgnoreNullability compares two types by name and list structure,
+// ignoring NonNull. A nullable FK referencing a non-null PK is valid.
+func equalTypesIgnoreNullability(a, b *ast.Type) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.NamedType != b.NamedType {
+		return false
+	}
+	return equalTypesIgnoreNullability(a.Elem, b.Elem)
 }
 
 // typeString returns a human-readable type representation.
@@ -309,13 +328,6 @@ func hasField(def *ast.Definition, name string) bool {
 		}
 	}
 	return false
-}
-
-func directiveKind(isTable bool) string {
-	if isTable {
-		return "@table"
-	}
-	return "@view"
 }
 
 // validateFunctionSQL validates [paramName] references in @function(sql: "...") strings.

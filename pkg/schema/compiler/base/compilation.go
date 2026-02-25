@@ -25,6 +25,16 @@ type CompilationContext interface {
 	AddExtension(ext *ast.Definition)
 	AddDefinitionReplaceOrCreate(def *ast.Definition)
 
+	// PromoteToSource adds a definition to the source-level pool.
+	// Definitions added here are dispatched to DefinitionRules in subsequent phases,
+	// alongside source definitions. Used by PREPARE rules (e.g. InternalExtensionMerger)
+	// when an extension targets a provider type not present in the source.
+	PromoteToSource(def *ast.Definition)
+
+	// PromotedDefinitions returns definitions promoted via PromoteToSource.
+	// Used by PREPARE batch rules (e.g. PrefixPreparer) to also process promoted defs.
+	PromotedDefinitions() []*ast.Definition
+
 	// Type lookup: checks compilation output first, then target schema
 	LookupType(name string) *ast.Definition
 	LookupDirective(name string) *ast.DirectiveDefinition
@@ -51,6 +61,10 @@ type CompilationContext interface {
 
 	// Object iteration
 	Objects() iter.Seq2[string, *ObjectInfo]
+
+	// Output iteration (for FINALIZE rules)
+	OutputDefinitions() iter.Seq[*ast.Definition]
+	OutputExtensions() iter.Seq[*ast.Definition]
 
 	// Dependency registration (extension compilation)
 	RegisterDependency(name string)

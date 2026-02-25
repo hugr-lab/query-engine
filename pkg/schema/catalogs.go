@@ -15,12 +15,14 @@ type memoryCatalog struct {
 	mu       sync.RWMutex
 	catalogs map[string]registeredCatalog
 	provider Provider
+	compiler *compiler.Compiler
 }
 
-func newMemoryCatalogManager(provider Provider) *memoryCatalog {
+func newMemoryCatalogManager(provider Provider, compiler *compiler.Compiler) *memoryCatalog {
 	return &memoryCatalog{
 		catalogs: make(map[string]registeredCatalog),
 		provider: provider,
+		compiler: compiler,
 	}
 }
 
@@ -89,7 +91,7 @@ func (c *memoryCatalog) incrementalUpdate(ctx context.Context, catalog Catalog) 
 		return errors.New("catalog provider does not support mutable operations, cannot update catalog")
 	}
 	// no change support, replace whole catalog
-	compiled, err := compiler.Compile(ctx, p, catalog, catalog.CompileOptions())
+	compiled, err := c.compiler.Compile(ctx, p, catalog, catalog.CompileOptions())
 	if err != nil {
 		return err
 	}

@@ -1,0 +1,25 @@
+extend type Function {
+    geom_to_h3_cells(
+        geom: Geometry!, 
+        resolution: Int! = 8,
+        simplify: Boolean = true,
+        compact: Boolean = false
+    ): [H3Cell!] @function(
+        name: "h3_geom_to_cells"
+        sql: "CASE WHEN [compact] THEN h3_compact_cells(h3_geom_to_cells([geom], [resolution], [simplify])) ELSE h3_geom_to_cells([geom], [resolution], [simplify]) END"
+    )
+
+    h3_cell_to_geom(
+        cell: H3Cell!, 
+    ): Geometry! @function(
+        name: "h3_cell_to_geom", 
+        sql: "ST_GeomFromText(h3_cell_to_boundary_wkt([cell]))"
+    )
+    h3_cells_to_multi_polygon(
+        cells: [H3Cell!]!,
+        compact: Boolean = false
+    ): Geometry! @function(
+        name: "h3_cells_to_multi_polygon",
+        sql: "CASE WHEN [compact] THEN ST_GeomFromText(h3_cells_to_multi_polygon_wkt(h3_compact_cells([cells]))) ELSE ST_GeomFromText(h3_cells_to_multi_polygon_wkt([cells])) END"
+    )
+}

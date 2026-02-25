@@ -23,6 +23,9 @@ type compilationContext struct {
 	// Shared state
 	objects map[string]*base.ObjectInfo
 
+	// Promoted definitions — added by PREPARE rules, dispatched in subsequent phases.
+	promoted []*ast.Definition
+
 	// Field collectors for ASSEMBLE phase
 	queryFields         map[string][]*ast.FieldDefinition
 	mutationFields      map[string][]*ast.FieldDefinition
@@ -98,6 +101,14 @@ func dependencyDirective(name string, pos *ast.Position) *ast.Directive {
 
 func (c *compilationContext) AddDefinitionReplaceOrCreate(def *ast.Definition) {
 	c.output.AddDefinitionReplaceOrCreate(def)
+}
+
+func (c *compilationContext) PromoteToSource(def *ast.Definition) {
+	c.promoted = append(c.promoted, def)
+}
+
+func (c *compilationContext) PromotedDefinitions() []*ast.Definition {
+	return c.promoted
 }
 
 // LookupType checks compilation output first, then target schema (FR-012).
@@ -177,4 +188,12 @@ func (c *compilationContext) Objects() iter.Seq2[string, *base.ObjectInfo] {
 			}
 		}
 	}
+}
+
+func (c *compilationContext) OutputDefinitions() iter.Seq[*ast.Definition] {
+	return c.output.Definitions()
+}
+
+func (c *compilationContext) OutputExtensions() iter.Seq[*ast.Definition] {
+	return c.output.Extensions()
 }

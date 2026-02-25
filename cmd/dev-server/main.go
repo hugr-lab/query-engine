@@ -39,7 +39,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	engine := hugr.New(hugr.Config{
+	engine, err := hugr.New(hugr.Config{
 		AdminUI:            conf.EnableAdminUI,
 		AdminUIFetchPath:   conf.AdminUIFetchPath,
 		Debug:              conf.DebugMode,
@@ -53,6 +53,10 @@ func main() {
 		Auth:               auth,
 		Cache:              conf.Cache,
 	})
+	if err != nil {
+		log.Println("Engine initialization error:", err)
+		os.Exit(1)
+	}
 
 	if conf.DB.Path != "" {
 		log.Println("DB path: ", conf.DB.Path)

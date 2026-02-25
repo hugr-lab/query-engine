@@ -250,7 +250,7 @@ func TestCompile_SystemTypeRedefinitionError(t *testing.T) {
 }
 
 func TestCompile_DefinitionRuleError(t *testing.T) {
-	// A @table without @pk field should be rejected by DefinitionValidator
+	// A @table with non-scalar @pk field should be rejected by DefinitionValidator
 	c := newAllRulesCompiler()
 	ctx := context.Background()
 
@@ -258,15 +258,16 @@ func TestCompile_DefinitionRuleError(t *testing.T) {
 		defs: []*ast.Definition{
 			{
 				Kind:     ast.Object,
-				Name:     "NoPKTable",
+				Name:     "BadPKTable",
 				Position: pos(),
 				Directives: ast.DirectiveList{
 					{Name: "table", Arguments: ast.ArgumentList{
-						{Name: "name", Value: &ast.Value{Raw: "no_pk", Kind: ast.StringValue, Position: pos()}, Position: pos()},
+						{Name: "name", Value: &ast.Value{Raw: "bad_pk", Kind: ast.StringValue, Position: pos()}, Position: pos()},
 					}, Position: pos()},
 				},
 				Fields: ast.FieldList{
-					{Name: "name", Type: ast.NamedType("String", pos()), Position: pos()},
+					{Name: "info", Type: ast.NamedType("SomeObject", pos()), Position: pos(),
+						Directives: ast.DirectiveList{{Name: "pk", Position: pos()}}},
 				},
 			},
 		},
@@ -274,7 +275,7 @@ func TestCompile_DefinitionRuleError(t *testing.T) {
 
 	_, err := c.Compile(ctx, nil, source, base.Options{})
 	if err == nil {
-		t.Fatal("expected error for @table without @pk")
+		t.Fatal("expected error for @pk on non-scalar field")
 	}
 	t.Logf("got expected error: %v", err)
 }
@@ -1059,14 +1060,11 @@ func TestCompile_MultiCatalogModuleExtension(t *testing.T) {
 	defsB := collectDefs(ctx, resultB)
 	extsB := collectExts(ctx, resultB)
 
-	// Catalog B should also produce module types (with @if_not_exists)
-	modQuery, ok := defsB["_module_m_query"]
-	if !ok {
-		t.Fatal("expected _module_m_query from catalog B")
-	}
-	// Should have @if_not_exists directive
-	if modQuery.Directives.ForName("if_not_exists") == nil {
-		t.Error("expected @if_not_exists on _module_m_query")
+	// Catalog B should NOT produce a new definition for _module_m_query
+	// (it already exists in the provider from catalog A).
+	// Instead it should only produce an extension with its fields.
+	if _, ok := defsB["_module_m_query"]; ok {
+		t.Error("unexpected _module_m_query definition from catalog B (should use extension only)")
 	}
 
 	// Catalog B's TableB should be in the module extension

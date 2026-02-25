@@ -1,0 +1,10 @@
+{
+  "catalogs": [
+    {
+      "file": "01_transport.graphql",
+      "name": "transport",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    }
+  ]
+}

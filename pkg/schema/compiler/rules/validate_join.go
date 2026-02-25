@@ -108,7 +108,7 @@ func validateJoinField(ctx base.CompilationContext, def *ast.Definition, field *
 				"@join on %s.%s: references field %q not found in %s",
 				def.Name, field.Name, rfn, refName)
 		}
-		if !equalTypes(sf.Type, rf.Type) {
+		if !equalTypesIgnoreNull(sf.Type, rf.Type) {
 			return gqlerror.ErrorPosf(field.Position,
 				"@join on %s.%s: field %q and references field %q must have the same type",
 				def.Name, field.Name, sfn, rfn)
@@ -237,4 +237,19 @@ func equalTypes(a, b *ast.Type) bool {
 		return false
 	}
 	return equalTypes(a.Elem, b.Elem)
+}
+
+// equalTypesIgnoreNull checks if two types have the same named type, ignoring nullability.
+// This is appropriate for @join validation where a non-null PK joining a nullable FK is valid.
+func equalTypesIgnoreNull(a, b *ast.Type) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.NamedType != b.NamedType {
+		return false
+	}
+	return equalTypesIgnoreNull(a.Elem, b.Elem)
 }

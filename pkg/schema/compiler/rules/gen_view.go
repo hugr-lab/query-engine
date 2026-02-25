@@ -96,16 +96,16 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 	// 2c. Set scalar-specific field arguments
 	setScalarFieldArguments(ctx, def)
 
-	// 3. Generate aggregation type
-	aggName := "_" + def.Name + "_aggregation"
-	aggDef := generateAggregationType(ctx, def, aggName, pos)
-	addDef(aggDef)
+	// Note: aggregation types (_X_aggregation, _X_aggregation_bucket) are generated
+	// by AggregationRule which runs after TableRule/ViewRule.
 
-	// 3b. Generate bucket aggregation type
-	bucketAggName := "_" + def.Name + "_aggregation_bucket"
 	opts := ctx.CompileOptions()
-	bucketAggDef := generateBucketAggregationType(def, aggName, filterName, bucketAggName, opts, pos)
-	addDef(bucketAggDef)
+
+	// Use original (unprefixed) name for query field names when AsModule
+	fieldName := def.Name
+	if opts.AsModule && info.OriginalName != "" && info.OriginalName != def.Name {
+		fieldName = info.OriginalName
+	}
 
 	// 4. Register query fields (views are read-only -- no mutation fields)
 	queryFields := generateQueryFields(ctx, def, info, filterName, pos)
@@ -115,7 +115,7 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 	def.Directives = append(def.Directives, &ast.Directive{
 		Name: "query",
 		Arguments: ast.ArgumentList{
-			{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+			{Name: "name", Value: &ast.Value{Raw: fieldName, Kind: ast.StringValue, Position: pos}, Position: pos},
 			{Name: "type", Value: &ast.Value{Raw: "SELECT", Kind: ast.EnumValue, Position: pos}, Position: pos},
 		},
 		Position: pos,
@@ -124,12 +124,14 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 		def.Directives = append(def.Directives, &ast.Directive{
 			Name: "query",
 			Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: def.Name + "_by_pk", Kind: ast.StringValue, Position: pos}, Position: pos},
+				{Name: "name", Value: &ast.Value{Raw: fieldName + "_by_pk", Kind: ast.StringValue, Position: pos}, Position: pos},
 				{Name: "type", Value: &ast.Value{Raw: "SELECT_ONE", Kind: ast.EnumValue, Position: pos}, Position: pos},
 			},
 			Position: pos,
 		})
 	}
+	// Note: @query(AGGREGATE/AGGREGATE_BUCKET) directives are added by AggregationRule
+	// (must come after UniqueRule to match old compiler directive ordering).
 
 	return nil
 }

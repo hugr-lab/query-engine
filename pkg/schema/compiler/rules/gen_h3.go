@@ -7,39 +7,29 @@ import (
 
 var _ base.BatchRule = (*H3Rule)(nil)
 
-// H3Rule creates _h3_data_query and _h3_query types, and registers the "h3"
-// query field on root Query. It runs after JoinSpatialRule because it copies
-// fields from the _spatial type.
+// H3Rule extends the _h3_data_query type with fields from the _spatial extension.
+// It runs after JoinSpatialRule because it copies fields from the _spatial type.
+//
+// Base types (_h3_data_query, _h3_query) and the h3 query field are defined in
+// system_types.graphql. This rule only adds catalog-specific data fields as
+// extensions so they accumulate across catalogs.
 type H3Rule struct{}
 
 func (r *H3Rule) Name() string     { return "H3Rule" }
 func (r *H3Rule) Phase() base.Phase { return base.PhaseGenerate }
 
 func (r *H3Rule) ProcessAll(ctx base.CompilationContext) error {
-	// Skip if _h3_query already exists
-	if ctx.LookupType("_h3_query") != nil {
-		return nil
-	}
-	// Requires _spatial type to exist
-	spatial := ctx.LookupType("_spatial")
-	if spatial == nil {
+	// Fields are in the extension (added by JoinSpatialRule), not on the definition directly.
+	spatialExt := ctx.LookupExtension("_spatial")
+	if spatialExt == nil {
 		return nil
 	}
 
 	pos := compiledPos("h3")
 
-	// --- _h3_data_query type ---
-	// Copy fields from _spatial with added H3-specific arguments.
-	h3DataType := &ast.Definition{
-		Kind:        ast.Object,
-		Name:        "_h3_data_query",
-		Description: "Data queries for H3 aggregation",
-		Position:    pos,
-		Directives: ast.DirectiveList{
-			{Name: "system", Position: pos},
-		},
-	}
-	for _, f := range spatial.Fields {
+	// Build _h3_data_query fields from this catalog's spatial objects
+	var h3DataFields ast.FieldList
+	for _, f := range spatialExt.Fields {
 		if f.Name == "h3" {
 			continue
 		}
@@ -83,122 +73,20 @@ func (r *H3Rule) ProcessAll(ctx base.CompilationContext) error {
 				Position: pos,
 			},
 		)
-		h3DataType.Fields = append(h3DataType.Fields, field)
+		h3DataFields = append(h3DataFields, field)
 	}
 
-	if len(h3DataType.Fields) == 0 {
+	if len(h3DataFields) == 0 {
 		return nil
 	}
-	ctx.AddDefinition(h3DataType)
 
-	// --- _h3_query type ---
-	h3QueryType := &ast.Definition{
+	// Add fields as extension so they accumulate across catalogs
+	ctx.AddExtension(&ast.Definition{
 		Kind:     ast.Object,
-		Name:     "_h3_query",
+		Name:     "_h3_data_query",
 		Position: pos,
-		Directives: ast.DirectiveList{
-			{Name: "system", Position: pos},
-		},
-		Fields: ast.FieldList{
-			{
-				Name:        "cell",
-				Description: "The H3 cell",
-				Type:        ast.NonNullNamedType("H3Cell", pos),
-				Position:    pos,
-			},
-			{
-				Name:        "resolution",
-				Description: "The resolution of the H3 cell",
-				Type:        ast.NonNullNamedType("Int", pos),
-				Position:    pos,
-			},
-			{
-				Name:        "geom",
-				Description: "The geometry representation of the H3 cell",
-				Type:        ast.NonNullNamedType("Geometry", pos),
-				Position:    pos,
-			},
-			{
-				Name:        "data",
-				Description: "The data associated with the H3 cell",
-				Type:        ast.NonNullNamedType("_h3_data_query", pos),
-				Position:    pos,
-			},
-			{
-				Name:        "distribution_by",
-				Description: "Calculate distributed aggregated value",
-				Arguments: ast.ArgumentDefinitionList{
-					{
-						Name:        "numerator",
-						Description: "Path to numerator aggregated value",
-						Type:        ast.NonNullNamedType("String", pos),
-						Position:    pos,
-					},
-					{
-						Name:        "denominator",
-						Description: "Path to denominator aggregated value",
-						Type:        ast.NonNullNamedType("String", pos),
-						Position:    pos,
-					},
-				},
-				Type:     ast.NamedType("_distribution_by", pos),
-				Position: pos,
-			},
-			{
-				Name:        "distribution_by_bucket",
-				Description: "Calculate distributed aggregated value across denominator buckets",
-				Arguments: ast.ArgumentDefinitionList{
-					{
-						Name:        "numerator_key",
-						Description: "Path to bucket key in numerator bucket aggregation",
-						Type:        ast.NamedType("String", pos),
-						Position:    pos,
-					},
-					{
-						Name:        "numerator",
-						Description: "Path to numerator aggregated value",
-						Type:        ast.NonNullNamedType("String", pos),
-						Position:    pos,
-					},
-					{
-						Name:        "denominator_key",
-						Description: "Path to bucket key in denominator bucket aggregation",
-						Type:        ast.NonNullNamedType("String", pos),
-						Position:    pos,
-					},
-					{
-						Name:        "denominator",
-						Description: "Path to denominator aggregated value in bucket aggregations",
-						Type:        ast.NonNullNamedType("String", pos),
-						Position:    pos,
-					},
-				},
-				Type:     ast.ListType(ast.NamedType("_distribution_by_bucket", pos), pos),
-				Position: pos,
-			},
-		},
-	}
-	ctx.AddDefinition(h3QueryType)
-
-	// Register "h3" query field on root Query
-	h3Field := &ast.FieldDefinition{
-		Name:        "h3",
-		Description: "H3 aggregation query",
-		Type:        ast.ListType(ast.NamedType("_h3_query", pos), pos),
-		Arguments: ast.ArgumentDefinitionList{
-			{
-				Name:        "resolution",
-				Description: "H3 resolution to use for the query",
-				Type:        ast.NonNullNamedType("Int", pos),
-				Position:    pos,
-			},
-		},
-		Directives: ast.DirectiveList{
-			{Name: "system", Position: pos},
-		},
-		Position: pos,
-	}
-	ctx.RegisterQueryFields("_h3", []*ast.FieldDefinition{h3Field})
+		Fields:   h3DataFields,
+	})
 
 	return nil
 }
