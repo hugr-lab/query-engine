@@ -1,0 +1,157 @@
+"""
+  Catalog sources are the sources to data schemas, that can be provided by data sources
+  Currently supported types are (localFS, uri):
+  - localFS - accepts path to the directory with graphql schema files on the local filesystem
+  - uri - load data by uri, including local file storage, s3, http, aws, gcs, r2 (all file source should be set up in the system)
+"""
+type catalog_sources @module(name: "core")
+  @table(name: "catalog_sources") {
+  name: String! @pk
+  type: String!
+  description: String
+  path: String!
+}
+
+"""
+  Data sources are the sources to the data that are defined in catalogs
+  Currently supported types (duckdb, postgres):
+  - duckdb - accepts path to the duckdb database file
+  - postgres - accepts connection string to the postgres database
+  - http - accepts uri to the open-api specification of the http web service
+  - extension - extents the common schema to add fields (joins and function calls) to the data objects
+"""
+type data_sources @module(name: "core") 
+  @table(name: "data_sources") {
+  """
+    Data source name
+  """
+  name: String! @pk
+  """
+    Data source type
+  """
+  type: String!
+  """
+    Prefix for the data source that will added to the all types in the data source.
+    Is as module than all queries will be passed to the separate module and added to the root query
+    Functions will be passed as well in the separate module
+  """
+  prefix: String!
+  as_module: Boolean! @default(value: false)
+  """
+    Data source description
+  """
+  description: String
+  """
+    Data source path, depends on the type of the data source
+    - duckdb - path to the duckdb database file
+    - postgres - connection string to the postgres database
+    - http - http source url and uri to the open-api specification of the http web service in the parameter
+  """
+  path: String!
+  """
+    Data source disabled flag
+  """
+  disabled: Boolean @default(value: false)
+  """
+    Data source self defined flag, if true, the data source should return schema definition for itself.
+    This is used for the http and duckdb data sources, that can be used to define the schema for the data source
+  """
+  self_defined: Boolean @default(value: false)
+  """
+    Data source read only flag
+  """
+  read_only: Boolean @default(value: false)
+}
+
+"""
+  Data source catalogs are the mapping between data sources and catalog sources
+"""
+type catalogs @module(name: "core") 
+  @table(name: "data_source_catalogs" is_m2m: true) {
+  catalog_name: String! @pk @field_references(references_name: "catalog_sources", field: "name", references_query: "data_sources")
+  data_source_name: String! @pk @field_references(references_name: "data_sources", field: "name", references_query: "catalogs")
+}
+
+"""
+  Roles are the permissions that can be assigned to users
+"""
+type roles @module(name: "core") 
+  @table(name: "roles") {
+  """
+    Role name
+  """
+  name: String! @pk
+  """
+    Role description
+  """
+  description: String!
+  """
+    Role disabled flag
+  """
+  disabled: Boolean @default(value: false)
+}
+
+"""
+  Role permissions to visible and allowed types and theirs field that can be assigned to roles
+"""
+type role_permissions @module(name: "core") 
+  @table(name: "permissions") {
+  "Role name"
+  role: String! @pk @field_references(references_name: "roles", field: "name", query: "role_info" references_query: "permissions")
+  "Type name, can be * for all types"
+  type_name: String! @pk
+  "Field name, can be * for all fields"
+  field_name: String! @pk
+  "Hidden flag"
+  hidden: Boolean @default(value: false)
+  "Disabled flag"
+  disabled: Boolean @default(value: false)
+  "Required filter values for the field"
+  filter: JSON
+  "Required field values for the data mutation"
+  data: JSON
+}
+
+type api_keys @module(name: "core") 
+  @table(name: "api_keys") @unique(fields: ["key"], query_suffix: "by_key") {
+  """
+    API key name
+  """
+  name: String! @pk
+  """
+    API key description
+  """
+  description: String!
+  """
+    API key value
+  """
+  key: String!
+  """
+    Default role for the API key  
+  """
+  default_role: String @field_references(references_name: "roles", field: "name", references_query: "api_keys")
+  """
+    API key disabled flag
+  """
+  disabled: Boolean @default(value: false)
+  """
+    API key temporal flag (expires_at is required)
+  """
+  is_temporal: Boolean @default(value: false)
+  """
+    API key expiration date
+  """
+  expires_at: Timestamp
+  """
+    headers for get user info  from request with the api key
+    JSON with following structure:
+    {"role": "x-role", "user_id": "x-user-id", "user_name":"x-user-name"}
+  """
+  headers: JSON
+  """
+    claims for the api key
+    JSON with following structure:
+    {"role": "role", "user_id": "user-id", "user_name":"user-name"}
+  """
+  claims: JSON
+}

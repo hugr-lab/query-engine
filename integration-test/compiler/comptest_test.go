@@ -8,7 +8,6 @@ import (
 
 	"github.com/hugr-lab/query-engine/integration-test/compare"
 	oldcompiler "github.com/hugr-lab/query-engine/pkg/compiler"
-	oldbase "github.com/hugr-lab/query-engine/pkg/compiler/base"
 	newcompiler "github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/rules"
@@ -538,35 +537,11 @@ type Airport @table(name: "airports") {
 func setupMultiCatalogProvider(t *testing.T) (*static.Provider, *newcompiler.Compiler) {
 	t.Helper()
 
-	baseDoc := &ast.SchemaDocument{}
-	for _, src := range oldbase.Sources() {
-		parsed, err := parser.ParseSchema(src)
-		if err != nil {
-			t.Fatalf("parse system types: %v", err)
-		}
-		baseDoc.Merge(parsed)
+	provider, err := static.New()
+	if err != nil {
+		t.Fatalf("init provider: %v", err)
 	}
-	pos := &ast.Position{Src: &ast.Source{Name: "comptest"}}
-	baseDoc.Directives = append(baseDoc.Directives, &ast.DirectiveDefinition{
-		Name:      "if_not_exists",
-		Locations: []ast.DirectiveLocation{ast.LocationObject},
-		Position:  pos,
-	})
-	if len(baseDoc.Schema) == 0 {
-		baseDoc.Schema = append(baseDoc.Schema, &ast.SchemaDefinition{})
-	}
-	if baseDoc.Schema[0].OperationTypes.ForType("Query") == nil &&
-		baseDoc.Definitions.ForName("Query") != nil {
-		baseDoc.Schema[0].OperationTypes = append(baseDoc.Schema[0].OperationTypes,
-			&ast.OperationTypeDefinition{Operation: ast.Query, Type: "Query"})
-	}
-
-	baseSchema, errs := validator.ValidateSchemaDocument(baseDoc)
-	if errs != nil {
-		t.Fatalf("validate base schema: %v", errs)
-	}
-
-	return static.NewWithSchema(baseSchema), newcompiler.New(rules.RegisterAll()...)
+	return provider, newcompiler.New(rules.RegisterAll()...)
 }
 
 // compileNewCatalog compiles a single catalog SDL with the new compiler.
@@ -838,9 +813,13 @@ func assertCompilersMatch(t *testing.T, sdl string, oldOpts oldcompiler.Options,
 	opts := []compare.CompareOption{
 		compare.SkipSystemTypes(),
 		compare.IgnoreDescriptions(),
-		compare.IgnoreDirectiveArgs("if_not_exists"),
+		compare.IgnoreDirectiveArgs("if_not_exists", "field_aggregation"),
 		compare.IgnoreDirectives("catalog"),
 		compare.SkipTypes(systemTypesToSkip()...),
+		// New compiler creates sub-aggregation types upfront for all objects
+		// and propagates reference fields deeper; old compiler was lazier.
+		compare.AllowExtraTypes(),
+		compare.AllowExtraFields(),
 	}
 	opts = append(opts, extraOpts...)
 
@@ -887,91 +866,16 @@ func buildNewSchema(t *testing.T, sdl string, opts base.Options) *ast.Schema {
 	}
 	source := extractSourceDefs(sd)
 
-	c := newcompiler.New(rules.RegisterAll()...)
+	provider, c := setupMultiCatalogProvider(t)
 	ctx := context.Background()
-	catalog, err := c.Compile(ctx, nil, source, opts)
+	compiled, err := c.Compile(ctx, provider, source, opts)
 	if err != nil {
 		t.Fatalf("new compiler: %v", err)
 	}
-
-	// Build *ast.SchemaDocument from system types (old compiler's Sources includes
-	// all base types + scalar_types.graphql with enums like TimeBucket, etc.)
-	doc := &ast.SchemaDocument{}
-	for _, src := range oldbase.Sources() {
-		parsed, err := parser.ParseSchema(src)
-		if err != nil {
-			t.Fatalf("parse system types: %v", err)
-		}
-		doc.Merge(parsed)
+	if err := provider.Update(ctx, compiled); err != nil {
+		t.Fatalf("provider.Update: %v", err)
 	}
-
-	// Add if_not_exists directive definition (used by new compiler but not in any SDL)
-	doc.Directives = append(doc.Directives, &ast.DirectiveDefinition{
-		Name:      "if_not_exists",
-		Locations: []ast.DirectiveLocation{ast.LocationObject},
-		Position:  &ast.Position{Src: &ast.Source{Name: "comptest"}},
-	})
-
-	// Add DDL definitions (strip @if_not_exists control directive —
-	// provider.Update does this automatically, but we build schemas manually here)
-	for def := range catalog.Definitions(ctx) {
-		def.Directives = stripIfNotExists(def.Directives)
-		doc.Definitions = append(doc.Definitions, def)
-	}
-
-	// Merge extensions into base definitions
-	for ext := range catalog.Extensions(ctx) {
-		if target := doc.Definitions.ForName(ext.Name); target != nil {
-			target.Fields = append(target.Fields, ext.Fields...)
-		}
-	}
-
-	// Ensure schema operation types are set
-	if len(doc.Schema) == 0 {
-		doc.Schema = append(doc.Schema, &ast.SchemaDefinition{})
-	}
-	if doc.Schema[0].OperationTypes.ForType("Query") == nil &&
-		doc.Definitions.ForName("Query") != nil {
-		doc.Schema[0].OperationTypes = append(doc.Schema[0].OperationTypes,
-			&ast.OperationTypeDefinition{Operation: ast.Query, Type: "Query"})
-	}
-	if doc.Schema[0].OperationTypes.ForType("Mutation") == nil &&
-		doc.Definitions.ForName("Mutation") != nil {
-		doc.Schema[0].OperationTypes = append(doc.Schema[0].OperationTypes,
-			&ast.OperationTypeDefinition{Operation: ast.Mutation, Type: "Mutation"})
-	}
-
-	// Add _placeholder to empty Object types to pass validation
-	// (e.g., Function type when all fields moved to module in AsModule mode)
-	pos := &ast.Position{Src: &ast.Source{Name: "comptest"}}
-	for _, def := range doc.Definitions {
-		if def.Kind == ast.Object && len(def.Fields) == 0 {
-			def.Fields = append(def.Fields, &ast.FieldDefinition{
-				Name:     "_placeholder",
-				Type:     ast.NamedType("Boolean", pos),
-				Position: pos,
-			})
-		}
-	}
-
-	schema, errs := validator.ValidateSchemaDocument(doc)
-	if errs != nil {
-		t.Fatalf("validate new schema: %v", errs)
-	}
-	return schema
-}
-
-// stripIfNotExists removes @if_not_exists directives from a directive list.
-// provider.Update strips these automatically during the apply phase;
-// this helper is used in test schema building where we don't go through Update.
-func stripIfNotExists(dirs ast.DirectiveList) ast.DirectiveList {
-	var result ast.DirectiveList
-	for _, d := range dirs {
-		if d.Name != "if_not_exists" {
-			result = append(result, d)
-		}
-	}
-	return result
+	return provider.Schema()
 }
 
 func extractSourceDefs(sd *ast.SchemaDocument) *testSource {
@@ -1255,39 +1159,7 @@ func buildOldMultiCatalogSchema(t *testing.T, catalogs []catalogDef) *ast.Schema
 func buildNewMultiCatalogSchema(t *testing.T, catalogs []catalogDef) *ast.Schema {
 	t.Helper()
 
-	// Build base schema from system types
-	baseDoc := &ast.SchemaDocument{}
-	for _, src := range oldbase.Sources() {
-		parsed, err := parser.ParseSchema(src)
-		if err != nil {
-			t.Fatalf("parse system types: %v", err)
-		}
-		baseDoc.Merge(parsed)
-	}
-	// Add if_not_exists directive definition
-	pos := &ast.Position{Src: &ast.Source{Name: "comptest"}}
-	baseDoc.Directives = append(baseDoc.Directives, &ast.DirectiveDefinition{
-		Name:      "if_not_exists",
-		Locations: []ast.DirectiveLocation{ast.LocationObject},
-		Position:  pos,
-	})
-	// Add empty schema definition for validation
-	if len(baseDoc.Schema) == 0 {
-		baseDoc.Schema = append(baseDoc.Schema, &ast.SchemaDefinition{})
-	}
-	if baseDoc.Schema[0].OperationTypes.ForType("Query") == nil &&
-		baseDoc.Definitions.ForName("Query") != nil {
-		baseDoc.Schema[0].OperationTypes = append(baseDoc.Schema[0].OperationTypes,
-			&ast.OperationTypeDefinition{Operation: ast.Query, Type: "Query"})
-	}
-
-	baseSchema, errs := validator.ValidateSchemaDocument(baseDoc)
-	if errs != nil {
-		t.Fatalf("validate base schema: %v", errs)
-	}
-
-	provider := static.NewWithSchema(baseSchema)
-	c := newcompiler.New(rules.RegisterAll()...)
+	provider, c := setupMultiCatalogProvider(t)
 	ctx := context.Background()
 
 	for i, cat := range catalogs {
@@ -1300,13 +1172,7 @@ func buildNewMultiCatalogSchema(t *testing.T, catalogs []catalogDef) *ast.Schema
 		}
 		source := extractSourceDefs(sd)
 
-		// First catalog compiles without provider; subsequent catalogs use it.
-		var schema base.Provider
-		if i > 0 {
-			schema = provider
-		}
-
-		compiled, err := c.Compile(ctx, schema, source, cat.NewOpts)
+		compiled, err := c.Compile(ctx, provider, source, cat.NewOpts)
 		if err != nil {
 			t.Fatalf("new compiler catalog %d (%s): %v", i, cat.NewOpts.Name, err)
 		}
@@ -1329,9 +1195,13 @@ func assertMultiCatalogMatch(t *testing.T, catalogs []catalogDef, extraOpts ...c
 	opts := []compare.CompareOption{
 		compare.SkipSystemTypes(),
 		compare.IgnoreDescriptions(),
-		compare.IgnoreDirectiveArgs("if_not_exists"),
+		compare.IgnoreDirectiveArgs("if_not_exists", "field_aggregation"),
 		compare.IgnoreDirectives("catalog"),
 		compare.SkipTypes(systemTypesToSkip()...),
+		// New compiler creates sub-aggregation types upfront for all objects
+		// and propagates reference fields deeper; old compiler was lazier.
+		compare.AllowExtraTypes(),
+		compare.AllowExtraFields(),
 	}
 	opts = append(opts, extraOpts...)
 
@@ -1390,6 +1260,10 @@ func systemTypesToSkip() []string {
 		"any",
 		// H3 types (not yet implemented in new compiler)
 		"_h3_data_query", "_h3_query",
+		// Shared system types (pre-defined in base schema, may not exist in old compiler)
+		"Function", "MutationFunction",
+		"_join", "_join_aggregation",
+		"_spatial", "_spatial_aggregation",
 		// Base schema types shared between compilers
 		"Query", "Mutation", "OrderByField", "OperationResult",
 		"OrderByDirection", "Geometry", "JSON", "BigInt", "Interval",

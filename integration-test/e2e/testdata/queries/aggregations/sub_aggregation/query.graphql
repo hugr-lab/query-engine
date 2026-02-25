@@ -7,7 +7,9 @@
           sum
         }
         price {
-          avg
+          avg {
+            avg
+          }
         }
       }
     }

@@ -13,18 +13,20 @@ func RegisterAll() []base.Rule {
 		&DefinitionValidator{},
 
 		// PREPARE phase
+		&InternalExtensionMerger{}, // must run before prefix — merges extend type into definitions
 		&CatalogTagger{},
 		&PrefixPreparer{},
 
 		// GENERATE phase
+		&PassthroughRule{}, // must be first — adds structural types not handled by other rules
 		&TableRule{},
 		&ViewRule{},
 		&CubeHypertableRule{},
 		&UniqueRule{},
+		&AggregationRule{}, // generates _X_aggregation/_X_aggregation_bucket types + @query directives
 		&ReferencesRule{},
 		&JoinSpatialRule{},
 		&H3Rule{},
-		&AggregationRule{},
 		&FunctionRule{},
 		&ExtraFieldRule{},
 		&VectorSearchRule{},
@@ -38,6 +40,7 @@ func RegisterAll() []base.Rule {
 		&ReadOnlyFinalizer{},
 		&JoinValidator{},
 		&FunctionCallValidator{},
+		&ArgumentTypeValidator{},
 		&PostValidator{},
 	}
 }

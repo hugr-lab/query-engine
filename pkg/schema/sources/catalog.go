@@ -96,6 +96,28 @@ func (c *Catalog) ForName(ctx context.Context, name string) *ast.Definition {
 	return c.provider.ForName(ctx, name)
 }
 
+// Extensions implements [base.ExtensionsSource].
+// Delegates to the underlying docProvider so the compiler can process
+// internal extensions (extend type within the same catalog).
+func (c *Catalog) Extensions(ctx context.Context) iter.Seq[*ast.Definition] {
+	if ep, ok := c.provider.(interface {
+		Extensions(context.Context) iter.Seq[*ast.Definition]
+	}); ok {
+		return ep.Extensions(ctx)
+	}
+	return func(yield func(*ast.Definition) bool) {}
+}
+
+// DefinitionExtensions implements [base.ExtensionsSource].
+func (c *Catalog) DefinitionExtensions(ctx context.Context, name string) iter.Seq[*ast.Definition] {
+	if ep, ok := c.provider.(interface {
+		DefinitionExtensions(context.Context, string) iter.Seq[*ast.Definition]
+	}); ok {
+		return ep.DefinitionExtensions(ctx, name)
+	}
+	return func(yield func(*ast.Definition) bool) {}
+}
+
 // Name implements [schema.Catalog].
 func (c *Catalog) Name() string {
 	return c.def.Name

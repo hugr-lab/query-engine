@@ -5,9 +5,14 @@ import (
 	"fmt"
 
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/rules"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
+
+func init() {
+	RegisterRules(rules.RegisterAll()...)
+}
 
 // Catalog is a source of definitions with compile options.
 // Used by pkg/schema to pass catalog sources to compilation.
@@ -86,6 +91,17 @@ func (c *Compiler) Compile(
 		// Single iteration pass over source definitions dispatching all matching DefinitionRules (FR-009)
 		if len(defRules) > 0 {
 			for def := range source.Definitions(ctx) {
+				for _, rule := range defRules {
+					if rule.Match(def) {
+						if err := rule.Process(cctx, def); err != nil {
+							return nil, wrapRuleError(phase, rule.Name(), def, err)
+						}
+					}
+				}
+			}
+			// Also dispatch promoted definitions (added by PREPARE rules,
+			// e.g. extensions targeting provider types like Function).
+			for _, def := range cctx.promoted {
 				for _, rule := range defRules {
 					if rule.Match(def) {
 						if err := rule.Process(cctx, def); err != nil {

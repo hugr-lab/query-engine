@@ -46,6 +46,7 @@ type OperationResult @system {
 
 schema {
 	query: Query
+	mutation: Mutation
 }
 
 type Query @system {
@@ -54,6 +55,103 @@ type Query @system {
 	Results will be placed in 'extension' field by field or alias name
 	"""
 	jq(query: String!, include_origin: Boolean = false): Query @system
+
+	function: Function @system
+
+	"""
+	H3 aggregation query
+	"""
+	h3(
+		"""
+		H3 resolution to use for the query
+		"""
+		resolution: Int!
+	): [_h3_query] @system
+}
+
+type Mutation @system {
+	function: MutationFunction @system
+}
+
+type Function @system {
+	_stub: String
+}
+
+type MutationFunction @system {
+	_stub: String
+}
+
+type _join @system {
+	_stub: String
+}
+
+type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
+	_stub: String
+}
+
+type _spatial @system {
+	_stub: String
+}
+
+type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1) {
+	_stub: String
+}
+
+type _h3_data_query @system {
+	_stub: String
+}
+
+type _h3_query @system {
+	"""
+	The H3 cell
+	"""
+	cell: H3Cell!
+	"""
+	The resolution of the H3 cell
+	"""
+	resolution: Int!
+	"""
+	The geometry representation of the H3 cell
+	"""
+	geom: Geometry!
+	"""
+	The data associated with the H3 cell
+	"""
+	data: _h3_data_query!
+	"""
+	Calculate distributed aggregated value
+	"""
+	distribution_by(
+		"""
+		Path to numerator aggregated value
+		"""
+		numerator: String!
+		"""
+		Path to denominator aggregated value
+		"""
+		denominator: String!
+	): _distribution_by
+	"""
+	Calculate distributed aggregated value across denominator buckets
+	"""
+	distribution_by_bucket(
+		"""
+		Path to bucket key in numerator bucket aggregation
+		"""
+		numerator_key: String
+		"""
+		Path to numerator aggregated value
+		"""
+		numerator: String!
+		"""
+		Path to bucket key in denominator bucket aggregation
+		"""
+		denominator_key: String!
+		"""
+		Path to denominator aggregated value in bucket aggregations
+		"""
+		denominator: String!
+	): [_distribution_by_bucket]
 }
 
 # generated directives

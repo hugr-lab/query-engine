@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/schema/validator"
 	"github.com/hugr-lab/query-engine/pkg/schema/validator/rules"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -45,7 +46,7 @@ func WithServiceVarTransformer(t VariableTransformer) ServiceOption {
 func NewService(p Provider, opts ...ServiceOption) *Service {
 	m, ok := p.(CatalogManager)
 	if !ok {
-		m = newMemoryCatalogManager(p)
+		m = newMemoryCatalogManager(p, compiler.New(compiler.GlobalRules()...))
 	}
 	s := &Service{
 		provider: p,

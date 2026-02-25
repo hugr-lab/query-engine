@@ -10,6 +10,7 @@ type compareConfig struct {
 	ignoreDirectiveArgs map[string]bool
 	ignoreDirectives    map[string]bool
 	allowExtraTypes     bool
+	allowExtraFields    bool
 	knownIssues         map[string]bool // paths to move to KnownIssues
 }
 
@@ -68,6 +69,13 @@ func IgnoreDirectives(names ...string) CompareOption {
 func AllowExtraTypes() CompareOption {
 	return func(c *compareConfig) {
 		c.allowExtraTypes = true
+	}
+}
+
+// AllowExtraFields treats fields present in new but missing in old as non-diffs.
+func AllowExtraFields() CompareOption {
+	return func(c *compareConfig) {
+		c.allowExtraFields = true
 	}
 }
 

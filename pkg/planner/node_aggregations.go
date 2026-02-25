@@ -92,6 +92,9 @@ func joinAggregateNodes(_ context.Context, defs compiler.DefinitionsSource, plan
 func aggregateDataNode(ctx context.Context, defs compiler.DefinitionsSource, planner Catalog, inGeneral bool, query *ast.Field, vars map[string]any) (*QueryPlanNode, bool, error) {
 	// 1. get references data object
 	aggregated := compiler.AggregatedQueryDef(query)
+	if aggregated == nil {
+		return nil, false, compiler.ErrorPosf(query.Position, "aggregated definition not found for query")
+	}
 	// 2. create references object query (if table function than pass parameters and add selection set to perform aggregation)
 	var keyFields, aggFields fieldList
 	// split by aggregate and bucket key fields

@@ -62,6 +62,35 @@ enum TimestampMeasurementAggregation @system {
   MIN
   MAX
   ANY
+}
+
+"""
+The time bucket for the time series data.
+Defines the time interval for the time series data.
+"""
+enum TimeBucket @system {
+  minute
+  hour
+  day
+  week
+  month
+  quarter
+  year
+}
+
+enum TimeExtract @system {
+  epoch
+  minute
+  hour
+  day
+  doy
+  dow
+  iso_dow
+  week
+  month
+  year
+  iso_year
+  quarter
 }`
 }
 

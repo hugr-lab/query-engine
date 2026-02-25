@@ -80,13 +80,12 @@ type Info struct {
 	Cache  cache.Config        `json:"cache"`
 }
 
-func New(config Config) *Service {
-	// Initialize schema service with an empty schema (queries won't validate
-	// until the first rebuildSchema populates it via SetProvider).
-	ss := schema.NewService(static.NewWithSchema(&ast.Schema{
-		Types:      make(map[string]*ast.Definition),
-		Directives: make(map[string]*ast.DirectiveDefinition),
-	}))
+func New(config Config) (*Service, error) {
+	provider, err := static.New()
+	if err != nil {
+		return nil, fmt.Errorf("init system schema: %w", err)
+	}
+	ss := schema.NewService(provider)
 	var cat schema.Manager = ss
 	if !config.UseNewCompiler {
 		cat = schemacatalogs.NewAdapter(catalogs.New(ss))
@@ -99,7 +98,7 @@ func New(config Config) *Service {
 		catalog: cat,
 		cache:   cache.New(config.Cache),
 		s3:      storage.New(),
-	}
+	}, nil
 }
 
 func (s *Service) Init(ctx context.Context) (err error) {

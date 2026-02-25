@@ -1,6 +1,8 @@
 package rules
 
 import (
+	"strings"
+
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -24,13 +26,17 @@ func (r *FunctionCallValidator) Name() string     { return "FunctionCallValidato
 func (r *FunctionCallValidator) Phase() base.Phase { return base.PhaseFinalize }
 
 func (r *FunctionCallValidator) ProcessAll(ctx base.CompilationContext) error {
+	// Build function registry: map function name → field definition.
+	// Includes functions from root Function/MutationFunction types AND module function types.
+	funcRegistry := buildFuncRegistry(ctx)
+
 	for name := range ctx.Objects() {
 		def := ctx.LookupType(name)
 		if def == nil {
 			continue
 		}
 		for _, f := range def.Fields {
-			if err := validateFuncCallField(ctx, def, f); err != nil {
+			if err := validateFuncCallField(ctx, def, f, funcRegistry); err != nil {
 				return err
 			}
 		}
@@ -38,7 +44,60 @@ func (r *FunctionCallValidator) ProcessAll(ctx base.CompilationContext) error {
 	return nil
 }
 
-func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, field *ast.FieldDefinition) error {
+// buildFuncRegistry collects all function fields from Function, MutationFunction,
+// and module function types into a single lookup map by field name.
+func buildFuncRegistry(ctx base.CompilationContext) map[string]*ast.FieldDefinition {
+	registry := make(map[string]*ast.FieldDefinition)
+
+	// Collect from root Function type
+	collectFuncsFromType(ctx, "Function", registry)
+	// Collect from root MutationFunction type
+	collectFuncsFromType(ctx, "MutationFunction", registry)
+
+	// Collect from module function types: they follow the pattern _module_<name>_function.
+	// Also check parent module paths because functions may be registered at a higher
+	// module level (e.g., a function with module "transport_db" is visible to objects
+	// with module "transport_db.transport.air").
+	checked := make(map[string]bool)
+	for name := range ctx.Objects() {
+		info := ctx.GetObject(name)
+		if info == nil || info.Module == "" {
+			continue
+		}
+		// Check all module paths from the full module down to the top-level
+		parts := strings.Split(info.Module, ".")
+		for i := len(parts); i > 0; i-- {
+			mod := strings.Join(parts[:i], ".")
+			modFuncTypeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_function"
+			if !checked[modFuncTypeName] {
+				checked[modFuncTypeName] = true
+				collectFuncsFromType(ctx, modFuncTypeName, registry)
+			}
+			modMutFuncTypeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_mutation_function"
+			if !checked[modMutFuncTypeName] {
+				checked[modMutFuncTypeName] = true
+				collectFuncsFromType(ctx, modMutFuncTypeName, registry)
+			}
+		}
+	}
+
+	return registry
+}
+
+func collectFuncsFromType(ctx base.CompilationContext, typeName string, registry map[string]*ast.FieldDefinition) {
+	if def := ctx.LookupType(typeName); def != nil {
+		for _, f := range def.Fields {
+			registry[f.Name] = f
+		}
+	}
+	if ext := ctx.LookupExtension(typeName); ext != nil {
+		for _, f := range ext.Fields {
+			registry[f.Name] = f
+		}
+	}
+}
+
+func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, field *ast.FieldDefinition, funcRegistry map[string]*ast.FieldDefinition) error {
 	fcDir := field.Directives.ForName("function_call")
 	tfjDir := field.Directives.ForName("table_function_call_join")
 	if fcDir == nil && tfjDir == nil {
@@ -53,11 +112,10 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 	}
 
 	refName := base.DirectiveArgString(dir, "references_name")
-	moduleName := base.DirectiveArgString(dir, "module")
 	argsMap := extractArgsMap(dir)
 
-	// 1. Resolve the function definition
-	funcField := resolveFunctionField(ctx, refName, moduleName)
+	// 1. Resolve the function definition using the pre-built registry
+	funcField := funcRegistry[refName]
 	if funcField == nil {
 		return gqlerror.ErrorPosf(field.Position,
 			"%s.%s: unknown function %q", def.Name, field.Name, refName)
@@ -86,14 +144,15 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 		}
 	}
 
-	// 4. Validate field arguments exist in function and types match
+	// 4. Validate field arguments that correspond to function arguments.
+	// Field arguments may also include compiler-added args (e.g., geometry transforms,
+	// subquery filter/limit) which are not function arguments and should be skipped.
 	usedArgs := make(map[string]struct{})
 	for _, arg := range field.Arguments {
 		funcArg := funcField.Arguments.ForName(arg.Name)
 		if funcArg == nil {
-			return gqlerror.ErrorPosf(field.Position,
-				"%s.%s: function %q doesn't have argument %q",
-				def.Name, field.Name, refName, arg.Name)
+			// Not a function argument — skip (could be compiler-added like transforms)
+			continue
 		}
 		if _, ok := argsMap[arg.Name]; ok {
 			return gqlerror.ErrorPosf(field.Position,
@@ -123,7 +182,7 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 				"%s.%s: function %q argument %q source field %q not found in %s",
 				def.Name, field.Name, refName, argName, sourcePath, def.Name)
 		}
-		if !equalTypes(sourceField.Type, funcArg.Type) {
+		if !equalTypesIgnoreNull(sourceField.Type, funcArg.Type) {
 			return gqlerror.ErrorPosf(field.Position,
 				"%s.%s: function %q argument %q type should be %s, same as in the function definition",
 				def.Name, field.Name, refName, argName, sourceField.Type.Name())
@@ -143,46 +202,6 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 	return nil
 }
 
-// resolveFunctionField looks up a function field in Function or module function types.
-// Checks both type definitions and extensions (function fields are emitted as extensions).
-func resolveFunctionField(ctx base.CompilationContext, refName, moduleName string) *ast.FieldDefinition {
-	// If module specified, look in module function type
-	if moduleName != "" {
-		modFuncTypeName := "_module_" + moduleName + "_function"
-		modFuncDef := ctx.LookupType(modFuncTypeName)
-		if modFuncDef != nil {
-			if f := modFuncDef.Fields.ForName(refName); f != nil {
-				return f
-			}
-		}
-	}
-
-	// Look in root Function type (definition + extension)
-	if funcDef := ctx.LookupType("Function"); funcDef != nil {
-		if f := funcDef.Fields.ForName(refName); f != nil {
-			return f
-		}
-	}
-	if funcExt := ctx.LookupExtension("Function"); funcExt != nil {
-		if f := funcExt.Fields.ForName(refName); f != nil {
-			return f
-		}
-	}
-
-	// Look in MutationFunction type (definition + extension)
-	if mutFuncDef := ctx.LookupType("MutationFunction"); mutFuncDef != nil {
-		if f := mutFuncDef.Fields.ForName(refName); f != nil {
-			return f
-		}
-	}
-	if mutFuncExt := ctx.LookupExtension("MutationFunction"); mutFuncExt != nil {
-		if f := mutFuncExt.Fields.ForName(refName); f != nil {
-			return f
-		}
-	}
-
-	return nil
-}
 
 // extractArgsMap extracts the args map from a function_call/table_function_call_join directive.
 // The args argument is an object value like: args: {code: "iata_code", radius: "distance"}

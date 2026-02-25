@@ -19,30 +19,35 @@ func (r *ModuleAssembler) Name() string     { return "ModuleAssembler" }
 func (r *ModuleAssembler) Phase() base.Phase { return base.PhaseAssemble }
 
 func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
-	// Collect fields per module first, then create types with real fields
-	type moduleFields struct {
-		queryFields    ast.FieldList
-		mutationFields ast.FieldList
-	}
-	modules := make(map[string]*moduleFields)
-
 	pos := compiledPos("module")
 
+	// Phase 1: Collect all fields per module.
+	type moduleFields struct {
+		queryFields     ast.FieldList
+		mutationFields  ast.FieldList
+		queryFuncFields ast.FieldList
+		mutFuncFields   ast.FieldList
+	}
+	modules := make(map[string]*moduleFields)
+	getOrCreate := func(mod string) *moduleFields {
+		if mf := modules[mod]; mf != nil {
+			return mf
+		}
+		mf := &moduleFields{}
+		modules[mod] = mf
+		return mf
+	}
+
+	// Collect query/mutation fields from data objects.
 	for name, info := range ctx.Objects() {
 		if info.Module == "" {
 			continue
 		}
-
-		mf := modules[info.Module]
-		if mf == nil {
-			mf = &moduleFields{}
-			modules[info.Module] = mf
-		}
+		mf := getOrCreate(info.Module)
 
 		// Add @module directive on the object definition (or update existing)
 		if def := ctx.LookupType(name); def != nil {
 			if existing := def.Directives.ForName("module"); existing != nil {
-				// Update existing @module value (may have been set by inline SDL or PrefixPreparer)
 				if a := existing.Arguments.ForName("name"); a != nil {
 					a.Value.Raw = info.Module
 				}
@@ -57,27 +62,17 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 			}
 		}
 
-		// Collect query fields
 		if qFields := ctx.QueryFields()[name]; len(qFields) > 0 {
 			mf.queryFields = append(mf.queryFields, qFields...)
 			delete(ctx.QueryFields(), name)
 		}
-
-		// Collect mutation fields
 		if mFields := ctx.MutationFields()[name]; len(mFields) > 0 {
 			mf.mutationFields = append(mf.mutationFields, mFields...)
 			delete(ctx.MutationFields(), name)
 		}
 	}
 
-	// Also collect function fields by module from Function/MutationFunction extensions.
-	// Function fields are emitted as extensions (not on the definition) for multi-catalog support.
-	type funcModuleFields struct {
-		queryFuncFields ast.FieldList
-		mutFuncFields   ast.FieldList
-	}
-	funcModules := make(map[string]*funcModuleFields)
-
+	// Collect function fields from Function/MutationFunction extensions.
 	if funcExt := ctx.LookupExtension("Function"); funcExt != nil {
 		var remaining ast.FieldList
 		for _, f := range funcExt.Fields {
@@ -89,12 +84,8 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 				remaining = append(remaining, f)
 				continue
 			}
-			fm := funcModules[mod]
-			if fm == nil {
-				fm = &funcModuleFields{}
-				funcModules[mod] = fm
-			}
-			fm.queryFuncFields = append(fm.queryFuncFields, f)
+			mf := getOrCreate(mod)
+			mf.queryFuncFields = append(mf.queryFuncFields, f)
 		}
 		funcExt.Fields = remaining
 	}
@@ -110,235 +101,226 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 				remaining = append(remaining, f)
 				continue
 			}
-			fm := funcModules[mod]
-			if fm == nil {
-				fm = &funcModuleFields{}
-				funcModules[mod] = fm
-			}
-			fm.mutFuncFields = append(fm.mutFuncFields, f)
+			mf := getOrCreate(mod)
+			mf.mutFuncFields = append(mf.mutFuncFields, f)
 		}
 		mutFuncExt.Fields = remaining
 	}
 
-	if len(modules) == 0 && len(funcModules) == 0 {
+	if len(modules) == 0 {
 		return nil
 	}
 
-	// Collect all unique module names including implicit parents.
-	// For dotted names like "transport.air", ensure "transport" also exists.
-	allModules := make(map[string]bool)
+	// Sort modules for deterministic output.
+	sortedMods := make([]string, 0, len(modules))
 	for mod := range modules {
-		allModules[mod] = true
-		parts := strings.Split(mod, ".")
-		for i := 1; i < len(parts); i++ {
-			allModules[strings.Join(parts[:i], ".")] = true
-		}
+		sortedMods = append(sortedMods, mod)
 	}
-	for mod := range funcModules {
-		allModules[mod] = true
-		parts := strings.Split(mod, ".")
-		for i := 1; i < len(parts); i++ {
-			allModules[strings.Join(parts[:i], ".")] = true
+	sort.Strings(sortedMods)
+
+	// Phase 2: Distribute fields into module type hierarchy.
+	//
+	// For each module that has fields of a given kind (query/mutation/function/mut_function):
+	//   1. Find or create the leaf module type
+	//   2. Add fields to it via extension
+	//   3. Walk up the module chain, ensuring parent types exist and wiring child→parent
+	//   4. Wire top-level module to the root type (Query/Mutation/Function/MutationFunction)
+	//
+	// Type lookup order (per the user algorithm):
+	//   1. Already created by us (in this compilation) → use it
+	//   2. Exists in provider (from another catalog) → extend it
+	//   3. Not found → create new definition
+
+	ensured := make(map[string]bool)
+	ensureType := func(typeName, mod, modRootType string) {
+		if ensured[typeName] {
+			return
 		}
+		ensured[typeName] = true
+		if ctx.LookupType(typeName) != nil {
+			// Exists in provider — will add fields via extension
+			return
+		}
+		ctx.AddDefinition(&ast.Definition{
+			Kind:     ast.Object,
+			Name:     typeName,
+			Position: pos,
+			Directives: ast.DirectiveList{
+				{Name: "module_root", Arguments: ast.ArgumentList{
+					{Name: "name", Value: &ast.Value{Raw: mod, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: "type", Value: &ast.Value{Raw: modRootType, Kind: ast.EnumValue, Position: pos}, Position: pos},
+				}, Position: pos},
+			},
+		})
 	}
 
-	// Sort by depth (parents before children), then alphabetically.
-	sortedModules := make([]string, 0, len(allModules))
-	for mod := range allModules {
-		sortedModules = append(sortedModules, mod)
-	}
-	sort.Slice(sortedModules, func(i, j int) bool {
-		di := strings.Count(sortedModules[i], ".")
-		dj := strings.Count(sortedModules[j], ".")
-		if di != dj {
-			return di < dj
+	wired := make(map[string]bool)
+	wireChild := func(parentTypeName, childName, childTypeName, desc string) {
+		key := parentTypeName + "." + childName
+		if wired[key] {
+			return
 		}
-		return sortedModules[i] < sortedModules[j]
-	})
-
-	// Track created module types for adding child fields on parents.
-	createdQueryTypes := make(map[string]*ast.Definition)
-	createdMutTypes := make(map[string]*ast.Definition)
-	createdFuncTypes := make(map[string]*ast.Definition)
-
-	for _, mod := range sortedModules {
-		modTypeName := "_module_" + strings.ReplaceAll(mod, ".", "_")
-		queryTypeName := modTypeName + "_query"
-		mutTypeName := modTypeName + "_mutation"
-
-		// Check if module types already exist in provider (multi-catalog case)
-		existsInProvider := ctx.LookupType(queryTypeName) != nil
-
-		// --- Module query type ---
-		queryDirs := ast.DirectiveList{
-			{Name: "module_root", Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: mod, Kind: ast.StringValue, Position: pos}, Position: pos},
-				{Name: "type", Value: &ast.Value{Raw: "QUERY", Kind: ast.EnumValue, Position: pos}, Position: pos},
-			}, Position: pos},
-		}
-		if existsInProvider {
-			queryDirs = append(queryDirs, &ast.Directive{Name: "if_not_exists", Position: pos})
-		}
-		queryModType := &ast.Definition{
-			Kind:       ast.Object,
-			Name:       queryTypeName,
-			Position:   pos,
-			Directives: queryDirs,
-		}
-		ctx.AddDefinition(queryModType)
-		createdQueryTypes[mod] = queryModType
-
-		// Add query fields as extension (only if this module has data objects)
-		if mf := modules[mod]; mf != nil && len(mf.queryFields) > 0 {
-			ctx.AddExtension(&ast.Definition{
-				Kind:     ast.Object,
-				Name:     queryTypeName,
-				Position: pos,
-				Fields:   mf.queryFields,
-			})
-		}
-
-		// --- Module mutation type ---
-		mutDirs := ast.DirectiveList{
-			{Name: "module_root", Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: mod, Kind: ast.StringValue, Position: pos}, Position: pos},
-				{Name: "type", Value: &ast.Value{Raw: "MUTATION", Kind: ast.EnumValue, Position: pos}, Position: pos},
-			}, Position: pos},
-		}
-		if existsInProvider {
-			mutDirs = append(mutDirs, &ast.Directive{Name: "if_not_exists", Position: pos})
-		}
-		mutModType := &ast.Definition{
-			Kind:       ast.Object,
-			Name:       mutTypeName,
-			Position:   pos,
-			Directives: mutDirs,
-		}
-		ctx.AddDefinition(mutModType)
-		createdMutTypes[mod] = mutModType
-
-		// Add mutation fields as extension (only if this module has data objects)
-		if mf := modules[mod]; mf != nil && len(mf.mutationFields) > 0 {
-			ctx.AddExtension(&ast.Definition{
-				Kind:     ast.Object,
-				Name:     mutTypeName,
-				Position: pos,
-				Fields:   mf.mutationFields,
-			})
-		}
-
-		// --- Module function type (if this module has function fields) ---
-		if fm := funcModules[mod]; fm != nil {
-			if len(fm.queryFuncFields) > 0 {
-				funcTypeName := modTypeName + "_function"
-				funcModType := &ast.Definition{
-					Kind:     ast.Object,
-					Name:     funcTypeName,
-					Position: pos,
-					Directives: ast.DirectiveList{
-						{Name: "module_root", Arguments: ast.ArgumentList{
-							{Name: "name", Value: &ast.Value{Raw: mod, Kind: ast.StringValue, Position: pos}, Position: pos},
-							{Name: "type", Value: &ast.Value{Raw: "FUNCTION", Kind: ast.EnumValue, Position: pos}, Position: pos},
-						}, Position: pos},
-					},
-					Fields: fm.queryFuncFields,
-				}
-				ctx.AddDefinition(funcModType)
-				createdFuncTypes[mod] = funcModType
-				addModuleFuncAggregations(ctx, funcModType, pos)
-			}
-			delete(funcModules, mod)
-		}
-
-		// Wire up hierarchy: child modules add field on parent, top-level registers on root
-		parts := strings.Split(mod, ".")
-		if len(parts) > 1 {
-			// Has parent — add child field on parent module types
-			parentMod := strings.Join(parts[:len(parts)-1], ".")
-			childName := parts[len(parts)-1]
-
-			if parentQuery := createdQueryTypes[parentMod]; parentQuery != nil {
-				parentQuery.Fields = append(parentQuery.Fields, &ast.FieldDefinition{
-					Name:        childName,
-					Description: "The root query object of the module " + mod,
-					Type:        ast.NamedType(queryTypeName, pos),
-					Position:    pos,
-				})
-			}
-			if parentMut := createdMutTypes[parentMod]; parentMut != nil {
-				parentMut.Fields = append(parentMut.Fields, &ast.FieldDefinition{
-					Name:        childName,
-					Description: "The root mutation object of the module " + mod,
-					Type:        ast.NamedType(mutTypeName, pos),
-					Position:    pos,
-				})
-			}
-			if funcType := createdFuncTypes[mod]; funcType != nil {
-				funcTypeName := modTypeName + "_function"
-				if parentFunc := createdFuncTypes[parentMod]; parentFunc != nil {
-					parentFunc.Fields = append(parentFunc.Fields, &ast.FieldDefinition{
-						Name:        childName,
-						Description: "The root query object of the module " + mod,
-						Type:        ast.NamedType(funcTypeName, pos),
-						Position:    pos,
-					})
+		wired[key] = true
+		// Check if field already exists on the provider type
+		if def := ctx.LookupType(parentTypeName); def != nil {
+			for _, f := range def.Fields {
+				if f.Name == childName {
+					return
 				}
 			}
-		} else {
-			// Top-level module — register on root Query/Mutation
-			modField := &ast.FieldDefinition{
-				Name:     mod,
-				Type:     ast.NamedType(queryTypeName, pos),
-				Position: pos,
-			}
-			ctx.RegisterQueryFields("_module_"+mod, []*ast.FieldDefinition{modField})
+		}
+		ctx.AddExtension(&ast.Definition{
+			Kind:     ast.Object,
+			Name:     parentTypeName,
+			Position: pos,
+			Fields: ast.FieldList{
+				{Name: childName, Description: desc, Type: ast.NamedType(childTypeName, pos), Position: pos},
+			},
+		})
+	}
 
-			mutField := &ast.FieldDefinition{
-				Name:     mod,
-				Type:     ast.NamedType(mutTypeName, pos),
-				Position: pos,
-			}
-			ctx.RegisterMutationFields("_module_"+mod, []*ast.FieldDefinition{mutField})
+	rootWired := make(map[string]bool)
 
-			// Wire function module type on Function via extension
-			if funcType := createdFuncTypes[mod]; funcType != nil {
-				funcTypeName := modTypeName + "_function"
-				ctx.AddExtension(&ast.Definition{
-					Kind:     ast.Object,
-					Name:     "Function",
-					Position: pos,
-					Fields: ast.FieldList{
-						{
-							Name:        mod,
-							Description: "The root query object of the module " + mod,
-							Type:        ast.NamedType(funcTypeName, pos),
-							Position:    pos,
-						},
-					},
-				})
-			}
+	// --- Query module types ---
+	for _, mod := range sortedMods {
+		mf := modules[mod]
+		if len(mf.queryFields) == 0 {
+			continue
+		}
+		typeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_query"
+		ensureType(typeName, mod, "QUERY")
+		ctx.AddExtension(&ast.Definition{
+			Kind: ast.Object, Name: typeName, Position: pos,
+			Fields: mf.queryFields,
+		})
+
+		parts := strings.Split(mod, ".")
+		childTypeName := typeName
+		for i := len(parts) - 1; i >= 1; i-- {
+			parentMod := strings.Join(parts[:i], ".")
+			parentTypeName := "_module_" + strings.ReplaceAll(parentMod, ".", "_") + "_query"
+			ensureType(parentTypeName, parentMod, "QUERY")
+			wireChild(parentTypeName, parts[i], childTypeName,
+				"The root query object of the module "+strings.Join(parts[:i+1], "."))
+			childTypeName = parentTypeName
+		}
+
+		topMod := parts[0]
+		if !rootWired["query."+topMod] {
+			rootWired["query."+topMod] = true
+			ctx.RegisterQueryFields("_module_"+topMod, []*ast.FieldDefinition{
+				{Name: topMod, Type: ast.NamedType(childTypeName, pos), Position: pos},
+			})
 		}
 	}
 
-	// Handle function modules that don't have corresponding data object modules
-	for mod, fm := range funcModules {
-		modTypeName := "_module_" + strings.ReplaceAll(mod, ".", "_")
-		if len(fm.queryFuncFields) > 0 {
-			funcTypeName := modTypeName + "_function"
-			funcModType := &ast.Definition{
-				Kind:     ast.Object,
-				Name:     funcTypeName,
-				Position: pos,
-				Directives: ast.DirectiveList{
-					{Name: "module_root", Arguments: ast.ArgumentList{
-						{Name: "name", Value: &ast.Value{Raw: mod, Kind: ast.StringValue, Position: pos}, Position: pos},
-						{Name: "type", Value: &ast.Value{Raw: "FUNCTION", Kind: ast.EnumValue, Position: pos}, Position: pos},
-					}, Position: pos},
+	// --- Mutation module types ---
+	for _, mod := range sortedMods {
+		mf := modules[mod]
+		if len(mf.mutationFields) == 0 {
+			continue
+		}
+		typeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_mutation"
+		ensureType(typeName, mod, "MUTATION")
+		ctx.AddExtension(&ast.Definition{
+			Kind: ast.Object, Name: typeName, Position: pos,
+			Fields: mf.mutationFields,
+		})
+
+		parts := strings.Split(mod, ".")
+		childTypeName := typeName
+		for i := len(parts) - 1; i >= 1; i-- {
+			parentMod := strings.Join(parts[:i], ".")
+			parentTypeName := "_module_" + strings.ReplaceAll(parentMod, ".", "_") + "_mutation"
+			ensureType(parentTypeName, parentMod, "MUTATION")
+			wireChild(parentTypeName, parts[i], childTypeName,
+				"The root mutation object of the module "+strings.Join(parts[:i+1], "."))
+			childTypeName = parentTypeName
+		}
+
+		topMod := parts[0]
+		if !rootWired["mutation."+topMod] {
+			rootWired["mutation."+topMod] = true
+			ctx.RegisterMutationFields("_module_"+topMod, []*ast.FieldDefinition{
+				{Name: topMod, Type: ast.NamedType(childTypeName, pos), Position: pos},
+			})
+		}
+	}
+
+	// --- Function module types ---
+	for _, mod := range sortedMods {
+		mf := modules[mod]
+		if len(mf.queryFuncFields) == 0 {
+			continue
+		}
+		typeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_function"
+		ensureType(typeName, mod, "FUNCTION")
+		// Build function fields + aggregation fields
+		tmpDef := &ast.Definition{Name: typeName, Fields: mf.queryFuncFields}
+		addModuleFuncAggregations(ctx, tmpDef, pos)
+		ctx.AddExtension(&ast.Definition{
+			Kind: ast.Object, Name: typeName, Position: pos,
+			Fields: tmpDef.Fields,
+		})
+
+		parts := strings.Split(mod, ".")
+		childTypeName := typeName
+		for i := len(parts) - 1; i >= 1; i-- {
+			parentMod := strings.Join(parts[:i], ".")
+			parentTypeName := "_module_" + strings.ReplaceAll(parentMod, ".", "_") + "_function"
+			ensureType(parentTypeName, parentMod, "FUNCTION")
+			wireChild(parentTypeName, parts[i], childTypeName,
+				"The root function object of the module "+strings.Join(parts[:i+1], "."))
+			childTypeName = parentTypeName
+		}
+
+		topMod := parts[0]
+		if !rootWired["function."+topMod] {
+			rootWired["function."+topMod] = true
+			ctx.AddExtension(&ast.Definition{
+				Kind: ast.Object, Name: "Function", Position: pos,
+				Fields: ast.FieldList{
+					{Name: topMod, Description: "The root function object of the module " + topMod,
+						Type: ast.NamedType(childTypeName, pos), Position: pos},
 				},
-				Fields: fm.queryFuncFields,
-			}
-			ctx.AddDefinition(funcModType)
-			addModuleFuncAggregations(ctx, funcModType, pos)
+			})
+		}
+	}
+
+	// --- Mutation function module types ---
+	for _, mod := range sortedMods {
+		mf := modules[mod]
+		if len(mf.mutFuncFields) == 0 {
+			continue
+		}
+		typeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_mut_function"
+		ensureType(typeName, mod, "MUT_FUNCTION")
+		ctx.AddExtension(&ast.Definition{
+			Kind: ast.Object, Name: typeName, Position: pos,
+			Fields: mf.mutFuncFields,
+		})
+
+		parts := strings.Split(mod, ".")
+		childTypeName := typeName
+		for i := len(parts) - 1; i >= 1; i-- {
+			parentMod := strings.Join(parts[:i], ".")
+			parentTypeName := "_module_" + strings.ReplaceAll(parentMod, ".", "_") + "_mut_function"
+			ensureType(parentTypeName, parentMod, "MUT_FUNCTION")
+			wireChild(parentTypeName, parts[i], childTypeName,
+				"The root mutation function object of the module "+strings.Join(parts[:i+1], "."))
+			childTypeName = parentTypeName
+		}
+
+		topMod := parts[0]
+		if !rootWired["mut_function."+topMod] {
+			rootWired["mut_function."+topMod] = true
+			ctx.AddExtension(&ast.Definition{
+				Kind: ast.Object, Name: "MutationFunction", Position: pos,
+				Fields: ast.FieldList{
+					{Name: topMod, Description: "The root mutation function object of the module " + topMod,
+						Type: ast.NamedType(childTypeName, pos), Position: pos},
+				},
+			})
 		}
 	}
 

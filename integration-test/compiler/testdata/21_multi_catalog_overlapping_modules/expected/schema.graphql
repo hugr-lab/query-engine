@@ -37,8 +37,7 @@ enum BigIntMeasurementAggregation @system {
   SUM
 }
 """
-BigIntRange - represents range of big integers, supports filtering.
-Input format: string with range, e.g. "[1,10)" or "(,100]"
+The `BigIntRange` scalar type represents a range of big integer values with inclusive/exclusive bounds.
 Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
 """
 scalar BigIntRange
@@ -91,9 +90,18 @@ type Customer @table(name: "customers") @module(name: "crm") @catalog(name: "pg_
   id: Int! @pk
   name: String!
   orders(filter: Order_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Order] @references_query(references_name: "Order", name: "order_customer", is_m2m: false, m2m_name: "") @catalog(name: "pg_crm", engine: "duckdb")
+  """
+  The aggregation for orders
+  """
   orders_aggregation(filter: Order_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Order_aggregation @aggregation_query(is_bucket: false, name: "orders") @catalog(name: "pg_crm", engine: "duckdb")
+  """
+  The bucket aggregation for orders
+  """
   orders_bucket_aggregation(filter: Order_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Order_aggregation_bucket] @aggregation_query(is_bucket: true, name: "orders") @catalog(name: "pg_crm", engine: "duckdb")
 }
+"""
+Filter for Customer objects
+"""
 input Customer_filter @filter_input(name: "Customer") @catalog(name: "pg_crm", engine: "duckdb") {
   _and: [Customer_filter]
   _not: Customer_filter
@@ -115,21 +123,11 @@ input Customer_mut_input_data @data_input(name: "Customer") @catalog(name: "pg_c
   orders: [Order_mut_input_data]
 }
 """
-Date - represents date type, supports filtering, aggregation.
-Input formats:
-- ISO 8601 date string, e.g. "2023-01-01"
-- Year and day of year string, e.g. "2023"
-- Year, month and day string, e.g. "2023-01"
-- Year, month, day and time string, e.g. "2023-01-01T12:00:00Z"
-Output format: RFC 3339 timestamp string, e.g. "2023-01-01T00:00:00Z+00:00"
+The `Date` scalar type represents a calendar date encoded as an ISO 8601 string (e.g. "2006-01-02").
+On input, values are parsed from ISO 8601 date strings. On output, values are formatted as ISO 8601 date strings.
 Filter operators: eq, gt, gte, lt, lte, in, is_null
 Aggregation functions: count, min, max, list, any, last
-Supports arguments:
-- bucket: TimeBucket - to aggregate by time bucket, e.g. day, month, year
-Extra field: For type field with Date type, generated extra field BigInt field with prefix "_" and suffix "_part" to extract part of the date, e.g. _created_at_part(extract: dow) to extract day of week.
-Arguments:
-- extract: TimeExtract! - part to extract, e.g. year, month, day, dow (day of week), doy (day of year), week, quarter, iso_year, iso_dow, iso_week
-- extract_divide: Int - divide the extracted value by the specified number, e.g. to get decade from year, use extract: year, extract_divide: 10
+Extra field: Extract (extracts date parts such as year, month, day)
 """
 scalar Date
 type DateAggregation @system {
@@ -236,28 +234,12 @@ type FloatSubAggregation @system {
   min: FloatAggregation
   sum: FloatAggregation
 }
+type Function @system
 """
-Geometry - represents geometry type, supports filtering, aggregation.
-Input formats:
-- WKT string, e.g. "POINT(30 10)"
-- WKB hex string, e.g. "01010000000000000000003E400000000000002440"
-- GeoJSON object, e.g. '{"type": "Point", "coordinates": [30, 10]}'
-Output format: GeoJSON object
+The `Geometry` scalar type represents a spatial geometry value (WKB/WKT encoded).
 Filter operators: eq, intersects, contains, is_null
 Aggregation functions: count, list, any, last, intersection, union, extent
-Supports arguments:
-- transforms: [GeometryTransform!] - to apply transforms to geometry, e.g. Transform (reproject), Centroid, Buffer, Simplify, StartPoint, EndPoint, Reverse, FlipCoordinates, ConvexHull, Envelope
-- from: Int - to reproject from the spatial reference system identifier, e.g. 4326
-- to: Int - to reproject to the spatial reference system identifier, e.g. 3857
-- buffer: Float - to create buffer around geometry, e.g. 10.0
-- simplify_factor: Float - to simplify geometry, e.g. 0.1
-Extra fields: For type field with Geometry type, generated extra fields:
-- BigInt field with prefix "_" and suffix "_measurement" to calculate measurement of the geometry, e.g. _geom_measurement(type: Area). 
-Arguments:
-  - type: GeometryMeasurementTypes! - type of measurement, e.g. Area, Length, Perimeter, AreaSpheroid, LengthSpheroid, PerimeterSpheroid
-  - transform: Boolean - whether to transform geometry to other projection for measurement, default is false
-  - from: Int - to reproject from the spatial reference system identifier, e.g. 4326
-  - to: Int - to reproject to the spatial reference system identifier, e.g. 3857
+Extra field: Measurement (calculates area, length, perimeter, etc.)
 """
 scalar Geometry
 type GeometryAggregation @system {
@@ -334,8 +316,7 @@ enum GeometryType @system {
   POLYGON
 }
 """
-H3Cell - represents H3 cell index, doesn't support filtering, aggregation.
-Input format: string with H3 cell index, e.g. "8928308280fffff"
+The `H3Cell` scalar type represents an H3 hexagonal hierarchical geospatial index cell identifier.
 """
 scalar H3Cell
 type IntAggregation @system {
@@ -371,8 +352,7 @@ enum IntMeasurementAggregation @system {
   SUM
 }
 """
-IntRange - represents range of integers, supports filtering.
-Input format: string with range, e.g. "[1,10)" or "(,100]"
+The `IntRange` scalar type represents a range of integer values with inclusive/exclusive bounds.
 Filter operators: eq, contains, intersects, includes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
 """
 scalar IntRange
@@ -397,10 +377,8 @@ type IntSubAggregation @system {
   sum: IntAggregation
 }
 """
-Interval - represents time interval type, supports filtering, aggregation.
-Input format: string the same as PostgreSQL or DuckDB interval, e.g. "1 day", "2 hours 30 minutes", supports months, days, hours, minutes, seconds
+The `Interval` scalar type represents a time duration (e.g. "1 year 2 months 3 days 04:05:06").
 Filter operators: eq, gt, gte, lt, lte, is_null
-Aggregation functions: count, min, max, list, any, last
 """
 scalar Interval
 input IntervalFilter @system {
@@ -418,11 +396,9 @@ input IntervalListFilter @system {
   is_null: Boolean
 }
 """
-JSON - represents JSON type, supports filtering, aggregation.
-Input format: valid JSON string, e.g. '{"key": "value"}'
+The `JSON` scalar type represents arbitrary JSON data, encoded as a JSON string.
 Filter operators: eq, has, has_all, contains, is_null
-Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or. The many aggregation functions accept argument 'path' to aggregate by path, e.g. count(path: 'key'), sum(path: 'key.subkey')
-Supports argument `struct: JSON` - to extract object field, e.g. '{"key": "String", "field2": {"key": "Int"}, "array_field": ["Bool"]}'. Supported types: String, Int, BigInt, Float, Boolean, JSON, Time (Timestamp), JSON, H3String
+Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter)
 """
 scalar JSON
 type JSONAggregation @system {
@@ -462,9 +438,10 @@ enum ModuleObjectType @system {
   QUERY
 }
 type Mutation @system {
-  _stub: String
   crm: _module_crm_mutation
+  function: MutationFunction @system
 }
+type MutationFunction @system
 enum MutationType @system {
   DELETE
   INSERT
@@ -476,7 +453,7 @@ type OperationResult @system {
   message: String
   success: Boolean
 }
-type Order @table(name: "orders") @module(name: "crm") @references(name: "order_customer", references_name: "Customer", source_fields: ["customer_id"], references_fields: ["id"], query: "customer", references_query: "orders", is_m2m: false, m2m_name: "", description: "", references_description: "") @catalog(name: "pg_crm", engine: "duckdb") @filter_input(name: "Order_filter") @data_input(name: "Order_mut_input_data") @data_input(name: "Order_mut_data") @query(name: "Order", type: SELECT) @query(name: "Order_by_pk", type: SELECT_ONE) @mutation(name: "insert_Order", type: INSERT, data_input: "Order_mut_input_data") @mutation(name: "update_Order", type: UPDATE, data_input: "Order_mut_data") @mutation(name: "delete_Order", type: DELETE, data_input: "") @filter_list_input(name: "Order_list_filter") @query(name: "Order_aggregation", type: AGGREGATE) @query(name: "Order_bucket_aggregation", type: AGGREGATE_BUCKET) {
+type Order @table(name: "orders") @module(name: "crm") @references(name: "order_customer", references_name: "Customer", source_fields: ["customer_id"], references_fields: ["id"], query: "customer", references_query: "orders", is_m2m: false, m2m_name: "", description: "", references_description: "") @catalog(name: "pg_crm", engine: "duckdb") @filter_input(name: "Order_filter") @data_input(name: "Order_mut_input_data") @data_input(name: "Order_mut_data") @query(name: "Order", type: SELECT) @query(name: "Order_by_pk", type: SELECT_ONE) @mutation(name: "insert_Order", type: INSERT, data_input: "Order_mut_input_data") @mutation(name: "update_Order", type: UPDATE, data_input: "Order_mut_data") @mutation(name: "delete_Order", type: DELETE, data_input: "") @query(name: "Order_aggregation", type: AGGREGATE) @query(name: "Order_bucket_aggregation", type: AGGREGATE_BUCKET) @filter_list_input(name: "Order_list_filter") {
   _join(fields: [String!]!): _join
   customer(inner: Boolean): Customer @references_query(references_name: "Customer", name: "order_customer", is_m2m: false, m2m_name: "") @catalog(name: "pg_crm", engine: "duckdb")
   customer_id: Int!
@@ -491,6 +468,9 @@ enum OrderDirection @system {
   ASC
   DESC
 }
+"""
+Filter for Order objects
+"""
 input Order_filter @filter_input(name: "Order") @catalog(name: "pg_crm", engine: "duckdb") {
   _and: [Order_filter]
   _not: Order_filter
@@ -518,6 +498,16 @@ input Order_mut_input_data @data_input(name: "Order") @catalog(name: "pg_crm", e
 }
 type Query @system {
   crm: _module_crm_query
+  function: Function @system
+  """
+  H3 aggregation query
+  """
+  h3(
+    """
+    H3 resolution to use for the query
+    """
+    resolution: Int!
+  ): [_h3_query] @system
   """
   Performs jq query on result set
   Results will be placed in 'extension' field by field or alias name
@@ -572,6 +562,9 @@ type Ticket @table(name: "tickets") @module(name: "crm") @catalog(name: "support
   priority: Int
   subject: String!
 }
+"""
+Filter for Ticket objects
+"""
 input Ticket_filter @filter_input(name: "Ticket") @catalog(name: "support", engine: "duckdb") {
   _and: [Ticket_filter]
   _not: Ticket_filter
@@ -591,9 +584,8 @@ input Ticket_mut_input_data @data_input(name: "Ticket") @catalog(name: "support"
   subject: String
 }
 """
-Time - represents time type, supports filtering, aggregation.
-Input formats:
-- Time string, e.g. "12:00:00"
+The `Time` scalar type represents a time-of-day value encoded as an ISO 8601 time string (e.g. "15:04:05").
+On input, values are parsed from ISO 8601 time strings. On output, values are formatted as ISO 8601 time strings.
 Filter operators: eq, gt, gte, lt, lte, in, is_null
 Aggregation functions: count, min, max, list, any, last
 """
@@ -607,8 +599,8 @@ type TimeAggregation @system {
   min: Time
 }
 """
-The time bucket for the time series data
-Defines the time interval for the time series data
+The time bucket for the time series data.
+Defines the time interval for the time series data.
 """
 enum TimeBucket @system {
   day
@@ -659,26 +651,11 @@ type TimeSubAggregation @system {
   min: TimeAggregation
 }
 """
-Timestamp - represents timestamp type, supports filtering, aggregation.
-Input formats:
-- RFC 3339 timestamp string, e.g. "2023-01-01T12:00:00Z+00:00"
-- Unix epoch in seconds, e.g. "1672531200" or "1672531200.123456"
-- Year string for the beginning of the year, e.g. "2023"
-- Year and month string for the beginning of the month, e.g. "2023-01"
-- Year, month and day string for the beginning of the day, e.g. "2023-01-01"
-- Year, month, day, hours and minutes string for the beginning of the minute, e.g. "2023-01-01 12:00"
-- Year, month, day and time string with out time zone, e.g. "2023-01-01 12:00:00"
-Output format: RFC 3339 timestamp string, e.g. "2023-01-01T12:00:00Z+00:00"
-Filter operators: eq, gt, gte, lt, lte, in, is_null
+The `Timestamp` scalar type represents a date-time value with timezone, encoded as an RFC 3339 string (e.g. "2006-01-02T15:04:05Z07:00").
+On input, values are parsed from RFC 3339 strings. On output, values are formatted as RFC 3339 strings.
+Filter operators: eq, gt, gte, lt, lte, is_null
 Aggregation functions: count, min, max, list, any, last
-Supports arguments:
-- bucket: TimeBucket - to aggregate by time bucket, e.g. day, month, year
-- bucket_interval: Interval - to aggregate by custom time interval, e.g. "15 minutes", "2 hours", "3 days"
-- gapfill: Boolean - to fill gaps in time series data, default is false (only for hypertables)
-Extra field: For type field with Timestamp type, generated extra field BigInt field with prefix "_" and suffix "_part" to extract part of the timestamp, e.g. _created_at_part(extract: dow) to extract day of week.
-Arguments:
-- extract: TimeExtract! - part to extract, e.g. year, month, day, dow (day of week), doy (day of year), week, quarter, iso_year, iso_dow, iso_week
-- extract_divide: Int - divide the extracted value by the specified number, e.g. to get decade from year, use extract: year, extract_divide
+Extra field: Extract (extracts date/time parts such as year, month, day, hour, minute, second)
 """
 scalar Timestamp
 type TimestampAggregation @system {
@@ -709,8 +686,7 @@ enum TimestampMeasurementAggregation @system {
   MIN
 }
 """
-TimestampRange - represents range of timestamps, supports filtering.
-Input format: string with range, e.g. "[2023-01-01T00:00:00Z,2023-12-31T23:59:59Z)" or "(,2023-12-31T23:59:59Z]"
+The `TimestampRange` scalar type represents a range of timestamp values with inclusive/exclusive bounds.
 Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
 """
 scalar TimestampRange
@@ -738,9 +714,9 @@ enum UniqueRuleType @system {
   INTERSECTS
 }
 """
-Represents embeddings vectors, should use with @dim directive to set dimensionality.
-Input format: formatted string with comma separated float values, e.g. "[0.1,0.2,0.3564,0.123]"
+The `Vector` scalar type represents a fixed-length array of floating-point numbers, used for embeddings and similarity search.
 Filter operators: is_null
+Extra field: VectorDistance (calculates distance between vectors using a specified metric)
 """
 scalar Vector
 enum VectorDistanceType @system {
@@ -787,9 +763,23 @@ type _Customer_aggregation @aggregation(name: "Customer", is_bucket: false, leve
   orders(filter: Order_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Order_aggregation @field_aggregation(name: "orders")
   orders_aggregation(filter: Order_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Order_aggregation_sub_aggregation @field_aggregation(name: "orders")
 }
+"""
+Bucket aggregation for Customer
+"""
 type _Customer_aggregation_bucket @aggregation(name: "Customer", is_bucket: true, level: 1) @catalog(name: "pg_crm", engine: "duckdb") {
+  """
+  The aggregations of the bucket
+  """
   aggregations(filter: Customer_filter, order_by: [OrderByField]): _Customer_aggregation
   key: Customer
+}
+type _Customer_aggregation_sub_aggregation @aggregation(name: "_Customer_aggregation", is_bucket: false, level: 2) @catalog(name: "pg_crm", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  email: StringSubAggregation @field_aggregation(name: "email")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  name: StringSubAggregation @field_aggregation(name: "name")
+  orders(filter: Order_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Order_aggregation_sub_aggregation @field_aggregation(name: "orders")
+  orders_aggregation(filter: Order_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Order_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "orders_aggregation")
 }
 type _Order_aggregation @aggregation(name: "Order", is_bucket: false, level: 1) @catalog(name: "pg_crm", engine: "duckdb") {
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
@@ -799,15 +789,24 @@ type _Order_aggregation @aggregation(name: "Order", is_bucket: false, level: 1) 
   id: IntAggregation @field_aggregation(name: "id")
   total: FloatAggregation @field_aggregation(name: "total")
 }
+"""
+Bucket aggregation for Order
+"""
 type _Order_aggregation_bucket @aggregation(name: "Order", is_bucket: true, level: 1) @catalog(name: "pg_crm", engine: "duckdb") {
+  """
+  The aggregations of the bucket
+  """
   aggregations(filter: Order_filter, order_by: [OrderByField]): _Order_aggregation
   key: Order
 }
 type _Order_aggregation_sub_aggregation @aggregation(name: "_Order_aggregation", is_bucket: false, level: 2) @catalog(name: "pg_crm", engine: "duckdb") {
-  _rows_count: BigIntAggregation @field_aggregation(name: "_rows_count")
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   customer_id: IntSubAggregation @field_aggregation(name: "customer_id")
   id: IntSubAggregation @field_aggregation(name: "id")
   total: FloatSubAggregation @field_aggregation(name: "total")
+}
+type _Order_aggregation_sub_aggregation_sub_aggregation @aggregation(name: "_Order_aggregation_sub_aggregation", is_bucket: false, level: 3) @catalog(name: "pg_crm", engine: "duckdb") {
+  _rows_count: BigIntSubAggregation @field_aggregation(name: "aggregation_field")
 }
 type _Ticket_aggregation @aggregation(name: "Ticket", is_bucket: false, level: 1) @catalog(name: "support", engine: "duckdb") {
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
@@ -816,9 +815,21 @@ type _Ticket_aggregation @aggregation(name: "Ticket", is_bucket: false, level: 1
   priority: IntAggregation @field_aggregation(name: "priority")
   subject: StringAggregation @field_aggregation(name: "subject")
 }
+"""
+Bucket aggregation for Ticket
+"""
 type _Ticket_aggregation_bucket @aggregation(name: "Ticket", is_bucket: true, level: 1) @catalog(name: "support", engine: "duckdb") {
+  """
+  The aggregations of the bucket
+  """
   aggregations(filter: Ticket_filter, order_by: [OrderByField]): _Ticket_aggregation
   key: Ticket
+}
+type _Ticket_aggregation_sub_aggregation @aggregation(name: "_Ticket_aggregation", is_bucket: false, level: 2) @catalog(name: "support", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  priority: IntSubAggregation @field_aggregation(name: "priority")
+  subject: StringSubAggregation @field_aggregation(name: "subject")
 }
 """
 Value distribution data type
@@ -864,6 +875,63 @@ type _distribution_by_bucket_aggregation @system {
   ratio: FloatAggregation
   value: FloatAggregation
 }
+type _h3_data_query @system
+type _h3_query @system {
+  """
+  The H3 cell
+  """
+  cell: H3Cell!
+  """
+  The data associated with the H3 cell
+  """
+  data: _h3_data_query!
+  """
+  Calculate distributed aggregated value
+  """
+  distribution_by(
+    """
+    Path to numerator aggregated value
+    """
+    numerator: String!
+
+    """
+    Path to denominator aggregated value
+    """
+    denominator: String!
+  ): _distribution_by
+  """
+  Calculate distributed aggregated value across denominator buckets
+  """
+  distribution_by_bucket(
+    """
+    Path to bucket key in numerator bucket aggregation
+    """
+    numerator_key: String
+
+    """
+    Path to numerator aggregated value
+    """
+    numerator: String!
+
+    """
+    Path to bucket key in denominator bucket aggregation
+    """
+    denominator_key: String!
+
+    """
+    Path to denominator aggregated value in bucket aggregations
+    """
+    denominator: String!
+  ): [_distribution_by_bucket]
+  """
+  The geometry representation of the H3 cell
+  """
+  geom: Geometry!
+  """
+  The resolution of the H3 cell
+  """
+  resolution: Int!
+}
 type _join @system {
   Customer(fields: [String!]!, filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Customer] @query(name: "Customer", type: SELECT) @catalog(name: "pg_crm", engine: "duckdb")
   Customer_aggregation(fields: [String!]!, filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Customer_aggregation @aggregation_query(is_bucket: false, name: "Customer") @catalog(name: "pg_crm", engine: "duckdb")
@@ -875,7 +943,7 @@ type _join @system {
   Ticket_aggregation(fields: [String!]!, filter: Ticket_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Ticket_aggregation @aggregation_query(is_bucket: false, name: "Ticket") @catalog(name: "support", engine: "duckdb")
   Ticket_bucket_aggregation(fields: [String!]!, filter: Ticket_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Ticket_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Ticket") @catalog(name: "support", engine: "duckdb")
 }
-type _join_aggregation @aggregation(is_bucket: false, level: 1, name: "_join") {
+type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
   Customer(fields: [String!]!, filter: Customer_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Customer_aggregation @aggregation_query(is_bucket: false, name: "Customer") @catalog(name: "pg_crm", engine: "duckdb") @field_aggregation(name: "Customer")
   Order(fields: [String!]!, filter: Order_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Order_aggregation @aggregation_query(is_bucket: false, name: "Order") @catalog(name: "pg_crm", engine: "duckdb") @field_aggregation(name: "Order")
   Ticket(fields: [String!]!, filter: Ticket_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Ticket_aggregation @aggregation_query(is_bucket: false, name: "Ticket") @catalog(name: "support", engine: "duckdb") @field_aggregation(name: "Ticket")
@@ -893,19 +961,36 @@ type _module_crm_mutation @module_root(name: "crm", type: MUTATION) {
 }
 type _module_crm_query @module_root(name: "crm", type: QUERY) {
   Customer(filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Customer] @query(name: "Customer", type: SELECT) @catalog(name: "pg_crm", engine: "duckdb")
-  Customer_aggregation(filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Customer_aggregation @aggregation_query(is_bucket: false, name: "Customer") @catalog(name: "pg_crm", engine: "duckdb")
-  Customer_bucket_aggregation(filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Customer_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Customer") @catalog(name: "pg_crm", engine: "duckdb")
+  """
+  The aggregation for Customer
+  """
+  Customer_aggregation(filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Customer_aggregation @aggregation_query(name: "Customer", is_bucket: false) @catalog(name: "pg_crm", engine: "duckdb")
+  """
+  The aggregation for Customer
+  """
+  Customer_bucket_aggregation(filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Customer_aggregation_bucket] @aggregation_query(name: "Customer", is_bucket: true) @catalog(name: "pg_crm", engine: "duckdb")
   Customer_by_pk(id: Int!): Customer @query(name: "Customer", type: SELECT_ONE) @catalog(name: "pg_crm", engine: "duckdb")
   Order(filter: Order_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Order] @query(name: "Order", type: SELECT) @catalog(name: "pg_crm", engine: "duckdb")
-  Order_aggregation(filter: Order_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Order_aggregation @aggregation_query(is_bucket: false, name: "Order") @catalog(name: "pg_crm", engine: "duckdb")
-  Order_bucket_aggregation(filter: Order_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Order_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Order") @catalog(name: "pg_crm", engine: "duckdb")
+  """
+  The aggregation for Order
+  """
+  Order_aggregation(filter: Order_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Order_aggregation @aggregation_query(name: "Order", is_bucket: false) @catalog(name: "pg_crm", engine: "duckdb")
+  """
+  The aggregation for Order
+  """
+  Order_bucket_aggregation(filter: Order_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Order_aggregation_bucket] @aggregation_query(name: "Order", is_bucket: true) @catalog(name: "pg_crm", engine: "duckdb")
   Order_by_pk(id: Int!): Order @query(name: "Order", type: SELECT_ONE) @catalog(name: "pg_crm", engine: "duckdb")
   Ticket(filter: Ticket_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Ticket] @query(name: "Ticket", type: SELECT) @catalog(name: "support", engine: "duckdb")
-  Ticket_aggregation(filter: Ticket_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Ticket_aggregation @aggregation_query(is_bucket: false, name: "Ticket") @catalog(name: "support", engine: "duckdb")
-  Ticket_bucket_aggregation(filter: Ticket_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Ticket_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Ticket") @catalog(name: "support", engine: "duckdb")
+  """
+  The aggregation for Ticket
+  """
+  Ticket_aggregation(filter: Ticket_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Ticket_aggregation @aggregation_query(name: "Ticket", is_bucket: false) @catalog(name: "support", engine: "duckdb")
+  """
+  The aggregation for Ticket
+  """
+  Ticket_bucket_aggregation(filter: Ticket_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Ticket_aggregation_bucket] @aggregation_query(name: "Ticket", is_bucket: true) @catalog(name: "support", engine: "duckdb")
   Ticket_by_pk(id: Int!): Ticket @query(name: "Ticket", type: SELECT_ONE) @catalog(name: "support", engine: "duckdb")
 }
-"""
-any - represents any type, can be used for fields with mixed types, doesn't support filtering, aggregation, transformations and extra fields
-"""
+type _spatial @system
+type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)
 scalar any

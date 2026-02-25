@@ -3,6 +3,8 @@ package compiler_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -11,6 +13,7 @@ import (
 	newcompiler "github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/rules"
+	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	_ "github.com/hugr-lab/query-engine/pkg/schema/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
@@ -257,8 +260,13 @@ func buildNewCompilerResult(t *testing.T, sdl string, opts base.Options) *compil
 	source := extractSourceDefs(sd)
 	ctx := context.Background()
 
+	provider, err := static.New()
+	if err != nil {
+		t.Fatalf("failed to create static provider: %v", err)
+	}
+
 	c := newcompiler.New(rules.RegisterAll()...)
-	catalog, err := c.Compile(ctx, nil, source, opts)
+	catalog, err := c.Compile(ctx, provider, source, opts)
 	if err != nil {
 		t.Fatalf("new compiler failed: %v", err)
 	}
@@ -331,7 +339,7 @@ func isBaseSystemType(name string) bool {
 		"OperationResult": true, "ModuleObjectType": true,
 		"QueryType": true, "MutationType": true,
 		"GeometryType": true, "ExtraFieldBaseType": true,
-		"Function": true, "FunctionMutation": true,
+		"Function": true, "FunctionMutation": true, "MutationFunction": true,
 		// Filter/Aggregation input types for scalars
 		"IntFilter": true, "IntListFilter": true, "IntAggregation": true, "IntMeasurementAggregation": true,
 		"FloatFilter": true, "FloatListFilter": true, "FloatAggregation": true, "FloatMeasurementAggregation": true,
@@ -785,7 +793,7 @@ func compareSummary(t *testing.T, old, new *compileResult) {
 	t.Log("=== DEFINITION DETAIL COMPARISON ===")
 	var stats diffStats
 	for _, name := range common {
-		compareDefinitions(t, name, old.defs[name], new.defs[name], &stats)
+		compareDefinitions(t, name, old.defs[name], new.defs[name], &stats, old, new)
 	}
 
 	// 3. Compare query fields
@@ -807,7 +815,7 @@ func compareSummary(t *testing.T, old, new *compileResult) {
 
 	// Deep compare common query fields
 	for _, qname := range commonQ {
-		compareFieldDef(t, "Query."+qname, old.queryFieldDefs[qname], new.queryFieldDefs[qname], &stats)
+		compareFieldDef(t, "Query."+qname, old.queryFieldDefs[qname], new.queryFieldDefs[qname], &stats, old, new)
 	}
 
 	// 4. Compare mutation fields
@@ -829,7 +837,7 @@ func compareSummary(t *testing.T, old, new *compileResult) {
 
 	// Deep compare common mutation fields
 	for _, mname := range commonM {
-		compareFieldDef(t, "Mutation."+mname, old.mutFieldDefs[mname], new.mutFieldDefs[mname], &stats)
+		compareFieldDef(t, "Mutation."+mname, old.mutFieldDefs[mname], new.mutFieldDefs[mname], &stats, old, new)
 	}
 
 	// 5. Summary
@@ -840,8 +848,8 @@ func compareSummary(t *testing.T, old, new *compileResult) {
 		len(oldQNames), len(newQNames), len(commonQ), len(oldOnlyQ), len(newOnlyQ))
 	t.Logf("Mutation fields: old=%d new=%d common=%d old-only=%d new-only=%d",
 		len(oldMNames), len(newMNames), len(commonM), len(oldOnlyM), len(newOnlyM))
-	t.Logf("Detail diffs: field-names=%d field-types=%d field-args=%d field-directives=%d def-kind=%d def-directives=%d",
-		stats.fieldNameDiffs, stats.typeDiffs, stats.argDiffs, stats.fieldDirDiffs, stats.kindDiffs, stats.defDirDiffs)
+	t.Logf("Detail diffs: field-names=%d field-types=%d field-args=%d arg-type-defs=%d field-directives=%d def-kind=%d def-directives=%d",
+		stats.fieldNameDiffs, stats.typeDiffs, stats.argDiffs, stats.argTypeDiffs, stats.fieldDirDiffs, stats.kindDiffs, stats.defDirDiffs)
 }
 
 // diffStats accumulates comparison counters.
@@ -849,13 +857,14 @@ type diffStats struct {
 	fieldNameDiffs int
 	typeDiffs      int
 	argDiffs       int
+	argTypeDiffs   int // argument type definition diffs (InputObject field comparison)
 	fieldDirDiffs  int
 	kindDiffs      int
 	defDirDiffs    int
 }
 
 // compareDefinitions deeply compares two definitions: kind, directives, and per-field details.
-func compareDefinitions(t *testing.T, name string, oldDef, newDef *ast.Definition, stats *diffStats) {
+func compareDefinitions(t *testing.T, name string, oldDef, newDef *ast.Definition, stats *diffStats, oldResult, newResult *compileResult) {
 	t.Helper()
 
 	// Compare kind
@@ -892,12 +901,14 @@ func compareDefinitions(t *testing.T, name string, oldDef, newDef *ast.Definitio
 		if oldF == nil || newF == nil {
 			continue
 		}
-		compareFieldDef(t, name+"."+fname, oldF, newF, stats)
+		compareFieldDef(t, name+"."+fname, oldF, newF, stats, oldResult, newResult)
 	}
 }
 
 // compareFieldDef deeply compares two field definitions: return type, arguments, directives.
-func compareFieldDef(t *testing.T, prefix string, oldF, newF *ast.FieldDefinition, stats *diffStats) {
+// When oldResult and newResult are provided, also compares InputObject definitions
+// referenced by common arguments.
+func compareFieldDef(t *testing.T, prefix string, oldF, newF *ast.FieldDefinition, stats *diffStats, oldResult, newResult *compileResult) {
 	t.Helper()
 
 	// Compare return type
@@ -908,7 +919,7 @@ func compareFieldDef(t *testing.T, prefix string, oldF, newF *ast.FieldDefinitio
 		stats.typeDiffs++
 	}
 
-	// Compare arguments
+	// Compare arguments (name + type signature)
 	oldArgs := argsSignatures(oldF.Arguments)
 	newArgs := argsSignatures(newF.Arguments)
 	aOld := stringDiff(oldArgs, newArgs)
@@ -916,6 +927,11 @@ func compareFieldDef(t *testing.T, prefix string, oldF, newF *ast.FieldDefinitio
 	if len(aOld) > 0 || len(aNew) > 0 {
 		t.Logf("    %s args: old-only=%v new-only=%v", prefix, aOld, aNew)
 		stats.argDiffs++
+	}
+
+	// Deep comparison of argument types: for common args, compare the InputObject definitions they reference
+	if oldResult != nil && newResult != nil {
+		compareArgInputTypes(t, prefix, oldF, newF, stats, oldResult, newResult)
 	}
 
 	// Compare field-level directives
@@ -926,6 +942,70 @@ func compareFieldDef(t *testing.T, prefix string, oldF, newF *ast.FieldDefinitio
 	if len(dOld) > 0 || len(dNew) > 0 {
 		t.Logf("    %s directives: old-only=%v new-only=%v", prefix, dOld, dNew)
 		stats.fieldDirDiffs++
+	}
+}
+
+// compareArgInputTypes compares InputObject definitions referenced by common arguments
+// between old and new field definitions.
+func compareArgInputTypes(t *testing.T, prefix string, oldF, newF *ast.FieldDefinition, stats *diffStats, oldResult, newResult *compileResult) {
+	t.Helper()
+
+	// Build argument maps by name
+	oldArgMap := make(map[string]*ast.ArgumentDefinition, len(oldF.Arguments))
+	for _, a := range oldF.Arguments {
+		oldArgMap[a.Name] = a
+	}
+	newArgMap := make(map[string]*ast.ArgumentDefinition, len(newF.Arguments))
+	for _, a := range newF.Arguments {
+		newArgMap[a.Name] = a
+	}
+
+	// For each common argument, compare the referenced type definitions
+	for name, oldArg := range oldArgMap {
+		newArg, ok := newArgMap[name]
+		if !ok {
+			continue
+		}
+		oldTypeName := oldArg.Type.Name()
+		newTypeName := newArg.Type.Name()
+
+		// Look up definitions in both results
+		oldDef := oldResult.defs[oldTypeName]
+		newDef := newResult.defs[newTypeName]
+		if oldDef == nil || newDef == nil {
+			continue
+		}
+		if oldDef.Kind != ast.InputObject || newDef.Kind != ast.InputObject {
+			continue
+		}
+
+		// Compare the InputObject definitions (fields)
+		oldFields := fieldNames(oldDef)
+		newFields := fieldNames(newDef)
+		fOld := stringDiff(oldFields, newFields)
+		fNew := stringDiff(newFields, oldFields)
+		if len(fOld) > 0 || len(fNew) > 0 {
+			t.Logf("    %s arg %q type %s/%s fields: old-only=%v new-only=%v",
+				prefix, name, oldTypeName, newTypeName, fOld, fNew)
+			stats.argTypeDiffs++
+		}
+
+		// Compare common field types within the InputObject
+		commonFields := stringIntersect(oldFields, newFields)
+		for _, fname := range commonFields {
+			oF := oldDef.Fields.ForName(fname)
+			nF := newDef.Fields.ForName(fname)
+			if oF == nil || nF == nil {
+				continue
+			}
+			oType := typeString(oF.Type)
+			nType := typeString(nF.Type)
+			if oType != nType {
+				t.Logf("    %s arg %q type %s.%s: old=%s new=%s",
+					prefix, name, oldTypeName, fname, oType, nType)
+				stats.argTypeDiffs++
+			}
+		}
 	}
 }
 
@@ -1331,8 +1411,12 @@ func compileNewOnly(t *testing.T, sdl string) error {
 	sd := parseSourceSchemaDocument(t, sdl)
 	source := extractSourceDefs(sd)
 	ctx := context.Background()
+	provider, err := static.New()
+	if err != nil {
+		t.Fatalf("failed to create static provider: %v", err)
+	}
 	c := newcompiler.New(rules.RegisterAll()...)
-	_, err := c.Compile(ctx, nil, source, base.Options{Name: "test", EngineType: "duckdb"})
+	_, err = c.Compile(ctx, provider, source, base.Options{Name: "test", EngineType: "duckdb"})
 	return err
 }
 
@@ -1781,6 +1865,90 @@ type Dummy @table(name: "d") {
 	if !strings.Contains(err.Error(), "@cube") {
 		t.Fatalf("expected error to mention '@cube', got: %v", err)
 	}
+}
+
+// --- External schema cross-compiler tests ---
+
+// loadExternalSchemaSDL reads all .graphql files from a directory and concatenates them.
+func loadExternalSchemaSDL(t *testing.T, dir string) string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir %s: %v", dir, err)
+	}
+	var files []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".graphql") {
+			files = append(files, e.Name())
+		}
+	}
+	sort.Strings(files)
+	if len(files) == 0 {
+		t.Fatalf("no .graphql files in %s", dir)
+	}
+	var parts []string
+	for _, f := range files {
+		data, err := os.ReadFile(filepath.Join(dir, f))
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+		parts = append(parts, string(data))
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// TestCrossCompiler_ExternalSchema_TF compares old and new compiler outputs for
+// the TF external schema with prefix "tf2" and AsModule.
+func TestCrossCompiler_ExternalSchema_TF(t *testing.T) {
+	dir := os.Getenv("EXTERNAL_SCHEMA_DIR")
+	if dir == "" {
+		dir = filepath.Join(os.Getenv("HOME"), "projects", "hugr-lab", "schemes", "tf")
+	}
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		t.Skipf("external schema dir %s not found, skipping", dir)
+	}
+
+	sdl := loadExternalSchemaSDL(t, dir)
+
+	caps := &base.EngineCapabilities{
+		General: base.EngineGeneralCapabilities{
+			SupportDefaultSequences: true,
+		},
+		Insert: base.EngineInsertCapabilities{
+			Insert:           true,
+			Returning:        true,
+			InsertReferences: true,
+		},
+		Update: base.EngineUpdateCapabilities{
+			Update:           true,
+			UpdatePKColumns:  true,
+			UpdateWithoutPKs: true,
+		},
+		Delete: base.EngineDeleteCapabilities{
+			Delete:           true,
+			DeleteWithoutPKs: true,
+		},
+	}
+
+	oldOpts := oldcompiler.Options{
+		Name:         "tf2",
+		Prefix:       "tf2",
+		AsModule:     true,
+		EngineType:   "postgres",
+		Capabilities: caps,
+	}
+	newOpts := base.Options{
+		Name:         "tf2",
+		Prefix:       "tf2",
+		AsModule:     true,
+		EngineType:   "postgres",
+		Capabilities: caps,
+	}
+
+	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
+	newResult := buildNewCompilerResult(t, sdl, newOpts)
+
+	compareSummary(t, oldResult, newResult)
 }
 
 func TestValidate_HypertableWithoutTableOrView(t *testing.T) {

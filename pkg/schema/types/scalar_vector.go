@@ -23,6 +23,33 @@ scalar Vector
 
 input VectorFilter @system {
   is_null: Boolean
+}
+
+input VectorSearchInput @system {
+  "The name of vector field"
+  name: String!
+  "The vector to search"
+  vector: Vector!
+  "Distance type"
+  distance: VectorDistanceType!
+  "Limit to results"
+  limit: Int!
+}
+
+enum VectorDistanceType @system {
+  "L2 distance"
+  L2
+  "Cosine similarity"
+  Cosine
+  "Inner product"
+  Inner
+}
+
+input SemanticSearchInput @system {
+  "The text to search"
+  query: String!
+  "Limit to results"
+  limit: Int!
 }`
 }
 

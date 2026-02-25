@@ -291,6 +291,13 @@ func (p *Provider) applyChangeset(cs *updateChangeset) {
 	// Add definitions
 	for _, def := range cs.toAdd {
 		p.schema.Types[def.Name] = def
+		// Update root type pointers when adding Query/Mutation/Subscription
+		switch def.Name {
+		case "Mutation":
+			p.schema.Mutation = def
+		case "Subscription":
+			p.schema.Subscription = def
+		}
 	}
 
 	// Apply extensions

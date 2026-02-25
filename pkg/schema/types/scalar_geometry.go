@@ -46,6 +46,29 @@ type GeometrySubAggregation @system {
   intersection: GeometryAggregation
   union: GeometryAggregation
   extent: GeometryAggregation
+}
+
+enum GeometryTransform @system {
+  Transform
+  Centroid
+  Buffer
+  Simplify
+  SimplifyTopology
+  StartPoint
+  EndPoint
+  Reverse
+  FlipCoordinates
+  ConvexHull
+  Envelope
+}
+
+enum GeometryMeasurementTypes @system {
+  Area
+  AreaSpheroid
+  Length
+  LengthSpheroid
+  Perimeter
+  PerimeterSpheroid
 }`
 }
 

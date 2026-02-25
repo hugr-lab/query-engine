@@ -68,16 +68,47 @@ func (r *ExtraFieldRule) Process(ctx base.CompilationContext, def *ast.Definitio
 	}
 	ctx.AddExtension(ext)
 
-	// Also add extra fields to the aggregation type (with aggregation types)
+	// Also add extra fields to the aggregation type
 	aggName := "_" + def.Name + "_aggregation"
-	if ctx.LookupType(aggName) != nil && len(aggExtraFields) > 0 {
-		aggExt := &ast.Definition{
+	if len(aggExtraFields) > 0 {
+		ctx.AddExtension(&ast.Definition{
 			Kind:     ast.Object,
 			Name:     aggName,
 			Position: pos,
 			Fields:   aggExtraFields,
+		})
+
+		// Add SubAggregation variants to the sub-aggregation type
+		subAggName := aggTypeNameAtDepth(def.Name, 1)
+		var subAggExtraFields ast.FieldList
+		for _, f := range aggExtraFields {
+			subTypeName := scalarSubAggTypeName(f.Type.Name())
+			if subTypeName == "" {
+				continue
+			}
+			subField := &ast.FieldDefinition{
+				Name:     f.Name,
+				Type:     ast.NamedType(subTypeName, pos),
+				Position: pos,
+			}
+			if len(f.Directives) > 0 {
+				subField.Directives = make(ast.DirectiveList, len(f.Directives))
+				copy(subField.Directives, f.Directives)
+			}
+			if len(f.Arguments) > 0 {
+				subField.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
+				copy(subField.Arguments, f.Arguments)
+			}
+			subAggExtraFields = append(subAggExtraFields, subField)
 		}
-		ctx.AddExtension(aggExt)
+		if len(subAggExtraFields) > 0 {
+			ctx.AddExtension(&ast.Definition{
+				Kind:     ast.Object,
+				Name:     subAggName,
+				Position: pos,
+				Fields:   subAggExtraFields,
+			})
+		}
 	}
 
 	return nil

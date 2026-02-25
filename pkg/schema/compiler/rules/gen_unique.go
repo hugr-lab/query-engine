@@ -48,8 +48,13 @@ func (r *UniqueRule) Process(ctx base.CompilationContext, def *ast.Definition) e
 			continue
 		}
 
-		// Generate query field: <defName>_<suffix>
-		fieldName := def.Name + "_" + suffix
+		// Use original (unprefixed) name for query field names when AsModule
+		queryBaseName := def.Name
+		if opts.AsModule && info.OriginalName != "" && info.OriginalName != def.Name {
+			queryBaseName = info.OriginalName
+		}
+		// Generate query field: <queryBaseName>_<suffix>
+		fieldName := queryBaseName + "_" + suffix
 		selectOneField := &ast.FieldDefinition{
 			Name: fieldName,
 			Type: ast.NamedType(def.Name, pos),

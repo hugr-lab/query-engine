@@ -11,6 +11,9 @@ type Airport @table(name: "airports") @module(name: "transport_db.transport.air"
   name: String!
   nearby: [Airport] @table_function_call_join(references_name: "find_nearby", args: {iata_code:"iata_code"}, module: "transport_db") @catalog(name: "transport_db", engine: "duckdb")
 }
+"""
+Filter for Airport objects
+"""
 input Airport_filter @filter_input(name: "Airport") @catalog(name: "transport_db", engine: "duckdb") {
   _and: [Airport_filter]
   _not: Airport_filter
@@ -71,8 +74,7 @@ enum BigIntMeasurementAggregation @system {
   SUM
 }
 """
-BigIntRange - represents range of big integers, supports filtering.
-Input format: string with range, e.g. "[1,10)" or "(,100]"
+The `BigIntRange` scalar type represents a range of big integer values with inclusive/exclusive bounds.
 Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
 """
 scalar BigIntRange
@@ -120,21 +122,11 @@ type BooleanSubAggregation @system {
   count: BigIntAggregation
 }
 """
-Date - represents date type, supports filtering, aggregation.
-Input formats:
-- ISO 8601 date string, e.g. "2023-01-01"
-- Year and day of year string, e.g. "2023"
-- Year, month and day string, e.g. "2023-01"
-- Year, month, day and time string, e.g. "2023-01-01T12:00:00Z"
-Output format: RFC 3339 timestamp string, e.g. "2023-01-01T00:00:00Z+00:00"
+The `Date` scalar type represents a calendar date encoded as an ISO 8601 string (e.g. "2006-01-02").
+On input, values are parsed from ISO 8601 date strings. On output, values are formatted as ISO 8601 date strings.
 Filter operators: eq, gt, gte, lt, lte, in, is_null
 Aggregation functions: count, min, max, list, any, last
-Supports arguments:
-- bucket: TimeBucket - to aggregate by time bucket, e.g. day, month, year
-Extra field: For type field with Date type, generated extra field BigInt field with prefix "_" and suffix "_part" to extract part of the date, e.g. _created_at_part(extract: dow) to extract day of week.
-Arguments:
-- extract: TimeExtract! - part to extract, e.g. year, month, day, dow (day of week), doy (day of year), week, quarter, iso_year, iso_dow, iso_week
-- extract_divide: Int - divide the extracted value by the specified number, e.g. to get decade from year, use extract: year, extract_divide: 10
+Extra field: Extract (extracts date parts such as year, month, day)
 """
 scalar Date
 type DateAggregation @system {
@@ -243,32 +235,15 @@ type FloatSubAggregation @system {
 }
 type Function @system {
   """
-  The root query object of the module transport_db
+  The root function object of the module transport_db
   """
   transport_db: _module_transport_db_function
 }
 """
-Geometry - represents geometry type, supports filtering, aggregation.
-Input formats:
-- WKT string, e.g. "POINT(30 10)"
-- WKB hex string, e.g. "01010000000000000000003E400000000000002440"
-- GeoJSON object, e.g. '{"type": "Point", "coordinates": [30, 10]}'
-Output format: GeoJSON object
+The `Geometry` scalar type represents a spatial geometry value (WKB/WKT encoded).
 Filter operators: eq, intersects, contains, is_null
 Aggregation functions: count, list, any, last, intersection, union, extent
-Supports arguments:
-- transforms: [GeometryTransform!] - to apply transforms to geometry, e.g. Transform (reproject), Centroid, Buffer, Simplify, StartPoint, EndPoint, Reverse, FlipCoordinates, ConvexHull, Envelope
-- from: Int - to reproject from the spatial reference system identifier, e.g. 4326
-- to: Int - to reproject to the spatial reference system identifier, e.g. 3857
-- buffer: Float - to create buffer around geometry, e.g. 10.0
-- simplify_factor: Float - to simplify geometry, e.g. 0.1
-Extra fields: For type field with Geometry type, generated extra fields:
-- BigInt field with prefix "_" and suffix "_measurement" to calculate measurement of the geometry, e.g. _geom_measurement(type: Area). 
-Arguments:
-  - type: GeometryMeasurementTypes! - type of measurement, e.g. Area, Length, Perimeter, AreaSpheroid, LengthSpheroid, PerimeterSpheroid
-  - transform: Boolean - whether to transform geometry to other projection for measurement, default is false
-  - from: Int - to reproject from the spatial reference system identifier, e.g. 4326
-  - to: Int - to reproject to the spatial reference system identifier, e.g. 3857
+Extra field: Measurement (calculates area, length, perimeter, etc.)
 """
 scalar Geometry
 type GeometryAggregation @system {
@@ -345,8 +320,7 @@ enum GeometryType @system {
   POLYGON
 }
 """
-H3Cell - represents H3 cell index, doesn't support filtering, aggregation.
-Input format: string with H3 cell index, e.g. "8928308280fffff"
+The `H3Cell` scalar type represents an H3 hexagonal hierarchical geospatial index cell identifier.
 """
 scalar H3Cell
 type IntAggregation @system {
@@ -382,8 +356,7 @@ enum IntMeasurementAggregation @system {
   SUM
 }
 """
-IntRange - represents range of integers, supports filtering.
-Input format: string with range, e.g. "[1,10)" or "(,100]"
+The `IntRange` scalar type represents a range of integer values with inclusive/exclusive bounds.
 Filter operators: eq, contains, intersects, includes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
 """
 scalar IntRange
@@ -408,10 +381,8 @@ type IntSubAggregation @system {
   sum: IntAggregation
 }
 """
-Interval - represents time interval type, supports filtering, aggregation.
-Input format: string the same as PostgreSQL or DuckDB interval, e.g. "1 day", "2 hours 30 minutes", supports months, days, hours, minutes, seconds
+The `Interval` scalar type represents a time duration (e.g. "1 year 2 months 3 days 04:05:06").
 Filter operators: eq, gt, gte, lt, lte, is_null
-Aggregation functions: count, min, max, list, any, last
 """
 scalar Interval
 input IntervalFilter @system {
@@ -429,11 +400,9 @@ input IntervalListFilter @system {
   is_null: Boolean
 }
 """
-JSON - represents JSON type, supports filtering, aggregation.
-Input format: valid JSON string, e.g. '{"key": "value"}'
+The `JSON` scalar type represents arbitrary JSON data, encoded as a JSON string.
 Filter operators: eq, has, has_all, contains, is_null
-Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or. The many aggregation functions accept argument 'path' to aggregate by path, e.g. count(path: 'key'), sum(path: 'key.subkey')
-Supports argument `struct: JSON` - to extract object field, e.g. '{"key": "String", "field2": {"key": "Int"}, "array_field": ["Bool"]}'. Supported types: String, Int, BigInt, Float, Boolean, JSON, Time (Timestamp), JSON, H3String
+Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter)
 """
 scalar JSON
 type JSONAggregation @system {
@@ -473,9 +442,10 @@ enum ModuleObjectType @system {
   QUERY
 }
 type Mutation @system {
-  _stub: String
+  function: MutationFunction @system
   transport_db: _module_transport_db_mutation
 }
+type MutationFunction @system
 enum MutationType @system {
   DELETE
   INSERT
@@ -499,7 +469,16 @@ type Query @system {
   """
   Functions
   """
-  function: Function
+  function: Function @system
+  """
+  H3 aggregation query
+  """
+  h3(
+    """
+    H3 resolution to use for the query
+    """
+    resolution: Int!
+  ): [_h3_query] @system
   """
   Performs jq query on result set
   Results will be placed in 'extension' field by field or alias name
@@ -527,6 +506,9 @@ type Station @table(name: "stations") @module(name: "transport_db.transport.grou
   id: Int! @pk
   name: String!
 }
+"""
+Filter for Station objects
+"""
 input Station_filter @filter_input(name: "Station") @catalog(name: "transport_db", engine: "duckdb") {
   _and: [Station_filter]
   _not: Station_filter
@@ -574,9 +556,8 @@ type StringSubAggregation @system {
   string_agg: StringAggregation
 }
 """
-Time - represents time type, supports filtering, aggregation.
-Input formats:
-- Time string, e.g. "12:00:00"
+The `Time` scalar type represents a time-of-day value encoded as an ISO 8601 time string (e.g. "15:04:05").
+On input, values are parsed from ISO 8601 time strings. On output, values are formatted as ISO 8601 time strings.
 Filter operators: eq, gt, gte, lt, lte, in, is_null
 Aggregation functions: count, min, max, list, any, last
 """
@@ -590,8 +571,8 @@ type TimeAggregation @system {
   min: Time
 }
 """
-The time bucket for the time series data
-Defines the time interval for the time series data
+The time bucket for the time series data.
+Defines the time interval for the time series data.
 """
 enum TimeBucket @system {
   day
@@ -642,26 +623,11 @@ type TimeSubAggregation @system {
   min: TimeAggregation
 }
 """
-Timestamp - represents timestamp type, supports filtering, aggregation.
-Input formats:
-- RFC 3339 timestamp string, e.g. "2023-01-01T12:00:00Z+00:00"
-- Unix epoch in seconds, e.g. "1672531200" or "1672531200.123456"
-- Year string for the beginning of the year, e.g. "2023"
-- Year and month string for the beginning of the month, e.g. "2023-01"
-- Year, month and day string for the beginning of the day, e.g. "2023-01-01"
-- Year, month, day, hours and minutes string for the beginning of the minute, e.g. "2023-01-01 12:00"
-- Year, month, day and time string with out time zone, e.g. "2023-01-01 12:00:00"
-Output format: RFC 3339 timestamp string, e.g. "2023-01-01T12:00:00Z+00:00"
-Filter operators: eq, gt, gte, lt, lte, in, is_null
+The `Timestamp` scalar type represents a date-time value with timezone, encoded as an RFC 3339 string (e.g. "2006-01-02T15:04:05Z07:00").
+On input, values are parsed from RFC 3339 strings. On output, values are formatted as RFC 3339 strings.
+Filter operators: eq, gt, gte, lt, lte, is_null
 Aggregation functions: count, min, max, list, any, last
-Supports arguments:
-- bucket: TimeBucket - to aggregate by time bucket, e.g. day, month, year
-- bucket_interval: Interval - to aggregate by custom time interval, e.g. "15 minutes", "2 hours", "3 days"
-- gapfill: Boolean - to fill gaps in time series data, default is false (only for hypertables)
-Extra field: For type field with Timestamp type, generated extra field BigInt field with prefix "_" and suffix "_part" to extract part of the timestamp, e.g. _created_at_part(extract: dow) to extract day of week.
-Arguments:
-- extract: TimeExtract! - part to extract, e.g. year, month, day, dow (day of week), doy (day of year), week, quarter, iso_year, iso_dow, iso_week
-- extract_divide: Int - divide the extracted value by the specified number, e.g. to get decade from year, use extract: year, extract_divide
+Extra field: Extract (extracts date/time parts such as year, month, day, hour, minute, second)
 """
 scalar Timestamp
 type TimestampAggregation @system {
@@ -692,8 +658,7 @@ enum TimestampMeasurementAggregation @system {
   MIN
 }
 """
-TimestampRange - represents range of timestamps, supports filtering.
-Input format: string with range, e.g. "[2023-01-01T00:00:00Z,2023-12-31T23:59:59Z)" or "(,2023-12-31T23:59:59Z]"
+The `TimestampRange` scalar type represents a range of timestamp values with inclusive/exclusive bounds.
 Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
 """
 scalar TimestampRange
@@ -721,9 +686,9 @@ enum UniqueRuleType @system {
   INTERSECTS
 }
 """
-Represents embeddings vectors, should use with @dim directive to set dimensionality.
-Input format: formatted string with comma separated float values, e.g. "[0.1,0.2,0.3564,0.123]"
+The `Vector` scalar type represents a fixed-length array of floating-point numbers, used for embeddings and similarity search.
 Filter operators: is_null
+Extra field: VectorDistance (calculates distance between vectors using a specified metric)
 """
 scalar Vector
 enum VectorDistanceType @system {
@@ -770,14 +735,24 @@ type _Airport_aggregation @aggregation(name: "Airport", is_bucket: false, level:
   geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): GeometryAggregation @field_aggregation(name: "geom")
   iata_code: StringAggregation @field_aggregation(name: "iata_code")
   name: StringAggregation @field_aggregation(name: "name")
+  """
+  The aggregation for nearby
+  """
   nearby_aggregation: _Airport_aggregation_sub_aggregation @field_aggregation(name: "nearby")
 }
+"""
+Bucket aggregation for Airport
+"""
 type _Airport_aggregation_bucket @aggregation(name: "Airport", is_bucket: true, level: 1) @catalog(name: "transport_db", engine: "duckdb") {
+  """
+  The aggregations of the bucket
+  """
   aggregations(filter: Airport_filter, order_by: [OrderByField]): _Airport_aggregation
   key: Airport
 }
 type _Airport_aggregation_sub_aggregation @aggregation(name: "_Airport_aggregation", is_bucket: false, level: 2) @catalog(name: "transport_db", engine: "duckdb") {
-  _rows_count: BigIntAggregation @field_aggregation(name: "_rows_count")
+  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): FloatSubAggregation @field_aggregation(name: "_geom_measurement")
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   city: StringSubAggregation @field_aggregation(name: "city")
   geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): GeometrySubAggregation @field_aggregation(name: "geom")
   iata_code: StringSubAggregation @field_aggregation(name: "iata_code")
@@ -790,9 +765,21 @@ type _Station_aggregation @aggregation(name: "Station", is_bucket: false, level:
   id: IntAggregation @field_aggregation(name: "id")
   name: StringAggregation @field_aggregation(name: "name")
 }
+"""
+Bucket aggregation for Station
+"""
 type _Station_aggregation_bucket @aggregation(name: "Station", is_bucket: true, level: 1) @catalog(name: "transport_db", engine: "duckdb") {
+  """
+  The aggregations of the bucket
+  """
   aggregations(filter: Station_filter, order_by: [OrderByField]): _Station_aggregation
   key: Station
+}
+type _Station_aggregation_sub_aggregation @aggregation(name: "_Station_aggregation", is_bucket: false, level: 2) @catalog(name: "transport_db", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  city: StringSubAggregation @field_aggregation(name: "city")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  name: StringSubAggregation @field_aggregation(name: "name")
 }
 """
 Value distribution data type
@@ -838,6 +825,127 @@ type _distribution_by_bucket_aggregation @system {
   ratio: FloatAggregation
   value: FloatAggregation
 }
+type _h3_data_query @system {
+  Airport(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+    """
+    Reproject geometry from SRID before aggregation
+    """
+    transform_from: Int
+
+    """
+    Buffer distance in meters to apply to the geometry before aggregation
+    """
+    buffer: Float
+
+    """
+    Divide the aggregated values by a count of split h3 cells
+    """
+    divide_values: Boolean
+
+    """
+    Simplify the geometry before cast to h3 cells
+    """
+    simplify: Boolean = true
+  ): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "transport_db", engine: "duckdb")
+  Airport_aggregation(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+    """
+    Reproject geometry from SRID before aggregation
+    """
+    transform_from: Int
+
+    """
+    Buffer distance in meters to apply to the geometry before aggregation
+    """
+    buffer: Float
+
+    """
+    Divide the aggregated values by a count of split h3 cells
+    """
+    divide_values: Boolean
+
+    """
+    Simplify the geometry before cast to h3 cells
+    """
+    simplify: Boolean = true
+  ): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "transport_db", engine: "duckdb")
+  Airport_bucket_aggregation(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+    """
+    Reproject geometry from SRID before aggregation
+    """
+    transform_from: Int
+
+    """
+    Buffer distance in meters to apply to the geometry before aggregation
+    """
+    buffer: Float
+
+    """
+    Divide the aggregated values by a count of split h3 cells
+    """
+    divide_values: Boolean
+
+    """
+    Simplify the geometry before cast to h3 cells
+    """
+    simplify: Boolean = true
+  ): [_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airport") @catalog(name: "transport_db", engine: "duckdb")
+}
+type _h3_query @system {
+  """
+  The H3 cell
+  """
+  cell: H3Cell!
+  """
+  The data associated with the H3 cell
+  """
+  data: _h3_data_query!
+  """
+  Calculate distributed aggregated value
+  """
+  distribution_by(
+    """
+    Path to numerator aggregated value
+    """
+    numerator: String!
+
+    """
+    Path to denominator aggregated value
+    """
+    denominator: String!
+  ): _distribution_by
+  """
+  Calculate distributed aggregated value across denominator buckets
+  """
+  distribution_by_bucket(
+    """
+    Path to bucket key in numerator bucket aggregation
+    """
+    numerator_key: String
+
+    """
+    Path to numerator aggregated value
+    """
+    numerator: String!
+
+    """
+    Path to bucket key in denominator bucket aggregation
+    """
+    denominator_key: String!
+
+    """
+    Path to denominator aggregated value in bucket aggregations
+    """
+    denominator: String!
+  ): [_distribution_by_bucket]
+  """
+  The geometry representation of the H3 cell
+  """
+  geom: Geometry!
+  """
+  The resolution of the H3 cell
+  """
+  resolution: Int!
+}
 type _join @system {
   Airport(fields: [String!]!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "transport_db", engine: "duckdb")
   Airport_aggregation(fields: [String!]!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "transport_db", engine: "duckdb")
@@ -846,7 +954,7 @@ type _join @system {
   Station_aggregation(fields: [String!]!, filter: Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Station_aggregation @aggregation_query(is_bucket: false, name: "Station") @catalog(name: "transport_db", engine: "duckdb")
   Station_bucket_aggregation(fields: [String!]!, filter: Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Station_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Station") @catalog(name: "transport_db", engine: "duckdb")
 }
-type _join_aggregation @aggregation(is_bucket: false, level: 1, name: "_join") {
+type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
   Airport(fields: [String!]!, filter: Airport_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "transport_db", engine: "duckdb") @field_aggregation(name: "Airport")
   Station(fields: [String!]!, filter: Station_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Station_aggregation @aggregation_query(is_bucket: false, name: "Station") @catalog(name: "transport_db", engine: "duckdb") @field_aggregation(name: "Station")
 }
@@ -878,8 +986,14 @@ type _module_transport_db_transport_air_mutation @module_root(name: "transport_d
 }
 type _module_transport_db_transport_air_query @module_root(name: "transport_db.transport.air", type: QUERY) {
   Airport(filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "transport_db", engine: "duckdb")
-  Airport_aggregation(filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "transport_db", engine: "duckdb")
-  Airport_bucket_aggregation(filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airport") @catalog(name: "transport_db", engine: "duckdb")
+  """
+  The aggregation for Airport
+  """
+  Airport_aggregation(filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Airport_aggregation @aggregation_query(name: "Airport", is_bucket: false) @catalog(name: "transport_db", engine: "duckdb")
+  """
+  The aggregation for Airport
+  """
+  Airport_bucket_aggregation(filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Airport_aggregation_bucket] @aggregation_query(name: "Airport", is_bucket: true) @catalog(name: "transport_db", engine: "duckdb")
   Airport_by_pk(iata_code: String!): Airport @query(name: "Airport", type: SELECT_ONE) @catalog(name: "transport_db", engine: "duckdb")
 }
 type _module_transport_db_transport_ground_mutation @module_root(name: "transport_db.transport.ground", type: MUTATION) {
@@ -889,8 +1003,14 @@ type _module_transport_db_transport_ground_mutation @module_root(name: "transpor
 }
 type _module_transport_db_transport_ground_query @module_root(name: "transport_db.transport.ground", type: QUERY) {
   Station(filter: Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Station] @query(name: "Station", type: SELECT) @catalog(name: "transport_db", engine: "duckdb")
-  Station_aggregation(filter: Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Station_aggregation @aggregation_query(is_bucket: false, name: "Station") @catalog(name: "transport_db", engine: "duckdb")
-  Station_bucket_aggregation(filter: Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Station_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Station") @catalog(name: "transport_db", engine: "duckdb")
+  """
+  The aggregation for Station
+  """
+  Station_aggregation(filter: Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Station_aggregation @aggregation_query(name: "Station", is_bucket: false) @catalog(name: "transport_db", engine: "duckdb")
+  """
+  The aggregation for Station
+  """
+  Station_bucket_aggregation(filter: Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Station_aggregation_bucket] @aggregation_query(name: "Station", is_bucket: true) @catalog(name: "transport_db", engine: "duckdb")
   Station_by_pk(id: Int!): Station @query(name: "Station", type: SELECT_ONE) @catalog(name: "transport_db", engine: "duckdb")
 }
 type _module_transport_db_transport_mutation @module_root(name: "transport_db.transport", type: MUTATION) {
@@ -918,10 +1038,7 @@ type _spatial @system {
   Airport_aggregation(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "transport_db", engine: "duckdb")
   Airport_bucket_aggregation(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airport") @catalog(name: "transport_db", engine: "duckdb")
 }
-type _spatial_aggregation @aggregation(is_bucket: false, level: 1, name: "_spatial") {
+type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1) {
   Airport(field: String!, filter: Airport_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "transport_db", engine: "duckdb") @field_aggregation(name: "Airport")
 }
-"""
-any - represents any type, can be used for fields with mixed types, doesn't support filtering, aggregation, transformations and extra fields
-"""
 scalar any

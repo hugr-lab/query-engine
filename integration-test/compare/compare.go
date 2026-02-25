@@ -145,13 +145,15 @@ func compareFields(basePath string, old, new ast.FieldList, cfg *compareConfig) 
 		}
 		diffs = append(diffs, compareField(basePath+"."+name, oldF, newF, cfg)...)
 	}
-	for name := range newMap {
-		if _, ok := oldMap[name]; !ok {
-			diffs = append(diffs, Diff{
-				Path:    basePath + "." + name,
-				Kind:    DiffExtra,
-				Message: fmt.Sprintf("field %q extra in new", name),
-			})
+	if !cfg.allowExtraFields {
+		for name := range newMap {
+			if _, ok := oldMap[name]; !ok {
+				diffs = append(diffs, Diff{
+					Path:    basePath + "." + name,
+					Kind:    DiffExtra,
+					Message: fmt.Sprintf("field %q extra in new", name),
+				})
+			}
 		}
 	}
 	return diffs
