@@ -30,7 +30,7 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 			}
 		}
 		// Validate @view + @args consistency
-		if def.Directives.ForName("view") != nil && def.Directives.ForName("args") != nil {
+		if def.Directives.ForName(base.ObjectViewDirectiveName) != nil && def.Directives.ForName(base.ViewArgsDirectiveName) != nil {
 			if err := validateViewArgs(ctx, def); err != nil {
 				return err
 			}
@@ -40,8 +40,8 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 }
 
 func validateDefinition(ctx base.CompilationContext, def *ast.Definition) error {
-	isTable := def.Directives.ForName("table") != nil
-	isView := def.Directives.ForName("view") != nil
+	isTable := def.Directives.ForName(base.ObjectTableDirectiveName) != nil
+	isView := def.Directives.ForName(base.ObjectViewDirectiveName) != nil
 
 	// Validate @pk fields are scalar types (if present)
 	if isTable || isView {
@@ -51,11 +51,11 @@ func validateDefinition(ctx base.CompilationContext, def *ast.Definition) error 
 	}
 
 	// Validate @cube and @hypertable require @table or @view
-	if def.Directives.ForName("cube") != nil && !isTable && !isView {
+	if def.Directives.ForName(base.ObjectCubeDirectiveName) != nil && !isTable && !isView {
 		return gqlerror.ErrorPosf(def.Position,
 			"object %q: @cube requires @table or @view directive", def.Name)
 	}
-	if def.Directives.ForName("hypertable") != nil && !isTable && !isView {
+	if def.Directives.ForName(base.ObjectHyperTableDirectiveName) != nil && !isTable && !isView {
 		return gqlerror.ErrorPosf(def.Position,
 			"object %q: @hypertable requires @table or @view directive", def.Name)
 	}
@@ -78,12 +78,12 @@ func validateDefinition(ctx base.CompilationContext, def *ast.Definition) error 
 
 // validateCubeHypertableFields validates @measurement and @timescale_key field directives.
 func validateCubeHypertableFields(ctx base.CompilationContext, def *ast.Definition) error {
-	isCube := def.Directives.ForName("cube") != nil
-	isHypertable := def.Directives.ForName("hypertable") != nil
+	isCube := def.Directives.ForName(base.ObjectCubeDirectiveName) != nil
+	isHypertable := def.Directives.ForName(base.ObjectHyperTableDirectiveName) != nil
 
 	for _, f := range def.Fields {
 		// @measurement requires @cube on parent object
-		if mDir := f.Directives.ForName("measurement"); mDir != nil {
+		if mDir := f.Directives.ForName(base.FieldMeasurementDirectiveName); mDir != nil {
 			if !isCube {
 				return gqlerror.ErrorPosf(mDir.Position,
 					"field %q of %q: @measurement requires @cube directive on the object", f.Name, def.Name)
@@ -104,7 +104,7 @@ func validateCubeHypertableFields(ctx base.CompilationContext, def *ast.Definiti
 		}
 
 		// @timescale_key requires @hypertable on parent object
-		if tsDir := f.Directives.ForName("timescale_key"); tsDir != nil {
+		if tsDir := f.Directives.ForName(base.FieldTimescaleKeyDirectiveName); tsDir != nil {
 			if !isHypertable {
 				return gqlerror.ErrorPosf(tsDir.Position,
 					"field %q of %q: @timescale_key requires @hypertable directive on the object", f.Name, def.Name)
@@ -118,7 +118,7 @@ func validateCubeHypertableFields(ctx base.CompilationContext, def *ast.Definiti
 // validatePrimaryKeyTypes checks that all @pk fields (if any) are scalar types.
 func validatePrimaryKeyTypes(ctx base.CompilationContext, def *ast.Definition) error {
 	for _, f := range def.Fields {
-		if f.Directives.ForName("pk") != nil {
+		if f.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil {
 			typeName := f.Type.Name()
 			if typeName == "" || !ctx.IsScalar(typeName) {
 				return gqlerror.ErrorPosf(f.Position,
@@ -162,7 +162,7 @@ func validateFieldTypes(ctx base.CompilationContext, def *ast.Definition) error 
 func validateReferences(ctx base.CompilationContext, def *ast.Definition) error {
 	// Validate definition-level @references
 	for _, dir := range def.Directives {
-		if dir.Name != "references" {
+		if dir.Name != base.ReferencesDirectiveName {
 			continue
 		}
 		if err := validateReferencesDirective(ctx, def, dir); err != nil {
@@ -172,7 +172,7 @@ func validateReferences(ctx base.CompilationContext, def *ast.Definition) error 
 
 	// Validate field-level @field_references
 	for _, f := range def.Fields {
-		frDir := f.Directives.ForName("field_references")
+		frDir := f.Directives.ForName(base.FieldReferencesDirectiveName)
 		if frDir == nil {
 			continue
 		}
@@ -185,9 +185,9 @@ func validateReferences(ctx base.CompilationContext, def *ast.Definition) error 
 }
 
 func validateReferencesDirective(ctx base.CompilationContext, def *ast.Definition, dir *ast.Directive) error {
-	refName := base.DirectiveArgString(dir, "references_name")
-	sourceFields := base.DirectiveArgStrings(dir, "source_fields")
-	refsFields := base.DirectiveArgStrings(dir, "references_fields")
+	refName := base.DirectiveArgString(dir, base.ArgReferencesName)
+	sourceFields := base.DirectiveArgStrings(dir, base.ArgSourceFields)
+	refsFields := base.DirectiveArgStrings(dir, base.ArgReferencesFields)
 
 	// 1. Source fields exist
 	for _, fieldName := range sourceFields {
@@ -210,7 +210,7 @@ func validateReferencesDirective(ctx base.CompilationContext, def *ast.Definitio
 	// 3. If references_fields not specified, infer from PK of target
 	if len(refsFields) == 0 {
 		for _, f := range refDef.Fields {
-			if f.Directives.ForName("pk") != nil {
+			if f.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil {
 				refsFields = append(refsFields, f.Name)
 			}
 		}
@@ -251,8 +251,8 @@ func validateReferencesDirective(ctx base.CompilationContext, def *ast.Definitio
 }
 
 func validateFieldReferences(ctx base.CompilationContext, def *ast.Definition, field *ast.FieldDefinition, dir *ast.Directive) error {
-	refName := base.DirectiveArgString(dir, "references_name")
-	refField := base.DirectiveArgString(dir, "field")
+	refName := base.DirectiveArgString(dir, base.ArgReferencesName)
+	refField := base.DirectiveArgString(dir, base.ArgField)
 
 	// Referenced object exists
 	refDef := ctx.Source().ForName(ctx.Context(), refName)
@@ -334,11 +334,11 @@ func hasField(def *ast.Definition, name string) bool {
 // Each non-$ reference must match a declared argument on the function field.
 func validateFunctionSQL(def *ast.Definition) error {
 	for _, field := range def.Fields {
-		funcDir := field.Directives.ForName("function")
+		funcDir := field.Directives.ForName(base.FunctionDirectiveName)
 		if funcDir == nil {
 			continue
 		}
-		sql := base.DirectiveArgString(funcDir, "sql")
+		sql := base.DirectiveArgString(funcDir, base.ArgSQL)
 		if sql == "" {
 			continue
 		}
@@ -363,8 +363,8 @@ func validateFunctionSQL(def *ast.Definition) error {
 // - If @view has sql: argument, [paramName] references must be either
 //   view fields, $-prefixed system vars, or input args fields
 func validateViewArgs(ctx base.CompilationContext, def *ast.Definition) error {
-	argsDir := def.Directives.ForName("args")
-	argInputName := base.DirectiveArgString(argsDir, "name")
+	argsDir := def.Directives.ForName(base.ViewArgsDirectiveName)
+	argInputName := base.DirectiveArgString(argsDir, base.ArgName)
 	if argInputName == "" {
 		return nil
 	}
@@ -384,8 +384,8 @@ func validateViewArgs(ctx base.CompilationContext, def *ast.Definition) error {
 	}
 
 	// Validate SQL parameter references if @view has sql: argument
-	viewDir := def.Directives.ForName("view")
-	sql := base.DirectiveArgString(viewDir, "sql")
+	viewDir := def.Directives.ForName(base.ObjectViewDirectiveName)
+	sql := base.DirectiveArgString(viewDir, base.ArgSQL)
 	if sql == "" {
 		return nil
 	}

@@ -48,26 +48,26 @@ func DataObjectInfo(def *ast.Definition) *Object {
 	}
 
 	if def.Directives.ForName(base.ObjectTableDirectiveName) != nil {
-		info.Name = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "name")
-		info.SoftDelete = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "soft_delete") == "true"
-		info.softDeleteCondition = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "soft_delete_cond")
-		info.softDeleteSet = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "soft_delete_set")
-		info.IsM2M = objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "is_m2m") == "true"
+		info.Name = base.DefinitionDirectiveArgString(def, base.ObjectTableDirectiveName, base.ArgName)
+		info.SoftDelete = base.DefinitionDirectiveArgString(def, base.ObjectTableDirectiveName, base.ArgSoftDelete) == "true"
+		info.softDeleteCondition = base.DefinitionDirectiveArgString(def, base.ObjectTableDirectiveName, base.ArgSoftDeleteCond)
+		info.softDeleteSet = base.DefinitionDirectiveArgString(def, base.ObjectTableDirectiveName, base.ArgSoftDeleteSet)
+		info.IsM2M = base.DefinitionDirectiveArgString(def, base.ObjectTableDirectiveName, base.ArgIsM2M) == "true"
 		info.Type = TableDataObject
 	}
 
 	if def.Directives.ForName(base.ObjectViewDirectiveName) != nil {
-		info.Name = objectDirectiveArgValue(def, base.ObjectViewDirectiveName, "name")
-		info.sql = objectDirectiveArgValue(def, base.ObjectViewDirectiveName, "sql")
+		info.Name = base.DefinitionDirectiveArgString(def, base.ObjectViewDirectiveName, base.ArgName)
+		info.sql = base.DefinitionDirectiveArgString(def, base.ObjectViewDirectiveName, base.ArgSQL)
 		info.Type = ViewDataObject
 	}
 
-	info.inputFilterName = objectDirectiveArgValue(def, base.FilterInputDirectiveName, "name")
-	info.inputFilterListName = objectDirectiveArgValue(def, base.FilterListInputDirectiveName, "name")
+	info.inputFilterName = base.DefinitionDirectiveArgString(def, base.FilterInputDirectiveName, base.ArgName)
+	info.inputFilterListName = base.DefinitionDirectiveArgString(def, base.FilterListInputDirectiveName, base.ArgName)
 	info.IsCube = def.Directives.ForName(base.ObjectCubeDirectiveName) != nil
 	info.IsHypertable = def.Directives.ForName(base.ObjectHyperTableDirectiveName) != nil
-	info.InputArgsName = objectDirectiveArgValue(def, base.ViewArgsDirectiveName, "name")
-	info.RequiredArgs = objectDirectiveArgValue(def, base.ViewArgsDirectiveName, "required") == "true"
+	info.InputArgsName = base.DefinitionDirectiveArgString(def, base.ViewArgsDirectiveName, base.ArgName)
+	info.RequiredArgs = base.DefinitionDirectiveArgString(def, base.ViewArgsDirectiveName, base.ArgRequired) == "true"
 	info.HasVectors = IsVectorSearchable(def)
 
 	return &info
@@ -78,12 +78,12 @@ func CatalogName(def *ast.Definition) string {
 }
 
 func ObjectSQL(def *ast.Definition) string {
-	name := objectDirectiveArgValue(def, base.ObjectTableDirectiveName, "name")
+	name := base.DefinitionDirectiveArgString(def, base.ObjectTableDirectiveName, base.ArgName)
 	if name != "" {
 		return name
 	}
-	name = objectDirectiveArgValue(def, base.ObjectViewDirectiveName, "name")
-	sql := objectDirectiveArgValue(def, base.ObjectViewDirectiveName, "sql")
+	name = base.DefinitionDirectiveArgString(def, base.ObjectViewDirectiveName, base.ArgName)
+	sql := base.DefinitionDirectiveArgString(def, base.ObjectViewDirectiveName, base.ArgSQL)
 	if sql != "" {
 		return fmt.Sprintf("(%s) AS %s", sql, name)
 	}
@@ -137,8 +137,8 @@ type ObjectQuery struct {
 
 func (info *Object) Queries() (queries []ObjectQuery) {
 	for _, d := range info.def.Directives.ForNames(base.QueryDirectiveName) {
-		name := directiveArgValue(d, "name")
-		switch directiveArgValue(d, "type") {
+		name := base.DirectiveArgString(d, base.ArgName)
+		switch base.DirectiveArgString(d, base.ArgType) {
 		case base.QueryTypeTextSelect:
 			queries = append(queries, ObjectQuery{Name: name, Type: QueryTypeSelect})
 		case base.QueryTypeTextSelectOne:
@@ -184,7 +184,7 @@ func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSou
 		}
 		if d := field.Directives.ForName(base.InputFieldNamedArgDirectiveName); d != nil {
 			name := field.Name
-			if fn := directiveArgValue(d, "name"); fn != "" {
+			if fn := base.DirectiveArgString(d, base.ArgName); fn != "" {
 				name = fn
 			}
 			namedArgs[name] = val
@@ -250,7 +250,7 @@ func (info *Object) SubAggregationTypeName(ctx context.Context, defs base.Defini
 }
 
 func (info *Object) InputFilterName() string {
-	return objectDirectiveArgValue(info.def, base.FilterInputDirectiveName, "name")
+	return base.DefinitionDirectiveArgString(info.def, base.FilterInputDirectiveName, base.ArgName)
 }
 
 type ObjectMutationType = base.ObjectMutationType
@@ -263,8 +263,8 @@ const (
 
 func (info *Object) InputInsertDataName() string {
 	for _, d := range info.def.Directives.ForNames(base.MutationDirectiveName) {
-		if directiveArgValue(d, "type") == base.MutationTypeTextInsert {
-			return directiveArgValue(d, base.DataInputDirectiveName)
+		if base.DirectiveArgString(d, base.ArgType) == base.MutationTypeTextInsert {
+			return base.DirectiveArgString(d, base.DataInputDirectiveName)
 		}
 	}
 	return ""
@@ -272,8 +272,8 @@ func (info *Object) InputInsertDataName() string {
 
 func (info *Object) InsertMutationName() string {
 	for _, d := range info.def.Directives.ForNames(base.MutationDirectiveName) {
-		if directiveArgValue(d, "type") == base.MutationTypeTextInsert {
-			return directiveArgValue(d, "name")
+		if base.DirectiveArgString(d, base.ArgType) == base.MutationTypeTextInsert {
+			return base.DirectiveArgString(d, base.ArgName)
 		}
 	}
 	return ""
@@ -281,8 +281,8 @@ func (info *Object) InsertMutationName() string {
 
 func (info *Object) InputUpdateDataName() string {
 	for _, d := range info.def.Directives.ForNames(base.MutationDirectiveName) {
-		if directiveArgValue(d, "type") == base.MutationTypeTextUpdate {
-			return directiveArgValue(d, base.DataInputDirectiveName)
+		if base.DirectiveArgString(d, base.ArgType) == base.MutationTypeTextUpdate {
+			return base.DirectiveArgString(d, base.DataInputDirectiveName)
 		}
 	}
 	return ""
@@ -290,8 +290,8 @@ func (info *Object) InputUpdateDataName() string {
 
 func (info *Object) UpdateMutationName() string {
 	for _, d := range info.def.Directives.ForNames(base.MutationDirectiveName) {
-		if directiveArgValue(d, "type") == base.MutationTypeTextUpdate {
-			return directiveArgValue(d, "name")
+		if base.DirectiveArgString(d, base.ArgType) == base.MutationTypeTextUpdate {
+			return base.DirectiveArgString(d, base.ArgName)
 		}
 	}
 	return ""
@@ -299,8 +299,8 @@ func (info *Object) UpdateMutationName() string {
 
 func (info *Object) DeleteMutationName() string {
 	for _, d := range info.def.Directives.ForNames(base.MutationDirectiveName) {
-		if directiveArgValue(d, "type") == base.MutationTypeTextDelete {
-			return directiveArgValue(d, "name")
+		if base.DirectiveArgString(d, base.ArgType) == base.MutationTypeTextDelete {
+			return base.DirectiveArgString(d, base.ArgName)
 		}
 	}
 	return ""
@@ -324,7 +324,7 @@ func (info *Object) ReferencesQueryInfo(ctx context.Context, defs base.Definitio
 	if field == nil {
 		return nil
 	}
-	refName := fieldDirectiveArgValue(field.def, base.FieldReferencesQueryDirectiveName, "name")
+	refName := base.FieldDefDirectiveArgString(field.def, base.FieldReferencesQueryDirectiveName, base.ArgName)
 	def := info.def
 	for _, ref := range def.Directives.ForNames(base.ReferencesDirectiveName) {
 		if ri := ReferencesInfo(ref); ri.Name == refName {
@@ -334,7 +334,7 @@ func (info *Object) ReferencesQueryInfo(ctx context.Context, defs base.Definitio
 			return referencesInfo(ref, def.Name, false)
 		}
 	}
-	refObject := fieldDirectiveArgValue(field.def, base.FieldReferencesQueryDirectiveName, "references_name")
+	refObject := base.FieldDefDirectiveArgString(field.def, base.FieldReferencesQueryDirectiveName, base.ArgReferencesName)
 	def = defs.ForName(ctx, refObject)
 	if def == nil {
 		return nil

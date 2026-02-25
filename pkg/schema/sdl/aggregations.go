@@ -9,7 +9,7 @@ import (
 )
 
 func AggregatedQueryDef(field *ast.Field) *ast.FieldDefinition {
-	refField := fieldDirectiveArgValue(field.Definition, base.FieldAggregationQueryDirectiveName, "name")
+	refField := base.FieldDefDirectiveArgString(field.Definition, base.FieldAggregationQueryDirectiveName, base.ArgName)
 	if refField == "" {
 		return nil
 	}
@@ -20,8 +20,8 @@ func AggregatedQueryFieldName(def *ast.FieldDefinition) (string, bool) {
 	if def == nil {
 		return "", false
 	}
-	return fieldDirectiveArgValue(def, base.FieldAggregationQueryDirectiveName, "name"),
-		fieldDirectiveArgValue(def, base.FieldAggregationQueryDirectiveName, "is_bucket") == "true"
+	return base.FieldDefDirectiveArgString(def, base.FieldAggregationQueryDirectiveName, base.ArgName),
+		base.FieldDefDirectiveArgString(def, base.FieldAggregationQueryDirectiveName, base.ArgIsBucket) == "true"
 }
 
 func AggregatedObjectDef(ctx context.Context, defs base.DefinitionsSource, def *ast.Definition) *ast.Definition {
@@ -32,7 +32,7 @@ func AggregatedObjectDef(ctx context.Context, defs base.DefinitionsSource, def *
 	if parentAgg := types.AggregationTypeFromSub(def.Name); parentAgg != "" {
 		return defs.ForName(ctx, parentAgg)
 	}
-	refName := objectDirectiveArgValue(def, base.ObjectAggregationDirectiveName, "name")
+	refName := base.DefinitionDirectiveArgString(def, base.ObjectAggregationDirectiveName, base.ArgName)
 	if refName == "" {
 		return nil
 	}

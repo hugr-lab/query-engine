@@ -50,17 +50,12 @@ func IsHyperTable(def *ast.Definition) bool {
 	return def.Directives.ForName(base.ObjectHyperTableDirectiveName) != nil
 }
 
-const (
-	Table = "table"
-	View  = "view"
-)
-
 func DataObjectType(def *ast.Definition) string {
-	if d := def.Directives.ForName(Table); d != nil {
-		return Table
+	if d := def.Directives.ForName(base.TableDataObject); d != nil {
+		return base.TableDataObject
 	}
-	if d := def.Directives.ForName(View); d != nil {
-		return View
+	if d := def.Directives.ForName(base.ViewDataObject); d != nil {
+		return base.ViewDataObject
 	}
 	return ""
 }
@@ -108,7 +103,7 @@ func IsSelectQueryDefinition(field *ast.FieldDefinition) bool {
 	if d == nil {
 		return false
 	}
-	t := d.Arguments.ForName("type")
+	t := d.Arguments.ForName(base.ArgType)
 	if t == nil {
 		return false
 	}
@@ -124,7 +119,7 @@ func IsSelectOneQueryDefinition(def *ast.FieldDefinition) bool {
 	if d == nil {
 		return false
 	}
-	t := d.Arguments.ForName("type")
+	t := d.Arguments.ForName(base.ArgType)
 	if t == nil {
 		return false
 	}
@@ -137,7 +132,7 @@ func IsAggregateQuery(field *ast.Field) bool {
 
 func IsAggregateQueryDefinition(def *ast.FieldDefinition) bool {
 	d := def.Directives.ForName(base.FieldAggregationQueryDirectiveName)
-	return d != nil && directiveArgValue(d, "is_bucket") != "true"
+	return d != nil && base.DirectiveArgString(d, base.ArgIsBucket) != "true"
 }
 
 func IsBucketAggregateQuery(field *ast.Field) bool {
@@ -146,7 +141,7 @@ func IsBucketAggregateQuery(field *ast.Field) bool {
 
 func IsBucketAggregateQueryDefinition(def *ast.FieldDefinition) bool {
 	d := def.Directives.ForName(base.FieldAggregationQueryDirectiveName)
-	return d != nil && directiveArgValue(d, "is_bucket") == "true"
+	return d != nil && base.DirectiveArgString(d, base.ArgIsBucket) == "true"
 }
 
 func IsH3Query(field *ast.Field) bool {
@@ -163,7 +158,7 @@ func IsInsertQueryDefinition(def *ast.FieldDefinition) bool {
 	if d == nil {
 		return false
 	}
-	t := d.Arguments.ForName("type")
+	t := d.Arguments.ForName(base.ArgType)
 	if t == nil {
 		return false
 	}
@@ -195,7 +190,7 @@ func isFieldDefMutationType(def *ast.FieldDefinition, mutType string) bool {
 	if d == nil {
 		return false
 	}
-	t := d.Arguments.ForName("type")
+	t := d.Arguments.ForName(base.ArgType)
 	if t == nil {
 		return false
 	}

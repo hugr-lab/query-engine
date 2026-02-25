@@ -36,7 +36,7 @@ func (r *JoinValidator) ProcessAll(ctx base.CompilationContext) error {
 			continue
 		}
 		for _, f := range def.Fields {
-			joinDir := f.Directives.ForName("join")
+			joinDir := f.Directives.ForName(base.JoinDirectiveName)
 			if joinDir == nil {
 				continue
 			}
@@ -49,10 +49,10 @@ func (r *JoinValidator) ProcessAll(ctx base.CompilationContext) error {
 }
 
 func validateJoinField(ctx base.CompilationContext, def *ast.Definition, field *ast.FieldDefinition, dir *ast.Directive) error {
-	refName := base.DirectiveArgString(dir, "references_name")
-	sourceFields := base.DirectiveArgStrings(dir, "source_fields")
-	refsFields := base.DirectiveArgStrings(dir, "references_fields")
-	sql := base.DirectiveArgString(dir, "sql")
+	refName := base.DirectiveArgString(dir, base.ArgReferencesName)
+	sourceFields := base.DirectiveArgStrings(dir, base.ArgSourceFields)
+	refsFields := base.DirectiveArgStrings(dir, base.ArgReferencesFields)
+	sql := base.DirectiveArgString(dir, base.ArgSQL)
 
 	// 1. Validate source_fields and references_fields have equal length
 	if len(sourceFields) != len(refsFields) {
@@ -74,8 +74,8 @@ func validateJoinField(ctx base.CompilationContext, def *ast.Definition, field *
 	}
 
 	// 3. Propagate @catalog from referenced object to field if missing
-	if field.Directives.ForName("catalog") == nil {
-		if refCatalog := refDef.Directives.ForName("catalog"); refCatalog != nil {
+	if field.Directives.ForName(base.CatalogDirectiveName) == nil {
+		if refCatalog := refDef.Directives.ForName(base.CatalogDirectiveName); refCatalog != nil {
 			field.Directives = append(field.Directives, refCatalog)
 		}
 	}

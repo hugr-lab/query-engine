@@ -191,7 +191,7 @@ func addModuleToFuncCallDirective(f *ast.FieldDefinition, moduleName string) {
 		if d == nil {
 			continue
 		}
-		if a := d.Arguments.ForName("module"); a != nil {
+		if a := d.Arguments.ForName(base.ArgModule); a != nil {
 			a.Value.Raw = moduleName
 		} else {
 			d.Arguments = append(d.Arguments, &ast.Argument{
@@ -325,7 +325,7 @@ func generateMutInputData(ctx base.CompilationContext, def *ast.Definition, name
 		if f.Name == "_stub" {
 			continue
 		}
-		if f.Directives.ForName("sql") != nil {
+		if f.Directives.ForName(base.FieldSqlDirectiveName) != nil {
 			continue // skip computed fields
 		}
 		if isVirtualField(f) {
@@ -378,7 +378,7 @@ func generateMutData(ctx base.CompilationContext, def *ast.Definition, name stri
 		if f.Name == "_stub" {
 			continue
 		}
-		if f.Directives.ForName("sql") != nil {
+		if f.Directives.ForName(base.FieldSqlDirectiveName) != nil {
 			continue // skip computed fields
 		}
 		if isVirtualField(f) {

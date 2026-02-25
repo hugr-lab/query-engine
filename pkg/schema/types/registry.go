@@ -141,6 +141,38 @@ func IsKnownJSONType(typeName string) bool {
 	return false
 }
 
+// JSONTypeHintWithOk returns the JSON extraction type hint and whether the type is known.
+func JSONTypeHintWithOk(typeName string) (string, bool) {
+	if !IsKnownJSONType(typeName) {
+		return "", false
+	}
+	return JSONTypeHint(typeName), true
+}
+
+// ParseValue dispatches value parsing to the scalar type's ValueParser interface.
+func ParseValue(typeName string, v any) (any, error) {
+	s := Lookup(typeName)
+	if s == nil {
+		return v, nil
+	}
+	if p, ok := s.(ValueParser); ok {
+		return p.ParseValue(v)
+	}
+	return v, nil
+}
+
+// ParseArray dispatches array parsing to the scalar type's ArrayParser interface.
+func ParseArray(typeName string, v any) (any, error) {
+	s := Lookup(typeName)
+	if s == nil {
+		return nil, fmt.Errorf("unsupported array type [%s]", typeName)
+	}
+	if p, ok := s.(ArrayParser); ok {
+		return p.ParseArray(v)
+	}
+	return nil, fmt.Errorf("unsupported array type [%s]", typeName)
+}
+
 // Sources returns all scalar SDL merged into ast.Source entries.
 func Sources() []*ast.Source {
 	var b strings.Builder

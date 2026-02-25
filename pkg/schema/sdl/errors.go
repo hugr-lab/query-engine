@@ -1,15 +1,5 @@
 package sdl
 
-import (
-	"fmt"
+import "github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 
-	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/gqlerror"
-)
-
-func ErrorPosf(pos *ast.Position, format string, args ...interface{}) *gqlerror.Error {
-	if pos == nil || pos.Src == nil {
-		return gqlerror.Wrap(fmt.Errorf(format, args...))
-	}
-	return gqlerror.ErrorPosf(pos, format, args...)
-}
+var ErrorPosf = base.ErrorPosf

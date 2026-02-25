@@ -54,21 +54,21 @@ func joinInfoFromDirective(def *ast.Directive) *Join {
 		return nil
 	}
 	return &Join{
-		ReferencesName:   directiveArgValue(def, "references_name"),
-		sourceFields:     directiveArgChildValues(def, "source_fields"),
-		referencesFields: directiveArgChildValues(def, "references_fields"),
-		SQL:              directiveArgValue(def, "sql"),
+		ReferencesName:   base.DirectiveArgString(def, base.ArgReferencesName),
+		sourceFields:     base.DirectiveArgStrings(def, base.ArgSourceFields),
+		referencesFields: base.DirectiveArgStrings(def, base.ArgReferencesFields),
+		SQL:              base.DirectiveArgString(def, base.ArgSQL),
 	}
 }
 
 func (j *Join) Catalog(ctx context.Context, defs base.DefinitionsSource) string {
-	cat := fieldDirectiveArgValue(j.field, base.CatalogDirectiveName, "name")
+	cat := base.FieldDefDirectiveArgString(j.field, base.CatalogDirectiveName, base.ArgName)
 	if cat != "" {
 		return cat
 	}
-	return objectDirectiveArgValue(
+	return base.DefinitionDirectiveArgString(
 		defs.ForName(ctx, j.field.Type.Name()),
-		base.CatalogDirectiveName, "name",
+		base.CatalogDirectiveName, base.ArgName,
 	)
 }
 

@@ -30,28 +30,10 @@ func SpecifiedByURL(def *ast.Definition) string {
 }
 
 // ParseScalarValue dispatches value parsing to the scalar type's ValueParser interface.
-func ParseScalarValue(typeName string, v any) (any, error) {
-	s := types.Lookup(typeName)
-	if s == nil {
-		return v, nil
-	}
-	if p, ok := s.(types.ValueParser); ok {
-		return p.ParseValue(v)
-	}
-	return v, nil
-}
+var ParseScalarValue = types.ParseValue
 
 // ParseScalarArray dispatches array parsing to the scalar type's ArrayParser interface.
-func ParseScalarArray(typeName string, v any) (any, error) {
-	s := types.Lookup(typeName)
-	if s == nil {
-		return nil, ErrorPosf(nil, "unsupported array type [%s]", typeName)
-	}
-	if p, ok := s.(types.ArrayParser); ok {
-		return p.ParseArray(v)
-	}
-	return nil, ErrorPosf(nil, "unsupported array type [%s]", typeName)
-}
+var ParseScalarArray = types.ParseArray
 
 // ToOutputSQL applies output SQL transformation for a scalar type.
 func ToOutputSQL(typeName, sql string, raw bool) string {
@@ -219,21 +201,16 @@ func ParseDataAsInputObject(ctx context.Context, defs base.DefinitionsSource, in
 
 // JSONTypeHint returns the JSON extraction type hint for a type name and whether
 // the type is known. Delegates to the scalar type registry.
-func JSONTypeHint(typeName string) (string, bool) {
-	if !types.IsKnownJSONType(typeName) {
-		return "", false
-	}
-	return types.JSONTypeHint(typeName), true
-}
+var JSONTypeHint = types.JSONTypeHintWithOk
 
 func checkDim(val any, dim *ast.Directive) error {
 	if dim == nil {
 		return nil
 	}
-	if dim.Arguments.ForName("len").Value.Raw == "" {
+	if dim.Arguments.ForName(base.ArgLen).Value.Raw == "" {
 		return ErrorPosf(dim.Position, "missing length argument")
 	}
-	d, err := dim.Arguments.ForName("len").Value.Value(nil)
+	d, err := dim.Arguments.ForName(base.ArgLen).Value.Value(nil)
 	if err != nil {
 		return err
 	}

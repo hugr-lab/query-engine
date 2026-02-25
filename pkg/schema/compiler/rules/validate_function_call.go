@@ -98,8 +98,8 @@ func collectFuncsFromType(ctx base.CompilationContext, typeName string, registry
 }
 
 func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, field *ast.FieldDefinition, funcRegistry map[string]*ast.FieldDefinition) error {
-	fcDir := field.Directives.ForName("function_call")
-	tfjDir := field.Directives.ForName("table_function_call_join")
+	fcDir := field.Directives.ForName(base.FunctionCallDirectiveName)
+	tfjDir := field.Directives.ForName(base.FunctionCallTableJoinDirectiveName)
 	if fcDir == nil && tfjDir == nil {
 		return nil
 	}
@@ -111,7 +111,7 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 		isTableFuncJoin = true
 	}
 
-	refName := base.DirectiveArgString(dir, "references_name")
+	refName := base.DirectiveArgString(dir, base.ArgReferencesName)
 	argsMap := extractArgsMap(dir)
 
 	// 1. Resolve the function definition using the pre-built registry
@@ -138,8 +138,8 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 	}
 
 	// 3. Propagate @catalog from function to field if missing
-	if field.Directives.ForName("catalog") == nil {
-		if funcCatalog := funcField.Directives.ForName("catalog"); funcCatalog != nil {
+	if field.Directives.ForName(base.CatalogDirectiveName) == nil {
+		if funcCatalog := funcField.Directives.ForName(base.CatalogDirectiveName); funcCatalog != nil {
 			field.Directives = append(field.Directives, funcCatalog)
 		}
 	}
@@ -147,8 +147,8 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 	// 3b. Propagate module from function's @module directive to the function_call/
 	// table_function_call_join directive. Skip for extension fields (@dependency)
 	// since they may reference functions from a different catalog.
-	if funcModule := funcModuleName(funcField); funcModule != "" && field.Directives.ForName("dependency") == nil {
-		base.SetDirectiveArg(dir, "module", funcModule)
+	if funcModule := funcModuleName(funcField); funcModule != "" && field.Directives.ForName(base.DependencyDirectiveName) == nil {
+		base.SetDirectiveArg(dir, base.ArgModule, funcModule)
 	}
 
 	// 4. Validate field arguments that correspond to function arguments.
@@ -214,7 +214,7 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 // The args argument is an object value like: args: {code: "iata_code", radius: "distance"}
 func extractArgsMap(dir *ast.Directive) map[string]string {
 	result := make(map[string]string)
-	argsArg := dir.Arguments.ForName("args")
+	argsArg := dir.Arguments.ForName(base.ArgArgs)
 	if argsArg == nil || argsArg.Value == nil {
 		return result
 	}
@@ -226,5 +226,5 @@ func extractArgsMap(dir *ast.Directive) map[string]string {
 
 // funcModuleName returns the module name from a function field's @module directive.
 func funcModuleName(funcField *ast.FieldDefinition) string {
-	return base.DirectiveArgString(funcField.Directives.ForName("module"), "name")
+	return base.DirectiveArgString(funcField.Directives.ForName(base.ModuleDirectiveName), base.ArgName)
 }

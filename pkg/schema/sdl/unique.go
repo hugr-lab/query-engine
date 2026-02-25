@@ -21,8 +21,8 @@ func UniqueInfo(def *ast.Directive) *Unique {
 	}
 	return &Unique{
 		def:         def,
-		Fields:      directiveArgChildValues(def, "fields"),
-		QuerySuffix: directiveArgValue(def, "query_suffix"),
-		Skip:        directiveArgValue(def, "skip_query") == "true",
+		Fields:      base.DirectiveArgStrings(def, "fields"),
+		QuerySuffix: base.DirectiveArgString(def, base.ArgQuerySuffix),
+		Skip:        base.DirectiveArgString(def, base.ArgSkipQuery) == "true",
 	}
 }

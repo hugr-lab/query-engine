@@ -163,10 +163,10 @@ func ObjectQueryDefinition(ctx context.Context, defs base.DefinitionsSource, def
 	}
 	qt := queryTypeToText(queryType)
 	for _, d := range def.Directives.ForNames(base.QueryDirectiveName) {
-		if directiveArgValue(d, "type") != qt {
+		if base.DirectiveArgString(d, base.ArgType) != qt {
 			continue
 		}
-		qn := directiveArgValue(d, "name")
+		qn := base.DirectiveArgString(d, base.ArgName)
 		if qn == "" {
 			return "", nil
 		}
@@ -185,10 +185,10 @@ func ObjectMutationDefinition(ctx context.Context, defs base.DefinitionsSource, 
 	}
 	mt := mutationTypeToText(mutationType)
 	for _, d := range def.Directives.ForNames(base.MutationDirectiveName) {
-		if directiveArgValue(d, "type") != mt {
+		if base.DirectiveArgString(d, base.ArgType) != mt {
 			continue
 		}
-		mn := directiveArgValue(d, "name")
+		mn := base.DirectiveArgString(d, base.ArgName)
 		if mn == "" {
 			return "", nil
 		}
@@ -244,8 +244,8 @@ func MutationInfo(ctx context.Context, defs base.DefinitionsSource, query *ast.F
 		return nil
 	}
 	m := Mutation{
-		ObjectName: directiveArgValue(d, "name"),
-		Catalog:    fieldDirectiveArgValue(query, base.CatalogDirectiveName, "name"),
+		ObjectName: base.DirectiveArgString(d, base.ArgName),
+		Catalog:    base.FieldDefDirectiveArgString(query, base.CatalogDirectiveName, base.ArgName),
 		query:      query,
 		ctx:        ctx,
 		defs:       defs,
@@ -253,7 +253,7 @@ func MutationInfo(ctx context.Context, defs base.DefinitionsSource, query *ast.F
 	if m.ObjectName == "" {
 		return nil
 	}
-	t := directiveArgValue(d, "type")
+	t := base.DirectiveArgString(d, base.ArgType)
 	if t == "" {
 		return nil
 	}
@@ -413,11 +413,11 @@ func (m *Mutation) ReferencesMutation(name string) *Mutation {
 		return nil
 	}
 	for _, d := range rt.Directives.ForNames(base.MutationDirectiveName) {
-		t := directiveArgValue(d, "type")
+		t := base.DirectiveArgString(d, base.ArgType)
 		if t != base.MutationTypeTextInsert {
 			continue
 		}
-		mn := objectDirectiveArgValue(rt, base.MutationDirectiveName, "name")
+		mn := base.DefinitionDirectiveArgString(rt, base.MutationDirectiveName, base.ArgName)
 		if mn == "" {
 			return nil
 		}
@@ -435,7 +435,7 @@ func (m *Mutation) DefaultSequencesValues() map[string]string {
 		if field.Directives.ForName(base.FieldDefaultDirectiveName) == nil {
 			continue
 		}
-		sequence := fieldDirectiveArgValue(field, base.FieldDefaultDirectiveName, "sequence")
+		sequence := base.FieldDefDirectiveArgString(field, base.FieldDefaultDirectiveName, base.ArgSequence)
 		if sequence == "" {
 			continue
 		}
@@ -476,7 +476,7 @@ func (m *Mutation) AppendInsertSQLExpression(data map[string]string, vars map[st
 		if field.def == nil {
 			return ErrorPosf(m.query.Position, "field %s definition not found", field.Name)
 		}
-		sql := fieldDirectiveArgValue(field.def, base.FieldDefaultDirectiveName, base.FieldDefaultDirectiveInsertExprArgName)
+		sql := base.FieldDefDirectiveArgString(field.def, base.FieldDefaultDirectiveName, base.FieldDefaultDirectiveInsertExprArgName)
 		if sql == "" {
 			continue
 		}
@@ -497,7 +497,7 @@ func (m *Mutation) AppendUpdateSQLExpression(data map[string]string, vars map[st
 		if field.def == nil {
 			return ErrorPosf(m.query.Position, "field %s definition not found", field.Name)
 		}
-		sql := fieldDirectiveArgValue(field.def, base.FieldDefaultDirectiveName, base.FieldDefaultDirectiveUpdateExprArgName)
+		sql := base.FieldDefDirectiveArgString(field.def, base.FieldDefaultDirectiveName, base.FieldDefaultDirectiveUpdateExprArgName)
 		if sql == "" {
 			continue
 		}
@@ -538,7 +538,7 @@ func (m *Mutation) DBFieldName(name string) string {
 		return ""
 	}
 	if d := field.Directives.ForName(base.FieldSourceDirectiveName); d != nil {
-		return directiveArgValue(d, "field")
+		return base.DirectiveArgString(d, base.ArgField)
 	}
 	return field.Name
 }
@@ -550,10 +550,10 @@ func (m *Mutation) SelectByPKQuery(query *ast.Field) *ast.Field {
 	}
 	var qn string
 	for _, d := range m.ObjectDefinition.Directives.ForNames(base.QueryDirectiveName) {
-		if directiveArgValue(d, "type") != base.QueryTypeTextSelectOne {
+		if base.DirectiveArgString(d, base.ArgType) != base.QueryTypeTextSelectOne {
 			continue
 		}
-		name := directiveArgValue(d, "name")
+		name := base.DirectiveArgString(d, base.ArgName)
 		if name == "" || !strings.HasSuffix(name, base.ObjectQueryByPKSuffix) {
 			continue
 		}

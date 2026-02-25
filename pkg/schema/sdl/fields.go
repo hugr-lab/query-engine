@@ -29,14 +29,14 @@ func FieldInfo(field *ast.Field) *Field {
 }
 
 func FieldDefinitionInfo(field *ast.FieldDefinition, object *ast.Definition) *Field {
-	dim, _ := strconv.Atoi(fieldDirectiveArgValue(field, base.FieldDimDirectiveName, "len"))
+	dim, _ := strconv.Atoi(base.FieldDefDirectiveArgString(field, base.FieldDimDirectiveName, base.ArgLen))
 	return &Field{
 		Name:         field.Name,
-		dbName:       fieldDirectiveArgValue(field, base.FieldSourceDirectiveName, "field"),
-		sql:          fieldDirectiveArgValue(field, base.FieldSqlDirectiveName, "exp"),
-		geometrySRID: fieldDirectiveArgValue(field, base.FieldGeometryInfoDirectiveName, "srid"),
-		geometryType: fieldDirectiveArgValue(field, base.FieldGeometryInfoDirectiveName, "type"),
-		sequence:     fieldDirectiveArgValue(field, base.FieldDefaultDirectiveName, "sequence"),
+		dbName:       base.FieldDefDirectiveArgString(field, base.FieldSourceDirectiveName, base.ArgField),
+		sql:          base.FieldDefDirectiveArgString(field, base.FieldSqlDirectiveName, base.ArgExp),
+		geometrySRID: base.FieldDefDirectiveArgString(field, base.FieldGeometryInfoDirectiveName, base.ArgSRID),
+		geometryType: base.FieldDefDirectiveArgString(field, base.FieldGeometryInfoDirectiveName, base.ArgType),
+		sequence:     base.FieldDefDirectiveArgString(field, base.FieldDefaultDirectiveName, base.ArgSequence),
 		Dim:          dim,
 		def:          field,
 		object:       object,
@@ -166,7 +166,7 @@ func IsTimescaleKey(def *ast.FieldDefinition) bool {
 
 func TransformBaseFieldType(field *ast.FieldDefinition) string {
 	if d := field.Directives.ForName(base.FieldExtraFieldDirectiveName); d != nil {
-		if t := directiveArgValue(d, "base_type"); t != "" {
+		if t := base.DirectiveArgString(d, base.ArgBaseType); t != "" {
 			return t
 		}
 	}
@@ -182,7 +182,7 @@ func IsExtraField(def *ast.FieldDefinition) bool {
 
 func ExtraFieldName(def *ast.FieldDefinition) string {
 	if d := def.Directives.ForName(base.FieldExtraFieldDirectiveName); d != nil {
-		if t := directiveArgValue(d, "name"); t != "" {
+		if t := base.DirectiveArgString(d, base.ArgName); t != "" {
 			return t
 		}
 	}

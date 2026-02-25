@@ -30,7 +30,10 @@ func DirectiveArgValue(d *ast.Directive, name string, vars map[string]any) strin
 		}
 		return ""
 	}
-	return argumentRawValue(a)
+	if a.Value == nil || a.Value.Raw == "" {
+		return ""
+	}
+	return a.Value.Raw
 }
 
 func DirectiveArgChildValues(d *ast.Directive, name string, vars map[string]any) []string {
@@ -65,53 +68,14 @@ func DirectiveArgChildValues(d *ast.Directive, name string, vars map[string]any)
 		}
 		return nil
 	}
-	return argumentChildRawValues(a)
-}
-
-// directiveArgValue reads a raw argument value from a directive (no variable resolution).
-func directiveArgValue(d *ast.Directive, name string) string {
-	if d == nil {
-		return ""
-	}
-	return argumentRawValue(d.Arguments.ForName(name))
-}
-
-// directiveArgChildValues reads child values from a list argument (no variable resolution).
-func directiveArgChildValues(d *ast.Directive, name string) []string {
-	if d == nil {
-		return nil
-	}
-	return argumentChildRawValues(d.Arguments.ForName(name))
-}
-
-func fieldDirectiveArgValue(field *ast.FieldDefinition, directiveName, argName string) string {
-	if field == nil {
-		return ""
-	}
-	return directiveArgValue(field.Directives.ForName(directiveName), argName)
-}
-
-func objectDirectiveArgValue(def *ast.Definition, directiveName, argName string) string {
-	if def == nil {
-		return ""
-	}
-	return directiveArgValue(def.Directives.ForName(directiveName), argName)
-}
-
-func argumentRawValue(a *ast.Argument) string {
-	if a == nil {
-		return ""
-	}
-	return a.Value.Raw
-}
-
-func argumentChildRawValues(a *ast.Argument) []string {
-	if a == nil {
+	if a.Value == nil {
 		return nil
 	}
 	var out []string
 	for _, v := range a.Value.Children {
-		out = append(out, v.Value.Raw)
+		if v.Value != nil {
+			out = append(out, v.Value.Raw)
+		}
 	}
 	return out
 }

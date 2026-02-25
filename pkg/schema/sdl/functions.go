@@ -26,18 +26,18 @@ func FunctionInfo(field *ast.FieldDefinition) (*Function, error) {
 	if d == nil {
 		return nil, ErrorPosf(field.Position, "field %s should have a directive @%s", field.Name, base.FunctionDirectiveName)
 	}
-	catalog := fieldDirectiveArgValue(field, base.CatalogDirectiveName, "name")
-	isTable := fieldDirectiveArgValue(field, base.FunctionDirectiveName, "is_table") == "true" ||
+	catalog := base.FieldDefDirectiveArgString(field, base.CatalogDirectiveName, base.ArgName)
+	isTable := base.FieldDefDirectiveArgString(field, base.FunctionDirectiveName, base.ArgIsTable) == "true" ||
 		!IsScalarType(field.Type.Name()) && field.Type.NamedType == ""
 
 	return &Function{
-		Module:       fieldDirectiveArgValue(field, base.ModuleDirectiveName, "name"),
+		Module:       base.FieldDefDirectiveArgString(field, base.ModuleDirectiveName, base.ArgName),
 		Catalog:      catalog,
-		Name:         directiveArgValue(d, "name"),
-		SkipNullArg:  directiveArgValue(d, "skip_null_arg") == "true" && len(field.Arguments) == 1,
-		JsonCast:     !isTable && fieldDirectiveArgValue(field, base.FunctionDirectiveName, "json_cast") == "true",
+		Name:         base.DirectiveArgString(d, base.ArgName),
+		SkipNullArg:  base.DirectiveArgString(d, base.ArgSkipNullArg) == "true" && len(field.Arguments) == 1,
+		JsonCast:     !isTable && base.FieldDefDirectiveArgString(field, base.FunctionDirectiveName, base.ArgJsonCast) == "true",
 		ReturnsTable: isTable,
-		sql:          directiveArgValue(d, "sql"),
+		sql:          base.DirectiveArgString(d, base.ArgSQL),
 		field:        field,
 	}, nil
 }
@@ -53,7 +53,7 @@ func (f *Function) SQL() string {
 	}
 	if sql == "" {
 		d := f.field.Directives.ForName(base.FunctionDirectiveName)
-		name := directiveArgValue(d, "name")
+		name := base.DirectiveArgString(d, base.ArgName)
 		sql = name + "("
 		for i, arg := range f.field.Arguments {
 			if i > 0 {
@@ -201,15 +201,15 @@ func parseFunctionCallDirective(def *ast.Directive) *FunctionCall {
 	ref := &FunctionCall{
 		argumentMap: make(map[string]string),
 		IsTableFuncJoin: def.Name == base.FunctionCallTableJoinDirectiveName ||
-			directiveArgValue(def, "is_table_func_join") == "true",
-		ReferencesName:   directiveArgValue(def, "references_name"),
-		sql:              directiveArgValue(def, "sql"),
-		sourceFields:     directiveArgChildValues(def, "source_fields"),
-		referencesFields: directiveArgChildValues(def, "references_fields"),
-		Module:           directiveArgValue(def, "module"),
+			base.DirectiveArgString(def, base.ArgIsTableFuncJoin) == "true",
+		ReferencesName:   base.DirectiveArgString(def, base.ArgReferencesName),
+		sql:              base.DirectiveArgString(def, base.ArgSQL),
+		sourceFields:     base.DirectiveArgStrings(def, base.ArgSourceFields),
+		referencesFields: base.DirectiveArgStrings(def, base.ArgReferencesFields),
+		Module:           base.DirectiveArgString(def, base.ArgModule),
 		directive:        def,
 	}
-	if a := def.Arguments.ForName("args"); a != nil {
+	if a := def.Arguments.ForName(base.ArgArgs); a != nil {
 		for _, f := range a.Value.Children {
 			ref.argumentMap[f.Name] = f.Value.Raw
 		}

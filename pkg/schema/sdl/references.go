@@ -37,23 +37,23 @@ func ReferencesInfo(def *ast.Directive) *References {
 	ref := &References{
 		def: def,
 	}
-	ref.ReferencesName = directiveArgValue(def, "references_name")
-	ref.sourceFields = directiveArgChildValues(def, "source_fields")
-	ref.referencesFields = directiveArgChildValues(def, "references_fields")
-	ref.Query = directiveArgValue(def, "query")
-	ref.Description = directiveArgValue(def, "description")
-	ref.ReferencesQuery = directiveArgValue(def, "references_query")
-	ref.ReferencesDescription = directiveArgValue(def, "references_description")
-	ref.IsM2M = directiveArgValue(def, "is_m2m") == "true"
-	ref.M2MName = directiveArgValue(def, "m2m_name")
-	ref.Name = directiveArgValue(def, "name")
+	ref.ReferencesName = base.DirectiveArgString(def, base.ArgReferencesName)
+	ref.sourceFields = base.DirectiveArgStrings(def, base.ArgSourceFields)
+	ref.referencesFields = base.DirectiveArgStrings(def, base.ArgReferencesFields)
+	ref.Query = base.DirectiveArgString(def, base.ArgQuery)
+	ref.Description = base.DirectiveArgString(def, base.ArgDescription)
+	ref.ReferencesQuery = base.DirectiveArgString(def, base.ArgReferencesQuery)
+	ref.ReferencesDescription = base.DirectiveArgString(def, base.ArgReferencesDescription)
+	ref.IsM2M = base.DirectiveArgString(def, base.ArgIsM2M) == "true"
+	ref.M2MName = base.DirectiveArgString(def, base.ArgM2MName)
+	ref.Name = base.DirectiveArgString(def, base.ArgName)
 	return ref
 }
 
 func FieldReferencesInfo(ctx context.Context, defs base.DefinitionsSource, def *ast.Definition, field *ast.FieldDefinition) *References {
-	fieldRefName := fieldDirectiveArgValue(field, base.FieldReferencesQueryDirectiveName, "name")
+	fieldRefName := base.FieldDefDirectiveArgString(field, base.FieldReferencesQueryDirectiveName, base.ArgName)
 	for _, d := range def.Directives.ForNames(base.ReferencesDirectiveName) {
-		name := directiveArgValue(d, "name")
+		name := base.DirectiveArgString(d, base.ArgName)
 		if name == fieldRefName {
 			ref := ReferencesInfo(d)
 			ref.sourceName = def.Name
@@ -68,7 +68,7 @@ func FieldReferencesInfo(ctx context.Context, defs base.DefinitionsSource, def *
 		return nil
 	}
 	for _, d := range refDef.Directives.ForNames(base.ReferencesDirectiveName) {
-		name := directiveArgValue(d, "name")
+		name := base.DirectiveArgString(d, base.ArgName)
 		if name == fieldRefName {
 			ref := ReferencesInfo(d)
 			ref.sourceName = refDef.Name
