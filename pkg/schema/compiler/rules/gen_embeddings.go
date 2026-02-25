@@ -22,9 +22,9 @@ func (r *EmbeddingsRule) Process(ctx base.CompilationContext, def *ast.Definitio
 	pos := compiledPos(def.Name)
 
 	// Extract and validate directive arguments
-	model := base.DirectiveArgString(dir, "model")
-	vectorFieldName := base.DirectiveArgString(dir, "vector")
-	distance := base.DirectiveArgString(dir, "distance")
+	model := base.DirectiveArgString(dir, base.ArgModel)
+	vectorFieldName := base.DirectiveArgString(dir, base.ArgVector)
+	distance := base.DirectiveArgString(dir, base.ArgDistance)
 	if model == "" || vectorFieldName == "" || distance == "" {
 		return gqlerror.ErrorPosf(dir.Position, "object %s: @embeddings requires model, vector, and distance arguments", def.Name)
 	}
@@ -121,7 +121,7 @@ func (r *EmbeddingsRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		if mutDir == nil {
 			continue
 		}
-		mutType := base.DirectiveArgString(mutDir, "type")
+		mutType := base.DirectiveArgString(mutDir, base.ArgType)
 		if mutType == "INSERT" || mutType == "UPDATE" {
 			// Make data argument nullable for embedded objects
 			for _, arg := range mf.Arguments {
@@ -146,9 +146,9 @@ func (r *EmbeddingsRule) Process(ctx base.CompilationContext, def *ast.Definitio
 
 // isSelectOneQuery checks if a query field is a SELECT_ONE query (by_pk or unique).
 func isSelectOneQuery(qf *ast.FieldDefinition) bool {
-	queryDir := qf.Directives.ForName("query")
+	queryDir := qf.Directives.ForName(base.QueryDirectiveName)
 	if queryDir != nil {
-		return base.DirectiveArgString(queryDir, "type") == "SELECT_ONE"
+		return base.DirectiveArgString(queryDir, base.ArgType) == "SELECT_ONE"
 	}
 	return false
 }

@@ -41,3 +41,31 @@ type ExtraFieldProvider interface {
 	ExtraFieldName() string
 	GenerateExtraField(fieldName string) *ast.FieldDefinition
 }
+
+// ValueParser is implemented by scalar types that need custom value parsing.
+type ValueParser interface {
+	ParseValue(v any) (any, error)
+}
+
+// ArrayParser is implemented by scalar types that support array parsing.
+type ArrayParser interface {
+	ParseArray(v any) (any, error)
+}
+
+// SubAggregatable indicates the scalar has a sub-aggregation type for nested aggregations.
+type SubAggregatable interface {
+	SubAggregationTypeName() string
+}
+
+// JSONTypeHintProvider provides the JSON extraction type hint for engines.
+// Hint examples: "string", "number", "bool", "timestamp".
+type JSONTypeHintProvider interface {
+	JSONTypeHint() string
+}
+
+// SQLOutputTransformer is implemented by scalar types that need SQL output
+// transformation (e.g., Geometry→ST_AsGeoJSON, H3Cell→h3_h3_to_string).
+type SQLOutputTransformer interface {
+	ToOutputSQL(sql string, raw bool) string
+	ToStructFieldSQL(sql string) string
+}

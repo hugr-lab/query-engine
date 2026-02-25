@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -15,9 +15,8 @@ import (
 
 // functionCallRootNode is a root node for function call query.
 func functionCallRootNode(ctx context.Context, provider schema.Provider, planer Catalog, query *ast.Field, vars map[string]interface{}) (*QueryPlanNode, error) {
-	catalog := base.FieldCatalogName(query.Definition)
-	defs := base.NewDefsAdapter(ctx, provider)
-	node, err := functionCallNode(ctx, defs, planer, "", query, vars)
+	catalog := base.FieldDefCatalog(query.Definition)
+	node, err := functionCallNode(ctx, provider, planer, "", query, vars)
 	if err != nil {
 		return nil, err
 	}
@@ -30,25 +29,25 @@ func functionCallRootNode(ctx context.Context, provider schema.Provider, planer 
 	if !isTypeCaster {
 		return finalResultNode(ctx,
 			provider, planer, query,
-			selectFromFunctionCallNode(ctx, defs, node),
+			selectFromFunctionCallNode(ctx, provider, node),
 			true,
 		), nil
 	}
 	if isTypeCaster {
-		node, err = castFunctionResultsNode(ctx, defs, tc, node, !IsRawResultsQuery(ctx, query))
+		node, err = castFunctionResultsNode(ctx, provider, tc, node, !IsRawResultsQuery(ctx, query))
 		if err != nil {
 			return nil, err
 		}
 	}
-	return selectFromFunctionCallNode(ctx, defs, node), nil
+	return selectFromFunctionCallNode(ctx, provider, node), nil
 }
 
-func functionCallNode(ctx context.Context, defs compiler.DefinitionsSource, planner Catalog, prefix string, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
-	call := compiler.FunctionCallInfo(query)
+func functionCallNode(ctx context.Context, defs base.DefinitionsSource, planner Catalog, prefix string, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+	call := sdl.FunctionCallInfo(query)
 	if call == nil {
 		return nil, ErrInternalPlanner
 	}
-	info, err := call.FunctionInfo(defs)
+	info, err := call.FunctionInfo(ctx, defs)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +58,7 @@ func functionCallNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 	}
 	if info.ReturnsTable {
 		ff := allSelectedFields(query)
-		refFields, err := referencesFields(defs, query)
+		refFields, err := referencesFields(ctx, defs, query)
 		if err != nil {
 			return nil, err
 		}
@@ -88,12 +87,12 @@ func functionCallNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 		Nodes:   nodes,
 		Comment: "function call",
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-			sql, params, err := functionCallSQL(node.TypeDefs(), e, node.Query, vars, params)
+			sql, params, err := functionCallSQL(ctx, node.TypeDefs(), e, node.Query, vars, params)
 			if err != nil {
 				return "", nil, err
 			}
-			if len(compiler.ExtractFieldsFromSQL(sql)) != 0 {
-				return "", nil, compiler.ErrorPosf(node.Query.Position, "function call %s required arguments", info.Name)
+			if len(sdl.ExtractFieldsFromSQL(sql)) != 0 {
+				return "", nil, sdl.ErrorPosf(node.Query.Position, "function call %s required arguments", info.Name)
 			}
 			if len(children) == 0 {
 				return sql, params, nil
@@ -120,7 +119,7 @@ func functionCallNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 // if func returns array of scalar: SELECT unnest(func()) AS alias
 // if func returns object: SELECT unpack(value) AS alias FROM (SELECT func() AS _value)
 // if func is table function: SELECT fields FROM func(), where fields is repack values
-func selectFromFunctionCallNode(_ context.Context, defs compiler.DefinitionsSource, node *QueryPlanNode) *QueryPlanNode {
+func selectFromFunctionCallNode(ctx context.Context, defs base.DefinitionsSource, node *QueryPlanNode) *QueryPlanNode {
 	return &QueryPlanNode{
 		Name:    node.Name,
 		Query:   node.Query,
@@ -134,11 +133,11 @@ func selectFromFunctionCallNode(_ context.Context, defs compiler.DefinitionsSour
 			if res == nil {
 				return "", nil, ErrInternalPlanner
 			}
-			call := compiler.FunctionCallInfo(node.Query)
+			call := sdl.FunctionCallInfo(node.Query)
 			if call == nil {
 				return "", nil, ErrInternalPlanner
 			}
-			info, err := call.FunctionInfo(defs)
+			info, err := call.FunctionInfo(ctx, defs)
 			if err != nil {
 				return "", nil, err
 			}
@@ -146,7 +145,7 @@ func selectFromFunctionCallNode(_ context.Context, defs compiler.DefinitionsSour
 			if info.ReturnsTable {
 				return funcCallSQL, params, nil
 			}
-			if compiler.IsScalarType(node.Query.Definition.Type.Name()) {
+			if sdl.IsScalarType(node.Query.Definition.Type.Name()) {
 				if node.Query.Definition.Type.NamedType == "" {
 					return "SELECT unnest(" + funcCallSQL + ") AS " + engines.Ident(node.Query.Alias), params, nil
 				}
@@ -159,12 +158,12 @@ func selectFromFunctionCallNode(_ context.Context, defs compiler.DefinitionsSour
 	}
 }
 
-func castFunctionResultsNode(ctx context.Context, defs compiler.DefinitionsSource, caster engines.EngineTypeCaster, child *QueryPlanNode, toJSON bool) (*QueryPlanNode, error) {
-	call := compiler.FunctionCallInfo(child.Query)
+func castFunctionResultsNode(ctx context.Context, defs base.DefinitionsSource, caster engines.EngineTypeCaster, child *QueryPlanNode, toJSON bool) (*QueryPlanNode, error) {
+	call := sdl.FunctionCallInfo(child.Query)
 	if call == nil {
 		return nil, ErrInternalPlanner
 	}
-	info, err := call.FunctionInfo(defs)
+	info, err := call.FunctionInfo(ctx, defs)
 	if err != nil {
 		return nil, err
 	}
@@ -201,13 +200,13 @@ func funcFieldsNodes(ctx context.Context, e engines.Engine, prefix string, field
 				if node.Query.Name == "__typename" {
 					return fmt.Sprintf("'%s' AS %s", node.Query.ObjectDefinition.Name, engines.Ident(node.Query.Alias)), params, nil
 				}
-				info := compiler.FieldInfo(node.Query)
+				info := sdl.FieldInfo(node.Query)
 				sql := info.SQL(prefix)
 				typeName := info.Definition().Type.NamedType
 				if len(node.Query.Arguments) != 0 &&
-					compiler.IsScalarType(typeName) &&
-					(compiler.ScalarTypes[typeName].Arguments != nil || compiler.IsExtraField(info.Definition())) {
-					args, err := compiler.ArgumentValues(node.TypeDefs(), field, vars, false)
+					sdl.IsScalarType(typeName) &&
+					(len(info.Definition().Arguments) != 0 || sdl.IsExtraField(info.Definition())) {
+					args, err := sdl.ArgumentValues(ctx, node.TypeDefs(), field, vars, false)
 					if err != nil {
 						return "", nil, err
 					}
@@ -229,12 +228,12 @@ func funcFieldsNodes(ctx context.Context, e engines.Engine, prefix string, field
 	return nodes
 }
 
-func functionCallSQL(defs compiler.Definitions, e engines.Engine, field *ast.Field, vars map[string]any, params []any) (string, []any, error) {
-	call := compiler.FunctionCallInfo(field)
+func functionCallSQL(ctx context.Context, defs base.DefinitionsSource, e engines.Engine, field *ast.Field, vars map[string]any, params []any) (string, []any, error) {
+	call := sdl.FunctionCallInfo(field)
 	if call == nil {
 		return "", nil, ErrInternalPlanner
 	}
-	info, err := call.FunctionInfo(defs)
+	info, err := call.FunctionInfo(ctx, defs)
 	if err != nil {
 		return "", nil, err
 	}
@@ -257,7 +256,7 @@ func functionCallSQL(defs compiler.Definitions, e engines.Engine, field *ast.Fie
 	for k, v := range call.ArgumentMap() {
 		sql = strings.ReplaceAll(sql, "["+k+"]", "["+v+"]")
 	}
-	queryArg, err := call.ArgumentValues(defs, vars)
+	queryArg, err := call.ArgumentValues(ctx, defs, vars)
 	if err != nil {
 		return "", nil, err
 	}

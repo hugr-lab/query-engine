@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -282,8 +282,8 @@ type DataObjectInfo struct {
 type DataObjectType string
 
 const (
-	DataObjectTypeTable DataObjectType = compiler.Table
-	DataObjectTypeView  DataObjectType = compiler.View
+	DataObjectTypeTable DataObjectType = sdl.TableDataObject
+	DataObjectTypeView  DataObjectType = sdl.ViewDataObject
 )
 
 type ReferenceType string
@@ -401,7 +401,7 @@ func (s *Source) Summary(ctx context.Context) (*SchemaInfo, error) {
 		return nil, fmt.Errorf("schema is not available")
 	}
 
-	defs := base.NewDefsAdapter(ctx, provider)
+	var defs base.DefinitionsSource = provider
 
 	queryType := provider.QueryType(ctx)
 	mutationType := provider.MutationType(ctx)
@@ -424,13 +424,13 @@ func (s *Source) Summary(ctx context.Context) (*SchemaInfo, error) {
 	// 2.Modules
 	var rootQueryModule, rootMutationModule *ModuleInfo
 	if queryType != nil {
-		rootQueryModule, err = s.moduleInfo(defs, si, queryType, si.QueryRoot)
+		rootQueryModule, err = s.moduleInfo(ctx, defs, si, queryType, si.QueryRoot)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if mutationType != nil {
-		rootMutationModule, err = s.moduleInfo(defs, si, mutationType, si.QueryRoot)
+		rootMutationModule, err = s.moduleInfo(ctx, defs, si, mutationType, si.QueryRoot)
 		if err != nil {
 			return nil, err
 		}
@@ -558,9 +558,9 @@ func (s *Source) schemaDataSources(ctx context.Context) ([]DataSourceInfo, error
 	return infos, nil
 }
 
-func (s *Source) schemaModulesInfo(defs compiler.DefinitionsSource, si *SchemaInfo, rootName string, queryRootName, mutationRootName string) ([]ModuleInfo, error) {
+func (s *Source) schemaModulesInfo(ctx context.Context, defs base.DefinitionsSource, si *SchemaInfo, rootName string, queryRootName, mutationRootName string) ([]ModuleInfo, error) {
 	var modules []ModuleInfo
-	rootDef := defs.ForName(rootName)
+	rootDef := defs.ForName(ctx, rootName)
 	if rootDef == nil {
 		return nil, nil
 	}
@@ -569,12 +569,12 @@ func (s *Source) schemaModulesInfo(defs compiler.DefinitionsSource, si *SchemaIn
 			field.Type.Name() == mutationRootName {
 			continue
 		}
-		def := defs.ForName(field.Type.Name())
-		info := compiler.ModuleRootInfo(def)
+		def := defs.ForName(ctx, field.Type.Name())
+		info := sdl.ModuleRootInfo(def)
 		if info == nil {
 			continue
 		}
-		module, err := s.moduleInfo(defs, si, def, queryRootName)
+		module, err := s.moduleInfo(ctx, defs, si, def, queryRootName)
 		if err != nil {
 			return nil, err
 		}
@@ -587,8 +587,8 @@ func (s *Source) schemaModulesInfo(defs compiler.DefinitionsSource, si *SchemaIn
 	return modules, nil
 }
 
-func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def *ast.Definition, queryRootName string) (*ModuleInfo, error) {
-	info := compiler.ModuleRootInfo(def)
+func (s *Source) moduleInfo(ctx context.Context, defs base.DefinitionsSource, si *SchemaInfo, def *ast.Definition, queryRootName string) (*ModuleInfo, error) {
+	info := sdl.ModuleRootInfo(def)
 	if info == nil {
 		return nil, fmt.Errorf("module root info not found for %s", def.Name)
 	}
@@ -598,30 +598,30 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 	}
 	// name of the graphql module type
 	switch info.Type {
-	case compiler.ModuleQuery:
+	case sdl.ModuleQuery:
 		module.QueryType = def.Name
-	case compiler.ModuleMutation:
+	case sdl.ModuleMutation:
 		module.MutationType = def.Name
-	case compiler.ModuleFunction:
+	case sdl.ModuleFunction:
 		module.FunctionType = def.Name
-	case compiler.ModuleMutationFunction:
+	case sdl.ModuleMutationFunction:
 		module.MutationFunctionType = def.Name
 	}
 	// submodules
-	sm, err := s.schemaModulesInfo(defs, si, def.Name, queryRootName, si.MutationRoot)
+	sm, err := s.schemaModulesInfo(ctx, defs, si, def.Name, queryRootName, si.MutationRoot)
 	if err != nil {
 		return nil, err
 	}
 	module.SubModules = sm
 
-	if info.Type == compiler.ModuleMutation {
+	if info.Type == sdl.ModuleMutation {
 		return &module, nil
 	}
 
 	// tables and views
 	for _, mf := range def.Fields {
 		// special queries
-		if mf.Name == compiler.JQTransformQueryName && mf.Type.NamedType == queryRootName ||
+		if mf.Name == sdl.JQTransformQueryName && mf.Type.NamedType == queryRootName ||
 			mf.Name == base.H3QueryFieldName && mf.Type.NamedType == base.H3QueryTypeName {
 			// Handle special query
 			special := QueryInfo{
@@ -630,24 +630,24 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 				ReturnedTypeName: mf.Type.Name(),
 				IsSingleRow:      mf.Type.NamedType != "",
 			}
-			if mf.Name == compiler.JQTransformQueryName {
+			if mf.Name == sdl.JQTransformQueryName {
 				special.Type = QueryTypeJQ
 			}
 			if mf.Name == base.H3QueryFieldName {
 				special.Type = QueryTypeH3
 			}
-			spDef := defs.ForName(mf.Type.Name())
+			spDef := defs.ForName(ctx, mf.Type.Name())
 			if spDef != nil {
-				special.ReturnTypeFields = objectFieldsInfo(defs, spDef, 3, true)
+				special.ReturnTypeFields = objectFieldsInfo(ctx, defs, spDef, 3, true)
 			}
 			for _, arg := range mf.Arguments {
-				special.Arguments = append(special.Arguments, argumentInfo(defs, arg, 2))
+				special.Arguments = append(special.Arguments, argumentInfo(ctx, defs, arg, 2))
 			}
 			module.SpecialQueries = append(module.SpecialQueries, special)
 		}
-		if compiler.IsFunction(mf) {
+		if sdl.IsFunction(mf) {
 			// Handle function fields
-			funcInfo, err := compiler.FunctionInfo(mf)
+			funcInfo, err := sdl.FunctionInfo(mf)
 			if err != nil {
 				return nil, err
 			}
@@ -659,16 +659,16 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 				DataSource:            funcInfo.Catalog,
 				ReturnType:            mf.Type.Name(),
 				ReturnsArray:          mf.Type.NamedType == "",
-				AggregationType:       funcInfo.ResultAggregationType(defs),
-				SubAggregationType:    funcInfo.ResultSubAggregationType(defs),
-				BucketAggregationType: funcInfo.ResultBucketAggregationType(defs),
+				AggregationType:       funcInfo.ResultAggregationType(ctx, defs),
+				SubAggregationType:    funcInfo.ResultSubAggregationType(ctx, defs),
+				BucketAggregationType: funcInfo.ResultBucketAggregationType(ctx, defs),
 			}
-			if !compiler.IsScalarType(mf.Type.Name()) {
-				fnDef := defs.ForName(mf.Type.Name())
+			if !sdl.IsScalarType(mf.Type.Name()) {
+				fnDef := defs.ForName(ctx, mf.Type.Name())
 				if fnDef == nil {
 					return nil, fmt.Errorf("type %s not found", mf.Type.Name())
 				}
-				function.ReturnTypeFields = objectFieldsInfo(defs, fnDef, 0, true)
+				function.ReturnTypeFields = objectFieldsInfo(ctx, defs, fnDef, 0, true)
 			}
 			// function arguments
 			for _, arg := range mf.Arguments {
@@ -677,24 +677,24 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 					Description:  arg.Description,
 					Type:         arg.Type.Name(),
 					IsRequired:   arg.Type.NonNull,
-					IsScalarType: compiler.IsScalarType(arg.Type.Name()),
+					IsScalarType: sdl.IsScalarType(arg.Type.Name()),
 					IsArray:      arg.Type.NamedType == "",
 				}
 				function.Arguments = append(function.Arguments, argInfo)
 			}
-			if info.Type == compiler.ModuleMutationFunction {
+			if info.Type == sdl.ModuleMutationFunction {
 				module.MutateFunctions = append(module.MutateFunctions, function)
 			}
-			if info.Type == compiler.ModuleFunction {
+			if info.Type == sdl.ModuleFunction {
 				module.Functions = append(module.Functions, function)
 			}
 			continue
 		}
-		if !compiler.IsSelectQueryDefinition(mf) {
+		if !sdl.IsSelectQueryDefinition(mf) {
 			continue
 		}
-		dtDef := defs.ForName(mf.Type.Name())
-		dtInfo := compiler.DataObjectInfo(dtDef)
+		dtDef := defs.ForName(ctx, mf.Type.Name())
+		dtInfo := sdl.DataObjectInfo(dtDef)
 		if dtInfo == nil {
 			return nil, fmt.Errorf("data object info not found for %s", dtDef.Name)
 		}
@@ -707,23 +707,23 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 			IsCube:                dtInfo.IsCube,
 			IsHypertable:          dtInfo.IsHypertable,
 			FilterType:            dtInfo.InputFilterName(),
-			AggregationType:       dtInfo.AggregationTypeName(defs),
-			SubAggregationType:    dtInfo.SubAggregationTypeName(defs),
-			BucketAggregationType: dtInfo.BucketAggregationTypeName(defs),
+			AggregationType:       dtInfo.AggregationTypeName(ctx, defs),
+			SubAggregationType:    dtInfo.SubAggregationTypeName(ctx, defs),
+			BucketAggregationType: dtInfo.BucketAggregationTypeName(ctx, defs),
 		}
 
 		for _, df := range dtDef.Fields {
 			switch {
-			case compiler.IsReferencesSubquery(df):
+			case sdl.IsReferencesSubquery(df):
 				// Handle references subquery
-				reference := referenceInfo(dtInfo, defs, df, dtDef)
+				reference := referenceInfo(ctx, dtInfo, defs, df, dtDef)
 				if reference == nil {
 					continue
 				}
 				dataObject.References = append(dataObject.References, *reference)
-			case compiler.IsJoinSubqueryDefinition(df):
+			case sdl.IsJoinSubqueryDefinition(df):
 				// Handle join subquery
-				sq, err := subQueryInfo(df, defs, dtDef)
+				sq, err := subQueryInfo(ctx, df, defs, dtDef)
 				if err != nil {
 					return nil, err
 				}
@@ -731,10 +731,10 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 					continue
 				}
 				dataObject.Subqueries = append(dataObject.Subqueries, *sq)
-			case compiler.IsFunctionCallSubqueryDefinition(df) ||
-				compiler.IsTableFuncJoinSubqueryDefinition(df):
+			case sdl.IsFunctionCallSubqueryDefinition(df) ||
+				sdl.IsTableFuncJoinSubqueryDefinition(df):
 				// Handle function call subquery
-				function, err := functionCallInfo(df, defs)
+				function, err := functionCallInfo(ctx, df, defs)
 				if err != nil {
 					return nil, err
 				}
@@ -742,13 +742,13 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 					continue
 				}
 				dataObject.FunctionCalls = append(dataObject.FunctionCalls, *function)
-			case compiler.IsAggregateQueryDefinition(df) ||
-				compiler.IsBucketAggregateQueryDefinition(df) ||
+			case sdl.IsAggregateQueryDefinition(df) ||
+				sdl.IsBucketAggregateQueryDefinition(df) ||
 				strings.HasPrefix(df.Name, "_"):
 				// skip extrafields and aggregation subquery
 			default:
 				// handle field (not subquery)
-				fi := fieldInfo(df, dtDef, defs, 0, true)
+				fi := fieldInfo(ctx, df, dtDef, defs, 0, true)
 				if fi == nil {
 					continue
 				}
@@ -756,7 +756,7 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 				if fi.IsPrimaryKey {
 					dataObject.HasPrimaryKey = true
 				}
-				if fi.Type == compiler.GeometryTypeName && !fi.ReturnsArray {
+				if fi.Type == base.GeometryTypeName && !fi.ReturnsArray {
 					dataObject.HasGeometry = true
 				}
 			}
@@ -766,13 +766,13 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 		for _, q := range dtInfo.Queries() {
 			var qt QueryType
 			switch q.Type {
-			case compiler.QueryTypeSelect:
+			case sdl.QueryTypeSelect:
 				qt = QueryTypeSelect
-			case compiler.QueryTypeSelectOne:
+			case sdl.QueryTypeSelectOne:
 				qt = QueryTypeSelectOne
-			case compiler.QueryTypeAggregate:
+			case sdl.QueryTypeAggregate:
 				qt = QueryTypeAggregate
-			case compiler.QueryTypeAggregateBucket:
+			case sdl.QueryTypeAggregateBucket:
 				qt = QueryTypeAggregateBucket
 			default:
 				continue
@@ -789,15 +789,15 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 				IsSingleRow:      qf.Type.NamedType != "",
 			}
 			for _, arg := range qf.Arguments {
-				query.Arguments = append(query.Arguments, argumentInfo(defs, arg, 1))
+				query.Arguments = append(query.Arguments, argumentInfo(ctx, defs, arg, 1))
 			}
-			if qfDef := defs.ForName(qf.Type.Name()); qfDef != nil {
-				query.ReturnTypeFields = objectFieldsInfo(defs, qfDef, 3, true)
+			if qfDef := defs.ForName(ctx, qf.Type.Name()); qfDef != nil {
+				query.ReturnTypeFields = objectFieldsInfo(ctx, defs, qfDef, 3, true)
 			}
 			dataObject.Queries = append(dataObject.Queries, query)
 		}
 
-		if dtInfo.Type == compiler.Table {
+		if dtInfo.Type == sdl.TableDataObject {
 			// mutation info
 			dataObject.Type = DataObjectTypeTable
 			dataObject.Mutations = &MutationInfo{
@@ -809,10 +809,10 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 			}
 			module.Tables = append(module.Tables, dataObject)
 		}
-		if dtInfo.Type == compiler.View {
+		if dtInfo.Type == sdl.ViewDataObject {
 			dataObject.Type = DataObjectTypeView
 			if dtInfo.HasArguments() {
-				argsType := defs.ForName(dtInfo.InputArgsName)
+				argsType := defs.ForName(ctx, dtInfo.InputArgsName)
 				if argsType == nil {
 					return nil, fmt.Errorf("arguments type not found for %s", dtInfo.InputArgsName)
 				}
@@ -821,7 +821,7 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 					Description:  argsType.Description,
 					Type:         dtInfo.InputArgsName,
 					IsRequired:   dtInfo.RequiredArgs,
-					NestedFields: objectFieldsInfo(defs, argsType, 1, true),
+					NestedFields: objectFieldsInfo(ctx, defs, argsType, 1, true),
 				}
 			}
 			module.Views = append(module.Views, dataObject)
@@ -830,9 +830,9 @@ func (s *Source) moduleInfo(defs compiler.DefinitionsSource, si *SchemaInfo, def
 	return &module, nil
 }
 
-func referenceInfo(dtInfo *compiler.Object, defs compiler.DefinitionsSource, df *ast.FieldDefinition, dtDef *ast.Definition) *SubqueryInfo {
+func referenceInfo(ctx context.Context, dtInfo *sdl.Object, defs base.DefinitionsSource, df *ast.FieldDefinition, dtDef *ast.Definition) *SubqueryInfo {
 	refInfo := dtInfo.ReferencesQueryInfo(
-		defs,
+		ctx, defs,
 		df.Name,
 	)
 	reference := SubqueryInfo{
@@ -844,12 +844,12 @@ func referenceInfo(dtInfo *compiler.Object, defs compiler.DefinitionsSource, df 
 		FieldDataType:  df.Type.Name(),
 		Description:    df.Description,
 	}
-	def := defs.ForName(refInfo.ReferencesName)
+	def := defs.ForName(ctx, refInfo.ReferencesName)
 	if def != nil {
-		reference.Module = compiler.ObjectModule(def)
+		reference.Module = sdl.ObjectModule(def)
 	}
 
-	reference.DataObjectFields = objectFieldsInfo(defs, def, 3, true)
+	reference.DataObjectFields = objectFieldsInfo(ctx, defs, def, 3, true)
 
 	// define reference type
 	switch {
@@ -862,11 +862,11 @@ func referenceInfo(dtInfo *compiler.Object, defs compiler.DefinitionsSource, df 
 	}
 	// aggregation queries for the reference
 	for _, sf := range dtDef.Fields {
-		if !compiler.IsAggregateQueryDefinition(sf) &&
-			!compiler.IsBucketAggregateQueryDefinition(sf) {
+		if !sdl.IsAggregateQueryDefinition(sf) &&
+			!sdl.IsBucketAggregateQueryDefinition(sf) {
 			continue
 		}
-		fieldName, isBucket := compiler.AggregatedQueryFieldName(sf)
+		fieldName, isBucket := sdl.AggregatedQueryFieldName(sf)
 		if fieldName != df.Name {
 			continue
 		}
@@ -881,16 +881,16 @@ func referenceInfo(dtInfo *compiler.Object, defs compiler.DefinitionsSource, df 
 	return &reference
 }
 
-func subQueryInfo(df *ast.FieldDefinition, defs compiler.DefinitionsSource, dtDef *ast.Definition) (*SubqueryInfo, error) {
-	joinInfo := compiler.JoinDefinitionInfo(df)
+func subQueryInfo(ctx context.Context, df *ast.FieldDefinition, defs base.DefinitionsSource, dtDef *ast.Definition) (*SubqueryInfo, error) {
+	joinInfo := sdl.JoinDefinitionInfo(df)
 	if joinInfo == nil {
 		return nil, fmt.Errorf("join info not found for %s", df.Name)
 	}
-	jt := defs.ForName(joinInfo.ReferencesName)
+	jt := defs.ForName(ctx, joinInfo.ReferencesName)
 	if jt == nil {
 		return nil, fmt.Errorf("join target type not found for %s", joinInfo.ReferencesName)
 	}
-	jtInfo := compiler.DataObjectInfo(jt)
+	jtInfo := sdl.DataObjectInfo(jt)
 	if jtInfo == nil {
 		return nil, fmt.Errorf("join target type info not found for %s", joinInfo.ReferencesName)
 	}
@@ -900,16 +900,16 @@ func subQueryInfo(df *ast.FieldDefinition, defs compiler.DefinitionsSource, dtDe
 		FieldDataQuery:   df.Name,
 		Description:      df.Description,
 		DataSource:       jtInfo.Catalog,
-		Module:           compiler.ObjectModule(jt),
-		DataObjectFields: objectFieldsInfo(defs, jt, 3, true),
+		Module:           sdl.ObjectModule(jt),
+		DataObjectFields: objectFieldsInfo(ctx, defs, jt, 3, true),
 	}
 	// aggregation queries for the join subquery
 	for _, sf := range dtDef.Fields {
-		if !compiler.IsAggregateQueryDefinition(sf) &&
-			!compiler.IsBucketAggregateQueryDefinition(sf) {
+		if !sdl.IsAggregateQueryDefinition(sf) &&
+			!sdl.IsBucketAggregateQueryDefinition(sf) {
 			continue
 		}
-		fieldName, isBucket := compiler.AggregatedQueryFieldName(sf)
+		fieldName, isBucket := sdl.AggregatedQueryFieldName(sf)
 		if fieldName != df.Name {
 			continue
 		}
@@ -923,12 +923,12 @@ func subQueryInfo(df *ast.FieldDefinition, defs compiler.DefinitionsSource, dtDe
 	return &sq, nil
 }
 
-func functionCallInfo(df *ast.FieldDefinition, defs compiler.DefinitionsSource) (*FunctionCallInfo, error) {
-	fcInfo := compiler.FunctionCallDefinitionInfo(df)
+func functionCallInfo(ctx context.Context, df *ast.FieldDefinition, defs base.DefinitionsSource) (*FunctionCallInfo, error) {
+	fcInfo := sdl.FunctionCallDefinitionInfo(df)
 	if fcInfo == nil {
 		return nil, fmt.Errorf("function call info not found for %s", df.Name)
 	}
-	funcDef, err := fcInfo.FunctionInfo(defs)
+	funcDef, err := fcInfo.FunctionInfo(ctx, defs)
 	if err != nil {
 		return nil, fmt.Errorf("function info not found for %s: %w", df.Name, err)
 	}
@@ -944,37 +944,37 @@ func functionCallInfo(df *ast.FieldDefinition, defs compiler.DefinitionsSource) 
 		DataSource:      funcDef.Catalog,
 		ReturnType:      df.Type.Name(),
 		ReturnsArray:    df.Type.NamedType == "",
-		IsScalarFunc:    compiler.IsScalarType(df.Type.Name()),
+		IsScalarFunc:    sdl.IsScalarType(df.Type.Name()),
 		IsTableFuncJoin: fcInfo.IsTableFuncJoin,
 	}
 	// function arguments
 	for _, arg := range df.Arguments {
-		function.Arguments = append(function.Arguments, argumentInfo(defs, arg, 2))
+		function.Arguments = append(function.Arguments, argumentInfo(ctx, defs, arg, 2))
 	}
 	return &function, nil
 }
 
 const maxNestedFieldLevels = 3
 
-func objectFieldsInfo(defs compiler.DefinitionsSource, def *ast.Definition, level int, skipSubqueries bool) []FieldInfo {
+func objectFieldsInfo(ctx context.Context, defs base.DefinitionsSource, def *ast.Definition, level int, skipSubqueries bool) []FieldInfo {
 	if level > maxNestedFieldLevels {
 		return nil
 	}
 	var fields []FieldInfo
 	for _, field := range def.Fields {
 		if strings.HasPrefix(field.Name, "_") ||
-			compiler.IsAggregateQueryDefinition(field) ||
-			compiler.IsBucketAggregateQueryDefinition(field) {
+			sdl.IsAggregateQueryDefinition(field) ||
+			sdl.IsBucketAggregateQueryDefinition(field) {
 			// skip system fields
 			continue
 		}
-		if skipSubqueries && (compiler.IsJoinSubqueryDefinition(field) ||
-			compiler.IsReferencesSubquery(field) ||
-			compiler.IsFunctionCallSubqueryDefinition(field) ||
-			compiler.IsTableFuncJoinSubqueryDefinition(field)) {
+		if skipSubqueries && (sdl.IsJoinSubqueryDefinition(field) ||
+			sdl.IsReferencesSubquery(field) ||
+			sdl.IsFunctionCallSubqueryDefinition(field) ||
+			sdl.IsTableFuncJoinSubqueryDefinition(field)) {
 			continue
 		}
-		fi := fieldInfo(field, def, defs, level, skipSubqueries)
+		fi := fieldInfo(ctx, field, def, defs, level, skipSubqueries)
 		if fi == nil {
 			continue
 		}
@@ -983,8 +983,8 @@ func objectFieldsInfo(defs compiler.DefinitionsSource, def *ast.Definition, leve
 	return fields
 }
 
-func fieldInfo(field *ast.FieldDefinition, def *ast.Definition, defs compiler.DefinitionsSource, level int, skipSubqueries bool) *FieldInfo {
-	info := compiler.FieldDefinitionInfo(field, def)
+func fieldInfo(ctx context.Context, field *ast.FieldDefinition, def *ast.Definition, defs base.DefinitionsSource, level int, skipSubqueries bool) *FieldInfo {
+	info := sdl.FieldDefinitionInfo(field, def)
 	if info == nil {
 		return nil
 	}
@@ -1003,19 +1003,19 @@ func fieldInfo(field *ast.FieldDefinition, def *ast.Definition, defs compiler.De
 			Description:  arg.Description,
 			Type:         arg.Type.Name(),
 			IsRequired:   arg.Type.NonNull,
-			IsScalarType: compiler.IsScalarType(arg.Type.Name()),
+			IsScalarType: sdl.IsScalarType(arg.Type.Name()),
 			IsArray:      arg.Type.NamedType == "",
 		}
 		fi.Arguments = append(fi.Arguments, argInfo)
 	}
-	if !compiler.IsScalarType(field.Type.Name()) {
+	if !sdl.IsScalarType(field.Type.Name()) {
 		// If the field is an object type, recurse into its fields
-		fieldDef := defs.ForName(field.Type.Name())
+		fieldDef := defs.ForName(ctx, field.Type.Name())
 		if fieldDef != nil {
-			fi.NestedFields = objectFieldsInfo(defs, fieldDef, level+1, skipSubqueries)
+			fi.NestedFields = objectFieldsInfo(ctx, defs, fieldDef, level+1, skipSubqueries)
 		}
 	}
-	if compiler.IsScalarType(field.Type.Name()) {
+	if sdl.IsScalarType(field.Type.Name()) {
 		// find extra fields
 		for _, ef := range def.Fields {
 			ed := ef.Directives.ForName(base.FieldExtraFieldDirectiveName)
@@ -1032,13 +1032,13 @@ func fieldInfo(field *ast.FieldDefinition, def *ast.Definition, defs compiler.De
 				IsCalculated: true,
 			}
 			for _, arg := range ef.Arguments {
-				extraFieldInfo.Arguments = append(extraFieldInfo.Arguments, argumentInfo(defs, arg, 2))
+				extraFieldInfo.Arguments = append(extraFieldInfo.Arguments, argumentInfo(ctx, defs, arg, 2))
 			}
-			if !compiler.IsScalarType(ef.Type.Name()) {
+			if !sdl.IsScalarType(ef.Type.Name()) {
 				// If the extra field is an object type, recurse into its fields
-				efDef := defs.ForName(ef.Type.Name())
+				efDef := defs.ForName(ctx, ef.Type.Name())
 				if efDef != nil {
-					extraFieldInfo.NestedFields = objectFieldsInfo(defs, efDef, 1, skipSubqueries)
+					extraFieldInfo.NestedFields = objectFieldsInfo(ctx, defs, efDef, 1, skipSubqueries)
 				}
 			}
 			fi.ExtraFields = append(fi.ExtraFields, extraFieldInfo)
@@ -1047,7 +1047,7 @@ func fieldInfo(field *ast.FieldDefinition, def *ast.Definition, defs compiler.De
 	return &fi
 }
 
-func argumentInfo(defs compiler.DefinitionsSource, arg *ast.ArgumentDefinition, maxNestedLevel int) ArgumentInfo {
+func argumentInfo(ctx context.Context, defs base.DefinitionsSource, arg *ast.ArgumentDefinition, maxNestedLevel int) ArgumentInfo {
 	if maxNestedLevel <= 0 && maxNestedLevel+1 > maxNestedFieldLevels {
 		maxNestedLevel = maxNestedFieldLevels
 	}
@@ -1057,14 +1057,14 @@ func argumentInfo(defs compiler.DefinitionsSource, arg *ast.ArgumentDefinition, 
 		Description:  arg.Description,
 		Type:         arg.Type.Name(),
 		IsRequired:   arg.Type.NonNull,
-		IsScalarType: compiler.IsScalarType(arg.Type.Name()),
+		IsScalarType: sdl.IsScalarType(arg.Type.Name()),
 		IsArray:      arg.Type.NamedType == "",
 	}
-	if !compiler.IsScalarType(arg.Type.Name()) {
+	if !sdl.IsScalarType(arg.Type.Name()) {
 		// If the argument is an object type, recurse into its fields
-		def := defs.ForName(arg.Type.Name())
+		def := defs.ForName(ctx, arg.Type.Name())
 		if def != nil {
-			argInfo.NestedFields = objectFieldsInfo(defs, def, maxNestedLevel, true)
+			argInfo.NestedFields = objectFieldsInfo(ctx, defs, def, maxNestedLevel, true)
 		}
 	}
 	return argInfo

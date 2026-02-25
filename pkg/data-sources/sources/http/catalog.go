@@ -10,8 +10,8 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -147,7 +147,7 @@ func (s *Source) schemaFromSpec() (doc *ast.SchemaDocument, err error) {
 	if !s.params.hasSpec || s.spec == nil {
 		return &ast.SchemaDocument{}, nil
 	}
-	pos := compiler.CompiledPosName("http-openapi-" + s.ds.Name)
+	pos := base.CompiledPos("http-openapi-" + s.ds.Name)
 	defs := ast.DefinitionList{}
 	var funcs, mutFuncs []openApiFunction
 	var gt *ast.Type
@@ -309,7 +309,7 @@ func (s *Source) functionFields(defs ast.DefinitionList, funcs []openApiFunction
 				Position:    pos,
 			})
 			sql := "[" + p.Name + "]"
-			if p.Type.NamedType == compiler.GeometryTypeName {
+			if p.Type.NamedType == base.GeometryTypeName {
 				sql = fmt.Sprintf("ST_AsGeoJSON(%s)", sql)
 			}
 			switch p.In {
@@ -328,7 +328,7 @@ func (s *Source) functionFields(defs ast.DefinitionList, funcs []openApiFunction
 		bSQL := ""
 		if reqBody != nil && (len(args) != 0 ||
 			reqBody.NamedType == "" ||
-			reqBody.NamedType == compiler.JSONTypeName) {
+			reqBody.NamedType == base.JSONTypeName) {
 			args = append(args, &ast.ArgumentDefinition{
 				Name:        "request_body",
 				Description: "request body",
@@ -384,7 +384,7 @@ func (s *Source) functionFields(defs ast.DefinitionList, funcs []openApiFunction
 			bSQL,
 		)
 		// directive
-		def := compiler.NewFunction("", f.Name, sql, resType, false, true, args, pos)
+		def := sdl.NewFunction("", f.Name, sql, resType, false, true, args, pos)
 		fields = append(fields, def)
 	}
 	return fields, nil
@@ -596,7 +596,7 @@ type openApiTypeExt struct {
 func (t *openApiTypeExt) FieldDirectives(name string) []*ast.Directive {
 	var dd ast.DirectiveList
 	switch {
-	case t.TypeName == compiler.TimestampTypeName:
+	case t.TypeName == base.TimestampTypeName:
 		sql := "[" + name + "]"
 		switch t.TransformName {
 		case "FromUnixTime":
@@ -604,7 +604,7 @@ func (t *openApiTypeExt) FieldDirectives(name string) []*ast.Directive {
 		default:
 			dd = append(dd, base.FieldSqlDirective(fmt.Sprintf("try_cast(%s AS VARCHAR)::TIMESTAMP_TZ", sql)))
 		}
-	case t.TypeName == compiler.GeometryTypeName:
+	case t.TypeName == base.GeometryTypeName:
 		if t.GeometryInfo.GeometryType != "" && t.GeometryInfo.SRID != 0 {
 			dd = append(dd, base.FieldGeometryInfoDirective(t.GeometryInfo.GeometryType, t.GeometryInfo.SRID))
 		}

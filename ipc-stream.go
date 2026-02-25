@@ -14,8 +14,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 )
@@ -210,10 +210,10 @@ func (s *Service) dataObjectStreamQuery(ctx context.Context, dataObject string, 
 		if def == nil {
 			return "", fmt.Errorf("data object %s not found in schema", dataObject)
 		}
-		if !compiler.IsDataObject(def) {
+		if !sdl.IsDataObject(def) {
 			return "", fmt.Errorf("data object %s is not a valid data object", dataObject)
 		}
-		path, field := compiler.ObjectQueryDefinition(base.NewDefsAdapter(ctx, provider), def, compiler.QueryTypeSelect)
+		path, field := sdl.ObjectQueryDefinition(ctx, provider, def, sdl.QueryTypeSelect)
 		if path != "" {
 			dataObject = path + "." + field.Name
 		}
@@ -233,7 +233,7 @@ func (s *Service) dataObjectStreamQuery(ctx context.Context, dataObject string, 
 		def = provider.ForName(ctx, field.Type.Name())
 		query = field
 	}
-	if !compiler.IsDataObject(def) || query == nil {
+	if !sdl.IsDataObject(def) || query == nil {
 		return "", fmt.Errorf("data object %s is not a valid data object", dataObject)
 	}
 	path = path[:len(path)-1] // Remove the last part which is the field name

@@ -1,13 +1,17 @@
 {
-  "errors": [
-    {
-      "locations": [
-        {
-          "column": 11,
-          "line": 10
+  "data": {
+    "pg_store": {
+      "categories_aggregation": {
+        "_rows_count": 3,
+        "products_aggregation": {
+          "_rows_count": 3,
+          "price": {
+            "avg": {
+              "avg": 966.6566666666665
+            }
+          }
         }
-      ],
-      "message": "Field \"avg\" of type \"FloatAggregation\" must have a selection of subfields. Did you mean \"avg { ... }\"?"
+      }
     }
-  ]
+  }
 }

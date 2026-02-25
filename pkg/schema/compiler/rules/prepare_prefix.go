@@ -31,16 +31,16 @@ func (r *PrefixPreparer) ProcessAll(ctx base.CompilationContext) error {
 
 		if isTable {
 			tableDir := def.Directives.ForName("table")
-			if arg := tableDir.Arguments.ForName("name"); arg != nil {
+			if arg := tableDir.Arguments.ForName(base.ArgName); arg != nil {
 				tableName = arg.Value.Raw
 			}
-			if arg := tableDir.Arguments.ForName("is_m2m"); arg != nil {
+			if arg := tableDir.Arguments.ForName(base.ArgIsM2M); arg != nil {
 				isM2M = arg.Value.Raw == "true"
 			}
 		}
 		if isView {
 			viewDir := def.Directives.ForName("view")
-			if arg := viewDir.Arguments.ForName("name"); arg != nil {
+			if arg := viewDir.Arguments.ForName(base.ArgName); arg != nil {
 				tableName = arg.Value.Raw
 			}
 		}
@@ -62,16 +62,16 @@ func (r *PrefixPreparer) ProcessAll(ctx base.CompilationContext) error {
 				module = opts.Name
 				// Concatenate with inline @module if present (e.g., "transport" + "air" → "transport.air")
 				// Also update the directive value to match the old compiler's behavior.
-				if modDir := def.Directives.ForName("module"); modDir != nil {
-					if arg := modDir.Arguments.ForName("name"); arg != nil {
+				if modDir := def.Directives.ForName(base.ModuleDirectiveName); modDir != nil {
+					if arg := modDir.Arguments.ForName(base.ArgName); arg != nil {
 						if arg.Value.Raw != "" {
 							module = opts.Name + "." + arg.Value.Raw
 						}
 						arg.Value.Raw = module
 					}
 				}
-			} else if modDir := def.Directives.ForName("module"); modDir != nil {
-				if arg := modDir.Arguments.ForName("name"); arg != nil {
+			} else if modDir := def.Directives.ForName(base.ModuleDirectiveName); modDir != nil {
+				if arg := modDir.Arguments.ForName(base.ArgName); arg != nil {
 					module = arg.Value.Raw
 				}
 			}

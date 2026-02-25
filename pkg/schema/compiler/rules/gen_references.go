@@ -18,11 +18,11 @@ func (r *ReferencesRule) Phase() base.Phase { return base.PhaseGenerate }
 
 func (r *ReferencesRule) Match(def *ast.Definition) bool {
 	// Match definitions that have @references or fields with @field_references
-	if def.Directives.ForName("references") != nil {
+	if def.Directives.ForName(base.ReferencesDirectiveName) != nil {
 		return true
 	}
 	for _, f := range def.Fields {
-		if f.Directives.ForName("field_references") != nil {
+		if f.Directives.ForName(base.FieldReferencesDirectiveName) != nil {
 			return true
 		}
 	}
@@ -40,7 +40,7 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 	// Process @field_references on individual fields first — convert to object-level @references
 	// Also add @field_references directive to the corresponding filter field
 	for _, f := range def.Fields {
-		for _, dir := range f.Directives.ForNames("field_references") {
+		for _, dir := range f.Directives.ForNames(base.FieldReferencesDirectiveName) {
 			refDir := fieldReferencesToReferences(f.Name, dir, def, ctx, pos)
 			if refDir != nil {
 				def.Directives = append(def.Directives, refDir)
@@ -56,8 +56,8 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 
 	if isM2M {
 		// Enrich M2M table's @references directives with descriptions and default args
-		for _, dir := range def.Directives.ForNames("references") {
-			refName := base.DirectiveArgString(dir, "references_name")
+		for _, dir := range def.Directives.ForNames(base.ReferencesDirectiveName) {
+			refName := base.DirectiveArgString(dir, base.ArgReferencesName)
 			if refName == "" {
 				continue
 			}
@@ -77,28 +77,28 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 			}
 
 			// Add default args
-			if dir.Arguments.ForName("is_m2m") == nil {
+			if dir.Arguments.ForName(base.ArgIsM2M) == nil {
 				dir.Arguments = append(dir.Arguments, &ast.Argument{
-					Name: "is_m2m", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos,
+					Name: base.ArgIsM2M, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos,
 				})
 			}
-			if dir.Arguments.ForName("m2m_name") == nil {
+			if dir.Arguments.ForName(base.ArgM2MName) == nil {
 				dir.Arguments = append(dir.Arguments, &ast.Argument{
-					Name: "m2m_name", Value: &ast.Value{Raw: "", Kind: ast.StringValue, Position: pos}, Position: pos,
+					Name: base.ArgM2MName, Value: &ast.Value{Raw: "", Kind: ast.StringValue, Position: pos}, Position: pos,
 				})
 			}
-			if dir.Arguments.ForName("description") == nil {
+			if dir.Arguments.ForName(base.ArgDescription) == nil {
 				descVal := ""
 				if targetDef != nil {
 					descVal = targetDef.Description
 				}
 				dir.Arguments = append(dir.Arguments, &ast.Argument{
-					Name: "description", Value: &ast.Value{Raw: descVal, Kind: ast.StringValue, Position: pos}, Position: pos,
+					Name: base.ArgDescription, Value: &ast.Value{Raw: descVal, Kind: ast.StringValue, Position: pos}, Position: pos,
 				})
 			}
-			if dir.Arguments.ForName("references_description") == nil {
+			if dir.Arguments.ForName(base.ArgReferencesDescription) == nil {
 				dir.Arguments = append(dir.Arguments, &ast.Argument{
-					Name: "references_description", Value: &ast.Value{Raw: def.Description, Kind: ast.StringValue, Position: pos}, Position: pos,
+					Name: base.ArgReferencesDescription, Value: &ast.Value{Raw: def.Description, Kind: ast.StringValue, Position: pos}, Position: pos,
 				})
 			}
 		}
@@ -108,8 +108,8 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		return nil
 	}
 
-	for _, dir := range def.Directives.ForNames("references") {
-		refName := base.DirectiveArgString(dir, "references_name")
+	for _, dir := range def.Directives.ForNames(base.ReferencesDirectiveName) {
+		refName := base.DirectiveArgString(dir, base.ArgReferencesName)
 		if refName == "" {
 			continue
 		}
@@ -137,24 +137,24 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		}
 
 		// Extract fields
-		sourceFields := base.DirectiveArgStrings(dir, "source_fields")
-		refFields := base.DirectiveArgStrings(dir, "references_fields")
+		sourceFields := base.DirectiveArgStrings(dir, base.ArgSourceFields)
+		refFields := base.DirectiveArgStrings(dir, base.ArgReferencesFields)
 		if len(sourceFields) == 0 || len(refFields) == 0 {
 			continue
 		}
 
 		// Extract names
-		query := base.DirectiveArgString(dir, "query")
+		query := base.DirectiveArgString(dir, base.ArgQuery)
 		if query == "" {
 			query = refName
 		}
-		refQuery := base.DirectiveArgString(dir, "references_query")
+		refQuery := base.DirectiveArgString(dir, base.ArgReferencesQuery)
 		if refQuery == "" {
 			refQuery = def.Name
 		}
-		isM2MRef := base.DirectiveArgString(dir, "is_m2m") == "true"
-		m2mName := base.DirectiveArgString(dir, "m2m_name")
-		dirName := base.DirectiveArgString(dir, "name")
+		isM2MRef := base.DirectiveArgString(dir, base.ArgIsM2M) == "true"
+		m2mName := base.DirectiveArgString(dir, base.ArgM2MName)
+		dirName := base.DirectiveArgString(dir, base.ArgName)
 		if dirName == "" {
 			dirName = refName
 			if len(sourceFields) == 1 {
@@ -163,24 +163,24 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		}
 
 		// Enrich @references directive with missing default args
-		if dir.Arguments.ForName("is_m2m") == nil {
+		if dir.Arguments.ForName(base.ArgIsM2M) == nil {
 			dir.Arguments = append(dir.Arguments, &ast.Argument{
-				Name: "is_m2m", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos,
+				Name: base.ArgIsM2M, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos,
 			})
 		}
-		if dir.Arguments.ForName("m2m_name") == nil {
+		if dir.Arguments.ForName(base.ArgM2MName) == nil {
 			dir.Arguments = append(dir.Arguments, &ast.Argument{
-				Name: "m2m_name", Value: &ast.Value{Raw: "", Kind: ast.StringValue, Position: pos}, Position: pos,
+				Name: base.ArgM2MName, Value: &ast.Value{Raw: "", Kind: ast.StringValue, Position: pos}, Position: pos,
 			})
 		}
-		if dir.Arguments.ForName("description") == nil {
+		if dir.Arguments.ForName(base.ArgDescription) == nil {
 			dir.Arguments = append(dir.Arguments, &ast.Argument{
-				Name: "description", Value: &ast.Value{Raw: targetDef.Description, Kind: ast.StringValue, Position: pos}, Position: pos,
+				Name: base.ArgDescription, Value: &ast.Value{Raw: targetDef.Description, Kind: ast.StringValue, Position: pos}, Position: pos,
 			})
 		}
-		if dir.Arguments.ForName("references_description") == nil {
+		if dir.Arguments.ForName(base.ArgReferencesDescription) == nil {
 			dir.Arguments = append(dir.Arguments, &ast.Argument{
-				Name: "references_description", Value: &ast.Value{Raw: def.Description, Kind: ast.StringValue, Position: pos}, Position: pos,
+				Name: base.ArgReferencesDescription, Value: &ast.Value{Raw: def.Description, Kind: ast.StringValue, Position: pos}, Position: pos,
 			})
 		}
 
@@ -279,7 +279,7 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 
 // addM2MReferences handles M2M reference propagation to both sides.
 func addM2MReferences(ctx base.CompilationContext, def *ast.Definition, pos *ast.Position) {
-	refs := def.Directives.ForNames("references")
+	refs := def.Directives.ForNames(base.ReferencesDirectiveName)
 	if len(refs) < 2 {
 		return
 	}
@@ -306,12 +306,12 @@ type refInfo struct {
 
 func refDirectiveInfo(dir *ast.Directive) refInfo {
 	return refInfo{
-		referencesName: base.DirectiveArgString(dir, "references_name"),
-		sourceFields:   base.DirectiveArgStrings(dir, "source_fields"),
-		refFields:      base.DirectiveArgStrings(dir, "references_fields"),
-		query:          base.DirectiveArgString(dir, "query"),
-		refQuery:       base.DirectiveArgString(dir, "references_query"),
-		name:           base.DirectiveArgString(dir, "name"),
+		referencesName: base.DirectiveArgString(dir, base.ArgReferencesName),
+		sourceFields:   base.DirectiveArgStrings(dir, base.ArgSourceFields),
+		refFields:      base.DirectiveArgStrings(dir, base.ArgReferencesFields),
+		query:          base.DirectiveArgString(dir, base.ArgQuery),
+		refQuery:       base.DirectiveArgString(dir, base.ArgReferencesQuery),
+		name:           base.DirectiveArgString(dir, base.ArgName),
 	}
 }
 
@@ -407,9 +407,9 @@ func addReferenceToFilterInput(ctx base.CompilationContext, objectName, fieldNam
 			// Add @filter_list_input directive to the target object's definition
 			if targetDef := ctx.LookupType(targetObjName); targetDef != nil {
 				targetDef.Directives = append(targetDef.Directives, &ast.Directive{
-					Name: "filter_list_input",
+					Name: base.FilterListInputDirectiveName,
 					Arguments: ast.ArgumentList{
-						{Name: "name", Value: &ast.Value{Raw: filterTypeName, Kind: ast.StringValue, Position: pos}, Position: pos},
+						{Name: base.ArgName, Value: &ast.Value{Raw: filterTypeName, Kind: ast.StringValue, Position: pos}, Position: pos},
 					},
 					Position: pos,
 				})
@@ -454,9 +454,9 @@ func addReferenceAggregationFields(ctx base.CompilationContext, parentObject, re
 				Type:        ast.NamedType(aggTypeName, pos),
 				Arguments:   subQueryArgs(targetFilterName, pos),
 				Directives: ast.DirectiveList{
-					{Name: "aggregation_query", Arguments: ast.ArgumentList{
-						{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
-						{Name: "name", Value: &ast.Value{Raw: refFieldName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
+						{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+						{Name: base.ArgName, Value: &ast.Value{Raw: refFieldName, Kind: ast.StringValue, Position: pos}, Position: pos},
 					}, Position: pos},
 					optsCatalogDirective(opts),
 				},
@@ -468,9 +468,9 @@ func addReferenceAggregationFields(ctx base.CompilationContext, parentObject, re
 				Type:        ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
 				Arguments:   subQueryArgs(targetFilterName, pos),
 				Directives: ast.DirectiveList{
-					{Name: "aggregation_query", Arguments: ast.ArgumentList{
-						{Name: "is_bucket", Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
-						{Name: "name", Value: &ast.Value{Raw: refFieldName, Kind: ast.StringValue, Position: pos}, Position: pos},
+					{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
+						{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+						{Name: base.ArgName, Value: &ast.Value{Raw: refFieldName, Kind: ast.StringValue, Position: pos}, Position: pos},
 					}, Position: pos},
 					optsCatalogDirective(opts),
 				},
@@ -484,12 +484,12 @@ func addReferenceAggregationFields(ctx base.CompilationContext, parentObject, re
 // fieldReferencesToReferences converts a @field_references directive on a field
 // to an object-level @references directive.
 func fieldReferencesToReferences(fieldName string, dir *ast.Directive, def *ast.Definition, ctx base.CompilationContext, pos *ast.Position) *ast.Directive {
-	refName := base.DirectiveArgString(dir, "references_name")
+	refName := base.DirectiveArgString(dir, base.ArgReferencesName)
 	if refName == "" {
 		return nil
 	}
 
-	field := base.DirectiveArgString(dir, "field")
+	field := base.DirectiveArgString(dir, base.ArgField)
 	if field == "" {
 		// Default to PK of referenced object
 		targetDef := ctx.LookupType(refName)
@@ -508,15 +508,15 @@ func fieldReferencesToReferences(fieldName string, dir *ast.Directive, def *ast.
 		return nil
 	}
 
-	query := base.DirectiveArgString(dir, "query")
+	query := base.DirectiveArgString(dir, base.ArgQuery)
 	if query == "" {
 		query = refName
 	}
-	refQuery := base.DirectiveArgString(dir, "references_query")
+	refQuery := base.DirectiveArgString(dir, base.ArgReferencesQuery)
 	if refQuery == "" {
 		refQuery = def.Name
 	}
-	name := base.DirectiveArgString(dir, "name")
+	name := base.DirectiveArgString(dir, base.ArgName)
 	if name == "" {
 		name = refName + "_" + fieldName
 	}
@@ -547,14 +547,14 @@ func referencesDirective(name, refName string, sourceFields, refFields []string,
 		isM2MStr = "true"
 	}
 	args := ast.ArgumentList{
-		{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue, Position: pos}, Position: pos},
-		{Name: "references_name", Value: &ast.Value{Raw: refName, Kind: ast.StringValue, Position: pos}, Position: pos},
-		{Name: "source_fields", Value: &ast.Value{Children: sfChildren, Kind: ast.ListValue, Position: pos}, Position: pos},
-		{Name: "references_fields", Value: &ast.Value{Children: rfChildren, Kind: ast.ListValue, Position: pos}, Position: pos},
-		{Name: "query", Value: &ast.Value{Raw: query, Kind: ast.StringValue, Position: pos}, Position: pos},
-		{Name: "references_query", Value: &ast.Value{Raw: refQuery, Kind: ast.StringValue, Position: pos}, Position: pos},
-		{Name: "is_m2m", Value: &ast.Value{Raw: isM2MStr, Kind: ast.BooleanValue, Position: pos}, Position: pos},
-		{Name: "m2m_name", Value: &ast.Value{Raw: m2mName, Kind: ast.StringValue, Position: pos}, Position: pos},
+		{Name: base.ArgName, Value: &ast.Value{Raw: name, Kind: ast.StringValue, Position: pos}, Position: pos},
+		{Name: base.ArgReferencesName, Value: &ast.Value{Raw: refName, Kind: ast.StringValue, Position: pos}, Position: pos},
+		{Name: base.ArgSourceFields, Value: &ast.Value{Children: sfChildren, Kind: ast.ListValue, Position: pos}, Position: pos},
+		{Name: base.ArgReferencesFields, Value: &ast.Value{Children: rfChildren, Kind: ast.ListValue, Position: pos}, Position: pos},
+		{Name: base.ArgQuery, Value: &ast.Value{Raw: query, Kind: ast.StringValue, Position: pos}, Position: pos},
+		{Name: base.ArgReferencesQuery, Value: &ast.Value{Raw: refQuery, Kind: ast.StringValue, Position: pos}, Position: pos},
+		{Name: base.ArgIsM2M, Value: &ast.Value{Raw: isM2MStr, Kind: ast.BooleanValue, Position: pos}, Position: pos},
+		{Name: base.ArgM2MName, Value: &ast.Value{Raw: m2mName, Kind: ast.StringValue, Position: pos}, Position: pos},
 	}
 	// Always include description and references_description (old compiler always includes them)
 	desc := ""
@@ -565,10 +565,10 @@ func referencesDirective(name, refName string, sourceFields, refFields []string,
 	if len(descriptions) > 1 {
 		refDesc = descriptions[1]
 	}
-	args = append(args, &ast.Argument{Name: "description", Value: &ast.Value{Raw: desc, Kind: ast.StringValue, Position: pos}, Position: pos})
-	args = append(args, &ast.Argument{Name: "references_description", Value: &ast.Value{Raw: refDesc, Kind: ast.StringValue, Position: pos}, Position: pos})
+	args = append(args, &ast.Argument{Name: base.ArgDescription, Value: &ast.Value{Raw: desc, Kind: ast.StringValue, Position: pos}, Position: pos})
+	args = append(args, &ast.Argument{Name: base.ArgReferencesDescription, Value: &ast.Value{Raw: refDesc, Kind: ast.StringValue, Position: pos}, Position: pos})
 	return &ast.Directive{
-		Name:      "references",
+		Name:      base.ReferencesDirectiveName,
 		Arguments: args,
 		Position:  pos,
 	}
@@ -585,12 +585,12 @@ func referencesQueryDirective(refName, name string, isM2M bool, m2mName string, 
 		isM2MStr = "true"
 	}
 	return &ast.Directive{
-		Name: "references_query",
+		Name: base.FieldReferencesQueryDirectiveName,
 		Arguments: ast.ArgumentList{
-			{Name: "references_name", Value: &ast.Value{Raw: refName, Kind: ast.StringValue, Position: pos}, Position: pos},
-			{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue, Position: pos}, Position: pos},
-			{Name: "is_m2m", Value: &ast.Value{Raw: isM2MStr, Kind: ast.BooleanValue, Position: pos}, Position: pos},
-			{Name: "m2m_name", Value: &ast.Value{Raw: m2mName, Kind: ast.StringValue, Position: pos}, Position: pos},
+			{Name: base.ArgReferencesName, Value: &ast.Value{Raw: refName, Kind: ast.StringValue, Position: pos}, Position: pos},
+			{Name: base.ArgName, Value: &ast.Value{Raw: name, Kind: ast.StringValue, Position: pos}, Position: pos},
+			{Name: base.ArgIsM2M, Value: &ast.Value{Raw: isM2MStr, Kind: ast.BooleanValue, Position: pos}, Position: pos},
+			{Name: base.ArgM2MName, Value: &ast.Value{Raw: m2mName, Kind: ast.StringValue, Position: pos}, Position: pos},
 		},
 		Position: pos,
 	}
@@ -776,8 +776,8 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 		Type:     ast.NamedType(rowsCountType, pos),
 		Position: pos,
 		Directives: ast.DirectiveList{
-			{Name: "field_aggregation", Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: "aggregation_field", Kind: ast.StringValue, Position: pos}, Position: pos},
+			{Name: base.ObjectFieldAggregationDirectiveName, Arguments: ast.ArgumentList{
+				{Name: base.ArgName, Value: &ast.Value{Raw: "aggregation_field", Kind: ast.StringValue, Position: pos}, Position: pos},
 			}, Position: pos},
 		},
 	})
@@ -867,9 +867,9 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 		Name:     subAggTypeName,
 		Position: pos,
 		Directives: ast.DirectiveList{
-			{Name: "aggregation", Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: parentAggName, Kind: ast.StringValue, Position: pos}, Position: pos},
-				{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+			{Name: base.ObjectAggregationDirectiveName, Arguments: ast.ArgumentList{
+				{Name: base.ArgName, Value: &ast.Value{Raw: parentAggName, Kind: ast.StringValue, Position: pos}, Position: pos},
+				{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
 				{Name: "level", Value: &ast.Value{Raw: fmt.Sprintf("%d", level), Kind: ast.IntValue, Position: pos}, Position: pos},
 			}, Position: pos},
 			optsCatalogDirective(ctx.CompileOptions()),
@@ -908,8 +908,8 @@ func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, su
 		Type:     ast.NamedType(rowsCountType, pos),
 		Position: pos,
 		Directives: ast.DirectiveList{
-			{Name: "field_aggregation", Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: "aggregation_field", Kind: ast.StringValue, Position: pos}, Position: pos},
+			{Name: base.ObjectFieldAggregationDirectiveName, Arguments: ast.ArgumentList{
+				{Name: base.ArgName, Value: &ast.Value{Raw: "aggregation_field", Kind: ast.StringValue, Position: pos}, Position: pos},
 			}, Position: pos},
 		},
 	})
@@ -946,9 +946,9 @@ func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, su
 		Name:     subAggTypeName,
 		Position: pos,
 		Directives: ast.DirectiveList{
-			{Name: "aggregation", Arguments: ast.ArgumentList{
-				{Name: "name", Value: &ast.Value{Raw: parentAggName, Kind: ast.StringValue, Position: pos}, Position: pos},
-				{Name: "is_bucket", Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+			{Name: base.ObjectAggregationDirectiveName, Arguments: ast.ArgumentList{
+				{Name: base.ArgName, Value: &ast.Value{Raw: parentAggName, Kind: ast.StringValue, Position: pos}, Position: pos},
+				{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
 				{Name: "level", Value: &ast.Value{Raw: fmt.Sprintf("%d", level), Kind: ast.IntValue, Position: pos}, Position: pos},
 			}, Position: pos},
 			optsCatalogDirective(ctx.CompileOptions()),
@@ -960,31 +960,9 @@ func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, su
 
 // scalarSubAggTypeName maps a scalar aggregation type to its SubAggregation variant.
 // Returns "" if the type is not a known scalar aggregation type.
+// Delegates to the type registry.
 func scalarSubAggTypeName(aggTypeName string) string {
-	switch aggTypeName {
-	case "StringAggregation":
-		return "StringSubAggregation"
-	case "IntAggregation":
-		return "IntSubAggregation"
-	case "BigIntAggregation":
-		return "BigIntSubAggregation"
-	case "FloatAggregation":
-		return "FloatSubAggregation"
-	case "BooleanAggregation":
-		return "BooleanSubAggregation"
-	case "DateAggregation":
-		return "DateSubAggregation"
-	case "TimestampAggregation":
-		return "TimestampSubAggregation"
-	case "TimeAggregation":
-		return "TimeSubAggregation"
-	case "JSONAggregation":
-		return "JSONSubAggregation"
-	case "GeometryAggregation":
-		return "GeometrySubAggregation"
-	default:
-		return ""
-	}
+	return types.SubAggregationTypeName(aggTypeName)
 }
 
 
@@ -1051,11 +1029,11 @@ func addFieldReferencesToFilter(ctx base.CompilationContext, objectName, fieldNa
 }
 
 func isM2MObject(def *ast.Definition) bool {
-	d := def.Directives.ForName("table")
+	d := def.Directives.ForName(base.ObjectTableDirectiveName)
 	if d == nil {
 		return false
 	}
-	if a := d.Arguments.ForName("is_m2m"); a != nil {
+	if a := d.Arguments.ForName(base.ArgIsM2M); a != nil {
 		return a.Value.Raw == "true"
 	}
 	return false

@@ -1,7 +1,7 @@
 package schema
 
 import (
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -18,8 +18,8 @@ type Operation struct {
 	Variables map[string]any
 
 	// Classified top-level query requests from the selection set
-	Queries []base.QueryRequest
+	Queries []sdl.QueryRequest
 
 	// Combined bitmask of all query types in the operation
-	QueryType base.QueryType
+	QueryType sdl.QueryType
 }

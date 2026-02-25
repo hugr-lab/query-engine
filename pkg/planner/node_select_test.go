@@ -1,10 +1,11 @@
 package planner
 
 import (
+	"context"
 	"strings"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -138,8 +139,8 @@ func TestWhereFieldNode(t *testing.T) {
 			if def == nil {
 				t.Fatalf("object %s not found", tt.objectName)
 			}
-			info := compiler.DataObjectInfo(def)
-			node, err := whereFieldNode(info, tt.prefix, tt.field, tt.value, false)
+			info := sdl.DataObjectInfo(def)
+			node, err := whereFieldNode(context.Background(), info, tt.prefix, tt.field, tt.value, false)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("whereFieldNode() error = %v, wantErr %v", err, tt.wantErr)
 			}

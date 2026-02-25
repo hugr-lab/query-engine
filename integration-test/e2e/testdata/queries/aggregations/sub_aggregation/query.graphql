@@ -1,6 +1,6 @@
 {
   pg_store {
-    categories_aggregation(order_by: [{field: "id", direction: ASC}]) {
+    categories_aggregation {
       _rows_count
       products_aggregation {
         _rows_count{

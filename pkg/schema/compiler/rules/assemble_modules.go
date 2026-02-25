@@ -47,8 +47,8 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 
 		// Add @module directive on the object definition (or update existing)
 		if def := ctx.LookupType(name); def != nil {
-			if existing := def.Directives.ForName("module"); existing != nil {
-				if a := existing.Arguments.ForName("name"); a != nil {
+			if existing := def.Directives.ForName(base.ModuleDirectiveName); existing != nil {
+				if a := existing.Arguments.ForName(base.ArgName); a != nil {
 					a.Value.Raw = info.Module
 				}
 			} else {
@@ -79,7 +79,7 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 			if f.Name == "_stub" || f.Name == "_placeholder" {
 				continue
 			}
-			mod := base.DirectiveArgString(f.Directives.ForName("module"), "name")
+			mod := base.DirectiveArgString(f.Directives.ForName(base.ModuleDirectiveName), base.ArgName)
 			if mod == "" {
 				remaining = append(remaining, f)
 				continue
@@ -96,7 +96,7 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 			if f.Name == "_stub" || f.Name == "_placeholder" {
 				continue
 			}
-			mod := base.DirectiveArgString(f.Directives.ForName("module"), "name")
+			mod := base.DirectiveArgString(f.Directives.ForName(base.ModuleDirectiveName), base.ArgName)
 			if mod == "" {
 				remaining = append(remaining, f)
 				continue
@@ -345,7 +345,7 @@ func addModuleFuncAggregations(ctx base.CompilationContext, funcType *ast.Defini
 		if targetDef == nil || targetDef.Kind != ast.Object {
 			continue
 		}
-		if targetDef.Directives.ForName("table") == nil && targetDef.Directives.ForName("view") == nil {
+		if targetDef.Directives.ForName(base.ObjectTableDirectiveName) == nil && targetDef.Directives.ForName(base.ObjectViewDirectiveName) == nil {
 			continue
 		}
 
@@ -394,15 +394,15 @@ func addModuleFuncAggregations(ctx base.CompilationContext, funcType *ast.Defini
 // on a definition, or adds a new one if none exists.
 func replaceOrAddQueryDirective(def *ast.Definition, queryType, name string, pos *ast.Position) {
 	for _, d := range def.Directives {
-		if d.Name == "query" && base.DirectiveArgString(d, "type") == queryType {
+		if d.Name == base.QueryDirectiveName && base.DirectiveArgString(d, base.ArgType) == queryType {
 			// Replace the name
-			if a := d.Arguments.ForName("name"); a != nil {
+			if a := d.Arguments.ForName(base.ArgName); a != nil {
 				a.Value.Raw = name
 			}
 			return
 		}
 	}
-	def.Directives = append(def.Directives, &ast.Directive{Name: "query", Arguments: ast.ArgumentList{
+	def.Directives = append(def.Directives, &ast.Directive{Name: base.QueryDirectiveName, Arguments: ast.ArgumentList{
 		{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue, Position: pos}, Position: pos},
 		{Name: "type", Value: &ast.Value{Raw: queryType, Kind: ast.EnumValue, Position: pos}, Position: pos},
 	}, Position: pos})

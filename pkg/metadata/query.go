@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -14,8 +14,8 @@ var (
 	ErrInvalidTypeQuery     = errors.New("invalid type query")
 )
 
-func ProcessQuery(ctx context.Context, provider schema.Provider, query compiler.QueryRequest, maxDepth int, vars map[string]any) (any, error) {
-	if query.QueryType != compiler.QueryTypeMeta {
+func ProcessQuery(ctx context.Context, provider schema.Provider, query sdl.QueryRequest, maxDepth int, vars map[string]any) (any, error) {
+	if query.QueryType != sdl.QueryTypeMeta {
 		return nil, ErrInvalidMetaDataQuery
 	}
 	if query.Field == nil {

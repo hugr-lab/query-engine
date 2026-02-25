@@ -10,8 +10,8 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/metadata"
 	"github.com/hugr-lab/query-engine/pkg/schema"
@@ -332,7 +332,7 @@ func (s *Service) processDataQuery(ctx context.Context, provider schema.Provider
 
 	if ci.Use {
 		if ci.Key == "" {
-			return nil, nil, compiler.ErrorPosf(query.Field.Position, "cache key is empty")
+			return nil, nil, sdl.ErrorPosf(query.Field.Position, "cache key is empty")
 		}
 		ci.Key = query.Field.Name + "_" + ci.Key
 		data, err = s.cache.Load(ctx, ci.Key, dataFunc, ci.Options()...)
@@ -382,24 +382,24 @@ func (s *Service) processJQTransformation(ctx context.Context, provider schema.P
 	dataFunc := func() (any, error) {
 		am := query.Field.ArgumentMap(vars)
 		if len(am) == 0 {
-			return nil, compiler.ErrorPosf(query.Field.Position, "jq requires arguments")
+			return nil, sdl.ErrorPosf(query.Field.Position, "jq requires arguments")
 		}
 		if _, ok := am["query"]; !ok {
-			return nil, compiler.ErrorPosf(query.Field.Position, "jq requires query argument")
+			return nil, sdl.ErrorPosf(query.Field.Position, "jq requires query argument")
 		}
 		q, ok := am["query"].(string)
 		if !ok {
-			return nil, compiler.ErrorPosf(query.Field.Position, "jq query argument should be string")
+			return nil, sdl.ErrorPosf(query.Field.Position, "jq query argument should be string")
 		}
 		t, err := jq.NewTransformer(ctx, q, jq.WithVariables(vars), jq.WithQuerier(s), jq.WithCollectStat())
 		if err != nil {
-			return nil, compiler.ErrorPosf(query.Field.Position, "jq query compile error: %v", err)
+			return nil, sdl.ErrorPosf(query.Field.Position, "jq query compile error: %v", err)
 		}
 		a, includeResults := am["include_origin"]
 		if includeResults {
 			includeResults, ok = a.(bool)
 			if !ok {
-				return nil, compiler.ErrorPosf(query.Field.Position, "includeResults argument should be boolean")
+				return nil, sdl.ErrorPosf(query.Field.Position, "includeResults argument should be boolean")
 			}
 		}
 		subQueries, subQtt := schema.QueryRequestInfo(query.Field.SelectionSet)
@@ -427,7 +427,7 @@ func (s *Service) processJQTransformation(ctx context.Context, provider schema.P
 		}
 		transformed, err := t.Transform(ctx, data, nil)
 		if err != nil {
-			return nil, compiler.ErrorPosf(query.Field.Position, "jq query execution error: %v", err)
+			return nil, sdl.ErrorPosf(query.Field.Position, "jq query execution error: %v", err)
 		}
 		extension := map[string]any{}
 		if ext != nil {
@@ -457,7 +457,7 @@ func (s *Service) processJQTransformation(ctx context.Context, provider schema.P
 	}
 	if ci.Use {
 		if ci.Key == "" {
-			return nil, nil, compiler.ErrorPosf(query.Field.Position, "cache key is empty")
+			return nil, nil, sdl.ErrorPosf(query.Field.Position, "cache key is empty")
 		}
 		ci.Key = query.Field.Name + "_" + ci.Key
 		res, err = s.cache.Load(ctx, ci.Key, dataFunc, ci.Options()...)

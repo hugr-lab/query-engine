@@ -1,6 +1,11 @@
 package types
 
-import "github.com/vektah/gqlparser/v2/ast"
+import (
+	"time"
+
+	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/vektah/gqlparser/v2/ast"
+)
 
 // Compile-time interface assertions.
 var (
@@ -8,9 +13,13 @@ var (
 	_ Filterable              = (*dateScalar)(nil)
 	_ ListFilterable          = (*dateScalar)(nil)
 	_ Aggregatable            = (*dateScalar)(nil)
+	_ SubAggregatable         = (*dateScalar)(nil)
 	_ MeasurementAggregatable = (*dateScalar)(nil)
+	_ JSONTypeHintProvider    = (*dateScalar)(nil)
 	_ ExtraFieldProvider      = (*dateScalar)(nil)
 	_ FieldArgumentsProvider  = (*dateScalar)(nil)
+	_ ValueParser             = (*dateScalar)(nil)
+	_ ArrayParser             = (*dateScalar)(nil)
 )
 
 type dateScalar struct{}
@@ -72,6 +81,10 @@ func (s *dateScalar) ListFilterTypeName() string { return "DateListFilter" }
 
 func (s *dateScalar) AggregationTypeName() string { return "DateAggregation" }
 
+func (s *dateScalar) SubAggregationTypeName() string { return "DateSubAggregation" }
+
+func (s *dateScalar) JSONTypeHint() string { return "timestamp" }
+
 func (s *dateScalar) MeasurementAggregationTypeName() string {
 	return "DateMeasurementAggregation"
 }
@@ -86,4 +99,12 @@ func (s *dateScalar) ExtraFieldName() string { return "Extract" }
 
 func (s *dateScalar) GenerateExtraField(fieldName string) *ast.FieldDefinition {
 	return generateTimestampExtraField(fieldName, "Timestamp")
+}
+
+func (s *dateScalar) ParseValue(v any) (any, error) {
+	return pkgtypes.ParseTimeValue(v)
+}
+
+func (s *dateScalar) ParseArray(v any) (any, error) {
+	return pkgtypes.ParseScalarArray[time.Time](v)
 }

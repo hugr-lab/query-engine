@@ -1,12 +1,17 @@
 package types
 
-import "github.com/vektah/gqlparser/v2/ast"
+import (
+	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/vektah/gqlparser/v2/ast"
+)
 
 // Compile-time interface assertions.
 var (
-	_ ScalarType        = (*vectorScalar)(nil)
-	_ Filterable        = (*vectorScalar)(nil)
-	_ ExtraFieldProvider = (*vectorScalar)(nil)
+	_ ScalarType           = (*vectorScalar)(nil)
+	_ Filterable           = (*vectorScalar)(nil)
+	_ ExtraFieldProvider   = (*vectorScalar)(nil)
+	_ ValueParser          = (*vectorScalar)(nil)
+	_ SQLOutputTransformer = (*vectorScalar)(nil)
 )
 
 type vectorScalar struct{}
@@ -59,4 +64,19 @@ func (s *vectorScalar) ExtraFieldName() string { return "VectorDistance" }
 
 func (s *vectorScalar) GenerateExtraField(fieldName string) *ast.FieldDefinition {
 	return generateVectorExtraField(fieldName)
+}
+
+func (s *vectorScalar) ParseValue(v any) (any, error) {
+	if v == nil {
+		return nil, nil
+	}
+	return pkgtypes.ParseVector(v)
+}
+
+func (s *vectorScalar) ToOutputSQL(sql string, _ bool) string {
+	return "(" + sql + ")::VARCHAR"
+}
+
+func (s *vectorScalar) ToStructFieldSQL(sql string) string {
+	return "(" + sql + ")::VARCHAR"
 }

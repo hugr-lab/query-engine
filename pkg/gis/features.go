@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -33,11 +33,11 @@ type featureDefinition struct {
 }
 
 func newFeatureDefinition(d *ast.Directive, vars map[string]any) (featureDefinition, error) {
-	name := compiler.DirectiveArgValue(d, "name", vars)
+	name := sdl.DirectiveArgValue(d, "name", vars)
 	if name == "" {
 		return featureDefinition{}, errors.New("missing feature name")
 	}
-	v := compiler.DirectiveArgValue(d, "geometry_srid", vars)
+	v := sdl.DirectiveArgValue(d, "geometry_srid", vars)
 	srid, _ := strconv.Atoi(v)
 	if srid == 0 {
 		srid = 4326 // default SRID
@@ -53,19 +53,19 @@ func newFeatureDefinition(d *ast.Directive, vars map[string]any) (featureDefinit
 
 	return featureDefinition{
 		Name:          name,
-		Description:   compiler.DirectiveArgValue(d, "description", vars),
-		GeometryField: compiler.DirectiveArgValue(d, "geometry", vars),
-		IdField:       compiler.DirectiveArgValue(d, "id", vars),
-		PropertiesJQ:  compiler.DirectiveArgValue(d, "properties", vars),
-		GeometryType:  compiler.DirectiveArgValue(d, "geometry_type", vars),
+		Description:   sdl.DirectiveArgValue(d, "description", vars),
+		GeometryField: sdl.DirectiveArgValue(d, "geometry", vars),
+		IdField:       sdl.DirectiveArgValue(d, "id", vars),
+		PropertiesJQ:  sdl.DirectiveArgValue(d, "properties", vars),
+		GeometryType:  sdl.DirectiveArgValue(d, "geometry_type", vars),
 		GeometrySRID:  srid,
 		Definition:    def,
 		Variables:     vv,
-		Summary:       compiler.DirectiveArgValue(d, "summary", vars),
-		ExtentPath:    compiler.DirectiveArgValue(d, "extent_path", vars),
-		CountPath:     compiler.DirectiveArgValue(d, "count_path", vars),
-		WriteBBox:     compiler.DirectiveArgValue(d, "write_bbox", vars) == "true",
-		IsPaginated:   compiler.DirectiveArgValue(d, "is_paginated", vars) == "true",
+		Summary:       sdl.DirectiveArgValue(d, "summary", vars),
+		ExtentPath:    sdl.DirectiveArgValue(d, "extent_path", vars),
+		CountPath:     sdl.DirectiveArgValue(d, "count_path", vars),
+		WriteBBox:     sdl.DirectiveArgValue(d, "write_bbox", vars) == "true",
+		IsPaginated:   sdl.DirectiveArgValue(d, "is_paginated", vars) == "true",
 	}, nil
 }
 

@@ -13,7 +13,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/planner"
@@ -80,7 +81,7 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 		ctx = types.ContextWithValidateOnly(ctx)
 	}
 
-	qm := compiler.FlatQuery(op.Queries)
+	qm := sdl.FlatQuery(op.Queries)
 	if len(qm) == 0 {
 		return nil
 	}
@@ -110,7 +111,7 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 	return nil
 }
 
-func writeDataIPC(w *multipart.Writer, path string, query compiler.QueryRequest, data any) error {
+func writeDataIPC(w *multipart.Writer, path string, query base.QueryRequest, data any) error {
 	switch data := data.(type) {
 	case db.ArrowTable:
 		return writeArrowTableToIPC(w, path, query, data)
@@ -119,7 +120,7 @@ func writeDataIPC(w *multipart.Writer, path string, query compiler.QueryRequest,
 	}
 }
 
-func writeArrowTableToIPC(w *multipart.Writer, path string, query compiler.QueryRequest, data db.ArrowTable) error {
+func writeArrowTableToIPC(w *multipart.Writer, path string, query base.QueryRequest, data db.ArrowTable) error {
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Type", "application/vnd.apache.arrow.stream")
 	hdr.Set("X-Hugr-Part-Type", "data")
@@ -227,8 +228,8 @@ type geomInfo struct {
 }
 
 func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomInfo {
-	if compiler.IsScalarType(query.Definition.Type.Name()) {
-		if query.Definition.Type.NamedType == compiler.H3CellTypeName {
+	if sdl.IsScalarType(query.Definition.Type.Name()) {
+		if query.Definition.Type.NamedType == base.H3CellTypeName {
 			// H3 cell type is special, it has no geometry, but we can return its info
 			return map[string]geomInfo{
 				"": {
@@ -236,10 +237,10 @@ func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomInfo {
 				},
 			}
 		}
-		if query.Definition.Type.NamedType != compiler.GeometryTypeName {
+		if query.Definition.Type.NamedType != base.GeometryTypeName {
 			return nil
 		}
-		fi := compiler.FieldInfo(query)
+		fi := sdl.FieldInfo(query)
 		if fi == nil {
 			return nil
 		}
@@ -270,7 +271,7 @@ func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomInfo {
 	return meta
 }
 
-func writeJsonValueToIPC(w *multipart.Writer, path string, query compiler.QueryRequest, val any) error {
+func writeJsonValueToIPC(w *multipart.Writer, path string, query base.QueryRequest, val any) error {
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Type", "application/json")
 	hdr.Set("X-Hugr-Part-Type", "data")

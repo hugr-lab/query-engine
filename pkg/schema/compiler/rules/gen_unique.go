@@ -27,7 +27,7 @@ func (r *UniqueRule) Process(ctx base.CompilationContext, def *ast.Definition) e
 	var queryFields []*ast.FieldDefinition
 
 	for _, dir := range def.Directives.ForNames("unique") {
-		suffix := base.DirectiveArgString(dir, "query_suffix")
+		suffix := base.DirectiveArgString(dir, base.ArgQuerySuffix)
 		if suffix == "" {
 			continue
 		}

@@ -41,8 +41,8 @@ func (r *FunctionRule) Process(ctx base.CompilationContext, def *ast.Definition)
 
 		// Handle @module for AsModule option
 		if opts.AsModule {
-			if d := field.Directives.ForName("module"); d != nil {
-				if a := d.Arguments.ForName("name"); a != nil {
+			if d := field.Directives.ForName(base.ModuleDirectiveName); d != nil {
+				if a := d.Arguments.ForName(base.ArgName); a != nil {
 					if a.Value.Raw == "" {
 						a.Value.Raw = opts.Name
 					} else {
@@ -105,7 +105,7 @@ func addFunctionAggregationFields(ctx base.CompilationContext, def *ast.Definiti
 		}
 		// Skip fields that have @module — the ModuleAssembler's
 		// addModuleFuncAggregations handles agg fields for module function types.
-		if field.Directives.ForName("module") != nil {
+		if field.Directives.ForName(base.ModuleDirectiveName) != nil {
 			continue
 		}
 		// Only table-returning functions (list type)

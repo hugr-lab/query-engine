@@ -1,11 +1,16 @@
 package types
 
+import pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
+
 // Compile-time interface assertions.
 var (
 	_ ScalarType              = (*booleanScalar)(nil)
 	_ Filterable              = (*booleanScalar)(nil)
 	_ Aggregatable            = (*booleanScalar)(nil)
+	_ SubAggregatable         = (*booleanScalar)(nil)
 	_ MeasurementAggregatable = (*booleanScalar)(nil)
+	_ JSONTypeHintProvider    = (*booleanScalar)(nil)
+	_ ArrayParser             = (*booleanScalar)(nil)
 )
 
 // Note: booleanScalar does NOT implement ListFilterable.
@@ -53,6 +58,14 @@ func (s *booleanScalar) FilterTypeName() string { return "BooleanFilter" }
 
 func (s *booleanScalar) AggregationTypeName() string { return "BooleanAggregation" }
 
+func (s *booleanScalar) SubAggregationTypeName() string { return "BooleanSubAggregation" }
+
+func (s *booleanScalar) JSONTypeHint() string { return "bool" }
+
 func (s *booleanScalar) MeasurementAggregationTypeName() string {
 	return "BooleanMeasurementAggregation"
+}
+
+func (s *booleanScalar) ParseArray(v any) (any, error) {
+	return pkgtypes.ParseScalarArray[bool](v)
 }

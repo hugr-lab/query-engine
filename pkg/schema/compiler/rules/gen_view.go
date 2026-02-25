@@ -15,7 +15,7 @@ func (r *ViewRule) Phase() base.Phase { return base.PhaseGenerate }
 
 func (r *ViewRule) Match(def *ast.Definition) bool {
 	// Match @view but NOT @table (TableRule handles those)
-	return def.Directives.ForName("view") != nil && def.Directives.ForName("table") == nil
+	return def.Directives.ForName(base.ObjectViewDirectiveName) != nil && def.Directives.ForName(base.ObjectTableDirectiveName) == nil
 }
 
 func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) error {
@@ -30,8 +30,8 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 	pos := compiledPos(def.Name)
 
 	// Parse @args directive for parameterized views
-	if argsDir := def.Directives.ForName("args"); argsDir != nil {
-		argInputName := base.DirectiveArgString(argsDir, "name")
+	if argsDir := def.Directives.ForName(base.ViewArgsDirectiveName); argsDir != nil {
+		argInputName := base.DirectiveArgString(argsDir, base.ArgName)
 		if argInputName == "" {
 			return gqlerror.ErrorPosf(argsDir.Position, "object %s: @args directive requires 'name' argument", def.Name)
 		}
@@ -41,7 +41,7 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 			return gqlerror.ErrorPosf(argsDir.Position, "object %s: @args input type %q not found", def.Name, argInputName)
 		}
 		// Auto-compute required: true if any field in input type is NonNull
-		required := base.DirectiveArgString(argsDir, "required") == "true"
+		required := base.DirectiveArgString(argsDir, base.ArgRequired) == "true"
 		if !required {
 			for _, f := range inputDef.Fields {
 				if f.Type.NonNull {
@@ -54,9 +54,9 @@ func (r *ViewRule) Process(ctx base.CompilationContext, def *ast.Definition) err
 		info.RequiredArgs = required
 
 		// Propagate computed required to @args directive for downstream consumers
-		if required && base.DirectiveArgString(argsDir, "required") != "true" {
+		if required && base.DirectiveArgString(argsDir, base.ArgRequired) != "true" {
 			argsDir.Arguments = append(argsDir.Arguments, &ast.Argument{
-				Name:     "required",
+				Name:     base.ArgRequired,
 				Value:    &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos},
 				Position: pos,
 			})

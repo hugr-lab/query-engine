@@ -6,11 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	oldcompiler "github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/integration-test/compare"
-	newcompiler "github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 )
@@ -110,32 +107,27 @@ type Ticket
 func TestIntegration_BootstrapSimulation(t *testing.T) {
 	t.Run("sequential_compilation", func(t *testing.T) {
 		// Simulate Init() flow: system → runtime → user catalogs
-		// All catalogs compiled and compared old vs new
 		catalogs := []catalogDef{
 			// 1. Runtime catalog (cache)
 			{
-				SDL:     systemRuntimeSDL,
-				OldOpts: oldcompiler.Options{Name: "cache", EngineType: "duckdb"},
-				NewOpts: base.Options{Name: "cache", EngineType: "duckdb"},
+				SDL:  systemRuntimeSDL,
+				Opts: base.Options{Name: "cache", EngineType: "duckdb"},
 			},
 			// 2. Runtime catalog (meta)
 			{
-				SDL:     runtimeMetaSDL,
-				OldOpts: oldcompiler.Options{Name: "meta", EngineType: "duckdb"},
-				NewOpts: base.Options{Name: "meta", EngineType: "duckdb"},
+				SDL:  runtimeMetaSDL,
+				Opts: base.Options{Name: "meta", EngineType: "duckdb"},
 			},
 			// 3. User catalog (Postgres, asModule)
 			{
-				SDL:     userCatalogPostgresSDL,
-				OldOpts: oldcompiler.Options{Name: "pg_crm", EngineType: "postgres", AsModule: true},
-				NewOpts: base.Options{Name: "pg_crm", EngineType: "postgres", AsModule: true,
+				SDL: userCatalogPostgresSDL,
+				Opts: base.Options{Name: "pg_crm", EngineType: "postgres", AsModule: true,
 					Capabilities: postgresCapabilities()},
 			},
 			// 4. User catalog (DuckDB, asModule)
 			{
-				SDL:     userCatalogDuckDBSDL,
-				OldOpts: oldcompiler.Options{Name: "analytics", EngineType: "duckdb", AsModule: true},
-				NewOpts: base.Options{Name: "analytics", EngineType: "duckdb", AsModule: true,
+				SDL: userCatalogDuckDBSDL,
+				Opts: base.Options{Name: "analytics", EngineType: "duckdb", AsModule: true,
 					Capabilities: duckdbCapabilities()},
 			},
 		}
@@ -147,14 +139,12 @@ func TestIntegration_BootstrapSimulation(t *testing.T) {
 		// Catalog A with modules, Catalog B without modules
 		catalogs := []catalogDef{
 			{
-				SDL:     userCatalogPostgresSDL,
-				OldOpts: oldcompiler.Options{Name: "pg_crm", EngineType: "duckdb", AsModule: true},
-				NewOpts: base.Options{Name: "pg_crm", EngineType: "duckdb", AsModule: true},
+				SDL:  userCatalogPostgresSDL,
+				Opts: base.Options{Name: "pg_crm", EngineType: "duckdb", AsModule: true},
 			},
 			{
-				SDL:     systemRuntimeSDL,
-				OldOpts: oldcompiler.Options{Name: "cache", EngineType: "duckdb"},
-				NewOpts: base.Options{Name: "cache", EngineType: "duckdb"},
+				SDL:  systemRuntimeSDL,
+				Opts: base.Options{Name: "cache", EngineType: "duckdb"},
 			},
 		}
 
@@ -188,14 +178,12 @@ func TestIntegration_BootstrapSimulation(t *testing.T) {
 		// Two catalogs contributing to the same "crm" module
 		catalogs := []catalogDef{
 			{
-				SDL:     userCatalogPostgresSDL,
-				OldOpts: oldcompiler.Options{Name: "pg_crm", EngineType: "duckdb"},
-				NewOpts: base.Options{Name: "pg_crm", EngineType: "duckdb"},
+				SDL:  userCatalogPostgresSDL,
+				Opts: base.Options{Name: "pg_crm", EngineType: "duckdb"},
 			},
 			{
-				SDL:     overlapModuleCatalogSDL,
-				OldOpts: oldcompiler.Options{Name: "support", EngineType: "duckdb"},
-				NewOpts: base.Options{Name: "support", EngineType: "duckdb"},
+				SDL:  overlapModuleCatalogSDL,
+				Opts: base.Options{Name: "support", EngineType: "duckdb"},
 			},
 		}
 
@@ -725,9 +713,8 @@ func TestIntegration_EngineCapabilities(t *testing.T) {
 			}
 		}
 
-		// Also compare with old compiler
+		// Verify compilation succeeds with new compiler
 		assertCompilersMatch(t, systemRuntimeSDL,
-			oldcompiler.Options{Name: "readonly_cache", EngineType: "duckdb", ReadOnly: true},
 			base.Options{Name: "readonly_cache", EngineType: "duckdb", ReadOnly: true},
 		)
 	})
@@ -1097,19 +1084,4 @@ func TestIntegration_RuntimeSourceBootstrap(t *testing.T) {
 			t.Error("system type String missing after drop")
 		}
 	})
-}
-
-// compileNewCatalogWithError is like compileNewCatalog but returns the error instead of calling t.Fatal.
-func compileNewCatalogWithError(c *newcompiler.Compiler, provider *static.Provider, sdl string, opts base.Options) (base.CompiledCatalog, error) {
-	sd, err := parser.ParseSchema(&ast.Source{Name: opts.Name + ".graphql", Input: sdl})
-	if err != nil {
-		return nil, err
-	}
-	source := extractSourceDefs(sd)
-
-	var p base.Provider
-	if provider != nil {
-		p = provider
-	}
-	return c.Compile(context.Background(), p, source, opts)
 }

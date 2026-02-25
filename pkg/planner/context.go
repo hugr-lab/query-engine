@@ -3,7 +3,7 @@ package planner
 import (
 	"context"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
