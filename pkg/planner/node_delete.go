@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/schema"
@@ -14,31 +14,31 @@ import (
 )
 
 func deleteRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
-	defs := base.NewDefsAdapter(ctx, provider)
-	catalog := base.FieldCatalogName(query.Definition)
+	defs := sdl.NewDefsAdapter(ctx, provider)
+	catalog := base.FieldDefCatalog(query.Definition)
 	e, err := planner.Engine(catalog)
 	if err != nil {
 		return nil, err
 	}
-	m := compiler.MutationInfo(defs, query.Definition)
+	m := sdl.MutationInfo(defs, query.Definition)
 	if m == nil {
 		return nil, ErrInternalPlanner
 	}
-	if m.Type != compiler.MutationTypeDelete {
-		return nil, compiler.ErrorPosf(query.Position, "mutation type is not delete")
+	if m.Type != sdl.MutationTypeDelete {
+		return nil, sdl.ErrorPosf(query.Position, "mutation type is not delete")
 	}
 	def := provider.ForName(ctx, m.ObjectName)
 	if def == nil {
 		return nil, ErrInternalPlanner
 	}
-	info := compiler.DataObjectInfo(def)
+	info := sdl.DataObjectInfo(def)
 	if info == nil {
 		return nil, ErrInternalPlanner
 	}
-	if info.Type != compiler.TableDataObject {
-		return nil, compiler.ErrorPosf(query.Position, "unsupported data object type %s", info.Type)
+	if info.Type != sdl.TableDataObject {
+		return nil, sdl.ErrorPosf(query.Position, "unsupported data object type %s", info.Type)
 	}
-	queryArg, err := compiler.ArgumentValues(defs, query, vars, true)
+	queryArg, err := sdl.ArgumentValues(defs, query, vars, true)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func deleteRootNode(ctx context.Context, provider schema.Provider, planner Catal
 	if filter != nil {
 		v, ok := filter.Value.(map[string]interface{})
 		if !ok {
-			return nil, compiler.ErrorPosf(query.Position, "invalid filter argument type")
+			return nil, sdl.ErrorPosf(query.Position, "invalid filter argument type")
 		}
 		whereNode, err := whereNode(ctx, defs, info, v, "_object", false, false)
 		if err != nil {

@@ -960,31 +960,9 @@ func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, su
 
 // scalarSubAggTypeName maps a scalar aggregation type to its SubAggregation variant.
 // Returns "" if the type is not a known scalar aggregation type.
+// Delegates to the type registry.
 func scalarSubAggTypeName(aggTypeName string) string {
-	switch aggTypeName {
-	case "StringAggregation":
-		return "StringSubAggregation"
-	case "IntAggregation":
-		return "IntSubAggregation"
-	case "BigIntAggregation":
-		return "BigIntSubAggregation"
-	case "FloatAggregation":
-		return "FloatSubAggregation"
-	case "BooleanAggregation":
-		return "BooleanSubAggregation"
-	case "DateAggregation":
-		return "DateSubAggregation"
-	case "TimestampAggregation":
-		return "TimestampSubAggregation"
-	case "TimeAggregation":
-		return "TimeSubAggregation"
-	case "JSONAggregation":
-		return "JSONSubAggregation"
-	case "GeometryAggregation":
-		return "GeometrySubAggregation"
-	default:
-		return ""
-	}
+	return types.SubAggregationTypeName(aggTypeName)
 }
 
 

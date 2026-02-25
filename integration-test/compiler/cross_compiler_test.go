@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	oldcompiler "github.com/hugr-lab/query-engine/pkg/compiler"
 	newcompiler "github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/rules"
@@ -205,53 +204,6 @@ func isSkipMutField(name string) bool {
 	return name == "_stub" || name == "function"
 }
 
-// buildOldCompilerResult compiles with old compiler and extracts comparison data.
-func buildOldCompilerResult(t *testing.T, sdl string, opts oldcompiler.Options) *compileResult {
-	t.Helper()
-	sd := parseSourceSchemaDocument(t, sdl)
-	schema, err := oldcompiler.Compile(sd, opts)
-	if err != nil {
-		t.Fatalf("old compiler failed: %v", err)
-	}
-
-	result := &compileResult{
-		name:           "OLD",
-		defs:           make(map[string]*ast.Definition),
-		queryFieldDefs: make(map[string]*ast.FieldDefinition),
-		mutFieldDefs:   make(map[string]*ast.FieldDefinition),
-	}
-
-	// Collect all non-system types
-	for name, def := range schema.Types {
-		if isBaseSystemType(name) {
-			continue
-		}
-		result.defs[name] = def
-	}
-
-	// Extract Query fields
-	if schema.Query != nil {
-		for _, f := range schema.Query.Fields {
-			if isSkipQueryField(f.Name) {
-				continue
-			}
-			result.queryFieldDefs[f.Name] = f
-		}
-	}
-
-	// Extract Mutation fields
-	if schema.Mutation != nil {
-		for _, f := range schema.Mutation.Fields {
-			if isSkipMutField(f.Name) {
-				continue
-			}
-			result.mutFieldDefs[f.Name] = f
-		}
-	}
-
-	return result
-}
-
 // buildNewCompilerResult compiles with new compiler and extracts comparison data.
 // Extensions are merged into definitions for fair comparison with the old compiler.
 func buildNewCompilerResult(t *testing.T, sdl string, opts base.Options) *compileResult {
@@ -380,57 +332,39 @@ func isBaseSystemType(name string) bool {
 
 func TestCrossCompiler_BasicTable(t *testing.T) {
 	sdl := complexTestSchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 func TestCrossCompiler_ReadOnly(t *testing.T) {
 	sdl := complexTestSchema
-	oldOpts := oldcompiler.Options{Name: "test", ReadOnly: true, EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", ReadOnly: true, EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 
-	compareSummary(t, oldResult, newResult)
-
-	// Both should have zero mutation fields
-	if len(oldResult.mutFieldDefs) != 0 {
-		t.Errorf("OLD: expected 0 mutation fields in ReadOnly, got %d", len(oldResult.mutFieldDefs))
-	}
-	if len(newResult.mutFieldDefs) != 0 {
-		t.Errorf("NEW: expected 0 mutation fields in ReadOnly, got %d", len(newResult.mutFieldDefs))
+	// Should have zero mutation fields
+	if len(result.mutFieldDefs) != 0 {
+		t.Errorf("expected 0 mutation fields in ReadOnly, got %d", len(result.mutFieldDefs))
 	}
 }
 
 func TestCrossCompiler_WithPrefix(t *testing.T) {
 	sdl := complexTestSchema
-	oldOpts := oldcompiler.Options{Name: "test", Prefix: "air", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", Prefix: "air", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 func TestCrossCompiler_AsModule(t *testing.T) {
 	sdl := complexTestSchema
-	oldOpts := oldcompiler.Options{Name: "aviation", AsModule: true, EngineType: "duckdb"}
 	newOpts := base.Options{Name: "aviation", AsModule: true, EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 // crossFunctionTestSchema tests functions, function calls, and table_function_call_join.
@@ -461,58 +395,34 @@ extend type Function {
 
 func TestCrossCompiler_Functions(t *testing.T) {
 	sdl := crossFunctionTestSchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 func TestCrossCompiler_FunctionsAsModule(t *testing.T) {
 	sdl := crossFunctionTestSchema
-	oldOpts := oldcompiler.Options{Name: "aviation", AsModule: true, EngineType: "duckdb"}
 	newOpts := base.Options{Name: "aviation", AsModule: true, EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 func TestCrossCompiler_NestedModules(t *testing.T) {
 	sdl := nestedModuleSchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 func TestCrossCompiler_NestedModulesAsModule(t *testing.T) {
 	sdl := nestedModuleAsModuleSchema
-	oldOpts := oldcompiler.Options{Name: "transport", AsModule: true, EngineType: "duckdb"}
 	newOpts := base.Options{Name: "transport", AsModule: true, EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 // parameterizedViewSchema tests @view with @args for parameterized views.
@@ -544,16 +454,10 @@ type Airport
 
 func TestCrossCompiler_ParameterizedView(t *testing.T) {
 	sdl := parameterizedViewSchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 // vectorOnlySchema tests tables with Vector fields but WITHOUT @embeddings.
@@ -578,16 +482,10 @@ type Tag
 
 func TestCrossCompiler_VectorOnly(t *testing.T) {
 	sdl := vectorOnlySchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 // embeddingsSchema tests @embeddings directive for vector/semantic search.
@@ -612,16 +510,10 @@ type Category
 
 func TestCrossCompiler_Embeddings(t *testing.T) {
 	sdl := embeddingsSchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 // vectorAndEmbeddingsSchema tests both: table with plain Vector AND table with @embeddings.
@@ -656,16 +548,10 @@ type Author
 
 func TestCrossCompiler_VectorAndEmbeddings(t *testing.T) {
 	sdl := vectorAndEmbeddingsSchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 // geometrySchema tests Geometry fields and _spatial type generation.
@@ -699,16 +585,10 @@ type City
 
 func TestCrossCompiler_Geometry(t *testing.T) {
 	sdl := geometrySchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 // vectorGeometryEmbeddingsSchema tests all special field types together.
@@ -742,270 +622,18 @@ type Embedding
 
 func TestCrossCompiler_VectorGeometryEmbeddings(t *testing.T) {
 	sdl := vectorGeometryEmbeddingsSchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
-// --- Deep comparison ---
-
-// compareSummary prints a detailed comparison between old and new compiler outputs,
-// including field types, arguments, and directives.
-func compareSummary(t *testing.T, old, new *compileResult) {
+// logCompileResult logs the compile result and performs basic structural checks.
+func logCompileResult(t *testing.T, r *compileResult) {
 	t.Helper()
-
-	// 1. Compare definition names
-	t.Log("=== DEFINITION COMPARISON ===")
-	var onlyOld, onlyNew, common []string
-
-	for name := range old.defs {
-		if _, ok := new.defs[name]; ok {
-			common = append(common, name)
-		} else {
-			onlyOld = append(onlyOld, name)
-		}
-	}
-	for name := range new.defs {
-		if _, ok := old.defs[name]; !ok {
-			onlyNew = append(onlyNew, name)
-		}
-	}
-	sort.Strings(onlyOld)
-	sort.Strings(onlyNew)
-	sort.Strings(common)
-
-	t.Logf("Common definitions: %d", len(common))
-	if len(onlyOld) > 0 {
-		t.Logf("Only in OLD (%d): %v", len(onlyOld), onlyOld)
-	}
-	if len(onlyNew) > 0 {
-		t.Logf("Only in NEW (%d): %v", len(onlyNew), onlyNew)
-	}
-
-	// 2. Deep comparison of common definitions
-	t.Log("=== DEFINITION DETAIL COMPARISON ===")
-	var stats diffStats
-	for _, name := range common {
-		compareDefinitions(t, name, old.defs[name], new.defs[name], &stats, old, new)
-	}
-
-	// 3. Compare query fields
-	t.Log("=== QUERY FIELD COMPARISON ===")
-	oldQNames := old.queryFieldNames()
-	newQNames := new.queryFieldNames()
-
-	oldOnlyQ := stringDiff(oldQNames, newQNames)
-	newOnlyQ := stringDiff(newQNames, oldQNames)
-	commonQ := stringIntersect(oldQNames, newQNames)
-
-	t.Logf("Common query fields: %d", len(commonQ))
-	if len(oldOnlyQ) > 0 {
-		t.Logf("Only in OLD query (%d): %v", len(oldOnlyQ), oldOnlyQ)
-	}
-	if len(newOnlyQ) > 0 {
-		t.Logf("Only in NEW query (%d): %v", len(newOnlyQ), newOnlyQ)
-	}
-
-	// Deep compare common query fields
-	for _, qname := range commonQ {
-		compareFieldDef(t, "Query."+qname, old.queryFieldDefs[qname], new.queryFieldDefs[qname], &stats, old, new)
-	}
-
-	// 4. Compare mutation fields
-	t.Log("=== MUTATION FIELD COMPARISON ===")
-	oldMNames := old.mutationFieldNames()
-	newMNames := new.mutationFieldNames()
-
-	oldOnlyM := stringDiff(oldMNames, newMNames)
-	newOnlyM := stringDiff(newMNames, oldMNames)
-	commonM := stringIntersect(oldMNames, newMNames)
-
-	t.Logf("Common mutation fields: %d", len(commonM))
-	if len(oldOnlyM) > 0 {
-		t.Logf("Only in OLD mutation (%d): %v", len(oldOnlyM), oldOnlyM)
-	}
-	if len(newOnlyM) > 0 {
-		t.Logf("Only in NEW mutation (%d): %v", len(newOnlyM), newOnlyM)
-	}
-
-	// Deep compare common mutation fields
-	for _, mname := range commonM {
-		compareFieldDef(t, "Mutation."+mname, old.mutFieldDefs[mname], new.mutFieldDefs[mname], &stats, old, new)
-	}
-
-	// 5. Summary
-	t.Log("=== SUMMARY ===")
-	t.Logf("Definitions: old=%d new=%d common=%d old-only=%d new-only=%d",
-		len(old.defs), len(new.defs), len(common), len(onlyOld), len(onlyNew))
-	t.Logf("Query fields: old=%d new=%d common=%d old-only=%d new-only=%d",
-		len(oldQNames), len(newQNames), len(commonQ), len(oldOnlyQ), len(newOnlyQ))
-	t.Logf("Mutation fields: old=%d new=%d common=%d old-only=%d new-only=%d",
-		len(oldMNames), len(newMNames), len(commonM), len(oldOnlyM), len(newOnlyM))
-	t.Logf("Detail diffs: field-names=%d field-types=%d field-args=%d arg-type-defs=%d field-directives=%d def-kind=%d def-directives=%d",
-		stats.fieldNameDiffs, stats.typeDiffs, stats.argDiffs, stats.argTypeDiffs, stats.fieldDirDiffs, stats.kindDiffs, stats.defDirDiffs)
-}
-
-// diffStats accumulates comparison counters.
-type diffStats struct {
-	fieldNameDiffs int
-	typeDiffs      int
-	argDiffs       int
-	argTypeDiffs   int // argument type definition diffs (InputObject field comparison)
-	fieldDirDiffs  int
-	kindDiffs      int
-	defDirDiffs    int
-}
-
-// compareDefinitions deeply compares two definitions: kind, directives, and per-field details.
-func compareDefinitions(t *testing.T, name string, oldDef, newDef *ast.Definition, stats *diffStats, oldResult, newResult *compileResult) {
-	t.Helper()
-
-	// Compare kind
-	if oldDef.Kind != newDef.Kind {
-		t.Logf("  %s kind: old=%s new=%s", name, oldDef.Kind, newDef.Kind)
-		stats.kindDiffs++
-	}
-
-	// Compare definition-level directives
-	oldDirs := directiveSignatures(oldDef.Directives)
-	newDirs := directiveSignatures(newDef.Directives)
-	dOld := stringDiff(oldDirs, newDirs)
-	dNew := stringDiff(newDirs, oldDirs)
-	if len(dOld) > 0 || len(dNew) > 0 {
-		t.Logf("  %s directives: old-only=%v new-only=%v", name, dOld, dNew)
-		stats.defDirDiffs++
-	}
-
-	// Compare field names
-	oldFieldNames := fieldNames(oldDef)
-	newFieldNames := fieldNames(newDef)
-	fOld := stringDiff(oldFieldNames, newFieldNames)
-	fNew := stringDiff(newFieldNames, oldFieldNames)
-	if len(fOld) > 0 || len(fNew) > 0 {
-		t.Logf("  %s fields: old-only=%v new-only=%v", name, fOld, fNew)
-		stats.fieldNameDiffs++
-	}
-
-	// Deep compare common fields
-	commonFields := stringIntersect(oldFieldNames, newFieldNames)
-	for _, fname := range commonFields {
-		oldF := oldDef.Fields.ForName(fname)
-		newF := newDef.Fields.ForName(fname)
-		if oldF == nil || newF == nil {
-			continue
-		}
-		compareFieldDef(t, name+"."+fname, oldF, newF, stats, oldResult, newResult)
-	}
-}
-
-// compareFieldDef deeply compares two field definitions: return type, arguments, directives.
-// When oldResult and newResult are provided, also compares InputObject definitions
-// referenced by common arguments.
-func compareFieldDef(t *testing.T, prefix string, oldF, newF *ast.FieldDefinition, stats *diffStats, oldResult, newResult *compileResult) {
-	t.Helper()
-
-	// Compare return type
-	ot := typeString(oldF.Type)
-	nt := typeString(newF.Type)
-	if ot != nt {
-		t.Logf("    %s type: old=%s new=%s", prefix, ot, nt)
-		stats.typeDiffs++
-	}
-
-	// Compare arguments (name + type signature)
-	oldArgs := argsSignatures(oldF.Arguments)
-	newArgs := argsSignatures(newF.Arguments)
-	aOld := stringDiff(oldArgs, newArgs)
-	aNew := stringDiff(newArgs, oldArgs)
-	if len(aOld) > 0 || len(aNew) > 0 {
-		t.Logf("    %s args: old-only=%v new-only=%v", prefix, aOld, aNew)
-		stats.argDiffs++
-	}
-
-	// Deep comparison of argument types: for common args, compare the InputObject definitions they reference
-	if oldResult != nil && newResult != nil {
-		compareArgInputTypes(t, prefix, oldF, newF, stats, oldResult, newResult)
-	}
-
-	// Compare field-level directives
-	oldDirs := directiveSignatures(oldF.Directives)
-	newDirs := directiveSignatures(newF.Directives)
-	dOld := stringDiff(oldDirs, newDirs)
-	dNew := stringDiff(newDirs, oldDirs)
-	if len(dOld) > 0 || len(dNew) > 0 {
-		t.Logf("    %s directives: old-only=%v new-only=%v", prefix, dOld, dNew)
-		stats.fieldDirDiffs++
-	}
-}
-
-// compareArgInputTypes compares InputObject definitions referenced by common arguments
-// between old and new field definitions.
-func compareArgInputTypes(t *testing.T, prefix string, oldF, newF *ast.FieldDefinition, stats *diffStats, oldResult, newResult *compileResult) {
-	t.Helper()
-
-	// Build argument maps by name
-	oldArgMap := make(map[string]*ast.ArgumentDefinition, len(oldF.Arguments))
-	for _, a := range oldF.Arguments {
-		oldArgMap[a.Name] = a
-	}
-	newArgMap := make(map[string]*ast.ArgumentDefinition, len(newF.Arguments))
-	for _, a := range newF.Arguments {
-		newArgMap[a.Name] = a
-	}
-
-	// For each common argument, compare the referenced type definitions
-	for name, oldArg := range oldArgMap {
-		newArg, ok := newArgMap[name]
-		if !ok {
-			continue
-		}
-		oldTypeName := oldArg.Type.Name()
-		newTypeName := newArg.Type.Name()
-
-		// Look up definitions in both results
-		oldDef := oldResult.defs[oldTypeName]
-		newDef := newResult.defs[newTypeName]
-		if oldDef == nil || newDef == nil {
-			continue
-		}
-		if oldDef.Kind != ast.InputObject || newDef.Kind != ast.InputObject {
-			continue
-		}
-
-		// Compare the InputObject definitions (fields)
-		oldFields := fieldNames(oldDef)
-		newFields := fieldNames(newDef)
-		fOld := stringDiff(oldFields, newFields)
-		fNew := stringDiff(newFields, oldFields)
-		if len(fOld) > 0 || len(fNew) > 0 {
-			t.Logf("    %s arg %q type %s/%s fields: old-only=%v new-only=%v",
-				prefix, name, oldTypeName, newTypeName, fOld, fNew)
-			stats.argTypeDiffs++
-		}
-
-		// Compare common field types within the InputObject
-		commonFields := stringIntersect(oldFields, newFields)
-		for _, fname := range commonFields {
-			oF := oldDef.Fields.ForName(fname)
-			nF := newDef.Fields.ForName(fname)
-			if oF == nil || nF == nil {
-				continue
-			}
-			oType := typeString(oF.Type)
-			nType := typeString(nF.Type)
-			if oType != nType {
-				t.Logf("    %s arg %q type %s.%s: old=%s new=%s",
-					prefix, name, oldTypeName, fname, oType, nType)
-				stats.argTypeDiffs++
-			}
-		}
+	t.Log(r)
+	if len(r.defs) == 0 {
+		t.Error("no definitions found")
 	}
 }
 
@@ -1354,18 +982,6 @@ func TestCatalogPresence_ForDropCatalogSupport(t *testing.T) {
 
 // --- Helper functions ---
 
-func fieldNames(def *ast.Definition) []string {
-	if def == nil {
-		return nil
-	}
-	names := make([]string, 0, len(def.Fields))
-	for _, f := range def.Fields {
-		names = append(names, f.Name)
-	}
-	sort.Strings(names)
-	return names
-}
-
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -1373,34 +989,6 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-func stringDiff(a, b []string) []string {
-	bSet := make(map[string]bool, len(b))
-	for _, s := range b {
-		bSet[s] = true
-	}
-	var diff []string
-	for _, s := range a {
-		if !bSet[s] {
-			diff = append(diff, s)
-		}
-	}
-	return diff
-}
-
-func stringIntersect(a, b []string) []string {
-	bSet := make(map[string]bool, len(b))
-	for _, s := range b {
-		bSet[s] = true
-	}
-	var common []string
-	for _, s := range a {
-		if bSet[s] {
-			common = append(common, s)
-		}
-	}
-	return common
 }
 
 // --- SQL parameter validation tests ---
@@ -1601,16 +1189,10 @@ type Sensor
 
 func TestCrossCompiler_Cube(t *testing.T) {
 	sdl := cubeTestSchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
 	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	logCompileResult(t, newResult)
 
 	// Verify that @measurement fields on the cube object have measurement_func argument
 	newSR := newResult.defs["SensorReading"]
@@ -1652,13 +1234,10 @@ func TestCrossCompiler_Cube(t *testing.T) {
 
 func TestCrossCompiler_CubeWithPrefix(t *testing.T) {
 	sdl := cubeTestSchema
-	oldOpts := oldcompiler.Options{Name: "test", Prefix: "iot", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", Prefix: "iot", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 // --- @hypertable cross-compiler tests ---
@@ -1685,16 +1264,10 @@ type MetricType
 
 func TestCrossCompiler_Hypertable(t *testing.T) {
 	sdl := hypertableTestSchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
 	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	logCompileResult(t, newResult)
 
 	// Verify that @timescale_key Timestamp field has gapfill argument
 	newML := newResult.defs["MetricLog"]
@@ -1735,13 +1308,10 @@ func TestCrossCompiler_Hypertable(t *testing.T) {
 
 func TestCrossCompiler_HypertableWithPrefix(t *testing.T) {
 	sdl := hypertableTestSchema
-	oldOpts := oldcompiler.Options{Name: "test", Prefix: "ts", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", Prefix: "ts", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 // --- @cube + @hypertable combined test ---
@@ -1762,16 +1332,10 @@ type TimeSeries
 
 func TestCrossCompiler_CubeAndHypertable(t *testing.T) {
 	sdl := cubeHypertableTestSchema
-	oldOpts := oldcompiler.Options{Name: "test", EngineType: "duckdb"}
 	newOpts := base.Options{Name: "test", EngineType: "duckdb"}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
 	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	t.Log(oldResult)
-	t.Log(newResult)
-
-	compareSummary(t, oldResult, newResult)
+	logCompileResult(t, newResult)
 
 	// Verify measurement_func on @measurement fields
 	newTS := newResult.defs["TimeSeries"]
@@ -1897,8 +1461,8 @@ func loadExternalSchemaSDL(t *testing.T, dir string) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// TestCrossCompiler_ExternalSchema_TF compares old and new compiler outputs for
-// the TF external schema with prefix "tf2" and AsModule.
+// TestCrossCompiler_ExternalSchema_TF compiles the TF external schema
+// with prefix "tf2" and AsModule using the new compiler.
 func TestCrossCompiler_ExternalSchema_TF(t *testing.T) {
 	dir := os.Getenv("EXTERNAL_SCHEMA_DIR")
 	if dir == "" {
@@ -1930,13 +1494,6 @@ func TestCrossCompiler_ExternalSchema_TF(t *testing.T) {
 		},
 	}
 
-	oldOpts := oldcompiler.Options{
-		Name:         "tf2",
-		Prefix:       "tf2",
-		AsModule:     true,
-		EngineType:   "postgres",
-		Capabilities: caps,
-	}
 	newOpts := base.Options{
 		Name:         "tf2",
 		Prefix:       "tf2",
@@ -1945,10 +1502,8 @@ func TestCrossCompiler_ExternalSchema_TF(t *testing.T) {
 		Capabilities: caps,
 	}
 
-	oldResult := buildOldCompilerResult(t, sdl, oldOpts)
-	newResult := buildNewCompilerResult(t, sdl, newOpts)
-
-	compareSummary(t, oldResult, newResult)
+	result := buildNewCompilerResult(t, sdl, newOpts)
+	logCompileResult(t, result)
 }
 
 func TestValidate_HypertableWithoutTableOrView(t *testing.T) {

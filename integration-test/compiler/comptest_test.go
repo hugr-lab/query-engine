@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/integration-test/compare"
-	oldcompiler "github.com/hugr-lab/query-engine/pkg/compiler"
 	newcompiler "github.com/hugr-lab/query-engine/pkg/schema/compiler"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/rules"
@@ -15,7 +14,6 @@ import (
 	_ "github.com/hugr-lab/query-engine/pkg/schema/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
-	"github.com/vektah/gqlparser/v2/validator"
 )
 
 // complexTestSchema matches the cross-compiler test schema exactly.
@@ -241,64 +239,48 @@ type Station
 
 func TestCompare_BasicTable(t *testing.T) {
 	assertCompilersMatch(t, complexTestSchema,
-		oldcompiler.Options{Name: "test", EngineType: "duckdb"},
 		base.Options{Name: "test", EngineType: "duckdb"},
 	)
 }
 
 func TestCompare_ReadOnly(t *testing.T) {
 	assertCompilersMatch(t, complexTestSchema,
-		oldcompiler.Options{Name: "test", EngineType: "duckdb", ReadOnly: true},
 		base.Options{Name: "test", EngineType: "duckdb", ReadOnly: true},
 	)
 }
 
 func TestCompare_WithPrefix(t *testing.T) {
 	assertCompilersMatch(t, complexTestSchema,
-		oldcompiler.Options{Name: "test", EngineType: "duckdb", Prefix: "pfx"},
 		base.Options{Name: "test", EngineType: "duckdb", Prefix: "pfx"},
 	)
 }
 
 func TestCompare_AsModule(t *testing.T) {
 	assertCompilersMatch(t, complexTestSchema,
-		oldcompiler.Options{Name: "aviation", EngineType: "duckdb", AsModule: true},
 		base.Options{Name: "aviation", EngineType: "duckdb", AsModule: true},
 	)
 }
 
 func TestCompare_Functions(t *testing.T) {
 	assertCompilersMatch(t, functionTestSchema,
-		oldcompiler.Options{Name: "test", EngineType: "duckdb"},
 		base.Options{Name: "test", EngineType: "duckdb"},
-		// Known gap: new compiler adds extra @catalog directive to Function type
-		compare.KnownIssues(
-			"types.Function.directives.catalog",
-		),
 	)
 }
 
 func TestCompare_FunctionsAsModule(t *testing.T) {
 	assertCompilersMatch(t, functionTestSchema,
-		oldcompiler.Options{Name: "aviation", EngineType: "duckdb", AsModule: true},
 		base.Options{Name: "aviation", EngineType: "duckdb", AsModule: true},
-		// Known gap: new compiler adds extra @catalog directive to Function type
-		compare.KnownIssues(
-			"types.Function.directives.catalog",
-		),
 	)
 }
 
 func TestCompare_NestedModules(t *testing.T) {
 	assertCompilersMatch(t, nestedModuleSchema,
-		oldcompiler.Options{Name: "test", EngineType: "duckdb"},
 		base.Options{Name: "test", EngineType: "duckdb"},
 	)
 }
 
 func TestCompare_NestedModulesAsModule(t *testing.T) {
 	assertCompilersMatch(t, nestedModuleAsModuleSchema,
-		oldcompiler.Options{Name: "transport", EngineType: "duckdb", AsModule: true},
 		base.Options{Name: "transport", EngineType: "duckdb", AsModule: true},
 	)
 }
@@ -308,23 +290,14 @@ func TestCompare_NestedModulesAsModule(t *testing.T) {
 func TestCompare_MultiCatalog_TwoCatalogs(t *testing.T) {
 	assertMultiCatalogMatch(t, []catalogDef{
 		{
-			SDL:     multiCatalogA,
-			OldOpts: oldcompiler.Options{Name: "base", EngineType: "duckdb"},
-			NewOpts: base.Options{Name: "base", EngineType: "duckdb"},
+			SDL:  multiCatalogA,
+			Opts: base.Options{Name: "base", EngineType: "duckdb"},
 		},
 		{
-			SDL:     multiCatalogB,
-			OldOpts: oldcompiler.Options{Name: "functions", EngineType: "duckdb", AsModule: true},
-			NewOpts: base.Options{Name: "functions", EngineType: "duckdb", AsModule: true},
+			SDL:  multiCatalogB,
+			Opts: base.Options{Name: "functions", EngineType: "duckdb", AsModule: true},
 		},
-	},
-		// Known: new compiler adds @catalog on Function type;
-		// FlightLog_by_pk correctly gets args param for parameterized views in new compiler.
-		compare.KnownIssues(
-			"types.Function.directives.catalog",
-			"types._module_transport_air_query.fields.FlightLog_by_pk.args.args",
-		),
-	)
+	})
 }
 
 func TestCompare_MultiCatalog_OverlappingModules(t *testing.T) {
@@ -334,21 +307,14 @@ func TestCompare_MultiCatalog_OverlappingModules(t *testing.T) {
 	// _module_transport_query must contain fields from both.
 	assertMultiCatalogMatch(t, []catalogDef{
 		{
-			SDL:     multiCatalogA,
-			OldOpts: oldcompiler.Options{Name: "base", EngineType: "duckdb"},
-			NewOpts: base.Options{Name: "base", EngineType: "duckdb"},
+			SDL:  multiCatalogA,
+			Opts: base.Options{Name: "base", EngineType: "duckdb"},
 		},
 		{
-			SDL:     multiCatalogB,
-			OldOpts: oldcompiler.Options{Name: "functions", EngineType: "duckdb", AsModule: true},
-			NewOpts: base.Options{Name: "functions", EngineType: "duckdb", AsModule: true},
+			SDL:  multiCatalogB,
+			Opts: base.Options{Name: "functions", EngineType: "duckdb", AsModule: true},
 		},
-	},
-		compare.KnownIssues(
-			"types.Function.directives.catalog",
-			"types._module_transport_air_query.fields.FlightLog_by_pk.args.args",
-		),
-	)
+	})
 }
 
 func TestCompare_MultiCatalog_SharedTypes(t *testing.T) {
@@ -356,47 +322,32 @@ func TestCompare_MultiCatalog_SharedTypes(t *testing.T) {
 	// Shared types must merge correctly with fields from all catalogs.
 	assertMultiCatalogMatch(t, []catalogDef{
 		{
-			SDL:     multiCatalogA,
-			OldOpts: oldcompiler.Options{Name: "base", EngineType: "duckdb"},
-			NewOpts: base.Options{Name: "base", EngineType: "duckdb"},
+			SDL:  multiCatalogA,
+			Opts: base.Options{Name: "base", EngineType: "duckdb"},
 		},
 		{
-			SDL:     multiCatalogC,
-			OldOpts: oldcompiler.Options{Name: "extra", EngineType: "duckdb", Prefix: "ext"},
-			NewOpts: base.Options{Name: "extra", EngineType: "duckdb", Prefix: "ext"},
+			SDL:  multiCatalogC,
+			Opts: base.Options{Name: "extra", EngineType: "duckdb", Prefix: "ext"},
 		},
-	},
-		// FlightLog_by_pk correctly gets args param for parameterized views in new compiler.
-		compare.KnownIssues(
-			"types._module_transport_air_query.fields.FlightLog_by_pk.args.args",
-		),
-	)
+	})
 }
 
 func TestCompare_MultiCatalog_ThreeCatalogs(t *testing.T) {
 	// Full bootstrap: base tables + functions with AsModule + extra with Prefix.
 	assertMultiCatalogMatch(t, []catalogDef{
 		{
-			SDL:     multiCatalogA,
-			OldOpts: oldcompiler.Options{Name: "base", EngineType: "duckdb"},
-			NewOpts: base.Options{Name: "base", EngineType: "duckdb"},
+			SDL:  multiCatalogA,
+			Opts: base.Options{Name: "base", EngineType: "duckdb"},
 		},
 		{
-			SDL:     multiCatalogB,
-			OldOpts: oldcompiler.Options{Name: "functions", EngineType: "duckdb", AsModule: true},
-			NewOpts: base.Options{Name: "functions", EngineType: "duckdb", AsModule: true},
+			SDL:  multiCatalogB,
+			Opts: base.Options{Name: "functions", EngineType: "duckdb", AsModule: true},
 		},
 		{
-			SDL:     multiCatalogC,
-			OldOpts: oldcompiler.Options{Name: "extra", EngineType: "duckdb", Prefix: "ext"},
-			NewOpts: base.Options{Name: "extra", EngineType: "duckdb", Prefix: "ext"},
+			SDL:  multiCatalogC,
+			Opts: base.Options{Name: "extra", EngineType: "duckdb", Prefix: "ext"},
 		},
-	},
-		compare.KnownIssues(
-			"types.Function.directives.catalog",
-			"types._module_transport_air_query.fields.FlightLog_by_pk.args.args",
-		),
-	)
+	})
 }
 
 // --- Duplicate Definition & Atomicity Tests (T012-T014) ---
@@ -802,60 +753,17 @@ func TestCompare_MultiCatalog_ExtensionDependencyTag(t *testing.T) {
 
 // --- Helpers ---
 
-// assertCompilersMatch compiles with both old and new compilers, builds *ast.Schema
-// from each, and uses compare.Compare() to verify structural equivalence.
-func assertCompilersMatch(t *testing.T, sdl string, oldOpts oldcompiler.Options, newOpts base.Options, extraOpts ...compare.CompareOption) {
+// assertCompilersMatch compiles with the new compiler and verifies success.
+func assertCompilersMatch(t *testing.T, sdl string, newOpts base.Options) {
 	t.Helper()
 
-	oldSchema := buildOldSchema(t, sdl, oldOpts)
 	newSchema := buildNewSchema(t, sdl, newOpts)
-
-	opts := []compare.CompareOption{
-		compare.SkipSystemTypes(),
-		compare.IgnoreDescriptions(),
-		compare.IgnoreDirectiveArgs("if_not_exists", "field_aggregation"),
-		compare.IgnoreDirectives("catalog"),
-		compare.SkipTypes(systemTypesToSkip()...),
-		// New compiler creates sub-aggregation types upfront for all objects
-		// and propagates reference fields deeper; old compiler was lazier.
-		compare.AllowExtraTypes(),
-		compare.AllowExtraFields(),
+	if newSchema == nil {
+		t.Fatal("schema is nil")
 	}
-	opts = append(opts, extraOpts...)
-
-	result := compare.Compare(oldSchema, newSchema, opts...)
-
-	if !result.Equal() {
-		var sb strings.Builder
-		sb.WriteString("Schema comparison found diffs:\n")
-		for _, d := range result.Diffs {
-			sb.WriteString("  ")
-			sb.WriteString(d.Kind.String())
-			sb.WriteString(" ")
-			sb.WriteString(d.Path)
-			sb.WriteString(": ")
-			sb.WriteString(d.Message)
-			sb.WriteByte('\n')
-		}
-		t.Fatal(sb.String())
+	if newSchema.Query == nil {
+		t.Fatal("Query root missing")
 	}
-
-	if len(result.KnownIssues) > 0 {
-		t.Logf("Known issues: %d", len(result.KnownIssues))
-	}
-}
-
-func buildOldSchema(t *testing.T, sdl string, opts oldcompiler.Options) *ast.Schema {
-	t.Helper()
-	sd, err := parser.ParseSchema(&ast.Source{Name: "test.graphql", Input: sdl})
-	if err != nil {
-		t.Fatalf("parse source SDL: %v", err)
-	}
-	schema, err := oldcompiler.Compile(sd, opts)
-	if err != nil {
-		t.Fatalf("old compiler: %v", err)
-	}
-	return schema
 }
 
 func buildNewSchema(t *testing.T, sdl string, opts base.Options) *ast.Schema {
@@ -1118,41 +1026,8 @@ extend type Function {
 
 // catalogDef describes a catalog for multi-catalog compilation.
 type catalogDef struct {
-	SDL     string
-	OldOpts oldcompiler.Options
-	NewOpts base.Options
-}
-
-// buildOldMultiCatalogSchema compiles each catalog with old compiler, then merges with MergeSchema (T003).
-func buildOldMultiCatalogSchema(t *testing.T, catalogs []catalogDef) *ast.Schema {
-	t.Helper()
-
-	schemas := make([]*ast.Schema, 0, len(catalogs))
-	for i, cat := range catalogs {
-		sd, err := parser.ParseSchema(&ast.Source{
-			Name:  cat.OldOpts.Name + ".graphql",
-			Input: cat.SDL,
-		})
-		if err != nil {
-			t.Fatalf("parse catalog %d (%s) SDL: %v", i, cat.OldOpts.Name, err)
-		}
-		schema, err := oldcompiler.Compile(sd, cat.OldOpts)
-		if err != nil {
-			t.Fatalf("old compiler catalog %d (%s): %v", i, cat.OldOpts.Name, err)
-		}
-		schemas = append(schemas, schema)
-	}
-
-	merged, err := oldcompiler.MergeSchema(schemas...)
-	if err != nil {
-		t.Fatalf("MergeSchema: %v", err)
-	}
-
-	schema, errs := validator.ValidateSchemaDocument(merged)
-	if errs != nil {
-		t.Fatalf("validate merged schema: %v", errs)
-	}
-	return schema
+	SDL  string
+	Opts base.Options
 }
 
 // buildNewMultiCatalogSchema compiles catalogs iteratively with provider.Update (T004).
@@ -1164,66 +1039,37 @@ func buildNewMultiCatalogSchema(t *testing.T, catalogs []catalogDef) *ast.Schema
 
 	for i, cat := range catalogs {
 		sd, err := parser.ParseSchema(&ast.Source{
-			Name:  cat.NewOpts.Name + ".graphql",
+			Name:  cat.Opts.Name + ".graphql",
 			Input: cat.SDL,
 		})
 		if err != nil {
-			t.Fatalf("parse catalog %d (%s) SDL: %v", i, cat.NewOpts.Name, err)
+			t.Fatalf("parse catalog %d (%s) SDL: %v", i, cat.Opts.Name, err)
 		}
 		source := extractSourceDefs(sd)
 
-		compiled, err := c.Compile(ctx, provider, source, cat.NewOpts)
+		compiled, err := c.Compile(ctx, provider, source, cat.Opts)
 		if err != nil {
-			t.Fatalf("new compiler catalog %d (%s): %v", i, cat.NewOpts.Name, err)
+			t.Fatalf("new compiler catalog %d (%s): %v", i, cat.Opts.Name, err)
 		}
 
 		if err := provider.Update(ctx, compiled); err != nil {
-			t.Fatalf("provider.Update catalog %d (%s): %v", i, cat.NewOpts.Name, err)
+			t.Fatalf("provider.Update catalog %d (%s): %v", i, cat.Opts.Name, err)
 		}
 	}
 
 	return provider.Schema()
 }
 
-// assertMultiCatalogMatch compiles catalogs with both compilers, compares results (T005).
-func assertMultiCatalogMatch(t *testing.T, catalogs []catalogDef, extraOpts ...compare.CompareOption) {
+// assertMultiCatalogMatch compiles catalogs with the new compiler and verifies success.
+func assertMultiCatalogMatch(t *testing.T, catalogs []catalogDef) {
 	t.Helper()
 
-	oldSchema := buildOldMultiCatalogSchema(t, catalogs)
 	newSchema := buildNewMultiCatalogSchema(t, catalogs)
-
-	opts := []compare.CompareOption{
-		compare.SkipSystemTypes(),
-		compare.IgnoreDescriptions(),
-		compare.IgnoreDirectiveArgs("if_not_exists", "field_aggregation"),
-		compare.IgnoreDirectives("catalog"),
-		compare.SkipTypes(systemTypesToSkip()...),
-		// New compiler creates sub-aggregation types upfront for all objects
-		// and propagates reference fields deeper; old compiler was lazier.
-		compare.AllowExtraTypes(),
-		compare.AllowExtraFields(),
+	if newSchema == nil {
+		t.Fatal("schema is nil")
 	}
-	opts = append(opts, extraOpts...)
-
-	result := compare.Compare(oldSchema, newSchema, opts...)
-
-	if !result.Equal() {
-		var sb strings.Builder
-		sb.WriteString("Multi-catalog schema comparison found diffs:\n")
-		for _, d := range result.Diffs {
-			sb.WriteString("  ")
-			sb.WriteString(d.Kind.String())
-			sb.WriteString(" ")
-			sb.WriteString(d.Path)
-			sb.WriteString(": ")
-			sb.WriteString(d.Message)
-			sb.WriteByte('\n')
-		}
-		t.Fatal(sb.String())
-	}
-
-	if len(result.KnownIssues) > 0 {
-		t.Logf("Known issues: %d", len(result.KnownIssues))
+	if newSchema.Query == nil {
+		t.Fatal("Query root missing")
 	}
 }
 

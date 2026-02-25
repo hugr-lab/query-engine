@@ -8,25 +8,35 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+// measurementAggregations maps measurement function names (user-facing) to
+// engine-level aggregation function names.
+var measurementAggregations = map[string]string{
+	"MIN": "min",
+	"MAX": "max",
+	"SUM": "sum",
+	"AVG": "avg",
+	"ANY": "any",
+}
+
 func selectDataObjectRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]interface{}) (*QueryPlanNode, error) {
-	defs := base.NewDefsAdapter(ctx, provider)
+	defs := sdl.NewDefsAdapter(ctx, provider)
 	node, inGeneral, err := selectDataObjectNode(ctx, defs, planner, query, vars)
 	if err != nil {
 		return nil, err
 	}
 
 	dataObject := provider.ForName(ctx, query.Definition.Type.Name())
-	if dataObject == nil || !compiler.IsDataObject(dataObject) {
+	if dataObject == nil || !sdl.IsDataObject(dataObject) {
 		return nil, errors.New("data object for query not found")
 	}
-	info := compiler.DataObjectInfo(dataObject)
+	info := sdl.DataObjectInfo(dataObject)
 	if info == nil {
 		return nil, errors.New("data object info not found")
 	}
@@ -75,12 +85,12 @@ func selectDataObjectRootNode(ctx context.Context, provider schema.Provider, pla
 // [WHERE [argument filters for data object and references]]
 // [ORDER BY [order by fields]]
 // [LIMIT [limit] OFFSET [offset]] -- for select one limit is set to 1
-func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, planer Catalog, query *ast.Field, vars map[string]interface{}) (*QueryPlanNode, bool, error) {
+func selectDataObjectNode(ctx context.Context, defs sdl.Definitions, planer Catalog, query *ast.Field, vars map[string]interface{}) (*QueryPlanNode, bool, error) {
 	dataObject := defs.ForName(query.Definition.Type.Name())
-	if dataObject == nil || !compiler.IsDataObject(dataObject) {
+	if dataObject == nil || !sdl.IsDataObject(dataObject) {
 		return nil, false, errors.New("data object for query not found")
 	}
-	info := compiler.DataObjectInfo(dataObject)
+	info := sdl.DataObjectInfo(dataObject)
 	if info == nil {
 		return nil, false, errors.New("data object info not found")
 	}
@@ -107,7 +117,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	for _, sq := range qp.subQueries {
 		rAlias := "_" + sq.Alias + "_sub_node"
 		isInner := false
-		if !compiler.IsFunctionCall(sq.Definition) {
+		if !sdl.IsFunctionCall(sq.Definition) {
 			am := sq.ArgumentMap(vars)
 			if iv, ok := am["inner"]; ok {
 				isInner, _ = iv.(bool)
@@ -179,7 +189,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			sq := selected.Field
 			rAlias := "_" + qj.Alias + "_" + sq.Alias + "_join_sub_node"
 			isInner := false
-			if !compiler.IsFunctionCall(sq.Definition) {
+			if !sdl.IsFunctionCall(sq.Definition) {
 				am := sq.ArgumentMap(vars)
 				if iv, ok := am["inner"]; ok {
 					isInner, _ = iv.(bool)
@@ -277,7 +287,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 		}
 		return strings.Compare(a.Name, b.Name) // both are unnest or both are not
 	})
-	queryArg, err := compiler.ArgumentValues(defs, query, vars, true)
+	queryArg, err := sdl.ArgumentValues(defs, query, vars, true)
 	if err != nil {
 		return nil, false, err
 	}
@@ -317,14 +327,14 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 
 	// params nodes (limit, offset, filter, order by, distinct on)
 	var paramNodes QueryPlanNodes
-	if compiler.IsSelectOneQuery(query) {
+	if sdl.IsSelectOneQuery(query) {
 		// return query with limit 1 and filtered by unique fields
 		paramNodes, err = selectOneQueryParamsNodes(ctx, info, query, queryArg, "_objects")
 		if err != nil {
 			return nil, false, err
 		}
 	}
-	if !compiler.IsSelectOneQuery(query) {
+	if !sdl.IsSelectOneQuery(query) {
 		// return query with limit, offset, filter, order by, distinct on, field filters
 		paramNodes, err = selectQueryParamsNodes(ctx, defs, e, info, "_objects", query, queryArg, false)
 		if err != nil {
@@ -364,7 +374,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	if len(joinGeneralNodes) == 0 &&
 		len(joinCatalogNodes) == 0 &&
 		qp.h3 == nil &&
-		!compiler.IsNoJoinPushdown(query) && paramNodes.ForName(vectorSearchLimitNodeName) == nil {
+		!sdl.IsNoJoinPushdown(query) && paramNodes.ForName(vectorSearchLimitNodeName) == nil {
 		return baseData, false, nil
 	}
 
@@ -441,7 +451,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			},
 			joinsNode(joinCatalogNodes),
 		}
-		if len(joinGeneralNodes) == 0 && !compiler.IsSelectOneQuery(query) && distinctNode != nil {
+		if len(joinGeneralNodes) == 0 && !sdl.IsSelectOneQuery(query) && distinctNode != nil {
 			// only distinct on params can be pushed down, because the distinct fields always are in the base data object
 			nodes = append(nodes, distinctNode)
 		}
@@ -491,7 +501,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 
 	if len(joinGeneralNodes) == 0 &&
 		qp.h3 == nil &&
-		!compiler.IsNoJoinPushdown(query) {
+		!sdl.IsNoJoinPushdown(query) {
 		// if there are no general joins, we can return the base query
 		return baseData, false, nil
 	}
@@ -604,7 +614,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 			},
 		},
 	}
-	if !compiler.IsSelectOneQuery(query) {
+	if !sdl.IsSelectOneQuery(query) {
 		paramNodes, err = selectQueryParamsNodes(ctx, defs, defaultEngine, info, "_objects", query, queryArg, true)
 		if err != nil {
 			return nil, false, err
@@ -703,7 +713,7 @@ func selectDataObjectNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	return selectStatementNode(query, nodes, "_objects", qp.withRowNum), true, nil
 }
 
-func cubeGroupByNode(info *compiler.Object, query *ast.Field, fieldList fieldList) (*QueryPlanNode, error) {
+func cubeGroupByNode(info *sdl.Object, query *ast.Field, fieldList fieldList) (*QueryPlanNode, error) {
 	if !info.IsCube {
 		return nil, fmt.Errorf("object %s is not cube", info.Name)
 	}
@@ -755,30 +765,30 @@ func joinsNode(nodes QueryPlanNodes) *QueryPlanNode {
 	}
 }
 
-func subDataQueryNode(ctx context.Context, defs compiler.DefinitionsSource, planner Catalog, info *compiler.Object, inGeneral bool, field *ast.Field, rAlias string, vars map[string]interface{}) (node *QueryPlanNode, isGeneral bool, err error) {
+func subDataQueryNode(ctx context.Context, defs sdl.Definitions, planner Catalog, info *sdl.Object, inGeneral bool, field *ast.Field, rAlias string, vars map[string]interface{}) (node *QueryPlanNode, isGeneral bool, err error) {
 	var e engines.Engine
 	var qCatalog string
 	def := defs.ForName(field.Definition.Type.Name())
 	switch {
-	case compiler.IsDataObject(def):
+	case sdl.IsDataObject(def):
 		node, isGeneral, err = selectDataObjectNode(ctx, defs, planner, field, vars)
 		if err != nil {
 			return nil, false, err
 		}
-		qCatalog = compiler.DataObjectInfo(def).Catalog
+		qCatalog = sdl.DataObjectInfo(def).Catalog
 		e, err = planner.Engine(qCatalog)
 		if err != nil {
 			return nil, false, err
 		}
-	case compiler.IsTableFuncJoinSubquery(field),
-		compiler.IsFunctionCallSubquery(field):
-		qCatalog = base.FieldCatalogName(field.Definition)
+	case sdl.IsTableFuncJoinSubquery(field),
+		sdl.IsFunctionCallSubquery(field):
+		qCatalog = base.FieldDefCatalog(field.Definition)
 		e, err = planner.Engine(qCatalog)
 		if err != nil {
 			return nil, false, err
 		}
 		// check if func call use some fields from the main query than it will call from join
-		fInfo := compiler.FunctionCallInfo(field)
+		fInfo := sdl.FunctionCallInfo(field)
 		if fInfo == nil {
 			return nil, false, errors.New("function call info not found")
 		}
@@ -800,8 +810,8 @@ func subDataQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 		if err != nil {
 			return nil, false, err
 		}
-	case compiler.IsAggregateQuery(field), compiler.IsBucketAggregateQuery(field):
-		qCatalog = base.FieldCatalogName(field.Definition)
+	case sdl.IsAggregateQuery(field), sdl.IsBucketAggregateQuery(field):
+		qCatalog = base.FieldDefCatalog(field.Definition)
 		node, isGeneral, err = aggregateDataNode(ctx, defs, planner, inGeneral || qCatalog != info.Catalog, field, vars)
 		if err != nil {
 			return nil, false, err
@@ -834,16 +844,16 @@ func subDataQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 //	WHERE [join conditions]
 //
 // ) AS _subquery_sub_node_final
-func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, planner Catalog, e engines.Engine, info *compiler.Object, inGeneral bool, left, right *ast.Field, vars map[string]any, prefix, rAlias string) (node *QueryPlanNode, err error) {
+func joinSubQueryNode(ctx context.Context, defs sdl.Definitions, planner Catalog, e engines.Engine, info *sdl.Object, inGeneral bool, left, right *ast.Field, vars map[string]any, prefix, rAlias string) (node *QueryPlanNode, err error) {
 	var nodes QueryPlanNodes
 	switch {
-	case compiler.IsAggregateQuery(right), compiler.IsBucketAggregateQuery(right):
+	case sdl.IsAggregateQuery(right), sdl.IsBucketAggregateQuery(right):
 		nodes, err = joinAggregateNodes(ctx, defs, planner, inGeneral, right, prefix, rAlias)
-	case compiler.IsReferencesSubquery(right.Definition):
+	case sdl.IsReferencesSubquery(right.Definition):
 		nodes, err = joinReferencesQueryNodes(ctx, defs, info, inGeneral, right, prefix, rAlias)
-	case compiler.IsJoinSubquery(right):
+	case sdl.IsJoinSubquery(right):
 		nodes, err = joinQueryNodes(ctx, defs, inGeneral, right, prefix, rAlias)
-	case compiler.IsFunctionCallSubquery(right) || compiler.IsTableFuncJoinSubquery(right):
+	case sdl.IsFunctionCallSubquery(right) || sdl.IsTableFuncJoinSubquery(right):
 		nodes, err = joinFunctionCallNodes(ctx, defs, inGeneral, left, right, vars, prefix, rAlias)
 	default:
 		return nil, errors.New("unsupported subquery type")
@@ -936,13 +946,13 @@ func joinSubQueryNode(ctx context.Context, defs compiler.DefinitionsSource, plan
 	}, nil
 }
 
-func joinReferencesQueryNodes(ctx context.Context, defs compiler.DefinitionsSource, info *compiler.Object, inGeneral bool, field *ast.Field, prefix, rAlias string) (nodes QueryPlanNodes, err error) {
+func joinReferencesQueryNodes(ctx context.Context, defs sdl.Definitions, info *sdl.Object, inGeneral bool, field *ast.Field, prefix, rAlias string) (nodes QueryPlanNodes, err error) {
 	ri := info.ReferencesQueryInfo(defs, field.Name)
 	if ri == nil {
 		return nil, errors.New("references query info not found")
 	}
 	refObject := defs.ForName(field.Definition.Type.Name())
-	refObjectInfo := compiler.DataObjectInfo(refObject)
+	refObjectInfo := sdl.DataObjectInfo(refObject)
 	nodes = QueryPlanNodes{
 		{
 			Name:  "from",
@@ -955,7 +965,7 @@ func joinReferencesQueryNodes(ctx context.Context, defs compiler.DefinitionsSour
 						return "", nil, err
 					}
 					m2m := defs.ForName(ri.M2MName)
-					m2mInfo := compiler.DataObjectInfo(m2m)
+					m2mInfo := sdl.DataObjectInfo(m2m)
 					db := m2mInfo.Catalog
 					if !inGeneral {
 						db = ""
@@ -1013,8 +1023,8 @@ func joinReferencesQueryNodes(ctx context.Context, defs compiler.DefinitionsSour
 	return nodes, nil
 }
 
-func joinQueryNodes(_ context.Context, defs compiler.DefinitionsSource, inGeneral bool, right *ast.Field, prefix, rAlias string) (nodes QueryPlanNodes, err error) {
-	ji := compiler.JoinInfo(right)
+func joinQueryNodes(_ context.Context, defs sdl.Definitions, inGeneral bool, right *ast.Field, prefix, rAlias string) (nodes QueryPlanNodes, err error) {
+	ji := sdl.JoinInfo(right)
 	if ji == nil {
 		return nil, errors.New("join info not found")
 	}
@@ -1022,7 +1032,7 @@ func joinQueryNodes(_ context.Context, defs compiler.DefinitionsSource, inGenera
 	if refObject == nil {
 		return nil, errors.New("reference object not found")
 	}
-	catalog := compiler.DataObjectInfo(refObject).Catalog
+	catalog := sdl.DataObjectInfo(refObject).Catalog
 
 	nodes = QueryPlanNodes{
 		{
@@ -1045,14 +1055,14 @@ func joinQueryNodes(_ context.Context, defs compiler.DefinitionsSource, inGenera
 					prefix += "."
 				}
 				for _, fn := range leftFields {
-					sql = strings.ReplaceAll(sql, "["+compiler.JoinSourceFieldPrefix+"."+fn+"]", prefix+fn)
+					sql = strings.ReplaceAll(sql, "["+base.JoinSourceFieldPrefix+"."+fn+"]", prefix+fn)
 				}
 				rightFields, err := ji.ReferencesFields()
 				if err != nil {
 					return "", nil, err
 				}
 				for _, fn := range rightFields {
-					sql = strings.ReplaceAll(sql, "["+compiler.JoinRefFieldPrefix+"."+fn+"]", rAlias+"."+fn)
+					sql = strings.ReplaceAll(sql, "["+base.JoinRefFieldPrefix+"."+fn+"]", rAlias+"."+fn)
 				}
 				return sql, params, nil
 			},
@@ -1096,8 +1106,8 @@ func joinQueryNodes(_ context.Context, defs compiler.DefinitionsSource, inGenera
 	return nodes, nil
 }
 
-func joinFunctionCallNodes(_ context.Context, defs compiler.DefinitionsSource, inGeneral bool, left, right *ast.Field, vars map[string]interface{}, prefix, rAlias string) (nodes QueryPlanNodes, err error) {
-	call := compiler.FunctionCallInfo(right)
+func joinFunctionCallNodes(_ context.Context, defs sdl.Definitions, inGeneral bool, left, right *ast.Field, vars map[string]interface{}, prefix, rAlias string) (nodes QueryPlanNodes, err error) {
+	call := sdl.FunctionCallInfo(right)
 	if call == nil {
 		return nil, errors.New("function call info not found")
 	}
@@ -1109,7 +1119,7 @@ func joinFunctionCallNodes(_ context.Context, defs compiler.DefinitionsSource, i
 		Name:  "from",
 		Query: right,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-			call := compiler.FunctionCallInfo(node.Query)
+			call := sdl.FunctionCallInfo(node.Query)
 			if call == nil {
 				return "", nil, ErrInternalPlanner
 			}
@@ -1126,8 +1136,8 @@ func joinFunctionCallNodes(_ context.Context, defs compiler.DefinitionsSource, i
 			}
 			// replace fields
 			def := defs.ForName(left.Definition.Type.Name())
-			info := compiler.DataObjectInfo(def)
-			for _, f := range compiler.ExtractFieldsFromSQL(sql) {
+			info := sdl.DataObjectInfo(def)
+			for _, f := range sdl.ExtractFieldsFromSQL(sql) {
 				fieldInfo := info.FieldForName(f)
 				if fieldInfo == nil {
 					return "", nil, fmt.Errorf("field %s not found in data object", f)
@@ -1143,10 +1153,10 @@ func joinFunctionCallNodes(_ context.Context, defs compiler.DefinitionsSource, i
 				}
 				sql = strings.ReplaceAll(sql, "["+f+"]", fSQL)
 			}
-			if len(compiler.ExtractFieldsFromSQL(sql)) != 0 {
+			if len(sdl.ExtractFieldsFromSQL(sql)) != 0 {
 				return "", nil, fmt.Errorf("not all function %s arguments is defined %s",
 					node.Query.Name,
-					strings.Join(compiler.ExtractFieldsFromSQL(sql), ","))
+					strings.Join(sdl.ExtractFieldsFromSQL(sql), ","))
 			}
 			fi, err := call.FunctionInfo(defs)
 			if err != nil {
@@ -1192,11 +1202,11 @@ func joinFunctionCallNodes(_ context.Context, defs compiler.DefinitionsSource, i
 					prefix += "."
 				}
 				for _, fn := range leftFields {
-					sql = strings.ReplaceAll(sql, "["+compiler.JoinSourceFieldPrefix+"."+fn+"]", prefix+fn)
+					sql = strings.ReplaceAll(sql, "["+base.JoinSourceFieldPrefix+"."+fn+"]", prefix+fn)
 				}
 				rightFields := call.ReferencesFields()
 				for _, fn := range rightFields {
-					sql = strings.ReplaceAll(sql, "["+compiler.JoinRefFieldPrefix+"."+fn+"]", rAlias+"."+fn)
+					sql = strings.ReplaceAll(sql, "["+base.JoinRefFieldPrefix+"."+fn+"]", rAlias+"."+fn)
 				}
 				return sql, params, nil
 			},
@@ -1239,7 +1249,7 @@ func joinFunctionCallNodes(_ context.Context, defs compiler.DefinitionsSource, i
 	}}, nil
 }
 
-func fromDataObjectNode(ctx context.Context, info *compiler.Object) *QueryPlanNode {
+func fromDataObjectNode(ctx context.Context, info *sdl.Object) *QueryPlanNode {
 	return &QueryPlanNode{
 		Name:    "from",
 		Comment: "from data object",
@@ -1273,7 +1283,7 @@ func fieldsNode(query *ast.Field, fields QueryPlanNodes) *QueryPlanNode {
 	}
 }
 
-func fieldsNodes(ctx context.Context, e engines.Engine, info *compiler.Object, prefix string, fields []*ast.Field, vars map[string]any, aliases bool) QueryPlanNodes {
+func fieldsNodes(ctx context.Context, e engines.Engine, info *sdl.Object, prefix string, fields []*ast.Field, vars map[string]any, aliases bool) QueryPlanNodes {
 	var nodes QueryPlanNodes
 	for _, field := range fields {
 		if fn := nodes.ForName(field.Alias); fn != nil {
@@ -1301,13 +1311,13 @@ func fieldsNodes(ctx context.Context, e engines.Engine, info *compiler.Object, p
 				sql := fi.SQL(prefix)
 				typeName := fi.Definition().Type.NamedType
 				if len(node.Query.Arguments) != 0 &&
-					compiler.IsScalarType(typeName) {
-					args, err := compiler.ArgumentValues(node.TypeDefs(), field, vars, true)
+					sdl.IsScalarType(typeName) {
+					args, err := sdl.ArgumentValues(node.TypeDefs(), field, vars, true)
 					if err != nil {
 						return "", nil, err
 					}
-					if compiler.ScalarTypes[typeName].Arguments != nil ||
-						compiler.IsExtraField(fi.Definition()) {
+					if len(fi.Definition().Arguments) != 0 ||
+						sdl.IsExtraField(fi.Definition()) {
 						sql, params, err = e.ApplyFieldTransforms(ctx, node.Querier(), sql, field, args, params)
 						if err != nil {
 							return "", nil, err
@@ -1318,14 +1328,14 @@ func fieldsNodes(ctx context.Context, e engines.Engine, info *compiler.Object, p
 						args.ForName(base.FieldMeasurementFuncArgName) != nil {
 						// aggregate measurements
 						mf, ok := args.ForName(base.FieldMeasurementFuncArgName).Value.(string)
-						if !ok || compiler.MeasurementAggregations[mf] == "" {
+						if !ok || measurementAggregations[mf] == "" {
 							return "", nil, errors.New("measurement function not found")
 						}
 						aggregator, ok := e.(engines.EngineAggregator)
 						if !ok {
 							return "", nil, fmt.Errorf("cube %s engine does not support aggregation", info.Name)
 						}
-						sql, params, err = aggregator.AggregateFuncSQL(compiler.MeasurementAggregations[mf], sql, "", "", field.Definition, compiler.IsHyperTable(info.Definition()), nil, params)
+						sql, params, err = aggregator.AggregateFuncSQL(measurementAggregations[mf], sql, "", "", field.Definition, sdl.IsHyperTable(info.Definition()), nil, params)
 						if err != nil {
 							return "", nil, err
 						}
@@ -1375,23 +1385,23 @@ type h3SubQuery struct {
 	buffer          float64 // if non zero, the H3 cells will be buffered by this value
 }
 
-func splitByQueryParts(_ context.Context, defs compiler.DefinitionsSource, query *ast.Field, vars map[string]any) (*queryPart, error) {
+func splitByQueryParts(_ context.Context, defs sdl.Definitions, query *ast.Field, vars map[string]any) (*queryPart, error) {
 	qp := queryPart{}
 	var queryTimeJoins, queryTimeSpatial []*ast.Field
 	for _, field := range engines.SelectedFields(query.SelectionSet) {
 		switch {
-		case compiler.IsReferencesSubquery(field.Field.Definition):
+		case sdl.IsReferencesSubquery(field.Field.Definition):
 			qp.subQueries = append(qp.subQueries, field.Field)
-		case compiler.IsFunctionCallSubquery(field.Field),
-			compiler.IsTableFuncJoinSubquery(field.Field):
+		case sdl.IsFunctionCallSubquery(field.Field),
+			sdl.IsTableFuncJoinSubquery(field.Field):
 			qp.subQueries = append(qp.subQueries, field.Field)
-		case compiler.IsJoinSubquery(field.Field):
+		case sdl.IsJoinSubquery(field.Field):
 			qp.subQueries = append(qp.subQueries, field.Field)
 		case field.Field.Name == base.QueryTimeJoinsFieldName:
 			queryTimeJoins = append(queryTimeJoins, field.Field)
 		case field.Field.Name == base.QueryTimeSpatialFieldName:
 			queryTimeSpatial = append(queryTimeSpatial, field.Field)
-		case compiler.IsAggregateQuery(field.Field), compiler.IsBucketAggregateQuery(field.Field):
+		case sdl.IsAggregateQuery(field.Field), sdl.IsBucketAggregateQuery(field.Field):
 			qp.subQueries = append(qp.subQueries, field.Field)
 			qp.withRowNum = true
 		default:
@@ -1458,50 +1468,50 @@ func splitByQueryParts(_ context.Context, defs compiler.DefinitionsSource, query
 	}
 	// add H3 base field if needed
 	if d := query.Directives.ForName(base.AddH3DirectiveName); d != nil {
-		res, err := strconv.Atoi(compiler.DirectiveArgValue(d, "res", vars))
+		res, err := strconv.Atoi(sdl.DirectiveArgValue(d, "res", vars))
 		if err != nil {
-			return nil, compiler.ErrorPosf(d.Position, "invalid H3 resolution: %s", err.Error())
+			return nil, sdl.ErrorPosf(d.Position, "invalid H3 resolution: %s", err.Error())
 		}
 		if res < 0 || res > 15 {
-			return nil, compiler.ErrorPosf(d.Position, "H3 resolution must be in range 0-15, got %d", res)
+			return nil, sdl.ErrorPosf(d.Position, "H3 resolution must be in range 0-15, got %d", res)
 		}
 		qp.h3 = &h3SubQuery{
 			res:      res,
-			baseGeom: compiler.DirectiveArgValue(d, "field", vars),
+			baseGeom: sdl.DirectiveArgValue(d, "field", vars),
 		}
 		def := defs.ForName(query.Definition.Type.Name())
 		if def == nil {
-			return nil, compiler.ErrorPosf(d.Position, "object %s not found", query.Definition.Type.Name())
+			return nil, sdl.ErrorPosf(d.Position, "object %s not found", query.Definition.Type.Name())
 		}
 		h3Base := def.Fields.ForName(qp.h3.baseGeom)
 		if h3Base == nil {
-			return nil, compiler.ErrorPosf(d.Position, "H3 base field %s not found in object %s", qp.h3.baseGeom, query.ObjectDefinition.Name)
+			return nil, sdl.ErrorPosf(d.Position, "H3 base field %s not found in object %s", qp.h3.baseGeom, query.ObjectDefinition.Name)
 		}
-		if h3Base.Type.NamedType != compiler.GeometryTypeName &&
-			h3Base.Type.Name() != compiler.H3CellTypeName {
-			return nil, compiler.ErrorPosf(d.Position, "H3 base field %s must be of type %s or %s, got %s",
+		if h3Base.Type.NamedType != base.GeometryTypeName &&
+			h3Base.Type.Name() != base.H3CellTypeName {
+			return nil, sdl.ErrorPosf(d.Position, "H3 base field %s must be of type %s or %s, got %s",
 				qp.h3.baseGeom,
-				compiler.GeometryTypeName,
-				compiler.H3CellTypeName,
+				base.GeometryTypeName,
+				base.H3CellTypeName,
 				h3Base.Type.NamedType)
 		}
-		qp.h3.transformFrom, _ = strconv.Atoi(compiler.DirectiveArgValue(d, "transform_from", vars))
+		qp.h3.transformFrom, _ = strconv.Atoi(sdl.DirectiveArgValue(d, "transform_from", vars))
 		if d := h3Base.Directives.ForName(base.FieldGeometryInfoDirectiveName); d != nil && qp.h3.transformFrom == 0 {
-			qp.h3.transformFrom, _ = strconv.Atoi(compiler.DirectiveArgValue(d, "srid", vars))
+			qp.h3.transformFrom, _ = strconv.Atoi(sdl.DirectiveArgValue(d, "srid", vars))
 			if qp.h3.transformFrom == 4326 {
 				qp.h3.transformFrom = 0 // 4326 is the default SRID, no need to transform
 			}
 		}
-		qp.h3.buffer, _ = strconv.ParseFloat(compiler.DirectiveArgValue(d, "buffer", vars), 64)
+		qp.h3.buffer, _ = strconv.ParseFloat(sdl.DirectiveArgValue(d, "buffer", vars), 64)
 		if qp.h3.buffer != 0 {
 			if qp.h3.buffer > 5000 {
-				return nil, compiler.ErrorPosf(d.Position, "H3 buffer must be in range 0-5000 meters, got %f", qp.h3.buffer)
+				return nil, sdl.ErrorPosf(d.Position, "H3 buffer must be in range 0-5000 meters, got %f", qp.h3.buffer)
 			}
 			qp.h3.buffer /= 111111 // convert meters to degrees
 		}
-		qp.h3.extractFromGeom = h3Base.Type.NamedType == compiler.GeometryTypeName
-		qp.h3.unnest = h3Base.Type.Name() != compiler.H3CellTypeName || h3Base.Type.NamedType != ""
-		qp.h3.simplify = compiler.DirectiveArgValue(d, "simplify", vars) == "true"
+		qp.h3.extractFromGeom = h3Base.Type.NamedType == base.GeometryTypeName
+		qp.h3.unnest = h3Base.Type.Name() != base.H3CellTypeName || h3Base.Type.NamedType != ""
+		qp.h3.simplify = sdl.DirectiveArgValue(d, "simplify", vars) == "true"
 		qp.extraSourceFields = append(qp.extraSourceFields, &ast.Field{
 			Alias:            "_h3_base_field",
 			Name:             qp.h3.baseGeom,
@@ -1526,7 +1536,7 @@ func splitByQueryParts(_ context.Context, defs compiler.DefinitionsSource, query
 	return &qp, nil
 }
 
-func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *ast.Field, vars map[string]any) (*ast.Field, bool, error) {
+func castJoinDirectiveToJoin(defs sdl.Definitions, query, joinQuery *ast.Field, vars map[string]any) (*ast.Field, bool, error) {
 	if joinQuery.Name != base.QueryTimeJoinsFieldName {
 		return nil, false, errors.New("field is not join")
 	}
@@ -1544,51 +1554,51 @@ func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *
 	argMap := joinQuery.ArgumentMap(vars)
 	v, ok := argMap["fields"]
 	if !ok {
-		return nil, false, compiler.ErrorPosf(joinQuery.Position, "fields argument is required")
+		return nil, false, sdl.ErrorPosf(joinQuery.Position, "fields argument is required")
 	}
 	sourceFields, ok := v.([]any)
 	if !ok {
-		return nil, false, compiler.ErrorPosf(joinQuery.Position, "fields argument must be an array")
+		return nil, false, sdl.ErrorPosf(joinQuery.Position, "fields argument must be an array")
 	}
 	if len(sourceFields) == 0 {
-		return nil, false, compiler.ErrorPosf(joinQuery.Position, "fields argument must have at least one field")
+		return nil, false, sdl.ErrorPosf(joinQuery.Position, "fields argument must have at least one field")
 	}
 	// 3. add query fields with @join directive
 	withAgg := false
 	for _, sq := range engines.SelectedFields(joinQuery.SelectionSet) {
-		if compiler.IsAggregateQuery(sq.Field) || compiler.IsBucketAggregateQuery(sq.Field) {
+		if sdl.IsAggregateQuery(sq.Field) || sdl.IsBucketAggregateQuery(sq.Field) {
 			withAgg = true
 		}
 		// 3.1 get references fields name
 		argMap := sq.Field.ArgumentMap(vars)
 		v, ok := argMap["fields"]
 		if !ok {
-			return nil, false, compiler.ErrorPosf(sq.Field.Position, "fields argument is required")
+			return nil, false, sdl.ErrorPosf(sq.Field.Position, "fields argument is required")
 		}
 		refFields, ok := v.([]any)
 		if !ok {
-			return nil, false, compiler.ErrorPosf(sq.Field.Position, "fields argument must be an array")
+			return nil, false, sdl.ErrorPosf(sq.Field.Position, "fields argument must be an array")
 		}
 		if len(refFields) == 0 {
-			return nil, false, compiler.ErrorPosf(sq.Field.Position, "fields argument must have at least one field")
+			return nil, false, sdl.ErrorPosf(sq.Field.Position, "fields argument must have at least one field")
 		}
 		// 3.2 create sql for @join directive
 		if len(sourceFields) != len(refFields) {
-			return nil, false, compiler.ErrorPosf(sq.Field.Position, "fields and references fields must have the same length")
+			return nil, false, sdl.ErrorPosf(sq.Field.Position, "fields and references fields must have the same length")
 		}
 		sourceDef := defs.ForName(query.Definition.Type.Name())
 		if sourceDef == nil {
-			return nil, false, compiler.ErrorPosf(sq.Field.Position, "left object %s not found", query.Definition.Type.Name())
+			return nil, false, sdl.ErrorPosf(sq.Field.Position, "left object %s not found", query.Definition.Type.Name())
 		}
 		var sql string
 		for i, f := range sourceFields {
 			sourceFieldName, ok := f.(string)
 			if !ok {
-				return nil, false, compiler.ErrorPosf(sq.Field.Position, "field must be a string")
+				return nil, false, sdl.ErrorPosf(sq.Field.Position, "field must be a string")
 			}
 			// check fields and if the field is not in sub query (join, function call, etc) add it to source fields
 			if strings.Contains(sourceFieldName, ".") {
-				return nil, false, compiler.ErrorPosf(sq.Field.Position, "join field could not be in a nested object")
+				return nil, false, sdl.ErrorPosf(sq.Field.Position, "join field could not be in a nested object")
 			}
 			var sourceFieldDef *ast.FieldDefinition
 			if s := engines.SelectedFields(query.SelectionSet).ForName(sourceFieldName); s != nil {
@@ -1598,19 +1608,19 @@ func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *
 				sourceFieldDef = sourceDef.Fields.ForName(sourceFieldName)
 			}
 			if sourceFieldDef == nil {
-				return nil, false, compiler.ErrorPosf(sq.Field.Position, "left object field %s not found", sourceFieldName)
+				return nil, false, sdl.ErrorPosf(sq.Field.Position, "left object field %s not found", sourceFieldName)
 			}
-			sourceFieldName = "[" + compiler.JoinSourceFieldPrefix + "." + sourceFieldName + "]"
+			sourceFieldName = "[" + base.JoinSourceFieldPrefix + "." + sourceFieldName + "]"
 			refFieldName, ok := refFields[i].(string)
 			if !ok {
-				return nil, false, compiler.ErrorPosf(sq.Field.Position, "field must be a string")
+				return nil, false, sdl.ErrorPosf(sq.Field.Position, "field must be a string")
 			}
 			if strings.Contains(refFieldName, ".") {
-				return nil, false, compiler.ErrorPosf(sq.Field.Position, "join field could not be in a nested object")
+				return nil, false, sdl.ErrorPosf(sq.Field.Position, "join field could not be in a nested object")
 			}
 			rightDef := defs.ForName(sq.Field.Definition.Type.Name())
 			if rightDef == nil {
-				return nil, false, compiler.ErrorPosf(sq.Field.Position, "right object %s not found", sq.Field.Definition.Type.Name())
+				return nil, false, sdl.ErrorPosf(sq.Field.Position, "right object %s not found", sq.Field.Definition.Type.Name())
 			}
 			var refFieldDef *ast.FieldDefinition
 			if s := engines.SelectedFields(sq.Field.SelectionSet).ForName(refFieldName); s != nil {
@@ -1620,14 +1630,14 @@ func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *
 				refFieldDef = rightDef.Fields.ForName(refFieldName)
 			}
 			if refFieldDef == nil {
-				return nil, false, compiler.ErrorPosf(sq.Field.Position, "right object field %s not found", refFieldName)
+				return nil, false, sdl.ErrorPosf(sq.Field.Position, "right object field %s not found", refFieldName)
 			}
 			if sourceFieldDef.Type.NamedType == "" ||
-				!compiler.IsScalarType(sourceFieldDef.Type.NamedType) ||
+				!sdl.IsScalarType(sourceFieldDef.Type.NamedType) ||
 				sourceFieldDef.Type.NamedType != refFieldDef.Type.NamedType {
-				return nil, false, compiler.ErrorPosf(sq.Field.Position, "fields must be scalar and have the same type")
+				return nil, false, sdl.ErrorPosf(sq.Field.Position, "fields must be scalar and have the same type")
 			}
-			refFieldName = "[" + compiler.JoinRefFieldPrefix + "." + refFieldName + "]"
+			refFieldName = "[" + base.JoinRefFieldPrefix + "." + refFieldName + "]"
 			if sql != "" {
 				sql += " AND "
 			}
@@ -1635,7 +1645,7 @@ func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *
 		}
 		// 3.3 add @join directive to subquery field
 		sq.Field.Directives = append(sq.Field.Directives, &ast.Directive{
-			Name: compiler.JoinDirectiveName,
+			Name: base.JoinDirectiveName,
 			Arguments: []*ast.Argument{
 				{
 					Name: "sql",
@@ -1653,7 +1663,7 @@ func castJoinDirectiveToJoin(defs compiler.DefinitionsSource, query, joinQuery *
 	return new, withAgg, nil
 }
 
-func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, field *ast.Field, vars map[string]any) (*ast.Field, bool, error) {
+func castSpatialQueryToJoin(defs sdl.Definitions, query *ast.Field, field *ast.Field, vars map[string]any) (*ast.Field, bool, error) {
 	if field.Name != base.QueryTimeSpatialFieldName {
 		return nil, false, errors.New("field is not spatial query")
 	}
@@ -1667,11 +1677,6 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 	if joinObject == nil {
 		return nil, false, errors.New("join object not found")
 	}
-	joinDirectiveDef := defs.DirectiveForName(compiler.JoinDirectiveName)
-	if joinDirectiveDef == nil {
-		return nil, false, errors.New("join directive definition not found")
-	}
-
 	new := &ast.Field{
 		Alias:            field.Alias,
 		Name:             joinField.Name,
@@ -1741,11 +1746,11 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 			fmt.Sprintf("ST_Buffer([field1], %f)", buffer),
 		)
 	}
-	sqlTemplate = strings.ReplaceAll(sqlTemplate, "[field1]", "["+compiler.JoinSourceFieldPrefix+"."+aliasName+"]")
+	sqlTemplate = strings.ReplaceAll(sqlTemplate, "[field1]", "["+base.JoinSourceFieldPrefix+"."+aliasName+"]")
 
 	withAgg := false
 	for _, f := range engines.SelectedFields(field.SelectionSet) {
-		if compiler.IsAggregateQuery(f.Field) || compiler.IsBucketAggregateQuery(f.Field) {
+		if sdl.IsAggregateQuery(f.Field) || sdl.IsBucketAggregateQuery(f.Field) {
 			withAgg = true
 		}
 		sql := sqlTemplate
@@ -1756,10 +1761,10 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 		}
 		fieldSQL := v.(string)
 
-		sql = strings.ReplaceAll(sql, "[field2]", "["+compiler.JoinRefFieldPrefix+"."+fieldSQL+"]")
+		sql = strings.ReplaceAll(sql, "[field2]", "["+base.JoinRefFieldPrefix+"."+fieldSQL+"]")
 
 		joinDirective := &ast.Directive{
-			Name: compiler.JoinDirectiveName,
+			Name: base.JoinDirectiveName,
 			Arguments: []*ast.Argument{
 				{
 					Name: "sql",
@@ -1770,7 +1775,7 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 					Position: f.Field.Position,
 				},
 			},
-			Definition:       joinDirectiveDef,
+			Definition:       nil,
 			ParentDefinition: joinObject,
 			Location:         ast.LocationField,
 		}
@@ -1807,8 +1812,8 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 				f.Field.Directives.ForName(base.AddH3DirectiveName),
 			)
 		}
-		if compiler.IsNoJoinPushdown(query) ||
-			compiler.IsNoJoinPushdown(f.Field) {
+		if sdl.IsNoJoinPushdown(query) ||
+			sdl.IsNoJoinPushdown(f.Field) {
 			newField.Directives = append(newField.Directives,
 				f.Field.Directives.ForName(base.NoPushdownDirectiveName),
 			)
@@ -1820,11 +1825,11 @@ func castSpatialQueryToJoin(defs compiler.DefinitionsSource, query *ast.Field, f
 
 }
 
-func referencesFields(defs compiler.DefinitionsSource, query *ast.Field) (fieldList, error) {
+func referencesFields(defs sdl.Definitions, query *ast.Field) (fieldList, error) {
 	var refFields []string
 	switch {
-	case compiler.IsReferencesSubquery(query.Definition):
-		info := compiler.DataObjectInfo(query.ObjectDefinition)
+	case sdl.IsReferencesSubquery(query.Definition):
+		info := sdl.DataObjectInfo(query.ObjectDefinition)
 		if info == nil {
 			return nil, nil
 		}
@@ -1835,15 +1840,15 @@ func referencesFields(defs compiler.DefinitionsSource, query *ast.Field) (fieldL
 		refFields = ri.ReferencesFields()
 		if ri.IsM2M {
 			m2m := defs.ForName(ri.M2MName)
-			refObjectInfo := compiler.DataObjectInfo(m2m)
+			refObjectInfo := sdl.DataObjectInfo(m2m)
 			ri = refObjectInfo.M2MReferencesQueryInfo(defs, ri.Name)
 			if ri == nil {
 				return nil, errors.New("references query info not found")
 			}
 			refFields = ri.ReferencesFields()
 		}
-	case compiler.IsJoinSubquery(query):
-		ji := compiler.JoinInfo(query)
+	case sdl.IsJoinSubquery(query):
+		ji := sdl.JoinInfo(query)
 		if ji == nil {
 			return nil, errors.New("join info not found")
 		}
@@ -1852,8 +1857,8 @@ func referencesFields(defs compiler.DefinitionsSource, query *ast.Field) (fieldL
 			return nil, err
 		}
 		refFields = ff
-	case compiler.IsTableFuncJoinSubquery(query):
-		fc := compiler.FunctionCallInfo(query)
+	case sdl.IsTableFuncJoinSubquery(query):
+		fc := sdl.FunctionCallInfo(query)
 		if fc == nil {
 			return nil, errors.New("function call info not found")
 		}
@@ -1897,18 +1902,18 @@ func referencesFields(defs compiler.DefinitionsSource, query *ast.Field) (fieldL
 	return fields, nil
 }
 
-func sourceFields(defs compiler.DefinitionsSource, def *ast.Definition, query *ast.Field) (fieldList, error) {
+func sourceFields(defs sdl.Definitions, def *ast.Definition, query *ast.Field) (fieldList, error) {
 	var fields []*ast.Field
 	var fieldNames []string
 	byAliases := false
-	info := compiler.DataObjectInfo(def)
+	info := sdl.DataObjectInfo(def)
 	if info == nil {
 		return nil, nil
 	}
 	switch {
-	case compiler.IsAggregateQuery(query),
-		compiler.IsBucketAggregateQuery(query):
-		aggregated := compiler.AggregatedQueryDef(query)
+	case sdl.IsAggregateQuery(query),
+		sdl.IsBucketAggregateQuery(query):
+		aggregated := sdl.AggregatedQueryDef(query)
 		if aggregated == nil {
 			return nil, errors.New("aggregated field not found")
 		}
@@ -1921,8 +1926,8 @@ func sourceFields(defs compiler.DefinitionsSource, def *ast.Definition, query *a
 			Position:         query.Position,
 			Comment:          query.Comment,
 		})
-	case compiler.IsJoinSubquery(query):
-		ji := compiler.JoinInfo(query)
+	case sdl.IsJoinSubquery(query):
+		ji := sdl.JoinInfo(query)
 		if ji == nil {
 			return nil, errors.New("join info not found")
 		}
@@ -1932,9 +1937,9 @@ func sourceFields(defs compiler.DefinitionsSource, def *ast.Definition, query *a
 		}
 		byAliases = ji.IsQueryTime
 		fieldNames = ff
-	case compiler.IsTableFuncJoinSubquery(query),
-		compiler.IsFunctionCallSubquery(query):
-		fc := compiler.FunctionCallInfo(query)
+	case sdl.IsTableFuncJoinSubquery(query),
+		sdl.IsFunctionCallSubquery(query):
+		fc := sdl.FunctionCallInfo(query)
 		if fc == nil {
 			return nil, errors.New("function call info not found")
 		}
@@ -1943,7 +1948,7 @@ func sourceFields(defs compiler.DefinitionsSource, def *ast.Definition, query *a
 			return nil, err
 		}
 		fieldNames = ff
-	case compiler.IsReferencesSubquery(query.Definition):
+	case sdl.IsReferencesSubquery(query.Definition):
 		ri := info.ReferencesQueryInfo(defs, query.Name)
 		if ri == nil {
 			return nil, errors.New("references query info not found")

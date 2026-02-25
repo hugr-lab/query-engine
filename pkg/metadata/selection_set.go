@@ -3,7 +3,7 @@ package metadata
 import (
 	"context"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -39,7 +39,7 @@ func processSelectionSet(ctx context.Context, ss ast.SelectionSet, resolvers map
 				if pos == nil {
 					pos = &ast.Position{}
 				}
-				return nil, compiler.ErrorPosf(selection.Position, "%s: couldn't find field resolver", selection.Name)
+				return nil, sdl.ErrorPosf(selection.Position, "%s: couldn't find field resolver", selection.Name)
 			}
 			data, err := resolver(ctx, selection, "")
 			if err != nil {

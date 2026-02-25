@@ -8,8 +8,8 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -37,8 +37,8 @@ func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map
 		return nil, nil, fmt.Errorf("streaming is only supported for single queries, found %d queries", len(op.Queries))
 	}
 
-	flatQuery := compiler.FlatQuery(op.Queries)
-	var q compiler.QueryRequest
+	flatQuery := sdl.FlatQuery(op.Queries)
+	var q base.QueryRequest
 	for _, qq := range flatQuery {
 		q = qq
 		break

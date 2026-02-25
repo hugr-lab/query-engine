@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -54,7 +54,7 @@ func Test_functionCallNode(t *testing.T) {
 		"arg3": 2,
 	}
 	calls := filterFields(q.Operations[0].SelectionSet, func(f *ast.Field) bool {
-		return compiler.IsFunctionCall(f.Definition) || compiler.IsFunctionCallQuery(f)
+		return sdl.IsFunctionCall(f.Definition) || sdl.IsFunctionCallQuery(f)
 	}, true)
 
 	tests := map[string]struct {
@@ -104,10 +104,10 @@ func Test_functionCallNode(t *testing.T) {
 				t.Fatalf("test %s case not found", call.Alias)
 			}
 			prefix := ""
-			if compiler.IsDataObject(call.ObjectDefinition) {
+			if sdl.IsDataObject(call.ObjectDefinition) {
 				prefix = "_objects"
 			}
-			funcNode, err := functionCallNode(context.Background(), compiler.SchemaDefs(testCats.Schema()), testService.engines, prefix, call, vars)
+			funcNode, err := functionCallNode(context.Background(), sdl.SchemaDefs(testCats.Schema()), testService.engines, prefix, call, vars)
 			if err != nil {
 				t.Fatal("functionCallNode", err)
 			}
@@ -123,10 +123,10 @@ func Test_functionCallNode(t *testing.T) {
 			if !reflect.DeepEqual(tc.expectedFCParams, res.Params) {
 				t.Errorf("functionCallNode.Execute: expected %v, got %v", tc.expectedFCParams, res.Params)
 			}
-			if compiler.IsDataObject(call.ObjectDefinition) {
+			if sdl.IsDataObject(call.ObjectDefinition) {
 				return
 			}
-			selectNode := selectFromFunctionCallNode(context.Background(), compiler.SchemaDefs(testCats.Schema()), funcNode)
+			selectNode := selectFromFunctionCallNode(context.Background(), sdl.SchemaDefs(testCats.Schema()), funcNode)
 			selectNode.provider = static.NewWithSchema(testCats.Schema())
 			selectNode.engines = testService.engines
 			res, err = selectNode.Compile(selectNode, nil)

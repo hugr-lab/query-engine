@@ -8,7 +8,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/vektah/gqlparser/v2"
 )
@@ -47,7 +47,7 @@ func Test_processQuery(t *testing.T) {
 		t.Fatal(errs)
 	}
 
-	resolvers, _ := compiler.QueryRequestInfo(qd.Operations[0].SelectionSet)
+	resolvers, _ := sdl.QueryRequestInfo(qd.Operations[0].SelectionSet)
 
 	t.Logf("%+v", resolvers)
 }

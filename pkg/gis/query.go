@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/planner"
@@ -225,13 +225,13 @@ func parseRequest(ctx context.Context, schemaSvc *schema.Service, req *types.Req
 			return nil, fmt.Errorf("summary field %s not found in feature %s", f.Summary, f.Name)
 		}
 		if s.Field.SelectionSet == nil {
-			return nil, compiler.ErrorPosf(s.Field.Position, "summary field %s is not a selection set in feature %s", f.Summary, f.Name)
+			return nil, sdl.ErrorPosf(s.Field.Position, "summary field %s is not a selection set in feature %s", f.Summary, f.Name)
 		}
 		if f.ExtentPath != "" && engines.SelectedFields(s.Field.SelectionSet).ForPath(f.ExtentPath) == nil {
-			return nil, compiler.ErrorPosf(s.Field.Position, "extent field %s not found in summary %s of feature %s", f.ExtentPath, f.Summary, f.Name)
+			return nil, sdl.ErrorPosf(s.Field.Position, "extent field %s not found in summary %s of feature %s", f.ExtentPath, f.Summary, f.Name)
 		}
 		if f.CountPath != "" && engines.SelectedFields(s.Field.SelectionSet).ForPath(f.CountPath) == nil {
-			return nil, compiler.ErrorPosf(s.Field.Position, "count field %s not found in summary %s of feature %s", f.CountPath, f.Summary, f.Name)
+			return nil, sdl.ErrorPosf(s.Field.Position, "count field %s not found in summary %s of feature %s", f.CountPath, f.Summary, f.Name)
 		}
 		filtered = addSelectionByPath(filtered, op.SelectionSet, f.Summary)
 	}
@@ -279,21 +279,21 @@ func filterRecursive(selSet ast.SelectionSet, features []string, vars map[string
 			})
 			continue
 		}
-		name := compiler.DirectiveArgValue(df, "name", vars)
+		name := sdl.DirectiveArgValue(df, "name", vars)
 		if name == "" || features != nil && !slices.Contains(features, name) {
 			continue
 		}
 		fd, err := newFeatureDefinition(df, vars)
 		if err != nil {
-			return nil, nil, compiler.ErrorPosf(s.Field.Position, "error parsing feature %s: %v", name, err)
+			return nil, nil, sdl.ErrorPosf(s.Field.Position, "error parsing feature %s: %v", name, err)
 		}
 		if !summaryOnly {
 			filtered = append(filtered, s)
 			if engines.SelectedFields(s.Field.SelectionSet).ForPath(fd.GeometryField) == nil {
-				return nil, nil, compiler.ErrorPosf(s.Field.Position, "geometry field %s not found in feature %s", fd.GeometryField, name)
+				return nil, nil, sdl.ErrorPosf(s.Field.Position, "geometry field %s not found in feature %s", fd.GeometryField, name)
 			}
 			if fd.IdField != "" && engines.SelectedFields(s.Field.SelectionSet).ForPath(fd.IdField) == nil {
-				return nil, nil, compiler.ErrorPosf(s.Field.Position, "id field %s not found in feature %s", fd.IdField, name)
+				return nil, nil, sdl.ErrorPosf(s.Field.Position, "id field %s not found in feature %s", fd.IdField, name)
 			}
 		}
 		featuresMap[s.Field.Alias] = fd

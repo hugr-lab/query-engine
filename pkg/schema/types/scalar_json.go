@@ -1,13 +1,18 @@
 package types
 
-import "github.com/vektah/gqlparser/v2/ast"
+import (
+	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/vektah/gqlparser/v2/ast"
+)
 
 // Compile-time interface assertions.
 var (
 	_ ScalarType             = (*jsonScalar)(nil)
 	_ Filterable             = (*jsonScalar)(nil)
 	_ Aggregatable           = (*jsonScalar)(nil)
+	_ SubAggregatable        = (*jsonScalar)(nil)
 	_ FieldArgumentsProvider = (*jsonScalar)(nil)
+	_ ValueParser            = (*jsonScalar)(nil)
 )
 
 type jsonScalar struct{}
@@ -60,8 +65,14 @@ func (s *jsonScalar) FilterTypeName() string { return "JSONFilter" }
 
 func (s *jsonScalar) AggregationTypeName() string { return "JSONAggregation" }
 
+func (s *jsonScalar) SubAggregationTypeName() string { return "JSONSubAggregation" }
+
 func (s *jsonScalar) FieldArguments() ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
 		{Name: "struct", Type: ast.NamedType("JSON", nil)},
 	}
+}
+
+func (s *jsonScalar) ParseValue(v any) (any, error) {
+	return pkgtypes.ParseJsonValue(v)
 }

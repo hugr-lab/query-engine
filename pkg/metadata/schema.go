@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/schema"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -150,7 +150,7 @@ func typeResolver(ctx context.Context, provider schema.Provider, typeDef *ast.Ty
 				if isPlaceholderField(f.Name) && len(def.Fields) > 1 {
 					continue
 				}
-				di := compiler.FieldDeprecatedInfo(f)
+				di := sdl.FieldDeprecatedInfo(f)
 				if !includeDeprecated && di.IsDeprecated {
 					continue
 				}
@@ -214,7 +214,7 @@ func typeResolver(ctx context.Context, provider schema.Provider, typeDef *ast.Ty
 			}
 			var res []map[string]any
 			for _, ev := range def.EnumValues {
-				di := compiler.EnumDeprecatedInfo(ev)
+				di := sdl.EnumDeprecatedInfo(ev)
 				if !includeDeprecated && di.IsDeprecated {
 					continue
 				}
@@ -264,28 +264,28 @@ func typeResolver(ctx context.Context, provider schema.Provider, typeDef *ast.Ty
 			if def.Kind != ast.Scalar {
 				return nil, nil
 			}
-			url := compiler.SpecifiedByURL(def)
+			url := sdl.SpecifiedByURL(def)
 			if url == "" {
 				return nil, nil
 			}
 			return url, nil
 		},
 		"hugr_type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			if mi := compiler.ModuleRootInfo(def); mi != nil {
+			if mi := sdl.ModuleRootInfo(def); mi != nil {
 				return base.HugrTypeModule, nil
 			}
-			switch compiler.DataObjectType(def) {
-			case compiler.Table:
+			switch sdl.DataObjectType(def) {
+			case sdl.TableDataObject:
 				return base.HugrTypeTable, nil
-			case compiler.View:
+			case sdl.ViewDataObject:
 				return base.HugrTypeView, nil
 			}
 			switch {
-			case def.Kind == ast.InputObject && def.Directives.ForName(compiler.FilterInputDirectiveName) != nil:
+			case def.Kind == ast.InputObject && def.Directives.ForName(base.FilterInputDirectiveName) != nil:
 				return base.HugrTypeFilter, nil
-			case def.Kind == ast.InputObject && def.Directives.ForName(compiler.FilterListInputDirectiveName) != nil:
+			case def.Kind == ast.InputObject && def.Directives.ForName(base.FilterListInputDirectiveName) != nil:
 				return base.HugrTypeFilterList, nil
-			case def.Kind == ast.InputObject && def.Directives.ForName(compiler.DataInputDirectiveName) != nil:
+			case def.Kind == ast.InputObject && def.Directives.ForName(base.DataInputDirectiveName) != nil:
 				return base.HugrTypeDataInput, nil
 			case def.Kind == ast.Object && def.Name == base.QueryTimeJoinsTypeName:
 				return base.HugrTypeJoin, nil
@@ -299,17 +299,17 @@ func typeResolver(ctx context.Context, provider schema.Provider, typeDef *ast.Ty
 			return "", nil
 		},
 		"module": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			if mi := compiler.ModuleRootInfo(def); mi != nil {
+			if mi := sdl.ModuleRootInfo(def); mi != nil {
 				return mi.Name, nil
 			}
-			if compiler.IsDataObject(def) {
-				return compiler.ObjectModule(def), nil
+			if sdl.IsDataObject(def) {
+				return sdl.ObjectModule(def), nil
 			}
 			return "", nil
 		},
 		"catalog": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			if compiler.IsDataObject(def) {
-				info := compiler.DataObjectInfo(def)
+			if sdl.IsDataObject(def) {
+				info := sdl.DataObjectInfo(def)
 				if info != nil {
 					return info.Catalog, nil
 				}
@@ -321,7 +321,7 @@ func typeResolver(ctx context.Context, provider schema.Provider, typeDef *ast.Ty
 }
 
 func fieldResolver(ctx context.Context, provider schema.Provider, def *ast.FieldDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
-	di := compiler.FieldDeprecatedInfo(def)
+	di := sdl.FieldDeprecatedInfo(def)
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
 		"__typename": typeNameResolver,
 		"name": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
@@ -343,7 +343,7 @@ func fieldResolver(ctx context.Context, provider schema.Provider, def *ast.Field
 		},
 		"type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			if maxDepth <= 2 {
-				return typeResolver(ctx, provider, ast.NamedType(compiler.JSONTypeName, &ast.Position{}), field.SelectionSet, maxDepth-1)
+				return typeResolver(ctx, provider, ast.NamedType(base.JSONTypeName, &ast.Position{}), field.SelectionSet, maxDepth-1)
 			}
 			return typeResolver(ctx, provider, def.Type, field.SelectionSet, maxDepth-1)
 		},
@@ -361,33 +361,33 @@ func fieldResolver(ctx context.Context, provider schema.Provider, def *ast.Field
 			if td == nil {
 				return "", nil
 			}
-			if mi := compiler.ModuleRootInfo(td); mi != nil && def.Type.NamedType != "" {
+			if mi := sdl.ModuleRootInfo(td); mi != nil && def.Type.NamedType != "" {
 				return base.HugrTypeFieldSubmodule, nil
 			}
 			switch {
-			case compiler.IsAggregateQueryDefinition(def):
+			case sdl.IsAggregateQueryDefinition(def):
 				return base.HugrTypeFieldAgg, nil
-			case compiler.IsSelectOneQueryDefinition(def):
+			case sdl.IsSelectOneQueryDefinition(def):
 				return base.HugrTypeFieldSelectOne, nil
-			case compiler.IsSelectQueryDefinition(def):
+			case sdl.IsSelectQueryDefinition(def):
 				return base.HugrTypeFieldSelect, nil
-			case compiler.IsAggregateQueryDefinition(def):
+			case sdl.IsAggregateQueryDefinition(def):
 				return base.HugrTypeFieldAgg, nil
-			case compiler.IsBucketAggregateQueryDefinition(def):
+			case sdl.IsBucketAggregateQueryDefinition(def):
 				return base.HugrTypeFieldBucketAgg, nil
-			case compiler.IsFunctionCall(def):
+			case sdl.IsFunctionCall(def):
 				return base.HugrTypeFieldFunction, nil
-			case compiler.IsFunction(def):
+			case sdl.IsFunction(def):
 				return base.HugrTypeFieldFunction, nil
-			case compiler.IsJoinSubqueryDefinition(def):
+			case sdl.IsJoinSubqueryDefinition(def):
 				return base.HugrTypeFieldSelect, nil
-			case compiler.IsReferencesSubquery(def):
+			case sdl.IsReferencesSubquery(def):
 				return base.HugrTypeFieldSelect, nil
-			case compiler.IsInsertQueryDefinition(def):
+			case sdl.IsInsertQueryDefinition(def):
 				return base.HugrTypeFieldMutationInsert, nil
-			case compiler.IsUpdateQueryDefinition(def):
+			case sdl.IsUpdateQueryDefinition(def):
 				return base.HugrTypeFieldMutationUpdate, nil
-			case compiler.IsDeleteQueryDefinition(def):
+			case sdl.IsDeleteQueryDefinition(def):
 				return base.HugrTypeFieldMutationDelete, nil
 			}
 			if def.Name == base.QueryTimeJoinsFieldName && td.Name == base.QueryBaseName {
@@ -396,7 +396,7 @@ func fieldResolver(ctx context.Context, provider schema.Provider, def *ast.Field
 			if def.Name == base.QueryTimeSpatialFieldName && td.Name == base.QueryBaseName {
 				return base.HugrTypeFieldSpatial, nil
 			}
-			if def.Name == compiler.JQTransformQueryName && td.Name == base.QueryBaseName {
+			if def.Name == sdl.JQTransformQueryName && td.Name == base.QueryBaseName {
 				return base.HugrTypeFieldJQ, nil
 			}
 			if def.Name == base.H3QueryFieldName && td.Name == base.H3QueryTypeName {
@@ -405,8 +405,8 @@ func fieldResolver(ctx context.Context, provider schema.Provider, def *ast.Field
 			return "", nil
 		},
 		"catalog": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			if compiler.IsFunction(def) {
-				info, err := compiler.FunctionInfo(def)
+			if sdl.IsFunction(def) {
+				info, err := sdl.FunctionInfo(def)
 				if err != nil {
 					return nil, err
 				}
@@ -421,7 +421,7 @@ func fieldResolver(ctx context.Context, provider schema.Provider, def *ast.Field
 }
 
 func enumValueResolver(ctx context.Context, def *ast.EnumValueDefinition, ss ast.SelectionSet) (map[string]any, error) {
-	di := compiler.EnumDeprecatedInfo(def)
+	di := sdl.EnumDeprecatedInfo(def)
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
 		"__typename": typeNameResolver,
 		"name": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
@@ -453,7 +453,7 @@ func argumentResolver(ctx context.Context, provider schema.Provider, def *ast.Ar
 		},
 		"type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			if maxDepth <= 2 {
-				return typeResolver(ctx, provider, ast.NamedType(compiler.JSONTypeName, &ast.Position{}), field.SelectionSet, maxDepth-1)
+				return typeResolver(ctx, provider, ast.NamedType(base.JSONTypeName, &ast.Position{}), field.SelectionSet, maxDepth-1)
 			}
 			return typeResolver(ctx, provider, def.Type, field.SelectionSet, maxDepth-1)
 		},
@@ -486,7 +486,7 @@ func inputValueResolver(ctx context.Context, provider schema.Provider, def *ast.
 		},
 		"type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			if maxDepth <= 2 {
-				return typeResolver(ctx, provider, ast.NamedType(compiler.JSONTypeName, &ast.Position{}), field.SelectionSet, maxDepth-1)
+				return typeResolver(ctx, provider, ast.NamedType(base.JSONTypeName, &ast.Position{}), field.SelectionSet, maxDepth-1)
 			}
 			return typeResolver(ctx, provider, def.Type, field.SelectionSet, maxDepth-1)
 		},

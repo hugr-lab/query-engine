@@ -1,12 +1,17 @@
 package types
 
+import pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
+
 // Compile-time interface assertions.
 var (
 	_ ScalarType              = (*stringScalar)(nil)
 	_ Filterable              = (*stringScalar)(nil)
 	_ ListFilterable          = (*stringScalar)(nil)
 	_ Aggregatable            = (*stringScalar)(nil)
+	_ SubAggregatable         = (*stringScalar)(nil)
 	_ MeasurementAggregatable = (*stringScalar)(nil)
+	_ JSONTypeHintProvider    = (*stringScalar)(nil)
+	_ ArrayParser             = (*stringScalar)(nil)
 )
 
 type stringScalar struct{}
@@ -61,6 +66,14 @@ func (s *stringScalar) ListFilterTypeName() string { return "StringListFilter" }
 
 func (s *stringScalar) AggregationTypeName() string { return "StringAggregation" }
 
+func (s *stringScalar) SubAggregationTypeName() string { return "StringSubAggregation" }
+
+func (s *stringScalar) JSONTypeHint() string { return "string" }
+
 func (s *stringScalar) MeasurementAggregationTypeName() string {
 	return "StringMeasurementAggregation"
+}
+
+func (s *stringScalar) ParseArray(v any) (any, error) {
+	return pkgtypes.ParseScalarArray[string](v)
 }

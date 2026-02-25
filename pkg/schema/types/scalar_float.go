@@ -1,12 +1,22 @@
 package types
 
+import (
+	"fmt"
+
+	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
+)
+
 // Compile-time interface assertions.
 var (
 	_ ScalarType              = (*floatScalar)(nil)
 	_ Filterable              = (*floatScalar)(nil)
 	_ ListFilterable          = (*floatScalar)(nil)
 	_ Aggregatable            = (*floatScalar)(nil)
+	_ SubAggregatable         = (*floatScalar)(nil)
 	_ MeasurementAggregatable = (*floatScalar)(nil)
+	_ JSONTypeHintProvider    = (*floatScalar)(nil)
+	_ ValueParser             = (*floatScalar)(nil)
+	_ ArrayParser             = (*floatScalar)(nil)
 )
 
 type floatScalar struct{}
@@ -73,6 +83,31 @@ func (s *floatScalar) ListFilterTypeName() string { return "FloatListFilter" }
 
 func (s *floatScalar) AggregationTypeName() string { return "FloatAggregation" }
 
+func (s *floatScalar) SubAggregationTypeName() string { return "FloatSubAggregation" }
+
+func (s *floatScalar) JSONTypeHint() string { return "number" }
+
 func (s *floatScalar) MeasurementAggregationTypeName() string {
 	return "FloatMeasurementAggregation"
+}
+
+func (s *floatScalar) ParseValue(v any) (any, error) {
+	if v == nil {
+		return nil, nil
+	}
+	switch val := v.(type) {
+	case int:
+		return float64(val), nil
+	case int32:
+		return float64(val), nil
+	case int64:
+		return float64(val), nil
+	case float64:
+		return val, nil
+	}
+	return nil, fmt.Errorf("unexpected type %T for Float", v)
+}
+
+func (s *floatScalar) ParseArray(v any) (any, error) {
+	return pkgtypes.ParseScalarArray[float64](v)
 }

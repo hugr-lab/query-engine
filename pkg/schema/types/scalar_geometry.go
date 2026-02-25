@@ -1,14 +1,22 @@
 package types
 
-import "github.com/vektah/gqlparser/v2/ast"
+import (
+	"fmt"
+
+	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/vektah/gqlparser/v2/ast"
+)
 
 // Compile-time interface assertions.
 var (
 	_ ScalarType             = (*geometryScalar)(nil)
 	_ Filterable             = (*geometryScalar)(nil)
 	_ Aggregatable           = (*geometryScalar)(nil)
+	_ SubAggregatable        = (*geometryScalar)(nil)
 	_ ExtraFieldProvider     = (*geometryScalar)(nil)
 	_ FieldArgumentsProvider = (*geometryScalar)(nil)
+	_ ValueParser            = (*geometryScalar)(nil)
+	_ SQLOutputTransformer   = (*geometryScalar)(nil)
 )
 
 type geometryScalar struct{}
@@ -76,6 +84,8 @@ func (s *geometryScalar) FilterTypeName() string { return "GeometryFilter" }
 
 func (s *geometryScalar) AggregationTypeName() string { return "GeometryAggregation" }
 
+func (s *geometryScalar) SubAggregationTypeName() string { return "GeometrySubAggregation" }
+
 func (s *geometryScalar) FieldArguments() ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
 		{Name: "transforms", Type: ast.ListType(ast.NonNullNamedType("GeometryTransform", nil), nil)},
@@ -90,4 +100,19 @@ func (s *geometryScalar) ExtraFieldName() string { return "Measurement" }
 
 func (s *geometryScalar) GenerateExtraField(fieldName string) *ast.FieldDefinition {
 	return generateGeometryExtraField(fieldName)
+}
+
+func (s *geometryScalar) ParseValue(v any) (any, error) {
+	return pkgtypes.ParseGeometryValue(v)
+}
+
+func (s *geometryScalar) ToOutputSQL(sql string, raw bool) string {
+	if raw {
+		return sql
+	}
+	return fmt.Sprintf("ST_AsGeoJSON(%s)", sql)
+}
+
+func (s *geometryScalar) ToStructFieldSQL(sql string) string {
+	return fmt.Sprintf("ST_AsGeoJSON(%s)", sql)
 }

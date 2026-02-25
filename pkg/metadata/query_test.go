@@ -6,7 +6,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/vektah/gqlparser/v2"
@@ -141,7 +141,7 @@ func TestProcessQuery(t *testing.T) {
 		return
 	}
 
-	rqt, _ := compiler.QueryRequestInfo(qd.Operations[0].SelectionSet)
+	rqt, _ := sdl.QueryRequestInfo(qd.Operations[0].SelectionSet)
 
 	for _, r := range rqt {
 		data, err := ProcessQuery(t.Context(), static.NewWithSchema(cat.Schema()), r, 10, nil)

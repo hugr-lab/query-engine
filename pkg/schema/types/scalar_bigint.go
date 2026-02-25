@@ -1,12 +1,22 @@
 package types
 
+import (
+	"fmt"
+
+	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
+)
+
 // Compile-time interface assertions.
 var (
 	_ ScalarType              = (*bigIntScalar)(nil)
 	_ Filterable              = (*bigIntScalar)(nil)
 	_ ListFilterable          = (*bigIntScalar)(nil)
 	_ Aggregatable            = (*bigIntScalar)(nil)
+	_ SubAggregatable         = (*bigIntScalar)(nil)
 	_ MeasurementAggregatable = (*bigIntScalar)(nil)
+	_ JSONTypeHintProvider    = (*bigIntScalar)(nil)
+	_ ValueParser             = (*bigIntScalar)(nil)
+	_ ArrayParser             = (*bigIntScalar)(nil)
 )
 
 type bigIntScalar struct{}
@@ -72,6 +82,52 @@ func (s *bigIntScalar) ListFilterTypeName() string { return "BigIntListFilter" }
 
 func (s *bigIntScalar) AggregationTypeName() string { return "BigIntAggregation" }
 
+func (s *bigIntScalar) SubAggregationTypeName() string { return "BigIntSubAggregation" }
+
+func (s *bigIntScalar) JSONTypeHint() string { return "number" }
+
 func (s *bigIntScalar) MeasurementAggregationTypeName() string {
 	return "BigIntMeasurementAggregation"
+}
+
+func (s *bigIntScalar) ParseValue(v any) (any, error) {
+	if v == nil {
+		return nil, nil
+	}
+	switch val := v.(type) {
+	case int:
+		return int64(val), nil
+	case int32:
+		return int64(val), nil
+	case int64:
+		return val, nil
+	case float64:
+		return int64(val), nil
+	}
+	return nil, fmt.Errorf("unexpected type %T for BigInt", v)
+}
+
+func (s *bigIntScalar) ParseArray(v any) (any, error) {
+	if v == nil {
+		return nil, nil
+	}
+	vv, ok := v.([]any)
+	if !ok {
+		return nil, fmt.Errorf("expected array of BigInt values, got %T", v)
+	}
+	if len(vv) == 0 {
+		return []int64{}, nil
+	}
+	if _, ok := vv[0].(float64); !ok {
+		return pkgtypes.ParseScalarArray[int64](vv)
+	}
+	dd, err := pkgtypes.ParseScalarArray[float64](v)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]int64, len(dd))
+	for i, val := range dd {
+		out[i] = int64(val)
+	}
+	return out, nil
 }

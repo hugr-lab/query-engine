@@ -8,8 +8,8 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 )
 
 type RolePermissions struct {
@@ -60,7 +60,7 @@ func (r *RolePermissions) CheckMutationInput(defs Definitions, inputName string,
 	if r.Disabled {
 		return auth.ErrForbidden
 	}
-	if compiler.IsScalarType(inputName) {
+	if sdl.IsScalarType(inputName) {
 		return nil
 	}
 	input := defs.ForName(inputName)

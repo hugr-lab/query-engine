@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func selectQueryParamsNodes(ctx context.Context, defs compiler.DefinitionsSource, e engines.Engine, info *compiler.Object, prefix string, query *ast.Field, args compiler.FieldQueryArguments, byAlias bool) (nodes QueryPlanNodes, err error) {
+func selectQueryParamsNodes(ctx context.Context, defs sdl.Definitions, e engines.Engine, info *sdl.Object, prefix string, query *ast.Field, args sdl.FieldQueryArguments, byAlias bool) (nodes QueryPlanNodes, err error) {
 	filter := args.ForName("filter")
 	limit := args.ForName("limit")
 	offset := args.ForName("offset")
@@ -82,7 +82,7 @@ func selectQueryParamsNodes(ctx context.Context, defs compiler.DefinitionsSource
 		}
 	}
 	if semantic != nil && similarity != nil {
-		return nil, compiler.ErrorPosf(query.Position, "only one of semantic or similarity search can be specified")
+		return nil, sdl.ErrorPosf(query.Position, "only one of semantic or similarity search can be specified")
 	}
 	// add vector search nodes (vector limit and vector order)
 	if similarity != nil {
@@ -103,7 +103,7 @@ func selectQueryParamsNodes(ctx context.Context, defs compiler.DefinitionsSource
 	return nodes, nil
 }
 
-func selectOneQueryParamsNodes(ctx context.Context, info *compiler.Object, query *ast.Field, args compiler.FieldQueryArguments, prefix string) (QueryPlanNodes, error) {
+func selectOneQueryParamsNodes(ctx context.Context, info *sdl.Object, query *ast.Field, args sdl.FieldQueryArguments, prefix string) (QueryPlanNodes, error) {
 	nodes := QueryPlanNodes{
 		{
 			Name:    "limit",
@@ -253,7 +253,7 @@ func parseOrderByArray(param any) ([]orderByField, error) {
 	return orderBy, nil
 }
 
-func orderByNode(e engines.Engine, info *compiler.Object, query *ast.Field, prefix string, param, distinctParam any, byAlias bool) (*QueryPlanNode, error) {
+func orderByNode(e engines.Engine, info *sdl.Object, query *ast.Field, prefix string, param, distinctParam any, byAlias bool) (*QueryPlanNode, error) {
 	if param == nil {
 		return nil, nil
 	}
@@ -286,13 +286,13 @@ func orderByNode(e engines.Engine, info *compiler.Object, query *ast.Field, pref
 	}, nil
 }
 
-func orderByFieldNode(e engines.Engine, info *compiler.Object, query *ast.Field, prefix string, field orderByField, byAlias bool) *QueryPlanNode {
+func orderByFieldNode(e engines.Engine, info *sdl.Object, query *ast.Field, prefix string, field orderByField, byAlias bool) *QueryPlanNode {
 	return &QueryPlanNode{
 		Name:  field.field,
 		Query: query,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 			var fieldName string
-			var fieldInfo *compiler.Field
+			var fieldInfo *sdl.Field
 			fieldName = field.field
 			sf := engines.SelectedFields(node.Query.SelectionSet)
 			queryField := sf.ScalarForPath(fieldName)
@@ -306,7 +306,7 @@ func orderByFieldNode(e engines.Engine, info *compiler.Object, query *ast.Field,
 				if prefix != "" {
 					pp[0] = prefix + "." + engines.Ident(pp[0])
 				}
-				t, ok := compiler.FieldJSONTypes[queryField.Field.Definition.Type.Name()]
+				t, ok := sdl.JSONTypeHint(queryField.Field.Definition.Type.Name())
 				if !ok {
 					return "", nil, fmt.Errorf("invalid orderBy field %s", fieldName)
 				}
@@ -317,10 +317,10 @@ func orderByFieldNode(e engines.Engine, info *compiler.Object, query *ast.Field,
 					fieldName = prefix + "." + engines.Ident(fieldName)
 				}
 				if !byAlias && info != nil {
-					if compiler.IsExtraField(queryField.Field.Definition) {
+					if sdl.IsExtraField(queryField.Field.Definition) {
 						fieldName = queryField.Field.Alias
 					}
-					if !compiler.IsExtraField(queryField.Field.Definition) {
+					if !sdl.IsExtraField(queryField.Field.Definition) {
 						fieldInfo = info.FieldForName(queryField.Field.Name)
 						if fieldInfo == nil {
 							return "", nil, fmt.Errorf("field %s not found", queryField.Field.Name)
@@ -332,7 +332,7 @@ func orderByFieldNode(e engines.Engine, info *compiler.Object, query *ast.Field,
 					return "", params, nil
 				}
 			}
-			if !compiler.IsScalarType(queryField.Field.Definition.Type.NamedType) {
+			if !sdl.IsScalarType(queryField.Field.Definition.Type.NamedType) {
 				return "", nil, fmt.Errorf("invalid orderBy field %s", fieldName)
 			}
 
@@ -344,7 +344,7 @@ func orderByFieldNode(e engines.Engine, info *compiler.Object, query *ast.Field,
 	}
 }
 
-func distinctOnNode(info *compiler.Object, query *ast.Field, prefix string, param any, byAlias bool) (*QueryPlanNode, error) {
+func distinctOnNode(info *sdl.Object, query *ast.Field, prefix string, param any, byAlias bool) (*QueryPlanNode, error) {
 	if param == nil {
 		return nil, nil
 	}
@@ -367,7 +367,7 @@ func distinctOnNode(info *compiler.Object, query *ast.Field, prefix string, para
 				if field == nil {
 					return "", nil, fmt.Errorf("field %s not found", fn)
 				}
-				if !compiler.IsScalarType(field.Field.Definition.Type.Name()) || field.Field.Definition.Type.NamedType == "" {
+				if !sdl.IsScalarType(field.Field.Definition.Type.Name()) || field.Field.Definition.Type.NamedType == "" {
 					return "", nil, errors.New("invalid distinct on field")
 				}
 				if byAlias {
@@ -391,7 +391,7 @@ func distinctOnNode(info *compiler.Object, query *ast.Field, prefix string, para
 	}, nil
 }
 
-func whereUniqueNode(_ context.Context, info *compiler.Object, filter compiler.FieldQueryArguments, prefix string, selectDeleted bool) (*QueryPlanNode, error) {
+func whereUniqueNode(_ context.Context, info *sdl.Object, filter sdl.FieldQueryArguments, prefix string, selectDeleted bool) (*QueryPlanNode, error) {
 	var nodes QueryPlanNodes
 	for _, arg := range filter {
 		field := info.FieldForName(arg.Name)
@@ -429,7 +429,7 @@ func whereUniqueNode(_ context.Context, info *compiler.Object, filter compiler.F
 	}, nil
 }
 
-func whereNode(ctx context.Context, defs compiler.DefinitionsSource, info *compiler.Object, filter map[string]any, prefix string, byAlias, selectDeleted bool) (*QueryPlanNode, error) {
+func whereNode(ctx context.Context, defs sdl.Definitions, info *sdl.Object, filter map[string]any, prefix string, byAlias, selectDeleted bool) (*QueryPlanNode, error) {
 	if len(filter) == 0 {
 		return nil, nil
 	}
@@ -492,7 +492,7 @@ func whereNode(ctx context.Context, defs compiler.DefinitionsSource, info *compi
 					return strings.Join(ff, " OR "), params, nil
 				},
 			})
-		case compiler.IsReferencesSubquery(inputField):
+		case sdl.IsReferencesSubquery(inputField):
 			node, err := whereReferencesObjectNode(ctx, defs, info, "", prefix, fn, fv.(map[string]any), byAlias, selectDeleted)
 			if err != nil {
 				return nil, err
@@ -529,7 +529,7 @@ func whereNode(ctx context.Context, defs compiler.DefinitionsSource, info *compi
 	}, nil
 }
 
-func whereReferencesObjectNode(ctx context.Context, defs compiler.DefinitionsSource, info *compiler.Object, op, prefix, name string, value map[string]any, byAlias, selectDeleted bool) (*QueryPlanNode, error) {
+func whereReferencesObjectNode(ctx context.Context, defs sdl.Definitions, info *sdl.Object, op, prefix, name string, value map[string]any, byAlias, selectDeleted bool) (*QueryPlanNode, error) {
 	if len(value) == 0 {
 		return nil, nil
 	}
@@ -575,7 +575,7 @@ func whereReferencesObjectNode(ctx context.Context, defs compiler.DefinitionsSou
 	if def == nil {
 		return nil, fmt.Errorf("references object %s not found", field.Definition().Type.Name())
 	}
-	refObjectInfo := compiler.DataObjectInfo(def)
+	refObjectInfo := sdl.DataObjectInfo(def)
 	if refObjectInfo == nil {
 		return nil, ErrInternalPlanner
 	}
@@ -592,7 +592,7 @@ func whereReferencesObjectNode(ctx context.Context, defs compiler.DefinitionsSou
 		if m2mDef == nil {
 			return nil, fmt.Errorf("m2m object %s not found", refInfo.M2MName)
 		}
-		m2mInfo := compiler.DataObjectInfo(m2mDef)
+		m2mInfo := sdl.DataObjectInfo(m2mDef)
 		joinObjectAlias = "_join_" + prefix + "_" + field.Name
 		nodes.Add(&QueryPlanNode{
 			Name:  "m2m",
@@ -669,7 +669,7 @@ func whereReferencesObjectNode(ctx context.Context, defs compiler.DefinitionsSou
 	}, nil
 }
 
-func whereFieldNode(info *compiler.Object, prefix, name string, value any, byAlias bool) (*QueryPlanNode, error) {
+func whereFieldNode(info *sdl.Object, prefix, name string, value any, byAlias bool) (*QueryPlanNode, error) {
 	vals := value.(map[string]any)
 	if len(vals) == 0 {
 		return nil, nil
@@ -698,8 +698,8 @@ func whereFieldNode(info *compiler.Object, prefix, name string, value any, byAli
 	}, nil
 }
 
-func filterSQLValue(e engines.Engine, defs compiler.Definitions, field *ast.FieldDefinition, sqlName, path string, value map[string]any, params []any) (string, []any, error) {
-	if !compiler.IsScalarType(field.Type.Name()) {
+func filterSQLValue(e engines.Engine, defs sdl.Definitions, field *ast.FieldDefinition, sqlName, path string, value map[string]any, params []any) (string, []any, error) {
+	if !sdl.IsScalarType(field.Type.Name()) {
 		def := defs.ForName(field.Type.Name())
 		if def == nil {
 			return "", nil, fmt.Errorf("type %s not found", field.Type.Name())
@@ -728,7 +728,7 @@ func filterSQLValue(e engines.Engine, defs compiler.Definitions, field *ast.Fiel
 	return strings.Join(filters, " AND "), params, nil
 }
 
-func nestedFieldFilterSQLValue(e engines.Engine, defs compiler.Definitions, def *ast.Definition, sqlName, path string, value map[string]any, params []any) (string, []any, error) {
+func nestedFieldFilterSQLValue(e engines.Engine, defs sdl.Definitions, def *ast.Definition, sqlName, path string, value map[string]any, params []any) (string, []any, error) {
 	var nestedFilters []string
 	for fieldName, fieldValue := range value {
 		field := def.Fields.ForName(fieldName)
@@ -741,7 +741,7 @@ func nestedFieldFilterSQLValue(e engines.Engine, defs compiler.Definitions, def 
 		}
 		var q string
 		var err error
-		fi := compiler.FieldDefinitionInfo(field, def)
+		fi := sdl.FieldDefinitionInfo(field, def)
 		p := fi.FieldSourceName("", false)
 		if path != "" {
 			p = path + "." + p

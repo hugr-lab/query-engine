@@ -1,12 +1,22 @@
 package types
 
+import (
+	"time"
+
+	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
+)
+
 // Compile-time interface assertions.
 var (
 	_ ScalarType              = (*timeScalar)(nil)
 	_ Filterable              = (*timeScalar)(nil)
 	_ ListFilterable          = (*timeScalar)(nil)
 	_ Aggregatable            = (*timeScalar)(nil)
+	_ SubAggregatable         = (*timeScalar)(nil)
 	_ MeasurementAggregatable = (*timeScalar)(nil)
+	_ JSONTypeHintProvider    = (*timeScalar)(nil)
+	_ ValueParser             = (*timeScalar)(nil)
+	_ ArrayParser             = (*timeScalar)(nil)
 )
 
 type timeScalar struct{}
@@ -67,6 +77,18 @@ func (s *timeScalar) ListFilterTypeName() string { return "TimeListFilter" }
 
 func (s *timeScalar) AggregationTypeName() string { return "TimeAggregation" }
 
+func (s *timeScalar) SubAggregationTypeName() string { return "TimeSubAggregation" }
+
+func (s *timeScalar) JSONTypeHint() string { return "timestamp" }
+
 func (s *timeScalar) MeasurementAggregationTypeName() string {
 	return "TimeMeasurementAggregation"
+}
+
+func (s *timeScalar) ParseValue(v any) (any, error) {
+	return pkgtypes.ParseTimeValue(v)
+}
+
+func (s *timeScalar) ParseArray(v any) (any, error) {
+	return pkgtypes.ParseScalarArray[time.Time](v)
 }

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	oldcomp "github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkt"
@@ -310,7 +310,8 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 		sqlName += extractPGJsonFieldByPath(path, false)
 	}
 	if op == "is_null" {
-		if value.(bool) {
+		v, _ := value.(bool)
+		if value == nil || v {
 			return fmt.Sprintf("%s IS NULL", sqlName), params, nil
 		}
 		return fmt.Sprintf("%s IS NOT NULL", sqlName), params, nil
@@ -469,7 +470,7 @@ func (e Postgres) PackFieldsToObject(prefix string, field *ast.Field) string {
 		prefix += "."
 	}
 	for _, f := range SelectedFields(field.SelectionSet) {
-		if f.Field.Definition.Type.NamedType == oldcomp.GeometryTypeName {
+		if f.Field.Definition.Type.NamedType == base.GeometryTypeName {
 			fields = append(fields, "'"+Ident(f.Field.Alias)+"',ST_AsGeoJSON("+prefix+Ident(f.Field.Alias)+")::JSON")
 			continue
 		}
@@ -514,7 +515,7 @@ func (e *Postgres) ToIntermediateType(f *ast.Field) (string, error) {
 func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, error) {
 	// only for geometry and non scalar objects types, other types are converted automatically
 	// interval type will be converted to TEXT representation
-	if f.Definition.Type.NamedType == oldcomp.GeometryTypeName {
+	if f.Definition.Type.NamedType == base.GeometryTypeName {
 		out := "ST_GeomFromHEXWKB(%s)"
 		if toJSON {
 			out = "ST_AsGeoJson(" + out + ")::JSON"
@@ -522,7 +523,7 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 		return fmt.Sprintf(out, Ident(f.Alias)), nil
 	}
 
-	if !oldcomp.IsScalarType(f.Definition.Type.Name()) {
+	if !sdl.IsScalarType(f.Definition.Type.Name()) {
 		if toJSON {
 			if f.Definition.Type.NamedType == "" {
 				return Ident(f.Alias) + "::JSON[]", nil
@@ -535,7 +536,7 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 		return JsonToStruct(f, "", false, false), nil
 	}
 
-	if f.Definition.Type.Name() == oldcomp.JSONTypeName {
+	if f.Definition.Type.Name() == base.JSONTypeName {
 		if f.Definition.Type.NamedType == "" {
 			return fmt.Sprintf("(%s)::JSON[]", Ident(f.Alias)), nil
 		}
@@ -664,11 +665,11 @@ func (e Postgres) ExtractJSONStruct(sql string, jsonStruct map[string]any) strin
 	return "jsonb_build_object(" + strings.Join(fields, ",") + ")"
 }
 
-func (e Postgres) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args oldcomp.FieldQueryArguments, params []any) (string, []any, error) {
-	switch oldcomp.TransformBaseFieldType(field.Definition) {
-	case oldcomp.GeometryTypeName:
+func (e Postgres) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args sdl.FieldQueryArguments, params []any) (string, []any, error) {
+	switch sdl.TransformBaseFieldType(field.Definition) {
+	case base.GeometryTypeName:
 		return e.GeometryTransform(sql, field, args), params, nil
-	case oldcomp.JSONTypeName:
+	case base.JSONTypeName:
 		sa := args.ForName("struct")
 		if sa == nil {
 			return sql, params, nil
@@ -678,7 +679,7 @@ func (e Postgres) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sq
 			return sql, params, nil
 		}
 		return e.ExtractJSONStruct(sql, s), params, nil
-	case oldcomp.TimestampTypeName:
+	case base.TimestampTypeName:
 		return e.TimestampTransform(sql, field, args), params, nil
 	case base.VectorTypeName:
 		return e.VectorTransform(ctx, qe, sql, field, args, params)
@@ -686,8 +687,8 @@ func (e Postgres) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sq
 	return sql, params, nil
 }
 
-func (e Postgres) GeometryTransform(sql string, field *ast.Field, args oldcomp.FieldQueryArguments) string {
-	if oldcomp.IsExtraField(field.Definition) {
+func (e Postgres) GeometryTransform(sql string, field *ast.Field, args sdl.FieldQueryArguments) string {
+	if sdl.IsExtraField(field.Definition) {
 		if a := args.ForName("Transform"); a != nil && a.Value != nil && a.Value.(bool) {
 			from := args.ForName("from")
 			to := args.ForName("to")
@@ -797,11 +798,11 @@ func (e Postgres) GeometryTransform(sql string, field *ast.Field, args oldcomp.F
 	return sql
 }
 
-func (e Postgres) TimestampTransform(sql string, field *ast.Field, args oldcomp.FieldQueryArguments) string {
+func (e Postgres) TimestampTransform(sql string, field *ast.Field, args sdl.FieldQueryArguments) string {
 	if len(args) == 0 {
 		return sql
 	}
-	if oldcomp.IsTimescaleKey(field.Definition) {
+	if sdl.IsTimescaleKey(field.Definition) {
 		bf := "time_bucket"
 		if bucket := args.ForName("bucket"); bucket != nil {
 			return fmt.Sprintf("date_trunc('%s', %s)", bucket.Value, sql)
@@ -896,7 +897,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 		if field == nil {
 			return "COUNT(*)", params, nil
 		}
-		if field.Type.Name() == oldcomp.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == base.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -907,10 +908,10 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 		}
 		return "COUNT(DISTINCT " + sql + ")", params, nil
 	case "sum":
-		if field.Type.Name() == oldcomp.JSONTypeName {
+		if field.Type.Name() == base.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, sdl.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -922,10 +923,10 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 		}
 		return "SUM(" + sql + ")", params, nil
 	case "avg":
-		if field.Type.Name() == oldcomp.JSONTypeName {
+		if field.Type.Name() == base.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, sdl.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -937,10 +938,10 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 		}
 		return "AVG(" + sql + ")", params, nil
 	case "min":
-		if field.Type.Name() == oldcomp.JSONTypeName {
+		if field.Type.Name() == base.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, sdl.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -948,9 +949,9 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 			path += jp.(string)
 		}
 		if path != "" {
-			jt, ok := oldcomp.FieldJSONTypes[field.Type.Name()]
+			jt, ok := sdl.JSONTypeHint(field.Type.Name())
 			if !ok {
-				return "", nil, oldcomp.ErrorPosf(field.Position, "unsupported type for min aggregate function")
+				return "", nil, sdl.ErrorPosf(field.Position, "unsupported type for min aggregate function")
 			}
 			if jt == "" {
 				jt = "number"
@@ -959,10 +960,10 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 		}
 		return "MIN(" + sql + ")", params, nil
 	case "max":
-		if field.Type.Name() == oldcomp.JSONTypeName {
+		if field.Type.Name() == base.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, sdl.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -970,9 +971,9 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 			path += jp.(string)
 		}
 		if path != "" {
-			jt, ok := oldcomp.FieldJSONTypes[field.Type.Name()]
+			jt, ok := sdl.JSONTypeHint(field.Type.Name())
 			if !ok {
-				return "", nil, oldcomp.ErrorPosf(field.Position, "unsupported type for min aggregate function")
+				return "", nil, sdl.ErrorPosf(field.Position, "unsupported type for min aggregate function")
 			}
 			if jt == "" {
 				jt = "number"
@@ -981,7 +982,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 		}
 		return "MAX(" + sql + ")", params, nil
 	case "list":
-		if field.Type.Name() == oldcomp.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == base.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -995,7 +996,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 		}
 		return "ARRAY_AGG(" + sql + ")", params, nil
 	case "last":
-		if field.Type.Name() == oldcomp.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == base.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -1010,7 +1011,7 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 		}
 		return "LAST(" + sql + ")", params, nil
 	case "any":
-		if field.Type.Name() == oldcomp.JSONTypeName && args != nil && args["path"] != nil {
+		if field.Type.Name() == base.JSONTypeName && args != nil && args["path"] != nil {
 			if path != "" {
 				path += "."
 			}
@@ -1021,10 +1022,10 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 		}
 		return "ANY_VALUE(" + sql + ")", params, nil
 	case "bool_and":
-		if field.Type.Name() == oldcomp.JSONTypeName {
+		if field.Type.Name() == base.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, sdl.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -1036,10 +1037,10 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 		}
 		return "BOOL_AND(" + sql + ")", params, nil
 	case "bool_or":
-		if field.Type.Name() == oldcomp.JSONTypeName {
+		if field.Type.Name() == base.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, sdl.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -1053,12 +1054,12 @@ func (e Postgres) AggregateFuncSQL(funcName, sql, path, factor string, field *as
 	case "string_agg":
 		sep := args["sep"]
 		if sep == nil {
-			return "", nil, oldcomp.ErrorPosf(field.Position, "separator argument is required")
+			return "", nil, sdl.ErrorPosf(field.Position, "separator argument is required")
 		}
-		if field.Type.Name() == oldcomp.JSONTypeName {
+		if field.Type.Name() == base.JSONTypeName {
 			jp := args["path"]
 			if jp == nil {
-				return "", nil, oldcomp.ErrorPosf(field.Position, "path argument is required")
+				return "", nil, sdl.ErrorPosf(field.Position, "path argument is required")
 			}
 			if path != "" {
 				path += "."
@@ -1116,7 +1117,7 @@ func repackPGJsonRecursive(sql string, field *ast.Field, path string) string {
 			fields = append(fields, "'"+Ident(f.Field.Alias)+"','"+f.Field.ObjectDefinition.Name+"'")
 			continue
 		}
-		info := oldcomp.FieldInfo(f.Field)
+		info := sdl.FieldInfo(f.Field)
 		extractValue := info.FieldSourceName("", false)
 		if extractValue != f.Field.Name || info.IsCalcField() { // need to full repack this level
 			check[f.Field.ObjectDefinition.Name]++
@@ -1211,6 +1212,6 @@ func (e *Postgres) VectorDistanceSQL(sql, distMetric string, vector types.Vector
 	}
 }
 
-func (e *Postgres) VectorTransform(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args oldcomp.FieldQueryArguments, params []any) (string, []any, error) {
+func (e *Postgres) VectorTransform(ctx context.Context, qe types.Querier, sql string, field *ast.Field, args sdl.FieldQueryArguments, params []any) (string, []any, error) {
 	return commonVectorTransform(ctx, e, qe, sql, field, args, params)
 }

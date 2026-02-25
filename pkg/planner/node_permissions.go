@@ -5,12 +5,13 @@ import (
 	"maps"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func permissionFilterNode(ctx context.Context, defs compiler.DefinitionsSource, info *compiler.Object, query *ast.Field, prefix string, byAlias bool) (*QueryPlanNode, error) {
+func permissionFilterNode(ctx context.Context, defs sdl.Definitions, info *sdl.Object, query *ast.Field, prefix string, byAlias bool) (*QueryPlanNode, error) {
 	p := perm.PermissionsFromCtx(ctx)
 	if p == nil {
 		return nil, nil
@@ -26,9 +27,9 @@ func permissionFilterNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	if ftn == "" {
 		return nil, nil
 	}
-	data, err := compiler.ParseDataAsInputObject(defs, &ast.Type{
+	data, err := sdl.ParseDataAsInputObject(defs, &ast.Type{
 		NamedType: ftn,
-		Position:  compiler.CompiledPosName("permissionFilterNode"),
+		Position:  base.CompiledPos("permissionFilterNode"),
 	}, arg, false)
 	if err != nil {
 		return nil, err
@@ -50,7 +51,7 @@ func permissionFilterNode(ctx context.Context, defs compiler.DefinitionsSource, 
 	}, nil
 }
 
-func checkMutationData(ctx context.Context, defs compiler.DefinitionsSource, query *ast.Field, inputType *ast.Type, data map[string]any) (map[string]any, error) {
+func checkMutationData(ctx context.Context, defs sdl.Definitions, query *ast.Field, inputType *ast.Type, data map[string]any) (map[string]any, error) {
 	// check permission
 	p := perm.PermissionsFromCtx(ctx)
 	if p == nil {
@@ -67,7 +68,7 @@ func checkMutationData(ctx context.Context, defs compiler.DefinitionsSource, que
 		return data, nil
 	}
 
-	values, err := compiler.ParseDataAsInputObject(defs, inputType, arg, false)
+	values, err := sdl.ParseDataAsInputObject(defs, inputType, arg, false)
 	if err != nil {
 		return nil, err
 	}

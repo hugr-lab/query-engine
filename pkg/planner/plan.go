@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/schema"
@@ -44,12 +43,12 @@ func (p *QueryPlan) Execute(ctx context.Context, db *db.Pool) (data interface{},
 	}
 
 	switch {
-	case compiler.IsScalarType(p.Query.Definition.Type.Name()) &&
+	case sdl.IsScalarType(p.Query.Definition.Type.Name()) &&
 		p.Query.Definition.Type.NamedType == "":
 		return db.QueryJsonScalarArray(ctx, p.CompiledQuery, p.Params...)
 	case p.Query.Definition.Type.NamedType == "":
 		return db.QueryArrowTable(ctx, p.CompiledQuery, !IsRawResultsQuery(ctx, p.Query), p.Params...)
-	case compiler.IsScalarType(p.Query.Definition.Type.Name()):
+	case sdl.IsScalarType(p.Query.Definition.Type.Name()):
 		return db.QueryScalarValue(ctx, p.CompiledQuery, p.Params...)
 	default:
 		return db.QueryJsonRow(ctx, p.CompiledQuery, p.Params...)
@@ -189,8 +188,8 @@ func (n *QueryPlanNode) SchemaProvider() schema.Provider {
 	return nil
 }
 
-func (n *QueryPlanNode) TypeDefs() compiler.DefinitionsSource {
-	return base.NewDefsAdapter(context.TODO(), n.SchemaProvider())
+func (n *QueryPlanNode) TypeDefs() sdl.Definitions {
+	return sdl.NewDefsAdapter(context.TODO(), n.SchemaProvider())
 }
 
 func (n *QueryPlanNode) Engine(name string) (engines.Engine, error) {

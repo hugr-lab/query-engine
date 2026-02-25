@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 )
 
@@ -86,7 +86,7 @@ func castResultsNode(_ context.Context, caster engines.EngineTypeCaster, node *Q
 			sql = "(SELECT " + strings.Join(intermediateSelection, ",") + " FROM " + sql + " AS _objects)"
 			if s, ok := caster.(engines.EngineQueryScanner); ok {
 				sql = s.WarpScann(
-					base.FieldCatalogName(node.Query.Definition),
+					base.FieldDefCatalog(node.Query.Definition),
 					sql,
 				)
 			}
@@ -129,7 +129,7 @@ func castScalarResultsNode(_ context.Context, caster engines.EngineTypeCaster, n
 			sql = "(SELECT " + v + " FROM (SELECT (" + sql + ") AS " + engines.Ident(node.Query.Alias) + "))"
 			if s, ok := caster.(engines.EngineQueryScanner); ok {
 				sql = s.WarpScann(
-					base.FieldCatalogName(node.Query.Definition),
+					base.FieldDefCatalog(node.Query.Definition),
 					sql,
 				)
 			}
@@ -138,7 +138,7 @@ func castScalarResultsNode(_ context.Context, caster engines.EngineTypeCaster, n
 				return "", nil, err
 			}
 			// if not scalar type - need to cast json to struct
-			if !compiler.IsScalarType(node.Query.Definition.Type.Name()) {
+			if !sdl.IsScalarType(node.Query.Definition.Type.Name()) {
 				c = engines.JsonToStruct(node.Query, "", !toJSON, false)
 			}
 			if aggArray && node.Query.Definition.Type.NamedType == "" {
