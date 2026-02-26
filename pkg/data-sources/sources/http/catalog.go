@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
+	"github.com/hugr-lab/query-engine/pkg/schema/sources"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -17,7 +16,6 @@ type Source struct {
 	isAttached bool
 
 	engine engines.Engine
-	c      *catalogs.Catalog
 }
 
 func New(ds types.DataSource, attached bool) (*Source, error) {
@@ -50,10 +48,6 @@ func (*Source) EngineType() engines.Type {
 
 func (s *Source) IsAttached() bool {
 	return s.isAttached
-}
-
-func (s *Source) Catalog() *catalogs.Catalog {
-	return s.c
 }
 
 func (s *Source) Attach(ctx context.Context, db *db.Pool) error {

@@ -4,7 +4,7 @@ import (
 	"context"
 	_ "embed"
 
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
+	"github.com/hugr-lab/query-engine/pkg/schema/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"

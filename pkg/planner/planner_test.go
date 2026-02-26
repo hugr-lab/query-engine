@@ -6,16 +6,18 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/catalogs"
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/schema/sources"
+	"github.com/hugr-lab/query-engine/pkg/schema/static"
+	"github.com/hugr-lab/query-engine/pkg/types"
 )
 
 const testSchemaData = `
 	extend type Function {
 		func_scalar_string(arg1: String, arg2:Int): String
 			@function(name: "func_scalar_string")
-		
+
 		func_scalar_array(arg1: Int, arg2:Int): [Int]
 			@function(name: "func_scalar_int", sql: "func_scalar_int(0, [arg1], [arg2])")
 
@@ -50,7 +52,7 @@ const testSchemaData = `
 		nested_field: test_object
 		nested_array_field: [nested_object2]
 		field_func_call(arg1: String, arg2:Int): String @function_call(references_name: "func_scalar_string")
-		field_func_call_fields: [Int] @function_call(references_name: "func_scalar_array", args: {arg1: "field1", arg2: "field2"})
+		field_func_call_fields: [Int] @function_call(references_name: "func_scalar_array", args: {arg1: "field2", arg2: "field2"})
 		func_table_object(arg2:Int): [test_object] @function_call(references_name: "func_table_object", args: {arg1: "field2"})
 	}
 `
@@ -94,53 +96,58 @@ const testPGSchemaData = `
 		nested_field: test_object
 		nested_array_field: [nested_object2]
 		field_func_call(arg1: String, arg2:Int): String @function_call(references_name: "func_scalar_string")
-		field_func_call_fields: [Int] @function_call(references_name: "func_scalar_array", args: {arg1: "field1", arg2: "field2"})
+		field_func_call_fields: [Int] @function_call(references_name: "func_scalar_array", args: {arg1: "field2", arg2: "field2"})
 		func_table_object(arg2:Int): [test_object] @function_call(references_name: "func_table_object", args: {arg1: "field2"})
 	}
 `
 
 var (
-	testCats    *catalogs.Service
-	testService *Service
+	testSchemaService *schema.Service
+	testService       *Service
 )
 
 func TestMain(m *testing.M) {
-	cs := catalogs.New(nil)
-	c, err := catalogs.NewCatalog(context.Background(), "test", "", &engines.DuckDB{}, sources.NewStringSource(testSchemaData), false, false)
+	provider, err := static.New()
+	if err != nil {
+		fmt.Printf("Failed to init static provider: %v", err)
+		os.Exit(1)
+	}
+	ss := schema.NewService(provider)
+
+	cat, err := sources.NewCatalog(context.Background(),
+		types.DataSource{Name: "test"},
+		&engines.DuckDB{},
+		sources.NewStringSource(testSchemaData),
+		false,
+	)
 	if err != nil {
 		fmt.Printf("Failed to create catalog: %v", err)
 		os.Exit(1)
 	}
-	err = cs.AddCatalog(context.Background(), "test", c)
+	err = ss.AddCatalog(context.Background(), "test", &engines.DuckDB{}, cat)
 	if err != nil {
-		fmt.Printf("Failed to create catalog: %v", err)
-		os.Exit(1)
-	}
-	c, err = catalogs.NewCatalog(context.Background(), "pg_test", "pg", &engines.Postgres{}, sources.NewStringSource(testPGSchemaData), false, false)
-	if err != nil {
-		fmt.Printf("Failed to create catalog: %v", err)
-		os.Exit(1)
-	}
-	err = cs.AddCatalog(context.Background(), "pg_test", c)
-	if err != nil {
-		fmt.Printf("Failed to create catalog: %v", err)
+		fmt.Printf("Failed to add catalog: %v", err)
 		os.Exit(1)
 	}
 
-	testCats = cs
-	testService = New(testCatalog{
-		"test":    &engines.DuckDB{},
-		"pg_test": &engines.Postgres{},
-	}, nil)
+	pgCat, err := sources.NewCatalog(context.Background(),
+		types.DataSource{Name: "pg_test", Prefix: "pg"},
+		&engines.Postgres{},
+		sources.NewStringSource(testPGSchemaData),
+		false,
+	)
+	if err != nil {
+		fmt.Printf("Failed to create catalog: %v", err)
+		os.Exit(1)
+	}
+	err = ss.AddCatalog(context.Background(), "pg_test", &engines.Postgres{}, pgCat)
+	if err != nil {
+		fmt.Printf("Failed to add catalog: %v", err)
+		os.Exit(1)
+	}
+
+	testSchemaService = ss
+	testService = New(ss, nil)
 
 	os.Exit(m.Run())
-}
-
-type testCatalog map[string]engines.Engine
-
-func (t testCatalog) Engine(name string) (engines.Engine, error) {
-	if e, ok := t[name]; ok {
-		return e, nil
-	}
-	return nil, fmt.Errorf("engine not found")
 }

@@ -11,7 +11,6 @@ import (
 	adminui "github.com/hugr-lab/query-engine/pkg/admin-ui"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
-	"github.com/hugr-lab/query-engine/pkg/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
 	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -22,7 +21,6 @@ import (
 	permissions "github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/pkg/schema"
-	schemacatalogs "github.com/hugr-lab/query-engine/pkg/schema/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/schema/static"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
@@ -61,9 +59,6 @@ type Config struct {
 	Auth   *auth.Config
 	Cache  cache.Config
 
-	// UseNewCompiler selects the new rule-based compiler and catalog service
-	// instead of the legacy catalogs.Service. Default false (legacy).
-	UseNewCompiler bool
 }
 
 type Info struct {
@@ -86,16 +81,12 @@ func New(config Config) (*Service, error) {
 		return nil, fmt.Errorf("init system schema: %w", err)
 	}
 	ss := schema.NewService(provider)
-	var cat schema.Manager = ss
-	if !config.UseNewCompiler {
-		cat = schemacatalogs.NewAdapter(catalogs.New(ss))
-	}
 
 	return &Service{
 		config:  config,
 		router:  http.NewServeMux(),
 		schema:  ss,
-		catalog: cat,
+		catalog: ss,
 		cache:   cache.New(config.Cache),
 		s3:      storage.New(),
 	}, nil

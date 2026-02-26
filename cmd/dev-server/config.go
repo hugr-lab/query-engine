@@ -17,8 +17,6 @@ type Config struct {
 	HttpProfiling      bool
 	AllowParallel      bool
 	MaxParallelQueries int
-	UseNewCompiler     bool
-
 	MaxDepthInTypes int
 
 	DB db.Config
@@ -44,7 +42,6 @@ func initEnvs() {
 	viper.SetDefault("ALLOW_PARALLEL", true)
 	viper.SetDefault("MAX_PARALLEL_QUERIES", 0)
 	viper.SetDefault("MAX_DEPTH", 0)
-	viper.SetDefault("USE_NEW_COMPILER", false)
 	viper.SetDefault("DB_PATH", "")
 	viper.SetDefault("DB_MAX_OPEN_CONNS", 0)
 	viper.SetDefault("DB_MAX_IDLE_CONNS", 0)
@@ -62,7 +59,6 @@ func loadConfig() Config {
 		HttpProfiling:      viper.GetBool("HTTP_PROFILING"),
 		AllowParallel:      viper.GetBool("ALLOW_PARALLEL"),
 		MaxParallelQueries: viper.GetInt("MAX_PARALLEL_QUERIES"),
-		UseNewCompiler:     viper.GetBool("USE_NEW_COMPILER"),
 		MaxDepthInTypes:    viper.GetInt("MAX_DEPTH"),
 		DB: db.Config{
 			Path:         viper.GetString("DB_PATH"),
