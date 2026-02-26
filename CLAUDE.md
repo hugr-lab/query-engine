@@ -14,6 +14,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST parsing/validation), `pkg/schema/compiler/base` (system SDL sources), `pkg/schema/types` (scalar registry) (007-static-provider-init)
 - Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag), `pkg/types` (runtime parsing) (008-sdl-migration)
 - N/A (in-memory schema AST manipulation) (008-sdl-migration)
+- Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag for tests), `crypto/sha256` (version hashing) (001-sources-cleanup-docs)
+- N/A (in-memory schema compilation) (001-sources-cleanup-docs)
 
 - Go 1.25 + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag), `apache/arrow-go/v18` (001-compiler-generators-decouple)
 
@@ -33,9 +35,9 @@ tests/
 Go 1.25: Follow standard conventions
 
 ## Recent Changes
+- 001-sources-cleanup-docs: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag for tests), `crypto/sha256` (version hashing)
 - 008-sdl-migration: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag), `pkg/types` (runtime parsing)
 - 007-static-provider-init: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST parsing/validation), `pkg/schema/compiler/base` (system SDL sources), `pkg/schema/types` (scalar registry)
-- 006-docker-e2e-testing: Added Go 1.25 (query engine), Bash (test runner scripts) + Docker, Docker Compose, curl, jq, duckdb CLI
 
 
 <!-- MANUAL ADDITIONS START -->

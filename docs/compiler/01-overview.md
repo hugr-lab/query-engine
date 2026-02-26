@@ -7,14 +7,18 @@ The query-engine compiler transforms user-provided GraphQL SDL into a fully popu
 ## Data Flow
 
 ```
-Source SDL → parser.ParseSchema()
-  → DefinitionsSource (source definitions)
+Catalog source (file / URI / DB / string / merged)
+  → catalog.Catalog (definitions, extensions, compile options, version)
   → Compiler.Compile(ctx, provider, source, opts)
     → [VALIDATE → PREPARE → GENERATE → ASSEMBLE → FINALIZE]
   → CompiledCatalog (definitions + extensions)
   → Provider.Update(ctx, compiled)
   → Schema (ast.Schema)
 ```
+
+Each source implements `catalog.Catalog` directly, providing definitions, extensions,
+compile options, and a version identifier. The version enables future compilation caching —
+file-based sources use content hashes, dynamic sources use timestamps.
 
 ## Phases
 
@@ -82,6 +86,25 @@ The `Options` struct controls compilation behavior:
 | `Capabilities` | `*EngineCapabilities` | Engine feature support flags |
 
 ## Key Interfaces
+
+### Catalog
+
+Source of schema definitions for compilation. Each catalog source (file, URI, DB, string, HTTP)
+implements this interface directly using `static.NewDocumentProvider` internally.
+
+```go
+type Catalog interface {
+    compiler.Catalog           // DefinitionsSource + CompileOptions()
+    Name() string
+    Description() string
+    Version(ctx context.Context) (string, error)
+}
+```
+
+Version strategies:
+- **File-based** (FileSource, StringSource): SHA-256 content hash — changes only when source changes
+- **Dynamic** (URISource, DB, HTTP): Timestamp — always triggers recompilation
+- **Merged**: SHA-256 of all sub-catalog versions
 
 ### CompilationContext
 
