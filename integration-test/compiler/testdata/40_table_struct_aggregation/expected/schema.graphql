@@ -622,7 +622,46 @@ enum OrderDirection @system {
   DESC
 }
 type Product @table(name: "products") @references(name: "prod_cat", references_name: "Category", source_fields: ["category_id"], references_fields: ["id"], query: "category", references_query: "products", is_m2m: false, m2m_name: "", description: "", references_description: "") @catalog(name: "store", engine: "duckdb") @filter_input(name: "Product_filter") @data_input(name: "Product_mut_input_data") @data_input(name: "Product_mut_data") @query(name: "Product", type: SELECT) @query(name: "Product_by_pk", type: SELECT_ONE) @mutation(name: "insert_Product", type: INSERT, data_input: "Product_mut_input_data") @mutation(name: "update_Product", type: UPDATE, data_input: "Product_mut_data") @mutation(name: "delete_Product", type: DELETE, data_input: "") @query(name: "Product_aggregation", type: AGGREGATE) @query(name: "Product_bucket_aggregation", type: AGGREGATE_BUCKET) @filter_list_input(name: "Product_list_filter") {
+  """
+  Extract part of Timestamp field created_at
+  """
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(name: "Extract", base_field: "created_at", base_type: Timestamp) @sql(exp: "[created_at]")
   _join(fields: [String!]!): _join
+  """
+  Calculate measurement of geometry field location
+  """
+  _location_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): Float @extra_field(name: "Measurement", base_field: "location", base_type: Geometry) @sql(exp: "[location]")
+  _spatial(field: String!, type: GeometrySpatialQueryType!, buffer: Int): _spatial
   category(
     """
     Apply inner join to reference record
@@ -630,7 +669,50 @@ type Product @table(name: "products") @references(name: "prod_cat", references_n
     inner: Boolean
   ): Category @references_query(references_name: "Category", name: "prod_cat", is_m2m: false, m2m_name: "") @catalog(name: "store", engine: "duckdb")
   category_id: Int
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): Timestamp
+  data(
+    """
+    Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    """
+    struct: JSON
+  ): JSON
   id: Int! @pk
+  location(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): Geometry
   metadata: Metadata
   name: String!
   nearby_categories: [Category] @join(references_name: "Category", source_fields: ["category_id"], references_fields: ["id"]) @catalog(name: "store", engine: "duckdb")
@@ -648,7 +730,10 @@ input Product_filter @filter_input(name: "Product") @catalog(name: "store", engi
   _or: [Product_filter]
   category: Category_filter @references_query(references_name: "Category", name: "prod_cat", is_m2m: false, m2m_name: "") @catalog(name: "store", engine: "duckdb")
   category_id: IntFilter
+  created_at: TimestampFilter
+  data: JSONFilter
   id: IntFilter @pk
+  location: GeometryFilter
   metadata: Metadata_filter
   name: StringFilter
   price: FloatFilter
@@ -662,7 +747,10 @@ input Product_list_filter @filter_list_input(name: "Product") @catalog(name: "st
 }
 input Product_mut_data @data_input(name: "Product") @catalog(name: "store", engine: "duckdb") {
   category_id: Int
+  created_at: Timestamp
+  data: JSON
   id: Int
+  location: Geometry
   metadata: Metadata_mut_data
   name: String
   price: Float
@@ -672,7 +760,10 @@ input Product_mut_data @data_input(name: "Product") @catalog(name: "store", engi
 input Product_mut_input_data @data_input(name: "Product") @catalog(name: "store", engine: "duckdb") {
   category: Category_mut_input_data
   category_id: Int
+  created_at: Timestamp
+  data: JSON
   id: Int
+  location: Geometry
   metadata: Metadata_mut_input_data
   name: String
   price: Float
@@ -1309,8 +1400,41 @@ type _Metadata_aggregation @aggregation(name: "Metadata", is_bucket: false, leve
   warranty_years: IntAggregation @field_aggregation(name: "warranty_years")
 }
 type _Product_aggregation @aggregation(name: "Product", is_bucket: false, level: 1) @catalog(name: "store", engine: "duckdb") {
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_created_at_part")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _location_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): FloatAggregation @field_aggregation(name: "_location_measurement")
   _rows_count: BigInt
+  _spatial(field: String!, type: GeometrySpatialQueryType!, buffer: Int): _spatial_aggregation @field_aggregation(name: "_spatial")
   category(
     """
     Apply inner join to reference record
@@ -1318,7 +1442,50 @@ type _Product_aggregation @aggregation(name: "Product", is_bucket: false, level:
     inner: Boolean
   ): _Category_aggregation @field_aggregation(name: "category")
   category_id: IntAggregation @field_aggregation(name: "category_id")
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampAggregation @field_aggregation(name: "created_at")
+  data(
+    """
+    Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    """
+    struct: JSON
+  ): JSONAggregation @field_aggregation(name: "data")
   id: IntAggregation @field_aggregation(name: "id")
+  location(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): GeometryAggregation @field_aggregation(name: "location")
   metadata: _Metadata_aggregation @field_aggregation(name: "metadata")
   name: StringAggregation @field_aggregation(name: "name")
   price: FloatAggregation @field_aggregation(name: "price")
@@ -1353,11 +1520,88 @@ type _Product_aggregation_bucket @aggregation(name: "Product", is_bucket: true, 
   key: Product
 }
 type _Product_aggregation_sub_aggregation @aggregation(name: "_Product_aggregation", is_bucket: false, level: 2) @catalog(name: "store", engine: "duckdb") {
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_created_at_part")
+  _location_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): FloatSubAggregation @field_aggregation(name: "_location_measurement")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   category_id: IntSubAggregation @field_aggregation(name: "category_id")
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampSubAggregation @field_aggregation(name: "created_at")
+  data(
+    """
+    Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    """
+    struct: JSON
+  ): JSONSubAggregation @field_aggregation(name: "data")
   id: IntSubAggregation @field_aggregation(name: "id")
+  location(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): GeometrySubAggregation @field_aggregation(name: "location")
+  metadata: _Metadata_aggregation @field_aggregation(name: "metadata")
   name: StringSubAggregation @field_aggregation(name: "name")
   price: FloatSubAggregation @field_aggregation(name: "price")
+  specs: _Specs_aggregation @field_aggregation(name: "specs")
   tags: StringSubAggregation @field_aggregation(name: "tags")
 }
 type _Product_aggregation_sub_aggregation_sub_aggregation @aggregation(name: "_Product_aggregation_sub_aggregation", is_bucket: false, level: 3) @catalog(name: "store", engine: "duckdb") {
@@ -1413,7 +1657,206 @@ type _distribution_by_bucket_aggregation @system {
   ratio: FloatAggregation
   value: FloatAggregation
 }
-type _h3_data_query @system
+type _h3_data_query @system {
+  Product(field: String!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Reproject geometry from SRID before aggregation
+    """
+    transform_from: Int
+
+    """
+    Buffer distance in meters to apply to the geometry before aggregation
+    """
+    buffer: Float
+
+    """
+    Divide the aggregated values by a count of split h3 cells
+    """
+    divide_values: Boolean
+
+    """
+    Simplify the geometry before cast to h3 cells
+    """
+    simplify: Boolean = true
+  ): [Product] @query(name: "Product", type: SELECT) @catalog(name: "store", engine: "duckdb")
+  Product_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Reproject geometry from SRID before aggregation
+    """
+    transform_from: Int
+
+    """
+    Buffer distance in meters to apply to the geometry before aggregation
+    """
+    buffer: Float
+
+    """
+    Divide the aggregated values by a count of split h3 cells
+    """
+    divide_values: Boolean
+
+    """
+    Simplify the geometry before cast to h3 cells
+    """
+    simplify: Boolean = true
+  ): _Product_aggregation @aggregation_query(is_bucket: false, name: "Product") @catalog(name: "store", engine: "duckdb")
+  Product_bucket_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Reproject geometry from SRID before aggregation
+    """
+    transform_from: Int
+
+    """
+    Buffer distance in meters to apply to the geometry before aggregation
+    """
+    buffer: Float
+
+    """
+    Divide the aggregated values by a count of split h3 cells
+    """
+    divide_values: Boolean
+
+    """
+    Simplify the geometry before cast to h3 cells
+    """
+    simplify: Boolean = true
+  ): [_Product_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Product") @catalog(name: "store", engine: "duckdb")
+}
 type _h3_query @system {
   """
   The H3 cell
@@ -1822,6 +2265,182 @@ type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
     nested_offset: Int
   ): _Product_aggregation @aggregation_query(is_bucket: false, name: "Product") @catalog(name: "store", engine: "duckdb") @field_aggregation(name: "Product")
 }
-type _spatial @system
-type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)
+type _spatial @system {
+  Product(field: String!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Product] @query(name: "Product", type: SELECT) @catalog(name: "store", engine: "duckdb")
+  Product_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Product_aggregation @aggregation_query(is_bucket: false, name: "Product") @catalog(name: "store", engine: "duckdb")
+  Product_bucket_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Product_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Product") @catalog(name: "store", engine: "duckdb")
+}
+type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1) {
+  Product(field: String!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Product_aggregation @aggregation_query(is_bucket: false, name: "Product") @catalog(name: "store", engine: "duckdb") @field_aggregation(name: "Product")
+}
 scalar any

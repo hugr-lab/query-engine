@@ -30,6 +30,9 @@ type Product @table(name: "products")
     specs: Specs
     metadata: Metadata
     tags: [String]
+    created_at: Timestamp
+    location: Geometry
+    data: JSON
 }
 
 extend type Function {

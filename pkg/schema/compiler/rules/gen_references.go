@@ -196,7 +196,7 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		} else {
 			forwardType = &ast.Type{NamedType: refName}
 			forwardArgs = ast.ArgumentDefinitionList{
-				{Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos},
+				{Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", pos), Position: pos},
 			}
 		}
 
@@ -703,7 +703,7 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 			Name: refFieldName,
 			Type: ast.NamedType(targetAggName, pos),
 			Arguments: ast.ArgumentDefinitionList{
-				{Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos},
+				{Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", pos), Position: pos},
 			},
 			Directives: ast.DirectiveList{
 				fieldAggregationDirective(refFieldName, pos),
@@ -784,32 +784,40 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 
 	// At max depth (sub-sub-aggregation), only _rows_count is included
 	if depth < maxAggDepth {
-		// Add scalar fields from base aggregation, mapped to SubAggregation types
+		// Add scalar and structural fields from base aggregation
 		for _, f := range baseAgg.Fields {
 			if f.Name == "_rows_count" {
 				continue
 			}
 			subTypeName := scalarSubAggTypeName(f.Type.Name())
-			if subTypeName == "" {
-				continue // skip non-scalar fields (references, etc.)
+			if subTypeName != "" {
+				subField := &ast.FieldDefinition{
+					Name:     f.Name,
+					Type:     ast.NamedType(subTypeName, pos),
+					Position: pos,
+				}
+				if len(f.Directives) > 0 {
+					subField.Directives = make(ast.DirectiveList, len(f.Directives))
+					copy(subField.Directives, f.Directives)
+				}
+				if len(f.Arguments) > 0 {
+					subField.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
+					copy(subField.Arguments, f.Arguments)
+				}
+				fields = append(fields, subField)
+			} else if isStructuralAggField(ctx, f) {
+				// Structural Object aggregation fields keep the same type in sub-aggregation
+				subField := &ast.FieldDefinition{
+					Name:     f.Name,
+					Type:     ast.NamedType(f.Type.Name(), pos),
+					Position: pos,
+				}
+				if len(f.Directives) > 0 {
+					subField.Directives = make(ast.DirectiveList, len(f.Directives))
+					copy(subField.Directives, f.Directives)
+				}
+				fields = append(fields, subField)
 			}
-
-			subField := &ast.FieldDefinition{
-				Name:     f.Name,
-				Type:     ast.NamedType(subTypeName, pos),
-				Position: pos,
-			}
-			// Copy directives
-			if len(f.Directives) > 0 {
-				subField.Directives = make(ast.DirectiveList, len(f.Directives))
-				copy(subField.Directives, f.Directives)
-			}
-			// Copy arguments
-			if len(f.Arguments) > 0 {
-				subField.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
-				copy(subField.Arguments, f.Arguments)
-			}
-			fields = append(fields, subField)
 		}
 
 		// Add extra fields (e.g., _founded_part for Date, _booking_time_part for Timestamp)
@@ -920,23 +928,34 @@ func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, su
 				continue
 			}
 			subTypeName := scalarSubAggTypeName(f.Type.Name())
-			if subTypeName == "" {
-				continue
+			if subTypeName != "" {
+				subField := &ast.FieldDefinition{
+					Name:     f.Name,
+					Type:     ast.NamedType(subTypeName, pos),
+					Position: pos,
+				}
+				if len(f.Directives) > 0 {
+					subField.Directives = make(ast.DirectiveList, len(f.Directives))
+					copy(subField.Directives, f.Directives)
+				}
+				if len(f.Arguments) > 0 {
+					subField.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
+					copy(subField.Arguments, f.Arguments)
+				}
+				fields = append(fields, subField)
+			} else if isStructuralAggField(ctx, f) {
+				// Structural Object aggregation fields keep the same type in sub-aggregation
+				subField := &ast.FieldDefinition{
+					Name:     f.Name,
+					Type:     ast.NamedType(f.Type.Name(), pos),
+					Position: pos,
+				}
+				if len(f.Directives) > 0 {
+					subField.Directives = make(ast.DirectiveList, len(f.Directives))
+					copy(subField.Directives, f.Directives)
+				}
+				fields = append(fields, subField)
 			}
-			subField := &ast.FieldDefinition{
-				Name:     f.Name,
-				Type:     ast.NamedType(subTypeName, pos),
-				Position: pos,
-			}
-			if len(f.Directives) > 0 {
-				subField.Directives = make(ast.DirectiveList, len(f.Directives))
-				copy(subField.Directives, f.Directives)
-			}
-			if len(f.Arguments) > 0 {
-				subField.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
-				copy(subField.Arguments, f.Arguments)
-			}
-			fields = append(fields, subField)
 		}
 		// No extra fields from ExtraFieldProvider — intentionally omitted
 	}
@@ -965,6 +984,29 @@ func scalarSubAggTypeName(aggTypeName string) string {
 	return types.SubAggregationTypeName(aggTypeName)
 }
 
+// isStructuralAggField returns true if the field on an aggregation type represents
+// a structural Object aggregation (e.g., specs: _Specs_aggregation), as opposed to
+// a scalar aggregation, reference aggregation, or join aggregation.
+func isStructuralAggField(ctx base.CompilationContext, f *ast.FieldDefinition) bool {
+	typeDef := ctx.LookupType(f.Type.Name())
+	if typeDef == nil || typeDef.Kind != ast.Object {
+		return false
+	}
+	aggDir := typeDef.Directives.ForName("aggregation")
+	if aggDir == nil {
+		return false
+	}
+	nameArg := aggDir.Arguments.ForName("name")
+	if nameArg == nil {
+		return false
+	}
+	origDef := lookupObjectDef(ctx, nameArg.Value.Raw)
+	if origDef == nil {
+		return false
+	}
+	return origDef.Kind == ast.Object && !isTableOrView(origDef)
+}
+
 
 
 // cloneArgDefs creates a shallow copy of an argument definition list.
@@ -982,14 +1024,14 @@ func cloneArgDefs(args ast.ArgumentDefinitionList, _ *ast.Position) ast.Argument
 // filter + order_by + distinct_on + inner + nested_*.
 func aggRefArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
-		{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-		{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
-		{Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos,
+		{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
+		{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+		{Name: "inner", Description: base.DescInnerJoin, Type: ast.NamedType("Boolean", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue}},
-		{Name: "nested_order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "nested_limit", Type: ast.NamedType("Int", pos), Position: pos},
-		{Name: "nested_offset", Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos},
 	}
 }
 
@@ -997,18 +1039,18 @@ func aggRefArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList
 // Includes filter + order_by + limit/offset + distinct_on + inner + nested_*.
 func aggSubRefArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
-		{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-		{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos,
+		{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
+		{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "limit", Description: base.DescLimit, Type: ast.NamedType("Int", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue}},
-		{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos,
+		{Name: "offset", Description: base.DescOffset, Type: ast.NamedType("Int", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue}},
-		{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
-		{Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos,
+		{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+		{Name: "inner", Description: base.DescInnerJoin, Type: ast.NamedType("Boolean", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue}},
-		{Name: "nested_order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "nested_limit", Type: ast.NamedType("Int", pos), Position: pos},
-		{Name: "nested_offset", Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos},
 	}
 }
 
