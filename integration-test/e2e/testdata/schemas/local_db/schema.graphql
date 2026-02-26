@@ -19,7 +19,21 @@ type event_tags @table(name: "event_tags") {
     tag: String! @pk
 }
 
+type ItemSpecs {
+    cpu: String
+    ram_gb: Int
+    storage_gb: Int
+}
+
+type items @table(name: "items") {
+    id: BigInt! @pk
+    name: String
+    specs: ItemSpecs
+    tags: JSON
+    created_at: Timestamp
+}
+
 extend type Function {
-    generate_series(start: Int!, stop: Int!, step: Int): Int
+    generate_series(start: Int!, stop: Int!, step: Int = 1): [Int]
         @function(name: "generate_series")
 }

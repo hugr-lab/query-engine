@@ -91,7 +91,7 @@ func (s *dateScalar) MeasurementAggregationTypeName() string {
 
 func (s *dateScalar) FieldArguments() ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
-		{Name: "bucket", Type: ast.NamedType("TimeBucket", nil)},
+		{Name: "bucket", Description: "Truncate to the specified part of the date. Possible values: 'year', 'month', 'day'.", Type: ast.NamedType("TimeBucket", nil)},
 	}
 }
 

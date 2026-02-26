@@ -1,0 +1,21 @@
+{
+  pg_store {
+    products_bucket_aggregation {
+      key {
+        category_id
+      }
+      aggregations {
+        _rows_count
+        price {
+          sum
+          avg
+          min
+          max
+        }
+        quantity {
+          sum
+        }
+      }
+    }
+  }
+}

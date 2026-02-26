@@ -88,11 +88,36 @@ type CacheEntry @table(name: "cache_entries") @catalog(name: "cache", engine: "d
   """
   Extract part of Timestamp field expires_at
   """
-  _expires_at_part(extract: TimeExtract!, extract_divide: Int): BigInt @extra_field(name: "Extract", base_field: "expires_at", base_type: Timestamp) @sql(exp: "[expires_at]")
+  _expires_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(name: "Extract", base_field: "expires_at", base_type: Timestamp) @sql(exp: "[expires_at]")
   _join(fields: [String!]!): _join
-  expires_at(bucket: TimeBucket, bucket_interval: Interval): Timestamp
+  expires_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): Timestamp
   key: String! @pk
-  value(struct: JSON): JSON
+  value(
+    """
+    Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    """
+    struct: JSON
+  ): JSON
 }
 """
 Filter for CacheEntry objects
@@ -487,25 +512,175 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  CacheEntry(filter: CacheEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [CacheEntry] @query(name: "CacheEntry", type: SELECT) @catalog(name: "cache", engine: "duckdb")
+  CacheEntry(
+    """
+    Filter
+    """
+    filter: CacheEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [CacheEntry] @query(name: "CacheEntry", type: SELECT) @catalog(name: "cache", engine: "duckdb")
   """
   The aggregation for CacheEntry
   """
-  CacheEntry_aggregation(filter: CacheEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _CacheEntry_aggregation @aggregation_query(name: "CacheEntry", is_bucket: false) @catalog(name: "cache", engine: "duckdb")
+  CacheEntry_aggregation(
+    """
+    Filter
+    """
+    filter: CacheEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _CacheEntry_aggregation @aggregation_query(name: "CacheEntry", is_bucket: false) @catalog(name: "cache", engine: "duckdb")
   """
   The aggregation for CacheEntry
   """
-  CacheEntry_bucket_aggregation(filter: CacheEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_CacheEntry_aggregation_bucket] @aggregation_query(name: "CacheEntry", is_bucket: true) @catalog(name: "cache", engine: "duckdb")
+  CacheEntry_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: CacheEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_CacheEntry_aggregation_bucket] @aggregation_query(name: "CacheEntry", is_bucket: true) @catalog(name: "cache", engine: "duckdb")
   CacheEntry_by_pk(key: String!): CacheEntry @query(name: "CacheEntry", type: SELECT_ONE) @catalog(name: "cache", engine: "duckdb")
-  DataSourceInfo(filter: DataSourceInfo_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [DataSourceInfo] @query(name: "DataSourceInfo", type: SELECT) @catalog(name: "meta", engine: "duckdb")
+  DataSourceInfo(
+    """
+    Filter
+    """
+    filter: DataSourceInfo_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [DataSourceInfo] @query(name: "DataSourceInfo", type: SELECT) @catalog(name: "meta", engine: "duckdb")
   """
   The aggregation for DataSourceInfo
   """
-  DataSourceInfo_aggregation(filter: DataSourceInfo_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _DataSourceInfo_aggregation @aggregation_query(name: "DataSourceInfo", is_bucket: false) @catalog(name: "meta", engine: "duckdb")
+  DataSourceInfo_aggregation(
+    """
+    Filter
+    """
+    filter: DataSourceInfo_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _DataSourceInfo_aggregation @aggregation_query(name: "DataSourceInfo", is_bucket: false) @catalog(name: "meta", engine: "duckdb")
   """
   The aggregation for DataSourceInfo
   """
-  DataSourceInfo_bucket_aggregation(filter: DataSourceInfo_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_DataSourceInfo_aggregation_bucket] @aggregation_query(name: "DataSourceInfo", is_bucket: true) @catalog(name: "meta", engine: "duckdb")
+  DataSourceInfo_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: DataSourceInfo_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_DataSourceInfo_aggregation_bucket] @aggregation_query(name: "DataSourceInfo", is_bucket: true) @catalog(name: "meta", engine: "duckdb")
   DataSourceInfo_by_pk(name: String!): DataSourceInfo @query(name: "DataSourceInfo", type: SELECT_ONE) @catalog(name: "meta", engine: "duckdb")
   function: Function @system
   """
@@ -737,12 +912,37 @@ input VectorSearchInput @system {
   vector: Vector!
 }
 type _CacheEntry_aggregation @aggregation(name: "CacheEntry", is_bucket: false, level: 1) @catalog(name: "cache", engine: "duckdb") {
-  _expires_at_part(extract: TimeExtract!, extract_divide: Int): BigIntAggregation @field_aggregation(name: "_expires_at_part")
+  _expires_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_expires_at_part")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
-  expires_at(bucket: TimeBucket, bucket_interval: Interval): TimestampAggregation @field_aggregation(name: "expires_at")
+  expires_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampAggregation @field_aggregation(name: "expires_at")
   key: StringAggregation @field_aggregation(name: "key")
-  value(struct: JSON): JSONAggregation @field_aggregation(name: "value")
+  value(
+    """
+    Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    """
+    struct: JSON
+  ): JSONAggregation @field_aggregation(name: "value")
 }
 """
 Bucket aggregation for CacheEntry
@@ -751,15 +951,53 @@ type _CacheEntry_aggregation_bucket @aggregation(name: "CacheEntry", is_bucket: 
   """
   The aggregations of the bucket
   """
-  aggregations(filter: CacheEntry_filter, order_by: [OrderByField]): _CacheEntry_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: CacheEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _CacheEntry_aggregation
+  """
+  The key of the bucket
+  """
   key: CacheEntry
 }
 type _CacheEntry_aggregation_sub_aggregation @aggregation(name: "_CacheEntry_aggregation", is_bucket: false, level: 2) @catalog(name: "cache", engine: "duckdb") {
-  _expires_at_part(extract: TimeExtract!, extract_divide: Int): BigIntSubAggregation @field_aggregation(name: "_expires_at_part")
+  _expires_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_expires_at_part")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
-  expires_at(bucket: TimeBucket, bucket_interval: Interval): TimestampSubAggregation @field_aggregation(name: "expires_at")
+  expires_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampSubAggregation @field_aggregation(name: "expires_at")
   key: StringSubAggregation @field_aggregation(name: "key")
-  value(struct: JSON): JSONSubAggregation @field_aggregation(name: "value")
+  value(
+    """
+    Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    """
+    struct: JSON
+  ): JSONSubAggregation @field_aggregation(name: "value")
 }
 type _DataSourceInfo_aggregation @aggregation(name: "DataSourceInfo", is_bucket: false, level: 1) @catalog(name: "meta", engine: "duckdb") {
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
@@ -775,7 +1013,20 @@ type _DataSourceInfo_aggregation_bucket @aggregation(name: "DataSourceInfo", is_
   """
   The aggregations of the bucket
   """
-  aggregations(filter: DataSourceInfo_filter, order_by: [OrderByField]): _DataSourceInfo_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: DataSourceInfo_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _DataSourceInfo_aggregation
+  """
+  The key of the bucket
+  """
   key: DataSourceInfo
 }
 type _DataSourceInfo_aggregation_sub_aggregation @aggregation(name: "_DataSourceInfo_aggregation", is_bucket: false, level: 2) @catalog(name: "meta", engine: "duckdb") {
@@ -886,16 +1137,356 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  CacheEntry(fields: [String!]!, filter: CacheEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [CacheEntry] @query(name: "CacheEntry", type: SELECT) @catalog(name: "cache", engine: "duckdb")
-  CacheEntry_aggregation(fields: [String!]!, filter: CacheEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _CacheEntry_aggregation @aggregation_query(is_bucket: false, name: "CacheEntry") @catalog(name: "cache", engine: "duckdb")
-  CacheEntry_bucket_aggregation(fields: [String!]!, filter: CacheEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_CacheEntry_aggregation_bucket] @aggregation_query(is_bucket: true, name: "CacheEntry") @catalog(name: "cache", engine: "duckdb")
-  DataSourceInfo(fields: [String!]!, filter: DataSourceInfo_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [DataSourceInfo] @query(name: "DataSourceInfo", type: SELECT) @catalog(name: "meta", engine: "duckdb")
-  DataSourceInfo_aggregation(fields: [String!]!, filter: DataSourceInfo_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _DataSourceInfo_aggregation @aggregation_query(is_bucket: false, name: "DataSourceInfo") @catalog(name: "meta", engine: "duckdb")
-  DataSourceInfo_bucket_aggregation(fields: [String!]!, filter: DataSourceInfo_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_DataSourceInfo_aggregation_bucket] @aggregation_query(is_bucket: true, name: "DataSourceInfo") @catalog(name: "meta", engine: "duckdb")
+  CacheEntry(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: CacheEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [CacheEntry] @query(name: "CacheEntry", type: SELECT) @catalog(name: "cache", engine: "duckdb")
+  CacheEntry_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: CacheEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _CacheEntry_aggregation @aggregation_query(is_bucket: false, name: "CacheEntry") @catalog(name: "cache", engine: "duckdb")
+  CacheEntry_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: CacheEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_CacheEntry_aggregation_bucket] @aggregation_query(is_bucket: true, name: "CacheEntry") @catalog(name: "cache", engine: "duckdb")
+  DataSourceInfo(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: DataSourceInfo_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [DataSourceInfo] @query(name: "DataSourceInfo", type: SELECT) @catalog(name: "meta", engine: "duckdb")
+  DataSourceInfo_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: DataSourceInfo_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _DataSourceInfo_aggregation @aggregation_query(is_bucket: false, name: "DataSourceInfo") @catalog(name: "meta", engine: "duckdb")
+  DataSourceInfo_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: DataSourceInfo_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_DataSourceInfo_aggregation_bucket] @aggregation_query(is_bucket: true, name: "DataSourceInfo") @catalog(name: "meta", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  CacheEntry(fields: [String!]!, filter: CacheEntry_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _CacheEntry_aggregation @aggregation_query(is_bucket: false, name: "CacheEntry") @catalog(name: "cache", engine: "duckdb") @field_aggregation(name: "CacheEntry")
-  DataSourceInfo(fields: [String!]!, filter: DataSourceInfo_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _DataSourceInfo_aggregation @aggregation_query(is_bucket: false, name: "DataSourceInfo") @catalog(name: "meta", engine: "duckdb") @field_aggregation(name: "DataSourceInfo")
+  CacheEntry(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: CacheEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _CacheEntry_aggregation @aggregation_query(is_bucket: false, name: "CacheEntry") @catalog(name: "cache", engine: "duckdb") @field_aggregation(name: "CacheEntry")
+  DataSourceInfo(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: DataSourceInfo_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _DataSourceInfo_aggregation @aggregation_query(is_bucket: false, name: "DataSourceInfo") @catalog(name: "meta", engine: "duckdb") @field_aggregation(name: "DataSourceInfo")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

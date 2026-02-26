@@ -77,3 +77,40 @@ input price_range_args {
     min_price: Float!
     max_price: Float!
 }
+
+type ProductSpecs {
+    cpu: String
+    ram_gb: Int
+    storage_gb: Int
+    dpi: Int
+    buttons: Int
+    wireless: Boolean
+}
+
+type ProductMetadata {
+    warranty_years: Int
+    origin: String
+}
+
+type product_details @table(name: "product_details") {
+    product_id: Int! @pk @field_references(
+        field: "id"
+        references_name: "products"
+        query: "product"
+        references_query: "details"
+    )
+    specs: ProductSpecs
+    metadata: ProductMetadata
+}
+
+type price_ranges @table(name: "price_ranges") {
+    id: Int! @pk @default(sequence: "price_ranges_id_seq")
+    product_id: Int @field_references(
+        field: "id"
+        references_name: "products"
+        query: "product"
+        references_query: "price_ranges"
+    )
+    valid_price: IntRange
+    valid_period: TimestampRange
+}

@@ -398,11 +398,31 @@ type LogEntry @table(name: "log_entries") @catalog(name: "logs", engine: "duckdb
   """
   Extract part of Timestamp field timestamp
   """
-  _timestamp_part(extract: TimeExtract!, extract_divide: Int): BigInt @extra_field(name: "Extract", base_field: "timestamp", base_type: Timestamp) @sql(exp: "[timestamp]")
+  _timestamp_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(name: "Extract", base_field: "timestamp", base_type: Timestamp) @sql(exp: "[timestamp]")
   id: BigInt! @pk
   level: String!
   message: String!
-  timestamp(bucket: TimeBucket, bucket_interval: Interval): Timestamp
+  timestamp(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): Timestamp
 }
 """
 Filter for LogEntry objects
@@ -446,15 +466,90 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  LogEntry(filter: LogEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [LogEntry] @query(name: "LogEntry", type: SELECT) @catalog(name: "logs", engine: "duckdb")
+  LogEntry(
+    """
+    Filter
+    """
+    filter: LogEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [LogEntry] @query(name: "LogEntry", type: SELECT) @catalog(name: "logs", engine: "duckdb")
   """
   The aggregation for LogEntry
   """
-  LogEntry_aggregation(filter: LogEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _LogEntry_aggregation @aggregation_query(name: "LogEntry", is_bucket: false) @catalog(name: "logs", engine: "duckdb")
+  LogEntry_aggregation(
+    """
+    Filter
+    """
+    filter: LogEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _LogEntry_aggregation @aggregation_query(name: "LogEntry", is_bucket: false) @catalog(name: "logs", engine: "duckdb")
   """
   The aggregation for LogEntry
   """
-  LogEntry_bucket_aggregation(filter: LogEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_LogEntry_aggregation_bucket] @aggregation_query(name: "LogEntry", is_bucket: true) @catalog(name: "logs", engine: "duckdb")
+  LogEntry_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: LogEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_LogEntry_aggregation_bucket] @aggregation_query(name: "LogEntry", is_bucket: true) @catalog(name: "logs", engine: "duckdb")
   LogEntry_by_pk(id: BigInt!): LogEntry @query(name: "LogEntry", type: SELECT_ONE) @catalog(name: "logs", engine: "duckdb")
   function: Function @system
   """
@@ -688,11 +783,31 @@ input VectorSearchInput @system {
 type _LogEntry_aggregation @aggregation(name: "LogEntry", is_bucket: false, level: 1) @catalog(name: "logs", engine: "duckdb") {
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
-  _timestamp_part(extract: TimeExtract!, extract_divide: Int): BigIntAggregation @field_aggregation(name: "_timestamp_part")
+  _timestamp_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_timestamp_part")
   id: BigIntAggregation @field_aggregation(name: "id")
   level: StringAggregation @field_aggregation(name: "level")
   message: StringAggregation @field_aggregation(name: "message")
-  timestamp(bucket: TimeBucket, bucket_interval: Interval): TimestampAggregation @field_aggregation(name: "timestamp")
+  timestamp(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampAggregation @field_aggregation(name: "timestamp")
 }
 """
 Bucket aggregation for LogEntry
@@ -701,16 +816,49 @@ type _LogEntry_aggregation_bucket @aggregation(name: "LogEntry", is_bucket: true
   """
   The aggregations of the bucket
   """
-  aggregations(filter: LogEntry_filter, order_by: [OrderByField]): _LogEntry_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: LogEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _LogEntry_aggregation
+  """
+  The key of the bucket
+  """
   key: LogEntry
 }
 type _LogEntry_aggregation_sub_aggregation @aggregation(name: "_LogEntry_aggregation", is_bucket: false, level: 2) @catalog(name: "logs", engine: "duckdb") {
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
-  _timestamp_part(extract: TimeExtract!, extract_divide: Int): BigIntSubAggregation @field_aggregation(name: "_timestamp_part")
+  _timestamp_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_timestamp_part")
   id: BigIntSubAggregation @field_aggregation(name: "id")
   level: StringSubAggregation @field_aggregation(name: "level")
   message: StringSubAggregation @field_aggregation(name: "message")
-  timestamp(bucket: TimeBucket, bucket_interval: Interval): TimestampSubAggregation @field_aggregation(name: "timestamp")
+  timestamp(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampSubAggregation @field_aggregation(name: "timestamp")
 }
 """
 Value distribution data type
@@ -814,12 +962,182 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  LogEntry(fields: [String!]!, filter: LogEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [LogEntry] @query(name: "LogEntry", type: SELECT) @catalog(name: "logs", engine: "duckdb")
-  LogEntry_aggregation(fields: [String!]!, filter: LogEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _LogEntry_aggregation @aggregation_query(is_bucket: false, name: "LogEntry") @catalog(name: "logs", engine: "duckdb")
-  LogEntry_bucket_aggregation(fields: [String!]!, filter: LogEntry_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_LogEntry_aggregation_bucket] @aggregation_query(is_bucket: true, name: "LogEntry") @catalog(name: "logs", engine: "duckdb")
+  LogEntry(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: LogEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [LogEntry] @query(name: "LogEntry", type: SELECT) @catalog(name: "logs", engine: "duckdb")
+  LogEntry_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: LogEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _LogEntry_aggregation @aggregation_query(is_bucket: false, name: "LogEntry") @catalog(name: "logs", engine: "duckdb")
+  LogEntry_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: LogEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_LogEntry_aggregation_bucket] @aggregation_query(is_bucket: true, name: "LogEntry") @catalog(name: "logs", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  LogEntry(fields: [String!]!, filter: LogEntry_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _LogEntry_aggregation @aggregation_query(is_bucket: false, name: "LogEntry") @catalog(name: "logs", engine: "duckdb") @field_aggregation(name: "LogEntry")
+  LogEntry(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: LogEntry_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _LogEntry_aggregation @aggregation_query(is_bucket: false, name: "LogEntry") @catalog(name: "logs", engine: "duckdb") @field_aggregation(name: "LogEntry")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

@@ -10,14 +10,16 @@ func generateVectorExtraField(fieldName string) *ast.FieldDefinition {
 		Type:        ast.NamedType("Float", pos),
 		Arguments: ast.ArgumentDefinitionList{
 			{
-				Name:     "vector",
-				Type:     ast.NonNullNamedType("Vector", pos),
-				Position: pos,
+				Name:        "vector",
+				Description: "Vector to calculate distance to",
+				Type:        ast.NonNullNamedType("Vector", pos),
+				Position:    pos,
 			},
 			{
-				Name:     "distance",
-				Type:     ast.NonNullNamedType("VectorDistanceType", pos),
-				Position: pos,
+				Name:        "distance",
+				Description: "Distance metric to use",
+				Type:        ast.NonNullNamedType("VectorDistanceType", pos),
+				Position:    pos,
 			},
 		},
 		Directives: ast.DirectiveList{

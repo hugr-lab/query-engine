@@ -68,6 +68,6 @@ extend type MutationFunction {
 extend type Function {
   data_source_status(
     name: String!
-  ): String @module(name: "Core")
+  ): String @module(name: "core")
     @function(name: "data_source_status")
 }

@@ -423,16 +423,111 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  SalesReport(args: SalesReportArgs!, filter: SalesReport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [SalesReport] @query(name: "SalesReport", type: SELECT) @catalog(name: "reports", engine: "duckdb")
+  SalesReport(
+    """
+    Arguments for the view
+    """
+    args: SalesReportArgs!
+
+    """
+    Filter
+    """
+    filter: SalesReport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [SalesReport] @query(name: "SalesReport", type: SELECT) @catalog(name: "reports", engine: "duckdb")
   """
   The aggregation for SalesReport
   """
-  SalesReport_aggregation(args: SalesReportArgs!, filter: SalesReport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _SalesReport_aggregation @aggregation_query(name: "SalesReport", is_bucket: false) @catalog(name: "reports", engine: "duckdb")
+  SalesReport_aggregation(
+    """
+    Arguments for the view
+    """
+    args: SalesReportArgs!
+
+    """
+    Filter
+    """
+    filter: SalesReport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _SalesReport_aggregation @aggregation_query(name: "SalesReport", is_bucket: false) @catalog(name: "reports", engine: "duckdb")
   """
   The aggregation for SalesReport
   """
-  SalesReport_bucket_aggregation(args: SalesReportArgs!, filter: SalesReport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_SalesReport_aggregation_bucket] @aggregation_query(name: "SalesReport", is_bucket: true) @catalog(name: "reports", engine: "duckdb")
-  SalesReport_by_pk(args: SalesReportArgs!, product_id: Int!): SalesReport @query(name: "SalesReport", type: SELECT_ONE) @catalog(name: "reports", engine: "duckdb")
+  SalesReport_bucket_aggregation(
+    """
+    Arguments for the view
+    """
+    args: SalesReportArgs!
+
+    """
+    Filter
+    """
+    filter: SalesReport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_SalesReport_aggregation_bucket] @aggregation_query(name: "SalesReport", is_bucket: true) @catalog(name: "reports", engine: "duckdb")
+  SalesReport_by_pk(
+    """
+    Arguments for the view
+    """
+    args: SalesReportArgs!
+  product_id: Int!): SalesReport @query(name: "SalesReport", type: SELECT_ONE) @catalog(name: "reports", engine: "duckdb")
   function: Function @system
   """
   H3 aggregation query
@@ -698,7 +793,20 @@ type _SalesReport_aggregation_bucket @aggregation(name: "SalesReport", is_bucket
   """
   The aggregations of the bucket
   """
-  aggregations(filter: SalesReport_filter, order_by: [OrderByField]): _SalesReport_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: SalesReport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _SalesReport_aggregation
+  """
+  The key of the bucket
+  """
   key: SalesReport
 }
 type _SalesReport_aggregation_sub_aggregation @aggregation(name: "_SalesReport_aggregation", is_bucket: false, level: 2) @catalog(name: "reports", engine: "duckdb") {
@@ -809,12 +917,202 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  SalesReport(args: SalesReportArgs!, fields: [String!]!, filter: SalesReport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [SalesReport] @query(name: "SalesReport", type: SELECT) @catalog(name: "reports", engine: "duckdb")
-  SalesReport_aggregation(args: SalesReportArgs!, fields: [String!]!, filter: SalesReport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _SalesReport_aggregation @aggregation_query(is_bucket: false, name: "SalesReport") @catalog(name: "reports", engine: "duckdb")
-  SalesReport_bucket_aggregation(args: SalesReportArgs!, fields: [String!]!, filter: SalesReport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_SalesReport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "SalesReport") @catalog(name: "reports", engine: "duckdb")
+  SalesReport(
+    """
+    Arguments for the view
+    """
+    args: SalesReportArgs!
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: SalesReport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [SalesReport] @query(name: "SalesReport", type: SELECT) @catalog(name: "reports", engine: "duckdb")
+  SalesReport_aggregation(
+    """
+    Arguments for the view
+    """
+    args: SalesReportArgs!
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: SalesReport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _SalesReport_aggregation @aggregation_query(is_bucket: false, name: "SalesReport") @catalog(name: "reports", engine: "duckdb")
+  SalesReport_bucket_aggregation(
+    """
+    Arguments for the view
+    """
+    args: SalesReportArgs!
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: SalesReport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_SalesReport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "SalesReport") @catalog(name: "reports", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  SalesReport(args: SalesReportArgs!, fields: [String!]!, filter: SalesReport_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _SalesReport_aggregation @aggregation_query(is_bucket: false, name: "SalesReport") @catalog(name: "reports", engine: "duckdb") @field_aggregation(name: "SalesReport")
+  SalesReport(
+    """
+    Arguments for the view
+    """
+    args: SalesReportArgs!
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: SalesReport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _SalesReport_aggregation @aggregation_query(is_bucket: false, name: "SalesReport") @catalog(name: "reports", engine: "duckdb") @field_aggregation(name: "SalesReport")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

@@ -47,7 +47,6 @@ func main() {
 		AllowParallel:      conf.AllowParallel,
 		MaxParallelQueries: conf.MaxParallelQueries,
 		MaxDepth:           conf.MaxDepthInTypes,
-		UseNewCompiler:     conf.UseNewCompiler,
 		DB:                 conf.DB,
 		CoreDB:             coredb.New(conf.CoreDB),
 		Auth:               auth,

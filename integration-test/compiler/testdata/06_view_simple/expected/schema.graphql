@@ -3,9 +3,29 @@ type ActiveUser @view(name: "active_users_view") @catalog(name: "reports", engin
   """
   Extract part of Timestamp field last_login
   """
-  _last_login_part(extract: TimeExtract!, extract_divide: Int): BigInt @extra_field(name: "Extract", base_field: "last_login", base_type: Timestamp) @sql(exp: "[last_login]")
+  _last_login_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(name: "Extract", base_field: "last_login", base_type: Timestamp) @sql(exp: "[last_login]")
   id: Int! @pk
-  last_login(bucket: TimeBucket, bucket_interval: Interval): Timestamp
+  last_login(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): Timestamp
   name: String!
 }
 """
@@ -444,15 +464,90 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  ActiveUser(filter: ActiveUser_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [ActiveUser] @query(name: "ActiveUser", type: SELECT) @catalog(name: "reports", engine: "duckdb")
+  ActiveUser(
+    """
+    Filter
+    """
+    filter: ActiveUser_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [ActiveUser] @query(name: "ActiveUser", type: SELECT) @catalog(name: "reports", engine: "duckdb")
   """
   The aggregation for ActiveUser
   """
-  ActiveUser_aggregation(filter: ActiveUser_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _ActiveUser_aggregation @aggregation_query(name: "ActiveUser", is_bucket: false) @catalog(name: "reports", engine: "duckdb")
+  ActiveUser_aggregation(
+    """
+    Filter
+    """
+    filter: ActiveUser_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _ActiveUser_aggregation @aggregation_query(name: "ActiveUser", is_bucket: false) @catalog(name: "reports", engine: "duckdb")
   """
   The aggregation for ActiveUser
   """
-  ActiveUser_bucket_aggregation(filter: ActiveUser_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_ActiveUser_aggregation_bucket] @aggregation_query(name: "ActiveUser", is_bucket: true) @catalog(name: "reports", engine: "duckdb")
+  ActiveUser_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: ActiveUser_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_ActiveUser_aggregation_bucket] @aggregation_query(name: "ActiveUser", is_bucket: true) @catalog(name: "reports", engine: "duckdb")
   ActiveUser_by_pk(id: Int!): ActiveUser @query(name: "ActiveUser", type: SELECT_ONE) @catalog(name: "reports", engine: "duckdb")
   function: Function @system
   """
@@ -685,10 +780,30 @@ input VectorSearchInput @system {
 }
 type _ActiveUser_aggregation @aggregation(name: "ActiveUser", is_bucket: false, level: 1) @catalog(name: "reports", engine: "duckdb") {
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
-  _last_login_part(extract: TimeExtract!, extract_divide: Int): BigIntAggregation @field_aggregation(name: "_last_login_part")
+  _last_login_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_last_login_part")
   _rows_count: BigInt
   id: IntAggregation @field_aggregation(name: "id")
-  last_login(bucket: TimeBucket, bucket_interval: Interval): TimestampAggregation @field_aggregation(name: "last_login")
+  last_login(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampAggregation @field_aggregation(name: "last_login")
   name: StringAggregation @field_aggregation(name: "name")
 }
 """
@@ -698,14 +813,47 @@ type _ActiveUser_aggregation_bucket @aggregation(name: "ActiveUser", is_bucket: 
   """
   The aggregations of the bucket
   """
-  aggregations(filter: ActiveUser_filter, order_by: [OrderByField]): _ActiveUser_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: ActiveUser_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _ActiveUser_aggregation
+  """
+  The key of the bucket
+  """
   key: ActiveUser
 }
 type _ActiveUser_aggregation_sub_aggregation @aggregation(name: "_ActiveUser_aggregation", is_bucket: false, level: 2) @catalog(name: "reports", engine: "duckdb") {
-  _last_login_part(extract: TimeExtract!, extract_divide: Int): BigIntSubAggregation @field_aggregation(name: "_last_login_part")
+  _last_login_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_last_login_part")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   id: IntSubAggregation @field_aggregation(name: "id")
-  last_login(bucket: TimeBucket, bucket_interval: Interval): TimestampSubAggregation @field_aggregation(name: "last_login")
+  last_login(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampSubAggregation @field_aggregation(name: "last_login")
   name: StringSubAggregation @field_aggregation(name: "name")
 }
 """
@@ -810,12 +958,182 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  ActiveUser(fields: [String!]!, filter: ActiveUser_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [ActiveUser] @query(name: "ActiveUser", type: SELECT) @catalog(name: "reports", engine: "duckdb")
-  ActiveUser_aggregation(fields: [String!]!, filter: ActiveUser_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _ActiveUser_aggregation @aggregation_query(is_bucket: false, name: "ActiveUser") @catalog(name: "reports", engine: "duckdb")
-  ActiveUser_bucket_aggregation(fields: [String!]!, filter: ActiveUser_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_ActiveUser_aggregation_bucket] @aggregation_query(is_bucket: true, name: "ActiveUser") @catalog(name: "reports", engine: "duckdb")
+  ActiveUser(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: ActiveUser_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [ActiveUser] @query(name: "ActiveUser", type: SELECT) @catalog(name: "reports", engine: "duckdb")
+  ActiveUser_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: ActiveUser_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _ActiveUser_aggregation @aggregation_query(is_bucket: false, name: "ActiveUser") @catalog(name: "reports", engine: "duckdb")
+  ActiveUser_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: ActiveUser_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_ActiveUser_aggregation_bucket] @aggregation_query(is_bucket: true, name: "ActiveUser") @catalog(name: "reports", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  ActiveUser(fields: [String!]!, filter: ActiveUser_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _ActiveUser_aggregation @aggregation_query(is_bucket: false, name: "ActiveUser") @catalog(name: "reports", engine: "duckdb") @field_aggregation(name: "ActiveUser")
+  ActiveUser(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: ActiveUser_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _ActiveUser_aggregation @aggregation_query(is_bucket: false, name: "ActiveUser") @catalog(name: "reports", engine: "duckdb") @field_aggregation(name: "ActiveUser")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

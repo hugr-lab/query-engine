@@ -435,25 +435,175 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  eu_Employee(filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [eu_Employee] @query(name: "eu_Employee", type: SELECT) @catalog(name: "eu_region", engine: "duckdb")
+  eu_Employee(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [eu_Employee] @query(name: "eu_Employee", type: SELECT) @catalog(name: "eu_region", engine: "duckdb")
   """
   The aggregation for eu_Employee
   """
-  eu_Employee_aggregation(filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _eu_Employee_aggregation @aggregation_query(name: "eu_Employee", is_bucket: false) @catalog(name: "eu_region", engine: "duckdb")
+  eu_Employee_aggregation(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _eu_Employee_aggregation @aggregation_query(name: "eu_Employee", is_bucket: false) @catalog(name: "eu_region", engine: "duckdb")
   """
   The aggregation for eu_Employee
   """
-  eu_Employee_bucket_aggregation(filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_eu_Employee_aggregation_bucket] @aggregation_query(name: "eu_Employee", is_bucket: true) @catalog(name: "eu_region", engine: "duckdb")
+  eu_Employee_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_eu_Employee_aggregation_bucket] @aggregation_query(name: "eu_Employee", is_bucket: true) @catalog(name: "eu_region", engine: "duckdb")
   eu_Employee_by_pk(id: Int!): eu_Employee @query(name: "eu_Employee", type: SELECT_ONE) @catalog(name: "eu_region", engine: "duckdb")
-  eu_Store(filter: eu_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [eu_Store] @query(name: "eu_Store", type: SELECT) @catalog(name: "eu_region", engine: "duckdb")
+  eu_Store(
+    """
+    Filter
+    """
+    filter: eu_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [eu_Store] @query(name: "eu_Store", type: SELECT) @catalog(name: "eu_region", engine: "duckdb")
   """
   The aggregation for eu_Store
   """
-  eu_Store_aggregation(filter: eu_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _eu_Store_aggregation @aggregation_query(name: "eu_Store", is_bucket: false) @catalog(name: "eu_region", engine: "duckdb")
+  eu_Store_aggregation(
+    """
+    Filter
+    """
+    filter: eu_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _eu_Store_aggregation @aggregation_query(name: "eu_Store", is_bucket: false) @catalog(name: "eu_region", engine: "duckdb")
   """
   The aggregation for eu_Store
   """
-  eu_Store_bucket_aggregation(filter: eu_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_eu_Store_aggregation_bucket] @aggregation_query(name: "eu_Store", is_bucket: true) @catalog(name: "eu_region", engine: "duckdb")
+  eu_Store_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: eu_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_eu_Store_aggregation_bucket] @aggregation_query(name: "eu_Store", is_bucket: true) @catalog(name: "eu_region", engine: "duckdb")
   eu_Store_by_pk(id: Int!): eu_Store @query(name: "eu_Store", type: SELECT_ONE) @catalog(name: "eu_region", engine: "duckdb")
   function: Function @system
   """
@@ -470,25 +620,175 @@ type Query @system {
   Results will be placed in 'extension' field by field or alias name
   """
   jq(query: String!, include_origin: Boolean = false): Query @system
-  us_Employee(filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [us_Employee] @query(name: "us_Employee", type: SELECT) @catalog(name: "us_region", engine: "duckdb")
+  us_Employee(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [us_Employee] @query(name: "us_Employee", type: SELECT) @catalog(name: "us_region", engine: "duckdb")
   """
   The aggregation for us_Employee
   """
-  us_Employee_aggregation(filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _us_Employee_aggregation @aggregation_query(name: "us_Employee", is_bucket: false) @catalog(name: "us_region", engine: "duckdb")
+  us_Employee_aggregation(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _us_Employee_aggregation @aggregation_query(name: "us_Employee", is_bucket: false) @catalog(name: "us_region", engine: "duckdb")
   """
   The aggregation for us_Employee
   """
-  us_Employee_bucket_aggregation(filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_us_Employee_aggregation_bucket] @aggregation_query(name: "us_Employee", is_bucket: true) @catalog(name: "us_region", engine: "duckdb")
+  us_Employee_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_us_Employee_aggregation_bucket] @aggregation_query(name: "us_Employee", is_bucket: true) @catalog(name: "us_region", engine: "duckdb")
   us_Employee_by_pk(id: Int!): us_Employee @query(name: "us_Employee", type: SELECT_ONE) @catalog(name: "us_region", engine: "duckdb")
-  us_Store(filter: us_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [us_Store] @query(name: "us_Store", type: SELECT) @catalog(name: "us_region", engine: "duckdb")
+  us_Store(
+    """
+    Filter
+    """
+    filter: us_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [us_Store] @query(name: "us_Store", type: SELECT) @catalog(name: "us_region", engine: "duckdb")
   """
   The aggregation for us_Store
   """
-  us_Store_aggregation(filter: us_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _us_Store_aggregation @aggregation_query(name: "us_Store", is_bucket: false) @catalog(name: "us_region", engine: "duckdb")
+  us_Store_aggregation(
+    """
+    Filter
+    """
+    filter: us_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _us_Store_aggregation @aggregation_query(name: "us_Store", is_bucket: false) @catalog(name: "us_region", engine: "duckdb")
   """
   The aggregation for us_Store
   """
-  us_Store_bucket_aggregation(filter: us_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_us_Store_aggregation_bucket] @aggregation_query(name: "us_Store", is_bucket: true) @catalog(name: "us_region", engine: "duckdb")
+  us_Store_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: us_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_us_Store_aggregation_bucket] @aggregation_query(name: "us_Store", is_bucket: true) @catalog(name: "us_region", engine: "duckdb")
   us_Store_by_pk(id: Int!): us_Store @query(name: "us_Store", type: SELECT_ONE) @catalog(name: "us_region", engine: "duckdb")
 }
 enum QueryType @system {
@@ -753,7 +1053,12 @@ type _eu_Employee_aggregation @aggregation(name: "eu_Employee", is_bucket: false
   _rows_count: BigInt
   id: IntAggregation @field_aggregation(name: "id")
   name: StringAggregation @field_aggregation(name: "name")
-  store(inner: Boolean): _eu_Store_aggregation @field_aggregation(name: "store")
+  store(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): _eu_Store_aggregation @field_aggregation(name: "store")
   store_id: IntAggregation @field_aggregation(name: "store_id")
 }
 """
@@ -763,7 +1068,20 @@ type _eu_Employee_aggregation_bucket @aggregation(name: "eu_Employee", is_bucket
   """
   The aggregations of the bucket
   """
-  aggregations(filter: eu_Employee_filter, order_by: [OrderByField]): _eu_Employee_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _eu_Employee_aggregation
+  """
+  The key of the bucket
+  """
   key: eu_Employee
 }
 type _eu_Employee_aggregation_sub_aggregation @aggregation(name: "_eu_Employee_aggregation", is_bucket: false, level: 2) @catalog(name: "eu_region", engine: "duckdb") {
@@ -779,8 +1097,88 @@ type _eu_Store_aggregation @aggregation(name: "eu_Store", is_bucket: false, leve
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   city: StringAggregation @field_aggregation(name: "city")
-  employees(filter: eu_Employee_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _eu_Employee_aggregation @field_aggregation(name: "employees")
-  employees_aggregation(filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _eu_Employee_aggregation_sub_aggregation @field_aggregation(name: "employees")
+  employees(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _eu_Employee_aggregation @field_aggregation(name: "employees")
+  employees_aggregation(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _eu_Employee_aggregation_sub_aggregation @field_aggregation(name: "employees")
   id: IntAggregation @field_aggregation(name: "id")
   name: StringAggregation @field_aggregation(name: "name")
   revenue: FloatAggregation @field_aggregation(name: "revenue")
@@ -792,14 +1190,107 @@ type _eu_Store_aggregation_bucket @aggregation(name: "eu_Store", is_bucket: true
   """
   The aggregations of the bucket
   """
-  aggregations(filter: eu_Store_filter, order_by: [OrderByField]): _eu_Store_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: eu_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _eu_Store_aggregation
+  """
+  The key of the bucket
+  """
   key: eu_Store
 }
 type _eu_Store_aggregation_sub_aggregation @aggregation(name: "_eu_Store_aggregation", is_bucket: false, level: 2) @catalog(name: "eu_region", engine: "duckdb") {
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   city: StringSubAggregation @field_aggregation(name: "city")
-  employees(filter: eu_Employee_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _eu_Employee_aggregation_sub_aggregation @field_aggregation(name: "employees")
-  employees_aggregation(filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _eu_Employee_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "employees_aggregation")
+  employees(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _eu_Employee_aggregation_sub_aggregation @field_aggregation(name: "employees")
+  employees_aggregation(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _eu_Employee_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "employees_aggregation")
   id: IntSubAggregation @field_aggregation(name: "id")
   name: StringSubAggregation @field_aggregation(name: "name")
   revenue: FloatSubAggregation @field_aggregation(name: "revenue")
@@ -862,24 +1353,704 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  eu_Employee(fields: [String!]!, filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [eu_Employee] @query(name: "eu_Employee", type: SELECT) @catalog(name: "eu_region", engine: "duckdb")
-  eu_Employee_aggregation(fields: [String!]!, filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _eu_Employee_aggregation @aggregation_query(is_bucket: false, name: "eu_Employee") @catalog(name: "eu_region", engine: "duckdb")
-  eu_Employee_bucket_aggregation(fields: [String!]!, filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_eu_Employee_aggregation_bucket] @aggregation_query(is_bucket: true, name: "eu_Employee") @catalog(name: "eu_region", engine: "duckdb")
-  eu_Store(fields: [String!]!, filter: eu_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [eu_Store] @query(name: "eu_Store", type: SELECT) @catalog(name: "eu_region", engine: "duckdb")
-  eu_Store_aggregation(fields: [String!]!, filter: eu_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _eu_Store_aggregation @aggregation_query(is_bucket: false, name: "eu_Store") @catalog(name: "eu_region", engine: "duckdb")
-  eu_Store_bucket_aggregation(fields: [String!]!, filter: eu_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_eu_Store_aggregation_bucket] @aggregation_query(is_bucket: true, name: "eu_Store") @catalog(name: "eu_region", engine: "duckdb")
-  us_Employee(fields: [String!]!, filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [us_Employee] @query(name: "us_Employee", type: SELECT) @catalog(name: "us_region", engine: "duckdb")
-  us_Employee_aggregation(fields: [String!]!, filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _us_Employee_aggregation @aggregation_query(is_bucket: false, name: "us_Employee") @catalog(name: "us_region", engine: "duckdb")
-  us_Employee_bucket_aggregation(fields: [String!]!, filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_us_Employee_aggregation_bucket] @aggregation_query(is_bucket: true, name: "us_Employee") @catalog(name: "us_region", engine: "duckdb")
-  us_Store(fields: [String!]!, filter: us_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [us_Store] @query(name: "us_Store", type: SELECT) @catalog(name: "us_region", engine: "duckdb")
-  us_Store_aggregation(fields: [String!]!, filter: us_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _us_Store_aggregation @aggregation_query(is_bucket: false, name: "us_Store") @catalog(name: "us_region", engine: "duckdb")
-  us_Store_bucket_aggregation(fields: [String!]!, filter: us_Store_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_us_Store_aggregation_bucket] @aggregation_query(is_bucket: true, name: "us_Store") @catalog(name: "us_region", engine: "duckdb")
+  eu_Employee(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [eu_Employee] @query(name: "eu_Employee", type: SELECT) @catalog(name: "eu_region", engine: "duckdb")
+  eu_Employee_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _eu_Employee_aggregation @aggregation_query(is_bucket: false, name: "eu_Employee") @catalog(name: "eu_region", engine: "duckdb")
+  eu_Employee_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_eu_Employee_aggregation_bucket] @aggregation_query(is_bucket: true, name: "eu_Employee") @catalog(name: "eu_region", engine: "duckdb")
+  eu_Store(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: eu_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [eu_Store] @query(name: "eu_Store", type: SELECT) @catalog(name: "eu_region", engine: "duckdb")
+  eu_Store_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: eu_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _eu_Store_aggregation @aggregation_query(is_bucket: false, name: "eu_Store") @catalog(name: "eu_region", engine: "duckdb")
+  eu_Store_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: eu_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_eu_Store_aggregation_bucket] @aggregation_query(is_bucket: true, name: "eu_Store") @catalog(name: "eu_region", engine: "duckdb")
+  us_Employee(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [us_Employee] @query(name: "us_Employee", type: SELECT) @catalog(name: "us_region", engine: "duckdb")
+  us_Employee_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _us_Employee_aggregation @aggregation_query(is_bucket: false, name: "us_Employee") @catalog(name: "us_region", engine: "duckdb")
+  us_Employee_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_us_Employee_aggregation_bucket] @aggregation_query(is_bucket: true, name: "us_Employee") @catalog(name: "us_region", engine: "duckdb")
+  us_Store(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: us_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [us_Store] @query(name: "us_Store", type: SELECT) @catalog(name: "us_region", engine: "duckdb")
+  us_Store_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: us_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _us_Store_aggregation @aggregation_query(is_bucket: false, name: "us_Store") @catalog(name: "us_region", engine: "duckdb")
+  us_Store_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: us_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_us_Store_aggregation_bucket] @aggregation_query(is_bucket: true, name: "us_Store") @catalog(name: "us_region", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  eu_Employee(fields: [String!]!, filter: eu_Employee_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _eu_Employee_aggregation @aggregation_query(is_bucket: false, name: "eu_Employee") @catalog(name: "eu_region", engine: "duckdb") @field_aggregation(name: "eu_Employee")
-  eu_Store(fields: [String!]!, filter: eu_Store_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _eu_Store_aggregation @aggregation_query(is_bucket: false, name: "eu_Store") @catalog(name: "eu_region", engine: "duckdb") @field_aggregation(name: "eu_Store")
-  us_Employee(fields: [String!]!, filter: us_Employee_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _us_Employee_aggregation @aggregation_query(is_bucket: false, name: "us_Employee") @catalog(name: "us_region", engine: "duckdb") @field_aggregation(name: "us_Employee")
-  us_Store(fields: [String!]!, filter: us_Store_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _us_Store_aggregation @aggregation_query(is_bucket: false, name: "us_Store") @catalog(name: "us_region", engine: "duckdb") @field_aggregation(name: "us_Store")
+  eu_Employee(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _eu_Employee_aggregation @aggregation_query(is_bucket: false, name: "eu_Employee") @catalog(name: "eu_region", engine: "duckdb") @field_aggregation(name: "eu_Employee")
+  eu_Store(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: eu_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _eu_Store_aggregation @aggregation_query(is_bucket: false, name: "eu_Store") @catalog(name: "eu_region", engine: "duckdb") @field_aggregation(name: "eu_Store")
+  us_Employee(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _us_Employee_aggregation @aggregation_query(is_bucket: false, name: "us_Employee") @catalog(name: "us_region", engine: "duckdb") @field_aggregation(name: "us_Employee")
+  us_Store(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: us_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _us_Store_aggregation @aggregation_query(is_bucket: false, name: "us_Store") @catalog(name: "us_region", engine: "duckdb") @field_aggregation(name: "us_Store")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)
@@ -888,7 +2059,12 @@ type _us_Employee_aggregation @aggregation(name: "us_Employee", is_bucket: false
   _rows_count: BigInt
   id: IntAggregation @field_aggregation(name: "id")
   name: StringAggregation @field_aggregation(name: "name")
-  store(inner: Boolean): _us_Store_aggregation @field_aggregation(name: "store")
+  store(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): _us_Store_aggregation @field_aggregation(name: "store")
   store_id: IntAggregation @field_aggregation(name: "store_id")
 }
 """
@@ -898,7 +2074,20 @@ type _us_Employee_aggregation_bucket @aggregation(name: "us_Employee", is_bucket
   """
   The aggregations of the bucket
   """
-  aggregations(filter: us_Employee_filter, order_by: [OrderByField]): _us_Employee_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _us_Employee_aggregation
+  """
+  The key of the bucket
+  """
   key: us_Employee
 }
 type _us_Employee_aggregation_sub_aggregation @aggregation(name: "_us_Employee_aggregation", is_bucket: false, level: 2) @catalog(name: "us_region", engine: "duckdb") {
@@ -914,8 +2103,88 @@ type _us_Store_aggregation @aggregation(name: "us_Store", is_bucket: false, leve
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   city: StringAggregation @field_aggregation(name: "city")
-  employees(filter: us_Employee_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _us_Employee_aggregation @field_aggregation(name: "employees")
-  employees_aggregation(filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _us_Employee_aggregation_sub_aggregation @field_aggregation(name: "employees")
+  employees(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _us_Employee_aggregation @field_aggregation(name: "employees")
+  employees_aggregation(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _us_Employee_aggregation_sub_aggregation @field_aggregation(name: "employees")
   id: IntAggregation @field_aggregation(name: "id")
   name: StringAggregation @field_aggregation(name: "name")
   revenue: FloatAggregation @field_aggregation(name: "revenue")
@@ -927,14 +2196,107 @@ type _us_Store_aggregation_bucket @aggregation(name: "us_Store", is_bucket: true
   """
   The aggregations of the bucket
   """
-  aggregations(filter: us_Store_filter, order_by: [OrderByField]): _us_Store_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: us_Store_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _us_Store_aggregation
+  """
+  The key of the bucket
+  """
   key: us_Store
 }
 type _us_Store_aggregation_sub_aggregation @aggregation(name: "_us_Store_aggregation", is_bucket: false, level: 2) @catalog(name: "us_region", engine: "duckdb") {
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   city: StringSubAggregation @field_aggregation(name: "city")
-  employees(filter: us_Employee_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _us_Employee_aggregation_sub_aggregation @field_aggregation(name: "employees")
-  employees_aggregation(filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _us_Employee_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "employees_aggregation")
+  employees(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _us_Employee_aggregation_sub_aggregation @field_aggregation(name: "employees")
+  employees_aggregation(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _us_Employee_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "employees_aggregation")
   id: IntSubAggregation @field_aggregation(name: "id")
   name: StringSubAggregation @field_aggregation(name: "name")
   revenue: FloatSubAggregation @field_aggregation(name: "revenue")
@@ -944,7 +2306,12 @@ type eu_Employee @table(name: "employees") @catalog(name: "eu_region", engine: "
   _join(fields: [String!]!): _join
   id: Int! @pk
   name: String!
-  store(inner: Boolean): eu_Store @references_query(references_name: "eu_Store", name: "eu_Store_store_id", is_m2m: false, m2m_name: "") @catalog(name: "eu_region", engine: "duckdb")
+  store(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): eu_Store @references_query(references_name: "eu_Store", name: "eu_Store_store_id", is_m2m: false, m2m_name: "") @catalog(name: "eu_region", engine: "duckdb")
   store_id: Int! @field_references(references_name: "eu_Store", field: "id", query: "store", references_query: "employees")
 }
 """
@@ -978,15 +2345,150 @@ input eu_Employee_mut_input_data @data_input(name: "eu_Employee") @catalog(name:
 type eu_Store @table(name: "stores") @catalog(name: "eu_region", engine: "duckdb") @original_name(name: "Store") @filter_input(name: "eu_Store_filter") @data_input(name: "eu_Store_mut_input_data") @data_input(name: "eu_Store_mut_data") @query(name: "eu_Store", type: SELECT) @query(name: "eu_Store_by_pk", type: SELECT_ONE) @mutation(name: "insert_eu_Store", type: INSERT, data_input: "eu_Store_mut_input_data") @mutation(name: "update_eu_Store", type: UPDATE, data_input: "eu_Store_mut_data") @mutation(name: "delete_eu_Store", type: DELETE, data_input: "") @query(name: "eu_Store_aggregation", type: AGGREGATE) @query(name: "eu_Store_bucket_aggregation", type: AGGREGATE_BUCKET) {
   _join(fields: [String!]!): _join
   city: String!
-  employees(filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [eu_Employee] @references_query(references_name: "eu_Employee", name: "eu_Store_store_id", is_m2m: false, m2m_name: "") @catalog(name: "eu_region", engine: "duckdb")
+  employees(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [eu_Employee] @references_query(references_name: "eu_Employee", name: "eu_Store_store_id", is_m2m: false, m2m_name: "") @catalog(name: "eu_region", engine: "duckdb")
   """
   The aggregation for employees
   """
-  employees_aggregation(filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _eu_Employee_aggregation @aggregation_query(is_bucket: false, name: "employees") @catalog(name: "eu_region", engine: "duckdb")
+  employees_aggregation(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _eu_Employee_aggregation @aggregation_query(is_bucket: false, name: "employees") @catalog(name: "eu_region", engine: "duckdb")
   """
   The bucket aggregation for employees
   """
-  employees_bucket_aggregation(filter: eu_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_eu_Employee_aggregation_bucket] @aggregation_query(is_bucket: true, name: "employees") @catalog(name: "eu_region", engine: "duckdb")
+  employees_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: eu_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_eu_Employee_aggregation_bucket] @aggregation_query(is_bucket: true, name: "employees") @catalog(name: "eu_region", engine: "duckdb")
   id: Int! @pk
   name: String!
   revenue: Float
@@ -1021,7 +2523,12 @@ type us_Employee @table(name: "employees") @catalog(name: "us_region", engine: "
   _join(fields: [String!]!): _join
   id: Int! @pk
   name: String!
-  store(inner: Boolean): us_Store @references_query(references_name: "us_Store", name: "us_Store_store_id", is_m2m: false, m2m_name: "") @catalog(name: "us_region", engine: "duckdb")
+  store(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): us_Store @references_query(references_name: "us_Store", name: "us_Store_store_id", is_m2m: false, m2m_name: "") @catalog(name: "us_region", engine: "duckdb")
   store_id: Int! @field_references(references_name: "us_Store", field: "id", query: "store", references_query: "employees")
 }
 """
@@ -1055,15 +2562,150 @@ input us_Employee_mut_input_data @data_input(name: "us_Employee") @catalog(name:
 type us_Store @table(name: "stores") @catalog(name: "us_region", engine: "duckdb") @original_name(name: "Store") @filter_input(name: "us_Store_filter") @data_input(name: "us_Store_mut_input_data") @data_input(name: "us_Store_mut_data") @query(name: "us_Store", type: SELECT) @query(name: "us_Store_by_pk", type: SELECT_ONE) @mutation(name: "insert_us_Store", type: INSERT, data_input: "us_Store_mut_input_data") @mutation(name: "update_us_Store", type: UPDATE, data_input: "us_Store_mut_data") @mutation(name: "delete_us_Store", type: DELETE, data_input: "") @query(name: "us_Store_aggregation", type: AGGREGATE) @query(name: "us_Store_bucket_aggregation", type: AGGREGATE_BUCKET) {
   _join(fields: [String!]!): _join
   city: String!
-  employees(filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [us_Employee] @references_query(references_name: "us_Employee", name: "us_Store_store_id", is_m2m: false, m2m_name: "") @catalog(name: "us_region", engine: "duckdb")
+  employees(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [us_Employee] @references_query(references_name: "us_Employee", name: "us_Store_store_id", is_m2m: false, m2m_name: "") @catalog(name: "us_region", engine: "duckdb")
   """
   The aggregation for employees
   """
-  employees_aggregation(filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _us_Employee_aggregation @aggregation_query(is_bucket: false, name: "employees") @catalog(name: "us_region", engine: "duckdb")
+  employees_aggregation(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _us_Employee_aggregation @aggregation_query(is_bucket: false, name: "employees") @catalog(name: "us_region", engine: "duckdb")
   """
   The bucket aggregation for employees
   """
-  employees_bucket_aggregation(filter: us_Employee_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_us_Employee_aggregation_bucket] @aggregation_query(is_bucket: true, name: "employees") @catalog(name: "us_region", engine: "duckdb")
+  employees_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: us_Employee_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_us_Employee_aggregation_bucket] @aggregation_query(is_bucket: true, name: "employees") @catalog(name: "us_region", engine: "duckdb")
   id: Int! @pk
   name: String!
   revenue: Float

@@ -282,16 +282,22 @@ func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name 
 				filterDef.Fields = append(filterDef.Fields, field)
 			}
 		} else if td := lookupObjectDef(ctx, typeName); td != nil && td.Kind == ast.Object && !isTableOrView(td) {
-			// For structural Object-typed fields (not tables/views), recursively generate a filter input
+			// For structural Object-typed fields (not tables/views), reference the filter by name.
+			// The filter type is created eagerly by PassthroughRule.
 			isList := f.Type.NamedType == ""
-			nestedFilterName := generateNestedFilterInput(ctx, td, isList, pos)
-			if nestedFilterName != "" {
-				filterDef.Fields = append(filterDef.Fields, &ast.FieldDefinition{
-					Name:     f.Name,
-					Type:     ast.NamedType(nestedFilterName, pos),
-					Position: pos,
-				})
+			filterTypeName := td.Name + "_filter"
+			if isList {
+				listFilterName := td.Name + "_list_filter"
+				if ctx.LookupType(listFilterName) == nil {
+					ctx.AddDefinition(generateListFilterInput(td.Name, filterTypeName, listFilterName, opts, pos))
+				}
+				filterTypeName = listFilterName
 			}
+			filterDef.Fields = append(filterDef.Fields, &ast.FieldDefinition{
+				Name:     f.Name,
+				Type:     ast.NamedType(filterTypeName, pos),
+				Position: pos,
+			})
 		}
 	}
 
@@ -510,8 +516,6 @@ func generateNestedMutInputData(ctx base.CompilationContext, def *ast.Definition
 			optsCatalogDirective(opts),
 		},
 	}
-	// Add to output first to prevent infinite recursion
-	ctx.AddDefinition(inputDef)
 
 	for _, f := range def.Fields {
 		if f.Name == "_stub" {
@@ -522,8 +526,8 @@ func generateNestedMutInputData(ctx base.CompilationContext, def *ast.Definition
 		isList := f.Type.NamedType == ""
 		if !ctx.IsScalar(typeName) {
 			if td := lookupObjectDef(ctx, typeName); td != nil && td.Kind == ast.Object {
-				nestedName := generateNestedMutInputData(ctx, td, pos)
-				fieldType = ast.NamedType(nestedName, pos)
+				// Reference by name — the type is created eagerly by PassthroughRule
+				fieldType = ast.NamedType(td.Name+"_mut_input_data", pos)
 			}
 		}
 		if isList {
@@ -535,6 +539,7 @@ func generateNestedMutInputData(ctx base.CompilationContext, def *ast.Definition
 			Position: pos,
 		})
 	}
+	ctx.AddDefinition(inputDef)
 	return inputName
 }
 
@@ -557,8 +562,6 @@ func generateNestedMutData(ctx base.CompilationContext, def *ast.Definition, pos
 			optsCatalogDirective(opts),
 		},
 	}
-	// Add to output first to prevent infinite recursion
-	ctx.AddDefinition(inputDef)
 
 	for _, f := range def.Fields {
 		if f.Name == "_stub" {
@@ -569,8 +572,8 @@ func generateNestedMutData(ctx base.CompilationContext, def *ast.Definition, pos
 		isList := f.Type.NamedType == ""
 		if !ctx.IsScalar(typeName) {
 			if td := lookupObjectDef(ctx, typeName); td != nil && td.Kind == ast.Object {
-				nestedName := generateNestedMutData(ctx, td, pos)
-				fieldType = ast.NamedType(nestedName, pos)
+				// Reference by name — the type is created eagerly by PassthroughRule
+				fieldType = ast.NamedType(td.Name+"_mut_data", pos)
 			}
 		}
 		if isList {
@@ -582,6 +585,7 @@ func generateNestedMutData(ctx base.CompilationContext, def *ast.Definition, pos
 			Position: pos,
 		})
 	}
+	ctx.AddDefinition(inputDef)
 	return inputName
 }
 
@@ -614,25 +618,58 @@ func generateAggregationType(ctx base.CompilationContext, def *ast.Definition, n
 			continue
 		}
 		typeName := f.Type.Name()
-		if s := ctx.ScalarLookup(typeName); s != nil {
-			if a, ok := s.(types.Aggregatable); ok {
-				field := &ast.FieldDefinition{
-					Name:     f.Name,
-					Type:     ast.NamedType(a.AggregationTypeName(), pos),
-					Position: pos,
-					Directives: ast.DirectiveList{
-						{Name: "field_aggregation", Arguments: ast.ArgumentList{
-							{Name: "name", Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
-						}, Position: pos},
-					},
-				}
-				// Copy arguments from original field (bucket, bucket_interval, struct, etc.)
-				if len(f.Arguments) > 0 {
-					field.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
-					copy(field.Arguments, f.Arguments)
-				}
-				aggDef.Fields = append(aggDef.Fields, field)
+
+		switch {
+		case ctx.ScalarLookup(typeName) != nil:
+			if f.Type.NamedType == "" {
+				continue // skip list scalars — can't aggregate arrays
 			}
+			s := ctx.ScalarLookup(typeName)
+			a, ok := s.(types.Aggregatable)
+			if !ok {
+				continue
+			}
+			field := &ast.FieldDefinition{
+				Name:     f.Name,
+				Type:     ast.NamedType(a.AggregationTypeName(), pos),
+				Position: pos,
+				Directives: ast.DirectiveList{
+					{Name: "field_aggregation", Arguments: ast.ArgumentList{
+						{Name: "name", Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+					}, Position: pos},
+				},
+			}
+			// Copy arguments from original field (bucket, bucket_interval, struct, etc.)
+			if len(f.Arguments) > 0 {
+				field.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
+				copy(field.Arguments, f.Arguments)
+			}
+			aggDef.Fields = append(aggDef.Fields, field)
+
+		default:
+			// Structural Object fields (not tables/views, not arrays, not virtual)
+			if f.Type.NamedType == "" {
+				continue
+			}
+			if isVirtualField(f) {
+				continue
+			}
+			td := lookupObjectDef(ctx, typeName)
+			if td == nil || td.Kind != ast.Object || isTableOrView(td) {
+				continue
+			}
+			// Reference by name — the type is created eagerly by PassthroughRule
+			nestedAggName := "_" + td.Name + "_aggregation"
+			aggDef.Fields = append(aggDef.Fields, &ast.FieldDefinition{
+				Name:     f.Name,
+				Type:     ast.NamedType(nestedAggName, pos),
+				Position: pos,
+				Directives: ast.DirectiveList{
+					{Name: "field_aggregation", Arguments: ast.ArgumentList{
+						{Name: "name", Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+					}, Position: pos},
+				},
+			})
 		}
 	}
 
@@ -657,17 +694,18 @@ func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName,
 		},
 		Fields: ast.FieldList{
 			{
-				Name:     "key",
-				Type:     ast.NamedType(def.Name, pos),
-				Position: pos,
+				Name:        "key",
+				Description: base.DescBucketKey,
+				Type:        ast.NamedType(def.Name, pos),
+				Position:    pos,
 			},
 			{
 				Name:        "aggregations",
 				Description: "The aggregations of the bucket",
 				Type:        ast.NamedType(aggTypeName, pos),
 				Arguments: ast.ArgumentDefinitionList{
-					{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-					{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+					{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
+					{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
 				},
 				Position: pos,
 			},
@@ -692,19 +730,20 @@ func queryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Po
 			argType = ast.NamedType(info.InputArgsName, pos)
 		}
 		args = append(args, &ast.ArgumentDefinition{
-			Name:     "args",
-			Type:     argType,
-			Position: pos,
+			Name:        "args",
+			Description: base.DescArgs,
+			Type:        argType,
+			Position:    pos,
 		})
 	}
 	args = append(args,
-		&ast.ArgumentDefinition{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-		&ast.ArgumentDefinition{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		&ast.ArgumentDefinition{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos,
+		&ast.ArgumentDefinition{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
+		&ast.ArgumentDefinition{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		&ast.ArgumentDefinition{Name: "limit", Description: base.DescLimit, Type: ast.NamedType("Int", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue}},
-		&ast.ArgumentDefinition{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos,
+		&ast.ArgumentDefinition{Name: "offset", Description: base.DescOffset, Type: ast.NamedType("Int", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue}},
-		&ast.ArgumentDefinition{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+		&ast.ArgumentDefinition{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
 	)
 	return args
 }
@@ -714,17 +753,17 @@ func subQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionLi
 	args := queryArgs(filterName, pos)
 	args = append(args,
 		&ast.ArgumentDefinition{
-			Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos,
+			Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue},
 		},
 		&ast.ArgumentDefinition{
-			Name: "nested_order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos,
+			Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos,
 		},
 		&ast.ArgumentDefinition{
-			Name: "nested_limit", Type: ast.NamedType("Int", pos), Position: pos,
+			Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos,
 		},
 		&ast.ArgumentDefinition{
-			Name: "nested_offset", Type: ast.NamedType("Int", pos), Position: pos,
+			Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos,
 		},
 	)
 	return args
@@ -800,9 +839,10 @@ func generateQueryFields(ctx base.CompilationContext, def *ast.Definition, info 
 				argType = ast.NamedType(info.InputArgsName, pos)
 			}
 			selectOneField.Arguments = append(selectOneField.Arguments, &ast.ArgumentDefinition{
-				Name:     "args",
-				Type:     argType,
-				Position: pos,
+				Name:        "args",
+				Description: base.DescArgs,
+				Type:        argType,
+				Position:    pos,
 			})
 		}
 		for _, pk := range info.PrimaryKey {
@@ -956,13 +996,17 @@ func generateMutationFields(ctx base.CompilationContext, def *ast.Definition, in
 	return fields
 }
 
-// addTableFuncJoinSubAggregations adds sub-aggregation fields for table_function_call_join
-// list fields on a data object. For each such field (that is a list), the old compiler
-// adds a {field}_aggregation sub-field on the aggregation type pointing to a sub-aggregation type.
-// Fields with bound args still get sub-aggregation (unlike main aggregation which is skipped).
-func addTableFuncJoinSubAggregations(ctx base.CompilationContext, def *ast.Definition, aggTypeName string, pos *ast.Position) {
+// addVirtualFieldAggregations adds aggregation fields for @join and @table_function_call_join
+// list fields on a data object. For each such field:
+// - @join: adds subquery args, standard aggregation args (aggRefArgs/aggSubRefArgs)
+// - @table_function_call_join: preserves original field arguments (function call args may not be in the mapping)
+// Both: adds {name}_aggregation and {name}_bucket_aggregation on base object,
+// and direct agg + sub-agg fields on the aggregation type.
+func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definition, aggTypeName string, opts base.Options, pos *ast.Position) {
 	for _, f := range def.Fields {
-		if f.Directives.ForName("table_function_call_join") == nil {
+		isJoin := f.Directives.ForName("join") != nil
+		isTFCJ := f.Directives.ForName("table_function_call_join") != nil
+		if !isJoin && !isTFCJ {
 			continue
 		}
 		// Only list fields (NamedType == "" means it's a list)
@@ -975,25 +1019,115 @@ func addTableFuncJoinSubAggregations(ctx base.CompilationContext, def *ast.Defin
 			continue
 		}
 
-		// Sub-aggregation type for the target is created by AggregationRule
+		targetFilterName := targetName + "_filter"
+		targetAggName := "_" + targetName + "_aggregation"
+		bucketAggName := "_" + targetName + "_aggregation_bucket"
 		subAggName := aggTypeNameAtDepth(targetName, 1)
 
-		// Add {field}_aggregation field to the aggregation type
-		ctx.AddExtension(&ast.Definition{
-			Kind:     ast.Object,
-			Name:     aggTypeName,
-			Position: pos,
-			Fields: ast.FieldList{
-				{
-					Name:        f.Name + "_aggregation",
-					Description: "The aggregation for " + f.Name,
-					Type:        ast.NamedType(subAggName, pos),
-					Directives: ast.DirectiveList{
-						fieldAggregationDirective(f.Name, pos),
+		if isJoin {
+			// @join fields: add subquery args to the field itself
+			if len(f.Arguments) == 0 {
+				f.Arguments = subQueryArgs(targetFilterName, pos)
+			}
+
+			// Add {name}_aggregation and {name}_bucket_aggregation on base object (with subQueryArgs)
+			addReferenceAggregationFields(ctx, def.Name, f.Name, targetName, targetFilterName, opts, pos)
+
+			// Add direct agg + sub-agg fields on aggregation type (with aggRefArgs/aggSubRefArgs)
+			ctx.AddExtension(&ast.Definition{
+				Kind:     ast.Object,
+				Name:     aggTypeName,
+				Position: pos,
+				Fields: ast.FieldList{
+					{
+						Name:      f.Name,
+						Type:      ast.NamedType(targetAggName, pos),
+						Arguments: aggRefArgs(targetFilterName, pos),
+						Directives: ast.DirectiveList{
+							fieldAggregationDirective(f.Name, pos),
+						},
+						Position: pos,
 					},
-					Position: pos,
+					{
+						Name:      f.Name + "_aggregation",
+						Type:      ast.NamedType(subAggName, pos),
+						Arguments: aggSubRefArgs(targetFilterName, pos),
+						Directives: ast.DirectiveList{
+							fieldAggregationDirective(f.Name, pos),
+						},
+						Position: pos,
+					},
 				},
-			},
-		})
+			})
+		} else {
+			// @table_function_call_join: use original field's arguments everywhere.
+			// TFCJ fields may have function call arguments that aren't in the args mapping,
+			// so we must preserve them exactly as-is rather than using standard subquery args.
+			origArgs := cloneArgDefs(f.Arguments, pos)
+
+			// Add {name}_aggregation and {name}_bucket_aggregation on base object (with original args)
+			ctx.AddExtension(&ast.Definition{
+				Kind:     ast.Object,
+				Name:     def.Name,
+				Position: pos,
+				Fields: ast.FieldList{
+					{
+						Name:        f.Name + "_aggregation",
+						Description: "The aggregation for " + f.Name,
+						Type:        ast.NamedType(targetAggName, pos),
+						Arguments:   origArgs,
+						Directives: ast.DirectiveList{
+							{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
+								{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+								{Name: base.ArgName, Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+							}, Position: pos},
+							optsCatalogDirective(opts),
+						},
+						Position: pos,
+					},
+					{
+						Name:        f.Name + "_bucket_aggregation",
+						Description: "The bucket aggregation for " + f.Name,
+						Type:        ast.ListType(ast.NamedType(bucketAggName, pos), pos),
+						Arguments:   cloneArgDefs(f.Arguments, pos),
+						Directives: ast.DirectiveList{
+							{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
+								{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+								{Name: base.ArgName, Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+							}, Position: pos},
+							optsCatalogDirective(opts),
+						},
+						Position: pos,
+					},
+				},
+			})
+
+			// Add direct agg + sub-agg fields on aggregation type (with original args)
+			ctx.AddExtension(&ast.Definition{
+				Kind:     ast.Object,
+				Name:     aggTypeName,
+				Position: pos,
+				Fields: ast.FieldList{
+					{
+						Name:      f.Name,
+						Type:      ast.NamedType(targetAggName, pos),
+						Arguments: cloneArgDefs(f.Arguments, pos),
+						Directives: ast.DirectiveList{
+							fieldAggregationDirective(f.Name, pos),
+						},
+						Position: pos,
+					},
+					{
+						Name:      f.Name + "_aggregation",
+						Type:      ast.NamedType(subAggName, pos),
+						Arguments: cloneArgDefs(f.Arguments, pos),
+						Directives: ast.DirectiveList{
+							fieldAggregationDirective(f.Name, pos),
+						},
+						Position: pos,
+					},
+				},
+			})
+		}
 	}
 }

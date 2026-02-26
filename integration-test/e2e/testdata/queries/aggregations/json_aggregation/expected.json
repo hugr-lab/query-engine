@@ -1,0 +1,14 @@
+{
+  "data": {
+    "local_db": {
+      "events_aggregation": {
+        "_rows_count": 5,
+        "metadata": {
+          "avg": 176.0,
+          "count": 5,
+          "sum": 880.0
+        }
+      }
+    }
+  }
+}

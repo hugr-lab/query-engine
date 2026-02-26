@@ -32,7 +32,6 @@ services:
     ports: ["15000:15000"]
     environment:
       BIND: ":15000"
-      USE_NEW_COMPILER: "true"
       DB_PATH: ""
       DB_ALLOWED_DIRECTORIES: "/workspace"
       CORE_DB_PATH: ""

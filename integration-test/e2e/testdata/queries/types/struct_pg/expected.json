@@ -1,0 +1,20 @@
+{
+  "data": {
+    "pg_store": {
+      "product_details": [
+        {
+          "metadata": {
+            "origin": "US",
+            "warranty_years": 2
+          },
+          "product_id": 1,
+          "specs": {
+            "cpu": "M2",
+            "ram_gb": 16,
+            "storage_gb": 512
+          }
+        }
+      ]
+    }
+  }
+}

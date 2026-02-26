@@ -52,8 +52,8 @@ func (r *AggregationRule) Process(ctx base.CompilationContext, def *ast.Definiti
 	subAggName := aggTypeNameAtDepth(def.Name, 1)
 	ensureSubAggregationTypeNoExtra(ctx, def.Name, subAggName, 1, pos)
 
-	// 3b. Add sub-aggregation fields for @table_function_call_join fields
-	addTableFuncJoinSubAggregations(ctx, def, aggName, pos)
+	// 3b. Add aggregation fields for @join and @table_function_call_join fields
+	addVirtualFieldAggregations(ctx, def, aggName, opts, pos)
 
 	// 4. Add @query directives for AGGREGATE and AGGREGATE_BUCKET on the data object.
 	// Use unprefixed field name when AsModule (matches query field names).

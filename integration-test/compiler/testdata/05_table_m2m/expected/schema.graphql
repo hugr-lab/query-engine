@@ -88,15 +88,150 @@ type Course @table(name: "courses") @catalog(name: "school", engine: "duckdb") @
   _join(fields: [String!]!): _join
   credits: Int
   id: Int! @pk
-  students(filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Student] @references_query(references_name: "Student", name: "sc_course", is_m2m: true, m2m_name: "StudentCourse") @catalog(name: "school", engine: "duckdb")
+  students(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Student] @references_query(references_name: "Student", name: "sc_course", is_m2m: true, m2m_name: "StudentCourse") @catalog(name: "school", engine: "duckdb")
   """
   The aggregation for students
   """
-  students_aggregation(filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Student_aggregation @aggregation_query(is_bucket: false, name: "students") @catalog(name: "school", engine: "duckdb")
+  students_aggregation(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Student_aggregation @aggregation_query(is_bucket: false, name: "students") @catalog(name: "school", engine: "duckdb")
   """
   The bucket aggregation for students
   """
-  students_bucket_aggregation(filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Student_aggregation_bucket] @aggregation_query(is_bucket: true, name: "students") @catalog(name: "school", engine: "duckdb")
+  students_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Student_aggregation_bucket] @aggregation_query(is_bucket: true, name: "students") @catalog(name: "school", engine: "duckdb")
   title: String!
 }
 """
@@ -475,34 +610,259 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  Course(filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Course] @query(name: "Course", type: SELECT) @catalog(name: "school", engine: "duckdb")
+  Course(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Course] @query(name: "Course", type: SELECT) @catalog(name: "school", engine: "duckdb")
   """
   The aggregation for Course
   """
-  Course_aggregation(filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Course_aggregation @aggregation_query(name: "Course", is_bucket: false) @catalog(name: "school", engine: "duckdb")
+  Course_aggregation(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Course_aggregation @aggregation_query(name: "Course", is_bucket: false) @catalog(name: "school", engine: "duckdb")
   """
   The aggregation for Course
   """
-  Course_bucket_aggregation(filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Course_aggregation_bucket] @aggregation_query(name: "Course", is_bucket: true) @catalog(name: "school", engine: "duckdb")
+  Course_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Course_aggregation_bucket] @aggregation_query(name: "Course", is_bucket: true) @catalog(name: "school", engine: "duckdb")
   Course_by_pk(id: Int!): Course @query(name: "Course", type: SELECT_ONE) @catalog(name: "school", engine: "duckdb")
-  Student(filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Student] @query(name: "Student", type: SELECT) @catalog(name: "school", engine: "duckdb")
-  StudentCourse(filter: StudentCourse_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [StudentCourse] @query(name: "StudentCourse", type: SELECT) @catalog(name: "school", engine: "duckdb")
+  Student(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Student] @query(name: "Student", type: SELECT) @catalog(name: "school", engine: "duckdb")
+  StudentCourse(
+    """
+    Filter
+    """
+    filter: StudentCourse_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [StudentCourse] @query(name: "StudentCourse", type: SELECT) @catalog(name: "school", engine: "duckdb")
   """
   The aggregation for StudentCourse
   """
-  StudentCourse_aggregation(filter: StudentCourse_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _StudentCourse_aggregation @aggregation_query(name: "StudentCourse", is_bucket: false) @catalog(name: "school", engine: "duckdb")
+  StudentCourse_aggregation(
+    """
+    Filter
+    """
+    filter: StudentCourse_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _StudentCourse_aggregation @aggregation_query(name: "StudentCourse", is_bucket: false) @catalog(name: "school", engine: "duckdb")
   """
   The aggregation for StudentCourse
   """
-  StudentCourse_bucket_aggregation(filter: StudentCourse_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_StudentCourse_aggregation_bucket] @aggregation_query(name: "StudentCourse", is_bucket: true) @catalog(name: "school", engine: "duckdb")
+  StudentCourse_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: StudentCourse_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_StudentCourse_aggregation_bucket] @aggregation_query(name: "StudentCourse", is_bucket: true) @catalog(name: "school", engine: "duckdb")
   """
   The aggregation for Student
   """
-  Student_aggregation(filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Student_aggregation @aggregation_query(name: "Student", is_bucket: false) @catalog(name: "school", engine: "duckdb")
+  Student_aggregation(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Student_aggregation @aggregation_query(name: "Student", is_bucket: false) @catalog(name: "school", engine: "duckdb")
   """
   The aggregation for Student
   """
-  Student_bucket_aggregation(filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Student_aggregation_bucket] @aggregation_query(name: "Student", is_bucket: true) @catalog(name: "school", engine: "duckdb")
+  Student_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Student_aggregation_bucket] @aggregation_query(name: "Student", is_bucket: true) @catalog(name: "school", engine: "duckdb")
   Student_by_pk(id: Int!): Student @query(name: "Student", type: SELECT_ONE) @catalog(name: "school", engine: "duckdb")
   function: Function @system
   """
@@ -564,15 +924,150 @@ type StringSubAggregation @system {
 }
 type Student @table(name: "students") @catalog(name: "school", engine: "duckdb") @filter_input(name: "Student_filter") @data_input(name: "Student_mut_input_data") @data_input(name: "Student_mut_data") @query(name: "Student", type: SELECT) @query(name: "Student_by_pk", type: SELECT_ONE) @mutation(name: "insert_Student", type: INSERT, data_input: "Student_mut_input_data") @mutation(name: "update_Student", type: UPDATE, data_input: "Student_mut_data") @mutation(name: "delete_Student", type: DELETE, data_input: "") @query(name: "Student_aggregation", type: AGGREGATE) @query(name: "Student_bucket_aggregation", type: AGGREGATE_BUCKET) @references(name: "sc_student", references_name: "Course", source_fields: ["id"], references_fields: ["student_id"], query: "courses", references_query: "students", is_m2m: true, m2m_name: "StudentCourse", description: "", references_description: "") @filter_list_input(name: "Student_list_filter") {
   _join(fields: [String!]!): _join
-  courses(filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Course] @references_query(references_name: "Course", name: "sc_student", is_m2m: true, m2m_name: "StudentCourse") @catalog(name: "school", engine: "duckdb")
+  courses(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Course] @references_query(references_name: "Course", name: "sc_student", is_m2m: true, m2m_name: "StudentCourse") @catalog(name: "school", engine: "duckdb")
   """
   The aggregation for courses
   """
-  courses_aggregation(filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Course_aggregation @aggregation_query(is_bucket: false, name: "courses") @catalog(name: "school", engine: "duckdb")
+  courses_aggregation(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Course_aggregation @aggregation_query(is_bucket: false, name: "courses") @catalog(name: "school", engine: "duckdb")
   """
   The bucket aggregation for courses
   """
-  courses_bucket_aggregation(filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Course_aggregation_bucket] @aggregation_query(is_bucket: true, name: "courses") @catalog(name: "school", engine: "duckdb")
+  courses_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Course_aggregation_bucket] @aggregation_query(is_bucket: true, name: "courses") @catalog(name: "school", engine: "duckdb")
   id: Int! @pk
   name: String!
 }
@@ -799,8 +1294,88 @@ type _Course_aggregation @aggregation(name: "Course", is_bucket: false, level: 1
   _rows_count: BigInt
   credits: IntAggregation @field_aggregation(name: "credits")
   id: IntAggregation @field_aggregation(name: "id")
-  students(filter: Student_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Student_aggregation @field_aggregation(name: "students")
-  students_aggregation(filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Student_aggregation_sub_aggregation @field_aggregation(name: "students")
+  students(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Student_aggregation @field_aggregation(name: "students")
+  students_aggregation(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Student_aggregation_sub_aggregation @field_aggregation(name: "students")
   title: StringAggregation @field_aggregation(name: "title")
 }
 """
@@ -810,15 +1385,108 @@ type _Course_aggregation_bucket @aggregation(name: "Course", is_bucket: true, le
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Course_filter, order_by: [OrderByField]): _Course_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Course_aggregation
+  """
+  The key of the bucket
+  """
   key: Course
 }
 type _Course_aggregation_sub_aggregation @aggregation(name: "_Course_aggregation", is_bucket: false, level: 2) @catalog(name: "school", engine: "duckdb") {
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   credits: IntSubAggregation @field_aggregation(name: "credits")
   id: IntSubAggregation @field_aggregation(name: "id")
-  students(filter: Student_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Student_aggregation_sub_aggregation @field_aggregation(name: "students")
-  students_aggregation(filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Student_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "students_aggregation")
+  students(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Student_aggregation_sub_aggregation @field_aggregation(name: "students")
+  students_aggregation(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Student_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "students_aggregation")
   title: StringSubAggregation @field_aggregation(name: "title")
 }
 type _Course_aggregation_sub_aggregation_sub_aggregation @aggregation(name: "_Course_aggregation_sub_aggregation", is_bucket: false, level: 3) @catalog(name: "school", engine: "duckdb") {
@@ -836,7 +1504,20 @@ type _StudentCourse_aggregation_bucket @aggregation(name: "StudentCourse", is_bu
   """
   The aggregations of the bucket
   """
-  aggregations(filter: StudentCourse_filter, order_by: [OrderByField]): _StudentCourse_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: StudentCourse_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _StudentCourse_aggregation
+  """
+  The key of the bucket
+  """
   key: StudentCourse
 }
 type _StudentCourse_aggregation_sub_aggregation @aggregation(name: "_StudentCourse_aggregation", is_bucket: false, level: 2) @catalog(name: "school", engine: "duckdb") {
@@ -847,8 +1528,88 @@ type _StudentCourse_aggregation_sub_aggregation @aggregation(name: "_StudentCour
 type _Student_aggregation @aggregation(name: "Student", is_bucket: false, level: 1) @catalog(name: "school", engine: "duckdb") {
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
-  courses(filter: Course_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Course_aggregation @field_aggregation(name: "courses")
-  courses_aggregation(filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Course_aggregation_sub_aggregation @field_aggregation(name: "courses")
+  courses(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Course_aggregation @field_aggregation(name: "courses")
+  courses_aggregation(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Course_aggregation_sub_aggregation @field_aggregation(name: "courses")
   id: IntAggregation @field_aggregation(name: "id")
   name: StringAggregation @field_aggregation(name: "name")
 }
@@ -859,13 +1620,106 @@ type _Student_aggregation_bucket @aggregation(name: "Student", is_bucket: true, 
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Student_filter, order_by: [OrderByField]): _Student_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Student_aggregation
+  """
+  The key of the bucket
+  """
   key: Student
 }
 type _Student_aggregation_sub_aggregation @aggregation(name: "_Student_aggregation", is_bucket: false, level: 2) @catalog(name: "school", engine: "duckdb") {
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
-  courses(filter: Course_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Course_aggregation_sub_aggregation @field_aggregation(name: "courses")
-  courses_aggregation(filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Course_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "courses_aggregation")
+  courses(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Course_aggregation_sub_aggregation @field_aggregation(name: "courses")
+  courses_aggregation(
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Course_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "courses_aggregation")
   id: IntSubAggregation @field_aggregation(name: "id")
   name: StringSubAggregation @field_aggregation(name: "name")
 }
@@ -974,16 +1828,356 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  Course(fields: [String!]!, filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Course] @query(name: "Course", type: SELECT) @catalog(name: "school", engine: "duckdb")
-  Course_aggregation(fields: [String!]!, filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Course_aggregation @aggregation_query(is_bucket: false, name: "Course") @catalog(name: "school", engine: "duckdb")
-  Course_bucket_aggregation(fields: [String!]!, filter: Course_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Course_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Course") @catalog(name: "school", engine: "duckdb")
-  Student(fields: [String!]!, filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Student] @query(name: "Student", type: SELECT) @catalog(name: "school", engine: "duckdb")
-  Student_aggregation(fields: [String!]!, filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Student_aggregation @aggregation_query(is_bucket: false, name: "Student") @catalog(name: "school", engine: "duckdb")
-  Student_bucket_aggregation(fields: [String!]!, filter: Student_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Student_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Student") @catalog(name: "school", engine: "duckdb")
+  Course(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Course] @query(name: "Course", type: SELECT) @catalog(name: "school", engine: "duckdb")
+  Course_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Course_aggregation @aggregation_query(is_bucket: false, name: "Course") @catalog(name: "school", engine: "duckdb")
+  Course_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Course_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Course") @catalog(name: "school", engine: "duckdb")
+  Student(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Student] @query(name: "Student", type: SELECT) @catalog(name: "school", engine: "duckdb")
+  Student_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Student_aggregation @aggregation_query(is_bucket: false, name: "Student") @catalog(name: "school", engine: "duckdb")
+  Student_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Student_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Student") @catalog(name: "school", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  Course(fields: [String!]!, filter: Course_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Course_aggregation @aggregation_query(is_bucket: false, name: "Course") @catalog(name: "school", engine: "duckdb") @field_aggregation(name: "Course")
-  Student(fields: [String!]!, filter: Student_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Student_aggregation @aggregation_query(is_bucket: false, name: "Student") @catalog(name: "school", engine: "duckdb") @field_aggregation(name: "Student")
+  Course(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Course_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Course_aggregation @aggregation_query(is_bucket: false, name: "Course") @catalog(name: "school", engine: "duckdb") @field_aggregation(name: "Course")
+  Student(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Student_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Student_aggregation @aggregation_query(is_bucket: false, name: "Student") @catalog(name: "school", engine: "duckdb") @field_aggregation(name: "Student")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

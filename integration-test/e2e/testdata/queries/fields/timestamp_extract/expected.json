@@ -1,0 +1,23 @@
+{
+  "data": {
+    "local_db": {
+      "events": [
+        {
+          "_created_at_part": 2025,
+          "id": 1,
+          "name": "Conference"
+        },
+        {
+          "_created_at_part": 2025,
+          "id": 2,
+          "name": "Workshop"
+        },
+        {
+          "_created_at_part": 2025,
+          "id": 3,
+          "name": "Meetup"
+        }
+      ]
+    }
+  }
+}

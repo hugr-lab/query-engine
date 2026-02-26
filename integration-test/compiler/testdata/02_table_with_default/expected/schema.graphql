@@ -361,9 +361,29 @@ type Item @table(name: "items") @catalog(name: "items", engine: "duckdb") @filte
   """
   Extract part of Timestamp field created_at
   """
-  _created_at_part(extract: TimeExtract!, extract_divide: Int): BigInt @extra_field(name: "Extract", base_field: "created_at", base_type: Timestamp) @sql(exp: "[created_at]")
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(name: "Extract", base_field: "created_at", base_type: Timestamp) @sql(exp: "[created_at]")
   _join(fields: [String!]!): _join
-  created_at(bucket: TimeBucket, bucket_interval: Interval): Timestamp @default(value: "now()")
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): Timestamp @default(value: "now()")
   id: Int! @pk
   quantity: Int @default(value: 0)
   status: String @default(value: "active")
@@ -461,15 +481,90 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  Item(filter: Item_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Item] @query(name: "Item", type: SELECT) @catalog(name: "items", engine: "duckdb")
+  Item(
+    """
+    Filter
+    """
+    filter: Item_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Item] @query(name: "Item", type: SELECT) @catalog(name: "items", engine: "duckdb")
   """
   The aggregation for Item
   """
-  Item_aggregation(filter: Item_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Item_aggregation @aggregation_query(name: "Item", is_bucket: false) @catalog(name: "items", engine: "duckdb")
+  Item_aggregation(
+    """
+    Filter
+    """
+    filter: Item_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Item_aggregation @aggregation_query(name: "Item", is_bucket: false) @catalog(name: "items", engine: "duckdb")
   """
   The aggregation for Item
   """
-  Item_bucket_aggregation(filter: Item_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Item_aggregation_bucket] @aggregation_query(name: "Item", is_bucket: true) @catalog(name: "items", engine: "duckdb")
+  Item_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Item_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Item_aggregation_bucket] @aggregation_query(name: "Item", is_bucket: true) @catalog(name: "items", engine: "duckdb")
   Item_by_pk(id: Int!): Item @query(name: "Item", type: SELECT_ONE) @catalog(name: "items", engine: "duckdb")
   function: Function @system
   """
@@ -701,10 +796,30 @@ input VectorSearchInput @system {
   vector: Vector!
 }
 type _Item_aggregation @aggregation(name: "Item", is_bucket: false, level: 1) @catalog(name: "items", engine: "duckdb") {
-  _created_at_part(extract: TimeExtract!, extract_divide: Int): BigIntAggregation @field_aggregation(name: "_created_at_part")
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_created_at_part")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
-  created_at(bucket: TimeBucket, bucket_interval: Interval): TimestampAggregation @field_aggregation(name: "created_at")
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampAggregation @field_aggregation(name: "created_at")
   id: IntAggregation @field_aggregation(name: "id")
   quantity: IntAggregation @field_aggregation(name: "quantity")
   status: StringAggregation @field_aggregation(name: "status")
@@ -716,13 +831,46 @@ type _Item_aggregation_bucket @aggregation(name: "Item", is_bucket: true, level:
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Item_filter, order_by: [OrderByField]): _Item_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Item_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Item_aggregation
+  """
+  The key of the bucket
+  """
   key: Item
 }
 type _Item_aggregation_sub_aggregation @aggregation(name: "_Item_aggregation", is_bucket: false, level: 2) @catalog(name: "items", engine: "duckdb") {
-  _created_at_part(extract: TimeExtract!, extract_divide: Int): BigIntSubAggregation @field_aggregation(name: "_created_at_part")
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_created_at_part")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
-  created_at(bucket: TimeBucket, bucket_interval: Interval): TimestampSubAggregation @field_aggregation(name: "created_at")
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampSubAggregation @field_aggregation(name: "created_at")
   id: IntSubAggregation @field_aggregation(name: "id")
   quantity: IntSubAggregation @field_aggregation(name: "quantity")
   status: StringSubAggregation @field_aggregation(name: "status")
@@ -829,12 +977,182 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  Item(fields: [String!]!, filter: Item_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Item] @query(name: "Item", type: SELECT) @catalog(name: "items", engine: "duckdb")
-  Item_aggregation(fields: [String!]!, filter: Item_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Item_aggregation @aggregation_query(is_bucket: false, name: "Item") @catalog(name: "items", engine: "duckdb")
-  Item_bucket_aggregation(fields: [String!]!, filter: Item_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Item_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Item") @catalog(name: "items", engine: "duckdb")
+  Item(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Item_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Item] @query(name: "Item", type: SELECT) @catalog(name: "items", engine: "duckdb")
+  Item_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Item_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Item_aggregation @aggregation_query(is_bucket: false, name: "Item") @catalog(name: "items", engine: "duckdb")
+  Item_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Item_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Item_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Item") @catalog(name: "items", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  Item(fields: [String!]!, filter: Item_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Item_aggregation @aggregation_query(is_bucket: false, name: "Item") @catalog(name: "items", engine: "duckdb") @field_aggregation(name: "Item")
+  Item(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Item_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Item_aggregation @aggregation_query(is_bucket: false, name: "Item") @catalog(name: "items", engine: "duckdb") @field_aggregation(name: "Item")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

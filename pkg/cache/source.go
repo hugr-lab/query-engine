@@ -8,7 +8,7 @@ import (
 
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	cs "github.com/hugr-lab/query-engine/pkg/catalogs/sources"
+	cs "github.com/hugr-lab/query-engine/pkg/schema/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"

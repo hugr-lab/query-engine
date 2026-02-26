@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
-	"github.com/hugr-lab/query-engine/pkg/schema/static"
-	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -44,9 +42,9 @@ func Test_functionCallNode(t *testing.T) {
 			}
 		}
 	`
-	q, gqlErr := gqlparser.LoadQuery(testCats.Schema(), query)
-	if len(gqlErr) != 0 {
-		t.Fatal(gqlErr)
+	q, err := testSchemaService.ValidateQuery(context.Background(), query)
+	if err != nil {
+		t.Fatal(err)
 	}
 	vars := map[string]interface{}{
 		"arg1": "test",
@@ -107,11 +105,11 @@ func Test_functionCallNode(t *testing.T) {
 			if sdl.IsDataObject(call.ObjectDefinition) {
 				prefix = "_objects"
 			}
-			funcNode, err := functionCallNode(context.Background(), static.NewWithSchema(testCats.Schema()), testService.engines, prefix, call, vars)
+			funcNode, err := functionCallNode(context.Background(), testSchemaService.Provider(), testService.engines, prefix, call, vars)
 			if err != nil {
 				t.Fatal("functionCallNode", err)
 			}
-			funcNode.provider = static.NewWithSchema(testCats.Schema())
+			funcNode.provider = testSchemaService.Provider()
 			funcNode.engines = testService.engines
 			res, err := funcNode.Compile(funcNode, nil)
 			if err != nil {
@@ -126,8 +124,8 @@ func Test_functionCallNode(t *testing.T) {
 			if sdl.IsDataObject(call.ObjectDefinition) {
 				return
 			}
-			selectNode := selectFromFunctionCallNode(context.Background(), static.NewWithSchema(testCats.Schema()), funcNode)
-			selectNode.provider = static.NewWithSchema(testCats.Schema())
+			selectNode := selectFromFunctionCallNode(context.Background(), testSchemaService.Provider(), funcNode)
+			selectNode.provider = testSchemaService.Provider()
 			selectNode.engines = testService.engines
 			res, err = selectNode.Compile(selectNode, nil)
 			if err != nil {

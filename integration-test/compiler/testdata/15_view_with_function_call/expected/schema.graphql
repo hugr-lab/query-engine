@@ -445,15 +445,90 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  City(filter: City_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [City] @query(name: "City", type: SELECT) @catalog(name: "enriched", engine: "duckdb")
+  City(
+    """
+    Filter
+    """
+    filter: City_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [City] @query(name: "City", type: SELECT) @catalog(name: "enriched", engine: "duckdb")
   """
   The aggregation for City
   """
-  City_aggregation(filter: City_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _City_aggregation @aggregation_query(name: "City", is_bucket: false) @catalog(name: "enriched", engine: "duckdb")
+  City_aggregation(
+    """
+    Filter
+    """
+    filter: City_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _City_aggregation @aggregation_query(name: "City", is_bucket: false) @catalog(name: "enriched", engine: "duckdb")
   """
   The aggregation for City
   """
-  City_bucket_aggregation(filter: City_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_City_aggregation_bucket] @aggregation_query(name: "City", is_bucket: true) @catalog(name: "enriched", engine: "duckdb")
+  City_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: City_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_City_aggregation_bucket] @aggregation_query(name: "City", is_bucket: true) @catalog(name: "enriched", engine: "duckdb")
   City_by_pk(id: Int!): City @query(name: "City", type: SELECT_ONE) @catalog(name: "enriched", engine: "duckdb")
   """
   Functions
@@ -703,7 +778,20 @@ type _City_aggregation_bucket @aggregation(name: "City", is_bucket: true, level:
   """
   The aggregations of the bucket
   """
-  aggregations(filter: City_filter, order_by: [OrderByField]): _City_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: City_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _City_aggregation
+  """
+  The key of the bucket
+  """
   key: City
 }
 type _City_aggregation_sub_aggregation @aggregation(name: "_City_aggregation", is_bucket: false, level: 2) @catalog(name: "enriched", engine: "duckdb") {
@@ -816,12 +904,182 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  City(fields: [String!]!, filter: City_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [City] @query(name: "City", type: SELECT) @catalog(name: "enriched", engine: "duckdb")
-  City_aggregation(fields: [String!]!, filter: City_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _City_aggregation @aggregation_query(is_bucket: false, name: "City") @catalog(name: "enriched", engine: "duckdb")
-  City_bucket_aggregation(fields: [String!]!, filter: City_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_City_aggregation_bucket] @aggregation_query(is_bucket: true, name: "City") @catalog(name: "enriched", engine: "duckdb")
+  City(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: City_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [City] @query(name: "City", type: SELECT) @catalog(name: "enriched", engine: "duckdb")
+  City_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: City_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _City_aggregation @aggregation_query(is_bucket: false, name: "City") @catalog(name: "enriched", engine: "duckdb")
+  City_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: City_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_City_aggregation_bucket] @aggregation_query(is_bucket: true, name: "City") @catalog(name: "enriched", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  City(fields: [String!]!, filter: City_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _City_aggregation @aggregation_query(is_bucket: false, name: "City") @catalog(name: "enriched", engine: "duckdb") @field_aggregation(name: "City")
+  City(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: City_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _City_aggregation @aggregation_query(is_bucket: false, name: "City") @catalog(name: "enriched", engine: "duckdb") @field_aggregation(name: "City")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

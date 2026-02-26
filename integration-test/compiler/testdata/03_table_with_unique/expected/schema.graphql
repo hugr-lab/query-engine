@@ -426,15 +426,90 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  User(filter: User_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [User] @query(name: "User", type: SELECT) @catalog(name: "users", engine: "duckdb")
+  User(
+    """
+    Filter
+    """
+    filter: User_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [User] @query(name: "User", type: SELECT) @catalog(name: "users", engine: "duckdb")
   """
   The aggregation for User
   """
-  User_aggregation(filter: User_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _User_aggregation @aggregation_query(name: "User", is_bucket: false) @catalog(name: "users", engine: "duckdb")
+  User_aggregation(
+    """
+    Filter
+    """
+    filter: User_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _User_aggregation @aggregation_query(name: "User", is_bucket: false) @catalog(name: "users", engine: "duckdb")
   """
   The aggregation for User
   """
-  User_bucket_aggregation(filter: User_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_User_aggregation_bucket] @aggregation_query(name: "User", is_bucket: true) @catalog(name: "users", engine: "duckdb")
+  User_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: User_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_User_aggregation_bucket] @aggregation_query(name: "User", is_bucket: true) @catalog(name: "users", engine: "duckdb")
   User_by_pk(id: Int!): User @query(name: "User", type: SELECT_ONE) @catalog(name: "users", engine: "duckdb")
   User_email(email: String!): User @query(name: "User", type: SELECT_ONE) @catalog(name: "users", engine: "duckdb")
   User_username(username: String!): User @query(name: "User", type: SELECT_ONE) @catalog(name: "users", engine: "duckdb")
@@ -713,7 +788,20 @@ type _User_aggregation_bucket @aggregation(name: "User", is_bucket: true, level:
   """
   The aggregations of the bucket
   """
-  aggregations(filter: User_filter, order_by: [OrderByField]): _User_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: User_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _User_aggregation
+  """
+  The key of the bucket
+  """
   key: User
 }
 type _User_aggregation_sub_aggregation @aggregation(name: "_User_aggregation", is_bucket: false, level: 2) @catalog(name: "users", engine: "duckdb") {
@@ -825,12 +913,182 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  User(fields: [String!]!, filter: User_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [User] @query(name: "User", type: SELECT) @catalog(name: "users", engine: "duckdb")
-  User_aggregation(fields: [String!]!, filter: User_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _User_aggregation @aggregation_query(is_bucket: false, name: "User") @catalog(name: "users", engine: "duckdb")
-  User_bucket_aggregation(fields: [String!]!, filter: User_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_User_aggregation_bucket] @aggregation_query(is_bucket: true, name: "User") @catalog(name: "users", engine: "duckdb")
+  User(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: User_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [User] @query(name: "User", type: SELECT) @catalog(name: "users", engine: "duckdb")
+  User_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: User_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _User_aggregation @aggregation_query(is_bucket: false, name: "User") @catalog(name: "users", engine: "duckdb")
+  User_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: User_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_User_aggregation_bucket] @aggregation_query(is_bucket: true, name: "User") @catalog(name: "users", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  User(fields: [String!]!, filter: User_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _User_aggregation @aggregation_query(is_bucket: false, name: "User") @catalog(name: "users", engine: "duckdb") @field_aggregation(name: "User")
+  User(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: User_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _User_aggregation @aggregation_query(is_bucket: false, name: "User") @catalog(name: "users", engine: "duckdb") @field_aggregation(name: "User")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

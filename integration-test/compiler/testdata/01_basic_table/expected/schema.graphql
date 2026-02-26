@@ -426,15 +426,90 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  Widget(filter: Widget_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Widget] @query(name: "Widget", type: SELECT) @catalog(name: "widgets", engine: "duckdb")
+  Widget(
+    """
+    Filter
+    """
+    filter: Widget_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Widget] @query(name: "Widget", type: SELECT) @catalog(name: "widgets", engine: "duckdb")
   """
   The aggregation for Widget
   """
-  Widget_aggregation(filter: Widget_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Widget_aggregation @aggregation_query(name: "Widget", is_bucket: false) @catalog(name: "widgets", engine: "duckdb")
+  Widget_aggregation(
+    """
+    Filter
+    """
+    filter: Widget_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Widget_aggregation @aggregation_query(name: "Widget", is_bucket: false) @catalog(name: "widgets", engine: "duckdb")
   """
   The aggregation for Widget
   """
-  Widget_bucket_aggregation(filter: Widget_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Widget_aggregation_bucket] @aggregation_query(name: "Widget", is_bucket: true) @catalog(name: "widgets", engine: "duckdb")
+  Widget_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Widget_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Widget_aggregation_bucket] @aggregation_query(name: "Widget", is_bucket: true) @catalog(name: "widgets", engine: "duckdb")
   Widget_by_pk(id: Int!): Widget @query(name: "Widget", type: SELECT_ONE) @catalog(name: "widgets", engine: "duckdb")
   function: Function @system
   """
@@ -669,10 +744,30 @@ type Widget @table(name: "widgets") @catalog(name: "widgets", engine: "duckdb") 
   """
   Extract part of Timestamp field created_at
   """
-  _created_at_part(extract: TimeExtract!, extract_divide: Int): BigInt @extra_field(name: "Extract", base_field: "created_at", base_type: Timestamp) @sql(exp: "[created_at]")
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(name: "Extract", base_field: "created_at", base_type: Timestamp) @sql(exp: "[created_at]")
   _join(fields: [String!]!): _join
   active: Boolean
-  created_at(bucket: TimeBucket, bucket_interval: Interval): Timestamp
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): Timestamp
   id: Int! @pk
   name: String!
   price: Float
@@ -705,11 +800,31 @@ input Widget_mut_input_data @data_input(name: "Widget") @catalog(name: "widgets"
   price: Float
 }
 type _Widget_aggregation @aggregation(name: "Widget", is_bucket: false, level: 1) @catalog(name: "widgets", engine: "duckdb") {
-  _created_at_part(extract: TimeExtract!, extract_divide: Int): BigIntAggregation @field_aggregation(name: "_created_at_part")
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_created_at_part")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   active: BooleanAggregation @field_aggregation(name: "active")
-  created_at(bucket: TimeBucket, bucket_interval: Interval): TimestampAggregation @field_aggregation(name: "created_at")
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampAggregation @field_aggregation(name: "created_at")
   id: IntAggregation @field_aggregation(name: "id")
   name: StringAggregation @field_aggregation(name: "name")
   price: FloatAggregation @field_aggregation(name: "price")
@@ -721,14 +836,47 @@ type _Widget_aggregation_bucket @aggregation(name: "Widget", is_bucket: true, le
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Widget_filter, order_by: [OrderByField]): _Widget_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Widget_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Widget_aggregation
+  """
+  The key of the bucket
+  """
   key: Widget
 }
 type _Widget_aggregation_sub_aggregation @aggregation(name: "_Widget_aggregation", is_bucket: false, level: 2) @catalog(name: "widgets", engine: "duckdb") {
-  _created_at_part(extract: TimeExtract!, extract_divide: Int): BigIntSubAggregation @field_aggregation(name: "_created_at_part")
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_created_at_part")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   active: BooleanSubAggregation @field_aggregation(name: "active")
-  created_at(bucket: TimeBucket, bucket_interval: Interval): TimestampSubAggregation @field_aggregation(name: "created_at")
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampSubAggregation @field_aggregation(name: "created_at")
   id: IntSubAggregation @field_aggregation(name: "id")
   name: StringSubAggregation @field_aggregation(name: "name")
   price: FloatSubAggregation @field_aggregation(name: "price")
@@ -835,12 +983,182 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  Widget(fields: [String!]!, filter: Widget_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Widget] @query(name: "Widget", type: SELECT) @catalog(name: "widgets", engine: "duckdb")
-  Widget_aggregation(fields: [String!]!, filter: Widget_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Widget_aggregation @aggregation_query(is_bucket: false, name: "Widget") @catalog(name: "widgets", engine: "duckdb")
-  Widget_bucket_aggregation(fields: [String!]!, filter: Widget_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Widget_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Widget") @catalog(name: "widgets", engine: "duckdb")
+  Widget(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Widget_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Widget] @query(name: "Widget", type: SELECT) @catalog(name: "widgets", engine: "duckdb")
+  Widget_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Widget_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Widget_aggregation @aggregation_query(is_bucket: false, name: "Widget") @catalog(name: "widgets", engine: "duckdb")
+  Widget_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Widget_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Widget_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Widget") @catalog(name: "widgets", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  Widget(fields: [String!]!, filter: Widget_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Widget_aggregation @aggregation_query(is_bucket: false, name: "Widget") @catalog(name: "widgets", engine: "duckdb") @field_aggregation(name: "Widget")
+  Widget(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Widget_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Widget_aggregation @aggregation_query(is_bucket: false, name: "Widget") @catalog(name: "widgets", engine: "duckdb") @field_aggregation(name: "Widget")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

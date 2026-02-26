@@ -119,8 +119,8 @@ func (s *timestampScalar) MeasurementAggregationTypeName() string {
 
 func (s *timestampScalar) FieldArguments() ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
-		{Name: "bucket", Type: ast.NamedType("TimeBucket", nil)},
-		{Name: "bucket_interval", Type: ast.NamedType("Interval", nil)},
+		{Name: "bucket", Description: "Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.", Type: ast.NamedType("TimeBucket", nil)},
+		{Name: "bucket_interval", Description: "Truncate the specified part of the timestamp", Type: ast.NamedType("Interval", nil)},
 	}
 }
 

@@ -1,0 +1,9 @@
+{
+  local_db {
+    events(order_by: [{ field: "id", direction: ASC }], limit: 3) {
+      id
+      name
+      _created_at_part(extract: year)
+    }
+  }
+}

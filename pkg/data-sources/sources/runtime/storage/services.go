@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/duckdb/duckdb-go/v2"
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
+	"github.com/hugr-lab/query-engine/pkg/schema/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"

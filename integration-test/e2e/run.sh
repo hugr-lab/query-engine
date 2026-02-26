@@ -20,7 +20,7 @@ SKIP=0
 KEEP=false
 
 # jq filter to recursively sort arrays of objects by "name" field for deterministic comparison
-JQ_DEEP_SORT='def sort_arrays: if type == "array" then map(sort_arrays) | sort_by(if type == "object" and has("name") then .name else tostring end) elif type == "object" then to_entries | map(.value = (.value | sort_arrays)) | from_entries else . end; . | sort_arrays'
+JQ_DEEP_SORT='def sort_arrays: if type == "array" then map(sort_arrays) | sort_by(if type == "object" and has("name") then .name else tostring end) elif type == "object" then to_entries | sort_by(.key) | map(.value = (.value | sort_arrays)) | from_entries else . end; . | sort_arrays'
 
 for arg in "$@"; do
   case $arg in

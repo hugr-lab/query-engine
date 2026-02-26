@@ -1,0 +1,44 @@
+{
+  "data": {
+    "local_db": {
+      "events_bucket_aggregation": [
+        {
+          "aggregations": {
+            "_rows_count": 2,
+            "value": {
+              "avg": 75.25,
+              "sum": 150.5
+            }
+          },
+          "key": {
+            "created_at": "2025-03-01 00:00:00+00"
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 2,
+            "value": {
+              "avg": 100.0,
+              "sum": 200.0
+            }
+          },
+          "key": {
+            "created_at": "2025-04-01 00:00:00+00"
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 1,
+            "value": {
+              "avg": 25.0,
+              "sum": 25.0
+            }
+          },
+          "key": {
+            "created_at": "2025-05-01 00:00:00+00"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "data": {
+    "local_db": {
+      "items": [
+        {
+          "id": 1,
+          "name": "Laptop",
+          "tags": {
+            "color": "silver"
+          }
+        }
+      ]
+    },
+    "pg_store": {
+      "products": [
+        {
+          "id": 1,
+          "name": "Laptop Pro",
+          "tags": {
+            "color": "silver",
+            "weight": 1.5
+          }
+        }
+      ]
+    }
+  }
+}
