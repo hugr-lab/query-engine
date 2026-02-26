@@ -7,10 +7,10 @@ import (
 	_ "embed"
 
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/schema"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
-	"github.com/hugr-lab/query-engine/pkg/schema/sources"
-	"github.com/hugr-lab/query-engine/pkg/schema/static"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/types"
 )
 
@@ -22,7 +22,7 @@ func Test_processQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ss := schema.NewService(provider)
+	ss := catalog.NewService(provider)
 	cat, err := sources.NewCatalog(context.Background(),
 		types.DataSource{Name: "test"},
 		engines.NewDuckDB(),

@@ -18,8 +18,8 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
-	"github.com/hugr-lab/query-engine/pkg/schema"
-	"github.com/hugr-lab/query-engine/pkg/schema/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
@@ -32,10 +32,10 @@ type Service struct {
 
 	db       *db.Pool
 	qe       types.Querier
-	catalogs schema.Manager
+	catalogs catalog.Manager
 }
 
-func New(qe types.Querier, db *db.Pool, cs schema.Manager) *Service {
+func New(qe types.Querier, db *db.Pool, cs catalog.Manager) *Service {
 	return &Service{
 		dataSources: make(map[string]Source),
 		catalogs:    cs,
@@ -174,7 +174,7 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 
 	// remove catalog
 	err := s.catalogs.RemoveCatalog(ctx, name)
-	if !errors.Is(err, schema.ErrCatalogNotFound) && err != nil {
+	if !errors.Is(err, catalog.ErrCatalogNotFound) && err != nil {
 		return err
 	}
 

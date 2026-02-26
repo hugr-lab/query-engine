@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name

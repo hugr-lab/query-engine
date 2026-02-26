@@ -11,7 +11,7 @@ import (
 	adminui "github.com/hugr-lab/query-engine/pkg/admin-ui"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
@@ -20,8 +20,8 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/gis"
 	permissions "github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/planner"
-	"github.com/hugr-lab/query-engine/pkg/schema"
-	"github.com/hugr-lab/query-engine/pkg/schema/static"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -33,8 +33,8 @@ type Service struct {
 
 	router  *http.ServeMux
 	adminUI http.HandlerFunc
-	catalog schema.Manager
-	schema  *schema.Service
+	catalog catalog.Manager
+	schema  *catalog.Service
 	ds      *datasources.Service
 	planner *planner.Service
 	db      *db.Pool
@@ -80,7 +80,7 @@ func New(config Config) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init system schema: %w", err)
 	}
-	ss := schema.NewService(provider)
+	ss := catalog.NewService(provider)
 
 	return &Service{
 		config:  config,
@@ -123,7 +123,7 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		return fmt.Errorf("attach runtime sources: %w", err)
 	}
 
-	s.schema.SetVariableTransformer(schema.NewJQVariableTransformer(s))
+	s.schema.SetVariableTransformer(catalog.NewJQVariableTransformer(s))
 	s.planner = planner.New(s.catalog, s)
 
 	if s.config.AdminUIFetchPath == "" {
@@ -200,7 +200,7 @@ func (s *Service) Close() error {
 	return nil
 }
 
-func (s *Service) SchemaProvider() schema.Provider {
+func (s *Service) SchemaProvider() catalog.Provider {
 	return s.schema.Provider()
 }
 
@@ -321,7 +321,7 @@ func (s *Service) ProcessQuery(ctx context.Context, _ string, req types.Request)
 	return res
 }
 
-func (s *Service) ProcessOperation(ctx context.Context, provider schema.Provider, op *schema.Operation) (map[string]any, map[string]any, error) {
+func (s *Service) ProcessOperation(ctx context.Context, provider catalog.Provider, op *catalog.Operation) (map[string]any, map[string]any, error) {
 	switch op.Definition.Operation {
 	case ast.Query, ast.Mutation:
 		return s.processQuery(ctx, provider, op)

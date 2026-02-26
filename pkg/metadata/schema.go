@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/perm"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -22,7 +22,7 @@ var (
 	ErrTypeNotFound  = errors.New("type not found")
 )
 
-func processSchemaQuery(ctx context.Context, provider schema.Provider, field *ast.Field, maxDepth int) (map[string]any, error) {
+func processSchemaQuery(ctx context.Context, provider catalog.Provider, field *ast.Field, maxDepth int) (map[string]any, error) {
 	return processSelectionSet(ctx, field.SelectionSet, map[string]fieldResolverFunc{
 		"description": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return provider.Description(ctx), nil
@@ -97,7 +97,7 @@ func typeNameResolver(ctx context.Context, field *ast.Field, onType string) (any
 	return field.ObjectDefinition.Name, nil
 }
 
-func typeResolver(ctx context.Context, provider schema.Provider, typeDef *ast.Type, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
+func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.Type, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
 	def := provider.ForName(ctx, typeDef.Name())
 	if def == nil {
 		return nil, ErrTypeNotFound
@@ -320,7 +320,7 @@ func typeResolver(ctx context.Context, provider schema.Provider, typeDef *ast.Ty
 	}, "__Type")
 }
 
-func fieldResolver(ctx context.Context, provider schema.Provider, def *ast.FieldDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
+func fieldResolver(ctx context.Context, provider catalog.Provider, def *ast.FieldDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
 	di := sdl.FieldDeprecatedInfo(def)
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
 		"__typename": typeNameResolver,
@@ -442,7 +442,7 @@ func enumValueResolver(ctx context.Context, def *ast.EnumValueDefinition, ss ast
 	}, "__EnumValue")
 }
 
-func argumentResolver(ctx context.Context, provider schema.Provider, def *ast.ArgumentDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
+func argumentResolver(ctx context.Context, provider catalog.Provider, def *ast.ArgumentDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
 		"__typename": typeNameResolver,
 		"name": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
@@ -475,7 +475,7 @@ func argumentResolver(ctx context.Context, provider schema.Provider, def *ast.Ar
 	}, "__InputValue")
 }
 
-func inputValueResolver(ctx context.Context, provider schema.Provider, def *ast.FieldDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
+func inputValueResolver(ctx context.Context, provider catalog.Provider, def *ast.FieldDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
 		"__typename": typeNameResolver,
 		"name": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
@@ -509,7 +509,7 @@ func isPlaceholderField(name string) bool {
 }
 
 
-func directiveResolver(ctx context.Context, provider schema.Provider, def *ast.DirectiveDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
+func directiveResolver(ctx context.Context, provider catalog.Provider, def *ast.DirectiveDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
 		"__typename": typeNameResolver,
 		"name": func(ctx context.Context, field *ast.Field, onType string) (any, error) {

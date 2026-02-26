@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/schema"
-	"github.com/hugr-lab/query-engine/pkg/schema/sources"
-	"github.com/hugr-lab/query-engine/pkg/schema/static"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/types"
 )
 
@@ -102,7 +102,7 @@ const testPGSchemaData = `
 `
 
 var (
-	testSchemaService *schema.Service
+	testSchemaService *catalog.Service
 	testService       *Service
 )
 
@@ -112,7 +112,7 @@ func TestMain(m *testing.M) {
 		fmt.Printf("Failed to init static provider: %v", err)
 		os.Exit(1)
 	}
-	ss := schema.NewService(provider)
+	ss := catalog.NewService(provider)
 
 	cat, err := sources.NewCatalog(context.Background(),
 		types.DataSource{Name: "test"},

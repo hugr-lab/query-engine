@@ -2,7 +2,7 @@ package perm
 
 import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/schema/validator"
+	"github.com/hugr-lab/query-engine/pkg/catalog/validator"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )

@@ -1,6 +1,6 @@
 package engines
 
-import "github.com/hugr-lab/query-engine/pkg/schema/compiler"
+import "github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 
 // HTTP Engine is a query engine for HTTP data sources.
 

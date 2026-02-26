@@ -12,7 +12,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
-	cs "github.com/hugr-lab/query-engine/pkg/schema/sources"
+	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 )
 
 const (

@@ -10,12 +10,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/planner"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/paulmach/orb/geojson"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -188,7 +188,7 @@ func parseContentType(contentType string) (string, string, error) {
 }
 
 // parseRequest parses the GraphQL request, filter it if feature list provided and returns the feature definitions and any errors.
-func parseRequest(ctx context.Context, schemaSvc *schema.Service, req *types.Request, features []string) (featureMap map[string]featureDefinition, err error) {
+func parseRequest(ctx context.Context, schemaSvc *catalog.Service, req *types.Request, features []string) (featureMap map[string]featureDefinition, err error) {
 	qd, err := schemaSvc.ValidateQuery(ctx, req.Query)
 	if err != nil {
 		return nil, err

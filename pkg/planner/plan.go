@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -88,7 +88,7 @@ type QueryPlanNode struct {
 
 	Before NodeBeforeExecFunc
 
-	provider schema.Provider
+	provider catalog.Provider
 	engines  Catalog
 	querier  types.Querier
 
@@ -179,7 +179,7 @@ func (r *Results) FirstResult() *Result {
 	return (*r)[0]
 }
 
-func (n *QueryPlanNode) SchemaProvider() schema.Provider {
+func (n *QueryPlanNode) SchemaProvider() catalog.Provider {
 	if n.provider != nil {
 		return n.provider
 	}

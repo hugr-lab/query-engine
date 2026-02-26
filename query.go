@@ -10,11 +10,11 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/metadata"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
@@ -29,7 +29,7 @@ type result struct {
 	path       []string
 }
 
-func (s *Service) processQuery(ctx context.Context, provider schema.Provider, op *schema.Operation) (map[string]any, map[string]any, error) {
+func (s *Service) processQuery(ctx context.Context, provider catalog.Provider, op *catalog.Operation) (map[string]any, map[string]any, error) {
 	start := time.Now()
 	queries := op.Queries
 	qtt := op.QueryType
@@ -164,7 +164,7 @@ func collectResult(data, extensions map[string]any, res result) (map[string]any,
 }
 
 func (s *Service) processQuerySequential(ctx context.Context,
-	provider schema.Provider,
+	provider catalog.Provider,
 	queries []base.QueryRequest,
 	vars map[string]any,
 	path []string,
@@ -219,7 +219,7 @@ func (s *Service) processQueryParallel(
 	ctx context.Context,
 	wg *sync.WaitGroup,
 	eg *errgroup.Group,
-	provider schema.Provider,
+	provider catalog.Provider,
 	queries []base.QueryRequest,
 	vars map[string]any,
 	path []string,
@@ -284,7 +284,7 @@ func (s *Service) processQueryParallel(
 	}
 }
 
-func (s *Service) processDataQuery(ctx context.Context, provider schema.Provider, query base.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
+func (s *Service) processDataQuery(ctx context.Context, provider catalog.Provider, query base.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
 	start := time.Now()
 	var plannerTime, compileTime time.Duration
 	dataFunc := func() (any, error) {
@@ -374,7 +374,7 @@ func (s *Service) processDataQuery(ctx context.Context, provider schema.Provider
 	return data, ext, nil
 }
 
-func (s *Service) processJQTransformation(ctx context.Context, provider schema.Provider, query base.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
+func (s *Service) processJQTransformation(ctx context.Context, provider catalog.Provider, query base.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
 	start := time.Now()
 	var dataTime, compilerTime, serializationTime, execTime time.Duration
 	var rn, tn int
@@ -402,8 +402,8 @@ func (s *Service) processJQTransformation(ctx context.Context, provider schema.P
 				return nil, sdl.ErrorPosf(query.Field.Position, "includeResults argument should be boolean")
 			}
 		}
-		subQueries, subQtt := schema.QueryRequestInfo(query.Field.SelectionSet)
-		subOp := &schema.Operation{
+		subQueries, subQtt := catalog.QueryRequestInfo(query.Field.SelectionSet)
+		subOp := &catalog.Operation{
 			Definition: &ast.OperationDefinition{
 				Operation:    ast.Query,
 				Name:         query.Field.Alias,
