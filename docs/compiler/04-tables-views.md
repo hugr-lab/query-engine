@@ -86,6 +86,18 @@ type _Widget_aggregation @aggregation(name: "Widget", is_bucket: false, level: 1
 - Per-field aggregation uses scalar type's `AggregationTypeName()` (e.g., `IntAggregation`, `StringAggregation`)
 - Field arguments (bucket, transforms, struct) are copied from source fields
 
+### Structural Object Fields
+
+Object fields without `@table`/`@view` (structural types) are included in aggregation types
+recursively. For `nested: NestedType` where `NestedType` has scalar fields, the aggregation
+type includes `nested: _NestedType_aggregation`.
+
+### Excluded Fields
+
+These fields do NOT get aggregation entries:
+- List scalar fields (`tags: [String]`) — no aggregation type exists for list scalars
+- Fields with `@function_call` or `@table_function_call_join` directives
+
 ### Bucket Aggregation
 
 ```graphql
@@ -94,6 +106,14 @@ type _Widget_aggregation_bucket @aggregation(name: "Widget", is_bucket: true, le
   aggregations(filter: Widget_filter, order_by: [OrderByField]): _Widget_aggregation
 }
 ```
+
+### Virtual Field Aggregation
+
+Fields with `@join` or `@table_function_call_join` that return list types generate
+aggregation and bucket-aggregation fields on the **base object's** aggregation type:
+
+- `<field>_aggregation: _Target_aggregation` with `@field_aggregation`
+- `<field>_bucket_aggregation: _Target_aggregation_bucket` with `@field_aggregation`
 
 ## View Compilation (`ViewRule`)
 

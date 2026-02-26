@@ -25,10 +25,10 @@ file-based sources use content hashes, dynamic sources use timestamps.
 | Phase | Purpose | Example Rules |
 |-------|---------|---------------|
 | **VALIDATE** | Structural validation of source schema | `SourceValidator`, `DefinitionValidator`, `ExtensionValidator`, `DependencyCollector` |
-| **PREPARE** | Metadata preparation, prefix application, catalog tagging | `CatalogTagger`, `PrefixPreparer` |
-| **GENERATE** | Type generation (filters, mutations, aggregations, subqueries) | `TableRule`, `ViewRule`, `ReferencesRule`, `FunctionRule`, `JoinSpatialRule` |
+| **PREPARE** | Metadata preparation, prefix application, catalog tagging | `InternalExtensionMerger`, `CatalogTagger`, `PrefixPreparer` |
+| **GENERATE** | Type generation (filters, mutations, aggregations, subqueries) | `PassthroughRule`, `TableRule`, `ViewRule`, `AggregationRule`, `ReferencesRule`, `FunctionRule`, `JoinSpatialRule` |
 | **ASSEMBLE** | Root Query/Mutation assembly, module hierarchy | `ModuleAssembler`, `RootTypeAssembler` |
-| **FINALIZE** | Post-compilation validation and constraints | `ReadOnlyFinalizer`, `JoinValidator`, `PostValidator` |
+| **FINALIZE** | Post-compilation validation and constraints | `ReadOnlyFinalizer`, `JoinValidator`, `FunctionCallValidator`, `ArgumentTypeValidator`, `PostValidator` |
 
 ## Rule Types
 
@@ -63,12 +63,12 @@ Rules are registered in `rules/init.go` and execute in registration order within
 
 ```
 VALIDATE:  ExtensionValidator → DependencyCollector → SourceValidator → DefinitionValidator
-PREPARE:   CatalogTagger → PrefixPreparer
-GENERATE:  TableRule → ViewRule → CubeHypertableRule → UniqueRule → ReferencesRule →
-           JoinSpatialRule → H3Rule → AggregationRule → FunctionRule → ExtraFieldRule →
-           VectorSearchRule → EmbeddingsRule
+PREPARE:   InternalExtensionMerger → CatalogTagger → PrefixPreparer
+GENERATE:  PassthroughRule → TableRule → ViewRule → CubeHypertableRule → UniqueRule →
+           AggregationRule → ReferencesRule → JoinSpatialRule → H3Rule →
+           FunctionRule → ExtraFieldRule → VectorSearchRule → EmbeddingsRule
 ASSEMBLE:  ModuleAssembler → RootTypeAssembler
-FINALIZE:  ReadOnlyFinalizer → JoinValidator → FunctionCallValidator → PostValidator
+FINALIZE:  ReadOnlyFinalizer → JoinValidator → FunctionCallValidator → ArgumentTypeValidator → PostValidator
 ```
 
 ## CompileOptions
@@ -98,6 +98,7 @@ type Catalog interface {
     Name() string
     Description() string
     Version(ctx context.Context) (string, error)
+    Engine() engines.Engine
 }
 ```
 

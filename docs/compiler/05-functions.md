@@ -37,7 +37,9 @@ These fields:
 
 ### Function Aggregation Fields
 
-For function fields returning lists, the compiler generates sub-aggregation entries:
+For fields with `@function_call` or `@table_function_call_join` returning list types,
+the compiler generates aggregation and bucket-aggregation entries on the base type's
+aggregation type. The original field arguments are preserved on the aggregation fields.
 
 ```graphql
 type _Airport_aggregation {
