@@ -55,6 +55,14 @@ type Airport @table(name: "airports") @module(name: "transport_db.transport.air"
   iata_code: String! @pk
   name: String!
   nearby: [Airport] @table_function_call_join(references_name: "find_nearby", args: {iata_code:"iata_code"}, module: "transport_db") @catalog(name: "transport_db", engine: "duckdb")
+  """
+  The aggregation for nearby
+  """
+  nearby_aggregation: _Airport_aggregation @aggregation_query(is_bucket: false, name: "nearby") @catalog(name: "transport_db", engine: "duckdb")
+  """
+  The bucket aggregation for nearby
+  """
+  nearby_bucket_aggregation: [_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "nearby") @catalog(name: "transport_db", engine: "duckdb")
 }
 """
 Filter for Airport objects
@@ -825,9 +833,7 @@ type _Airport_aggregation @aggregation(name: "Airport", is_bucket: false, level:
   ): GeometryAggregation @field_aggregation(name: "geom")
   iata_code: StringAggregation @field_aggregation(name: "iata_code")
   name: StringAggregation @field_aggregation(name: "name")
-  """
-  The aggregation for nearby
-  """
+  nearby: _Airport_aggregation @field_aggregation(name: "nearby")
   nearby_aggregation: _Airport_aggregation_sub_aggregation @field_aggregation(name: "nearby")
 }
 """

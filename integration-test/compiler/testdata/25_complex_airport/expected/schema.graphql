@@ -884,6 +884,14 @@ type FnAirport @table(name: "fn_airports") @catalog(name: "fn_transport", engine
   iata_code: String! @pk
   name: String!
   nearby: [FnAirport] @table_function_call_join(references_name: "find_nearby", args: {origin:"iata_code"}, module: "fn_transport") @catalog(name: "fn_transport", engine: "duckdb")
+  """
+  The aggregation for nearby
+  """
+  nearby_aggregation: _FnAirport_aggregation @aggregation_query(is_bucket: false, name: "nearby") @catalog(name: "fn_transport", engine: "duckdb")
+  """
+  The bucket aggregation for nearby
+  """
+  nearby_bucket_aggregation: [_FnAirport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "nearby") @catalog(name: "fn_transport", engine: "duckdb")
   status: String @function_call(references_name: "airport_status", args: {code:"iata_code"}, module: "fn_transport") @catalog(name: "fn_transport", engine: "duckdb")
 }
 """
@@ -2988,9 +2996,7 @@ type _FnAirport_aggregation @aggregation(name: "FnAirport", is_bucket: false, le
   ): GeometryAggregation @field_aggregation(name: "geom")
   iata_code: StringAggregation @field_aggregation(name: "iata_code")
   name: StringAggregation @field_aggregation(name: "name")
-  """
-  The aggregation for nearby
-  """
+  nearby: _FnAirport_aggregation @field_aggregation(name: "nearby")
   nearby_aggregation: _FnAirport_aggregation_sub_aggregation @field_aggregation(name: "nearby")
   status: StringAggregation @field_aggregation(name: "status")
 }

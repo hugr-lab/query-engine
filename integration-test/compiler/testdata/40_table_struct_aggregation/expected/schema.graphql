@@ -715,9 +715,160 @@ type Product @table(name: "products") @references(name: "prod_cat", references_n
   ): Geometry
   metadata: Metadata
   name: String!
-  nearby_categories: [Category] @join(references_name: "Category", source_fields: ["category_id"], references_fields: ["id"]) @catalog(name: "store", engine: "duckdb")
+  nearby_categories(
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Category] @join(references_name: "Category", source_fields: ["category_id"], references_fields: ["id"]) @catalog(name: "store", engine: "duckdb")
+  """
+  The aggregation for nearby_categories
+  """
+  nearby_categories_aggregation(
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Category_aggregation @aggregation_query(is_bucket: false, name: "nearby_categories") @catalog(name: "store", engine: "duckdb")
+  """
+  The bucket aggregation for nearby_categories
+  """
+  nearby_categories_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Category_aggregation_bucket] @aggregation_query(is_bucket: true, name: "nearby_categories") @catalog(name: "store", engine: "duckdb")
   price: Float!
   related: [Product] @table_function_call_join(references_name: "related_items", args: {product_id:"id"}) @catalog(name: "store", engine: "duckdb")
+  """
+  The aggregation for related
+  """
+  related_aggregation: _Product_aggregation @aggregation_query(is_bucket: false, name: "related") @catalog(name: "store", engine: "duckdb")
+  """
+  The bucket aggregation for related
+  """
+  related_bucket_aggregation: [_Product_aggregation_bucket] @aggregation_query(is_bucket: true, name: "related") @catalog(name: "store", engine: "duckdb")
   specs: Specs
   tags: [String]
 }
@@ -1493,13 +1644,92 @@ type _Product_aggregation @aggregation(name: "Product", is_bucket: false, level:
   ): GeometryAggregation @field_aggregation(name: "location")
   metadata: _Metadata_aggregation @field_aggregation(name: "metadata")
   name: StringAggregation @field_aggregation(name: "name")
+  nearby_categories(
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Category_aggregation @field_aggregation(name: "nearby_categories")
+  nearby_categories_aggregation(
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Category_aggregation_sub_aggregation @field_aggregation(name: "nearby_categories")
   price: FloatAggregation @field_aggregation(name: "price")
-  """
-  The aggregation for related
-  """
+  related: _Product_aggregation @field_aggregation(name: "related")
   related_aggregation: _Product_aggregation_sub_aggregation @field_aggregation(name: "related")
   specs: _Specs_aggregation @field_aggregation(name: "specs")
-  tags: StringAggregation @field_aggregation(name: "tags")
 }
 """
 Bucket aggregation for Product
@@ -1607,7 +1837,6 @@ type _Product_aggregation_sub_aggregation @aggregation(name: "_Product_aggregati
   name: StringSubAggregation @field_aggregation(name: "name")
   price: FloatSubAggregation @field_aggregation(name: "price")
   specs: _Specs_aggregation_sub_aggregation @field_aggregation(name: "specs")
-  tags: StringSubAggregation @field_aggregation(name: "tags")
 }
 type _Product_aggregation_sub_aggregation_sub_aggregation @aggregation(name: "_Product_aggregation_sub_aggregation", is_bucket: false, level: 3) @catalog(name: "store", engine: "duckdb") {
   _rows_count: BigIntSubAggregation @field_aggregation(name: "aggregation_field")

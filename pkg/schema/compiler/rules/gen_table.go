@@ -621,6 +621,9 @@ func generateAggregationType(ctx base.CompilationContext, def *ast.Definition, n
 
 		switch {
 		case ctx.ScalarLookup(typeName) != nil:
+			if f.Type.NamedType == "" {
+				continue // skip list scalars — can't aggregate arrays
+			}
 			s := ctx.ScalarLookup(typeName)
 			a, ok := s.(types.Aggregatable)
 			if !ok {
@@ -993,13 +996,17 @@ func generateMutationFields(ctx base.CompilationContext, def *ast.Definition, in
 	return fields
 }
 
-// addTableFuncJoinSubAggregations adds sub-aggregation fields for table_function_call_join
-// list fields on a data object. For each such field (that is a list), the old compiler
-// adds a {field}_aggregation sub-field on the aggregation type pointing to a sub-aggregation type.
-// Fields with bound args still get sub-aggregation (unlike main aggregation which is skipped).
-func addTableFuncJoinSubAggregations(ctx base.CompilationContext, def *ast.Definition, aggTypeName string, pos *ast.Position) {
+// addVirtualFieldAggregations adds aggregation fields for @join and @table_function_call_join
+// list fields on a data object. For each such field:
+// - @join: adds subquery args, standard aggregation args (aggRefArgs/aggSubRefArgs)
+// - @table_function_call_join: preserves original field arguments (function call args may not be in the mapping)
+// Both: adds {name}_aggregation and {name}_bucket_aggregation on base object,
+// and direct agg + sub-agg fields on the aggregation type.
+func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definition, aggTypeName string, opts base.Options, pos *ast.Position) {
 	for _, f := range def.Fields {
-		if f.Directives.ForName("table_function_call_join") == nil {
+		isJoin := f.Directives.ForName("join") != nil
+		isTFCJ := f.Directives.ForName("table_function_call_join") != nil
+		if !isJoin && !isTFCJ {
 			continue
 		}
 		// Only list fields (NamedType == "" means it's a list)
@@ -1012,25 +1019,115 @@ func addTableFuncJoinSubAggregations(ctx base.CompilationContext, def *ast.Defin
 			continue
 		}
 
-		// Sub-aggregation type for the target is created by AggregationRule
+		targetFilterName := targetName + "_filter"
+		targetAggName := "_" + targetName + "_aggregation"
+		bucketAggName := "_" + targetName + "_aggregation_bucket"
 		subAggName := aggTypeNameAtDepth(targetName, 1)
 
-		// Add {field}_aggregation field to the aggregation type
-		ctx.AddExtension(&ast.Definition{
-			Kind:     ast.Object,
-			Name:     aggTypeName,
-			Position: pos,
-			Fields: ast.FieldList{
-				{
-					Name:        f.Name + "_aggregation",
-					Description: "The aggregation for " + f.Name,
-					Type:        ast.NamedType(subAggName, pos),
-					Directives: ast.DirectiveList{
-						fieldAggregationDirective(f.Name, pos),
+		if isJoin {
+			// @join fields: add subquery args to the field itself
+			if len(f.Arguments) == 0 {
+				f.Arguments = subQueryArgs(targetFilterName, pos)
+			}
+
+			// Add {name}_aggregation and {name}_bucket_aggregation on base object (with subQueryArgs)
+			addReferenceAggregationFields(ctx, def.Name, f.Name, targetName, targetFilterName, opts, pos)
+
+			// Add direct agg + sub-agg fields on aggregation type (with aggRefArgs/aggSubRefArgs)
+			ctx.AddExtension(&ast.Definition{
+				Kind:     ast.Object,
+				Name:     aggTypeName,
+				Position: pos,
+				Fields: ast.FieldList{
+					{
+						Name:      f.Name,
+						Type:      ast.NamedType(targetAggName, pos),
+						Arguments: aggRefArgs(targetFilterName, pos),
+						Directives: ast.DirectiveList{
+							fieldAggregationDirective(f.Name, pos),
+						},
+						Position: pos,
 					},
-					Position: pos,
+					{
+						Name:      f.Name + "_aggregation",
+						Type:      ast.NamedType(subAggName, pos),
+						Arguments: aggSubRefArgs(targetFilterName, pos),
+						Directives: ast.DirectiveList{
+							fieldAggregationDirective(f.Name, pos),
+						},
+						Position: pos,
+					},
 				},
-			},
-		})
+			})
+		} else {
+			// @table_function_call_join: use original field's arguments everywhere.
+			// TFCJ fields may have function call arguments that aren't in the args mapping,
+			// so we must preserve them exactly as-is rather than using standard subquery args.
+			origArgs := cloneArgDefs(f.Arguments, pos)
+
+			// Add {name}_aggregation and {name}_bucket_aggregation on base object (with original args)
+			ctx.AddExtension(&ast.Definition{
+				Kind:     ast.Object,
+				Name:     def.Name,
+				Position: pos,
+				Fields: ast.FieldList{
+					{
+						Name:        f.Name + "_aggregation",
+						Description: "The aggregation for " + f.Name,
+						Type:        ast.NamedType(targetAggName, pos),
+						Arguments:   origArgs,
+						Directives: ast.DirectiveList{
+							{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
+								{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+								{Name: base.ArgName, Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+							}, Position: pos},
+							optsCatalogDirective(opts),
+						},
+						Position: pos,
+					},
+					{
+						Name:        f.Name + "_bucket_aggregation",
+						Description: "The bucket aggregation for " + f.Name,
+						Type:        ast.ListType(ast.NamedType(bucketAggName, pos), pos),
+						Arguments:   cloneArgDefs(f.Arguments, pos),
+						Directives: ast.DirectiveList{
+							{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
+								{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
+								{Name: base.ArgName, Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+							}, Position: pos},
+							optsCatalogDirective(opts),
+						},
+						Position: pos,
+					},
+				},
+			})
+
+			// Add direct agg + sub-agg fields on aggregation type (with original args)
+			ctx.AddExtension(&ast.Definition{
+				Kind:     ast.Object,
+				Name:     aggTypeName,
+				Position: pos,
+				Fields: ast.FieldList{
+					{
+						Name:      f.Name,
+						Type:      ast.NamedType(targetAggName, pos),
+						Arguments: cloneArgDefs(f.Arguments, pos),
+						Directives: ast.DirectiveList{
+							fieldAggregationDirective(f.Name, pos),
+						},
+						Position: pos,
+					},
+					{
+						Name:      f.Name + "_aggregation",
+						Type:      ast.NamedType(subAggName, pos),
+						Arguments: cloneArgDefs(f.Arguments, pos),
+						Directives: ast.DirectiveList{
+							fieldAggregationDirective(f.Name, pos),
+						},
+						Position: pos,
+					},
+				},
+			})
+		}
 	}
 }
