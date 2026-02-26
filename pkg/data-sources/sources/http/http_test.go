@@ -566,7 +566,7 @@ func TestHttpSource_Request(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				doc, err := s.SchemaDocument(context.Background())
+				doc, err := s.schemaDocument(context.Background())
 				if err != nil {
 					t.Fatal(err)
 				}

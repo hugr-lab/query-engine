@@ -19,7 +19,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
@@ -54,17 +53,11 @@ func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource)
 		return err
 	}
 
-	cat, err := sources.NewCatalog(ctx,
-		types.DataSource{
-			Name:     source.Name(),
-			AsModule: source.AsModule(),
-			ReadOnly: source.IsReadonly(),
-		},
-		source.Engine(), source.Catalog(ctx), false)
+	cat, err := source.Catalog(ctx)
 	if err != nil {
 		return err
 	}
-	return s.catalogs.AddCatalog(ctx, source.Name(), source.Engine(), cat)
+	return s.catalogs.AddCatalog(ctx, source.Name(), cat)
 }
 
 func (s *Service) Engine(name string) (engines.Engine, error) {
@@ -130,33 +123,24 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 
 	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {
 		// add extension
-		source, err := s.catalogSource(ctx, ds, false)
+		cat, err := s.catalogSource(ctx, ds, false)
 		if err != nil {
 			return err
 		}
 		def := ds.Definition()
-		e := engines.NewDuckDB()
-		cat, err := sources.NewCatalog(ctx, def, e, source, true)
-		if err != nil {
-			return err
-		}
-		return s.catalogs.AddCatalog(ctx, def.Name, e, cat)
+		return s.catalogs.AddCatalog(ctx, def.Name, cat)
 	}
 
 	// create data source catalog
-	source, err := s.catalogSource(ctx, ds, false)
+	cat, err := s.catalogSource(ctx, ds, false)
 	if err != nil {
 		return err
 	}
-	if source == nil {
+	if cat == nil {
 		return nil
 	}
 	def := ds.Definition()
-	cat, err := sources.NewCatalog(ctx, def, ds.Engine(), source, false)
-	if err != nil {
-		return err
-	}
-	return s.catalogs.AddCatalog(ctx, def.Name, ds.Engine(), cat)
+	return s.catalogs.AddCatalog(ctx, def.Name, cat)
 }
 
 func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {

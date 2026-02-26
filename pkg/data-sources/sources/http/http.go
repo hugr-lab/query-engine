@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -26,10 +28,13 @@ type Source struct {
 	isAttached bool
 	client     *http.Client
 
-	mu       sync.RWMutex
-	document *ast.SchemaDocument
-	spec     *openapi3.T
-	params   httpSourceParams
+	mu          sync.RWMutex
+	document    *ast.SchemaDocument
+	spec        *openapi3.T
+	params      httpSourceParams
+	provider    *static.DocProvider
+	catalogOpts compiler.Options
+	version     string
 }
 
 func New(ds types.DataSource, attached bool) (*Source, error) {

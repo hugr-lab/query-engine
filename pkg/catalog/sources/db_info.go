@@ -3,12 +3,20 @@ package sources
 import (
 	"context"
 	"fmt"
+	"iter"
 	"strings"
+	"time"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+
+	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
+
+var _ Catalog = (*DBInfo)(nil)
 
 func DescribeDataSource(ctx context.Context, qe types.Querier, name string) (*DBInfo, error) {
 	res, err := qe.Query(ctx, `query dbMeta($name: String!) {
@@ -84,19 +92,90 @@ func DescribeDataSource(ctx context.Context, qe types.Querier, name string) (*DB
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan data source %s: %w", name, err)
 	}
-	if dbInfo.Name == "" {
+	if dbInfo.InfoName == "" {
 		return nil, fmt.Errorf("data source %s not found", name)
 	}
 
 	return &dbInfo, nil
 }
 
-// create catalog source by provided database definition
+// DBInfo holds database introspection results and implements catalog.Catalog directly.
+// Call Build() after deserialization to initialize the catalog provider.
 type DBInfo struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Type        string         `json:"type"` // e.g., "mysql", "postgres", "duckdb", "memory", etc.
-	SchemaInfo  []DBSchemaInfo `json:"schemas"`
+	InfoName string         `json:"name"`
+	InfoDesc string         `json:"description"`
+	Type     string         `json:"type"` // e.g., "mysql", "postgres", "duckdb", "memory", etc.
+	SchemaInfo []DBSchemaInfo `json:"schemas"`
+
+	// Catalog fields, populated by Build().
+	opts     compiler.Options
+	provider *static.DocProvider
+	engine   engines.Engine
+	version  string
+}
+
+// Build initializes DBInfo as a Catalog from its introspected schema info.
+func (s *DBInfo) Build(ctx context.Context, engine engines.Engine, opts compiler.Options) error {
+	doc, err := s.schemaDocument(ctx)
+	if err != nil {
+		return err
+	}
+	s.opts = opts
+	s.engine = engine
+	s.provider = static.NewDocumentProvider(doc)
+	s.version = time.Now().Format(time.RFC3339Nano)
+	return nil
+}
+
+func (s *DBInfo) ForName(ctx context.Context, name string) *ast.Definition {
+	if s.provider == nil {
+		return nil
+	}
+	return s.provider.ForName(ctx, name)
+}
+
+func (s *DBInfo) DirectiveForName(ctx context.Context, name string) *ast.DirectiveDefinition {
+	if s.provider == nil {
+		return nil
+	}
+	return s.provider.DirectiveForName(ctx, name)
+}
+
+func (s *DBInfo) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {
+	if s.provider == nil {
+		return func(yield func(*ast.Definition) bool) {}
+	}
+	return s.provider.Definitions(ctx)
+}
+
+func (s *DBInfo) DirectiveDefinitions(ctx context.Context) iter.Seq2[string, *ast.DirectiveDefinition] {
+	if s.provider == nil {
+		return func(yield func(string, *ast.DirectiveDefinition) bool) {}
+	}
+	return s.provider.DirectiveDefinitions(ctx)
+}
+
+func (s *DBInfo) Extensions(ctx context.Context) iter.Seq[*ast.Definition] {
+	if s.provider == nil {
+		return func(yield func(*ast.Definition) bool) {}
+	}
+	return s.provider.Extensions(ctx)
+}
+
+func (s *DBInfo) DefinitionExtensions(ctx context.Context, name string) iter.Seq[*ast.Definition] {
+	if s.provider == nil {
+		return func(yield func(*ast.Definition) bool) {}
+	}
+	return s.provider.DefinitionExtensions(ctx, name)
+}
+
+func (s *DBInfo) Name() string                    { return s.opts.Name }
+func (s *DBInfo) Description() string             { return s.InfoDesc }
+func (s *DBInfo) CompileOptions() compiler.Options { return s.opts }
+func (s *DBInfo) Engine() engines.Engine           { return s.engine }
+
+func (s *DBInfo) Version(_ context.Context) (string, error) {
+	return s.version, nil
 }
 
 type DBSchemaInfo struct {
@@ -138,7 +217,7 @@ type DBConstraintInfo struct {
 	ReferencesColumns []string `json:"references_columns,omitempty"`     // columns in the referenced table
 }
 
-func (s *DBInfo) SchemaDocument(ctx context.Context) (*ast.SchemaDocument, error) {
+func (s *DBInfo) schemaDocument(_ context.Context) (*ast.SchemaDocument, error) {
 	doc := &ast.SchemaDocument{}
 
 	for _, schema := range s.SchemaInfo {

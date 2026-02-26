@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	schemalib "github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	_ "embed" // for embedding the schema
@@ -17,7 +18,7 @@ import (
 // The runtime meta-info source provides access to the metadata of DuckDB attached databases, their schemas, relations, and columns.
 type Engine interface {
 	types.Querier
-	SchemaProvider() schemalib.Provider
+	SchemaProvider() catalog.Provider
 }
 
 //go:embed schema.graphql
@@ -64,6 +65,14 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	return nil
 }
 
-func (s *Source) Catalog(ctx context.Context) sources.Source {
-	return sources.NewStringSource("core_meta", schema)
+func (s *Source) Catalog(ctx context.Context) (sources.Catalog, error) {
+	e := engines.NewDuckDB()
+	opts := compiler.Options{
+		Name:         s.Name(),
+		ReadOnly:     s.IsReadonly(),
+		AsModule:     s.AsModule(),
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+	}
+	return sources.NewStringSource(s.Name(), e, opts, schema)
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/parser"
 )
 
 func TestDocProvider_ForName(t *testing.T) {
@@ -179,4 +180,11 @@ func TestDocProvider_Description(t *testing.T) {
 	doc := parseSchemaDoc(t, `type Query { id: ID }`)
 	p := static.NewDocumentProvider(doc)
 	assert.Equal(t, "", p.Description(context.Background()))
+}
+
+func parseSchemaDoc(t *testing.T, sdl string) *ast.SchemaDocument {
+	t.Helper()
+	doc, err := parser.ParseSchema(&ast.Source{Input: sdl})
+	require.NoError(t, err)
+	return doc
 }

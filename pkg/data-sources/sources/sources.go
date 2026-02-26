@@ -3,7 +3,7 @@ package sources
 import (
 	"context"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
+	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -38,7 +38,7 @@ type ExtensionSource interface {
 }
 
 type SelfDescriber interface {
-	CatalogSource(ctx context.Context, db *db.Pool) (sources.Source, error)
+	CatalogSource(ctx context.Context, db *db.Pool) (cs.Catalog, error)
 }
 
 // RuntimeSource is a data source that is attached on start and provides a catalog source.
@@ -48,7 +48,7 @@ type RuntimeSource interface {
 	IsReadonly() bool
 	AsModule() bool
 	Attach(ctx context.Context, db *db.Pool) error
-	Catalog(ctx context.Context) sources.Source
+	Catalog(ctx context.Context) (cs.Catalog, error)
 }
 
 type RuntimeSourceQuerier interface {

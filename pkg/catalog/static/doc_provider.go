@@ -5,35 +5,35 @@ import (
 	"iter"
 	"slices"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// Compile-time check that docProvider implements catalog.Provider.
-var _ base.Provider = (*docProvider)(nil)
-var _ base.DefinitionsSource = (*docProvider)(nil)
-var _ base.ExtensionsSource = (*docProvider)(nil)
+// Compile-time checks.
+var _ base.Provider = (*DocProvider)(nil)
+var _ base.DefinitionsSource = (*DocProvider)(nil)
+var _ base.ExtensionsSource = (*DocProvider)(nil)
 
-type docProvider struct {
+// DocProvider is a read-only Provider backed by an *ast.SchemaDocument.
+// ForName is O(n) linear scan — suitable for compilation, not runtime.
+type DocProvider struct {
 	doc *ast.SchemaDocument
 }
 
-// NewDocumentProvider creates a read-only Provider backed by an *ast.SchemaDocument.
-// ForName is O(n) linear scan — suitable for compilation, not runtime.
-func NewDocumentProvider(doc *ast.SchemaDocument) catalog.Provider {
-	return &docProvider{doc: doc}
+// NewDocumentProvider creates a DocProvider from an *ast.SchemaDocument.
+func NewDocumentProvider(doc *ast.SchemaDocument) *DocProvider {
+	return &DocProvider{doc: doc}
 }
 
-func (p *docProvider) ForName(_ context.Context, name string) *ast.Definition {
+func (p *DocProvider) ForName(_ context.Context, name string) *ast.Definition {
 	return p.doc.Definitions.ForName(name)
 }
 
-func (p *docProvider) DirectiveForName(_ context.Context, name string) *ast.DirectiveDefinition {
+func (p *DocProvider) DirectiveForName(_ context.Context, name string) *ast.DirectiveDefinition {
 	return p.doc.Directives.ForName(name)
 }
 
-func (p *docProvider) QueryType(_ context.Context) *ast.Definition {
+func (p *DocProvider) QueryType(_ context.Context) *ast.Definition {
 	name := "Query"
 	if len(p.doc.Schema) > 0 {
 		for _, op := range p.doc.Schema[0].OperationTypes {
@@ -46,7 +46,7 @@ func (p *docProvider) QueryType(_ context.Context) *ast.Definition {
 	return p.doc.Definitions.ForName(name)
 }
 
-func (p *docProvider) MutationType(_ context.Context) *ast.Definition {
+func (p *DocProvider) MutationType(_ context.Context) *ast.Definition {
 	name := "Mutation"
 	if len(p.doc.Schema) > 0 {
 		for _, op := range p.doc.Schema[0].OperationTypes {
@@ -59,7 +59,7 @@ func (p *docProvider) MutationType(_ context.Context) *ast.Definition {
 	return p.doc.Definitions.ForName(name)
 }
 
-func (p *docProvider) SubscriptionType(_ context.Context) *ast.Definition {
+func (p *DocProvider) SubscriptionType(_ context.Context) *ast.Definition {
 	name := "Subscription"
 	if len(p.doc.Schema) > 0 {
 		for _, op := range p.doc.Schema[0].OperationTypes {
@@ -72,7 +72,7 @@ func (p *docProvider) SubscriptionType(_ context.Context) *ast.Definition {
 	return p.doc.Definitions.ForName(name)
 }
 
-func (p *docProvider) PossibleTypes(_ context.Context, name string) iter.Seq[*ast.Definition] {
+func (p *DocProvider) PossibleTypes(_ context.Context, name string) iter.Seq[*ast.Definition] {
 	def := p.doc.Definitions.ForName(name)
 	if def == nil {
 		return nil
@@ -112,7 +112,7 @@ func (p *docProvider) PossibleTypes(_ context.Context, name string) iter.Seq[*as
 	return nil
 }
 
-func (p *docProvider) Implements(_ context.Context, name string) iter.Seq[*ast.Definition] {
+func (p *DocProvider) Implements(_ context.Context, name string) iter.Seq[*ast.Definition] {
 	def := p.doc.Definitions.ForName(name)
 	if def == nil {
 		return nil
@@ -131,7 +131,7 @@ func (p *docProvider) Implements(_ context.Context, name string) iter.Seq[*ast.D
 	}
 }
 
-func (p *docProvider) Definitions(_ context.Context) iter.Seq[*ast.Definition] {
+func (p *DocProvider) Definitions(_ context.Context) iter.Seq[*ast.Definition] {
 	return func(yield func(*ast.Definition) bool) {
 		for _, def := range p.doc.Definitions {
 			if !yield(def) {
@@ -141,7 +141,7 @@ func (p *docProvider) Definitions(_ context.Context) iter.Seq[*ast.Definition] {
 	}
 }
 
-func (p *docProvider) Types(_ context.Context) iter.Seq2[string, *ast.Definition] {
+func (p *DocProvider) Types(_ context.Context) iter.Seq2[string, *ast.Definition] {
 	return func(yield func(string, *ast.Definition) bool) {
 		for _, def := range p.doc.Definitions {
 			if !yield(def.Name, def) {
@@ -151,7 +151,7 @@ func (p *docProvider) Types(_ context.Context) iter.Seq2[string, *ast.Definition
 	}
 }
 
-func (p *docProvider) DirectiveDefinitions(_ context.Context) iter.Seq2[string, *ast.DirectiveDefinition] {
+func (p *DocProvider) DirectiveDefinitions(_ context.Context) iter.Seq2[string, *ast.DirectiveDefinition] {
 	return func(yield func(string, *ast.DirectiveDefinition) bool) {
 		for _, dir := range p.doc.Directives {
 			if !yield(dir.Name, dir) {
@@ -161,14 +161,14 @@ func (p *docProvider) DirectiveDefinitions(_ context.Context) iter.Seq2[string, 
 	}
 }
 
-func (p *docProvider) Description(_ context.Context) string {
+func (p *DocProvider) Description(_ context.Context) string {
 	if len(p.doc.Schema) > 0 {
 		return p.doc.Schema[0].Description
 	}
 	return ""
 }
 
-func (p *docProvider) Extensions(_ context.Context) iter.Seq[*ast.Definition] {
+func (p *DocProvider) Extensions(_ context.Context) iter.Seq[*ast.Definition] {
 	return func(yield func(*ast.Definition) bool) {
 		for _, def := range p.doc.Extensions {
 			if !yield(def) {
@@ -178,7 +178,7 @@ func (p *docProvider) Extensions(_ context.Context) iter.Seq[*ast.Definition] {
 	}
 }
 
-func (p *docProvider) DefinitionExtensions(_ context.Context, name string) iter.Seq[*ast.Definition] {
+func (p *DocProvider) DefinitionExtensions(_ context.Context, name string) iter.Seq[*ast.Definition] {
 	return func(yield func(*ast.Definition) bool) {
 		for _, ext := range p.doc.Extensions {
 			if ext.Name == name {

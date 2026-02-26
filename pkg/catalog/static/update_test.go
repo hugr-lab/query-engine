@@ -487,9 +487,8 @@ func TestUpdate_DefinitionsSourceOnly(t *testing.T) {
 	p := static.NewWithSchema(s)
 	ctx := context.Background()
 
-	// Use a source that only implements DefinitionsSource, not ExtensionsSource
 	ddl := newDDL(t, `type User { id: ID!, name: String! }`)
-	src := static.NewDocSourceOnly(ddl)
+	src := static.NewDocumentProvider(ddl)
 
 	require.NoError(t, p.Update(ctx, src))
 	user := p.ForName(ctx, "User")

@@ -8,10 +8,11 @@ import (
 	"fmt"
 
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	_ "embed"
@@ -108,14 +109,17 @@ func (s *Service) RegisterUDF(ctx context.Context) error {
 
 func (s *Service) registerUDFCatalog(ctx context.Context) error {
 	e := engines.NewDuckDB()
-	cat, err := sources.NewCatalog(ctx, types.DataSource{Name: "data_sources"},
-		e, sources.NewStringSource(gqlSchema), false,
-	)
+	opts := compiler.Options{
+		Name:         "data_sources",
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+	}
+	cat, err := sources.NewStringSource("data_sources", e, opts, gqlSchema)
 	if err != nil {
 		return fmt.Errorf("create data_sources catalog: %w", err)
 	}
 
-	err = s.catalogs.AddCatalog(ctx, "data_sources", e, cat)
+	err = s.catalogs.AddCatalog(ctx, "data_sources", cat)
 	if err != nil {
 		return fmt.Errorf("register data_sources catalog: %w", err)
 	}

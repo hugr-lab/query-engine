@@ -8,9 +8,9 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
-	"github.com/hugr-lab/query-engine/pkg/types"
 )
 
 const testSchemaData = `
@@ -114,33 +114,34 @@ func TestMain(m *testing.M) {
 	}
 	ss := catalog.NewService(provider)
 
-	cat, err := sources.NewCatalog(context.Background(),
-		types.DataSource{Name: "test"},
-		&engines.DuckDB{},
-		sources.NewStringSource(testSchemaData),
-		false,
-	)
+	e := &engines.DuckDB{}
+	cat, err := sources.NewStringSource("test", e, compiler.Options{
+		Name:         "test",
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+	}, testSchemaData)
 	if err != nil {
 		fmt.Printf("Failed to create catalog: %v", err)
 		os.Exit(1)
 	}
-	err = ss.AddCatalog(context.Background(), "test", &engines.DuckDB{}, cat)
+	err = ss.AddCatalog(context.Background(), "test", cat)
 	if err != nil {
 		fmt.Printf("Failed to add catalog: %v", err)
 		os.Exit(1)
 	}
 
-	pgCat, err := sources.NewCatalog(context.Background(),
-		types.DataSource{Name: "pg_test", Prefix: "pg"},
-		&engines.Postgres{},
-		sources.NewStringSource(testPGSchemaData),
-		false,
-	)
+	pe := &engines.Postgres{}
+	pgCat, err := sources.NewStringSource("pg_test", pe, compiler.Options{
+		Name:         "pg_test",
+		Prefix:       "pg",
+		EngineType:   string(pe.Type()),
+		Capabilities: pe.Capabilities(),
+	}, testPGSchemaData)
 	if err != nil {
 		fmt.Printf("Failed to create catalog: %v", err)
 		os.Exit(1)
 	}
-	err = ss.AddCatalog(context.Background(), "pg_test", &engines.Postgres{}, pgCat)
+	err = ss.AddCatalog(context.Background(), "pg_test", pgCat)
 	if err != nil {
 		fmt.Printf("Failed to add catalog: %v", err)
 		os.Exit(1)

@@ -160,14 +160,14 @@ func (s *Service) Engine(name string) (engines.Engine, error) {
 	return nil, ErrCatalogNotFound
 }
 
-func (s *Service) AddCatalog(ctx context.Context, name string, engine engines.Engine, catalog Catalog) error {
+func (s *Service) AddCatalog(ctx context.Context, name string, catalog Catalog) error {
 	if s.ExistsCatalog(name) {
 		return ErrCatalogAlreadyExists
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.engines[name] = engine
+	s.engines[name] = catalog.Engine()
 	return s.manager.AddCatalog(ctx, name, catalog)
 }
 
