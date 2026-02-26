@@ -1,0 +1,14 @@
+{
+  pg_store {
+    by_contains: price_ranges(filter: { valid_price: { contains: 1200 } }) {
+      id
+      product_id
+      valid_price
+    }
+    by_intersects: price_ranges(filter: { valid_price: { intersects: "[1000, 2500)" } }) {
+      id
+      product_id
+      valid_price
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  pg_store {
+    price_ranges(order_by: [{ field: "id", direction: ASC }]) {
+      id
+      product_id
+      valid_price
+      valid_period
+    }
+  }
+}

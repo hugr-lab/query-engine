@@ -1,0 +1,16 @@
+{
+  pg_store {
+    products(filter: { id: { eq: 1 } }) {
+      id
+      name
+      tags(struct: {color: "string", weight: "float"})
+    }
+  }
+  local_db {
+    items(filter: { id: { eq: 1 } }) {
+      id
+      name
+      tags(struct: {color: "string"})
+    }
+  }
+}

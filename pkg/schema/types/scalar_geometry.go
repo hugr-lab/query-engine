@@ -88,11 +88,11 @@ func (s *geometryScalar) SubAggregationTypeName() string { return "GeometrySubAg
 
 func (s *geometryScalar) FieldArguments() ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
-		{Name: "transforms", Type: ast.ListType(ast.NonNullNamedType("GeometryTransform", nil), nil)},
-		{Name: "from", Type: ast.NamedType("Int", nil)},
-		{Name: "to", Type: ast.NamedType("Int", nil)},
-		{Name: "buffer", Type: ast.NamedType("Float", nil)},
-		{Name: "simplify_factor", Type: ast.NamedType("Float", nil)},
+		{Name: "transforms", Description: "Apply geometry transformations", Type: ast.ListType(ast.NonNullNamedType("GeometryTransform", nil), nil)},
+		{Name: "from", Description: "Converts geometry from the specified SRID", Type: ast.NamedType("Int", nil)},
+		{Name: "to", Description: "Converts geometry to the specified SRID", Type: ast.NamedType("Int", nil)},
+		{Name: "buffer", Description: "Buffer geometry by the specified distance", Type: ast.NamedType("Float", nil)},
+		{Name: "simplify_factor", Description: "Simplify geometry by the specified factor", Type: ast.NamedType("Float", nil)},
 	}
 }
 

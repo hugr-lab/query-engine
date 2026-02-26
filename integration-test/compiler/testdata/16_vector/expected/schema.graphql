@@ -129,7 +129,17 @@ type Document @table(name: "documents") @catalog(name: "docs", engine: "duckdb")
   """
   Calculate distance for vector field embedding
   """
-  _embedding_distance(vector: Vector!, distance: VectorDistanceType!): Float @extra_field(name: "VectorDistance", base_field: "embedding", base_type: Vector) @sql(exp: "[embedding]")
+  _embedding_distance(
+    """
+    Vector to calculate distance to
+    """
+    vector: Vector!
+
+    """
+    Distance metric to use
+    """
+    distance: VectorDistanceType!
+  ): Float @extra_field(name: "VectorDistance", base_field: "embedding", base_type: Vector) @sql(exp: "[embedding]")
   _join(fields: [String!]!): _join
   content: String
   embedding: Vector @dim(len: 768)
@@ -461,7 +471,32 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  Document(filter: Document_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String],
+  Document(
+    """
+    Filter
+    """
+    filter: Document_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
     """
     Search for vector similarity
     """
@@ -470,7 +505,32 @@ type Query @system {
   """
   The aggregation for Document
   """
-  Document_aggregation(filter: Document_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String],
+  Document_aggregation(
+    """
+    Filter
+    """
+    filter: Document_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
     """
     Search for vector similarity
     """
@@ -479,7 +539,32 @@ type Query @system {
   """
   The aggregation for Document
   """
-  Document_bucket_aggregation(filter: Document_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String],
+  Document_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Document_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
     """
     Search for vector similarity
     """
@@ -716,7 +801,17 @@ input VectorSearchInput @system {
   vector: Vector!
 }
 type _Document_aggregation @aggregation(name: "Document", is_bucket: false, level: 1) @catalog(name: "docs", engine: "duckdb") {
-  _embedding_distance(vector: Vector!, distance: VectorDistanceType!): FloatAggregation @field_aggregation(name: "_embedding_distance")
+  _embedding_distance(
+    """
+    Vector to calculate distance to
+    """
+    vector: Vector!
+
+    """
+    Distance metric to use
+    """
+    distance: VectorDistanceType!
+  ): FloatAggregation @field_aggregation(name: "_embedding_distance")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   content: StringAggregation @field_aggregation(name: "content")
@@ -730,11 +825,34 @@ type _Document_aggregation_bucket @aggregation(name: "Document", is_bucket: true
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Document_filter, order_by: [OrderByField]): _Document_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Document_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Document_aggregation
+  """
+  The key of the bucket
+  """
   key: Document
 }
 type _Document_aggregation_sub_aggregation @aggregation(name: "_Document_aggregation", is_bucket: false, level: 2) @catalog(name: "docs", engine: "duckdb") {
-  _embedding_distance(vector: Vector!, distance: VectorDistanceType!): FloatSubAggregation @field_aggregation(name: "_embedding_distance")
+  _embedding_distance(
+    """
+    Vector to calculate distance to
+    """
+    vector: Vector!
+
+    """
+    Distance metric to use
+    """
+    distance: VectorDistanceType!
+  ): FloatSubAggregation @field_aggregation(name: "_embedding_distance")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   content: StringSubAggregation @field_aggregation(name: "content")
   id: IntSubAggregation @field_aggregation(name: "id")
@@ -842,19 +960,154 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  Document(fields: [String!]!, filter: Document_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  Document(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Document_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Search for vector similarity
     """
     similarity: VectorSearchInput
   ): [Document] @query(name: "Document", type: SELECT) @catalog(name: "docs", engine: "duckdb")
-  Document_aggregation(fields: [String!]!, filter: Document_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  Document_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Document_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Search for vector similarity
     """
     similarity: VectorSearchInput
   ): _Document_aggregation @aggregation_query(is_bucket: false, name: "Document") @catalog(name: "docs", engine: "duckdb")
-  Document_bucket_aggregation(fields: [String!]!, filter: Document_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  Document_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Document_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Search for vector similarity
     """
@@ -862,7 +1115,42 @@ type _join @system {
   ): [_Document_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Document") @catalog(name: "docs", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  Document(fields: [String!]!, filter: Document_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  Document(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Document_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Search for vector similarity
     """

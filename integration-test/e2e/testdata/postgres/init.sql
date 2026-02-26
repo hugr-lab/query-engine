@@ -37,7 +37,7 @@ CREATE TABLE products (
     price DOUBLE PRECISION NOT NULL,
     quantity INTEGER NOT NULL DEFAULT 0,
     is_active BOOLEAN DEFAULT true,
-    tags JSON,
+    tags JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ,
     description TEXT,
@@ -83,3 +83,30 @@ INSERT INTO locations (id, name, point, area) VALUES
      ST_SetSRID(ST_MakeEnvelope(-118.25, 34.05, -118.24, 34.06), 4326));
 
 SELECT setval('locations_id_seq', 2);
+
+-- Product details (JSONB structural type)
+CREATE TABLE product_details (
+    product_id INTEGER PRIMARY KEY REFERENCES products(id),
+    specs JSONB,
+    metadata JSONB
+);
+
+INSERT INTO product_details VALUES
+    (1, '{"cpu": "M2", "ram_gb": 16, "storage_gb": 512}', '{"warranty_years": 2, "origin": "US"}'),
+    (2, '{"dpi": 1600, "buttons": 5, "wireless": true}', '{"warranty_years": 1, "origin": "CN"}'),
+    (5, '{"cpu": "i9", "ram_gb": 64, "storage_gb": 2000}', '{"warranty_years": 3, "origin": "US"}');
+
+-- Price ranges (range types)
+CREATE TABLE price_ranges (
+    id SERIAL PRIMARY KEY,
+    product_id INTEGER REFERENCES products(id),
+    valid_price INT4RANGE,
+    valid_period TSTZRANGE
+);
+
+INSERT INTO price_ranges VALUES
+    (1, 1, '[1000, 1500)', '[2025-01-01, 2025-06-30)'),
+    (2, 2, '[20, 40)', '[2025-03-01, 2025-12-31)'),
+    (3, 5, '[2000, 3000)', '[2025-01-01, 2025-12-31)');
+
+SELECT setval('price_ranges_id_seq', 3);

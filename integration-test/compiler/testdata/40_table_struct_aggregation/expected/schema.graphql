@@ -1399,6 +1399,11 @@ type _Metadata_aggregation @aggregation(name: "Metadata", is_bucket: false, leve
   origin: StringAggregation @field_aggregation(name: "origin")
   warranty_years: IntAggregation @field_aggregation(name: "warranty_years")
 }
+type _Metadata_aggregation_sub_aggregation @aggregation(name: "_Metadata_aggregation", is_bucket: false, level: 2) @catalog(name: "store", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  origin: StringSubAggregation @field_aggregation(name: "origin")
+  warranty_years: IntSubAggregation @field_aggregation(name: "warranty_years")
+}
 type _Product_aggregation @aggregation(name: "Product", is_bucket: false, level: 1) @catalog(name: "store", engine: "duckdb") {
   _created_at_part(
     """
@@ -1598,10 +1603,10 @@ type _Product_aggregation_sub_aggregation @aggregation(name: "_Product_aggregati
     """
     simplify_factor: Float
   ): GeometrySubAggregation @field_aggregation(name: "location")
-  metadata: _Metadata_aggregation @field_aggregation(name: "metadata")
+  metadata: _Metadata_aggregation_sub_aggregation @field_aggregation(name: "metadata")
   name: StringSubAggregation @field_aggregation(name: "name")
   price: FloatSubAggregation @field_aggregation(name: "price")
-  specs: _Specs_aggregation @field_aggregation(name: "specs")
+  specs: _Specs_aggregation_sub_aggregation @field_aggregation(name: "specs")
   tags: StringSubAggregation @field_aggregation(name: "tags")
 }
 type _Product_aggregation_sub_aggregation_sub_aggregation @aggregation(name: "_Product_aggregation_sub_aggregation", is_bucket: false, level: 3) @catalog(name: "store", engine: "duckdb") {
@@ -1612,6 +1617,12 @@ type _Specs_aggregation @aggregation(name: "Specs", is_bucket: false, level: 1) 
   cpu: StringAggregation @field_aggregation(name: "cpu")
   ram_gb: IntAggregation @field_aggregation(name: "ram_gb")
   storage_gb: IntAggregation @field_aggregation(name: "storage_gb")
+}
+type _Specs_aggregation_sub_aggregation @aggregation(name: "_Specs_aggregation", is_bucket: false, level: 2) @catalog(name: "store", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  cpu: StringSubAggregation @field_aggregation(name: "cpu")
+  ram_gb: IntSubAggregation @field_aggregation(name: "ram_gb")
+  storage_gb: IntSubAggregation @field_aggregation(name: "storage_gb")
 }
 """
 Value distribution data type

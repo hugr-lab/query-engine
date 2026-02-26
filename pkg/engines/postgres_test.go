@@ -867,7 +867,7 @@ func TestExtractJSONStruct(t *testing.T) {
 			jsonStruct: map[string]any{
 				"field1": "string",
 			},
-			expected: "jsonb_build_object('field1',(CASE WHEN jsonb_typeof(data->'field1') = 'string' THEN (data->'field1')::TEXT ELSE NULL END))",
+			expected: "jsonb_build_object('field1',(CASE WHEN jsonb_typeof(data->'field1') = 'string' THEN trim(both '\"' from (data->'field1')::TEXT) ELSE NULL END))",
 		},
 		{
 			name: "nested object",
@@ -877,7 +877,7 @@ func TestExtractJSONStruct(t *testing.T) {
 					"subfield1": "string",
 				},
 			},
-			expected: "jsonb_build_object('field1',(SELECT jsonb_build_object('subfield1',(CASE WHEN jsonb_typeof(_value->'subfield1') = 'string' THEN (_value->'subfield1')::TEXT ELSE NULL END)) FROM (SELECT data->'field1' AS _value) AS _value))",
+			expected: "jsonb_build_object('field1',(SELECT jsonb_build_object('subfield1',(CASE WHEN jsonb_typeof(_value->'subfield1') = 'string' THEN trim(both '\"' from (_value->'subfield1')::TEXT) ELSE NULL END)) FROM (SELECT data->'field1' AS _value) AS _value))",
 		},
 		{
 			name: "array of objects",
@@ -889,7 +889,7 @@ func TestExtractJSONStruct(t *testing.T) {
 					},
 				},
 			},
-			expected: "jsonb_build_object('field1',(CASE WHEN jsonb_typeof(data->'field1') = 'array' THEN (SELECT array_agg(_value) FROM (SELECT jsonb_build_object('subfield1',(CASE WHEN jsonb_typeof(_value->'subfield1') = 'string' THEN (_value->'subfield1')::TEXT ELSE NULL END)) AS _value FROM (SELECT jsonb_array_elements(data->'field1') AS _value) AS _value) WHERE _value IS NOT NULL AND _value != '{}'::JSONB) ELSE NULL END))",
+			expected: "jsonb_build_object('field1',(CASE WHEN jsonb_typeof(data->'field1') = 'array' THEN (SELECT array_agg(_value) FROM (SELECT jsonb_build_object('subfield1',(CASE WHEN jsonb_typeof(_value->'subfield1') = 'string' THEN trim(both '\"' from (_value->'subfield1')::TEXT) ELSE NULL END)) AS _value FROM (SELECT jsonb_array_elements(data->'field1') AS _value) AS _value) WHERE _value IS NOT NULL AND _value != '{}'::JSONB) ELSE NULL END))",
 		},
 		{
 			name: "array of scalars",
@@ -897,7 +897,7 @@ func TestExtractJSONStruct(t *testing.T) {
 			jsonStruct: map[string]any{
 				"field1": []any{"string"},
 			},
-			expected: "jsonb_build_object('field1',(CASE WHEN jsonb_typeof(data->'field1') = 'array' THEN (SELECT array_agg((CASE WHEN jsonb_typeof(_value) = 'string' THEN (_value)::TEXT ELSE NULL END)) FROM (SELECT jsonb_array_elements(data->'field1') AS _value) AS _value) ELSE NULL END))",
+			expected: "jsonb_build_object('field1',(CASE WHEN jsonb_typeof(data->'field1') = 'array' THEN (SELECT array_agg((CASE WHEN jsonb_typeof(_value) = 'string' THEN trim(both '\"' from (_value)::TEXT) ELSE NULL END)) FROM (SELECT jsonb_array_elements(data->'field1') AS _value) AS _value) ELSE NULL END))",
 		},
 		{
 			name: "empty array",
@@ -921,7 +921,7 @@ func TestExtractJSONStruct(t *testing.T) {
 					},
 				},
 			},
-			expected: "jsonb_build_object('field1',(CASE WHEN jsonb_typeof(data->'field1') = 'string' THEN (data->'field1')::TEXT ELSE NULL END),'field2',(SELECT jsonb_build_object('subfield1',(CASE WHEN jsonb_typeof(_value->'subfield1') = 'string' THEN (_value->'subfield1')::TEXT ELSE NULL END)) FROM (SELECT data->'field2' AS _value) AS _value),'field3',(CASE WHEN jsonb_typeof(data->'field3') = 'array' THEN (SELECT array_agg(_value) FROM (SELECT jsonb_build_object('subfield1',(CASE WHEN jsonb_typeof(_value->'subfield1') = 'string' THEN (_value->'subfield1')::TEXT ELSE NULL END)) AS _value FROM (SELECT jsonb_array_elements(data->'field3') AS _value) AS _value) WHERE _value IS NOT NULL AND _value != '{}'::JSONB) ELSE NULL END))",
+			expected: "jsonb_build_object('field1',(CASE WHEN jsonb_typeof(data->'field1') = 'string' THEN trim(both '\"' from (data->'field1')::TEXT) ELSE NULL END),'field2',(SELECT jsonb_build_object('subfield1',(CASE WHEN jsonb_typeof(_value->'subfield1') = 'string' THEN trim(both '\"' from (_value->'subfield1')::TEXT) ELSE NULL END)) FROM (SELECT data->'field2' AS _value) AS _value),'field3',(CASE WHEN jsonb_typeof(data->'field3') = 'array' THEN (SELECT array_agg(_value) FROM (SELECT jsonb_build_object('subfield1',(CASE WHEN jsonb_typeof(_value->'subfield1') = 'string' THEN trim(both '\"' from (_value->'subfield1')::TEXT) ELSE NULL END)) AS _value FROM (SELECT jsonb_array_elements(data->'field3') AS _value) AS _value) WHERE _value IS NOT NULL AND _value != '{}'::JSONB) ELSE NULL END))",
 		},
 	}
 

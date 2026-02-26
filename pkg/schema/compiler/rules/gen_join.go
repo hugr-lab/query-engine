@@ -427,7 +427,7 @@ func joinObjectQueryArgsWithViewArgs(info *base.ObjectInfo, filterName string, p
 			argType = ast.NamedType(info.InputArgsName, pos)
 		}
 		args = append(args, &ast.ArgumentDefinition{
-			Name: "args", Type: argType, Position: pos,
+			Name: "args", Description: base.DescArgs, Type: argType, Position: pos,
 		})
 	}
 	return append(args, joinObjectQueryArgs(filterName, pos)...)
@@ -445,7 +445,7 @@ func joinObjectAggArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos
 			argType = ast.NamedType(info.InputArgsName, pos)
 		}
 		args = append(args, &ast.ArgumentDefinition{
-			Name: "args", Type: argType, Position: pos,
+			Name: "args", Description: base.DescArgs, Type: argType, Position: pos,
 		})
 	}
 	return append(args, joinObjectAggArgs(filterName, pos)...)
@@ -455,18 +455,18 @@ func joinObjectAggArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos
 func joinObjectQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
 		{Name: "fields", Type: ast.NonNullListType(ast.NonNullNamedType("String", pos), pos), Position: pos},
-		{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-		{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos,
+		{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
+		{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "limit", Description: base.DescLimit, Type: ast.NamedType("Int", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue}},
-		{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos,
+		{Name: "offset", Description: base.DescOffset, Type: ast.NamedType("Int", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue}},
-		{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
-		{Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos,
+		{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+		{Name: "inner", Description: base.DescInnerJoin, Type: ast.NamedType("Boolean", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue}},
-		{Name: "nested_order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "nested_limit", Type: ast.NamedType("Int", pos), Position: pos},
-		{Name: "nested_offset", Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos},
 	}
 }
 
@@ -474,14 +474,14 @@ func joinObjectQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefin
 func joinObjectAggArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
 		{Name: "fields", Type: ast.NonNullListType(ast.NonNullNamedType("String", pos), pos), Position: pos},
-		{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-		{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
-		{Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos,
+		{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
+		{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+		{Name: "inner", Description: base.DescInnerJoin, Type: ast.NamedType("Boolean", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue}},
-		{Name: "nested_order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "nested_limit", Type: ast.NamedType("Int", pos), Position: pos},
-		{Name: "nested_offset", Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos},
 	}
 }
 
@@ -489,18 +489,18 @@ func joinObjectAggArgs(filterName string, pos *ast.Position) ast.ArgumentDefinit
 func spatialObjectQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
 		{Name: "field", Type: ast.NonNullNamedType("String", pos), Position: pos},
-		{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-		{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos,
+		{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
+		{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "limit", Description: base.DescLimit, Type: ast.NamedType("Int", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue}},
-		{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos,
+		{Name: "offset", Description: base.DescOffset, Type: ast.NamedType("Int", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue}},
-		{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
-		{Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos,
+		{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+		{Name: "inner", Description: base.DescInnerJoin, Type: ast.NamedType("Boolean", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue}},
-		{Name: "nested_order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "nested_limit", Type: ast.NamedType("Int", pos), Position: pos},
-		{Name: "nested_offset", Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos},
 	}
 }
 
@@ -508,14 +508,14 @@ func spatialObjectQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDe
 func spatialObjectAggArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
 		{Name: "field", Type: ast.NonNullNamedType("String", pos), Position: pos},
-		{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-		{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
-		{Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos,
+		{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
+		{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+		{Name: "inner", Description: base.DescInnerJoin, Type: ast.NamedType("Boolean", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue}},
-		{Name: "nested_order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "nested_limit", Type: ast.NamedType("Int", pos), Position: pos},
-		{Name: "nested_offset", Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		{Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos},
+		{Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos},
 	}
 }
 

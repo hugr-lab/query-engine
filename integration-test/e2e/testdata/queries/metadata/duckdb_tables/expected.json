@@ -135,6 +135,16 @@
           },
           {
             "database_name": "pg_store",
+            "name": "price_ranges",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "product_details",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
             "name": "product_tags",
             "schema_name": "public"
           },

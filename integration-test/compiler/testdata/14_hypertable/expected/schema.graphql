@@ -426,15 +426,90 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  SensorReading(filter: SensorReading_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [SensorReading] @query(name: "SensorReading", type: SELECT) @catalog(name: "metrics", engine: "postgres")
+  SensorReading(
+    """
+    Filter
+    """
+    filter: SensorReading_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [SensorReading] @query(name: "SensorReading", type: SELECT) @catalog(name: "metrics", engine: "postgres")
   """
   The aggregation for SensorReading
   """
-  SensorReading_aggregation(filter: SensorReading_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _SensorReading_aggregation @aggregation_query(name: "SensorReading", is_bucket: false) @catalog(name: "metrics", engine: "postgres")
+  SensorReading_aggregation(
+    """
+    Filter
+    """
+    filter: SensorReading_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _SensorReading_aggregation @aggregation_query(name: "SensorReading", is_bucket: false) @catalog(name: "metrics", engine: "postgres")
   """
   The aggregation for SensorReading
   """
-  SensorReading_bucket_aggregation(filter: SensorReading_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_SensorReading_aggregation_bucket] @aggregation_query(name: "SensorReading", is_bucket: true) @catalog(name: "metrics", engine: "postgres")
+  SensorReading_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: SensorReading_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_SensorReading_aggregation_bucket] @aggregation_query(name: "SensorReading", is_bucket: true) @catalog(name: "metrics", engine: "postgres")
   SensorReading_by_pk(id: Int!): SensorReading @query(name: "SensorReading", type: SELECT_ONE) @catalog(name: "metrics", engine: "postgres")
   function: Function @system
   """
@@ -471,10 +546,30 @@ type SensorReading @hypertable @table(name: "sensor_readings") @catalog(name: "m
   """
   Extract part of Timestamp field recorded_at
   """
-  _recorded_at_part(extract: TimeExtract!, extract_divide: Int): BigInt @extra_field(name: "Extract", base_field: "recorded_at", base_type: Timestamp) @sql(exp: "[recorded_at]")
+  _recorded_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(name: "Extract", base_field: "recorded_at", base_type: Timestamp) @sql(exp: "[recorded_at]")
   humidity: Float
   id: Int! @pk
-  recorded_at(bucket: TimeBucket, bucket_interval: Interval,
+  recorded_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+
     """
     Extracts the specified part of the timestamp
     """
@@ -711,11 +806,31 @@ input VectorSearchInput @system {
 }
 type _SensorReading_aggregation @aggregation(name: "SensorReading", is_bucket: false, level: 1) @catalog(name: "metrics", engine: "postgres") {
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
-  _recorded_at_part(extract: TimeExtract!, extract_divide: Int): BigIntAggregation @field_aggregation(name: "_recorded_at_part")
+  _recorded_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_recorded_at_part")
   _rows_count: BigInt
   humidity: FloatAggregation @field_aggregation(name: "humidity")
   id: IntAggregation @field_aggregation(name: "id")
-  recorded_at(bucket: TimeBucket, bucket_interval: Interval,
+  recorded_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+
     """
     Extracts the specified part of the timestamp
     """
@@ -731,15 +846,48 @@ type _SensorReading_aggregation_bucket @aggregation(name: "SensorReading", is_bu
   """
   The aggregations of the bucket
   """
-  aggregations(filter: SensorReading_filter, order_by: [OrderByField]): _SensorReading_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: SensorReading_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _SensorReading_aggregation
+  """
+  The key of the bucket
+  """
   key: SensorReading
 }
 type _SensorReading_aggregation_sub_aggregation @aggregation(name: "_SensorReading_aggregation", is_bucket: false, level: 2) @catalog(name: "metrics", engine: "postgres") {
-  _recorded_at_part(extract: TimeExtract!, extract_divide: Int): BigIntSubAggregation @field_aggregation(name: "_recorded_at_part")
+  _recorded_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_recorded_at_part")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   humidity: FloatSubAggregation @field_aggregation(name: "humidity")
   id: IntSubAggregation @field_aggregation(name: "id")
-  recorded_at(bucket: TimeBucket, bucket_interval: Interval,
+  recorded_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+
     """
     Extracts the specified part of the timestamp
     """
@@ -850,12 +998,182 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  SensorReading(fields: [String!]!, filter: SensorReading_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [SensorReading] @query(name: "SensorReading", type: SELECT) @catalog(name: "metrics", engine: "postgres")
-  SensorReading_aggregation(fields: [String!]!, filter: SensorReading_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _SensorReading_aggregation @aggregation_query(is_bucket: false, name: "SensorReading") @catalog(name: "metrics", engine: "postgres")
-  SensorReading_bucket_aggregation(fields: [String!]!, filter: SensorReading_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_SensorReading_aggregation_bucket] @aggregation_query(is_bucket: true, name: "SensorReading") @catalog(name: "metrics", engine: "postgres")
+  SensorReading(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: SensorReading_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [SensorReading] @query(name: "SensorReading", type: SELECT) @catalog(name: "metrics", engine: "postgres")
+  SensorReading_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: SensorReading_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _SensorReading_aggregation @aggregation_query(is_bucket: false, name: "SensorReading") @catalog(name: "metrics", engine: "postgres")
+  SensorReading_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: SensorReading_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_SensorReading_aggregation_bucket] @aggregation_query(is_bucket: true, name: "SensorReading") @catalog(name: "metrics", engine: "postgres")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  SensorReading(fields: [String!]!, filter: SensorReading_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _SensorReading_aggregation @aggregation_query(is_bucket: false, name: "SensorReading") @catalog(name: "metrics", engine: "postgres") @field_aggregation(name: "SensorReading")
+  SensorReading(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: SensorReading_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _SensorReading_aggregation @aggregation_query(is_bucket: false, name: "SensorReading") @catalog(name: "metrics", engine: "postgres") @field_aggregation(name: "SensorReading")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

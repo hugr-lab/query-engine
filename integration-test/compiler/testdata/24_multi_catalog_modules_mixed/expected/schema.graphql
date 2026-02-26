@@ -156,9 +156,29 @@ type Event @table(name: "events") @module(name: "analytics.analytics") @catalog(
   """
   Extract part of Timestamp field created_at
   """
-  _created_at_part(extract: TimeExtract!, extract_divide: Int): BigInt @extra_field(name: "Extract", base_field: "created_at", base_type: Timestamp) @sql(exp: "[created_at]")
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(name: "Extract", base_field: "created_at", base_type: Timestamp) @sql(exp: "[created_at]")
   _join(fields: [String!]!): _join
-  created_at(bucket: TimeBucket, bucket_interval: Interval): Timestamp
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): Timestamp
   event_type: String!
   id: BigInt! @pk
 }
@@ -728,7 +748,20 @@ type _Customer_aggregation_bucket @aggregation(name: "Customer", is_bucket: true
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Customer_filter, order_by: [OrderByField]): _Customer_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Customer_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Customer_aggregation
+  """
+  The key of the bucket
+  """
   key: Customer
 }
 type _Customer_aggregation_sub_aggregation @aggregation(name: "_Customer_aggregation", is_bucket: false, level: 2) @catalog(name: "pg_crm", engine: "postgres") {
@@ -738,10 +771,30 @@ type _Customer_aggregation_sub_aggregation @aggregation(name: "_Customer_aggrega
   name: StringSubAggregation @field_aggregation(name: "name")
 }
 type _Event_aggregation @aggregation(name: "Event", is_bucket: false, level: 1) @catalog(name: "analytics", engine: "duckdb") {
-  _created_at_part(extract: TimeExtract!, extract_divide: Int): BigIntAggregation @field_aggregation(name: "_created_at_part")
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_created_at_part")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
-  created_at(bucket: TimeBucket, bucket_interval: Interval): TimestampAggregation @field_aggregation(name: "created_at")
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampAggregation @field_aggregation(name: "created_at")
   event_type: StringAggregation @field_aggregation(name: "event_type")
   id: BigIntAggregation @field_aggregation(name: "id")
 }
@@ -752,13 +805,46 @@ type _Event_aggregation_bucket @aggregation(name: "Event", is_bucket: true, leve
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Event_filter, order_by: [OrderByField]): _Event_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Event_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Event_aggregation
+  """
+  The key of the bucket
+  """
   key: Event
 }
 type _Event_aggregation_sub_aggregation @aggregation(name: "_Event_aggregation", is_bucket: false, level: 2) @catalog(name: "analytics", engine: "duckdb") {
-  _created_at_part(extract: TimeExtract!, extract_divide: Int): BigIntSubAggregation @field_aggregation(name: "_created_at_part")
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_created_at_part")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
-  created_at(bucket: TimeBucket, bucket_interval: Interval): TimestampSubAggregation @field_aggregation(name: "created_at")
+  created_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampSubAggregation @field_aggregation(name: "created_at")
   event_type: StringSubAggregation @field_aggregation(name: "event_type")
   id: BigIntSubAggregation @field_aggregation(name: "id")
 }
@@ -864,16 +950,356 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  Customer(fields: [String!]!, filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Customer] @query(name: "Customer", type: SELECT) @catalog(name: "pg_crm", engine: "postgres")
-  Customer_aggregation(fields: [String!]!, filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Customer_aggregation @aggregation_query(is_bucket: false, name: "Customer") @catalog(name: "pg_crm", engine: "postgres")
-  Customer_bucket_aggregation(fields: [String!]!, filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Customer_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Customer") @catalog(name: "pg_crm", engine: "postgres")
-  Event(fields: [String!]!, filter: Event_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Event] @query(name: "Event", type: SELECT) @catalog(name: "analytics", engine: "duckdb")
-  Event_aggregation(fields: [String!]!, filter: Event_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Event_aggregation @aggregation_query(is_bucket: false, name: "Event") @catalog(name: "analytics", engine: "duckdb")
-  Event_bucket_aggregation(fields: [String!]!, filter: Event_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Event_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Event") @catalog(name: "analytics", engine: "duckdb")
+  Customer(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Customer_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Customer] @query(name: "Customer", type: SELECT) @catalog(name: "pg_crm", engine: "postgres")
+  Customer_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Customer_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Customer_aggregation @aggregation_query(is_bucket: false, name: "Customer") @catalog(name: "pg_crm", engine: "postgres")
+  Customer_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Customer_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Customer_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Customer") @catalog(name: "pg_crm", engine: "postgres")
+  Event(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Event_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Event] @query(name: "Event", type: SELECT) @catalog(name: "analytics", engine: "duckdb")
+  Event_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Event_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Event_aggregation @aggregation_query(is_bucket: false, name: "Event") @catalog(name: "analytics", engine: "duckdb")
+  Event_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Event_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Event_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Event") @catalog(name: "analytics", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  Customer(fields: [String!]!, filter: Customer_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Customer_aggregation @aggregation_query(is_bucket: false, name: "Customer") @catalog(name: "pg_crm", engine: "postgres") @field_aggregation(name: "Customer")
-  Event(fields: [String!]!, filter: Event_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Event_aggregation @aggregation_query(is_bucket: false, name: "Event") @catalog(name: "analytics", engine: "duckdb") @field_aggregation(name: "Event")
+  Customer(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Customer_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Customer_aggregation @aggregation_query(is_bucket: false, name: "Customer") @catalog(name: "pg_crm", engine: "postgres") @field_aggregation(name: "Customer")
+  Event(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Event_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Event_aggregation @aggregation_query(is_bucket: false, name: "Event") @catalog(name: "analytics", engine: "duckdb") @field_aggregation(name: "Event")
 }
 type _module_analytics_analytics_mutation @module_root(name: "analytics.analytics", type: MUTATION) {
   delete_Event(filter: Event_filter): OperationResult @mutation(name: "Event", type: DELETE, data_input: "") @catalog(name: "analytics", engine: "duckdb")
@@ -881,15 +1307,90 @@ type _module_analytics_analytics_mutation @module_root(name: "analytics.analytic
   update_Event(filter: Event_filter, data: Event_mut_data!): OperationResult @mutation(name: "Event", type: UPDATE, data_input: "Event_mut_data") @catalog(name: "analytics", engine: "duckdb")
 }
 type _module_analytics_analytics_query @module_root(name: "analytics.analytics", type: QUERY) {
-  Event(filter: Event_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Event] @query(name: "Event", type: SELECT) @catalog(name: "analytics", engine: "duckdb")
+  Event(
+    """
+    Filter
+    """
+    filter: Event_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Event] @query(name: "Event", type: SELECT) @catalog(name: "analytics", engine: "duckdb")
   """
   The aggregation for Event
   """
-  Event_aggregation(filter: Event_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Event_aggregation @aggregation_query(name: "Event", is_bucket: false) @catalog(name: "analytics", engine: "duckdb")
+  Event_aggregation(
+    """
+    Filter
+    """
+    filter: Event_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Event_aggregation @aggregation_query(name: "Event", is_bucket: false) @catalog(name: "analytics", engine: "duckdb")
   """
   The aggregation for Event
   """
-  Event_bucket_aggregation(filter: Event_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Event_aggregation_bucket] @aggregation_query(name: "Event", is_bucket: true) @catalog(name: "analytics", engine: "duckdb")
+  Event_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Event_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Event_aggregation_bucket] @aggregation_query(name: "Event", is_bucket: true) @catalog(name: "analytics", engine: "duckdb")
   Event_by_pk(id: BigInt!): Event @query(name: "Event", type: SELECT_ONE) @catalog(name: "analytics", engine: "duckdb")
 }
 type _module_analytics_mutation @module_root(name: "analytics", type: MUTATION) {
@@ -910,15 +1411,90 @@ type _module_pg_crm_crm_mutation @module_root(name: "pg_crm.crm", type: MUTATION
   update_Customer(filter: Customer_filter, data: Customer_mut_data!): OperationResult @mutation(name: "Customer", type: UPDATE, data_input: "Customer_mut_data") @catalog(name: "pg_crm", engine: "postgres")
 }
 type _module_pg_crm_crm_query @module_root(name: "pg_crm.crm", type: QUERY) {
-  Customer(filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Customer] @query(name: "Customer", type: SELECT) @catalog(name: "pg_crm", engine: "postgres")
+  Customer(
+    """
+    Filter
+    """
+    filter: Customer_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Customer] @query(name: "Customer", type: SELECT) @catalog(name: "pg_crm", engine: "postgres")
   """
   The aggregation for Customer
   """
-  Customer_aggregation(filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Customer_aggregation @aggregation_query(name: "Customer", is_bucket: false) @catalog(name: "pg_crm", engine: "postgres")
+  Customer_aggregation(
+    """
+    Filter
+    """
+    filter: Customer_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Customer_aggregation @aggregation_query(name: "Customer", is_bucket: false) @catalog(name: "pg_crm", engine: "postgres")
   """
   The aggregation for Customer
   """
-  Customer_bucket_aggregation(filter: Customer_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Customer_aggregation_bucket] @aggregation_query(name: "Customer", is_bucket: true) @catalog(name: "pg_crm", engine: "postgres")
+  Customer_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Customer_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Customer_aggregation_bucket] @aggregation_query(name: "Customer", is_bucket: true) @catalog(name: "pg_crm", engine: "postgres")
   Customer_by_pk(id: Int!): Customer @query(name: "Customer", type: SELECT_ONE) @catalog(name: "pg_crm", engine: "postgres")
 }
 type _module_pg_crm_mutation @module_root(name: "pg_crm", type: MUTATION) {

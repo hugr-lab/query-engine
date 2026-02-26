@@ -282,16 +282,22 @@ func generateFilterInput(ctx base.CompilationContext, def *ast.Definition, name 
 				filterDef.Fields = append(filterDef.Fields, field)
 			}
 		} else if td := lookupObjectDef(ctx, typeName); td != nil && td.Kind == ast.Object && !isTableOrView(td) {
-			// For structural Object-typed fields (not tables/views), recursively generate a filter input
+			// For structural Object-typed fields (not tables/views), reference the filter by name.
+			// The filter type is created eagerly by PassthroughRule.
 			isList := f.Type.NamedType == ""
-			nestedFilterName := generateNestedFilterInput(ctx, td, isList, pos)
-			if nestedFilterName != "" {
-				filterDef.Fields = append(filterDef.Fields, &ast.FieldDefinition{
-					Name:     f.Name,
-					Type:     ast.NamedType(nestedFilterName, pos),
-					Position: pos,
-				})
+			filterTypeName := td.Name + "_filter"
+			if isList {
+				listFilterName := td.Name + "_list_filter"
+				if ctx.LookupType(listFilterName) == nil {
+					ctx.AddDefinition(generateListFilterInput(td.Name, filterTypeName, listFilterName, opts, pos))
+				}
+				filterTypeName = listFilterName
 			}
+			filterDef.Fields = append(filterDef.Fields, &ast.FieldDefinition{
+				Name:     f.Name,
+				Type:     ast.NamedType(filterTypeName, pos),
+				Position: pos,
+			})
 		}
 	}
 
@@ -510,8 +516,6 @@ func generateNestedMutInputData(ctx base.CompilationContext, def *ast.Definition
 			optsCatalogDirective(opts),
 		},
 	}
-	// Add to output first to prevent infinite recursion
-	ctx.AddDefinition(inputDef)
 
 	for _, f := range def.Fields {
 		if f.Name == "_stub" {
@@ -522,8 +526,8 @@ func generateNestedMutInputData(ctx base.CompilationContext, def *ast.Definition
 		isList := f.Type.NamedType == ""
 		if !ctx.IsScalar(typeName) {
 			if td := lookupObjectDef(ctx, typeName); td != nil && td.Kind == ast.Object {
-				nestedName := generateNestedMutInputData(ctx, td, pos)
-				fieldType = ast.NamedType(nestedName, pos)
+				// Reference by name — the type is created eagerly by PassthroughRule
+				fieldType = ast.NamedType(td.Name+"_mut_input_data", pos)
 			}
 		}
 		if isList {
@@ -535,6 +539,7 @@ func generateNestedMutInputData(ctx base.CompilationContext, def *ast.Definition
 			Position: pos,
 		})
 	}
+	ctx.AddDefinition(inputDef)
 	return inputName
 }
 
@@ -557,8 +562,6 @@ func generateNestedMutData(ctx base.CompilationContext, def *ast.Definition, pos
 			optsCatalogDirective(opts),
 		},
 	}
-	// Add to output first to prevent infinite recursion
-	ctx.AddDefinition(inputDef)
 
 	for _, f := range def.Fields {
 		if f.Name == "_stub" {
@@ -569,8 +572,8 @@ func generateNestedMutData(ctx base.CompilationContext, def *ast.Definition, pos
 		isList := f.Type.NamedType == ""
 		if !ctx.IsScalar(typeName) {
 			if td := lookupObjectDef(ctx, typeName); td != nil && td.Kind == ast.Object {
-				nestedName := generateNestedMutData(ctx, td, pos)
-				fieldType = ast.NamedType(nestedName, pos)
+				// Reference by name — the type is created eagerly by PassthroughRule
+				fieldType = ast.NamedType(td.Name+"_mut_data", pos)
 			}
 		}
 		if isList {
@@ -582,6 +585,7 @@ func generateNestedMutData(ctx base.CompilationContext, def *ast.Definition, pos
 			Position: pos,
 		})
 	}
+	ctx.AddDefinition(inputDef)
 	return inputName
 }
 
@@ -651,11 +655,8 @@ func generateAggregationType(ctx base.CompilationContext, def *ast.Definition, n
 			if td == nil || td.Kind != ast.Object || isTableOrView(td) {
 				continue
 			}
+			// Reference by name — the type is created eagerly by PassthroughRule
 			nestedAggName := "_" + td.Name + "_aggregation"
-			if ctx.LookupType(nestedAggName) == nil {
-				nestedAggDef := generateAggregationType(ctx, td, nestedAggName, pos)
-				ctx.AddDefinition(nestedAggDef)
-			}
 			aggDef.Fields = append(aggDef.Fields, &ast.FieldDefinition{
 				Name:     f.Name,
 				Type:     ast.NamedType(nestedAggName, pos),

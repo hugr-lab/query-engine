@@ -1,0 +1,16 @@
+{
+  pg_store {
+    product_details(filter: { product_id: { eq: 1 } }) {
+      product_id
+      specs {
+        cpu
+        ram_gb
+        storage_gb
+      }
+      metadata {
+        warranty_years
+        origin
+      }
+    }
+  }
+}

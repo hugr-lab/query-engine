@@ -805,11 +805,13 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 					copy(subField.Arguments, f.Arguments)
 				}
 				fields = append(fields, subField)
-			} else if isStructuralAggField(ctx, f) {
-				// Structural Object aggregation fields keep the same type in sub-aggregation
+			} else if isStructuralAggFieldByConvention(f) {
+				// Structural Object aggregation fields — reference sub-agg type by name
+				// (created eagerly by PassthroughRule)
+				structSubAggName := f.Type.Name() + "_sub_aggregation"
 				subField := &ast.FieldDefinition{
 					Name:     f.Name,
-					Type:     ast.NamedType(f.Type.Name(), pos),
+					Type:     ast.NamedType(structSubAggName, pos),
 					Position: pos,
 				}
 				if len(f.Directives) > 0 {
@@ -943,11 +945,13 @@ func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, su
 					copy(subField.Arguments, f.Arguments)
 				}
 				fields = append(fields, subField)
-			} else if isStructuralAggField(ctx, f) {
-				// Structural Object aggregation fields keep the same type in sub-aggregation
+			} else if isStructuralAggFieldByConvention(f) {
+				// Structural Object aggregation fields — reference sub-agg type by name
+				// (created eagerly by PassthroughRule)
+				structSubAggName := f.Type.Name() + "_sub_aggregation"
 				subField := &ast.FieldDefinition{
 					Name:     f.Name,
-					Type:     ast.NamedType(f.Type.Name(), pos),
+					Type:     ast.NamedType(structSubAggName, pos),
 					Position: pos,
 				}
 				if len(f.Directives) > 0 {
@@ -984,27 +988,22 @@ func scalarSubAggTypeName(aggTypeName string) string {
 	return types.SubAggregationTypeName(aggTypeName)
 }
 
-// isStructuralAggField returns true if the field on an aggregation type represents
-// a structural Object aggregation (e.g., specs: _Specs_aggregation), as opposed to
-// a scalar aggregation, reference aggregation, or join aggregation.
-func isStructuralAggField(ctx base.CompilationContext, f *ast.FieldDefinition) bool {
-	typeDef := ctx.LookupType(f.Type.Name())
-	if typeDef == nil || typeDef.Kind != ast.Object {
+// isStructuralAggFieldByConvention returns true if the field on an aggregation type
+// represents a structural Object aggregation (e.g., specs: _Specs_aggregation).
+// Uses convention-based detection: non-scalar, no-arguments fields are structural.
+// Reference fields always have arguments (inner, filter, order_by, etc.).
+// Extra fields always have arguments and scalar agg types.
+func isStructuralAggFieldByConvention(f *ast.FieldDefinition) bool {
+	if f.Name == "_rows_count" {
 		return false
 	}
-	aggDir := typeDef.Directives.ForName("aggregation")
-	if aggDir == nil {
+	if scalarSubAggTypeName(f.Type.Name()) != "" {
 		return false
 	}
-	nameArg := aggDir.Arguments.ForName("name")
-	if nameArg == nil {
+	if len(f.Arguments) > 0 {
 		return false
 	}
-	origDef := lookupObjectDef(ctx, nameArg.Value.Raw)
-	if origDef == nil {
-		return false
-	}
-	return origDef.Kind == ast.Object && !isTableOrView(origDef)
+	return true
 }
 
 

@@ -10,14 +10,16 @@ func generateTimestampExtraField(fieldName, baseType string) *ast.FieldDefinitio
 		Type:        ast.NamedType("BigInt", pos),
 		Arguments: ast.ArgumentDefinitionList{
 			{
-				Name:     "extract",
-				Type:     ast.NonNullNamedType("TimeExtract", pos),
-				Position: pos,
+				Name:        "extract",
+				Description: "Extracts the specified part of the timestamp",
+				Type:        ast.NonNullNamedType("TimeExtract", pos),
+				Position:    pos,
 			},
 			{
-				Name:     "extract_divide",
-				Type:     ast.NamedType("Int", pos),
-				Position: pos,
+				Name:        "extract_divide",
+				Description: "Divides the extracted value",
+				Type:        ast.NamedType("Int", pos),
+				Position:    pos,
 			},
 		},
 		Directives: ast.DirectiveList{

@@ -1,0 +1,25 @@
+{
+  "data": {
+    "pg_store": {
+      "by_contains": [
+        {
+          "id": 1,
+          "product_id": 1,
+          "valid_price": "[1000,1500)"
+        }
+      ],
+      "by_intersects": [
+        {
+          "id": 1,
+          "product_id": 1,
+          "valid_price": "[1000,1500)"
+        },
+        {
+          "id": 3,
+          "product_id": 5,
+          "valid_price": "[2000,3000)"
+        }
+      ]
+    }
+  }
+}

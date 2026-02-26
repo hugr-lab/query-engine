@@ -707,7 +707,52 @@ type _distribution_by_bucket_aggregation @system {
   value: FloatAggregation
 }
 type _h3_data_query @system {
-  tr_Airport(field: String!, filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  tr_Airport(field: String!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -728,7 +773,52 @@ type _h3_data_query @system {
     """
     simplify: Boolean = true
   ): [tr_Airport] @query(name: "tr_Airport", type: SELECT) @catalog(name: "transport", engine: "duckdb")
-  tr_Airport_aggregation(field: String!, filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  tr_Airport_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -749,7 +839,52 @@ type _h3_data_query @system {
     """
     simplify: Boolean = true
   ): _tr_Airport_aggregation @aggregation_query(is_bucket: false, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb")
-  tr_Airport_bucket_aggregation(field: String!, filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  tr_Airport_bucket_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -828,16 +963,356 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  tr_Airport(fields: [String!]!, filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [tr_Airport] @query(name: "tr_Airport", type: SELECT) @catalog(name: "transport", engine: "duckdb")
-  tr_Airport_aggregation(fields: [String!]!, filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _tr_Airport_aggregation @aggregation_query(is_bucket: false, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb")
-  tr_Airport_bucket_aggregation(fields: [String!]!, filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_tr_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb")
-  tr_Station(fields: [String!]!, filter: tr_Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [tr_Station] @query(name: "tr_Station", type: SELECT) @catalog(name: "transport", engine: "duckdb")
-  tr_Station_aggregation(fields: [String!]!, filter: tr_Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _tr_Station_aggregation @aggregation_query(is_bucket: false, name: "tr_Station") @catalog(name: "transport", engine: "duckdb")
-  tr_Station_bucket_aggregation(fields: [String!]!, filter: tr_Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_tr_Station_aggregation_bucket] @aggregation_query(is_bucket: true, name: "tr_Station") @catalog(name: "transport", engine: "duckdb")
+  tr_Airport(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [tr_Airport] @query(name: "tr_Airport", type: SELECT) @catalog(name: "transport", engine: "duckdb")
+  tr_Airport_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _tr_Airport_aggregation @aggregation_query(is_bucket: false, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb")
+  tr_Airport_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_tr_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb")
+  tr_Station(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: tr_Station_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [tr_Station] @query(name: "tr_Station", type: SELECT) @catalog(name: "transport", engine: "duckdb")
+  tr_Station_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: tr_Station_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _tr_Station_aggregation @aggregation_query(is_bucket: false, name: "tr_Station") @catalog(name: "transport", engine: "duckdb")
+  tr_Station_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: tr_Station_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_tr_Station_aggregation_bucket] @aggregation_query(is_bucket: true, name: "tr_Station") @catalog(name: "transport", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  tr_Airport(fields: [String!]!, filter: tr_Airport_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _tr_Airport_aggregation @aggregation_query(is_bucket: false, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb") @field_aggregation(name: "tr_Airport")
-  tr_Station(fields: [String!]!, filter: tr_Station_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _tr_Station_aggregation @aggregation_query(is_bucket: false, name: "tr_Station") @catalog(name: "transport", engine: "duckdb") @field_aggregation(name: "tr_Station")
+  tr_Airport(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _tr_Airport_aggregation @aggregation_query(is_bucket: false, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb") @field_aggregation(name: "tr_Airport")
+  tr_Station(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: tr_Station_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _tr_Station_aggregation @aggregation_query(is_bucket: false, name: "tr_Station") @catalog(name: "transport", engine: "duckdb") @field_aggregation(name: "tr_Station")
 }
 type _module_transport_function @module_root(name: "transport", type: FUNCTION) {
   find_nearby(iata_code: String!, radius: Float): [tr_Airport] @function(name: "find_nearby_airports") @catalog(name: "transport", engine: "duckdb") @module(name: "transport")
@@ -866,15 +1341,90 @@ type _module_transport_transport_air_mutation @module_root(name: "transport.tran
   update_Airport(filter: tr_Airport_filter, data: tr_Airport_mut_data!): OperationResult @mutation(name: "tr_Airport", type: UPDATE, data_input: "tr_Airport_mut_data") @catalog(name: "transport", engine: "duckdb")
 }
 type _module_transport_transport_air_query @module_root(name: "transport.transport.air", type: QUERY) {
-  Airport(filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [tr_Airport] @query(name: "tr_Airport", type: SELECT) @catalog(name: "transport", engine: "duckdb")
+  Airport(
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [tr_Airport] @query(name: "tr_Airport", type: SELECT) @catalog(name: "transport", engine: "duckdb")
   """
   The aggregation for Airport
   """
-  Airport_aggregation(filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _tr_Airport_aggregation @aggregation_query(name: "Airport", is_bucket: false) @catalog(name: "transport", engine: "duckdb")
+  Airport_aggregation(
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _tr_Airport_aggregation @aggregation_query(name: "Airport", is_bucket: false) @catalog(name: "transport", engine: "duckdb")
   """
   The aggregation for Airport
   """
-  Airport_bucket_aggregation(filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_tr_Airport_aggregation_bucket] @aggregation_query(name: "Airport", is_bucket: true) @catalog(name: "transport", engine: "duckdb")
+  Airport_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_tr_Airport_aggregation_bucket] @aggregation_query(name: "Airport", is_bucket: true) @catalog(name: "transport", engine: "duckdb")
   Airport_by_pk(iata_code: String!): tr_Airport @query(name: "tr_Airport", type: SELECT_ONE) @catalog(name: "transport", engine: "duckdb")
 }
 type _module_transport_transport_ground_mutation @module_root(name: "transport.transport.ground", type: MUTATION) {
@@ -883,15 +1433,90 @@ type _module_transport_transport_ground_mutation @module_root(name: "transport.t
   update_Station(filter: tr_Station_filter, data: tr_Station_mut_data!): OperationResult @mutation(name: "tr_Station", type: UPDATE, data_input: "tr_Station_mut_data") @catalog(name: "transport", engine: "duckdb")
 }
 type _module_transport_transport_ground_query @module_root(name: "transport.transport.ground", type: QUERY) {
-  Station(filter: tr_Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [tr_Station] @query(name: "tr_Station", type: SELECT) @catalog(name: "transport", engine: "duckdb")
+  Station(
+    """
+    Filter
+    """
+    filter: tr_Station_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [tr_Station] @query(name: "tr_Station", type: SELECT) @catalog(name: "transport", engine: "duckdb")
   """
   The aggregation for Station
   """
-  Station_aggregation(filter: tr_Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _tr_Station_aggregation @aggregation_query(name: "Station", is_bucket: false) @catalog(name: "transport", engine: "duckdb")
+  Station_aggregation(
+    """
+    Filter
+    """
+    filter: tr_Station_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _tr_Station_aggregation @aggregation_query(name: "Station", is_bucket: false) @catalog(name: "transport", engine: "duckdb")
   """
   The aggregation for Station
   """
-  Station_bucket_aggregation(filter: tr_Station_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_tr_Station_aggregation_bucket] @aggregation_query(name: "Station", is_bucket: true) @catalog(name: "transport", engine: "duckdb")
+  Station_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: tr_Station_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_tr_Station_aggregation_bucket] @aggregation_query(name: "Station", is_bucket: true) @catalog(name: "transport", engine: "duckdb")
   Station_by_pk(id: Int!): tr_Station @query(name: "tr_Station", type: SELECT_ONE) @catalog(name: "transport", engine: "duckdb")
 }
 type _module_transport_transport_mutation @module_root(name: "transport.transport", type: MUTATION) {
@@ -915,20 +1540,235 @@ type _module_transport_transport_query @module_root(name: "transport.transport",
   ground: _module_transport_transport_ground_query
 }
 type _spatial @system {
-  tr_Airport(field: String!, filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [tr_Airport] @query(name: "tr_Airport", type: SELECT) @catalog(name: "transport", engine: "duckdb")
-  tr_Airport_aggregation(field: String!, filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _tr_Airport_aggregation @aggregation_query(is_bucket: false, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb")
-  tr_Airport_bucket_aggregation(field: String!, filter: tr_Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_tr_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb")
+  tr_Airport(field: String!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [tr_Airport] @query(name: "tr_Airport", type: SELECT) @catalog(name: "transport", engine: "duckdb")
+  tr_Airport_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _tr_Airport_aggregation @aggregation_query(is_bucket: false, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb")
+  tr_Airport_bucket_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_tr_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb")
 }
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1) {
-  tr_Airport(field: String!, filter: tr_Airport_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _tr_Airport_aggregation @aggregation_query(is_bucket: false, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb") @field_aggregation(name: "tr_Airport")
+  tr_Airport(field: String!,
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _tr_Airport_aggregation @aggregation_query(is_bucket: false, name: "tr_Airport") @catalog(name: "transport", engine: "duckdb") @field_aggregation(name: "tr_Airport")
 }
 type _tr_Airport_aggregation @aggregation(name: "tr_Airport", is_bucket: false, level: 1) @catalog(name: "transport", engine: "duckdb") {
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): FloatAggregation @field_aggregation(name: "_geom_measurement")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): FloatAggregation @field_aggregation(name: "_geom_measurement")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   _spatial(field: String!, type: GeometrySpatialQueryType!, buffer: Int): _spatial_aggregation @field_aggregation(name: "_spatial")
   city: StringAggregation @field_aggregation(name: "city")
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): GeometryAggregation @field_aggregation(name: "geom")
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): GeometryAggregation @field_aggregation(name: "geom")
   iata_code: StringAggregation @field_aggregation(name: "iata_code")
   name: StringAggregation @field_aggregation(name: "name")
   """
@@ -943,14 +1783,72 @@ type _tr_Airport_aggregation_bucket @aggregation(name: "tr_Airport", is_bucket: 
   """
   The aggregations of the bucket
   """
-  aggregations(filter: tr_Airport_filter, order_by: [OrderByField]): _tr_Airport_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: tr_Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _tr_Airport_aggregation
+  """
+  The key of the bucket
+  """
   key: tr_Airport
 }
 type _tr_Airport_aggregation_sub_aggregation @aggregation(name: "_tr_Airport_aggregation", is_bucket: false, level: 2) @catalog(name: "transport", engine: "duckdb") {
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): FloatSubAggregation @field_aggregation(name: "_geom_measurement")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): FloatSubAggregation @field_aggregation(name: "_geom_measurement")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   city: StringSubAggregation @field_aggregation(name: "city")
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): GeometrySubAggregation @field_aggregation(name: "geom")
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): GeometrySubAggregation @field_aggregation(name: "geom")
   iata_code: StringSubAggregation @field_aggregation(name: "iata_code")
   name: StringSubAggregation @field_aggregation(name: "name")
 }
@@ -969,7 +1867,20 @@ type _tr_Station_aggregation_bucket @aggregation(name: "tr_Station", is_bucket: 
   """
   The aggregations of the bucket
   """
-  aggregations(filter: tr_Station_filter, order_by: [OrderByField]): _tr_Station_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: tr_Station_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _tr_Station_aggregation
+  """
+  The key of the bucket
+  """
   key: tr_Station
 }
 type _tr_Station_aggregation_sub_aggregation @aggregation(name: "_tr_Station_aggregation", is_bucket: false, level: 2) @catalog(name: "transport", engine: "duckdb") {
@@ -984,11 +1895,56 @@ type tr_Airport @table(name: "airports") @module(name: "transport.transport.air"
   """
   Calculate measurement of geometry field geom
   """
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): Float @extra_field(name: "Measurement", base_field: "geom", base_type: Geometry) @sql(exp: "[geom]")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): Float @extra_field(name: "Measurement", base_field: "geom", base_type: Geometry) @sql(exp: "[geom]")
   _join(fields: [String!]!): _join
   _spatial(field: String!, type: GeometrySpatialQueryType!, buffer: Int): _spatial
   city: String!
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): Geometry
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): Geometry
   iata_code: String! @pk
   name: String!
   nearby: [tr_Airport] @table_function_call_join(references_name: "find_nearby", args: {iata_code:"iata_code"}, module: "transport") @catalog(name: "transport", engine: "duckdb")

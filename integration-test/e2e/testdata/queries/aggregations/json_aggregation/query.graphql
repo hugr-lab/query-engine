@@ -1,0 +1,12 @@
+{
+  local_db {
+    events_aggregation {
+      _rows_count
+      metadata {
+        count(path: "attendees")
+        sum(path: "attendees")
+        avg(path: "attendees")
+      }
+    }
+  }
+}

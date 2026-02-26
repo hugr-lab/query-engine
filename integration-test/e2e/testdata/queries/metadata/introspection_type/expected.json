@@ -73,6 +73,13 @@
           }
         },
         {
+          "name": "category",
+          "type": {
+            "kind": "OBJECT",
+            "name": "pg_store_categories"
+          }
+        },
+        {
           "name": "_created_at_part",
           "type": {
             "kind": "SCALAR",
@@ -87,24 +94,10 @@
           }
         },
         {
-          "name": "category",
-          "type": {
-            "kind": "OBJECT",
-            "name": "pg_store_categories"
-          }
-        },
-        {
           "name": "product_tags",
           "type": {
             "kind": "LIST",
             "name": null
-          }
-        },
-        {
-          "name": "_join",
-          "type": {
-            "kind": "OBJECT",
-            "name": "_join"
           }
         },
         {
@@ -119,6 +112,55 @@
           "type": {
             "kind": "LIST",
             "name": null
+          }
+        },
+        {
+          "name": "details",
+          "type": {
+            "kind": "LIST",
+            "name": null
+          }
+        },
+        {
+          "name": "details_aggregation",
+          "type": {
+            "kind": "OBJECT",
+            "name": "_pg_store_product_details_aggregation"
+          }
+        },
+        {
+          "name": "details_bucket_aggregation",
+          "type": {
+            "kind": "LIST",
+            "name": null
+          }
+        },
+        {
+          "name": "price_ranges",
+          "type": {
+            "kind": "LIST",
+            "name": null
+          }
+        },
+        {
+          "name": "price_ranges_aggregation",
+          "type": {
+            "kind": "OBJECT",
+            "name": "_pg_store_price_ranges_aggregation"
+          }
+        },
+        {
+          "name": "price_ranges_bucket_aggregation",
+          "type": {
+            "kind": "LIST",
+            "name": null
+          }
+        },
+        {
+          "name": "_join",
+          "type": {
+            "kind": "OBJECT",
+            "name": "_join"
           }
         }
       ],

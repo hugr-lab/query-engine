@@ -1,15 +1,150 @@
 type Airline @table(name: "airlines") @catalog(name: "base", engine: "duckdb") @filter_input(name: "Airline_filter") @data_input(name: "Airline_mut_input_data") @data_input(name: "Airline_mut_data") @query(name: "Airline", type: SELECT) @query(name: "Airline_by_pk", type: SELECT_ONE) @mutation(name: "insert_Airline", type: INSERT, data_input: "Airline_mut_input_data") @mutation(name: "update_Airline", type: UPDATE, data_input: "Airline_mut_data") @mutation(name: "delete_Airline", type: DELETE, data_input: "") @query(name: "Airline_aggregation", type: AGGREGATE) @query(name: "Airline_bucket_aggregation", type: AGGREGATE_BUCKET) @references(name: "booking_airline", references_name: "Passenger", source_fields: ["icao"], references_fields: ["airline_icao"], query: "booking_passengers", references_query: "bookings", is_m2m: true, m2m_name: "BookingPassenger", description: "", references_description: "") @filter_list_input(name: "Airline_list_filter") {
   _join(fields: [String!]!): _join
   active: Boolean @default(value: true)
-  booking_passengers(filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Passenger] @references_query(references_name: "Passenger", name: "booking_airline", is_m2m: true, m2m_name: "BookingPassenger") @catalog(name: "base", engine: "duckdb")
+  booking_passengers(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Passenger] @references_query(references_name: "Passenger", name: "booking_airline", is_m2m: true, m2m_name: "BookingPassenger") @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for booking_passengers
   """
-  booking_passengers_aggregation(filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Passenger_aggregation @aggregation_query(is_bucket: false, name: "booking_passengers") @catalog(name: "base", engine: "duckdb")
+  booking_passengers_aggregation(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Passenger_aggregation @aggregation_query(is_bucket: false, name: "booking_passengers") @catalog(name: "base", engine: "duckdb")
   """
   The bucket aggregation for booking_passengers
   """
-  booking_passengers_bucket_aggregation(filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Passenger_aggregation_bucket] @aggregation_query(is_bucket: true, name: "booking_passengers") @catalog(name: "base", engine: "duckdb")
+  booking_passengers_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Passenger_aggregation_bucket] @aggregation_query(is_bucket: true, name: "booking_passengers") @catalog(name: "base", engine: "duckdb")
   country: String
   icao: String! @pk
   name: String!
@@ -49,29 +184,344 @@ type Airport @table(name: "airports") @module(name: "transport.air") @catalog(na
   """
   Calculate measurement of geometry field geom
   """
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): Float @extra_field(name: "Measurement", base_field: "geom", base_type: Geometry) @sql(exp: "[geom]")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): Float @extra_field(name: "Measurement", base_field: "geom", base_type: Geometry) @sql(exp: "[geom]")
   _join(fields: [String!]!): _join
   _spatial(field: String!, type: GeometrySpatialQueryType!, buffer: Int): _spatial
-  arriving_routes(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Route] @references_query(references_name: "Route", name: "route_dst", is_m2m: false, m2m_name: "") @catalog(name: "base", engine: "duckdb")
+  arriving_routes(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Route] @references_query(references_name: "Route", name: "route_dst", is_m2m: false, m2m_name: "") @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for arriving_routes
   """
-  arriving_routes_aggregation(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation @aggregation_query(is_bucket: false, name: "arriving_routes") @catalog(name: "base", engine: "duckdb")
+  arriving_routes_aggregation(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation @aggregation_query(is_bucket: false, name: "arriving_routes") @catalog(name: "base", engine: "duckdb")
   """
   The bucket aggregation for arriving_routes
   """
-  arriving_routes_bucket_aggregation(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Route_aggregation_bucket] @aggregation_query(is_bucket: true, name: "arriving_routes") @catalog(name: "base", engine: "duckdb")
+  arriving_routes_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Route_aggregation_bucket] @aggregation_query(is_bucket: true, name: "arriving_routes") @catalog(name: "base", engine: "duckdb")
   city: String!
-  departing_routes(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Route] @references_query(references_name: "Route", name: "route_src", is_m2m: false, m2m_name: "") @catalog(name: "base", engine: "duckdb")
+  departing_routes(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Route] @references_query(references_name: "Route", name: "route_src", is_m2m: false, m2m_name: "") @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for departing_routes
   """
-  departing_routes_aggregation(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation @aggregation_query(is_bucket: false, name: "departing_routes") @catalog(name: "base", engine: "duckdb")
+  departing_routes_aggregation(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation @aggregation_query(is_bucket: false, name: "departing_routes") @catalog(name: "base", engine: "duckdb")
   """
   The bucket aggregation for departing_routes
   """
-  departing_routes_bucket_aggregation(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Route_aggregation_bucket] @aggregation_query(is_bucket: true, name: "departing_routes") @catalog(name: "base", engine: "duckdb")
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): Geometry
+  departing_routes_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Route_aggregation_bucket] @aggregation_query(is_bucket: true, name: "departing_routes") @catalog(name: "base", engine: "duckdb")
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): Geometry
   iata_code: String! @pk
   latitude: Float
   longitude: Float
@@ -295,9 +745,29 @@ type FlightLog @view(name: "flight_log_view", sql: "SELECT * FROM flights WHERE 
   """
   Extract part of Timestamp field departure
   """
-  _departure_part(extract: TimeExtract!, extract_divide: Int): BigInt @extra_field(name: "Extract", base_field: "departure", base_type: Timestamp) @sql(exp: "[departure]")
+  _departure_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(name: "Extract", base_field: "departure", base_type: Timestamp) @sql(exp: "[departure]")
   _join(fields: [String!]!): _join
-  departure(bucket: TimeBucket, bucket_interval: Interval): Timestamp
+  departure(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): Timestamp
   flight_number: String!
   id: Int! @pk
   route_id: Int
@@ -362,10 +832,55 @@ type FnAirport @table(name: "fn_airports") @catalog(name: "fn_transport", engine
   """
   Calculate measurement of geometry field geom
   """
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): Float @extra_field(name: "Measurement", base_field: "geom", base_type: Geometry) @sql(exp: "[geom]")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): Float @extra_field(name: "Measurement", base_field: "geom", base_type: Geometry) @sql(exp: "[geom]")
   _join(fields: [String!]!): _join
   _spatial(field: String!, type: GeometrySpatialQueryType!, buffer: Int): _spatial
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): Geometry
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): Geometry
   iata_code: String! @pk
   name: String!
   nearby: [FnAirport] @table_function_call_join(references_name: "find_nearby", args: {origin:"iata_code"}, module: "fn_transport") @catalog(name: "fn_transport", engine: "duckdb")
@@ -486,22 +1001,202 @@ type Hotel @table(name: "hotels") @module(name: "hospitality") @catalog(name: "h
   """
   Calculate measurement of geometry field geom
   """
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): Float @extra_field(name: "Measurement", base_field: "geom", base_type: Geometry) @sql(exp: "[geom]")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): Float @extra_field(name: "Measurement", base_field: "geom", base_type: Geometry) @sql(exp: "[geom]")
   _join(fields: [String!]!): _join
   _spatial(field: String!, type: GeometrySpatialQueryType!, buffer: Int): _spatial
   city: String!
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): Geometry
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): Geometry
   id: Int! @pk
   name: String!
-  reviews(filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Review] @references_query(references_name: "Review", name: "Hotel_hotel_id", is_m2m: false, m2m_name: "") @catalog(name: "hotels", engine: "duckdb")
+  reviews(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Review] @references_query(references_name: "Review", name: "Hotel_hotel_id", is_m2m: false, m2m_name: "") @catalog(name: "hotels", engine: "duckdb")
   """
   The aggregation for reviews
   """
-  reviews_aggregation(filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Review_aggregation @aggregation_query(is_bucket: false, name: "reviews") @catalog(name: "hotels", engine: "duckdb")
+  reviews_aggregation(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Review_aggregation @aggregation_query(is_bucket: false, name: "reviews") @catalog(name: "hotels", engine: "duckdb")
   """
   The bucket aggregation for reviews
   """
-  reviews_bucket_aggregation(filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Review_aggregation_bucket] @aggregation_query(is_bucket: true, name: "reviews") @catalog(name: "hotels", engine: "duckdb")
+  reviews_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Review_aggregation_bucket] @aggregation_query(is_bucket: true, name: "reviews") @catalog(name: "hotels", engine: "duckdb")
   stars: Int
 }
 """
@@ -688,15 +1383,150 @@ enum OrderDirection @system {
 }
 type Passenger @table(name: "passengers") @unique(fields: ["email"], query_suffix: "email") @catalog(name: "base", engine: "duckdb") @filter_input(name: "Passenger_filter") @data_input(name: "Passenger_mut_input_data") @data_input(name: "Passenger_mut_data") @query(name: "Passenger", type: SELECT) @query(name: "Passenger_by_pk", type: SELECT_ONE) @mutation(name: "insert_Passenger", type: INSERT, data_input: "Passenger_mut_input_data") @mutation(name: "update_Passenger", type: UPDATE, data_input: "Passenger_mut_data") @mutation(name: "delete_Passenger", type: DELETE, data_input: "") @query(name: "Passenger_email", type: SELECT_ONE) @query(name: "Passenger_aggregation", type: AGGREGATE) @query(name: "Passenger_bucket_aggregation", type: AGGREGATE_BUCKET) @filter_list_input(name: "Passenger_list_filter") @references(name: "booking_passenger", references_name: "Airline", source_fields: ["id"], references_fields: ["passenger_id"], query: "bookings", references_query: "booking_passengers", is_m2m: true, m2m_name: "BookingPassenger", description: "", references_description: "") {
   _join(fields: [String!]!): _join
-  bookings(filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Airline] @references_query(references_name: "Airline", name: "booking_passenger", is_m2m: true, m2m_name: "BookingPassenger") @catalog(name: "base", engine: "duckdb")
+  bookings(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Airline] @references_query(references_name: "Airline", name: "booking_passenger", is_m2m: true, m2m_name: "BookingPassenger") @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for bookings
   """
-  bookings_aggregation(filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airline_aggregation @aggregation_query(is_bucket: false, name: "bookings") @catalog(name: "base", engine: "duckdb")
+  bookings_aggregation(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airline_aggregation @aggregation_query(is_bucket: false, name: "bookings") @catalog(name: "base", engine: "duckdb")
   """
   The bucket aggregation for bookings
   """
-  bookings_bucket_aggregation(filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Airline_aggregation_bucket] @aggregation_query(is_bucket: true, name: "bookings") @catalog(name: "base", engine: "duckdb")
+  bookings_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Airline_aggregation_bucket] @aggregation_query(is_bucket: true, name: "bookings") @catalog(name: "base", engine: "duckdb")
   email: String!
   first_name: String!
   id: Int! @pk
@@ -734,34 +1564,259 @@ input Passenger_mut_input_data @data_input(name: "Passenger") @catalog(name: "ba
   last_name: String
 }
 type Query @system {
-  Airline(filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Airline] @query(name: "Airline", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  Airline(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Airline] @query(name: "Airline", type: SELECT) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for Airline
   """
-  Airline_aggregation(filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Airline_aggregation @aggregation_query(name: "Airline", is_bucket: false) @catalog(name: "base", engine: "duckdb")
+  Airline_aggregation(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Airline_aggregation @aggregation_query(name: "Airline", is_bucket: false) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for Airline
   """
-  Airline_bucket_aggregation(filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Airline_aggregation_bucket] @aggregation_query(name: "Airline", is_bucket: true) @catalog(name: "base", engine: "duckdb")
+  Airline_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Airline_aggregation_bucket] @aggregation_query(name: "Airline", is_bucket: true) @catalog(name: "base", engine: "duckdb")
   Airline_by_pk(icao: String!): Airline @query(name: "Airline", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
-  BookingPassenger(filter: BookingPassenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [BookingPassenger] @query(name: "BookingPassenger", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  BookingPassenger(
+    """
+    Filter
+    """
+    filter: BookingPassenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [BookingPassenger] @query(name: "BookingPassenger", type: SELECT) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for BookingPassenger
   """
-  BookingPassenger_aggregation(filter: BookingPassenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _BookingPassenger_aggregation @aggregation_query(name: "BookingPassenger", is_bucket: false) @catalog(name: "base", engine: "duckdb")
+  BookingPassenger_aggregation(
+    """
+    Filter
+    """
+    filter: BookingPassenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _BookingPassenger_aggregation @aggregation_query(name: "BookingPassenger", is_bucket: false) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for BookingPassenger
   """
-  BookingPassenger_bucket_aggregation(filter: BookingPassenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_BookingPassenger_aggregation_bucket] @aggregation_query(name: "BookingPassenger", is_bucket: true) @catalog(name: "base", engine: "duckdb")
-  Passenger(filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Passenger] @query(name: "Passenger", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  BookingPassenger_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: BookingPassenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_BookingPassenger_aggregation_bucket] @aggregation_query(name: "BookingPassenger", is_bucket: true) @catalog(name: "base", engine: "duckdb")
+  Passenger(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Passenger] @query(name: "Passenger", type: SELECT) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for Passenger
   """
-  Passenger_aggregation(filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Passenger_aggregation @aggregation_query(name: "Passenger", is_bucket: false) @catalog(name: "base", engine: "duckdb")
+  Passenger_aggregation(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Passenger_aggregation @aggregation_query(name: "Passenger", is_bucket: false) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for Passenger
   """
-  Passenger_bucket_aggregation(filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Passenger_aggregation_bucket] @aggregation_query(name: "Passenger", is_bucket: true) @catalog(name: "base", engine: "duckdb")
+  Passenger_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Passenger_aggregation_bucket] @aggregation_query(name: "Passenger", is_bucket: true) @catalog(name: "base", engine: "duckdb")
   Passenger_by_pk(id: Int!): Passenger @query(name: "Passenger", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
   Passenger_email(email: String!): Passenger @query(name: "Passenger", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
   fn_transport: _module_fn_transport_query
@@ -793,7 +1848,12 @@ enum QueryType @system {
 type Review @table(name: "reviews") @module(name: "hospitality") @catalog(name: "hotels", engine: "duckdb") @filter_input(name: "Review_filter") @data_input(name: "Review_mut_input_data") @data_input(name: "Review_mut_data") @query(name: "Review", type: SELECT) @query(name: "Review_by_pk", type: SELECT_ONE) @mutation(name: "insert_Review", type: INSERT, data_input: "Review_mut_input_data") @mutation(name: "update_Review", type: UPDATE, data_input: "Review_mut_data") @mutation(name: "delete_Review", type: DELETE, data_input: "") @query(name: "Review_aggregation", type: AGGREGATE) @query(name: "Review_bucket_aggregation", type: AGGREGATE_BUCKET) @references(name: "Hotel_hotel_id", references_name: "Hotel", source_fields: ["hotel_id"], references_fields: ["id"], query: "hotel", references_query: "reviews", is_m2m: false, m2m_name: "", description: "", references_description: "") @filter_list_input(name: "Review_list_filter") {
   _join(fields: [String!]!): _join
   comment: String
-  hotel(inner: Boolean): Hotel @references_query(references_name: "Hotel", name: "Hotel_hotel_id", is_m2m: false, m2m_name: "") @catalog(name: "hotels", engine: "duckdb")
+  hotel(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): Hotel @references_query(references_name: "Hotel", name: "Hotel_hotel_id", is_m2m: false, m2m_name: "") @catalog(name: "hotels", engine: "duckdb")
   hotel_id: Int! @field_references(references_name: "Hotel", field: "id", query: "hotel", references_query: "reviews")
   id: Int! @pk
   rating: Float!
@@ -831,11 +1891,21 @@ input Review_mut_input_data @data_input(name: "Review") @catalog(name: "hotels",
 }
 type Route @table(name: "routes") @module(name: "transport.air") @unique(fields: ["src_airport","dst_airport"], query_suffix: "route") @references(name: "route_src", references_name: "Airport", source_fields: ["src_airport"], references_fields: ["iata_code"], query: "source_airport", references_query: "departing_routes", is_m2m: false, m2m_name: "", description: "", references_description: "") @references(name: "route_dst", references_name: "Airport", source_fields: ["dst_airport"], references_fields: ["iata_code"], query: "destination_airport", references_query: "arriving_routes", is_m2m: false, m2m_name: "", description: "", references_description: "") @catalog(name: "base", engine: "duckdb") @filter_input(name: "Route_filter") @data_input(name: "Route_mut_input_data") @data_input(name: "Route_mut_data") @query(name: "Route", type: SELECT) @query(name: "Route_by_pk", type: SELECT_ONE) @mutation(name: "insert_Route", type: INSERT, data_input: "Route_mut_input_data") @mutation(name: "update_Route", type: UPDATE, data_input: "Route_mut_data") @mutation(name: "delete_Route", type: DELETE, data_input: "") @query(name: "Route_route", type: SELECT_ONE) @query(name: "Route_aggregation", type: AGGREGATE) @query(name: "Route_bucket_aggregation", type: AGGREGATE_BUCKET) @filter_list_input(name: "Route_list_filter") {
   _join(fields: [String!]!): _join
-  destination_airport(inner: Boolean): Airport @references_query(references_name: "Airport", name: "route_dst", is_m2m: false, m2m_name: "") @catalog(name: "base", engine: "duckdb")
+  destination_airport(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): Airport @references_query(references_name: "Airport", name: "route_dst", is_m2m: false, m2m_name: "") @catalog(name: "base", engine: "duckdb")
   dst_airport: String!
   id: Int! @pk
   is_active: Boolean @default(value: true)
-  source_airport(inner: Boolean): Airport @references_query(references_name: "Airport", name: "route_src", is_m2m: false, m2m_name: "") @catalog(name: "base", engine: "duckdb")
+  source_airport(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): Airport @references_query(references_name: "Airport", name: "route_src", is_m2m: false, m2m_name: "") @catalog(name: "base", engine: "duckdb")
   src_airport: String!
   stops: Int!
 }
@@ -1088,8 +2158,88 @@ type _Airline_aggregation @aggregation(name: "Airline", is_bucket: false, level:
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   active: BooleanAggregation @field_aggregation(name: "active")
-  booking_passengers(filter: Passenger_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Passenger_aggregation @field_aggregation(name: "booking_passengers")
-  booking_passengers_aggregation(filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Passenger_aggregation_sub_aggregation @field_aggregation(name: "booking_passengers")
+  booking_passengers(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Passenger_aggregation @field_aggregation(name: "booking_passengers")
+  booking_passengers_aggregation(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Passenger_aggregation_sub_aggregation @field_aggregation(name: "booking_passengers")
   country: StringAggregation @field_aggregation(name: "country")
   icao: StringAggregation @field_aggregation(name: "icao")
   name: StringAggregation @field_aggregation(name: "name")
@@ -1101,14 +2251,107 @@ type _Airline_aggregation_bucket @aggregation(name: "Airline", is_bucket: true, 
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Airline_filter, order_by: [OrderByField]): _Airline_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Airline_aggregation
+  """
+  The key of the bucket
+  """
   key: Airline
 }
 type _Airline_aggregation_sub_aggregation @aggregation(name: "_Airline_aggregation", is_bucket: false, level: 2) @catalog(name: "base", engine: "duckdb") {
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   active: BooleanSubAggregation @field_aggregation(name: "active")
-  booking_passengers(filter: Passenger_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Passenger_aggregation_sub_aggregation @field_aggregation(name: "booking_passengers")
-  booking_passengers_aggregation(filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Passenger_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "booking_passengers_aggregation")
+  booking_passengers(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Passenger_aggregation_sub_aggregation @field_aggregation(name: "booking_passengers")
+  booking_passengers_aggregation(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Passenger_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "booking_passengers_aggregation")
   country: StringSubAggregation @field_aggregation(name: "country")
   icao: StringSubAggregation @field_aggregation(name: "icao")
   name: StringSubAggregation @field_aggregation(name: "name")
@@ -1117,16 +2360,221 @@ type _Airline_aggregation_sub_aggregation_sub_aggregation @aggregation(name: "_A
   _rows_count: BigIntSubAggregation @field_aggregation(name: "aggregation_field")
 }
 type _Airport_aggregation @aggregation(name: "Airport", is_bucket: false, level: 1) @catalog(name: "base", engine: "duckdb") {
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): FloatAggregation @field_aggregation(name: "_geom_measurement")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): FloatAggregation @field_aggregation(name: "_geom_measurement")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   _spatial(field: String!, type: GeometrySpatialQueryType!, buffer: Int): _spatial_aggregation @field_aggregation(name: "_spatial")
-  arriving_routes(filter: Route_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation @field_aggregation(name: "arriving_routes")
-  arriving_routes_aggregation(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation_sub_aggregation @field_aggregation(name: "arriving_routes")
+  arriving_routes(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation @field_aggregation(name: "arriving_routes")
+  arriving_routes_aggregation(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation_sub_aggregation @field_aggregation(name: "arriving_routes")
   city: StringAggregation @field_aggregation(name: "city")
-  departing_routes(filter: Route_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation @field_aggregation(name: "departing_routes")
-  departing_routes_aggregation(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation_sub_aggregation @field_aggregation(name: "departing_routes")
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): GeometryAggregation @field_aggregation(name: "geom")
+  departing_routes(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation @field_aggregation(name: "departing_routes")
+  departing_routes_aggregation(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation_sub_aggregation @field_aggregation(name: "departing_routes")
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): GeometryAggregation @field_aggregation(name: "geom")
   iata_code: StringAggregation @field_aggregation(name: "iata_code")
   latitude: FloatAggregation @field_aggregation(name: "latitude")
   longitude: FloatAggregation @field_aggregation(name: "longitude")
@@ -1139,18 +2587,236 @@ type _Airport_aggregation_bucket @aggregation(name: "Airport", is_bucket: true, 
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Airport_filter, order_by: [OrderByField]): _Airport_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Airport_aggregation
+  """
+  The key of the bucket
+  """
   key: Airport
 }
 type _Airport_aggregation_sub_aggregation @aggregation(name: "_Airport_aggregation", is_bucket: false, level: 2) @catalog(name: "base", engine: "duckdb") {
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): FloatSubAggregation @field_aggregation(name: "_geom_measurement")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): FloatSubAggregation @field_aggregation(name: "_geom_measurement")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
-  arriving_routes(filter: Route_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation_sub_aggregation @field_aggregation(name: "arriving_routes")
-  arriving_routes_aggregation(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "arriving_routes_aggregation")
+  arriving_routes(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation_sub_aggregation @field_aggregation(name: "arriving_routes")
+  arriving_routes_aggregation(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "arriving_routes_aggregation")
   city: StringSubAggregation @field_aggregation(name: "city")
-  departing_routes(filter: Route_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation_sub_aggregation @field_aggregation(name: "departing_routes")
-  departing_routes_aggregation(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "departing_routes_aggregation")
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): GeometrySubAggregation @field_aggregation(name: "geom")
+  departing_routes(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation_sub_aggregation @field_aggregation(name: "departing_routes")
+  departing_routes_aggregation(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "departing_routes_aggregation")
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): GeometrySubAggregation @field_aggregation(name: "geom")
   iata_code: StringSubAggregation @field_aggregation(name: "iata_code")
   latitude: FloatSubAggregation @field_aggregation(name: "latitude")
   longitude: FloatSubAggregation @field_aggregation(name: "longitude")
@@ -1168,7 +2834,20 @@ type _BookingPassenger_aggregation_bucket @aggregation(name: "BookingPassenger",
   """
   The aggregations of the bucket
   """
-  aggregations(filter: BookingPassenger_filter, order_by: [OrderByField]): _BookingPassenger_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: BookingPassenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _BookingPassenger_aggregation
+  """
+  The key of the bucket
+  """
   key: BookingPassenger
 }
 type _BookingPassenger_aggregation_sub_aggregation @aggregation(name: "_BookingPassenger_aggregation", is_bucket: false, level: 2) @catalog(name: "base", engine: "duckdb") {
@@ -1177,10 +2856,30 @@ type _BookingPassenger_aggregation_sub_aggregation @aggregation(name: "_BookingP
   passenger_id: IntSubAggregation @field_aggregation(name: "passenger_id")
 }
 type _FlightLog_aggregation @aggregation(name: "FlightLog", is_bucket: false, level: 1) @catalog(name: "base", engine: "duckdb") {
-  _departure_part(extract: TimeExtract!, extract_divide: Int): BigIntAggregation @field_aggregation(name: "_departure_part")
+  _departure_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_departure_part")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
-  departure(bucket: TimeBucket, bucket_interval: Interval): TimestampAggregation @field_aggregation(name: "departure")
+  departure(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampAggregation @field_aggregation(name: "departure")
   flight_number: StringAggregation @field_aggregation(name: "flight_number")
   id: IntAggregation @field_aggregation(name: "id")
   route_id: IntAggregation @field_aggregation(name: "route_id")
@@ -1192,23 +2891,101 @@ type _FlightLog_aggregation_bucket @aggregation(name: "FlightLog", is_bucket: tr
   """
   The aggregations of the bucket
   """
-  aggregations(filter: FlightLog_filter, order_by: [OrderByField]): _FlightLog_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: FlightLog_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _FlightLog_aggregation
+  """
+  The key of the bucket
+  """
   key: FlightLog
 }
 type _FlightLog_aggregation_sub_aggregation @aggregation(name: "_FlightLog_aggregation", is_bucket: false, level: 2) @catalog(name: "base", engine: "duckdb") {
-  _departure_part(extract: TimeExtract!, extract_divide: Int): BigIntSubAggregation @field_aggregation(name: "_departure_part")
+  _departure_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_departure_part")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
-  departure(bucket: TimeBucket, bucket_interval: Interval): TimestampSubAggregation @field_aggregation(name: "departure")
+  departure(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+  ): TimestampSubAggregation @field_aggregation(name: "departure")
   flight_number: StringSubAggregation @field_aggregation(name: "flight_number")
   id: IntSubAggregation @field_aggregation(name: "id")
   route_id: IntSubAggregation @field_aggregation(name: "route_id")
 }
 type _FnAirport_aggregation @aggregation(name: "FnAirport", is_bucket: false, level: 1) @catalog(name: "fn_transport", engine: "duckdb") {
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): FloatAggregation @field_aggregation(name: "_geom_measurement")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): FloatAggregation @field_aggregation(name: "_geom_measurement")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   _spatial(field: String!, type: GeometrySpatialQueryType!, buffer: Int): _spatial_aggregation @field_aggregation(name: "_spatial")
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): GeometryAggregation @field_aggregation(name: "geom")
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): GeometryAggregation @field_aggregation(name: "geom")
   iata_code: StringAggregation @field_aggregation(name: "iata_code")
   name: StringAggregation @field_aggregation(name: "name")
   """
@@ -1224,28 +3001,211 @@ type _FnAirport_aggregation_bucket @aggregation(name: "FnAirport", is_bucket: tr
   """
   The aggregations of the bucket
   """
-  aggregations(filter: FnAirport_filter, order_by: [OrderByField]): _FnAirport_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _FnAirport_aggregation
+  """
+  The key of the bucket
+  """
   key: FnAirport
 }
 type _FnAirport_aggregation_sub_aggregation @aggregation(name: "_FnAirport_aggregation", is_bucket: false, level: 2) @catalog(name: "fn_transport", engine: "duckdb") {
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): FloatSubAggregation @field_aggregation(name: "_geom_measurement")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): FloatSubAggregation @field_aggregation(name: "_geom_measurement")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): GeometrySubAggregation @field_aggregation(name: "geom")
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): GeometrySubAggregation @field_aggregation(name: "geom")
   iata_code: StringSubAggregation @field_aggregation(name: "iata_code")
   name: StringSubAggregation @field_aggregation(name: "name")
   status: StringSubAggregation @field_aggregation(name: "status")
 }
 type _Hotel_aggregation @aggregation(name: "Hotel", is_bucket: false, level: 1) @catalog(name: "hotels", engine: "duckdb") {
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): FloatAggregation @field_aggregation(name: "_geom_measurement")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): FloatAggregation @field_aggregation(name: "_geom_measurement")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   _spatial(field: String!, type: GeometrySpatialQueryType!, buffer: Int): _spatial_aggregation @field_aggregation(name: "_spatial")
   city: StringAggregation @field_aggregation(name: "city")
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): GeometryAggregation @field_aggregation(name: "geom")
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): GeometryAggregation @field_aggregation(name: "geom")
   id: IntAggregation @field_aggregation(name: "id")
   name: StringAggregation @field_aggregation(name: "name")
-  reviews(filter: Review_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Review_aggregation @field_aggregation(name: "reviews")
-  reviews_aggregation(filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Review_aggregation_sub_aggregation @field_aggregation(name: "reviews")
+  reviews(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Review_aggregation @field_aggregation(name: "reviews")
+  reviews_aggregation(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Review_aggregation_sub_aggregation @field_aggregation(name: "reviews")
   stars: IntAggregation @field_aggregation(name: "stars")
 }
 """
@@ -1255,25 +3215,243 @@ type _Hotel_aggregation_bucket @aggregation(name: "Hotel", is_bucket: true, leve
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Hotel_filter, order_by: [OrderByField]): _Hotel_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Hotel_aggregation
+  """
+  The key of the bucket
+  """
   key: Hotel
 }
 type _Hotel_aggregation_sub_aggregation @aggregation(name: "_Hotel_aggregation", is_bucket: false, level: 2) @catalog(name: "hotels", engine: "duckdb") {
-  _geom_measurement(type: GeometryMeasurementTypes!, transform: Boolean, from: Int, to: Int): FloatSubAggregation @field_aggregation(name: "_geom_measurement")
+  _geom_measurement(
+    """
+    Measurement type
+    """
+    type: GeometryMeasurementTypes!
+
+    """
+    Reproject geometry (parameters from and to are required)
+    """
+    transform: Boolean
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+  ): FloatSubAggregation @field_aggregation(name: "_geom_measurement")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   city: StringSubAggregation @field_aggregation(name: "city")
-  geom(transforms: [GeometryTransform!], from: Int, to: Int, buffer: Float, simplify_factor: Float): GeometrySubAggregation @field_aggregation(name: "geom")
+  geom(
+    """
+    Apply geometry transformations
+    """
+    transforms: [GeometryTransform!]
+
+    """
+    Converts geometry from the specified SRID
+    """
+    from: Int
+
+    """
+    Converts geometry to the specified SRID
+    """
+    to: Int
+
+    """
+    Buffer geometry by the specified distance
+    """
+    buffer: Float
+
+    """
+    Simplify geometry by the specified factor
+    """
+    simplify_factor: Float
+  ): GeometrySubAggregation @field_aggregation(name: "geom")
   id: IntSubAggregation @field_aggregation(name: "id")
   name: StringSubAggregation @field_aggregation(name: "name")
-  reviews(filter: Review_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Review_aggregation_sub_aggregation @field_aggregation(name: "reviews")
-  reviews_aggregation(filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Review_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "reviews_aggregation")
+  reviews(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Review_aggregation_sub_aggregation @field_aggregation(name: "reviews")
+  reviews_aggregation(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Review_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "reviews_aggregation")
   stars: IntSubAggregation @field_aggregation(name: "stars")
 }
 type _Passenger_aggregation @aggregation(name: "Passenger", is_bucket: false, level: 1) @catalog(name: "base", engine: "duckdb") {
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
-  bookings(filter: Airline_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airline_aggregation @field_aggregation(name: "bookings")
-  bookings_aggregation(filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airline_aggregation_sub_aggregation @field_aggregation(name: "bookings")
+  bookings(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airline_aggregation @field_aggregation(name: "bookings")
+  bookings_aggregation(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airline_aggregation_sub_aggregation @field_aggregation(name: "bookings")
   email: StringAggregation @field_aggregation(name: "email")
   first_name: StringAggregation @field_aggregation(name: "first_name")
   id: IntAggregation @field_aggregation(name: "id")
@@ -1286,13 +3464,106 @@ type _Passenger_aggregation_bucket @aggregation(name: "Passenger", is_bucket: tr
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Passenger_filter, order_by: [OrderByField]): _Passenger_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Passenger_aggregation
+  """
+  The key of the bucket
+  """
   key: Passenger
 }
 type _Passenger_aggregation_sub_aggregation @aggregation(name: "_Passenger_aggregation", is_bucket: false, level: 2) @catalog(name: "base", engine: "duckdb") {
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
-  bookings(filter: Airline_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airline_aggregation_sub_aggregation @field_aggregation(name: "bookings")
-  bookings_aggregation(filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airline_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "bookings_aggregation")
+  bookings(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airline_aggregation_sub_aggregation @field_aggregation(name: "bookings")
+  bookings_aggregation(
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airline_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "bookings_aggregation")
   email: StringSubAggregation @field_aggregation(name: "email")
   first_name: StringSubAggregation @field_aggregation(name: "first_name")
   id: IntSubAggregation @field_aggregation(name: "id")
@@ -1305,7 +3576,12 @@ type _Review_aggregation @aggregation(name: "Review", is_bucket: false, level: 1
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   comment: StringAggregation @field_aggregation(name: "comment")
-  hotel(inner: Boolean): _Hotel_aggregation @field_aggregation(name: "hotel")
+  hotel(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): _Hotel_aggregation @field_aggregation(name: "hotel")
   hotel_id: IntAggregation @field_aggregation(name: "hotel_id")
   id: IntAggregation @field_aggregation(name: "id")
   rating: FloatAggregation @field_aggregation(name: "rating")
@@ -1317,7 +3593,20 @@ type _Review_aggregation_bucket @aggregation(name: "Review", is_bucket: true, le
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Review_filter, order_by: [OrderByField]): _Review_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Review_aggregation
+  """
+  The key of the bucket
+  """
   key: Review
 }
 type _Review_aggregation_sub_aggregation @aggregation(name: "_Review_aggregation", is_bucket: false, level: 2) @catalog(name: "hotels", engine: "duckdb") {
@@ -1333,11 +3622,21 @@ type _Review_aggregation_sub_aggregation_sub_aggregation @aggregation(name: "_Re
 type _Route_aggregation @aggregation(name: "Route", is_bucket: false, level: 1) @catalog(name: "base", engine: "duckdb") {
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
-  destination_airport(inner: Boolean): _Airport_aggregation @field_aggregation(name: "destination_airport")
+  destination_airport(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): _Airport_aggregation @field_aggregation(name: "destination_airport")
   dst_airport: StringAggregation @field_aggregation(name: "dst_airport")
   id: IntAggregation @field_aggregation(name: "id")
   is_active: BooleanAggregation @field_aggregation(name: "is_active")
-  source_airport(inner: Boolean): _Airport_aggregation @field_aggregation(name: "source_airport")
+  source_airport(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): _Airport_aggregation @field_aggregation(name: "source_airport")
   src_airport: StringAggregation @field_aggregation(name: "src_airport")
   stops: IntAggregation @field_aggregation(name: "stops")
 }
@@ -1348,7 +3647,20 @@ type _Route_aggregation_bucket @aggregation(name: "Route", is_bucket: true, leve
   """
   The aggregations of the bucket
   """
-  aggregations(filter: Route_filter, order_by: [OrderByField]): _Route_aggregation
+  aggregations(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Route_aggregation
+  """
+  The key of the bucket
+  """
   key: Route
 }
 type _Route_aggregation_sub_aggregation @aggregation(name: "_Route_aggregation", is_bucket: false, level: 2) @catalog(name: "base", engine: "duckdb") {
@@ -1407,7 +3719,52 @@ type _distribution_by_bucket_aggregation @system {
   value: FloatAggregation
 }
 type _h3_data_query @system {
-  Airport(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  Airport(field: String!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -1428,7 +3785,52 @@ type _h3_data_query @system {
     """
     simplify: Boolean = true
   ): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "base", engine: "duckdb")
-  Airport_aggregation(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  Airport_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -1449,7 +3851,52 @@ type _h3_data_query @system {
     """
     simplify: Boolean = true
   ): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "base", engine: "duckdb")
-  Airport_bucket_aggregation(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  Airport_bucket_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -1470,7 +3917,52 @@ type _h3_data_query @system {
     """
     simplify: Boolean = true
   ): [_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airport") @catalog(name: "base", engine: "duckdb")
-  FnAirport(field: String!, filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  FnAirport(field: String!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -1491,7 +3983,52 @@ type _h3_data_query @system {
     """
     simplify: Boolean = true
   ): [FnAirport] @query(name: "FnAirport", type: SELECT) @catalog(name: "fn_transport", engine: "duckdb")
-  FnAirport_aggregation(field: String!, filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  FnAirport_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -1512,7 +4049,52 @@ type _h3_data_query @system {
     """
     simplify: Boolean = true
   ): _FnAirport_aggregation @aggregation_query(is_bucket: false, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb")
-  FnAirport_bucket_aggregation(field: String!, filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  FnAirport_bucket_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -1533,7 +4115,52 @@ type _h3_data_query @system {
     """
     simplify: Boolean = true
   ): [_FnAirport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb")
-  Hotel(field: String!, filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  Hotel(field: String!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -1554,7 +4181,52 @@ type _h3_data_query @system {
     """
     simplify: Boolean = true
   ): [Hotel] @query(name: "Hotel", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
-  Hotel_aggregation(field: String!, filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  Hotel_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -1575,7 +4247,52 @@ type _h3_data_query @system {
     """
     simplify: Boolean = true
   ): _Hotel_aggregation @aggregation_query(is_bucket: false, name: "Hotel") @catalog(name: "hotels", engine: "duckdb")
-  Hotel_bucket_aggregation(field: String!, filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int,
+  Hotel_bucket_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
     """
     Reproject geometry from SRID before aggregation
     """
@@ -1654,40 +4371,1420 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  Airline(fields: [String!]!, filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Airline] @query(name: "Airline", type: SELECT) @catalog(name: "base", engine: "duckdb")
-  Airline_aggregation(fields: [String!]!, filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airline_aggregation @aggregation_query(is_bucket: false, name: "Airline") @catalog(name: "base", engine: "duckdb")
-  Airline_bucket_aggregation(fields: [String!]!, filter: Airline_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Airline_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airline") @catalog(name: "base", engine: "duckdb")
-  Airport(fields: [String!]!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "base", engine: "duckdb")
-  Airport_aggregation(fields: [String!]!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "base", engine: "duckdb")
-  Airport_bucket_aggregation(fields: [String!]!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airport") @catalog(name: "base", engine: "duckdb")
-  FlightLog(args: FlightLogArgs!, fields: [String!]!, filter: FlightLog_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [FlightLog] @query(name: "FlightLog", type: SELECT) @catalog(name: "base", engine: "duckdb")
-  FlightLog_aggregation(args: FlightLogArgs!, fields: [String!]!, filter: FlightLog_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _FlightLog_aggregation @aggregation_query(is_bucket: false, name: "FlightLog") @catalog(name: "base", engine: "duckdb")
-  FlightLog_bucket_aggregation(args: FlightLogArgs!, fields: [String!]!, filter: FlightLog_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_FlightLog_aggregation_bucket] @aggregation_query(is_bucket: true, name: "FlightLog") @catalog(name: "base", engine: "duckdb")
-  FnAirport(fields: [String!]!, filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [FnAirport] @query(name: "FnAirport", type: SELECT) @catalog(name: "fn_transport", engine: "duckdb")
-  FnAirport_aggregation(fields: [String!]!, filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _FnAirport_aggregation @aggregation_query(is_bucket: false, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb")
-  FnAirport_bucket_aggregation(fields: [String!]!, filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_FnAirport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb")
-  Hotel(fields: [String!]!, filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Hotel] @query(name: "Hotel", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
-  Hotel_aggregation(fields: [String!]!, filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Hotel_aggregation @aggregation_query(is_bucket: false, name: "Hotel") @catalog(name: "hotels", engine: "duckdb")
-  Hotel_bucket_aggregation(fields: [String!]!, filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Hotel_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Hotel") @catalog(name: "hotels", engine: "duckdb")
-  Passenger(fields: [String!]!, filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Passenger] @query(name: "Passenger", type: SELECT) @catalog(name: "base", engine: "duckdb")
-  Passenger_aggregation(fields: [String!]!, filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Passenger_aggregation @aggregation_query(is_bucket: false, name: "Passenger") @catalog(name: "base", engine: "duckdb")
-  Passenger_bucket_aggregation(fields: [String!]!, filter: Passenger_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Passenger_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Passenger") @catalog(name: "base", engine: "duckdb")
-  Review(fields: [String!]!, filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Review] @query(name: "Review", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
-  Review_aggregation(fields: [String!]!, filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Review_aggregation @aggregation_query(is_bucket: false, name: "Review") @catalog(name: "hotels", engine: "duckdb")
-  Review_bucket_aggregation(fields: [String!]!, filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Review_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Review") @catalog(name: "hotels", engine: "duckdb")
-  Route(fields: [String!]!, filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Route] @query(name: "Route", type: SELECT) @catalog(name: "base", engine: "duckdb")
-  Route_aggregation(fields: [String!]!, filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation @aggregation_query(is_bucket: false, name: "Route") @catalog(name: "base", engine: "duckdb")
-  Route_bucket_aggregation(fields: [String!]!, filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Route_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Route") @catalog(name: "base", engine: "duckdb")
+  Airline(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Airline] @query(name: "Airline", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  Airline_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airline_aggregation @aggregation_query(is_bucket: false, name: "Airline") @catalog(name: "base", engine: "duckdb")
+  Airline_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Airline_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airline") @catalog(name: "base", engine: "duckdb")
+  Airport(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  Airport_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "base", engine: "duckdb")
+  Airport_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airport") @catalog(name: "base", engine: "duckdb")
+  FlightLog(
+    """
+    Arguments for the view
+    """
+    args: FlightLogArgs!
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: FlightLog_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [FlightLog] @query(name: "FlightLog", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  FlightLog_aggregation(
+    """
+    Arguments for the view
+    """
+    args: FlightLogArgs!
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: FlightLog_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _FlightLog_aggregation @aggregation_query(is_bucket: false, name: "FlightLog") @catalog(name: "base", engine: "duckdb")
+  FlightLog_bucket_aggregation(
+    """
+    Arguments for the view
+    """
+    args: FlightLogArgs!
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: FlightLog_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_FlightLog_aggregation_bucket] @aggregation_query(is_bucket: true, name: "FlightLog") @catalog(name: "base", engine: "duckdb")
+  FnAirport(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [FnAirport] @query(name: "FnAirport", type: SELECT) @catalog(name: "fn_transport", engine: "duckdb")
+  FnAirport_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _FnAirport_aggregation @aggregation_query(is_bucket: false, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb")
+  FnAirport_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_FnAirport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb")
+  Hotel(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Hotel] @query(name: "Hotel", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
+  Hotel_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Hotel_aggregation @aggregation_query(is_bucket: false, name: "Hotel") @catalog(name: "hotels", engine: "duckdb")
+  Hotel_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Hotel_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Hotel") @catalog(name: "hotels", engine: "duckdb")
+  Passenger(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Passenger] @query(name: "Passenger", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  Passenger_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Passenger_aggregation @aggregation_query(is_bucket: false, name: "Passenger") @catalog(name: "base", engine: "duckdb")
+  Passenger_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Passenger_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Passenger") @catalog(name: "base", engine: "duckdb")
+  Review(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Review] @query(name: "Review", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
+  Review_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Review_aggregation @aggregation_query(is_bucket: false, name: "Review") @catalog(name: "hotels", engine: "duckdb")
+  Review_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Review_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Review") @catalog(name: "hotels", engine: "duckdb")
+  Route(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Route] @query(name: "Route", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  Route_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation @aggregation_query(is_bucket: false, name: "Route") @catalog(name: "base", engine: "duckdb")
+  Route_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Route_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Route") @catalog(name: "base", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  Airline(fields: [String!]!, filter: Airline_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airline_aggregation @aggregation_query(is_bucket: false, name: "Airline") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Airline")
-  Airport(fields: [String!]!, filter: Airport_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Airport")
-  FlightLog(args: FlightLogArgs!, fields: [String!]!, filter: FlightLog_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _FlightLog_aggregation @aggregation_query(is_bucket: false, name: "FlightLog") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "FlightLog")
-  FnAirport(fields: [String!]!, filter: FnAirport_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _FnAirport_aggregation @aggregation_query(is_bucket: false, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb") @field_aggregation(name: "FnAirport")
-  Hotel(fields: [String!]!, filter: Hotel_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Hotel_aggregation @aggregation_query(is_bucket: false, name: "Hotel") @catalog(name: "hotels", engine: "duckdb") @field_aggregation(name: "Hotel")
-  Passenger(fields: [String!]!, filter: Passenger_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Passenger_aggregation @aggregation_query(is_bucket: false, name: "Passenger") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Passenger")
-  Review(fields: [String!]!, filter: Review_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Review_aggregation @aggregation_query(is_bucket: false, name: "Review") @catalog(name: "hotels", engine: "duckdb") @field_aggregation(name: "Review")
-  Route(fields: [String!]!, filter: Route_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Route_aggregation @aggregation_query(is_bucket: false, name: "Route") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Route")
+  Airline(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Airline_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airline_aggregation @aggregation_query(is_bucket: false, name: "Airline") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Airline")
+  Airport(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Airport")
+  FlightLog(
+    """
+    Arguments for the view
+    """
+    args: FlightLogArgs!
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: FlightLog_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _FlightLog_aggregation @aggregation_query(is_bucket: false, name: "FlightLog") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "FlightLog")
+  FnAirport(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _FnAirport_aggregation @aggregation_query(is_bucket: false, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb") @field_aggregation(name: "FnAirport")
+  Hotel(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Hotel_aggregation @aggregation_query(is_bucket: false, name: "Hotel") @catalog(name: "hotels", engine: "duckdb") @field_aggregation(name: "Hotel")
+  Passenger(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Passenger_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Passenger_aggregation @aggregation_query(is_bucket: false, name: "Passenger") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Passenger")
+  Review(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Review_aggregation @aggregation_query(is_bucket: false, name: "Review") @catalog(name: "hotels", engine: "duckdb") @field_aggregation(name: "Review")
+  Route(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Route_aggregation @aggregation_query(is_bucket: false, name: "Route") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Route")
 }
 type _module_fn_transport_function @module_root(name: "fn_transport", type: FUNCTION) {
   airport_status(code: String!): String @function(name: "airport_status") @catalog(name: "fn_transport", engine: "duckdb") @module(name: "fn_transport")
@@ -1702,15 +5799,90 @@ type _module_fn_transport_mutation @module_root(name: "fn_transport", type: MUTA
   update_FnAirport(filter: FnAirport_filter, data: FnAirport_mut_data!): OperationResult @mutation(name: "FnAirport", type: UPDATE, data_input: "FnAirport_mut_data") @catalog(name: "fn_transport", engine: "duckdb")
 }
 type _module_fn_transport_query @module_root(name: "fn_transport", type: QUERY) {
-  FnAirport(filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [FnAirport] @query(name: "FnAirport", type: SELECT) @catalog(name: "fn_transport", engine: "duckdb")
+  FnAirport(
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [FnAirport] @query(name: "FnAirport", type: SELECT) @catalog(name: "fn_transport", engine: "duckdb")
   """
   The aggregation for FnAirport
   """
-  FnAirport_aggregation(filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _FnAirport_aggregation @aggregation_query(name: "FnAirport", is_bucket: false) @catalog(name: "fn_transport", engine: "duckdb")
+  FnAirport_aggregation(
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _FnAirport_aggregation @aggregation_query(name: "FnAirport", is_bucket: false) @catalog(name: "fn_transport", engine: "duckdb")
   """
   The aggregation for FnAirport
   """
-  FnAirport_bucket_aggregation(filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_FnAirport_aggregation_bucket] @aggregation_query(name: "FnAirport", is_bucket: true) @catalog(name: "fn_transport", engine: "duckdb")
+  FnAirport_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_FnAirport_aggregation_bucket] @aggregation_query(name: "FnAirport", is_bucket: true) @catalog(name: "fn_transport", engine: "duckdb")
   FnAirport_by_pk(iata_code: String!): FnAirport @query(name: "FnAirport", type: SELECT_ONE) @catalog(name: "fn_transport", engine: "duckdb")
 }
 type _module_hospitality_mutation @module_root(name: "hospitality", type: MUTATION) {
@@ -1722,25 +5894,175 @@ type _module_hospitality_mutation @module_root(name: "hospitality", type: MUTATI
   update_Review(filter: Review_filter, data: Review_mut_data!): OperationResult @mutation(name: "Review", type: UPDATE, data_input: "Review_mut_data") @catalog(name: "hotels", engine: "duckdb")
 }
 type _module_hospitality_query @module_root(name: "hospitality", type: QUERY) {
-  Hotel(filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Hotel] @query(name: "Hotel", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
+  Hotel(
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Hotel] @query(name: "Hotel", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
   """
   The aggregation for Hotel
   """
-  Hotel_aggregation(filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Hotel_aggregation @aggregation_query(name: "Hotel", is_bucket: false) @catalog(name: "hotels", engine: "duckdb")
+  Hotel_aggregation(
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Hotel_aggregation @aggregation_query(name: "Hotel", is_bucket: false) @catalog(name: "hotels", engine: "duckdb")
   """
   The aggregation for Hotel
   """
-  Hotel_bucket_aggregation(filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Hotel_aggregation_bucket] @aggregation_query(name: "Hotel", is_bucket: true) @catalog(name: "hotels", engine: "duckdb")
+  Hotel_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Hotel_aggregation_bucket] @aggregation_query(name: "Hotel", is_bucket: true) @catalog(name: "hotels", engine: "duckdb")
   Hotel_by_pk(id: Int!): Hotel @query(name: "Hotel", type: SELECT_ONE) @catalog(name: "hotels", engine: "duckdb")
-  Review(filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Review] @query(name: "Review", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
+  Review(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Review] @query(name: "Review", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
   """
   The aggregation for Review
   """
-  Review_aggregation(filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Review_aggregation @aggregation_query(name: "Review", is_bucket: false) @catalog(name: "hotels", engine: "duckdb")
+  Review_aggregation(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Review_aggregation @aggregation_query(name: "Review", is_bucket: false) @catalog(name: "hotels", engine: "duckdb")
   """
   The aggregation for Review
   """
-  Review_bucket_aggregation(filter: Review_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Review_aggregation_bucket] @aggregation_query(name: "Review", is_bucket: true) @catalog(name: "hotels", engine: "duckdb")
+  Review_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Review_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Review_aggregation_bucket] @aggregation_query(name: "Review", is_bucket: true) @catalog(name: "hotels", engine: "duckdb")
   Review_by_pk(id: Int!): Review @query(name: "Review", type: SELECT_ONE) @catalog(name: "hotels", engine: "duckdb")
 }
 type _module_transport_air_mutation @module_root(name: "transport.air", type: MUTATION) {
@@ -1752,35 +6074,280 @@ type _module_transport_air_mutation @module_root(name: "transport.air", type: MU
   update_Route(filter: Route_filter, data: Route_mut_data!): OperationResult @mutation(name: "Route", type: UPDATE, data_input: "Route_mut_data") @catalog(name: "base", engine: "duckdb")
 }
 type _module_transport_air_query @module_root(name: "transport.air", type: QUERY) {
-  Airport(filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  Airport(
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for Airport
   """
-  Airport_aggregation(filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Airport_aggregation @aggregation_query(name: "Airport", is_bucket: false) @catalog(name: "base", engine: "duckdb")
+  Airport_aggregation(
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Airport_aggregation @aggregation_query(name: "Airport", is_bucket: false) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for Airport
   """
-  Airport_bucket_aggregation(filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Airport_aggregation_bucket] @aggregation_query(name: "Airport", is_bucket: true) @catalog(name: "base", engine: "duckdb")
+  Airport_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Airport_aggregation_bucket] @aggregation_query(name: "Airport", is_bucket: true) @catalog(name: "base", engine: "duckdb")
   Airport_by_pk(iata_code: String!): Airport @query(name: "Airport", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
-  FlightLog(args: FlightLogArgs!, filter: FlightLog_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [FlightLog] @query(name: "FlightLog", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  FlightLog(
+    """
+    Arguments for the view
+    """
+    args: FlightLogArgs!
+
+    """
+    Filter
+    """
+    filter: FlightLog_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [FlightLog] @query(name: "FlightLog", type: SELECT) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for FlightLog
   """
-  FlightLog_aggregation(args: FlightLogArgs!, filter: FlightLog_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _FlightLog_aggregation @aggregation_query(name: "FlightLog", is_bucket: false) @catalog(name: "base", engine: "duckdb")
+  FlightLog_aggregation(
+    """
+    Arguments for the view
+    """
+    args: FlightLogArgs!
+
+    """
+    Filter
+    """
+    filter: FlightLog_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _FlightLog_aggregation @aggregation_query(name: "FlightLog", is_bucket: false) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for FlightLog
   """
-  FlightLog_bucket_aggregation(args: FlightLogArgs!, filter: FlightLog_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_FlightLog_aggregation_bucket] @aggregation_query(name: "FlightLog", is_bucket: true) @catalog(name: "base", engine: "duckdb")
-  FlightLog_by_pk(args: FlightLogArgs!, id: Int!): FlightLog @query(name: "FlightLog", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
-  Route(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [Route] @query(name: "Route", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  FlightLog_bucket_aggregation(
+    """
+    Arguments for the view
+    """
+    args: FlightLogArgs!
+
+    """
+    Filter
+    """
+    filter: FlightLog_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_FlightLog_aggregation_bucket] @aggregation_query(name: "FlightLog", is_bucket: true) @catalog(name: "base", engine: "duckdb")
+  FlightLog_by_pk(
+    """
+    Arguments for the view
+    """
+    args: FlightLogArgs!
+  id: Int!): FlightLog @query(name: "FlightLog", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
+  Route(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Route] @query(name: "Route", type: SELECT) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for Route
   """
-  Route_aggregation(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): _Route_aggregation @aggregation_query(name: "Route", is_bucket: false) @catalog(name: "base", engine: "duckdb")
+  Route_aggregation(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Route_aggregation @aggregation_query(name: "Route", is_bucket: false) @catalog(name: "base", engine: "duckdb")
   """
   The aggregation for Route
   """
-  Route_bucket_aggregation(filter: Route_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String]): [_Route_aggregation_bucket] @aggregation_query(name: "Route", is_bucket: true) @catalog(name: "base", engine: "duckdb")
+  Route_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Route_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Route_aggregation_bucket] @aggregation_query(name: "Route", is_bucket: true) @catalog(name: "base", engine: "duckdb")
   Route_by_pk(id: Int!): Route @query(name: "Route", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
   Route_route(src_airport: String!, dst_airport: String!): Route @query(name: "Route", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
 }
@@ -1797,19 +6364,529 @@ type _module_transport_query @module_root(name: "transport", type: QUERY) {
   air: _module_transport_air_query
 }
 type _spatial @system {
-  Airport(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "base", engine: "duckdb")
-  Airport_aggregation(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "base", engine: "duckdb")
-  Airport_bucket_aggregation(field: String!, filter: Airport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airport") @catalog(name: "base", engine: "duckdb")
-  FnAirport(field: String!, filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [FnAirport] @query(name: "FnAirport", type: SELECT) @catalog(name: "fn_transport", engine: "duckdb")
-  FnAirport_aggregation(field: String!, filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _FnAirport_aggregation @aggregation_query(is_bucket: false, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb")
-  FnAirport_bucket_aggregation(field: String!, filter: FnAirport_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_FnAirport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb")
-  Hotel(field: String!, filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [Hotel] @query(name: "Hotel", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
-  Hotel_aggregation(field: String!, filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Hotel_aggregation @aggregation_query(is_bucket: false, name: "Hotel") @catalog(name: "hotels", engine: "duckdb")
-  Hotel_bucket_aggregation(field: String!, filter: Hotel_filter, order_by: [OrderByField], limit: Int = 2000, offset: Int = 0, distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): [_Hotel_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Hotel") @catalog(name: "hotels", engine: "duckdb")
+  Airport(field: String!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "base", engine: "duckdb")
+  Airport_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "base", engine: "duckdb")
+  Airport_bucket_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airport") @catalog(name: "base", engine: "duckdb")
+  FnAirport(field: String!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [FnAirport] @query(name: "FnAirport", type: SELECT) @catalog(name: "fn_transport", engine: "duckdb")
+  FnAirport_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _FnAirport_aggregation @aggregation_query(is_bucket: false, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb")
+  FnAirport_bucket_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_FnAirport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb")
+  Hotel(field: String!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Hotel] @query(name: "Hotel", type: SELECT) @catalog(name: "hotels", engine: "duckdb")
+  Hotel_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Hotel_aggregation @aggregation_query(is_bucket: false, name: "Hotel") @catalog(name: "hotels", engine: "duckdb")
+  Hotel_bucket_aggregation(field: String!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Hotel_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Hotel") @catalog(name: "hotels", engine: "duckdb")
 }
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1) {
-  Airport(field: String!, filter: Airport_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Airport")
-  FnAirport(field: String!, filter: FnAirport_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _FnAirport_aggregation @aggregation_query(is_bucket: false, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb") @field_aggregation(name: "FnAirport")
-  Hotel(field: String!, filter: Hotel_filter, order_by: [OrderByField], distinct_on: [String], inner: Boolean = false, nested_order_by: [OrderByField], nested_limit: Int, nested_offset: Int): _Hotel_aggregation @aggregation_query(is_bucket: false, name: "Hotel") @catalog(name: "hotels", engine: "duckdb") @field_aggregation(name: "Hotel")
+  Airport(field: String!,
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Airport")
+  FnAirport(field: String!,
+    """
+    Filter
+    """
+    filter: FnAirport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _FnAirport_aggregation @aggregation_query(is_bucket: false, name: "FnAirport") @catalog(name: "fn_transport", engine: "duckdb") @field_aggregation(name: "FnAirport")
+  Hotel(field: String!,
+    """
+    Filter
+    """
+    filter: Hotel_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Hotel_aggregation @aggregation_query(is_bucket: false, name: "Hotel") @catalog(name: "hotels", engine: "duckdb") @field_aggregation(name: "Hotel")
 }
 scalar any

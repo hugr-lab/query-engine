@@ -32,3 +32,16 @@ INSERT INTO event_tags VALUES
     (3, 'social'),
     (4, 'technology'),
     (4, 'competition');
+
+CREATE TABLE items (
+    id BIGINT PRIMARY KEY,
+    name VARCHAR,
+    specs STRUCT(cpu VARCHAR, ram_gb INTEGER, storage_gb INTEGER),
+    tags JSON,
+    created_at TIMESTAMP WITH TIME ZONE
+);
+
+INSERT INTO items VALUES
+    (1, 'Laptop', {'cpu': 'M2', 'ram_gb': 16, 'storage_gb': 512}, '{"color":"silver"}', '2025-01-15 10:00:00+00'),
+    (2, 'Desktop', {'cpu': 'i9', 'ram_gb': 64, 'storage_gb': 2000}, '{"color":"black"}', '2025-02-20 14:00:00+00'),
+    (3, 'Tablet', {'cpu': 'A15', 'ram_gb': 8, 'storage_gb': 256}, '{"color":"gray"}', '2025-03-10 09:00:00+00');

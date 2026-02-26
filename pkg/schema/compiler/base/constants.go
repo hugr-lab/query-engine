@@ -189,6 +189,22 @@ const (
 // Catalog system variable.
 const CatalogSystemVariableName = "$catalog"
 
+// Query argument descriptions.
+const (
+	DescFilter          = "Filter"
+	DescOrderBy         = "Sort options for the result set"
+	DescLimit           = "Limit the number of returned objects"
+	DescOffset          = "Skip the first n objects"
+	DescDistinctOn      = "Distinct on the given fields"
+	DescInnerJoin       = "Apply inner join to the result set"
+	DescInnerJoinRef    = "Apply inner join to reference record"
+	DescArgs            = "Arguments for the view"
+	DescBucketKey       = "The key of the bucket"
+	DescNestedOrderBy   = "Sort options for the nested result set"
+	DescNestedLimit     = "Limit the number of returned nested objects"
+	DescNestedOffset    = "Skip the first n nested objects"
+)
+
 // Directive argument name constants (shared between sdl and rules).
 const (
 	ArgName                  = "name"

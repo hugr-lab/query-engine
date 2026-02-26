@@ -31,7 +31,60 @@ func aggregateRootNode(ctx context.Context, provider schema.Provider, planner Ca
 		}
 	}
 
+	// Apply order_by/limit/offset after type casting for bucket aggregation
+	// so that ORDER BY is not lost inside castResultsNode subselects.
+	if sdl.IsBucketAggregateQuery(query) {
+		node, err = aggregateRootParamsNode(ctx, provider, planner, query, node, vars, inGeneral)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return finalResultNode(ctx, provider, planner, query, node, inGeneral), nil
+}
+
+func aggregateRootParamsNode(ctx context.Context, defs base.DefinitionsSource, planner Catalog, query *ast.Field, node *QueryPlanNode, vars map[string]any, inGeneral bool) (*QueryPlanNode, error) {
+	queryArg, err := sdl.ArgumentValues(ctx, defs, query, vars, false)
+	if err != nil {
+		return nil, err
+	}
+	var qe engines.Engine = defaultEngine
+	if !inGeneral {
+		catalog := base.FieldDefCatalog(query.Definition)
+		qe, err = planner.Engine(catalog)
+		if err != nil {
+			return nil, err
+		}
+	}
+	paramNodes, err := selectQueryParamsNodes(ctx, defs, qe, nil, "", query, queryArg, true)
+	if err != nil {
+		return nil, err
+	}
+	// Keep only order_by, limit, offset
+	paramNodes = slices.DeleteFunc(paramNodes, func(n *QueryPlanNode) bool {
+		return n.Name != "orderBy" && n.Name != "limit" && n.Name != "offset"
+	})
+	if len(paramNodes) == 0 {
+		return node, nil
+	}
+	extraNodes := QueryPlanNodes{
+		{
+			Name: "fields",
+			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+				return "*", params, nil
+			},
+		},
+		{
+			Name:  "from",
+			Nodes: QueryPlanNodes{node},
+			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+				sql := children.FirstResult().Result
+				return "(" + sql + ") AS _objects", params, nil
+			},
+		},
+	}
+	extraNodes = append(extraNodes, paramNodes...)
+	return selectStatementNode(query, extraNodes, "", false), nil
 }
 
 // returns nodes: fields, from, where, group by (if bucket aggregation)
@@ -580,7 +633,8 @@ func aggregateDataNode(ctx context.Context, defs base.DefinitionsSource, planner
 		return nil, false, err
 	}
 	paramNodes = slices.DeleteFunc(paramNodes, func(n *QueryPlanNode) bool {
-		return n.Name == "where" || n.Name == vectorDistanceNodeName || n.Name == vectorSearchLimitNodeName
+		return n.Name == "where" || n.Name == vectorDistanceNodeName || n.Name == vectorSearchLimitNodeName ||
+			n.Name == "orderBy" || n.Name == "limit" || n.Name == "offset"
 	})
 	if len(paramNodes) == 0 {
 		return node, !isInCatalog, nil
