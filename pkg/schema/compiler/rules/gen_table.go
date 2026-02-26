@@ -614,25 +614,58 @@ func generateAggregationType(ctx base.CompilationContext, def *ast.Definition, n
 			continue
 		}
 		typeName := f.Type.Name()
-		if s := ctx.ScalarLookup(typeName); s != nil {
-			if a, ok := s.(types.Aggregatable); ok {
-				field := &ast.FieldDefinition{
-					Name:     f.Name,
-					Type:     ast.NamedType(a.AggregationTypeName(), pos),
-					Position: pos,
-					Directives: ast.DirectiveList{
-						{Name: "field_aggregation", Arguments: ast.ArgumentList{
-							{Name: "name", Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
-						}, Position: pos},
-					},
-				}
-				// Copy arguments from original field (bucket, bucket_interval, struct, etc.)
-				if len(f.Arguments) > 0 {
-					field.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
-					copy(field.Arguments, f.Arguments)
-				}
-				aggDef.Fields = append(aggDef.Fields, field)
+
+		switch {
+		case ctx.ScalarLookup(typeName) != nil:
+			s := ctx.ScalarLookup(typeName)
+			a, ok := s.(types.Aggregatable)
+			if !ok {
+				continue
 			}
+			field := &ast.FieldDefinition{
+				Name:     f.Name,
+				Type:     ast.NamedType(a.AggregationTypeName(), pos),
+				Position: pos,
+				Directives: ast.DirectiveList{
+					{Name: "field_aggregation", Arguments: ast.ArgumentList{
+						{Name: "name", Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+					}, Position: pos},
+				},
+			}
+			// Copy arguments from original field (bucket, bucket_interval, struct, etc.)
+			if len(f.Arguments) > 0 {
+				field.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
+				copy(field.Arguments, f.Arguments)
+			}
+			aggDef.Fields = append(aggDef.Fields, field)
+
+		default:
+			// Structural Object fields (not tables/views, not arrays, not virtual)
+			if f.Type.NamedType == "" {
+				continue
+			}
+			if isVirtualField(f) {
+				continue
+			}
+			td := lookupObjectDef(ctx, typeName)
+			if td == nil || td.Kind != ast.Object || isTableOrView(td) {
+				continue
+			}
+			nestedAggName := "_" + td.Name + "_aggregation"
+			if ctx.LookupType(nestedAggName) == nil {
+				nestedAggDef := generateAggregationType(ctx, td, nestedAggName, pos)
+				ctx.AddDefinition(nestedAggDef)
+			}
+			aggDef.Fields = append(aggDef.Fields, &ast.FieldDefinition{
+				Name:     f.Name,
+				Type:     ast.NamedType(nestedAggName, pos),
+				Position: pos,
+				Directives: ast.DirectiveList{
+					{Name: "field_aggregation", Arguments: ast.ArgumentList{
+						{Name: "name", Value: &ast.Value{Raw: f.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+					}, Position: pos},
+				},
+			})
 		}
 	}
 
@@ -657,17 +690,18 @@ func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName,
 		},
 		Fields: ast.FieldList{
 			{
-				Name:     "key",
-				Type:     ast.NamedType(def.Name, pos),
-				Position: pos,
+				Name:        "key",
+				Description: base.DescBucketKey,
+				Type:        ast.NamedType(def.Name, pos),
+				Position:    pos,
 			},
 			{
 				Name:        "aggregations",
 				Description: "The aggregations of the bucket",
 				Type:        ast.NamedType(aggTypeName, pos),
 				Arguments: ast.ArgumentDefinitionList{
-					{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-					{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+					{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
+					{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
 				},
 				Position: pos,
 			},
@@ -692,19 +726,20 @@ func queryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Po
 			argType = ast.NamedType(info.InputArgsName, pos)
 		}
 		args = append(args, &ast.ArgumentDefinition{
-			Name:     "args",
-			Type:     argType,
-			Position: pos,
+			Name:        "args",
+			Description: base.DescArgs,
+			Type:        argType,
+			Position:    pos,
 		})
 	}
 	args = append(args,
-		&ast.ArgumentDefinition{Name: "filter", Type: ast.NamedType(filterName, pos), Position: pos},
-		&ast.ArgumentDefinition{Name: "order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		&ast.ArgumentDefinition{Name: "limit", Type: ast.NamedType("Int", pos), Position: pos,
+		&ast.ArgumentDefinition{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
+		&ast.ArgumentDefinition{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
+		&ast.ArgumentDefinition{Name: "limit", Description: base.DescLimit, Type: ast.NamedType("Int", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue}},
-		&ast.ArgumentDefinition{Name: "offset", Type: ast.NamedType("Int", pos), Position: pos,
+		&ast.ArgumentDefinition{Name: "offset", Description: base.DescOffset, Type: ast.NamedType("Int", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue}},
-		&ast.ArgumentDefinition{Name: "distinct_on", Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
+		&ast.ArgumentDefinition{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
 	)
 	return args
 }
@@ -714,17 +749,17 @@ func subQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionLi
 	args := queryArgs(filterName, pos)
 	args = append(args,
 		&ast.ArgumentDefinition{
-			Name: "inner", Type: ast.NamedType("Boolean", pos), Position: pos,
+			Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", pos), Position: pos,
 			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue},
 		},
 		&ast.ArgumentDefinition{
-			Name: "nested_order_by", Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos,
+			Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos,
 		},
 		&ast.ArgumentDefinition{
-			Name: "nested_limit", Type: ast.NamedType("Int", pos), Position: pos,
+			Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos,
 		},
 		&ast.ArgumentDefinition{
-			Name: "nested_offset", Type: ast.NamedType("Int", pos), Position: pos,
+			Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos,
 		},
 	)
 	return args
@@ -800,9 +835,10 @@ func generateQueryFields(ctx base.CompilationContext, def *ast.Definition, info 
 				argType = ast.NamedType(info.InputArgsName, pos)
 			}
 			selectOneField.Arguments = append(selectOneField.Arguments, &ast.ArgumentDefinition{
-				Name:     "args",
-				Type:     argType,
-				Position: pos,
+				Name:        "args",
+				Description: base.DescArgs,
+				Type:        argType,
+				Position:    pos,
 			})
 		}
 		for _, pk := range info.PrimaryKey {

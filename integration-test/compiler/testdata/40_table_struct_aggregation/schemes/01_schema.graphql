@@ -1,0 +1,49 @@
+type Specs {
+    cpu: String
+    ram_gb: Int
+    storage_gb: Int
+}
+
+type Metadata {
+    warranty_years: Int
+    origin: String
+}
+
+type Category @table(name: "categories") {
+    id: Int! @pk
+    name: String!
+}
+
+type Product @table(name: "products")
+  @references(
+    name: "prod_cat"
+    references_name: "Category"
+    source_fields: ["category_id"]
+    references_fields: ["id"]
+    query: "category"
+    references_query: "products"
+  ) {
+    id: Int! @pk
+    name: String!
+    price: Float!
+    category_id: Int
+    specs: Specs
+    metadata: Metadata
+    tags: [String]
+}
+
+extend type Function {
+    search_products(query: String!, limit: Int): Product
+      @function(name: "search_products")
+    related_items(product_id: Int!): [Product]
+      @function(name: "related_items")
+}
+
+extend type Product {
+    related: [Product] @table_function_call_join(references_name: "related_items", args: {product_id: "id"})
+    nearby_categories: [Category] @join(
+        references_name: "Category"
+        source_fields: ["category_id"]
+        references_fields: ["id"]
+    )
+}

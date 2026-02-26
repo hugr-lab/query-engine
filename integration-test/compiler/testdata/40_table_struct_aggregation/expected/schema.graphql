@@ -1,0 +1,1827 @@
+"""
+BigInt - represents big integer type (64 bit), supports filtering, aggregation.
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, sum, avg, min, max, list, any, last
+"""
+scalar BigInt
+type BigIntAggregation @system {
+  any: BigInt
+  avg: Float
+  count: BigInt
+  last: BigInt
+  list(distinct: Boolean = false): [BigInt!]
+  max: BigInt
+  min: BigInt
+  sum: BigInt
+}
+input BigIntFilter @system {
+  eq: BigInt
+  gt: BigInt
+  gte: BigInt
+  in: [BigInt!]
+  is_null: Boolean
+  lt: BigInt
+  lte: BigInt
+}
+input BigIntListFilter @system {
+  contains: [BigInt!]
+  eq: [BigInt!]
+  intersects: [BigInt!]
+  is_null: Boolean
+}
+enum BigIntMeasurementAggregation @system {
+  ANY
+  AVG
+  MAX
+  MIN
+  SUM
+}
+"""
+The `BigIntRange` scalar type represents a range of big integer values with inclusive/exclusive bounds.
+Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
+"""
+scalar BigIntRange
+input BigIntRangeFilter @system {
+  contains: BigInt
+  eq: BigIntRange
+  excludes: BigIntRange
+  includes: BigIntRange
+  intersects: BigIntRange
+  is_null: Boolean
+  lower: BigInt
+  lower_inclusive: Boolean
+  lower_inf: Boolean
+  upper: BigInt
+  upper_inclusive: Boolean
+  upper_inf: Boolean
+}
+type BigIntSubAggregation @system {
+  avg: BigIntAggregation
+  count: BigIntAggregation
+  max: BigIntAggregation
+  min: BigIntAggregation
+  sum: BigIntAggregation
+}
+type BooleanAggregation @system {
+  any: Boolean
+  bool_and: Boolean
+  bool_or: Boolean
+  count: BigInt
+  last: Boolean
+  list(distinct: Boolean = false): [Boolean!]
+}
+input BooleanFilter @system {
+  eq: Boolean
+  is_null: Boolean
+}
+enum BooleanMeasurementAggregation @system {
+  AND
+  ANY
+  OR
+}
+type BooleanSubAggregation @system {
+  bool_and: BooleanAggregation
+  bool_or: BooleanAggregation
+  count: BigIntAggregation
+}
+type Category @table(name: "categories") @catalog(name: "store", engine: "duckdb") @filter_input(name: "Category_filter") @data_input(name: "Category_mut_input_data") @data_input(name: "Category_mut_data") @query(name: "Category", type: SELECT) @query(name: "Category_by_pk", type: SELECT_ONE) @mutation(name: "insert_Category", type: INSERT, data_input: "Category_mut_input_data") @mutation(name: "update_Category", type: UPDATE, data_input: "Category_mut_data") @mutation(name: "delete_Category", type: DELETE, data_input: "") @query(name: "Category_aggregation", type: AGGREGATE) @query(name: "Category_bucket_aggregation", type: AGGREGATE_BUCKET) {
+  _join(fields: [String!]!): _join
+  id: Int! @pk
+  name: String!
+  products(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Product] @references_query(references_name: "Product", name: "prod_cat", is_m2m: false, m2m_name: "") @catalog(name: "store", engine: "duckdb")
+  """
+  The aggregation for products
+  """
+  products_aggregation(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Product_aggregation @aggregation_query(is_bucket: false, name: "products") @catalog(name: "store", engine: "duckdb")
+  """
+  The bucket aggregation for products
+  """
+  products_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Product_aggregation_bucket] @aggregation_query(is_bucket: true, name: "products") @catalog(name: "store", engine: "duckdb")
+}
+"""
+Filter for Category objects
+"""
+input Category_filter @filter_input(name: "Category") @catalog(name: "store", engine: "duckdb") {
+  _and: [Category_filter]
+  _not: Category_filter
+  _or: [Category_filter]
+  id: IntFilter @pk
+  name: StringFilter
+  products: Product_list_filter @references_query(references_name: "Product", name: "prod_cat", is_m2m: false, m2m_name: "") @catalog(name: "store", engine: "duckdb")
+}
+input Category_mut_data @data_input(name: "Category") @catalog(name: "store", engine: "duckdb") {
+  id: Int
+  name: String
+}
+input Category_mut_input_data @data_input(name: "Category") @catalog(name: "store", engine: "duckdb") {
+  id: Int
+  name: String
+  products: [Product_mut_input_data]
+}
+"""
+The `Date` scalar type represents a calendar date encoded as an ISO 8601 string (e.g. "2006-01-02").
+On input, values are parsed from ISO 8601 date strings. On output, values are formatted as ISO 8601 date strings.
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, min, max, list, any, last
+Extra field: Extract (extracts date parts such as year, month, day)
+"""
+scalar Date
+type DateAggregation @system {
+  any: Date
+  count: BigInt
+  last: Date
+  list(distinct: Boolean = false): [Date!]
+  max: Date
+  min: Date
+}
+input DateFilter @system {
+  eq: Date
+  gt: Date
+  gte: Date
+  in: [Date!]
+  is_null: Boolean
+  lt: Date
+  lte: Date
+}
+input DateListFilter @system {
+  contains: [Date!]
+  eq: [Date!]
+  intersects: [Date!]
+  is_null: Boolean
+}
+enum DateMeasurementAggregation @system {
+  ANY
+  MAX
+  MIN
+}
+type DateSubAggregation @system {
+  count: BigIntAggregation
+  max: DateAggregation
+  min: DateAggregation
+}
+enum ExtraFieldBaseType @system {
+  Geometry
+  Timestamp
+}
+enum FilterOperator @system {
+  between
+  contains
+  eq
+  excludes
+  gt
+  gte
+  has
+  has_all
+  ilike
+  in
+  includes
+  intersects
+  is_null
+  like
+  lower
+  lower_inclusive
+  lower_inf
+  lt
+  lte
+  ne
+  regex
+  upper
+  upper_inclusive
+  upper_inf
+  within
+}
+type FloatAggregation @system {
+  any: Float
+  avg: Float
+  count: BigInt
+  last: Float
+  list(distinct: Boolean = false): [Float!]
+  max: Float
+  min: Float
+  sum: Float
+}
+input FloatFilter @system {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  is_null: Boolean
+  lt: Float
+  lte: Float
+  ne: Float
+}
+input FloatListFilter @system {
+  contains: [Float!]
+  eq: [Float!]
+  intersects: [Float!]
+  is_null: Boolean
+}
+enum FloatMeasurementAggregation @system {
+  ANY
+  AVG
+  MAX
+  MIN
+  SUM
+}
+type FloatSubAggregation @system {
+  avg: FloatAggregation
+  count: BigIntAggregation
+  max: FloatAggregation
+  min: FloatAggregation
+  sum: FloatAggregation
+}
+type Function @system {
+  related_items(product_id: Int!): [Product] @function(name: "related_items") @catalog(name: "store", engine: "duckdb")
+  related_items_aggregation(product_id: Int!): _Product_aggregation @aggregation_query(name: "related_items", is_bucket: false) @catalog(name: "store", engine: "duckdb")
+  related_items_bucket_aggregation(product_id: Int!): [_Product_aggregation_bucket] @aggregation_query(name: "related_items", is_bucket: true) @catalog(name: "store", engine: "duckdb")
+  search_products(query: String!, limit: Int): Product @function(name: "search_products") @catalog(name: "store", engine: "duckdb")
+}
+"""
+The `Geometry` scalar type represents a spatial geometry value (WKB/WKT encoded).
+Filter operators: eq, intersects, contains, is_null
+Aggregation functions: count, list, any, last, intersection, union, extent
+Extra field: Measurement (calculates area, length, perimeter, etc.)
+"""
+scalar Geometry
+type GeometryAggregation @system {
+  any: Geometry
+  count: BigInt
+  extent: Geometry
+  intersection: Geometry
+  last: Geometry
+  list(distinct: Boolean = false): [Geometry!]
+  union: Geometry
+}
+input GeometryFilter @system {
+  contains: Geometry
+  eq: Geometry
+  intersects: Geometry
+  is_null: Boolean
+}
+enum GeometryMeasurementTypes @system {
+  Area
+  AreaSpheroid
+  Length
+  LengthSpheroid
+  Perimeter
+  PerimeterSpheroid
+}
+enum GeometrySpatialQueryType @system {
+  """
+  checks if the references geometry are completely inside query geometry
+  """
+  CONTAINS
+  """
+  checks if the geometries don't intersect
+  """
+  DISJOIN
+  """
+  checks if the geometries are within a distance
+  """
+  DWITHIN
+  """
+  checks if the geometries intersect
+  """
+  INTERSECTS
+  """
+  checks if the geometries are completely inside reference geometry
+  """
+  WITHIN
+}
+type GeometrySubAggregation @system {
+  count: BigIntAggregation
+  extent: GeometryAggregation
+  intersection: GeometryAggregation
+  union: GeometryAggregation
+}
+enum GeometryTransform @system {
+  Buffer
+  Centroid
+  ConvexHull
+  EndPoint
+  Envelope
+  FlipCoordinates
+  Reverse
+  Simplify
+  SimplifyTopology
+  StartPoint
+  Transform
+}
+enum GeometryType @system {
+  GEOMETRYCOLLECTION
+  LINESTRING
+  MULTILINESTRING
+  MULTIPOINT
+  MULTIPOLYGON
+  POINT
+  POLYGON
+}
+"""
+The `H3Cell` scalar type represents an H3 hexagonal hierarchical geospatial index cell identifier.
+"""
+scalar H3Cell
+type IntAggregation @system {
+  any: Int
+  avg: Float
+  count: BigInt
+  last: Int
+  list(distinct: Boolean = false): [Int!]
+  max: Int
+  min: Int
+  sum: Int
+}
+input IntFilter @system {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  is_null: Boolean
+  lt: Int
+  lte: Int
+}
+input IntListFilter @system {
+  contains: [Int!]
+  eq: [Int!]
+  intersects: [Int!]
+  is_null: Boolean
+}
+enum IntMeasurementAggregation @system {
+  ANY
+  AVG
+  MAX
+  MIN
+  SUM
+}
+"""
+The `IntRange` scalar type represents a range of integer values with inclusive/exclusive bounds.
+Filter operators: eq, contains, intersects, includes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
+"""
+scalar IntRange
+input IntRangeFilter @system {
+  contains: Int
+  eq: IntRange
+  includes: IntRange
+  intersects: IntRange
+  is_null: Boolean
+  lower: Int
+  lower_inclusive: Boolean
+  lower_inf: Boolean
+  upper: Int
+  upper_inclusive: Boolean
+  upper_inf: Boolean
+}
+type IntSubAggregation @system {
+  avg: IntAggregation
+  count: BigIntAggregation
+  max: IntAggregation
+  min: IntAggregation
+  sum: IntAggregation
+}
+"""
+The `Interval` scalar type represents a time duration (e.g. "1 year 2 months 3 days 04:05:06").
+Filter operators: eq, gt, gte, lt, lte, is_null
+"""
+scalar Interval
+input IntervalFilter @system {
+  eq: Interval
+  gt: Interval
+  gte: Interval
+  is_null: Boolean
+  lt: Interval
+  lte: Interval
+}
+input IntervalListFilter @system {
+  contains: [Interval!]
+  eq: [Interval!]
+  intersects: [Interval!]
+  is_null: Boolean
+}
+"""
+The `JSON` scalar type represents arbitrary JSON data, encoded as a JSON string.
+Filter operators: eq, has, has_all, contains, is_null
+Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter)
+"""
+scalar JSON
+type JSONAggregation @system {
+  any(path: String): JSON
+  avg(path: String!): Float
+  bool_and(path: String!): Boolean
+  bool_or(path: String!): Boolean
+  count(path: String): BigInt
+  last(path: String): JSON
+  list(path: String, distinct: Boolean = false): [JSON!]
+  max(path: String!): Float
+  min(path: String!): Float
+  string_agg(path: String!, sep: String!, distinct: Boolean = false): String
+  sum(path: String!): Float
+}
+input JSONFilter @system {
+  contains: JSON
+  eq: JSON
+  has: String
+  has_all: [String!]
+  is_null: Boolean
+}
+type JSONSubAggregation @system {
+  avg(path: String!): FloatAggregation
+  bool_and(path: String!): BooleanAggregation
+  bool_or(path: String!): BooleanAggregation
+  count(path: String): BigIntAggregation
+  max(path: String!): FloatAggregation
+  min(path: String!): FloatAggregation
+  string_agg(path: String!, sep: String!, distinct: Boolean = false): StringAggregation
+  sum(path: String!): FloatAggregation
+}
+type Metadata @catalog(name: "store", engine: "duckdb") {
+  origin: String
+  warranty_years: Int
+}
+input Metadata_filter @filter_input(name: "Metadata") @catalog(name: "store", engine: "duckdb") {
+  _and: [Metadata_filter]
+  _not: Metadata_filter
+  _or: [Metadata_filter]
+  origin: StringFilter
+  warranty_years: IntFilter
+}
+input Metadata_mut_data @data_input(name: "Metadata") @catalog(name: "store", engine: "duckdb") {
+  origin: String
+  warranty_years: Int
+}
+input Metadata_mut_input_data @data_input(name: "Metadata") @catalog(name: "store", engine: "duckdb") {
+  origin: String
+  warranty_years: Int
+}
+enum ModuleObjectType @system {
+  FUNCTION
+  MUTATION
+  MUT_FUNCTION
+  QUERY
+}
+type Mutation @system {
+  delete_Category(filter: Category_filter): OperationResult @mutation(name: "Category", type: DELETE, data_input: "") @catalog(name: "store", engine: "duckdb")
+  delete_Product(filter: Product_filter): OperationResult @mutation(name: "Product", type: DELETE, data_input: "") @catalog(name: "store", engine: "duckdb")
+  function: MutationFunction @system
+  insert_Category(data: Category_mut_input_data!): Category @mutation(name: "Category", type: INSERT, data_input: "Category_mut_input_data") @catalog(name: "store", engine: "duckdb")
+  insert_Product(data: Product_mut_input_data!): Product @mutation(name: "Product", type: INSERT, data_input: "Product_mut_input_data") @catalog(name: "store", engine: "duckdb")
+  update_Category(filter: Category_filter, data: Category_mut_data!): OperationResult @mutation(name: "Category", type: UPDATE, data_input: "Category_mut_data") @catalog(name: "store", engine: "duckdb")
+  update_Product(filter: Product_filter, data: Product_mut_data!): OperationResult @mutation(name: "Product", type: UPDATE, data_input: "Product_mut_data") @catalog(name: "store", engine: "duckdb")
+}
+type MutationFunction @system
+enum MutationType @system {
+  DELETE
+  INSERT
+  UPDATE
+}
+type OperationResult @system {
+  affected_rows: BigInt
+  last_id: BigInt
+  message: String
+  success: Boolean
+}
+input OrderByField @system {
+  direction: OrderDirection = ASC
+  field: String!
+}
+enum OrderDirection @system {
+  ASC
+  DESC
+}
+type Product @table(name: "products") @references(name: "prod_cat", references_name: "Category", source_fields: ["category_id"], references_fields: ["id"], query: "category", references_query: "products", is_m2m: false, m2m_name: "", description: "", references_description: "") @catalog(name: "store", engine: "duckdb") @filter_input(name: "Product_filter") @data_input(name: "Product_mut_input_data") @data_input(name: "Product_mut_data") @query(name: "Product", type: SELECT) @query(name: "Product_by_pk", type: SELECT_ONE) @mutation(name: "insert_Product", type: INSERT, data_input: "Product_mut_input_data") @mutation(name: "update_Product", type: UPDATE, data_input: "Product_mut_data") @mutation(name: "delete_Product", type: DELETE, data_input: "") @query(name: "Product_aggregation", type: AGGREGATE) @query(name: "Product_bucket_aggregation", type: AGGREGATE_BUCKET) @filter_list_input(name: "Product_list_filter") {
+  _join(fields: [String!]!): _join
+  category(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): Category @references_query(references_name: "Category", name: "prod_cat", is_m2m: false, m2m_name: "") @catalog(name: "store", engine: "duckdb")
+  category_id: Int
+  id: Int! @pk
+  metadata: Metadata
+  name: String!
+  nearby_categories: [Category] @join(references_name: "Category", source_fields: ["category_id"], references_fields: ["id"]) @catalog(name: "store", engine: "duckdb")
+  price: Float!
+  related: [Product] @table_function_call_join(references_name: "related_items", args: {product_id:"id"}) @catalog(name: "store", engine: "duckdb")
+  specs: Specs
+  tags: [String]
+}
+"""
+Filter for Product objects
+"""
+input Product_filter @filter_input(name: "Product") @catalog(name: "store", engine: "duckdb") {
+  _and: [Product_filter]
+  _not: Product_filter
+  _or: [Product_filter]
+  category: Category_filter @references_query(references_name: "Category", name: "prod_cat", is_m2m: false, m2m_name: "") @catalog(name: "store", engine: "duckdb")
+  category_id: IntFilter
+  id: IntFilter @pk
+  metadata: Metadata_filter
+  name: StringFilter
+  price: FloatFilter
+  specs: Specs_filter
+  tags: StringListFilter
+}
+input Product_list_filter @filter_list_input(name: "Product") @catalog(name: "store", engine: "duckdb") {
+  all_of: Product_filter
+  any_of: Product_filter
+  none_of: Product_filter
+}
+input Product_mut_data @data_input(name: "Product") @catalog(name: "store", engine: "duckdb") {
+  category_id: Int
+  id: Int
+  metadata: Metadata_mut_data
+  name: String
+  price: Float
+  specs: Specs_mut_data
+  tags: [String]
+}
+input Product_mut_input_data @data_input(name: "Product") @catalog(name: "store", engine: "duckdb") {
+  category: Category_mut_input_data
+  category_id: Int
+  id: Int
+  metadata: Metadata_mut_input_data
+  name: String
+  price: Float
+  specs: Specs_mut_input_data
+  tags: [String]
+}
+type Query @system {
+  Category(
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Category] @query(name: "Category", type: SELECT) @catalog(name: "store", engine: "duckdb")
+  """
+  The aggregation for Category
+  """
+  Category_aggregation(
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Category_aggregation @aggregation_query(name: "Category", is_bucket: false) @catalog(name: "store", engine: "duckdb")
+  """
+  The aggregation for Category
+  """
+  Category_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Category_aggregation_bucket] @aggregation_query(name: "Category", is_bucket: true) @catalog(name: "store", engine: "duckdb")
+  Category_by_pk(id: Int!): Category @query(name: "Category", type: SELECT_ONE) @catalog(name: "store", engine: "duckdb")
+  Product(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Product] @query(name: "Product", type: SELECT) @catalog(name: "store", engine: "duckdb")
+  """
+  The aggregation for Product
+  """
+  Product_aggregation(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Product_aggregation @aggregation_query(name: "Product", is_bucket: false) @catalog(name: "store", engine: "duckdb")
+  """
+  The aggregation for Product
+  """
+  Product_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Product_aggregation_bucket] @aggregation_query(name: "Product", is_bucket: true) @catalog(name: "store", engine: "duckdb")
+  Product_by_pk(id: Int!): Product @query(name: "Product", type: SELECT_ONE) @catalog(name: "store", engine: "duckdb")
+  """
+  Functions
+  """
+  function: Function @system
+  """
+  H3 aggregation query
+  """
+  h3(
+    """
+    H3 resolution to use for the query
+    """
+    resolution: Int!
+  ): [_h3_query] @system
+  """
+  Performs jq query on result set
+  Results will be placed in 'extension' field by field or alias name
+  """
+  jq(query: String!, include_origin: Boolean = false): Query @system
+}
+enum QueryType @system {
+  SELECT
+  SELECT_ONE
+}
+input SemanticSearchInput @system {
+  """
+  Limit to results
+  """
+  limit: Int!
+  """
+  The text to search
+  """
+  query: String!
+}
+type Specs @catalog(name: "store", engine: "duckdb") {
+  cpu: String
+  ram_gb: Int
+  storage_gb: Int
+}
+input Specs_filter @filter_input(name: "Specs") @catalog(name: "store", engine: "duckdb") {
+  _and: [Specs_filter]
+  _not: Specs_filter
+  _or: [Specs_filter]
+  cpu: StringFilter
+  ram_gb: IntFilter
+  storage_gb: IntFilter
+}
+input Specs_mut_data @data_input(name: "Specs") @catalog(name: "store", engine: "duckdb") {
+  cpu: String
+  ram_gb: Int
+  storage_gb: Int
+}
+input Specs_mut_input_data @data_input(name: "Specs") @catalog(name: "store", engine: "duckdb") {
+  cpu: String
+  ram_gb: Int
+  storage_gb: Int
+}
+type StringAggregation @system {
+  any: String
+  count: BigInt
+  last: String
+  list(distinct: Boolean = false): [String!]
+  string_agg(sep: String!, distinct: Boolean = false): String
+}
+input StringFilter @system {
+  eq: String
+  ilike: String
+  in: [String!]
+  is_null: Boolean
+  like: String
+  regex: String
+}
+input StringListFilter @system {
+  contains: [String!]
+  eq: [String!]
+  intersects: [String!]
+  is_null: Boolean
+}
+enum StringMeasurementAggregation @system {
+  ANY
+}
+type StringSubAggregation @system {
+  count: BigIntAggregation
+  string_agg: StringAggregation
+}
+"""
+The `Time` scalar type represents a time-of-day value encoded as an ISO 8601 time string (e.g. "15:04:05").
+On input, values are parsed from ISO 8601 time strings. On output, values are formatted as ISO 8601 time strings.
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, min, max, list, any, last
+"""
+scalar Time
+type TimeAggregation @system {
+  any: Time
+  count: BigInt
+  last: Time
+  list(distinct: Boolean = false): [Time!]
+  max: Time
+  min: Time
+}
+"""
+The time bucket for the time series data.
+Defines the time interval for the time series data.
+"""
+enum TimeBucket @system {
+  day
+  hour
+  minute
+  month
+  quarter
+  week
+  year
+}
+enum TimeExtract @system {
+  day
+  dow
+  doy
+  epoch
+  hour
+  iso_dow
+  iso_year
+  minute
+  month
+  quarter
+  week
+  year
+}
+input TimeFilter @system {
+  eq: Time
+  gt: Time
+  gte: Time
+  in: [Time!]
+  is_null: Boolean
+  lt: Time
+  lte: Time
+}
+input TimeListFilter @system {
+  contains: [Time!]
+  eq: [Time!]
+  intersects: [Time!]
+  is_null: Boolean
+}
+enum TimeMeasurementAggregation @system {
+  ANY
+  MAX
+  MIN
+}
+type TimeSubAggregation @system {
+  count: BigIntAggregation
+  max: TimeAggregation
+  min: TimeAggregation
+}
+"""
+The `Timestamp` scalar type represents a date-time value with timezone, encoded as an RFC 3339 string (e.g. "2006-01-02T15:04:05Z07:00").
+On input, values are parsed from RFC 3339 strings. On output, values are formatted as RFC 3339 strings.
+Filter operators: eq, gt, gte, lt, lte, is_null
+Aggregation functions: count, min, max, list, any, last
+Extra field: Extract (extracts date/time parts such as year, month, day, hour, minute, second)
+"""
+scalar Timestamp
+type TimestampAggregation @system {
+  any: Timestamp
+  count: BigInt
+  last: Timestamp
+  list(distinct: Boolean = false): [Timestamp!]
+  max: Timestamp
+  min: Timestamp
+}
+input TimestampFilter @system {
+  eq: Timestamp
+  gt: Timestamp
+  gte: Timestamp
+  is_null: Boolean
+  lt: Timestamp
+  lte: Timestamp
+}
+input TimestampListFilter @system {
+  contains: [Timestamp!]
+  eq: [Timestamp!]
+  intersects: [Timestamp!]
+  is_null: Boolean
+}
+enum TimestampMeasurementAggregation @system {
+  ANY
+  MAX
+  MIN
+}
+"""
+The `TimestampRange` scalar type represents a range of timestamp values with inclusive/exclusive bounds.
+Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
+"""
+scalar TimestampRange
+input TimestampRangeFilter @system {
+  contains: Timestamp
+  eq: TimestampRange
+  excludes: TimestampRange
+  includes: TimestampRange
+  intersects: TimestampRange
+  is_null: Boolean
+  lower: Timestamp
+  lower_inclusive: Boolean
+  lower_inf: Boolean
+  upper: Timestamp
+  upper_inclusive: Boolean
+  upper_inf: Boolean
+}
+type TimestampSubAggregation @system {
+  count: BigIntAggregation
+  max: TimestampAggregation
+  min: TimestampAggregation
+}
+enum UniqueRuleType @system {
+  EQUALS
+  INTERSECTS
+}
+"""
+The `Vector` scalar type represents a fixed-length array of floating-point numbers, used for embeddings and similarity search.
+Filter operators: is_null
+Extra field: VectorDistance (calculates distance between vectors using a specified metric)
+"""
+scalar Vector
+enum VectorDistanceType @system {
+  """
+  Cosine similarity
+  """
+  Cosine
+  """
+  Inner product
+  """
+  Inner
+  """
+  L2 distance
+  """
+  L2
+}
+input VectorFilter @system {
+  is_null: Boolean
+}
+input VectorSearchInput @system {
+  """
+  Distance type
+  """
+  distance: VectorDistanceType!
+  """
+  Limit to results
+  """
+  limit: Int!
+  """
+  The name of vector field
+  """
+  name: String!
+  """
+  The vector to search
+  """
+  vector: Vector!
+}
+type _Category_aggregation @aggregation(name: "Category", is_bucket: false, level: 1) @catalog(name: "store", engine: "duckdb") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  id: IntAggregation @field_aggregation(name: "id")
+  name: StringAggregation @field_aggregation(name: "name")
+  products(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Product_aggregation @field_aggregation(name: "products")
+  products_aggregation(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Product_aggregation_sub_aggregation @field_aggregation(name: "products")
+}
+"""
+Bucket aggregation for Category
+"""
+type _Category_aggregation_bucket @aggregation(name: "Category", is_bucket: true, level: 1) @catalog(name: "store", engine: "duckdb") {
+  """
+  The aggregations of the bucket
+  """
+  aggregations(
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Category_aggregation
+  """
+  The key of the bucket
+  """
+  key: Category
+}
+type _Category_aggregation_sub_aggregation @aggregation(name: "_Category_aggregation", is_bucket: false, level: 2) @catalog(name: "store", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  name: StringSubAggregation @field_aggregation(name: "name")
+  products(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Product_aggregation_sub_aggregation @field_aggregation(name: "products")
+  products_aggregation(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Product_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "products_aggregation")
+}
+type _Metadata_aggregation @aggregation(name: "Metadata", is_bucket: false, level: 1) @catalog(name: "store", engine: "duckdb") {
+  _rows_count: BigInt
+  origin: StringAggregation @field_aggregation(name: "origin")
+  warranty_years: IntAggregation @field_aggregation(name: "warranty_years")
+}
+type _Product_aggregation @aggregation(name: "Product", is_bucket: false, level: 1) @catalog(name: "store", engine: "duckdb") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  category(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): _Category_aggregation @field_aggregation(name: "category")
+  category_id: IntAggregation @field_aggregation(name: "category_id")
+  id: IntAggregation @field_aggregation(name: "id")
+  metadata: _Metadata_aggregation @field_aggregation(name: "metadata")
+  name: StringAggregation @field_aggregation(name: "name")
+  price: FloatAggregation @field_aggregation(name: "price")
+  """
+  The aggregation for related
+  """
+  related_aggregation: _Product_aggregation_sub_aggregation @field_aggregation(name: "related")
+  specs: _Specs_aggregation @field_aggregation(name: "specs")
+  tags: StringAggregation @field_aggregation(name: "tags")
+}
+"""
+Bucket aggregation for Product
+"""
+type _Product_aggregation_bucket @aggregation(name: "Product", is_bucket: true, level: 1) @catalog(name: "store", engine: "duckdb") {
+  """
+  The aggregations of the bucket
+  """
+  aggregations(
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _Product_aggregation
+  """
+  The key of the bucket
+  """
+  key: Product
+}
+type _Product_aggregation_sub_aggregation @aggregation(name: "_Product_aggregation", is_bucket: false, level: 2) @catalog(name: "store", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  category_id: IntSubAggregation @field_aggregation(name: "category_id")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  name: StringSubAggregation @field_aggregation(name: "name")
+  price: FloatSubAggregation @field_aggregation(name: "price")
+  tags: StringSubAggregation @field_aggregation(name: "tags")
+}
+type _Product_aggregation_sub_aggregation_sub_aggregation @aggregation(name: "_Product_aggregation_sub_aggregation", is_bucket: false, level: 3) @catalog(name: "store", engine: "duckdb") {
+  _rows_count: BigIntSubAggregation @field_aggregation(name: "aggregation_field")
+}
+type _Specs_aggregation @aggregation(name: "Specs", is_bucket: false, level: 1) @catalog(name: "store", engine: "duckdb") {
+  _rows_count: BigInt
+  cpu: StringAggregation @field_aggregation(name: "cpu")
+  ram_gb: IntAggregation @field_aggregation(name: "ram_gb")
+  storage_gb: IntAggregation @field_aggregation(name: "storage_gb")
+}
+"""
+Value distribution data type
+"""
+type _distribution_by @system {
+  denominator: Float
+  denominator_total: Float
+  numerator: Float
+  ratio: Float
+  value: Float
+}
+"""
+Value distribution aggregation data type
+"""
+type _distribution_by_aggregation @system {
+  denominator: FloatAggregation
+  denominator_total: FloatAggregation
+  numerator: FloatAggregation
+  ratio: FloatAggregation
+  value: FloatAggregation
+}
+"""
+Value distribution bucket data type
+This type is used to store distribution data in buckets.
+"""
+type _distribution_by_bucket @system {
+  denominator: Float
+  denominator_key: JSON
+  denominator_total: Float
+  numerator: Float
+  numerator_key: JSON
+  ratio: Float
+  value: Float
+}
+"""
+Value distribution bucket aggregation data type
+"""
+type _distribution_by_bucket_aggregation @system {
+  denominator: FloatAggregation
+  denominator_total: FloatAggregation
+  key: JSONAggregation
+  numerator: FloatAggregation
+  ratio: FloatAggregation
+  value: FloatAggregation
+}
+type _h3_data_query @system
+type _h3_query @system {
+  """
+  The H3 cell
+  """
+  cell: H3Cell!
+  """
+  The data associated with the H3 cell
+  """
+  data: _h3_data_query!
+  """
+  Calculate distributed aggregated value
+  """
+  distribution_by(
+    """
+    Path to numerator aggregated value
+    """
+    numerator: String!
+
+    """
+    Path to denominator aggregated value
+    """
+    denominator: String!
+  ): _distribution_by
+  """
+  Calculate distributed aggregated value across denominator buckets
+  """
+  distribution_by_bucket(
+    """
+    Path to bucket key in numerator bucket aggregation
+    """
+    numerator_key: String
+
+    """
+    Path to numerator aggregated value
+    """
+    numerator: String!
+
+    """
+    Path to bucket key in denominator bucket aggregation
+    """
+    denominator_key: String!
+
+    """
+    Path to denominator aggregated value in bucket aggregations
+    """
+    denominator: String!
+  ): [_distribution_by_bucket]
+  """
+  The geometry representation of the H3 cell
+  """
+  geom: Geometry!
+  """
+  The resolution of the H3 cell
+  """
+  resolution: Int!
+}
+type _join @system {
+  Category(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Category] @query(name: "Category", type: SELECT) @catalog(name: "store", engine: "duckdb")
+  Category_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Category_aggregation @aggregation_query(is_bucket: false, name: "Category") @catalog(name: "store", engine: "duckdb")
+  Category_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Category_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Category") @catalog(name: "store", engine: "duckdb")
+  Product(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [Product] @query(name: "Product", type: SELECT) @catalog(name: "store", engine: "duckdb")
+  Product_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Product_aggregation @aggregation_query(is_bucket: false, name: "Product") @catalog(name: "store", engine: "duckdb")
+  Product_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_Product_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Product") @catalog(name: "store", engine: "duckdb")
+}
+type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
+  Category(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Category_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Category_aggregation @aggregation_query(is_bucket: false, name: "Category") @catalog(name: "store", engine: "duckdb") @field_aggregation(name: "Category")
+  Product(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: Product_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _Product_aggregation @aggregation_query(is_bucket: false, name: "Product") @catalog(name: "store", engine: "duckdb") @field_aggregation(name: "Product")
+}
+type _spatial @system
+type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)
+scalar any
