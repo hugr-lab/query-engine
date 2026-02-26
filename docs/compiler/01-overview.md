@@ -7,8 +7,8 @@ The query-engine compiler transforms user-provided GraphQL SDL into a fully popu
 ## Data Flow
 
 ```
-Source SDL → parser.ParseSchema()
-  → DefinitionsSource (source definitions)
+Catalog source (file / URI / DB / string / merged)
+  → catalog.Catalog (definitions, extensions, compile options, version)
   → Compiler.Compile(ctx, provider, source, opts)
     → [VALIDATE → PREPARE → GENERATE → ASSEMBLE → FINALIZE]
   → CompiledCatalog (definitions + extensions)
@@ -16,15 +16,19 @@ Source SDL → parser.ParseSchema()
   → Schema (ast.Schema)
 ```
 
+Each source implements `catalog.Catalog` directly, providing definitions, extensions,
+compile options, and a version identifier. The version enables future compilation caching —
+file-based sources use content hashes, dynamic sources use timestamps.
+
 ## Phases
 
 | Phase | Purpose | Example Rules |
 |-------|---------|---------------|
 | **VALIDATE** | Structural validation of source schema | `SourceValidator`, `DefinitionValidator`, `ExtensionValidator`, `DependencyCollector` |
-| **PREPARE** | Metadata preparation, prefix application, catalog tagging | `CatalogTagger`, `PrefixPreparer` |
-| **GENERATE** | Type generation (filters, mutations, aggregations, subqueries) | `TableRule`, `ViewRule`, `ReferencesRule`, `FunctionRule`, `JoinSpatialRule` |
+| **PREPARE** | Metadata preparation, prefix application, catalog tagging | `InternalExtensionMerger`, `CatalogTagger`, `PrefixPreparer` |
+| **GENERATE** | Type generation (filters, mutations, aggregations, subqueries) | `PassthroughRule`, `TableRule`, `ViewRule`, `AggregationRule`, `ReferencesRule`, `FunctionRule`, `JoinSpatialRule` |
 | **ASSEMBLE** | Root Query/Mutation assembly, module hierarchy | `ModuleAssembler`, `RootTypeAssembler` |
-| **FINALIZE** | Post-compilation validation and constraints | `ReadOnlyFinalizer`, `JoinValidator`, `PostValidator` |
+| **FINALIZE** | Post-compilation validation and constraints | `ReadOnlyFinalizer`, `JoinValidator`, `FunctionCallValidator`, `ArgumentTypeValidator`, `PostValidator` |
 
 ## Rule Types
 
@@ -59,12 +63,12 @@ Rules are registered in `rules/init.go` and execute in registration order within
 
 ```
 VALIDATE:  ExtensionValidator → DependencyCollector → SourceValidator → DefinitionValidator
-PREPARE:   CatalogTagger → PrefixPreparer
-GENERATE:  TableRule → ViewRule → CubeHypertableRule → UniqueRule → ReferencesRule →
-           JoinSpatialRule → H3Rule → AggregationRule → FunctionRule → ExtraFieldRule →
-           VectorSearchRule → EmbeddingsRule
+PREPARE:   InternalExtensionMerger → CatalogTagger → PrefixPreparer
+GENERATE:  PassthroughRule → TableRule → ViewRule → CubeHypertableRule → UniqueRule →
+           AggregationRule → ReferencesRule → JoinSpatialRule → H3Rule →
+           FunctionRule → ExtraFieldRule → VectorSearchRule → EmbeddingsRule
 ASSEMBLE:  ModuleAssembler → RootTypeAssembler
-FINALIZE:  ReadOnlyFinalizer → JoinValidator → FunctionCallValidator → PostValidator
+FINALIZE:  ReadOnlyFinalizer → JoinValidator → FunctionCallValidator → ArgumentTypeValidator → PostValidator
 ```
 
 ## CompileOptions
@@ -82,6 +86,26 @@ The `Options` struct controls compilation behavior:
 | `Capabilities` | `*EngineCapabilities` | Engine feature support flags |
 
 ## Key Interfaces
+
+### Catalog
+
+Source of schema definitions for compilation. Each catalog source (file, URI, DB, string, HTTP)
+implements this interface directly using `static.NewDocumentProvider` internally.
+
+```go
+type Catalog interface {
+    compiler.Catalog           // DefinitionsSource + CompileOptions()
+    Name() string
+    Description() string
+    Version(ctx context.Context) (string, error)
+    Engine() engines.Engine
+}
+```
+
+Version strategies:
+- **File-based** (FileSource, StringSource): SHA-256 content hash — changes only when source changes
+- **Dynamic** (URISource, DB, HTTP): Timestamp — always triggers recompilation
+- **Merged**: SHA-256 of all sub-catalog versions
 
 ### CompilationContext
 

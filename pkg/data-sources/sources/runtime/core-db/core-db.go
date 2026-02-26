@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"
-
-	cs "github.com/hugr-lab/query-engine/pkg/schema/sources"
 )
 
 const (
@@ -158,8 +158,14 @@ func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
 	return err
 }
 
-func (s *Source) Catalog(ctx context.Context) cs.Source {
-	return cs.NewStringSource(schema)
+func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
+	opts := compiler.Options{
+		Name:         s.Name(),
+		ReadOnly:     s.IsReadonly(),
+		EngineType:   string(s.e.Type()),
+		Capabilities: s.e.Capabilities(),
+	}
+	return cs.NewStringSource(s.Name(), s.e, opts, schema)
 }
 
 func checkDBVersion(ctx context.Context, db *db.Pool) error {

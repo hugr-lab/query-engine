@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/static"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 

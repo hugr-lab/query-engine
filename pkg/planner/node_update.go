@@ -6,16 +6,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func updateRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+func updateRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
 	catalog := base.FieldDefCatalog(query.Definition)
 	e, err := planner.Engine(catalog)
 	if err != nil {

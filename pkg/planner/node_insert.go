@@ -7,12 +7,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -43,7 +43,7 @@ func (sv seqValues) IsExists(seqName string) bool {
 	return false
 }
 
-func insertRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+func insertRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
 	// define request sequences values
 	var sv []seqValue
 
@@ -244,7 +244,7 @@ func insertBeforeExec(e engines.Engine, m *sdl.Mutation, query *ast.Field, data 
 	}, nil
 }
 
-func insertDataObjectNode(ctx context.Context, provider schema.Provider, e engines.Engine, m *sdl.Mutation, data map[string]any, path string, sv seqValues, parentSeqVal map[string]string) (*QueryPlanNode, seqValues, error) {
+func insertDataObjectNode(ctx context.Context, provider catalog.Provider, e engines.Engine, m *sdl.Mutation, data map[string]any, path string, sv seqValues, parentSeqVal map[string]string) (*QueryPlanNode, seqValues, error) {
 	refs := m.ReferencesFields()
 	m2mRefs := m.M2MReferencesFields()
 	// define queries nodes of that current query is depended (references data that should be inserted before)

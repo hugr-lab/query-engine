@@ -5,55 +5,60 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
+	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
 	. "github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 )
 
-func (s *Service) catalogSource(ctx context.Context, ds Source, self bool) (source sources.Source, err error) {
-	var ss []sources.Source
+func (s *Service) catalogSource(ctx context.Context, ds Source, self bool) (cat sources.Catalog, err error) {
 	def := ds.Definition()
+	opts := compileOptions(ds)
+
+	var cc []sources.Catalog
 	if def.SelfDefined || self {
-		if ds, ok := ds.(SelfDescriber); ok {
-			source, err = ds.CatalogSource(ctx, s.db)
+		if sd, ok := ds.(SelfDescriber); ok {
+			cat, err = sd.CatalogSource(ctx, s.db)
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			source, err = sources.DescribeDataSource(ctx, s.qe, def.Name)
+			info, err := sources.DescribeDataSource(ctx, s.qe, def.Name)
 			if err != nil {
 				return nil, fmt.Errorf("failed to describe data source %s: %w", def.Name, err)
 			}
+			if err := info.Build(ctx, ds.Engine(), opts); err != nil {
+				return nil, fmt.Errorf("failed to create catalog for data source %s: %w", def.Name, err)
+			}
+			cat = info
 		}
 		if self {
-			return source, nil
+			return cat, nil
 		}
-		if source != nil {
-			ss = append(ss, source)
+		if cat != nil {
+			cc = append(cc, cat)
 		}
 	}
 	for _, cs := range def.Sources {
-		s, err := s.loadCatalogSource(ctx, cs.Type, cs.Path)
+		c, err := s.loadCatalogSource(ctx, cs.Type, cs.Path, ds.Engine(), opts)
 		if err != nil {
 			return nil, err
 		}
-		ss = append(ss, s)
+		cc = append(cc, c)
 	}
-	if len(ss) == 0 {
+	if len(cc) == 0 {
 		return nil, nil
 	}
-	if len(ss) == 1 {
-		source = ss[0]
+	if len(cc) == 1 {
+		return cc[0], nil
 	}
-	if len(ss) > 1 {
-		source = sources.MergeSource(ss...)
-	}
-	return source, nil
+	return sources.NewMergedCatalog(ds.Engine(), opts, def.Description, cc...), nil
 }
 
-func (s *Service) loadCatalogSource(ctx context.Context, t types.CatalogSourceType, path string) (sources.Source, error) {
+func (s *Service) loadCatalogSource(ctx context.Context, t types.CatalogSourceType, path string, engine engines.Engine, opts compiler.Options) (sources.Catalog, error) {
 	switch t {
 	case sources.FileSourceType:
 		// check if path is a valid directory
@@ -61,18 +66,29 @@ func (s *Service) loadCatalogSource(ctx context.Context, t types.CatalogSourceTy
 		if err != nil {
 			return nil, fmt.Errorf("wrong localFS catalog source type: %w", err)
 		}
-		s := sources.NewFileSource(path)
-		return s, s.Reload(ctx)
+		fs := sources.NewFileSource(path, engine, opts)
+		return fs, fs.Reload(ctx)
 	case sources.URISourceType:
-		s := sources.NewURISource(s.db, path, false)
-		return s, s.Reload(ctx)
+		us := sources.NewURISource(s.db, path, false, engine, opts)
+		return us, us.Reload(ctx)
 	case sources.URIFileSourceType:
-		s := sources.NewURISource(s.db, path, true)
-		return s, s.Reload(ctx)
+		us := sources.NewURISource(s.db, path, true, engine, opts)
+		return us, us.Reload(ctx)
 	case sources.TextSourceType:
-		s := sources.NewStringSource(path)
-		return s, nil
+		return sources.NewStringSource(path, engine, opts, path)
 	default:
 		return nil, fmt.Errorf("unknown source type %s", t)
+	}
+}
+
+func compileOptions(ds Source) compiler.Options {
+	def := ds.Definition()
+	return compiler.Options{
+		Name:         def.Name,
+		ReadOnly:     def.ReadOnly,
+		Prefix:       def.Prefix,
+		EngineType:   string(ds.Engine().Type()),
+		AsModule:     def.AsModule,
+		Capabilities: ds.Engine().Capabilities(),
 	}
 }

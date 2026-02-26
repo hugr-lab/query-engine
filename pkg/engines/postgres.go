@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler"
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkt"

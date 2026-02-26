@@ -5,7 +5,9 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
@@ -106,9 +108,15 @@ func (s *Service) DescribeDataSource(ctx context.Context, name string, self bool
 		return "", nil
 	}
 
-	sd, err := source.SchemaDocument(ctx)
-	if err != nil {
-		return "", err
+	// Reconstruct a SchemaDocument from the catalog's definitions and extensions.
+	sd := &ast.SchemaDocument{}
+	for def := range source.Definitions(ctx) {
+		sd.Definitions = append(sd.Definitions, def)
+	}
+	if es, ok := source.(base.ExtensionsSource); ok {
+		for ext := range es.Extensions(ctx) {
+			sd.Extensions = append(sd.Extensions, ext)
+		}
 	}
 	var sb strings.Builder
 	formatter.NewFormatter(&sb).FormatSchemaDocument(sd)

@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -25,7 +25,7 @@ var measurementAggregations = map[string]string{
 	"ANY": "any",
 }
 
-func selectDataObjectRootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]interface{}) (*QueryPlanNode, error) {
+func selectDataObjectRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, query *ast.Field, vars map[string]interface{}) (*QueryPlanNode, error) {
 	node, inGeneral, err := selectDataObjectNode(ctx, provider, planner, query, vars)
 	if err != nil {
 		return nil, err

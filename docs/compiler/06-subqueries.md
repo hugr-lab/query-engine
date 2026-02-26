@@ -102,7 +102,11 @@ Cross-catalog restrictions:
 
 ## @join
 
-The `@join` directive creates join subquery fields with optional similarity/semantic matching:
+The `@join` directive creates join subquery fields with optional similarity/semantic matching.
+Generated fields get:
+
+- Standard subquery arguments: `filter`, `order_by`, `limit`, `offset`, `distinct_on`
+- `inner: Boolean` argument for join type control
 
 ```graphql
 type Airport @table(name: "airports") {
@@ -114,7 +118,15 @@ type Airport @table(name: "airports") {
 }
 ```
 
-Generates `_join` and `_join_aggregation` types. Validated by `JoinValidator` in PhaseFinalize.
+Generates `_join` and `_join_aggregation` system types (marked with `@system`).
+Validated by `JoinValidator` in PhaseFinalize.
+
+### @join Aggregation on Base Type
+
+@join fields returning lists generate aggregation entries on the base object's aggregation type:
+
+- `<field>_aggregation` and `<field>_bucket_aggregation` fields
+- These carry `@field_aggregation` linking back to the source field
 
 ## Sub-Aggregation
 

@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -33,7 +33,7 @@ func New(c Catalog, q types.Querier) *Service {
 	}
 }
 
-func (s *Service) Plan(ctx context.Context, provider schema.Provider, query *ast.Field, vars map[string]interface{}) (*QueryPlan, error) {
+func (s *Service) Plan(ctx context.Context, provider catalog.Provider, query *ast.Field, vars map[string]interface{}) (*QueryPlan, error) {
 	var node *QueryPlanNode
 	var err error
 	switch {

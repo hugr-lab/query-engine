@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/schema"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
-	"github.com/hugr-lab/query-engine/pkg/schema/sources"
-	"github.com/hugr-lab/query-engine/pkg/schema/static"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 
 	_ "embed"
 )
@@ -22,17 +22,17 @@ func TestProcessQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ss := schema.NewService(provider)
-	cat, err := sources.NewCatalog(context.Background(),
-		types.DataSource{Name: "test"},
-		&engines.DuckDB{},
-		sources.NewStringSource(testSchemaData),
-		false,
-	)
+	ss := catalog.NewService(provider)
+	e := &engines.DuckDB{}
+	cat, err := sources.NewStringSource("test", e, compiler.Options{
+		Name:         "test",
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+	}, testSchemaData)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = ss.AddCatalog(context.Background(), "test", &engines.DuckDB{}, cat)
+	err = ss.AddCatalog(context.Background(), "test", cat)
 	if err != nil {
 		t.Fatal(err)
 	}

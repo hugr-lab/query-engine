@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func finalResultNode(ctx context.Context, provider schema.Provider, planner Catalog, field *ast.Field, node *QueryPlanNode, transformTypes bool) *QueryPlanNode {
+func finalResultNode(ctx context.Context, provider catalog.Provider, planner Catalog, field *ast.Field, node *QueryPlanNode, transformTypes bool) *QueryPlanNode {
 	node = applyAllParametersNode(node)
 	node.engines = planner
 	node.provider = provider

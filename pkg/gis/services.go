@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 )
 
@@ -15,14 +15,14 @@ import (
 
 type Service struct {
 	qe     types.Querier
-	schema *schema.Service
+	schema *catalog.Service
 	router *http.ServeMux
 	lru    *expirable.LRU[string, *Collection]
 }
 
 type Config struct {
 	Querier types.Querier
-	Schema  *schema.Service
+	Schema  *catalog.Service
 
 	// Other dependencies can be added here
 	CacheTTL  time.Duration // Cache TTL for collections

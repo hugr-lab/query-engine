@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	newcompiler "github.com/hugr-lab/query-engine/pkg/schema/compiler"
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/rules"
-	"github.com/hugr-lab/query-engine/pkg/schema/static"
-	_ "github.com/hugr-lab/query-engine/pkg/schema/types"
+	newcompiler "github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	_ "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 )

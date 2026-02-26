@@ -6,15 +6,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/schema/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/schema/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/schema"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-func h3RootNode(ctx context.Context, provider schema.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+func h3RootNode(ctx context.Context, provider catalog.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
 	node, err := h3DataNode(ctx, provider, planner, query, vars)
 	if err != nil {
 		return nil, err
