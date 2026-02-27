@@ -533,7 +533,7 @@ type Query @system {
   """
   Functions
   """
-  function: Function @system
+  function: Function @system @module_catalog(name: "enriched")
   """
   H3 aggregation query
   """

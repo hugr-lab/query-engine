@@ -1,0 +1,18 @@
+{
+  "catalogs": [
+    {
+      "file": "01_base.graphql",
+      "name": "store",
+      "engine": "duckdb",
+      "prefix": "s",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "02_extension.graphql",
+      "name": "ext",
+      "engine": "duckdb",
+      "is_extension": true,
+      "capabilities": "duckdb_cross_catalog"
+    }
+  ]
+}

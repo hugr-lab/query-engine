@@ -662,7 +662,7 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 		// Ensure the target agg type exists at this depth
 		if depth > 0 {
 			baseTargetAgg := "_" + targetObject + "_aggregation"
-			ensureSubAggregationType(ctx, targetObject, targetAggName, baseTargetAgg, depth, pos)
+			ensureSubAggregationType(ctx, targetObject, targetAggName, baseTargetAgg, depth, opts, pos)
 		}
 
 		fields = append(fields, &ast.FieldDefinition{
@@ -679,7 +679,7 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 		targetSubAggName := aggTypeNameAtDepth(targetObject, depth+1)
 		// For the _aggregation sub-field, the parent is the current depth's target agg type
 		parentTargetAgg := aggTypeNameAtDepth(targetObject, depth)
-		ensureSubAggregationType(ctx, targetObject, targetSubAggName, parentTargetAgg, depth+1, pos)
+		ensureSubAggregationType(ctx, targetObject, targetSubAggName, parentTargetAgg, depth+1, opts, pos)
 
 		// At depth > 0, the @field_aggregation uses full field name including _aggregation
 		aggFieldDirectiveName := refFieldName
@@ -746,7 +746,7 @@ func aggTypeNameAtDepth(objectName string, depth int) string {
 // aggregation type's scalar fields, mapping them to SubAggregation variants.
 // depth 1: includes _rows_count + scalar fields (SubAgg types) + extra fields
 // depth >= 2: only _rows_count
-func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTypeName, _ string, depth int, pos *ast.Position) {
+func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTypeName, _ string, depth int, opts base.Options, pos *ast.Position) {
 	if ctx.LookupType(subAggTypeName) != nil {
 		return // already created
 	}
@@ -882,7 +882,7 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 				{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
 				{Name: "level", Value: &ast.Value{Raw: fmt.Sprintf("%d", level), Kind: ast.IntValue, Position: pos}, Position: pos},
 			}, Position: pos},
-			optsCatalogDirective(ctx.CompileOptions()),
+			optsCatalogDirective(opts),
 		},
 		Fields: fields,
 	}
@@ -893,7 +893,7 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 // scalar fields from the base aggregation (no ExtraFieldProvider extra fields).
 // This matches the old compiler's behavior for table_function_call_join-triggered sub-aggs,
 // which are created during field iteration before extra fields are added to the base agg type.
-func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, subAggTypeName string, depth int, pos *ast.Position) {
+func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, subAggTypeName string, depth int, opts base.Options, pos *ast.Position) {
 	if ctx.LookupType(subAggTypeName) != nil {
 		return // already created
 	}
@@ -974,7 +974,7 @@ func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, su
 				{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
 				{Name: "level", Value: &ast.Value{Raw: fmt.Sprintf("%d", level), Kind: ast.IntValue, Position: pos}, Position: pos},
 			}, Position: pos},
-			optsCatalogDirective(ctx.CompileOptions()),
+			optsCatalogDirective(opts),
 		},
 		Fields: fields,
 	}

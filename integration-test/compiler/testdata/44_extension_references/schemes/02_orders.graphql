@@ -1,0 +1,6 @@
+type Order @table(name: "orders") {
+  id: Int! @pk
+  customer_id: Int!
+  total: Float
+  ordered_at: Timestamp
+}

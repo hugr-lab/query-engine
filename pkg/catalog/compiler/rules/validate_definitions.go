@@ -36,6 +36,17 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 			}
 		}
 	}
+	// Also validate extensions (e.g. "extend type Function { ... }" kept separate
+	// by ExtensionsSource). Only Function/MutationFunction SQL validation applies.
+	if extSrc, ok := ctx.Source().(base.ExtensionsSource); ok {
+		for ext := range extSrc.Extensions(ctx.Context()) {
+			if ext.Name == "Function" || ext.Name == "MutationFunction" {
+				if err := validateFunctionSQL(ext); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -190,8 +201,17 @@ func validateReferencesDirective(ctx base.CompilationContext, def *ast.Definitio
 	refsFields := base.DirectiveArgStrings(dir, base.ArgReferencesFields)
 
 	// 1. Source fields exist
+	// For extension types (no @table/@view), check the provider type instead
+	fieldDef := def
+	isTable := def.Directives.ForName(base.ObjectTableDirectiveName) != nil
+	isView := def.Directives.ForName(base.ObjectViewDirectiveName) != nil
+	if !isTable && !isView {
+		if provDef := ctx.LookupType(def.Name); provDef != nil {
+			fieldDef = provDef
+		}
+	}
 	for _, fieldName := range sourceFields {
-		if !hasField(def, fieldName) {
+		if !hasField(fieldDef, fieldName) {
 			return gqlerror.ErrorPosf(dir.Position,
 				"@references on %q refers to unknown field %q", def.Name, fieldName)
 		}

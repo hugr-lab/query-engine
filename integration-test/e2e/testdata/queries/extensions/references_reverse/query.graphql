@@ -1,0 +1,12 @@
+{
+  local_db {
+    events(filter: { id: { eq: 1 } }) {
+      id
+      name
+      item {
+        id
+        name
+      }
+    }
+  }
+}

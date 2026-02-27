@@ -1,0 +1,13 @@
+extend type Function {
+  test_get(name: String!, value: Int): test_result @module(name: "test")
+    @function(
+      name: "test_get",
+      sql: "test_get_sql([name], [value])",
+      json_cast: true
+    )
+}
+
+type test_result {
+  name: String
+  value: Int
+}

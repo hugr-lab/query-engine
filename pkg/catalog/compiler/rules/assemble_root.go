@@ -33,6 +33,7 @@ func (r *RootTypeAssembler) ProcessAll(ctx base.CompilationContext) error {
 			Description: "Functions",
 			Type:        ast.NamedType("Function", pos),
 			Position:    pos,
+			Directives:  ast.DirectiveList{optsModuleCatalogDirective(ctx.CompileOptions())},
 		})
 	}
 
@@ -61,6 +62,7 @@ func (r *RootTypeAssembler) ProcessAll(ctx base.CompilationContext) error {
 			Description: "Functions",
 			Type:        ast.NamedType("MutationFunction", pos),
 			Position:    pos,
+			Directives:  ast.DirectiveList{optsModuleCatalogDirective(ctx.CompileOptions())},
 		})
 	}
 

@@ -1,0 +1,13 @@
+{
+  "errors": [
+    {
+      "locations": [
+        {
+          "column": 5,
+          "line": 3
+        }
+      ],
+      "message": "Cannot query field \"products\" on type \"_module_pg_store_query\"."
+    }
+  ]
+}

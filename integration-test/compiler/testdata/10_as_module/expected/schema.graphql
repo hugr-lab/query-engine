@@ -479,7 +479,7 @@ enum ModuleObjectType @system {
 }
 type Mutation @system {
   function: MutationFunction @system
-  transport_db: _module_transport_db_mutation
+  transport_db: _module_transport_db_mutation @module_catalog(name: "transport_db")
 }
 type MutationFunction @system
 enum MutationType @system {
@@ -517,7 +517,7 @@ type Query @system {
   Results will be placed in 'extension' field by field or alias name
   """
   jq(query: String!, include_origin: Boolean = false): Query @system
-  transport_db: _module_transport_db_query
+  transport_db: _module_transport_db_query @module_catalog(name: "transport_db")
 }
 enum QueryType @system {
   SELECT
@@ -1536,24 +1536,24 @@ type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
     nested_offset: Int
   ): _Ship_aggregation @aggregation_query(is_bucket: false, name: "Ship") @catalog(name: "transport_db", engine: "duckdb") @field_aggregation(name: "Ship")
 }
-type _module_transport_db_mutation @module_root(name: "transport_db", type: MUTATION) {
+type _module_transport_db_mutation @module_root(name: "transport_db", type: MUTATION) @module_catalog(name: "transport_db") {
   """
   The root mutation object of the module transport_db.transport
   """
-  transport: _module_transport_db_transport_mutation
+  transport: _module_transport_db_transport_mutation @module_catalog(name: "transport_db")
 }
-type _module_transport_db_query @module_root(name: "transport_db", type: QUERY) {
+type _module_transport_db_query @module_root(name: "transport_db", type: QUERY) @module_catalog(name: "transport_db") {
   """
   The root query object of the module transport_db.transport
   """
-  transport: _module_transport_db_transport_query
+  transport: _module_transport_db_transport_query @module_catalog(name: "transport_db")
 }
-type _module_transport_db_transport_air_mutation @module_root(name: "transport_db.transport.air", type: MUTATION) {
+type _module_transport_db_transport_air_mutation @module_root(name: "transport_db.transport.air", type: MUTATION) @module_catalog(name: "transport_db") {
   delete_Flight(filter: Flight_filter): OperationResult @mutation(name: "Flight", type: DELETE, data_input: "") @catalog(name: "transport_db", engine: "duckdb")
   insert_Flight(data: Flight_mut_input_data!): Flight @mutation(name: "Flight", type: INSERT, data_input: "Flight_mut_input_data") @catalog(name: "transport_db", engine: "duckdb")
   update_Flight(filter: Flight_filter, data: Flight_mut_data!): OperationResult @mutation(name: "Flight", type: UPDATE, data_input: "Flight_mut_data") @catalog(name: "transport_db", engine: "duckdb")
 }
-type _module_transport_db_transport_air_query @module_root(name: "transport_db.transport.air", type: QUERY) {
+type _module_transport_db_transport_air_query @module_root(name: "transport_db.transport.air", type: QUERY) @module_catalog(name: "transport_db") {
   Flight(
     """
     Filter
@@ -1640,12 +1640,12 @@ type _module_transport_db_transport_air_query @module_root(name: "transport_db.t
   ): [_Flight_aggregation_bucket] @aggregation_query(name: "Flight", is_bucket: true) @catalog(name: "transport_db", engine: "duckdb")
   Flight_by_pk(id: Int!): Flight @query(name: "Flight", type: SELECT_ONE) @catalog(name: "transport_db", engine: "duckdb")
 }
-type _module_transport_db_transport_ground_mutation @module_root(name: "transport_db.transport.ground", type: MUTATION) {
+type _module_transport_db_transport_ground_mutation @module_root(name: "transport_db.transport.ground", type: MUTATION) @module_catalog(name: "transport_db") {
   delete_Bus(filter: Bus_filter): OperationResult @mutation(name: "Bus", type: DELETE, data_input: "") @catalog(name: "transport_db", engine: "duckdb")
   insert_Bus(data: Bus_mut_input_data!): Bus @mutation(name: "Bus", type: INSERT, data_input: "Bus_mut_input_data") @catalog(name: "transport_db", engine: "duckdb")
   update_Bus(filter: Bus_filter, data: Bus_mut_data!): OperationResult @mutation(name: "Bus", type: UPDATE, data_input: "Bus_mut_data") @catalog(name: "transport_db", engine: "duckdb")
 }
-type _module_transport_db_transport_ground_query @module_root(name: "transport_db.transport.ground", type: QUERY) {
+type _module_transport_db_transport_ground_query @module_root(name: "transport_db.transport.ground", type: QUERY) @module_catalog(name: "transport_db") {
   Bus(
     """
     Filter
@@ -1732,40 +1732,40 @@ type _module_transport_db_transport_ground_query @module_root(name: "transport_d
   ): [_Bus_aggregation_bucket] @aggregation_query(name: "Bus", is_bucket: true) @catalog(name: "transport_db", engine: "duckdb")
   Bus_by_pk(id: Int!): Bus @query(name: "Bus", type: SELECT_ONE) @catalog(name: "transport_db", engine: "duckdb")
 }
-type _module_transport_db_transport_mutation @module_root(name: "transport_db.transport", type: MUTATION) {
+type _module_transport_db_transport_mutation @module_root(name: "transport_db.transport", type: MUTATION) @module_catalog(name: "transport_db") {
   """
   The root mutation object of the module transport_db.transport.air
   """
-  air: _module_transport_db_transport_air_mutation
+  air: _module_transport_db_transport_air_mutation @module_catalog(name: "transport_db")
   """
   The root mutation object of the module transport_db.transport.ground
   """
-  ground: _module_transport_db_transport_ground_mutation
+  ground: _module_transport_db_transport_ground_mutation @module_catalog(name: "transport_db")
   """
   The root mutation object of the module transport_db.transport.sea
   """
-  sea: _module_transport_db_transport_sea_mutation
+  sea: _module_transport_db_transport_sea_mutation @module_catalog(name: "transport_db")
 }
-type _module_transport_db_transport_query @module_root(name: "transport_db.transport", type: QUERY) {
+type _module_transport_db_transport_query @module_root(name: "transport_db.transport", type: QUERY) @module_catalog(name: "transport_db") {
   """
   The root query object of the module transport_db.transport.air
   """
-  air: _module_transport_db_transport_air_query
+  air: _module_transport_db_transport_air_query @module_catalog(name: "transport_db")
   """
   The root query object of the module transport_db.transport.ground
   """
-  ground: _module_transport_db_transport_ground_query
+  ground: _module_transport_db_transport_ground_query @module_catalog(name: "transport_db")
   """
   The root query object of the module transport_db.transport.sea
   """
-  sea: _module_transport_db_transport_sea_query
+  sea: _module_transport_db_transport_sea_query @module_catalog(name: "transport_db")
 }
-type _module_transport_db_transport_sea_mutation @module_root(name: "transport_db.transport.sea", type: MUTATION) {
+type _module_transport_db_transport_sea_mutation @module_root(name: "transport_db.transport.sea", type: MUTATION) @module_catalog(name: "transport_db") {
   delete_Ship(filter: Ship_filter): OperationResult @mutation(name: "Ship", type: DELETE, data_input: "") @catalog(name: "transport_db", engine: "duckdb")
   insert_Ship(data: Ship_mut_input_data!): Ship @mutation(name: "Ship", type: INSERT, data_input: "Ship_mut_input_data") @catalog(name: "transport_db", engine: "duckdb")
   update_Ship(filter: Ship_filter, data: Ship_mut_data!): OperationResult @mutation(name: "Ship", type: UPDATE, data_input: "Ship_mut_data") @catalog(name: "transport_db", engine: "duckdb")
 }
-type _module_transport_db_transport_sea_query @module_root(name: "transport_db.transport.sea", type: QUERY) {
+type _module_transport_db_transport_sea_query @module_root(name: "transport_db.transport.sea", type: QUERY) @module_catalog(name: "transport_db") {
   Ship(
     """
     Filter

@@ -1,0 +1,32 @@
+{
+  "data": {
+    "local_db": {
+      "items": [
+        {
+          "active_products": [
+            {
+              "id": 1,
+              "name": "Laptop Pro",
+              "price": 1299.99,
+              "quantity": 10
+            }
+          ],
+          "id": 1,
+          "name": "Laptop"
+        },
+        {
+          "active_products": [
+            {
+              "id": 2,
+              "name": "Wireless Mouse",
+              "price": 29.99,
+              "quantity": 50
+            }
+          ],
+          "id": 2,
+          "name": "Desktop"
+        }
+      ]
+    }
+  }
+}

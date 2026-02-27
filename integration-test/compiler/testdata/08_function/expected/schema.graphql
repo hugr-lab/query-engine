@@ -609,7 +609,7 @@ type Query @system {
   """
   Functions
   """
-  function: Function @system
+  function: Function @system @module_catalog(name: "airports")
   """
   H3 aggregation query
   """

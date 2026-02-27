@@ -70,11 +70,39 @@ directive @catalog(name: String!, engine: String!) on OBJECT | INPUT_OBJECT | FI
 
 ## DropCatalog
 
-`Provider.DropCatalog(ctx, name, cascade)` removes all types and fields tagged with `@catalog(name: ...)`:
+`Provider.DropCatalog(ctx, name, cascade)` removes all schema artifacts belonging to a catalog. The process runs in 5 steps:
 
-1. Scans all schema types for `@catalog` directive matching the given name
-2. Removes matched definitions (OBJECT, INPUT_OBJECT)
-3. Removes matched fields from extension types (FIELD_DEFINITION, INPUT_FIELD_DEFINITION)
-4. When `cascade=true`, also removes types with `@dependency(name: ...)` matching the catalog
+### Step 1: Collect definitions to drop
 
-This ensures clean removal of an entire catalog including all generated filter, mutation input, and aggregation types.
+- Types with `@catalog(name: ...)` matching the catalog → full drop
+- Types with `@dependency(name: ...)` matching the catalog → cascade drop (requires `cascade=true`)
+- Fields with `@catalog(name: ...)` or `@dependency(name: ...)` → partial drop (field removal)
+- Enum values, interface implementations, union members belonging to the catalog → partial drop
+
+### Step 2: Drop collected definitions
+
+Removes definitions from `schema.Types` and cleans up `PossibleTypes` / `Implements` references.
+
+### Step 3: Partially drop definitions
+
+Removes collected fields, enum values, interfaces, and union members from surviving definitions.
+
+### Step 4: Module catalog cleanup
+
+Handles the many-to-many relationship between modules and catalogs via `@module_catalog`:
+
+- Removes `@module_catalog(name: "dropped")` directives from all types and fields
+- Deletes `@module_root` types that have no remaining `@module_catalog` directives
+- Deletes fields that have no remaining `@module_catalog` directives (were previously tracked)
+
+This ensures shared module types survive when only one of their contributing catalogs is removed.
+
+### Step 5: Orphan cleanup
+
+Iteratively removes dangling references left by type deletions:
+
+- Fields whose target type no longer exists in the schema
+- Empty `@module_root` types (0 fields remaining)
+- Repeats until stable (cascading orphans are handled)
+
+This is a safety net for edge cases not covered by explicit directive tracking.

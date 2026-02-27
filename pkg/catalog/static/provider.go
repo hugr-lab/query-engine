@@ -165,9 +165,9 @@ func (p *Provider) DropCatalog(ctx context.Context, name string, cascade bool) e
 			ifaces        []string
 			possibleTypes []string
 		}{}
-		// Drop fields that belong to the catalog
+		// Drop fields that belong to the catalog or depend on it
 		for _, field := range def.Fields {
-			if base.FieldDefCatalog(field) == name {
+			if base.FieldDefCatalog(field) == name || base.FieldDefDependency(field) == name {
 				patrial.fields = append(patrial.fields, field.Name)
 			}
 		}
@@ -175,36 +175,35 @@ func (p *Provider) DropCatalog(ctx context.Context, name string, cascade bool) e
 		// enum values that belong to the catalog
 		for _, enumValue := range def.EnumValues {
 			if base.EnumValueCatalog(enumValue) == name {
-				if err := p.DropEnumValue(ctx, defName, enumValue.Name); err != nil {
-					return err
-				}
+				patrial.enumValues = append(patrial.enumValues, enumValue.Name)
 			}
 		}
 
 		// interface implementations that belong to the catalog
-		for _, name := range def.Interfaces {
-			iface := p.schema.Types[name]
+		for _, ifName := range def.Interfaces {
+			iface := p.schema.Types[ifName]
 			if iface == nil {
 				continue
 			}
 			if base.DefinitionCatalog(iface) == name {
-				def.Interfaces = slices.DeleteFunc(def.Interfaces, func(i string) bool {
-					return i == name
-				})
+				patrial.ifaces = append(patrial.ifaces, ifName)
 			}
 		}
 
 		// possible types that belong to the catalog
-		for _, name := range def.Types {
-			possible := p.schema.Types[name]
+		for _, tName := range def.Types {
+			possible := p.schema.Types[tName]
 			if possible == nil {
 				continue
 			}
 			if base.DefinitionCatalog(possible) == name {
-				def.Types = slices.DeleteFunc(def.Types, func(i string) bool {
-					return i == name
-				})
+				patrial.possibleTypes = append(patrial.possibleTypes, tName)
 			}
+		}
+
+		if len(patrial.fields) > 0 || len(patrial.enumValues) > 0 ||
+			len(patrial.ifaces) > 0 || len(patrial.possibleTypes) > 0 {
+			patriallyDropped[defName] = patrial
 		}
 	}
 	// 2. drop definitions
@@ -253,7 +252,85 @@ func (p *Provider) DropCatalog(ctx context.Context, name string, cascade bool) e
 		}
 	}
 
+	// Step 4: Module catalog cleanup — handle many-to-many module/catalog tracking.
+	// Remove @module_catalog(name: "dropped") from types and fields.
+	// Delete module types/wiring fields when no catalogs remain.
+	for defName, def := range p.schema.Types {
+		if def.Kind != ast.Object {
+			continue
+		}
+		// Remove matching @module_catalog from the definition
+		hadModCat := len(def.Directives.ForNames(base.ModuleCatalogDirectiveName)) > 0
+		def.Directives = slices.DeleteFunc(def.Directives, func(d *ast.Directive) bool {
+			return d.Name == base.ModuleCatalogDirectiveName &&
+				base.DirectiveArgString(d, "name") == name
+		})
+		// If @module_root type lost all @module_catalog → delete it
+		if hadModCat && def.Directives.ForName("module_root") != nil &&
+			len(def.Directives.ForNames(base.ModuleCatalogDirectiveName)) == 0 {
+			p.deleteType(defName)
+			continue
+		}
+		// Remove matching @module_catalog from fields
+		def.Fields = slices.DeleteFunc(def.Fields, func(f *ast.FieldDefinition) bool {
+			hadFieldModCat := len(f.Directives.ForNames(base.ModuleCatalogDirectiveName)) > 0
+			if !hadFieldModCat {
+				return false
+			}
+			f.Directives = slices.DeleteFunc(f.Directives, func(d *ast.Directive) bool {
+				return d.Name == base.ModuleCatalogDirectiveName &&
+					base.DirectiveArgString(d, "name") == name
+			})
+			// If field lost all @module_catalog → remove it
+			return len(f.Directives.ForNames(base.ModuleCatalogDirectiveName)) == 0
+		})
+	}
+
+	// Step 5: Orphan cleanup — iteratively remove dangling references.
+	// Handles fields pointing to deleted types and empty @module_root types.
+	for {
+		changed := false
+		for defName, def := range p.schema.Types {
+			if def.Kind != ast.Object {
+				continue
+			}
+			// Remove fields whose type no longer exists
+			origLen := len(def.Fields)
+			def.Fields = slices.DeleteFunc(def.Fields, func(f *ast.FieldDefinition) bool {
+				return !isKnownType(p.schema, f.Type.Name())
+			})
+			if len(def.Fields) != origLen {
+				changed = true
+			}
+			// Drop empty @module_root types
+			if len(def.Fields) == 0 && def.Directives.ForName("module_root") != nil {
+				p.deleteType(defName)
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+
 	return nil
+}
+
+// deleteType removes a type from the schema and cleans up PossibleTypes/Implements references.
+func (p *Provider) deleteType(defName string) {
+	delete(p.schema.Types, defName)
+	for k, defs := range p.schema.PossibleTypes {
+		p.schema.PossibleTypes[k] = slices.DeleteFunc(defs, func(d *ast.Definition) bool {
+			return d.Name == defName
+		})
+	}
+	for k := range p.schema.Implements {
+		p.schema.Implements[k] = slices.DeleteFunc(p.schema.Implements[k], func(d *ast.Definition) bool {
+			return d.Name == defName
+		})
+	}
+	delete(p.schema.Implements, defName)
+	delete(p.schema.PossibleTypes, defName)
 }
 
 func (p *Provider) DropDefinition(ctx context.Context, name string) error {

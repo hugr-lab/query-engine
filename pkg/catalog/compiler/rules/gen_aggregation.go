@@ -50,7 +50,7 @@ func (r *AggregationRule) Process(ctx base.CompilationContext, def *ast.Definiti
 
 	// 3. Generate sub-aggregation type (scalar fields only — ExtraFieldRule adds extra fields later)
 	subAggName := aggTypeNameAtDepth(def.Name, 1)
-	ensureSubAggregationTypeNoExtra(ctx, def.Name, subAggName, 1, pos)
+	ensureSubAggregationTypeNoExtra(ctx, def.Name, subAggName, 1, opts, pos)
 
 	// 3b. Add aggregation fields for @join and @table_function_call_join fields
 	addVirtualFieldAggregations(ctx, def, aggName, opts, pos)

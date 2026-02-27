@@ -41,6 +41,22 @@ func (r *FunctionCallValidator) ProcessAll(ctx base.CompilationContext) error {
 			}
 		}
 	}
+
+	// Also validate @function_call/@table_function_call_join fields in output extensions.
+	// Extension fields targeting provider types (e.g., ext_bridge adding test_info to
+	// local_db_items) are not in ctx.Objects() — they live in output extensions.
+	// We need to propagate @catalog from function definitions to these fields too.
+	for ext := range ctx.OutputExtensions() {
+		def := ctx.LookupType(ext.Name)
+		if def == nil {
+			continue
+		}
+		for _, f := range ext.Fields {
+			if err := validateFuncCallField(ctx, def, f, funcRegistry); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -68,20 +84,52 @@ func buildFuncRegistry(ctx base.CompilationContext) map[string]*ast.FieldDefinit
 		parts := strings.Split(info.Module, ".")
 		for i := len(parts); i > 0; i-- {
 			mod := strings.Join(parts[:i], ".")
-			modFuncTypeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_function"
-			if !checked[modFuncTypeName] {
-				checked[modFuncTypeName] = true
-				collectFuncsFromType(ctx, modFuncTypeName, registry)
+			collectModuleFuncs(ctx, mod, checked, registry)
+		}
+	}
+
+	// Also collect functions from modules referenced by extension @function_call fields.
+	// Extension sources may reference functions from other catalogs via module attribute.
+	for ext := range ctx.OutputExtensions() {
+		for _, f := range ext.Fields {
+			mod := extractFuncCallModule(f)
+			if mod == "" {
+				continue
 			}
-			modMutFuncTypeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_mutation_function"
-			if !checked[modMutFuncTypeName] {
-				checked[modMutFuncTypeName] = true
-				collectFuncsFromType(ctx, modMutFuncTypeName, registry)
+			parts := strings.Split(mod, ".")
+			for i := len(parts); i > 0; i-- {
+				m := strings.Join(parts[:i], ".")
+				collectModuleFuncs(ctx, m, checked, registry)
 			}
 		}
 	}
 
 	return registry
+}
+
+// collectModuleFuncs collects function fields from a module's function and mutation function types.
+func collectModuleFuncs(ctx base.CompilationContext, mod string, checked map[string]bool, registry map[string]*ast.FieldDefinition) {
+	modFuncTypeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_function"
+	if !checked[modFuncTypeName] {
+		checked[modFuncTypeName] = true
+		collectFuncsFromType(ctx, modFuncTypeName, registry)
+	}
+	modMutFuncTypeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_mutation_function"
+	if !checked[modMutFuncTypeName] {
+		checked[modMutFuncTypeName] = true
+		collectFuncsFromType(ctx, modMutFuncTypeName, registry)
+	}
+}
+
+// extractFuncCallModule returns the module name from a @function_call or @table_function_call_join directive.
+func extractFuncCallModule(f *ast.FieldDefinition) string {
+	if d := f.Directives.ForName(base.FunctionCallDirectiveName); d != nil {
+		return base.DirectiveArgString(d, base.ArgModule)
+	}
+	if d := f.Directives.ForName(base.FunctionCallTableJoinDirectiveName); d != nil {
+		return base.DirectiveArgString(d, base.ArgModule)
+	}
+	return ""
 }
 
 func collectFuncsFromType(ctx base.CompilationContext, typeName string, registry map[string]*ast.FieldDefinition) {

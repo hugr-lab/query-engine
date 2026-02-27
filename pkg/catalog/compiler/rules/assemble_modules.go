@@ -131,6 +131,8 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 	//   2. Exists in provider (from another catalog) → extend it
 	//   3. Not found → create new definition
 
+	modCatDir := optsModuleCatalogDirective(ctx.CompileOptions())
+
 	ensured := make(map[string]bool)
 	ensureType := func(typeName, mod, modRootType string) {
 		if ensured[typeName] {
@@ -138,7 +140,13 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 		}
 		ensured[typeName] = true
 		if ctx.LookupType(typeName) != nil {
-			// Exists in provider — will add fields via extension
+			// Exists in provider — add @module_catalog via extension to track this catalog
+			ctx.AddExtension(&ast.Definition{
+				Kind:       ast.Object,
+				Name:       typeName,
+				Position:   pos,
+				Directives: ast.DirectiveList{modCatDir},
+			})
 			return
 		}
 		ctx.AddDefinition(&ast.Definition{
@@ -150,6 +158,7 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 					{Name: "name", Value: &ast.Value{Raw: mod, Kind: ast.StringValue, Position: pos}, Position: pos},
 					{Name: "type", Value: &ast.Value{Raw: modRootType, Kind: ast.EnumValue, Position: pos}, Position: pos},
 				}, Position: pos},
+				modCatDir,
 			},
 		})
 	}
@@ -165,6 +174,15 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 		if def := ctx.LookupType(parentTypeName); def != nil {
 			for _, f := range def.Fields {
 				if f.Name == childName {
+					// Field exists — merge @module_catalog via extension
+					ctx.AddExtension(&ast.Definition{
+						Kind:     ast.Object,
+						Name:     parentTypeName,
+						Position: pos,
+						Fields: ast.FieldList{
+							{Name: childName, Directives: ast.DirectiveList{modCatDir}},
+						},
+					})
 					return
 				}
 			}
@@ -174,7 +192,8 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 			Name:     parentTypeName,
 			Position: pos,
 			Fields: ast.FieldList{
-				{Name: childName, Description: desc, Type: ast.NamedType(childTypeName, pos), Position: pos},
+				{Name: childName, Description: desc, Type: ast.NamedType(childTypeName, pos), Position: pos,
+					Directives: ast.DirectiveList{modCatDir}},
 			},
 		})
 	}
@@ -209,7 +228,8 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 		if !rootWired["query."+topMod] {
 			rootWired["query."+topMod] = true
 			ctx.RegisterQueryFields("_module_"+topMod, []*ast.FieldDefinition{
-				{Name: topMod, Type: ast.NamedType(childTypeName, pos), Position: pos},
+				{Name: topMod, Type: ast.NamedType(childTypeName, pos), Position: pos,
+					Directives: ast.DirectiveList{modCatDir}},
 			})
 		}
 	}
@@ -242,7 +262,8 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 		if !rootWired["mutation."+topMod] {
 			rootWired["mutation."+topMod] = true
 			ctx.RegisterMutationFields("_module_"+topMod, []*ast.FieldDefinition{
-				{Name: topMod, Type: ast.NamedType(childTypeName, pos), Position: pos},
+				{Name: topMod, Type: ast.NamedType(childTypeName, pos), Position: pos,
+					Directives: ast.DirectiveList{modCatDir}},
 			})
 		}
 	}
@@ -281,7 +302,8 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 				Kind: ast.Object, Name: "Function", Position: pos,
 				Fields: ast.FieldList{
 					{Name: topMod, Description: "The root function object of the module " + topMod,
-						Type: ast.NamedType(childTypeName, pos), Position: pos},
+						Type: ast.NamedType(childTypeName, pos), Position: pos,
+						Directives: ast.DirectiveList{modCatDir}},
 				},
 			})
 		}
@@ -318,7 +340,8 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 				Kind: ast.Object, Name: "MutationFunction", Position: pos,
 				Fields: ast.FieldList{
 					{Name: topMod, Description: "The root mutation function object of the module " + topMod,
-						Type: ast.NamedType(childTypeName, pos), Position: pos},
+						Type: ast.NamedType(childTypeName, pos), Position: pos,
+						Directives: ast.DirectiveList{modCatDir}},
 				},
 			})
 		}
@@ -406,6 +429,18 @@ func replaceOrAddQueryDirective(def *ast.Definition, queryType, name string, pos
 		{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue, Position: pos}, Position: pos},
 		{Name: "type", Value: &ast.Value{Raw: queryType, Kind: ast.EnumValue, Position: pos}, Position: pos},
 	}, Position: pos})
+}
+
+// optsModuleCatalogDirective creates a @module_catalog directive from compile options.
+func optsModuleCatalogDirective(opts base.Options) *ast.Directive {
+	pos := compiledPos("module_catalog")
+	return &ast.Directive{
+		Name: base.ModuleCatalogDirectiveName,
+		Arguments: ast.ArgumentList{
+			{Name: "name", Value: &ast.Value{Raw: opts.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
+		},
+		Position: pos,
+	}
 }
 
 // funcAggQueryDirective creates an @aggregation_query directive for a function aggregation field.

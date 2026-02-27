@@ -8,6 +8,10 @@
             "type": "duckdb"
           },
           {
+            "name": "ext_bridge",
+            "type": "duckdb"
+          },
+          {
             "name": "local_db",
             "type": "duckdb"
           },

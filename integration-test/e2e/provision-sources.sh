@@ -36,8 +36,12 @@ gql 'mutation { core { insert_data_sources(data: { name: \"local_db\", prefix: \
 echo "  Registering rest_api..."
 gql 'mutation { core { insert_data_sources(data: { name: \"rest_api\", prefix: \"rest_api\", type: \"http\", path: \"http://http-service:17000\", as_module: true, catalogs: [{ name: \"rest_api\", type: \"localFS\", path: \"/workspace/schemas/rest_api\" }] }) { name } } }'
 
-# 4. Load all sources
-for src in pg_store local_db rest_api; do
+# 4. Add extension data source (bridges local_db items and events)
+echo "  Registering ext_bridge..."
+gql 'mutation { core { insert_data_sources(data: { name: \"ext_bridge\", prefix: \"ext_bridge\", type: \"extension\", path: \"\", as_module: false, catalogs: [{ name: \"ext_bridge\", type: \"localFS\", path: \"/workspace/schemas/ext_bridge\" }] }) { name } } }'
+
+# 5. Load all sources (ext_bridge must load after its dependencies)
+for src in pg_store local_db rest_api ext_bridge; do
   echo "  Loading $src..."
   gql "mutation { function { core { load_data_source(name: \\\"$src\\\") { success message } } } }"
 done

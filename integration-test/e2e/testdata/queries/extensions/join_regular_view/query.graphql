@@ -1,0 +1,14 @@
+{
+  local_db {
+    items(filter: { id: { in: [1, 2] } }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+      active_products(order_by: [{field: "id", direction: ASC}]) {
+        id
+        name
+        price
+        quantity
+      }
+    }
+  }
+}

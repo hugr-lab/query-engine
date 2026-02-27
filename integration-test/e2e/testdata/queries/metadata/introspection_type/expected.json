@@ -162,6 +162,27 @@
             "kind": "OBJECT",
             "name": "_join"
           }
+        },
+        {
+          "name": "matching_items",
+          "type": {
+            "kind": "LIST",
+            "name": null
+          }
+        },
+        {
+          "name": "matching_items_aggregation",
+          "type": {
+            "kind": "OBJECT",
+            "name": "_local_db_items_aggregation"
+          }
+        },
+        {
+          "name": "matching_items_bucket_aggregation",
+          "type": {
+            "kind": "LIST",
+            "name": null
+          }
         }
       ],
       "kind": "OBJECT",

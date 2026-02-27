@@ -478,9 +478,9 @@ enum ModuleObjectType @system {
   QUERY
 }
 type Mutation @system {
-  analytics: _module_analytics_mutation
+  analytics: _module_analytics_mutation @module_catalog(name: "analytics")
   function: MutationFunction @system
-  pg_crm: _module_pg_crm_mutation
+  pg_crm: _module_pg_crm_mutation @module_catalog(name: "pg_crm")
 }
 type MutationFunction @system
 enum MutationType @system {
@@ -503,7 +503,7 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  analytics: _module_analytics_query
+  analytics: _module_analytics_query @module_catalog(name: "analytics")
   function: Function @system
   """
   H3 aggregation query
@@ -519,7 +519,7 @@ type Query @system {
   Results will be placed in 'extension' field by field or alias name
   """
   jq(query: String!, include_origin: Boolean = false): Query @system
-  pg_crm: _module_pg_crm_query
+  pg_crm: _module_pg_crm_query @module_catalog(name: "pg_crm")
 }
 enum QueryType @system {
   SELECT
@@ -1301,12 +1301,12 @@ type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
     nested_offset: Int
   ): _Event_aggregation @aggregation_query(is_bucket: false, name: "Event") @catalog(name: "analytics", engine: "duckdb") @field_aggregation(name: "Event")
 }
-type _module_analytics_analytics_mutation @module_root(name: "analytics.analytics", type: MUTATION) {
+type _module_analytics_analytics_mutation @module_root(name: "analytics.analytics", type: MUTATION) @module_catalog(name: "analytics") {
   delete_Event(filter: Event_filter): OperationResult @mutation(name: "Event", type: DELETE, data_input: "") @catalog(name: "analytics", engine: "duckdb")
   insert_Event(data: Event_mut_input_data!): Event @mutation(name: "Event", type: INSERT, data_input: "Event_mut_input_data") @catalog(name: "analytics", engine: "duckdb")
   update_Event(filter: Event_filter, data: Event_mut_data!): OperationResult @mutation(name: "Event", type: UPDATE, data_input: "Event_mut_data") @catalog(name: "analytics", engine: "duckdb")
 }
-type _module_analytics_analytics_query @module_root(name: "analytics.analytics", type: QUERY) {
+type _module_analytics_analytics_query @module_root(name: "analytics.analytics", type: QUERY) @module_catalog(name: "analytics") {
   Event(
     """
     Filter
@@ -1393,24 +1393,24 @@ type _module_analytics_analytics_query @module_root(name: "analytics.analytics",
   ): [_Event_aggregation_bucket] @aggregation_query(name: "Event", is_bucket: true) @catalog(name: "analytics", engine: "duckdb")
   Event_by_pk(id: BigInt!): Event @query(name: "Event", type: SELECT_ONE) @catalog(name: "analytics", engine: "duckdb")
 }
-type _module_analytics_mutation @module_root(name: "analytics", type: MUTATION) {
+type _module_analytics_mutation @module_root(name: "analytics", type: MUTATION) @module_catalog(name: "analytics") {
   """
   The root mutation object of the module analytics.analytics
   """
-  analytics: _module_analytics_analytics_mutation
+  analytics: _module_analytics_analytics_mutation @module_catalog(name: "analytics")
 }
-type _module_analytics_query @module_root(name: "analytics", type: QUERY) {
+type _module_analytics_query @module_root(name: "analytics", type: QUERY) @module_catalog(name: "analytics") {
   """
   The root query object of the module analytics.analytics
   """
-  analytics: _module_analytics_analytics_query
+  analytics: _module_analytics_analytics_query @module_catalog(name: "analytics")
 }
-type _module_pg_crm_crm_mutation @module_root(name: "pg_crm.crm", type: MUTATION) {
+type _module_pg_crm_crm_mutation @module_root(name: "pg_crm.crm", type: MUTATION) @module_catalog(name: "pg_crm") {
   delete_Customer(filter: Customer_filter): OperationResult @mutation(name: "Customer", type: DELETE, data_input: "") @catalog(name: "pg_crm", engine: "postgres")
   insert_Customer(data: Customer_mut_input_data!): Customer @mutation(name: "Customer", type: INSERT, data_input: "Customer_mut_input_data") @catalog(name: "pg_crm", engine: "postgres")
   update_Customer(filter: Customer_filter, data: Customer_mut_data!): OperationResult @mutation(name: "Customer", type: UPDATE, data_input: "Customer_mut_data") @catalog(name: "pg_crm", engine: "postgres")
 }
-type _module_pg_crm_crm_query @module_root(name: "pg_crm.crm", type: QUERY) {
+type _module_pg_crm_crm_query @module_root(name: "pg_crm.crm", type: QUERY) @module_catalog(name: "pg_crm") {
   Customer(
     """
     Filter
@@ -1497,17 +1497,17 @@ type _module_pg_crm_crm_query @module_root(name: "pg_crm.crm", type: QUERY) {
   ): [_Customer_aggregation_bucket] @aggregation_query(name: "Customer", is_bucket: true) @catalog(name: "pg_crm", engine: "postgres")
   Customer_by_pk(id: Int!): Customer @query(name: "Customer", type: SELECT_ONE) @catalog(name: "pg_crm", engine: "postgres")
 }
-type _module_pg_crm_mutation @module_root(name: "pg_crm", type: MUTATION) {
+type _module_pg_crm_mutation @module_root(name: "pg_crm", type: MUTATION) @module_catalog(name: "pg_crm") {
   """
   The root mutation object of the module pg_crm.crm
   """
-  crm: _module_pg_crm_crm_mutation
+  crm: _module_pg_crm_crm_mutation @module_catalog(name: "pg_crm")
 }
-type _module_pg_crm_query @module_root(name: "pg_crm", type: QUERY) {
+type _module_pg_crm_query @module_root(name: "pg_crm", type: QUERY) @module_catalog(name: "pg_crm") {
   """
   The root query object of the module pg_crm.crm
   """
-  crm: _module_pg_crm_crm_query
+  crm: _module_pg_crm_crm_query @module_catalog(name: "pg_crm")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

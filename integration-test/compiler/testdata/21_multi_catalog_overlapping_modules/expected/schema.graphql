@@ -573,7 +573,7 @@ enum ModuleObjectType @system {
   QUERY
 }
 type Mutation @system {
-  crm: _module_crm_mutation
+  crm: _module_crm_mutation @module_catalog(name: "pg_crm") @module_catalog(name: "support")
   function: MutationFunction @system
 }
 type MutationFunction @system
@@ -637,7 +637,7 @@ input Order_mut_input_data @data_input(name: "Order") @catalog(name: "pg_crm", e
   total: Float
 }
 type Query @system {
-  crm: _module_crm_query
+  crm: _module_crm_query @module_catalog(name: "pg_crm") @module_catalog(name: "support")
   function: Function @system
   """
   H3 aggregation query
@@ -1802,7 +1802,7 @@ type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
     nested_offset: Int
   ): _Ticket_aggregation @aggregation_query(is_bucket: false, name: "Ticket") @catalog(name: "support", engine: "duckdb") @field_aggregation(name: "Ticket")
 }
-type _module_crm_mutation @module_root(name: "crm", type: MUTATION) {
+type _module_crm_mutation @module_root(name: "crm", type: MUTATION) @module_catalog(name: "pg_crm") @module_catalog(name: "support") {
   delete_Customer(filter: Customer_filter): OperationResult @mutation(name: "Customer", type: DELETE, data_input: "") @catalog(name: "pg_crm", engine: "duckdb")
   delete_Order(filter: Order_filter): OperationResult @mutation(name: "Order", type: DELETE, data_input: "") @catalog(name: "pg_crm", engine: "duckdb")
   delete_Ticket(filter: Ticket_filter): OperationResult @mutation(name: "Ticket", type: DELETE, data_input: "") @catalog(name: "support", engine: "duckdb")
@@ -1813,7 +1813,7 @@ type _module_crm_mutation @module_root(name: "crm", type: MUTATION) {
   update_Order(filter: Order_filter, data: Order_mut_data!): OperationResult @mutation(name: "Order", type: UPDATE, data_input: "Order_mut_data") @catalog(name: "pg_crm", engine: "duckdb")
   update_Ticket(filter: Ticket_filter, data: Ticket_mut_data!): OperationResult @mutation(name: "Ticket", type: UPDATE, data_input: "Ticket_mut_data") @catalog(name: "support", engine: "duckdb")
 }
-type _module_crm_query @module_root(name: "crm", type: QUERY) {
+type _module_crm_query @module_root(name: "crm", type: QUERY) @module_catalog(name: "pg_crm") @module_catalog(name: "support") {
   Customer(
     """
     Filter

@@ -1,0 +1,10 @@
+type Product @table(name: "products") {
+  id: Int! @pk
+  name: String!
+  price: Float
+}
+
+extend type Function {
+  calculate_discount(product_id: Int!, quantity: Int = 1): Float
+    @function(name: "calculate_discount")
+}

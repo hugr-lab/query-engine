@@ -70,7 +70,7 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 
 	err = s.Register(ctx, item.Name, ds)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	return s.Attach(ctx, item.Name)
