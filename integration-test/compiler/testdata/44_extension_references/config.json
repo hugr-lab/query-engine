@@ -1,0 +1,23 @@
+{
+  "catalogs": [
+    {
+      "file": "01_customers.graphql",
+      "name": "customers",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "02_orders.graphql",
+      "name": "orders",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "03_extension.graphql",
+      "name": "ext_bridge",
+      "engine": "duckdb",
+      "is_extension": true,
+      "capabilities": "duckdb_cross_catalog"
+    }
+  ]
+}

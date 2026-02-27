@@ -3,6 +3,10 @@
     "core": {
       "data_sources": [
         {
+          "name": "ext_bridge",
+          "type": "extension"
+        },
+        {
           "name": "local_db",
           "type": "duckdb"
         },

@@ -1,0 +1,5 @@
+type Customer @table(name: "customers") {
+  id: Int! @pk
+  name: String!
+  email: String!
+}

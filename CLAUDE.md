@@ -35,9 +35,9 @@ tests/
 Go 1.25: Follow standard conventions
 
 ## Recent Changes
+- 008-extension-compiler: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag), `pkg/types` (runtime parsing)
 - 001-sources-cleanup-docs: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag for tests), `crypto/sha256` (version hashing)
 - 008-sdl-migration: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag), `pkg/types` (runtime parsing)
-- 007-static-provider-init: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST parsing/validation), `pkg/schema/compiler/base` (system SDL sources), `pkg/schema/types` (scalar registry)
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -1,0 +1,16 @@
+{
+  local_db {
+    events(filter: { id: { in: [1, 2, 3] } }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+      item(order_by: [{field: "id", direction: ASC}]) {
+        id
+        name
+        specs {
+          cpu
+          ram_gb
+        }
+      }
+    }
+  }
+}

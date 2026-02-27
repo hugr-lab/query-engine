@@ -1095,7 +1095,7 @@ type Query @system {
   """
   Functions
   """
-  function: Function @system
+  function: Function @system @module_catalog(name: "store")
   """
   H3 aggregation query
   """

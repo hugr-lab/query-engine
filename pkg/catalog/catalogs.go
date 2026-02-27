@@ -3,6 +3,8 @@ package catalog
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"slices"
 	"sync"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
@@ -36,8 +38,10 @@ func (c *memoryCatalog) SetProvider(p Provider) {
 }
 
 type registeredCatalog struct {
-	source  Catalog
-	version string
+	source       Catalog
+	version      string
+	dependencies []string // catalogs this one depends on (from compilation)
+	suspended    bool     // true when removed from provider because a dependency was removed
 }
 
 var (
@@ -49,30 +53,35 @@ var (
 func (c *memoryCatalog) AddCatalog(ctx context.Context, name string, catalog Catalog) (err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_, ok := c.catalogs[name]
-	if ok {
+	if reg, ok := c.catalogs[name]; ok && !reg.suspended {
 		return ErrCatalogAlreadyExists
 	}
 
-	c.catalogs[name] = registeredCatalog{source: catalog}
-	err = c.incrementalUpdate(ctx, catalog)
+	deps, err := c.compileAndApply(ctx, name, catalog)
 	if err != nil {
-		delete(c.catalogs, name)
 		return err
 	}
+	slog.Info("catalog added", "catalog", name, "dependencies", deps)
+	c.catalogs[name] = registeredCatalog{source: catalog, dependencies: deps}
+
+	// Re-activate any suspended catalogs whose dependencies are now all satisfied.
+	c.reactivateSuspended(ctx)
 	return nil
 }
 
 func (c *memoryCatalog) RemoveCatalog(ctx context.Context, name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_, ok := c.catalogs[name]
+	reg, ok := c.catalogs[name]
 	if !ok {
 		return ErrCatalogNotFound
 	}
-	err := c.removeCatalog(ctx, name)
-	if err != nil {
-		return err
+
+	// Suspend dependent catalogs first (remove from provider, keep source for re-activation).
+	c.suspendDependents(ctx, name)
+
+	if !reg.suspended {
+		_ = c.removeCatalog(ctx, name)
 	}
 	delete(c.catalogs, name)
 	return nil
@@ -85,17 +94,78 @@ func (c *memoryCatalog) ExistsCatalog(name string) bool {
 	return ok
 }
 
-func (c *memoryCatalog) incrementalUpdate(ctx context.Context, catalog Catalog) error {
+// compileAndApply compiles a catalog and applies it to the provider.
+// Returns the list of dependencies extracted from the compiled output.
+func (c *memoryCatalog) compileAndApply(ctx context.Context, name string, catalog Catalog) ([]string, error) {
 	p, ok := c.provider.(base.MutableProvider)
 	if !ok {
-		return errors.New("catalog provider does not support mutable operations, cannot update catalog")
+		return nil, errors.New("catalog provider does not support mutable operations, cannot update catalog")
 	}
-	// no change support, replace whole catalog
 	compiled, err := c.compiler.Compile(ctx, p, catalog, catalog.CompileOptions())
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return p.Update(ctx, compiled)
+	if err := p.Update(ctx, compiled); err != nil {
+		return nil, err
+	}
+
+	// Extract dependencies if available.
+	var deps []string
+	if dc, ok := compiled.(base.DependentCompiledCatalog); ok {
+		deps = dc.Dependencies()
+	}
+	return deps, nil
+}
+
+// suspendDependents finds all catalogs that depend on the given catalog name,
+// drops them from the provider, and marks them as suspended.
+func (c *memoryCatalog) suspendDependents(ctx context.Context, name string) {
+	for depName, reg := range c.catalogs {
+		if reg.suspended || !slices.Contains(reg.dependencies, name) {
+			continue
+		}
+		slog.Info("suspending dependent catalog", "catalog", depName, "dependency", name, "deps", reg.dependencies)
+		// Drop from provider (best-effort: types may already be partially gone).
+		_ = c.removeCatalog(ctx, depName)
+		reg.suspended = true
+		c.catalogs[depName] = reg
+	}
+}
+
+// reactivateSuspended re-compiles and re-applies any suspended catalogs
+// whose dependencies are all present and non-suspended.
+func (c *memoryCatalog) reactivateSuspended(ctx context.Context) {
+	for name, reg := range c.catalogs {
+		if !reg.suspended {
+			continue
+		}
+		if !c.allDependenciesSatisfied(reg.dependencies) {
+			slog.Info("skipping reactivation: dependencies not satisfied", "catalog", name, "deps", reg.dependencies)
+			continue
+		}
+		slog.Info("reactivating suspended catalog", "catalog", name, "deps", reg.dependencies)
+		deps, err := c.compileAndApply(ctx, name, reg.source)
+		if err != nil {
+			slog.Error("failed to reactivate catalog", "catalog", name, "error", err)
+			continue // leave suspended on error
+		}
+		slog.Info("catalog reactivated successfully", "catalog", name, "deps", deps)
+		reg.suspended = false
+		reg.dependencies = deps
+		c.catalogs[name] = reg
+	}
+}
+
+// allDependenciesSatisfied returns true if all dependency catalogs
+// exist in the map and are not themselves suspended.
+func (c *memoryCatalog) allDependenciesSatisfied(deps []string) bool {
+	for _, dep := range deps {
+		reg, ok := c.catalogs[dep]
+		if !ok || reg.suspended {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *memoryCatalog) removeCatalog(ctx context.Context, name string) error {

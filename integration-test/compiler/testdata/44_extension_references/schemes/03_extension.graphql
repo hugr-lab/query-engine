@@ -1,0 +1,13 @@
+extend type Order
+  @dependency(name: "orders")
+  @dependency(name: "customers")
+  @references(
+    name: "order_customer"
+    references_name: "Customer"
+    source_fields: ["customer_id"]
+    references_fields: ["id"]
+    query: "customer"
+    references_query: "orders"
+  ) {
+  _stub: String
+}

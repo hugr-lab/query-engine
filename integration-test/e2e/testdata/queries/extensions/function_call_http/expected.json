@@ -1,0 +1,16 @@
+{
+  "data": {
+    "local_db": {
+      "items": [
+        {
+          "id": 1,
+          "name": "Laptop",
+          "test_info": {
+            "name": "Laptop",
+            "value": 1
+          }
+        }
+      ]
+    }
+  }
+}

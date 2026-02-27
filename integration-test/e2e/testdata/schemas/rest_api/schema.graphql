@@ -1,5 +1,5 @@
 extend type Function {
-  test_get(name: String!, value: Int): test_result @module(name: "test")
+  test_get(name: String!, value: BigInt): test_result @module(name: "test")
     @function(
       name: "test_get",
       sql: """
@@ -16,7 +16,7 @@ extend type Function {
       json_cast: true
     )
 
-  test_post(name: String!, value: Int): test_result @module(name: "test")
+  test_post(name: String!, value: BigInt): test_result @module(name: "test")
     @function(
       name: "test_post",
       sql: """

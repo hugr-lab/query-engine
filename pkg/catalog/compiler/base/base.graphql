@@ -41,6 +41,13 @@ directive @dependency(
 	name: String!
 ) repeatable on OBJECT
 
+# Track which catalogs contribute to a module type or wiring field.
+# Many-to-many: multiple catalogs can share a module. On catalog unload,
+# remove the matching directive; delete the type/field only when none remain.
+directive @module_catalog(
+	name: String!
+) repeatable on OBJECT | FIELD_DEFINITION
+
 # The argument is named
 directive @named(name: String) on INPUT_FIELD_DEFINITION 
 

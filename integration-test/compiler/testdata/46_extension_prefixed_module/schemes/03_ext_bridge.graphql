@@ -1,0 +1,35 @@
+# Extension: @join from pg_store to local_db
+extend type pg_store_products
+  @dependency(name: "pg_store")
+  @dependency(name: "local_db") {
+  matching_items: [local_db_items] @join(
+    references_name: "local_db_items"
+    source_fields: ["id"]
+    references_fields: ["id"]
+  )
+}
+
+# Extension: @references between local_db types
+extend type local_db_items
+  @dependency(name: "local_db")
+  @references(
+    name: "item_event"
+    references_name: "local_db_events"
+    source_fields: ["id"]
+    references_fields: ["id"]
+    query: "event"
+    references_query: "item"
+  ) {
+  _stub: String
+}
+
+# Extension: @function_call from rest_api to local_db
+extend type local_db_items
+  @dependency(name: "local_db")
+  @dependency(name: "rest_api") {
+  test_info: rest_api_test_result @function_call(
+    references_name: "test_get"
+    args: { name: "name", value: "id" }
+    module: "rest_api.test"
+  )
+}

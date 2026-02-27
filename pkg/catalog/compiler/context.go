@@ -3,6 +3,7 @@ package compiler
 import (
 	"context"
 	"iter"
+	"slices"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
@@ -86,7 +87,33 @@ func (c *compilationContext) AddExtension(ext *ast.Definition) {
 			f.Directives = append(f.Directives, dependencyDirective(c.opts.Name, f.Position))
 		}
 	}
+	// Strip definition-level @dependency directives from extensions before
+	// passing to Provider.Update(). These directives are compilation metadata
+	// (what the extension source depends on), NOT what the target type depends on.
+	// If propagated to the target type, DropCatalog would incorrectly drop the
+	// target definition when a dependency catalog is reloaded.
+	ext = stripExtensionDependencyDirectives(ext)
 	c.output.AddExtension(ext)
+}
+
+// stripExtensionDependencyDirectives returns a copy of the definition with
+// definition-level @dependency directives removed, or the original if none present.
+func stripExtensionDependencyDirectives(ext *ast.Definition) *ast.Definition {
+	hasDeps := false
+	for _, d := range ext.Directives {
+		if d.Name == base.DependencyDirectiveName {
+			hasDeps = true
+			break
+		}
+	}
+	if !hasDeps {
+		return ext
+	}
+	cp := *ext
+	cp.Directives = slices.DeleteFunc(slices.Clone(ext.Directives), func(d *ast.Directive) bool {
+		return d.Name == base.DependencyDirectiveName
+	})
+	return &cp
 }
 
 func dependencyDirective(name string, pos *ast.Position) *ast.Directive {

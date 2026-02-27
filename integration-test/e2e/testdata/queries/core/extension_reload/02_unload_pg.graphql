@@ -1,0 +1,10 @@
+mutation {
+  function {
+    core {
+      unload_data_source(name: "pg_store") {
+        success
+        message
+      }
+    }
+  }
+}

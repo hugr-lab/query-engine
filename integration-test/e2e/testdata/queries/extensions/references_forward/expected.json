@@ -1,0 +1,35 @@
+{
+  "data": {
+    "local_db": {
+      "items": [
+        {
+          "event": {
+            "id": 1,
+            "name": "Conference",
+            "value": 100.5
+          },
+          "id": 1,
+          "name": "Laptop"
+        },
+        {
+          "event": {
+            "id": 2,
+            "name": "Workshop",
+            "value": 50.0
+          },
+          "id": 2,
+          "name": "Desktop"
+        },
+        {
+          "event": {
+            "id": 3,
+            "name": "Meetup",
+            "value": 0.0
+          },
+          "id": 3,
+          "name": "Tablet"
+        }
+      ]
+    }
+  }
+}

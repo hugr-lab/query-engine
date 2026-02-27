@@ -1,0 +1,13 @@
+{
+  "errors": [
+    {
+      "locations": [
+        {
+          "column": 7,
+          "line": 5
+        }
+      ],
+      "message": "Cannot query field \"nonexistent_field\" on type \"local_db_items\"."
+    }
+  ]
+}

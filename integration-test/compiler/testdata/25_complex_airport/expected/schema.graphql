@@ -919,7 +919,7 @@ type Function @system {
   """
   The root function object of the module fn_transport
   """
-  fn_transport: _module_fn_transport_function
+  fn_transport: _module_fn_transport_function @module_catalog(name: "fn_transport")
 }
 """
 The `Geometry` scalar type represents a spatial geometry value (WKB/WKT encoded).
@@ -1358,13 +1358,13 @@ type Mutation @system {
   delete_Airline(filter: Airline_filter): OperationResult @mutation(name: "Airline", type: DELETE, data_input: "") @catalog(name: "base", engine: "duckdb")
   delete_BookingPassenger(filter: BookingPassenger_filter): OperationResult @mutation(name: "BookingPassenger", type: DELETE, data_input: "") @catalog(name: "base", engine: "duckdb")
   delete_Passenger(filter: Passenger_filter): OperationResult @mutation(name: "Passenger", type: DELETE, data_input: "") @catalog(name: "base", engine: "duckdb")
-  fn_transport: _module_fn_transport_mutation
+  fn_transport: _module_fn_transport_mutation @module_catalog(name: "fn_transport")
   function: MutationFunction @system
-  hospitality: _module_hospitality_mutation
+  hospitality: _module_hospitality_mutation @module_catalog(name: "hotels")
   insert_Airline(data: Airline_mut_input_data!): Airline @mutation(name: "Airline", type: INSERT, data_input: "Airline_mut_input_data") @catalog(name: "base", engine: "duckdb")
   insert_BookingPassenger(data: BookingPassenger_mut_input_data!): OperationResult @mutation(name: "BookingPassenger", type: INSERT, data_input: "BookingPassenger_mut_input_data") @catalog(name: "base", engine: "duckdb")
   insert_Passenger(data: Passenger_mut_input_data!): Passenger @mutation(name: "Passenger", type: INSERT, data_input: "Passenger_mut_input_data") @catalog(name: "base", engine: "duckdb")
-  transport: _module_transport_mutation
+  transport: _module_transport_mutation @module_catalog(name: "base")
   update_Airline(filter: Airline_filter, data: Airline_mut_data!): OperationResult @mutation(name: "Airline", type: UPDATE, data_input: "Airline_mut_data") @catalog(name: "base", engine: "duckdb")
   update_BookingPassenger(filter: BookingPassenger_filter, data: BookingPassenger_mut_data!): OperationResult @mutation(name: "BookingPassenger", type: UPDATE, data_input: "BookingPassenger_mut_data") @catalog(name: "base", engine: "duckdb")
   update_Passenger(filter: Passenger_filter, data: Passenger_mut_data!): OperationResult @mutation(name: "Passenger", type: UPDATE, data_input: "Passenger_mut_data") @catalog(name: "base", engine: "duckdb")
@@ -1827,11 +1827,11 @@ type Query @system {
   ): [_Passenger_aggregation_bucket] @aggregation_query(name: "Passenger", is_bucket: true) @catalog(name: "base", engine: "duckdb")
   Passenger_by_pk(id: Int!): Passenger @query(name: "Passenger", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
   Passenger_email(email: String!): Passenger @query(name: "Passenger", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
-  fn_transport: _module_fn_transport_query
+  fn_transport: _module_fn_transport_query @module_catalog(name: "fn_transport")
   """
   Functions
   """
-  function: Function @system
+  function: Function @system @module_catalog(name: "fn_transport")
   """
   H3 aggregation query
   """
@@ -1841,13 +1841,13 @@ type Query @system {
     """
     resolution: Int!
   ): [_h3_query] @system
-  hospitality: _module_hospitality_query
+  hospitality: _module_hospitality_query @module_catalog(name: "hotels")
   """
   Performs jq query on result set
   Results will be placed in 'extension' field by field or alias name
   """
   jq(query: String!, include_origin: Boolean = false): Query @system
-  transport: _module_transport_query
+  transport: _module_transport_query @module_catalog(name: "base")
 }
 enum QueryType @system {
   SELECT
@@ -5792,19 +5792,19 @@ type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
     nested_offset: Int
   ): _Route_aggregation @aggregation_query(is_bucket: false, name: "Route") @catalog(name: "base", engine: "duckdb") @field_aggregation(name: "Route")
 }
-type _module_fn_transport_function @module_root(name: "fn_transport", type: FUNCTION) {
+type _module_fn_transport_function @module_root(name: "fn_transport", type: FUNCTION) @module_catalog(name: "fn_transport") {
   airport_status(code: String!): String @function(name: "airport_status") @catalog(name: "fn_transport", engine: "duckdb") @module(name: "fn_transport")
   find_nearby(origin: String!, radius: Float = 100): [FnAirport] @function(name: "find_nearby") @catalog(name: "fn_transport", engine: "duckdb") @module(name: "fn_transport")
   find_nearby_aggregation(origin: String!, radius: Float = 100): _FnAirport_aggregation @aggregation_query(name: "find_nearby", is_bucket: false) @catalog(name: "fn_transport", engine: "duckdb")
   find_nearby_bucket_aggregation(origin: String!, radius: Float = 100): [_FnAirport_aggregation_bucket] @aggregation_query(name: "find_nearby", is_bucket: true) @catalog(name: "fn_transport", engine: "duckdb")
   search_airports(country: String!, limit: Int): JSON @function(name: "search_airports", json_cast: true) @catalog(name: "fn_transport", engine: "duckdb") @module(name: "fn_transport")
 }
-type _module_fn_transport_mutation @module_root(name: "fn_transport", type: MUTATION) {
+type _module_fn_transport_mutation @module_root(name: "fn_transport", type: MUTATION) @module_catalog(name: "fn_transport") {
   delete_FnAirport(filter: FnAirport_filter): OperationResult @mutation(name: "FnAirport", type: DELETE, data_input: "") @catalog(name: "fn_transport", engine: "duckdb")
   insert_FnAirport(data: FnAirport_mut_input_data!): FnAirport @mutation(name: "FnAirport", type: INSERT, data_input: "FnAirport_mut_input_data") @catalog(name: "fn_transport", engine: "duckdb")
   update_FnAirport(filter: FnAirport_filter, data: FnAirport_mut_data!): OperationResult @mutation(name: "FnAirport", type: UPDATE, data_input: "FnAirport_mut_data") @catalog(name: "fn_transport", engine: "duckdb")
 }
-type _module_fn_transport_query @module_root(name: "fn_transport", type: QUERY) {
+type _module_fn_transport_query @module_root(name: "fn_transport", type: QUERY) @module_catalog(name: "fn_transport") {
   FnAirport(
     """
     Filter
@@ -5891,7 +5891,7 @@ type _module_fn_transport_query @module_root(name: "fn_transport", type: QUERY) 
   ): [_FnAirport_aggregation_bucket] @aggregation_query(name: "FnAirport", is_bucket: true) @catalog(name: "fn_transport", engine: "duckdb")
   FnAirport_by_pk(iata_code: String!): FnAirport @query(name: "FnAirport", type: SELECT_ONE) @catalog(name: "fn_transport", engine: "duckdb")
 }
-type _module_hospitality_mutation @module_root(name: "hospitality", type: MUTATION) {
+type _module_hospitality_mutation @module_root(name: "hospitality", type: MUTATION) @module_catalog(name: "hotels") {
   delete_Hotel(filter: Hotel_filter): OperationResult @mutation(name: "Hotel", type: DELETE, data_input: "") @catalog(name: "hotels", engine: "duckdb")
   delete_Review(filter: Review_filter): OperationResult @mutation(name: "Review", type: DELETE, data_input: "") @catalog(name: "hotels", engine: "duckdb")
   insert_Hotel(data: Hotel_mut_input_data!): Hotel @mutation(name: "Hotel", type: INSERT, data_input: "Hotel_mut_input_data") @catalog(name: "hotels", engine: "duckdb")
@@ -5899,7 +5899,7 @@ type _module_hospitality_mutation @module_root(name: "hospitality", type: MUTATI
   update_Hotel(filter: Hotel_filter, data: Hotel_mut_data!): OperationResult @mutation(name: "Hotel", type: UPDATE, data_input: "Hotel_mut_data") @catalog(name: "hotels", engine: "duckdb")
   update_Review(filter: Review_filter, data: Review_mut_data!): OperationResult @mutation(name: "Review", type: UPDATE, data_input: "Review_mut_data") @catalog(name: "hotels", engine: "duckdb")
 }
-type _module_hospitality_query @module_root(name: "hospitality", type: QUERY) {
+type _module_hospitality_query @module_root(name: "hospitality", type: QUERY) @module_catalog(name: "hotels") {
   Hotel(
     """
     Filter
@@ -6071,7 +6071,7 @@ type _module_hospitality_query @module_root(name: "hospitality", type: QUERY) {
   ): [_Review_aggregation_bucket] @aggregation_query(name: "Review", is_bucket: true) @catalog(name: "hotels", engine: "duckdb")
   Review_by_pk(id: Int!): Review @query(name: "Review", type: SELECT_ONE) @catalog(name: "hotels", engine: "duckdb")
 }
-type _module_transport_air_mutation @module_root(name: "transport.air", type: MUTATION) {
+type _module_transport_air_mutation @module_root(name: "transport.air", type: MUTATION) @module_catalog(name: "base") {
   delete_Airport(filter: Airport_filter): OperationResult @mutation(name: "Airport", type: DELETE, data_input: "") @catalog(name: "base", engine: "duckdb")
   delete_Route(filter: Route_filter): OperationResult @mutation(name: "Route", type: DELETE, data_input: "") @catalog(name: "base", engine: "duckdb")
   insert_Airport(data: Airport_mut_input_data!): Airport @mutation(name: "Airport", type: INSERT, data_input: "Airport_mut_input_data") @catalog(name: "base", engine: "duckdb")
@@ -6079,7 +6079,7 @@ type _module_transport_air_mutation @module_root(name: "transport.air", type: MU
   update_Airport(filter: Airport_filter, data: Airport_mut_data!): OperationResult @mutation(name: "Airport", type: UPDATE, data_input: "Airport_mut_data") @catalog(name: "base", engine: "duckdb")
   update_Route(filter: Route_filter, data: Route_mut_data!): OperationResult @mutation(name: "Route", type: UPDATE, data_input: "Route_mut_data") @catalog(name: "base", engine: "duckdb")
 }
-type _module_transport_air_query @module_root(name: "transport.air", type: QUERY) {
+type _module_transport_air_query @module_root(name: "transport.air", type: QUERY) @module_catalog(name: "base") {
   Airport(
     """
     Filter
@@ -6357,17 +6357,17 @@ type _module_transport_air_query @module_root(name: "transport.air", type: QUERY
   Route_by_pk(id: Int!): Route @query(name: "Route", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
   Route_route(src_airport: String!, dst_airport: String!): Route @query(name: "Route", type: SELECT_ONE) @catalog(name: "base", engine: "duckdb")
 }
-type _module_transport_mutation @module_root(name: "transport", type: MUTATION) {
+type _module_transport_mutation @module_root(name: "transport", type: MUTATION) @module_catalog(name: "base") {
   """
   The root mutation object of the module transport.air
   """
-  air: _module_transport_air_mutation
+  air: _module_transport_air_mutation @module_catalog(name: "base")
 }
-type _module_transport_query @module_root(name: "transport", type: QUERY) {
+type _module_transport_query @module_root(name: "transport", type: QUERY) @module_catalog(name: "base") {
   """
   The root query object of the module transport.air
   """
-  air: _module_transport_air_query
+  air: _module_transport_air_query @module_catalog(name: "base")
 }
 type _spatial @system {
   Airport(field: String!,

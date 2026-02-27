@@ -1,0 +1,11 @@
+type Airport @table(name: "airports") {
+  id: Int! @pk
+  name: String!
+  latitude: Float
+  longitude: Float
+}
+
+extend type Function {
+  find_nearby(lat: Float!, lon: Float!, radius: Float = 100.0): [Airport]
+    @function(name: "find_nearby", type: TABLE)
+}

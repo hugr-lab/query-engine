@@ -1,0 +1,13 @@
+{
+  local_db {
+    items(filter: { id: { in: [2, 3] } }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+      products_in_range(args: { min_price: 20.0, max_price: 60.0 }, order_by: [{field: "id", direction: ASC}]) {
+        id
+        name
+        price
+      }
+    }
+  }
+}

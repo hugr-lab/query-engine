@@ -1,0 +1,8 @@
+extend type s_Customer
+  @dependency(name: "store") {
+  orders: [s_Order] @join(
+    references_name: "s_Order"
+    source_fields: ["id"]
+    references_fields: ["customer_id"]
+  )
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"runtime/debug"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/auth"
@@ -15,12 +16,25 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+// recoverStreamPanic converts a panic into an error for stream handlers.
+func recoverStreamPanic(errp *error) {
+	if r := recover(); r != nil {
+		if e, ok := r.(error); ok {
+			*errp = fmt.Errorf("internal error: %w", e)
+		} else {
+			*errp = fmt.Errorf("internal error: %v", r)
+		}
+		log.Printf("panic recovered in stream: %v\n%s", r, debug.Stack())
+	}
+}
+
 var ErrEmptyRequest = errors.New("empty request")
 
 type ChunkProcessFunc func(ctx context.Context, path string, field *ast.Field, rec arrow.RecordBatch) error
 
-func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map[string]any) (db.ArrowTable, func(), error) {
-	ctx, err := s.perm.ContextWithPermissions(ctx)
+func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map[string]any) (table db.ArrowTable, finalize func(), err error) {
+	defer recoverStreamPanic(&err)
+	ctx, err = s.perm.ContextWithPermissions(ctx)
 	if err != nil {
 		return nil, nil, err
 	}

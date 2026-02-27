@@ -76,6 +76,7 @@ These are added by the compiler during PhaseGenerate and PhaseAssemble.
 | Directive | Location | Description |
 |-----------|----------|-------------|
 | `@catalog(name, engine)` | OBJECT \| INPUT_OBJECT \| FIELD_DEFINITION \| INPUT_FIELD_DEFINITION | Tags type/field with source catalog |
+| `@module_catalog(name)` | OBJECT \| FIELD_DEFINITION | Tracks catalog contribution to a shared module type or wiring field (repeatable) |
 | `@original_name(name)` | various | Preserves pre-prefix type name |
 | `@module_root(name, type)` | OBJECT | Marks module root query/mutation type |
 

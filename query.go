@@ -4,21 +4,36 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/metadata"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
 )
+
+// recoverPanic converts a panic into an error.
+// Use as: defer recoverPanic(&err)
+func recoverPanic(errp *error) {
+	if r := recover(); r != nil {
+		if e, ok := r.(error); ok {
+			*errp = fmt.Errorf("internal error: %w", e)
+		} else {
+			*errp = fmt.Errorf("internal error: %v", r)
+		}
+		log.Printf("panic recovered: %v\n%s", r, debug.Stack())
+	}
+}
 
 var ErrParallelMutationNotSupported = errors.New("parallel mutation queries are not supported")
 
@@ -45,7 +60,8 @@ func (s *Service) processQuery(ctx context.Context, provider catalog.Provider, o
 	// if requested at least one mutation query need to run in a transaction and sequentially
 	if !s.config.AllowParallel || qtt&(base.QueryTypeMutation|base.QueryTypeFunctionMutation) != 0 {
 		wg.Add(1)
-		eg.Go(func() error {
+		eg.Go(func() (err error) {
+			defer recoverPanic(&err)
 			defer wg.Done()
 			if qtt&(base.QueryTypeMutation|base.QueryTypeFunctionMutation) == 0 {
 				return s.processQuerySequential(ctx, provider, queries, vars, nil, dataCh)
@@ -231,7 +247,8 @@ func (s *Service) processQueryParallel(
 			s.processQueryParallel(ctx, wg, eg, provider, query.Subset, vars, append(path, query.Name), dataCh)
 		case base.QueryTypeJQTransform:
 			wg.Add(1)
-			eg.Go(func() error {
+			eg.Go(func() (err error) {
+				defer recoverPanic(&err)
 				defer wg.Done()
 				res, ext, err := s.processJQTransformation(ctx, provider, query, vars)
 				if err != nil {
@@ -246,7 +263,8 @@ func (s *Service) processQueryParallel(
 			})
 		case base.QueryTypeMeta:
 			wg.Add(1)
-			eg.Go(func() error {
+			eg.Go(func() (err error) {
+				defer recoverPanic(&err)
 				defer wg.Done()
 				res, err := metadata.ProcessQuery(ctx, provider, query, s.config.MaxDepth, vars)
 				if err != nil {
@@ -261,7 +279,8 @@ func (s *Service) processQueryParallel(
 			})
 		case base.QueryTypeQuery, base.QueryTypeFunction, base.QueryTypeH3Aggregation:
 			wg.Add(1)
-			eg.Go(func() error {
+			eg.Go(func() (err error) {
+				defer recoverPanic(&err)
 				defer wg.Done()
 				res, ext, err := s.processDataQuery(ctx, provider, query, vars)
 				if err != nil {
@@ -276,7 +295,8 @@ func (s *Service) processQueryParallel(
 			})
 		case base.QueryTypeMutation, base.QueryTypeFunctionMutation:
 			wg.Add(1)
-			eg.Go(func() error {
+			eg.Go(func() (err error) {
+				defer recoverPanic(&err)
 				defer wg.Done()
 				return ErrParallelMutationNotSupported
 			})
@@ -285,6 +305,7 @@ func (s *Service) processQueryParallel(
 }
 
 func (s *Service) processDataQuery(ctx context.Context, provider catalog.Provider, query base.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
+	defer recoverPanic(&err)
 	start := time.Now()
 	var plannerTime, compileTime time.Duration
 	dataFunc := func() (any, error) {
@@ -375,6 +396,7 @@ func (s *Service) processDataQuery(ctx context.Context, provider catalog.Provide
 }
 
 func (s *Service) processJQTransformation(ctx context.Context, provider catalog.Provider, query base.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
+	defer recoverPanic(&err)
 	start := time.Now()
 	var dataTime, compilerTime, serializationTime, execTime time.Duration
 	var rn, tn int

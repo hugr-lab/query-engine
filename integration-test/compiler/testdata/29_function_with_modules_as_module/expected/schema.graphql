@@ -290,7 +290,7 @@ type Function @system {
   """
   The root function object of the module transport_db
   """
-  transport_db: _module_transport_db_function
+  transport_db: _module_transport_db_function @module_catalog(name: "transport_db")
 }
 """
 The `Geometry` scalar type represents a spatial geometry value (WKB/WKT encoded).
@@ -496,7 +496,7 @@ enum ModuleObjectType @system {
 }
 type Mutation @system {
   function: MutationFunction @system
-  transport_db: _module_transport_db_mutation
+  transport_db: _module_transport_db_mutation @module_catalog(name: "transport_db")
 }
 type MutationFunction @system
 enum MutationType @system {
@@ -522,7 +522,7 @@ type Query @system {
   """
   Functions
   """
-  function: Function @system
+  function: Function @system @module_catalog(name: "transport_db")
   """
   H3 aggregation query
   """
@@ -537,7 +537,7 @@ type Query @system {
   Results will be placed in 'extension' field by field or alias name
   """
   jq(query: String!, include_origin: Boolean = false): Query @system
-  transport_db: _module_transport_db_query
+  transport_db: _module_transport_db_query @module_catalog(name: "transport_db")
 }
 enum QueryType @system {
   SELECT
@@ -1600,7 +1600,7 @@ type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
     nested_offset: Int
   ): _Station_aggregation @aggregation_query(is_bucket: false, name: "Station") @catalog(name: "transport_db", engine: "duckdb") @field_aggregation(name: "Station")
 }
-type _module_transport_db_function @module_root(name: "transport_db", type: FUNCTION) {
+type _module_transport_db_function @module_root(name: "transport_db", type: FUNCTION) @module_catalog(name: "transport_db") {
   find_nearby(iata_code: String!, radius: Float): [Airport] @function(name: "find_nearby_airports") @catalog(name: "transport_db", engine: "duckdb") @module(name: "transport_db")
   find_nearby_aggregation(iata_code: String!, radius: Float): _Airport_aggregation @aggregation_query(name: "find_nearby", is_bucket: false) @catalog(name: "transport_db", engine: "duckdb")
   find_nearby_bucket_aggregation(iata_code: String!, radius: Float): [_Airport_aggregation_bucket] @aggregation_query(name: "find_nearby", is_bucket: true) @catalog(name: "transport_db", engine: "duckdb")
@@ -1609,24 +1609,24 @@ type _module_transport_db_function @module_root(name: "transport_db", type: FUNC
   search_stations_aggregation(city: String!): _Station_aggregation @aggregation_query(name: "search_stations", is_bucket: false) @catalog(name: "transport_db", engine: "duckdb")
   search_stations_bucket_aggregation(city: String!): [_Station_aggregation_bucket] @aggregation_query(name: "search_stations", is_bucket: true) @catalog(name: "transport_db", engine: "duckdb")
 }
-type _module_transport_db_mutation @module_root(name: "transport_db", type: MUTATION) {
+type _module_transport_db_mutation @module_root(name: "transport_db", type: MUTATION) @module_catalog(name: "transport_db") {
   """
   The root mutation object of the module transport_db.transport
   """
-  transport: _module_transport_db_transport_mutation
+  transport: _module_transport_db_transport_mutation @module_catalog(name: "transport_db")
 }
-type _module_transport_db_query @module_root(name: "transport_db", type: QUERY) {
+type _module_transport_db_query @module_root(name: "transport_db", type: QUERY) @module_catalog(name: "transport_db") {
   """
   The root query object of the module transport_db.transport
   """
-  transport: _module_transport_db_transport_query
+  transport: _module_transport_db_transport_query @module_catalog(name: "transport_db")
 }
-type _module_transport_db_transport_air_mutation @module_root(name: "transport_db.transport.air", type: MUTATION) {
+type _module_transport_db_transport_air_mutation @module_root(name: "transport_db.transport.air", type: MUTATION) @module_catalog(name: "transport_db") {
   delete_Airport(filter: Airport_filter): OperationResult @mutation(name: "Airport", type: DELETE, data_input: "") @catalog(name: "transport_db", engine: "duckdb")
   insert_Airport(data: Airport_mut_input_data!): Airport @mutation(name: "Airport", type: INSERT, data_input: "Airport_mut_input_data") @catalog(name: "transport_db", engine: "duckdb")
   update_Airport(filter: Airport_filter, data: Airport_mut_data!): OperationResult @mutation(name: "Airport", type: UPDATE, data_input: "Airport_mut_data") @catalog(name: "transport_db", engine: "duckdb")
 }
-type _module_transport_db_transport_air_query @module_root(name: "transport_db.transport.air", type: QUERY) {
+type _module_transport_db_transport_air_query @module_root(name: "transport_db.transport.air", type: QUERY) @module_catalog(name: "transport_db") {
   Airport(
     """
     Filter
@@ -1713,12 +1713,12 @@ type _module_transport_db_transport_air_query @module_root(name: "transport_db.t
   ): [_Airport_aggregation_bucket] @aggregation_query(name: "Airport", is_bucket: true) @catalog(name: "transport_db", engine: "duckdb")
   Airport_by_pk(iata_code: String!): Airport @query(name: "Airport", type: SELECT_ONE) @catalog(name: "transport_db", engine: "duckdb")
 }
-type _module_transport_db_transport_ground_mutation @module_root(name: "transport_db.transport.ground", type: MUTATION) {
+type _module_transport_db_transport_ground_mutation @module_root(name: "transport_db.transport.ground", type: MUTATION) @module_catalog(name: "transport_db") {
   delete_Station(filter: Station_filter): OperationResult @mutation(name: "Station", type: DELETE, data_input: "") @catalog(name: "transport_db", engine: "duckdb")
   insert_Station(data: Station_mut_input_data!): Station @mutation(name: "Station", type: INSERT, data_input: "Station_mut_input_data") @catalog(name: "transport_db", engine: "duckdb")
   update_Station(filter: Station_filter, data: Station_mut_data!): OperationResult @mutation(name: "Station", type: UPDATE, data_input: "Station_mut_data") @catalog(name: "transport_db", engine: "duckdb")
 }
-type _module_transport_db_transport_ground_query @module_root(name: "transport_db.transport.ground", type: QUERY) {
+type _module_transport_db_transport_ground_query @module_root(name: "transport_db.transport.ground", type: QUERY) @module_catalog(name: "transport_db") {
   Station(
     """
     Filter
@@ -1805,25 +1805,25 @@ type _module_transport_db_transport_ground_query @module_root(name: "transport_d
   ): [_Station_aggregation_bucket] @aggregation_query(name: "Station", is_bucket: true) @catalog(name: "transport_db", engine: "duckdb")
   Station_by_pk(id: Int!): Station @query(name: "Station", type: SELECT_ONE) @catalog(name: "transport_db", engine: "duckdb")
 }
-type _module_transport_db_transport_mutation @module_root(name: "transport_db.transport", type: MUTATION) {
+type _module_transport_db_transport_mutation @module_root(name: "transport_db.transport", type: MUTATION) @module_catalog(name: "transport_db") {
   """
   The root mutation object of the module transport_db.transport.air
   """
-  air: _module_transport_db_transport_air_mutation
+  air: _module_transport_db_transport_air_mutation @module_catalog(name: "transport_db")
   """
   The root mutation object of the module transport_db.transport.ground
   """
-  ground: _module_transport_db_transport_ground_mutation
+  ground: _module_transport_db_transport_ground_mutation @module_catalog(name: "transport_db")
 }
-type _module_transport_db_transport_query @module_root(name: "transport_db.transport", type: QUERY) {
+type _module_transport_db_transport_query @module_root(name: "transport_db.transport", type: QUERY) @module_catalog(name: "transport_db") {
   """
   The root query object of the module transport_db.transport.air
   """
-  air: _module_transport_db_transport_air_query
+  air: _module_transport_db_transport_air_query @module_catalog(name: "transport_db")
   """
   The root query object of the module transport_db.transport.ground
   """
-  ground: _module_transport_db_transport_ground_query
+  ground: _module_transport_db_transport_ground_query @module_catalog(name: "transport_db")
 }
 type _spatial @system {
   Airport(field: String!,

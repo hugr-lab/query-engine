@@ -3,6 +3,11 @@
     "core": {
       "catalog_sources": [
         {
+          "name": "ext_bridge",
+          "path": "/workspace/schemas/ext_bridge",
+          "type": "localFS"
+        },
+        {
           "name": "local_db",
           "path": "/workspace/schemas/local_db",
           "type": "localFS"

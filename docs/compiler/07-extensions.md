@@ -71,15 +71,68 @@ type Flight @table(name: "flights") @module(name: "transport.air") { ... }
 
 Creates: `_module_<catalog>_query → transport → air → Flight`
 
+### Module–Catalog Tracking (`@module_catalog`)
+
+Module types and wiring fields have a **many-to-many** relationship with catalogs. A single module type (e.g., `_module_crm_query`) can be shared across multiple catalogs, and a single catalog can contribute to multiple modules.
+
+This is tracked via the repeatable `@module_catalog(name: String!)` directive:
+
+```graphql
+directive @module_catalog(name: String!) repeatable on OBJECT | FIELD_DEFINITION
+```
+
+**On module type definitions** — tracks which catalogs contribute to this module:
+```graphql
+type _module_crm_query @module_root(name: "crm", type: QUERY)
+  @module_catalog(name: "pg_crm") @module_catalog(name: "support") { ... }
+```
+
+**On wiring fields** — tracks which catalogs use this wiring path:
+```graphql
+type Query {
+  crm: _module_crm_query @module_catalog(name: "pg_crm") @module_catalog(name: "support")
+}
+```
+
+Data fields on module types (pointing to actual data objects) still use `@catalog(name, engine)` since they belong to exactly one catalog.
+
 ### Module Merging Across Catalogs
 
 When multiple catalogs contribute types to the same module name:
 
-1. First catalog creates the module root type with `@if_not_exists`
-2. Second catalog's module root type is skipped (already exists)
-3. Both catalogs' query fields are added as extensions to the shared module type
+1. First catalog creates the module root type — gets `@module_catalog(name: "first")`
+2. Second catalog finds the type already exists in the provider — adds `@module_catalog(name: "second")` via extension merge
+3. Both catalogs' data fields are added as extensions to the shared module type with their respective `@catalog`
+4. Wiring fields follow the same pattern — first catalog creates the field with `@module_catalog`, subsequent catalogs merge their `@module_catalog` directive onto the existing field
 
-This is handled by `@if_not_exists` on module root types.
+### Module Cleanup on DropCatalog
+
+When a catalog is dropped, `@module_catalog` directives are handled in DropCatalog step 4:
+
+1. Remove `@module_catalog(name: "dropped")` from all types and fields
+2. If a `@module_root` type has no remaining `@module_catalog` → delete the type
+3. If a wiring field has no remaining `@module_catalog` → delete the field
+4. Orphan cleanup catches any remaining dangling references
+
+Example with shared module `crm` (catalogs `pg_crm` + `support`):
+
+```
+Before:  _module_crm_query @module_catalog(pg_crm) @module_catalog(support)
+           field Customer @catalog(pg_crm)
+           field Ticket @catalog(support)
+
+Drop pg_crm:
+  → @module_catalog(pg_crm) removed from type and wiring fields
+  → field Customer removed (@catalog match)
+  → _module_crm_query survives (still has @module_catalog(support))
+  → Query.crm survives (still has @module_catalog(support))
+
+Drop support:
+  → @module_catalog(support) removed — none left
+  → field Ticket removed (@catalog match)
+  → _module_crm_query deleted (no @module_catalog remaining)
+  → Query.crm deleted (no @module_catalog remaining)
+```
 
 ## Root Type Assembly (`RootTypeAssembler`)
 
@@ -98,11 +151,11 @@ extend type Query {
 
 ### With AsModule
 
-Query fields are wrapped in the module hierarchy, and only the top-level module field extends the Query root:
+Query fields are wrapped in the module hierarchy. The top-level module wiring field extends the Query root with `@module_catalog` (not `@catalog`, since it may be shared):
 
 ```graphql
 extend type Query {
-  pg_crm: _module_pg_crm_query @module_root(...) @catalog(...)
+  pg_crm: _module_pg_crm_query @module_catalog(name: "pg_crm")
 }
 ```
 
@@ -116,7 +169,25 @@ extend type Query {
 }
 ```
 
+The `function` gateway field on Query/Mutation (pointing to the `Function`/`MutationFunction` type) uses `@module_catalog` since multiple catalogs can contribute functions:
+
+```graphql
+extend type Query {
+  function: Function @module_catalog(name: "catalog_with_functions")
+}
+```
+
 ## Lifecycle
+
+### Adding a Catalog
+
+```
+1. Compile SDL with catalog options (Name, EngineType, AsModule, etc.)
+2. Provider.Update(ctx, compiled)
+   — adds data types with @catalog(name: "catalog")
+   — creates or extends module types with @module_catalog(name: "catalog")
+   — creates or merges module wiring fields with @module_catalog(name: "catalog")
+```
 
 ### Adding an Extension
 
@@ -124,6 +195,19 @@ extend type Query {
 1. Compile extension SDL with IsExtension=true
 2. Provider.Update(ctx, compiled) — adds extension types and field extensions
 3. Extension fields carry @dependency(name: "ext_name")
+```
+
+### Removing a Catalog
+
+```
+1. Provider.DropCatalog(ctx, "catalog_name", cascade=true)
+   — Step 1-3: removes @catalog-tagged types and fields
+   — Step 3: cascade removes @dependency-tagged extension types/fields
+   — Step 4: removes @module_catalog(name: "catalog_name") from shared module types/fields
+     • module types with no remaining @module_catalog are deleted
+     • wiring fields with no remaining @module_catalog are deleted
+   — Step 5: orphan cleanup removes dangling type references
+2. Schema remains valid for remaining catalogs
 ```
 
 ### Removing an Extension
@@ -138,8 +222,7 @@ extend type Query {
 
 ```
 1. Provider.DropCatalog(ctx, "catalog_name", cascade=true)
-   — removes all @catalog-tagged types (OBJECT + INPUT_OBJECT + generated)
-   — cascade removes @dependency-tagged extension fields
+   — removes all catalog artifacts while preserving shared modules used by other catalogs
 2. Recompile with updated SDL
-3. Provider.Update(ctx, compiled) — re-adds all types
+3. Provider.Update(ctx, compiled) — re-adds all types, re-registers @module_catalog
 ```

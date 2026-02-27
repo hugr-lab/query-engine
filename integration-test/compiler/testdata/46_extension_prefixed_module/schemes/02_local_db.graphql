@@ -1,0 +1,9 @@
+type items @table(name: "items") {
+  id: Int! @pk
+  name: String!
+}
+
+type events @table(name: "events") {
+  id: Int! @pk
+  description: String
+}

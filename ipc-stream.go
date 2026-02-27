@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -142,6 +143,12 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic recovered in IPC stream: %v\n%s", r, debug.Stack())
+			stream.sendStreamError(fmt.Errorf("internal error: %v", r))
+		}
+	}()
 	defer func() {
 		if err := stream.sendStreamComplete(); err != nil {
 			stream.sendStreamError(fmt.Errorf("failed to send stream complete: %w", err))

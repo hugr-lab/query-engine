@@ -92,8 +92,8 @@ func (r *PrefixPreparer) ProcessAll(ctx base.CompilationContext) error {
 			}
 			ctx.RegisterObject(prefixedName, info)
 
-			// Apply prefix to definition name (NOT for functions)
-			if opts.Prefix != "" {
+			// Apply prefix to definition name (NOT for functions, NOT for extension views)
+			if opts.Prefix != "" && !(opts.IsExtension && isView) {
 				def.Name = prefixedName
 				// Add @original_name directive
 				pos := &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}}

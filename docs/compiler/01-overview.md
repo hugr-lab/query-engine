@@ -124,8 +124,8 @@ Read-only interface to an existing schema. Provides type lookups against the alr
 ### MutableProvider
 
 Extends Provider with mutation support:
-- `Update(ctx, compiled)` — applies a CompiledCatalog to the schema
-- `DropCatalog(ctx, name, cascade)` — removes all types tagged with `@catalog(name: ...)`
+- `Update(ctx, compiled)` — applies a CompiledCatalog to the schema (merges definitions, extensions, directives)
+- `DropCatalog(ctx, name, cascade)` — removes all `@catalog`-tagged types/fields, cascade-drops `@dependency`-tagged extensions, cleans up shared module types via `@module_catalog` tracking (see [02-ddl-operations.md](02-ddl-operations.md#dropcatalog))
 
 ### CompiledCatalog
 

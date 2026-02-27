@@ -1,0 +1,8 @@
+extend type Airport
+  @dependency(name: "base") {
+  nearby: [Airport] @table_function_call_join(
+    references_name: "find_nearby"
+    args: { lat: "latitude", lon: "longitude" }
+    module: "base"
+  )
+}

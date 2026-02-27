@@ -30,33 +30,57 @@ func (r *ExtensionValidator) ProcessAll(ctx base.CompilationContext) error {
 			return err
 		}
 	}
+	// Also validate extensions (e.g. "extend type Function { ... }") which are
+	// kept separate from definitions by ExtensionsSource implementations.
+	if extSrc, ok := ctx.Source().(base.ExtensionsSource); ok {
+		for ext := range extSrc.Extensions(ctx.Context()) {
+			if err := validateExtensionDef(ext); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
-var _ base.DefinitionRule = (*DependencyCollector)(nil)
+var _ base.BatchRule = (*DependencyCollector)(nil)
 
 // DependencyCollector collects @dependency directives from source definitions
-// during the VALIDATE phase and registers them on the compilation context.
-// Only active when opts.IsExtension is true.
+// AND extensions during the VALIDATE phase and registers them on the compilation
+// context. Only active when opts.IsExtension is true.
+//
+// This must be a BatchRule (not DefinitionRule) because extension sources
+// primarily contain "extend type" blocks that are extensions, not definitions.
+// DefinitionRules only iterate source.Definitions(), missing extensions entirely.
 type DependencyCollector struct{}
 
 func (r *DependencyCollector) Name() string     { return "DependencyCollector" }
 func (r *DependencyCollector) Phase() base.Phase { return base.PhaseValidate }
 
-func (r *DependencyCollector) Match(def *ast.Definition) bool {
-	return def.Directives.ForName(base.DependencyDirectiveName) != nil
-}
-
-func (r *DependencyCollector) Process(ctx base.CompilationContext, def *ast.Definition) error {
+func (r *DependencyCollector) ProcessAll(ctx base.CompilationContext) error {
 	if !ctx.CompileOptions().IsExtension {
 		return nil
 	}
+
+	// Collect from source definitions
+	for def := range ctx.Source().Definitions(ctx.Context()) {
+		collectDeps(ctx, def)
+	}
+
+	// Collect from source extensions (extend type blocks)
+	if extSrc, ok := ctx.Source().(base.ExtensionsSource); ok {
+		for ext := range extSrc.Extensions(ctx.Context()) {
+			collectDeps(ctx, ext)
+		}
+	}
+	return nil
+}
+
+func collectDeps(ctx base.CompilationContext, def *ast.Definition) {
 	for _, name := range base.DefinitionDependencies(def) {
 		if name != "" {
 			ctx.RegisterDependency(name)
 		}
 	}
-	return nil
 }
 
 func validateExtensionDef(def *ast.Definition) error {
@@ -82,6 +106,14 @@ func validateExtensionDef(def *ast.Definition) error {
 					return gqlerror.ErrorPosf(def.Position,
 						"extension definition %s can't contain functions", def.Name)
 				}
+			}
+		}
+
+		// No @sql fields on extension types (only @join, @function_call, @table_function_call_join, @references allowed)
+		for _, f := range def.Fields {
+			if f.Directives.ForName("sql") != nil {
+				return gqlerror.ErrorPosf(f.Position,
+					"extension definition %s: @sql fields are not allowed on extension types", def.Name)
 			}
 		}
 	}

@@ -768,6 +768,9 @@ func subDataQueryNode(ctx context.Context, defs base.DefinitionsSource, planner 
 	var e engines.Engine
 	var qCatalog string
 	def := defs.ForName(ctx, field.Definition.Type.Name())
+	if def == nil {
+		return nil, false, fmt.Errorf("subquery %q: type %q not found", field.Name, field.Definition.Type.Name())
+	}
 	switch {
 	case sdl.IsDataObject(def):
 		node, isGeneral, err = selectDataObjectNode(ctx, defs, planner, field, vars)
@@ -832,7 +835,11 @@ func subDataQueryNode(ctx context.Context, defs base.DefinitionsSource, planner 
 	if node != nil {
 		node.Name = rAlias
 	}
-	return node, isGeneral, nil
+	// If catalogs differ, mark as general even if the inner engine doesn't
+	// need type casting (e.g., DuckDB is the default engine). This ensures
+	// the subquery runs outside the outer engine's query wrapper (e.g.,
+	// not inside postgres_query()).
+	return node, isGeneral || qCatalog != info.Catalog, nil
 }
 
 // node create sql :

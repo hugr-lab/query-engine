@@ -1,0 +1,12 @@
+{
+  "data": {
+    "local_db": {
+      "items": [
+        {
+          "id": 1,
+          "name": "Laptop"
+        }
+      ]
+    }
+  }
+}

@@ -23,7 +23,8 @@ func RegisterAll() []base.Rule {
 		&ViewRule{},
 		&CubeHypertableRule{},
 		&UniqueRule{},
-		&AggregationRule{}, // generates _X_aggregation/_X_aggregation_bucket types + @query directives
+		&AggregationRule{},               // generates _X_aggregation/_X_aggregation_bucket types + @query directives
+		&ExtensionFieldAggregationRule{}, // generates agg/filter for extension fields — must run after AggregationRule
 		&ReferencesRule{},
 		&JoinSpatialRule{},
 		&H3Rule{},

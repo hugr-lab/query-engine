@@ -83,12 +83,17 @@ func (s *Service) loadCatalogSource(ctx context.Context, t types.CatalogSourceTy
 
 func compileOptions(ds Source) compiler.Options {
 	def := ds.Definition()
+	isExt := false
+	if ext, ok := ds.(ExtensionSource); ok {
+		isExt = ext.IsExtension()
+	}
 	return compiler.Options{
 		Name:         def.Name,
 		ReadOnly:     def.ReadOnly,
 		Prefix:       def.Prefix,
 		EngineType:   string(ds.Engine().Type()),
 		AsModule:     def.AsModule,
+		IsExtension:  isExt,
 		Capabilities: ds.Engine().Capabilities(),
 	}
 }

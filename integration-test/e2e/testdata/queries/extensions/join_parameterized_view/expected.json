@@ -1,0 +1,30 @@
+{
+  "data": {
+    "local_db": {
+      "items": [
+        {
+          "id": 2,
+          "name": "Desktop",
+          "products_in_range": [
+            {
+              "id": 2,
+              "name": "Wireless Mouse",
+              "price": 29.99
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "name": "Tablet",
+          "products_in_range": [
+            {
+              "id": 3,
+              "name": "USB-C Hub",
+              "price": 49.99
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

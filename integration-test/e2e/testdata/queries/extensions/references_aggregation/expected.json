@@ -1,0 +1,50 @@
+{
+  "data": {
+    "local_db": {
+      "events": [
+        {
+          "id": 1,
+          "item": [
+            {
+              "id": 1,
+              "name": "Laptop",
+              "specs": {
+                "cpu": "M2",
+                "ram_gb": 16
+              }
+            }
+          ],
+          "name": "Conference"
+        },
+        {
+          "id": 2,
+          "item": [
+            {
+              "id": 2,
+              "name": "Desktop",
+              "specs": {
+                "cpu": "i9",
+                "ram_gb": 64
+              }
+            }
+          ],
+          "name": "Workshop"
+        },
+        {
+          "id": 3,
+          "item": [
+            {
+              "id": 3,
+              "name": "Tablet",
+              "specs": {
+                "cpu": "A15",
+                "ram_gb": 8
+              }
+            }
+          ],
+          "name": "Meetup"
+        }
+      ]
+    }
+  }
+}

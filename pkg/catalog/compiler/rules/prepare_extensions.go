@@ -41,28 +41,55 @@ func (r *InternalExtensionMerger) ProcessAll(ctx base.CompilationContext) error 
 			continue
 		}
 
+		// Function/MutationFunction: always promote to source so FunctionRule
+		// can process them. These are well-known system types that exist even
+		// when no provider is available (single-catalog compilation).
+		if ext.Name == "Function" || ext.Name == "MutationFunction" {
+			promoted := &ast.Definition{
+				Kind:        ext.Kind,
+				Name:        ext.Name,
+				Fields:      ext.Fields,
+				Directives:  ext.Directives,
+				Position:    ext.Position,
+				Description: ext.Description,
+				Interfaces:  ext.Interfaces,
+				EnumValues:  ext.EnumValues,
+				Types:       ext.Types,
+			}
+			ctx.PromoteToSource(promoted)
+			continue
+		}
+
 		// Not in source — check the provider (target schema)
 		provDef := ctx.LookupType(ext.Name)
 		if provDef == nil {
 			continue // unknown type — cross-catalog or not yet compiled
 		}
 
-		// Create a definition from the extension and promote it to source level.
-		// Subsequent DefinitionRules (e.g. FunctionRule) will see this definition.
-		promoted := &ast.Definition{
-			Kind:        ext.Kind,
-			Name:        ext.Name,
-			Fields:      ext.Fields,
-			Directives:  ext.Directives,
-			Position:    ext.Position,
-			Description: ext.Description,
-			Interfaces:  ext.Interfaces,
-			EnumValues:  ext.EnumValues,
-			Types:       ext.Types,
-		}
-		ctx.PromoteToSource(promoted)
+		// All other provider types: pass through as extensions so Provider.Update()
+		// merges the fields. AddExtension() handles @dependency tagging when IsExtension=true.
+		// Filter out _stub/_placeholder fields before passing to AddExtension.
+		ctx.AddExtension(filterStubFields(ext))
 	}
 	return nil
+}
+
+// filterStubFields returns a copy of the definition with _stub/_placeholder fields removed.
+// Returns the original definition unchanged if no stub fields are present.
+func filterStubFields(ext *ast.Definition) *ast.Definition {
+	var fields ast.FieldList
+	for _, f := range ext.Fields {
+		if f.Name == "_stub" || f.Name == "_placeholder" {
+			continue
+		}
+		fields = append(fields, f)
+	}
+	if len(fields) == len(ext.Fields) {
+		return ext
+	}
+	cp := *ext
+	cp.Fields = fields
+	return &cp
 }
 
 // mergeExtensionIntoDef merges an extension's fields, directives, enum values,

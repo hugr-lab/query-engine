@@ -783,6 +783,12 @@ func buildNewSchema(t *testing.T, sdl string, opts base.Options) *ast.Schema {
 	if err := provider.Update(ctx, compiled); err != nil {
 		t.Fatalf("provider.Update: %v", err)
 	}
+	if errs := provider.ValidateSchema(); len(errs) > 0 {
+		for _, e := range errs {
+			t.Errorf("schema validation: %v", e)
+		}
+		t.Fatal("schema validation failed")
+	}
 	return provider.Schema()
 }
 
@@ -795,24 +801,31 @@ func extractSourceDefs(sd *ast.SchemaDocument) *testSource {
 			defMap[def.Name] = def
 		}
 	}
+	// Extensions targeting a definition in the same SDL are merged in place
+	// (same-catalog merge). Extensions targeting types NOT in this SDL are
+	// kept separate so that InternalExtensionMerger and
+	// ExtensionFieldAggregationRule can process them via the ExtensionsSource
+	// interface.
+	var exts []*ast.Definition
 	for _, ext := range sd.Extensions {
 		if existing, ok := defMap[ext.Name]; ok {
 			existing.Fields = append(existing.Fields, ext.Fields...)
 			existing.Directives = append(existing.Directives, ext.Directives...)
 		} else {
-			def := &ast.Definition{
+			exts = append(exts, &ast.Definition{
 				Kind: ext.Kind, Name: ext.Name,
 				Fields: ext.Fields, Directives: ext.Directives, Position: ext.Position,
-			}
-			defs = append(defs, def)
-			defMap[def.Name] = def
+				Description: ext.Description, Interfaces: ext.Interfaces,
+				EnumValues: ext.EnumValues, Types: ext.Types,
+			})
 		}
 	}
-	return &testSource{defs: defs}
+	return &testSource{defs: defs, exts: exts}
 }
 
 type testSource struct {
 	defs []*ast.Definition
+	exts []*ast.Definition
 }
 
 func (s *testSource) ForName(_ context.Context, name string) *ast.Definition {
@@ -840,6 +853,30 @@ func (s *testSource) Definitions(_ context.Context) iter.Seq[*ast.Definition] {
 
 func (s *testSource) DirectiveDefinitions(_ context.Context) iter.Seq2[string, *ast.DirectiveDefinition] {
 	return func(_ func(string, *ast.DirectiveDefinition) bool) {}
+}
+
+// Extensions returns extensions that target types NOT defined in this source.
+func (s *testSource) Extensions(_ context.Context) iter.Seq[*ast.Definition] {
+	return func(yield func(*ast.Definition) bool) {
+		for _, d := range s.exts {
+			if !yield(d) {
+				return
+			}
+		}
+	}
+}
+
+// DefinitionExtensions returns extensions for a specific type name.
+func (s *testSource) DefinitionExtensions(_ context.Context, name string) iter.Seq[*ast.Definition] {
+	return func(yield func(*ast.Definition) bool) {
+		for _, d := range s.exts {
+			if d.Name == name {
+				if !yield(d) {
+					return
+				}
+			}
+		}
+	}
 }
 
 // --- Multi-Catalog Test Schemas (T002) ---
@@ -1055,6 +1092,13 @@ func buildNewMultiCatalogSchema(t *testing.T, catalogs []catalogDef) *ast.Schema
 		if err := provider.Update(ctx, compiled); err != nil {
 			t.Fatalf("provider.Update catalog %d (%s): %v", i, cat.Opts.Name, err)
 		}
+	}
+
+	if errs := provider.ValidateSchema(); len(errs) > 0 {
+		for _, e := range errs {
+			t.Errorf("schema validation: %v", e)
+		}
+		t.Fatal("schema validation failed after multi-catalog compilation")
 	}
 
 	return provider.Schema()
