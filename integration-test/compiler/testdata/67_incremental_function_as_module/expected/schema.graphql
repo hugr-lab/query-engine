@@ -1,3 +1,30 @@
+type Airport @table(name: "airports") @catalog(name: "transport", engine: "duckdb") @filter_input(name: "Airport_filter") @data_input(name: "Airport_mut_input_data") @data_input(name: "Airport_mut_data") @query(name: "Airport", type: SELECT) @query(name: "Airport_by_pk", type: SELECT_ONE) @mutation(name: "insert_Airport", type: INSERT, data_input: "Airport_mut_input_data") @mutation(name: "update_Airport", type: UPDATE, data_input: "Airport_mut_data") @mutation(name: "delete_Airport", type: DELETE, data_input: "") @query(name: "find_nearby_aggregation", type: AGGREGATE) @query(name: "find_nearby_bucket_aggregation", type: AGGREGATE_BUCKET) @module(name: "transport") {
+  _join(fields: [String!]!): _join
+  city: String!
+  iata_code: String! @pk
+  name: String!
+}
+"""
+Filter for Airport objects
+"""
+input Airport_filter @filter_input(name: "Airport") @catalog(name: "transport", engine: "duckdb") {
+  _and: [Airport_filter]
+  _not: Airport_filter
+  _or: [Airport_filter]
+  city: StringFilter
+  iata_code: StringFilter @pk
+  name: StringFilter
+}
+input Airport_mut_data @data_input(name: "Airport") @catalog(name: "transport", engine: "duckdb") {
+  city: String
+  iata_code: String
+  name: String
+}
+input Airport_mut_input_data @data_input(name: "Airport") @catalog(name: "transport", engine: "duckdb") {
+  city: String
+  iata_code: String
+  name: String
+}
 """
 BigInt - represents big integer type (64 bit), supports filtering, aggregation.
 Filter operators: eq, gt, gte, lt, lte, in, is_null
@@ -196,7 +223,12 @@ type FloatSubAggregation @system {
   min: FloatAggregation
   sum: FloatAggregation
 }
-type Function @system
+type Function @system {
+  """
+  The root function object of the module transport
+  """
+  transport: _module_transport_function @module_catalog(name: "transport") @module_catalog(name: "transport")
+}
 """
 The `Geometry` scalar type represents a spatial geometry value (WKB/WKT encoded).
 Filter operators: eq, intersects, contains, is_null
@@ -400,10 +432,8 @@ enum ModuleObjectType @system {
   QUERY
 }
 type Mutation @system {
-  delete_Widget(filter: Widget_filter): OperationResult @mutation(name: "Widget", type: DELETE, data_input: "") @catalog(name: "test", engine: "duckdb")
   function: MutationFunction @system
-  insert_Widget(data: Widget_mut_input_data!): Widget @mutation(name: "Widget", type: INSERT, data_input: "Widget_mut_input_data") @catalog(name: "test", engine: "duckdb")
-  update_Widget(filter: Widget_filter, data: Widget_mut_data!): OperationResult @mutation(name: "Widget", type: UPDATE, data_input: "Widget_mut_data") @catalog(name: "test", engine: "duckdb")
+  transport: _module_transport_mutation @module_catalog(name: "transport")
 }
 type MutationFunction @system
 enum MutationType @system {
@@ -426,92 +456,10 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
-  Widget(
-    """
-    Filter
-    """
-    filter: Widget_filter
-
-    """
-    Sort options for the result set
-    """
-    order_by: [OrderByField]
-
-    """
-    Limit the number of returned objects
-    """
-    limit: Int = 2000
-
-    """
-    Skip the first n objects
-    """
-    offset: Int = 0
-
-    """
-    Distinct on the given fields
-    """
-    distinct_on: [String]
-  ): [Widget] @query(name: "Widget", type: SELECT) @catalog(name: "test", engine: "duckdb")
   """
-  The aggregation for Widget
+  Functions
   """
-  Widget_aggregation(
-    """
-    Filter
-    """
-    filter: Widget_filter
-
-    """
-    Sort options for the result set
-    """
-    order_by: [OrderByField]
-
-    """
-    Limit the number of returned objects
-    """
-    limit: Int = 2000
-
-    """
-    Skip the first n objects
-    """
-    offset: Int = 0
-
-    """
-    Distinct on the given fields
-    """
-    distinct_on: [String]
-  ): _Widget_aggregation @aggregation_query(name: "Widget", is_bucket: false) @catalog(name: "test", engine: "duckdb")
-  """
-  The aggregation for Widget
-  """
-  Widget_bucket_aggregation(
-    """
-    Filter
-    """
-    filter: Widget_filter
-
-    """
-    Sort options for the result set
-    """
-    order_by: [OrderByField]
-
-    """
-    Limit the number of returned objects
-    """
-    limit: Int = 2000
-
-    """
-    Skip the first n objects
-    """
-    offset: Int = 0
-
-    """
-    Distinct on the given fields
-    """
-    distinct_on: [String]
-  ): [_Widget_aggregation_bucket] @aggregation_query(name: "Widget", is_bucket: true) @catalog(name: "test", engine: "duckdb")
-  Widget_by_pk(id: Int!): Widget @query(name: "Widget", type: SELECT_ONE) @catalog(name: "test", engine: "duckdb")
-  function: Function @system
+  function: Function @system @module_catalog(name: "transport") @module_catalog(name: "transport")
   """
   H3 aggregation query
   """
@@ -526,6 +474,7 @@ type Query @system {
   Results will be placed in 'extension' field by field or alias name
   """
   jq(query: String!, include_origin: Boolean = false): Query @system
+  transport: _module_transport_query @module_catalog(name: "transport")
 }
 enum QueryType @system {
   SELECT
@@ -740,94 +689,17 @@ input VectorSearchInput @system {
   """
   vector: Vector!
 }
-type Widget @table(name: "widgets") @catalog(name: "test", engine: "duckdb") @filter_input(name: "Widget_filter") @data_input(name: "Widget_mut_input_data") @data_input(name: "Widget_mut_data") @query(name: "Widget", type: SELECT) @query(name: "Widget_by_pk", type: SELECT_ONE) @mutation(name: "insert_Widget", type: INSERT, data_input: "Widget_mut_input_data") @mutation(name: "update_Widget", type: UPDATE, data_input: "Widget_mut_data") @mutation(name: "delete_Widget", type: DELETE, data_input: "") @query(name: "Widget_aggregation", type: AGGREGATE) @query(name: "Widget_bucket_aggregation", type: AGGREGATE_BUCKET) {
-  _join(fields: [String!]!): _join
-  """
-  Extract part of Timestamp field updated_at
-  """
-  _updated_at_part(
-    """
-    Extracts the specified part of the timestamp
-    """
-    extract: TimeExtract!
-
-    """
-    Divides the extracted value
-    """
-    extract_divide: Int
-  ): BigInt @extra_field(name: "Extract", base_field: "updated_at", base_type: Timestamp) @sql(exp: "[updated_at]")
-  active: Boolean
-  email: String
-  id: Int! @pk
-  name: String!
-  price: Float
-  updated_at: Timestamp
-}
-"""
-Filter for Widget objects
-"""
-input Widget_filter @filter_input(name: "Widget") @catalog(name: "test", engine: "duckdb") {
-  _and: [Widget_filter]
-  _not: Widget_filter
-  _or: [Widget_filter]
-  active: BooleanFilter
-  email: StringFilter
-  id: IntFilter @pk
-  name: StringFilter
-  price: FloatFilter
-  updated_at: TimestampFilter
-}
-input Widget_mut_data @data_input(name: "Widget") @catalog(name: "test", engine: "duckdb") {
-  active: Boolean
-  email: String
-  id: Int
-  name: String
-  price: Float
-  updated_at: Timestamp
-}
-input Widget_mut_input_data @data_input(name: "Widget") @catalog(name: "test", engine: "duckdb") {
-  active: Boolean
-  email: String
-  id: Int
-  name: String
-  price: Float
-  updated_at: Timestamp
-}
-type _Widget_aggregation @aggregation(name: "Widget", is_bucket: false, level: 1) @catalog(name: "test", engine: "duckdb") {
-  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+type _Airport_aggregation @aggregation(name: "Airport", is_bucket: false, level: 1) @catalog(name: "transport", engine: "duckdb") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join") @field_aggregation(name: "_join")
   _rows_count: BigInt
-  _updated_at_part(
-    """
-    Extracts the specified part of the timestamp
-    """
-    extract: TimeExtract!
-
-    """
-    Divides the extracted value
-    """
-    extract_divide: Int
-  ): BigIntAggregation @field_aggregation(name: "_updated_at_part")
-  active: BooleanAggregation @field_aggregation(name: "active")
-  email: StringAggregation @field_aggregation(name: "email")
-  id: IntAggregation @field_aggregation(name: "id")
+  city: StringAggregation @field_aggregation(name: "city")
+  iata_code: StringAggregation @field_aggregation(name: "iata_code")
   name: StringAggregation @field_aggregation(name: "name")
-  price: FloatAggregation @field_aggregation(name: "price")
-  updated_at(
-    """
-    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
-    """
-    bucket: TimeBucket
-
-    """
-    Truncate the specified part of the timestamp
-    """
-    bucket_interval: Interval
-  ): TimestampAggregation @field_aggregation(name: "updated_at")
 }
 """
-Bucket aggregation for Widget
+Bucket aggregation for Airport
 """
-type _Widget_aggregation_bucket @aggregation(name: "Widget", is_bucket: true, level: 1) @catalog(name: "test", engine: "duckdb") {
+type _Airport_aggregation_bucket @aggregation(name: "Airport", is_bucket: true, level: 1) @catalog(name: "transport", engine: "duckdb") {
   """
   The aggregations of the bucket
   """
@@ -835,47 +707,23 @@ type _Widget_aggregation_bucket @aggregation(name: "Widget", is_bucket: true, le
     """
     Filter
     """
-    filter: Widget_filter
+    filter: Airport_filter
 
     """
     Sort options for the result set
     """
     order_by: [OrderByField]
-  ): _Widget_aggregation
+  ): _Airport_aggregation
   """
   The key of the bucket
   """
-  key: Widget
+  key: Airport
 }
-type _Widget_aggregation_sub_aggregation @aggregation(name: "_Widget_aggregation", is_bucket: false, level: 2) @catalog(name: "test", engine: "duckdb") {
+type _Airport_aggregation_sub_aggregation @aggregation(name: "_Airport_aggregation", is_bucket: false, level: 2) @catalog(name: "transport", engine: "duckdb") {
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
-  _updated_at_part(
-    """
-    Extracts the specified part of the timestamp
-    """
-    extract: TimeExtract!
-
-    """
-    Divides the extracted value
-    """
-    extract_divide: Int
-  ): BigIntSubAggregation @field_aggregation(name: "_updated_at_part")
-  active: BooleanSubAggregation @field_aggregation(name: "active")
-  email: StringSubAggregation @field_aggregation(name: "email")
-  id: IntSubAggregation @field_aggregation(name: "id")
+  city: StringSubAggregation @field_aggregation(name: "city")
+  iata_code: StringSubAggregation @field_aggregation(name: "iata_code")
   name: StringSubAggregation @field_aggregation(name: "name")
-  price: FloatSubAggregation @field_aggregation(name: "price")
-  updated_at(
-    """
-    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
-    """
-    bucket: TimeBucket
-
-    """
-    Truncate the specified part of the timestamp
-    """
-    bucket_interval: Interval
-  ): TimestampSubAggregation @field_aggregation(name: "updated_at")
 }
 """
 Value distribution data type
@@ -979,11 +827,11 @@ type _h3_query @system {
   resolution: Int!
 }
 type _join @system {
-  Widget(fields: [String!]!,
+  Airport(fields: [String!]!,
     """
     Filter
     """
-    filter: Widget_filter
+    filter: Airport_filter
 
     """
     Sort options for the result set
@@ -1024,12 +872,12 @@ type _join @system {
     Skip the first n nested objects
     """
     nested_offset: Int
-  ): [Widget] @query(name: "Widget", type: SELECT) @catalog(name: "test", engine: "duckdb")
-  Widget_aggregation(fields: [String!]!,
+  ): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "transport", engine: "duckdb") @query(name: "Airport", type: SELECT) @catalog(name: "transport", engine: "duckdb")
+  Airport_aggregation(fields: [String!]!,
     """
     Filter
     """
-    filter: Widget_filter
+    filter: Airport_filter
 
     """
     Sort options for the result set
@@ -1070,12 +918,12 @@ type _join @system {
     Skip the first n nested objects
     """
     nested_offset: Int
-  ): _Widget_aggregation @aggregation_query(is_bucket: false, name: "Widget") @catalog(name: "test", engine: "duckdb")
-  Widget_bucket_aggregation(fields: [String!]!,
+  ): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "transport", engine: "duckdb") @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "transport", engine: "duckdb")
+  Airport_bucket_aggregation(fields: [String!]!,
     """
     Filter
     """
-    filter: Widget_filter
+    filter: Airport_filter
 
     """
     Sort options for the result set
@@ -1116,14 +964,14 @@ type _join @system {
     Skip the first n nested objects
     """
     nested_offset: Int
-  ): [_Widget_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Widget") @catalog(name: "test", engine: "duckdb")
+  ): [_Airport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "Airport") @catalog(name: "transport", engine: "duckdb") @aggregation_query(is_bucket: true, name: "Airport") @catalog(name: "transport", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
-  Widget(fields: [String!]!,
+  Airport(fields: [String!]!,
     """
     Filter
     """
-    filter: Widget_filter
+    filter: Airport_filter
 
     """
     Sort options for the result set
@@ -1154,7 +1002,105 @@ type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
     Skip the first n nested objects
     """
     nested_offset: Int
-  ): _Widget_aggregation @aggregation_query(is_bucket: false, name: "Widget") @catalog(name: "test", engine: "duckdb") @field_aggregation(name: "Widget")
+  ): _Airport_aggregation @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "transport", engine: "duckdb") @field_aggregation(name: "Airport") @aggregation_query(is_bucket: false, name: "Airport") @catalog(name: "transport", engine: "duckdb") @field_aggregation(name: "Airport")
+}
+type _module_transport_function @module_root(name: "transport", type: FUNCTION) @module_catalog(name: "transport") @module_catalog(name: "transport") {
+  find_nearby(iata_code: String!, radius: Float): [Airport] @function(name: "find_nearby_airports") @catalog(name: "transport", engine: "duckdb") @module(name: "transport")
+  find_nearby_aggregation(iata_code: String!, radius: Float): _Airport_aggregation @aggregation_query(name: "find_nearby", is_bucket: false) @catalog(name: "transport", engine: "duckdb")
+  find_nearby_bucket_aggregation(iata_code: String!, radius: Float): [_Airport_aggregation_bucket] @aggregation_query(name: "find_nearby", is_bucket: true) @catalog(name: "transport", engine: "duckdb")
+  search_airports(query: String!, limit: Int): Airport @function(name: "search_airports") @catalog(name: "transport", engine: "duckdb") @module(name: "transport")
+}
+type _module_transport_mutation @module_root(name: "transport", type: MUTATION) @module_catalog(name: "transport") {
+  delete_Airport(filter: Airport_filter): OperationResult @mutation(name: "Airport", type: DELETE, data_input: "") @catalog(name: "transport", engine: "duckdb")
+  insert_Airport(data: Airport_mut_input_data!): Airport @mutation(name: "Airport", type: INSERT, data_input: "Airport_mut_input_data") @catalog(name: "transport", engine: "duckdb")
+  update_Airport(filter: Airport_filter, data: Airport_mut_data!): OperationResult @mutation(name: "Airport", type: UPDATE, data_input: "Airport_mut_data") @catalog(name: "transport", engine: "duckdb")
+}
+type _module_transport_query @module_root(name: "transport", type: QUERY) @module_catalog(name: "transport") {
+  Airport(
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [Airport] @query(name: "Airport", type: SELECT) @catalog(name: "transport", engine: "duckdb")
+  """
+  The aggregation for Airport
+  """
+  Airport_aggregation(
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _Airport_aggregation @aggregation_query(name: "Airport", is_bucket: false) @catalog(name: "transport", engine: "duckdb")
+  """
+  The aggregation for Airport
+  """
+  Airport_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: Airport_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_Airport_aggregation_bucket] @aggregation_query(name: "Airport", is_bucket: true) @catalog(name: "transport", engine: "duckdb")
+  Airport_by_pk(iata_code: String!): Airport @query(name: "Airport", type: SELECT_ONE) @catalog(name: "transport", engine: "duckdb")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

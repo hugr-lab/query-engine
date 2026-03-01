@@ -124,18 +124,24 @@ func diffFields(result *DiffResult, kind ast.DefinitionKind, typeName string, ol
 		if seenFields[of.Name] {
 			continue
 		}
+		dropDirs := ast.DirectiveList{
+			{Name: base.DropDirectiveName, Position: pos},
+		}
+		// Preserve @module on drop fields so the incremental compiler
+		// can locate the field in the correct module type (e.g., for functions).
+		if modDir := of.Directives.ForName(base.ModuleDirectiveName); modDir != nil {
+			dropDirs = append(ast.DirectiveList{modDir}, dropDirs...)
+		}
 		result.exts = append(result.exts, &ast.Definition{
 			Kind:     kind,
 			Name:     typeName,
 			Position: pos,
 			Fields: ast.FieldList{
 				{
-					Name: of.Name,
-					Type: ast.NamedType("Boolean", pos),
-					Directives: ast.DirectiveList{
-						{Name: base.DropDirectiveName, Position: pos},
-					},
-					Position: pos,
+					Name:       of.Name,
+					Type:       ast.NamedType("Boolean", pos),
+					Directives: dropDirs,
+					Position:   pos,
 				},
 			},
 		})

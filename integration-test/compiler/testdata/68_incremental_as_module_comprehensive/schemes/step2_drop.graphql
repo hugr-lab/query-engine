@@ -1,0 +1,14 @@
+# Step 2: Drop type, drop field, drop function
+
+# Drop Bus type
+type Bus @drop
+
+# Drop field from Flight
+extend type Flight {
+  departure: Boolean @drop
+}
+
+# Drop function (with @module to locate it in the compiled module function type)
+extend type Function {
+  search_airports: Boolean @module(name: "air") @drop
+}

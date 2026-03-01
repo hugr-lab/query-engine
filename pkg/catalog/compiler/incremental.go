@@ -2,6 +2,7 @@ package compiler
 
 import (
 	"context"
+	"fmt"
 	"iter"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
@@ -52,10 +53,15 @@ func (c *Compiler) CompileChanges(
 	classified := classifyChanges(ctx, changes)
 
 	// Check if changes source also provides extensions (field-level changes)
-	var allExtensions []*ast.Definition // all extensions (for field add/drop/replace on base + derived types)
-	var refExtensions []*ast.Definition // subset with @field_references (also need pipeline for reference generation)
+	var allExtensions []*ast.Definition    // all extensions (for field add/drop/replace on base + derived types)
+	var refExtensions []*ast.Definition    // subset with @field_references (also need pipeline for reference generation)
+	var funcExtensions []*ast.Definition   // extensions targeting Function/MutationFunction (need special handling)
 	if extSource, ok := changes.(base.ExtensionsSource); ok {
 		for ext := range extSource.Extensions(ctx) {
+			if ext.Name == "Function" || ext.Name == "MutationFunction" {
+				funcExtensions = append(funcExtensions, ext)
+				continue
+			}
 			allExtensions = append(allExtensions, ext)
 			if hasFieldReferences(ext) {
 				refExtensions = append(refExtensions, ext)
@@ -108,7 +114,7 @@ func (c *Compiler) CompileChanges(
 
 		// PREPARE — CatalogTagger + PrefixPreparer on change definitions only
 		if opts.Name != "" {
-			catDir := catalogDirective(opts.Name, opts.EngineType)
+			catDir := rules.CatalogDirective(opts.Name, opts.EngineType)
 			for _, def := range addDefs {
 				if def.Kind == ast.Object {
 					def.Directives = append(def.Directives, catDir)
@@ -120,49 +126,8 @@ func (c *Compiler) CompileChanges(
 		}
 
 		// Run GENERATE → ASSEMBLE → FINALIZE using existing rules
-		for _, phase := range []base.Phase{base.PhaseGenerate, base.PhaseAssemble, base.PhaseFinalize} {
-			phaseRules := c.rules[phase]
-			if len(phaseRules) == 0 {
-				continue
-			}
-
-			var defRules []base.DefinitionRule
-			var batchRules []base.BatchRule
-			for _, r := range phaseRules {
-				switch rule := r.(type) {
-				case base.DefinitionRule:
-					defRules = append(defRules, rule)
-				case base.BatchRule:
-					batchRules = append(batchRules, rule)
-				}
-			}
-
-			if len(defRules) > 0 {
-				for def := range source.Definitions(ctx) {
-					for _, rule := range defRules {
-						if rule.Match(def) {
-							if err := rule.Process(cctx, def); err != nil {
-								return nil, wrapRuleError(phase, rule.Name(), def, err)
-							}
-						}
-					}
-				}
-				for _, def := range cctx.promoted {
-					for _, rule := range defRules {
-						if rule.Match(def) {
-							if err := rule.Process(cctx, def); err != nil {
-								return nil, wrapRuleError(phase, rule.Name(), def, err)
-							}
-						}
-					}
-				}
-			}
-
-			for _, rule := range batchRules {
-				if err := rule.ProcessAll(cctx); err != nil {
-					return nil, wrapRuleError(phase, rule.Name(), nil, err)
-				}
-			}
+		if err := c.runRulePipeline(ctx, source, cctx); err != nil {
+			return nil, err
 		}
 	}
 
@@ -187,6 +152,16 @@ func (c *Compiler) CompileChanges(
 			for _, dir := range ext.Directives.ForNames(base.ReferencesDirectiveName) {
 				rules.ProcessExtensionReferences(cctx, ext, dir, pos)
 			}
+		}
+	}
+
+	// 5c. Process function extensions: separate adds from drops.
+	// Function adds go through the full GENERATE→ASSEMBLE→FINALIZE pipeline
+	// (FunctionRule + ModuleAssembler + RootTypeAssembler handle everything).
+	// Function drops are handled inline with drop+aggregation cleanup.
+	if len(funcExtensions) > 0 {
+		if err := processFunctionExtensions(ctx, c, output, provider, baseCatalog, funcExtensions, opts); err != nil {
+			return nil, err
 		}
 	}
 
@@ -246,88 +221,159 @@ func processFieldExtensions(
 	for _, ext := range extensions {
 		typeName := ext.Name
 
-		// Separate fields by operation
 		for _, f := range ext.Fields {
 			if f.Name == "_stub" || f.Name == "_placeholder" {
 				continue
 			}
-
 			switch {
 			case base.IsDropField(f):
-				// Drop field from derived types (filter, mut, agg)
-				emitFieldDropExtensions(output, typeName, f.Name, opts, typeExists)
-				// Also drop from the base type itself
-				pos := base.CompiledPos("incremental-field-drop")
-				emitDropFieldOnType(output, typeName, f.Name, pos)
-
-				// Check existing field in provider for special handling
-				if providerLookup != nil {
-					if typeDef := providerLookup(typeName); typeDef != nil {
-						existingField := typeDef.Fields.ForName(f.Name)
-						if existingField != nil {
-							// If field had @field_references, drop reference-generated fields
-							if existingField.Directives.ForName(base.FieldReferencesDirectiveName) != nil {
-								emitReferenceDropExtensions(output, typeDef, f.Name, typeExists)
-							}
-							// If field was virtual (@join/@function_call/@table_function_call_join),
-							// drop aggregation fields it generated
-							if isIncrementalVirtualField(existingField) {
-								emitVirtualFieldDropExtensions(output, typeName, f.Name, existingField, typeExists)
-							}
-						}
-					}
-				}
+				processFieldDrop(output, typeName, f, opts, scalarLookup, typeExists, providerLookup)
 			case base.IsReplaceField(f):
-				// Strip the @replace directive from the field before emitting add
-				stripped := stripControlDirectivesFromField(f)
-				emitFieldReplaceExtensions(output, typeName, stripped, opts, scalarLookup, typeExists)
-				// Also replace on the base type itself (drop old + add new)
-				pos := base.CompiledPos("incremental-field-replace")
-				emitDropFieldOnType(output, typeName, f.Name, pos)
-				output.AddExtension(&ast.Definition{
-					Kind: ext.Kind, Name: typeName, Position: pos,
-					Fields: ast.FieldList{stripped},
-				})
+				processFieldReplace(output, ext.Kind, typeName, f, opts, scalarLookup, typeExists, providerLookup)
 			default:
-				if isIncrementalVirtualField(f) {
-					// Virtual fields need special handling: subquery args, aggregation fields
-					emitVirtualFieldAddExtensions(output, typeName, f, opts, scalarLookup, typeExists, providerLookup)
-				} else {
-					emitFieldAddExtensions(output, typeName, f, opts, scalarLookup)
-				}
-				// Also add to the base type itself
-				output.AddExtension(&ast.Definition{
-					Kind: ext.Kind, Name: typeName, Position: f.Position,
-					Fields: ast.FieldList{f},
-				})
+				processFieldAdd(output, ext.Kind, typeName, f, opts, scalarLookup, typeExists, providerLookup)
 			}
 		}
 
-		// Pass through extension directives (e.g., @drop_directive, new directives)
-		if len(ext.Directives) > 0 {
-			output.AddExtension(&ast.Definition{
-				Kind:       ext.Kind,
-				Name:       typeName,
-				Position:   ext.Position,
-				Directives: ext.Directives,
-			})
+		processExtensionDirectives(output, ext, opts, typeExists, providerLookup)
+	}
+}
 
-			// Detect module change and emit module restructuring
-			oldModule, newModule := detectModuleChange(ext.Directives)
-			if newModule != "" && providerLookup != nil {
-				if typeDef := providerLookup(typeName); typeDef != nil {
-					if oldModule == "" {
-						// Fall back to provider's @module directive
-						if md := typeDef.Directives.ForName(base.ModuleDirectiveName); md != nil {
-							oldModule = base.DirectiveArgString(md, base.ArgName)
-						}
-					}
-					if oldModule != "" {
-						emitModuleChangeExtensions(output, typeDef, oldModule, newModule, opts, typeExists, providerLookup)
-					}
-				}
+// processFieldDrop handles a single @drop field: removes from derived types,
+// base type, and cleans up references/virtual/extra fields.
+func processFieldDrop(
+	output *indexedOutput,
+	typeName string,
+	f *ast.FieldDefinition,
+	opts base.Options,
+	scalarLookup func(string) types.ScalarType,
+	typeExists func(string) bool,
+	providerLookup func(string) *ast.Definition,
+) {
+	emitFieldDropExtensions(output, typeName, f.Name, opts, typeExists)
+
+	pos := base.CompiledPos("incremental-field-drop")
+	rules.EmitDropFieldOnType(output.AddExtension, typeName, f.Name, pos)
+
+	if providerLookup == nil {
+		return
+	}
+	typeDef := providerLookup(typeName)
+	if typeDef == nil {
+		return
+	}
+	existingField := typeDef.Fields.ForName(f.Name)
+	if existingField == nil {
+		return
+	}
+
+	// Drop reference-generated fields
+	if existingField.Directives.ForName(base.FieldReferencesDirectiveName) != nil {
+		emitReferenceDropExtensions(output, typeDef, f.Name, typeExists)
+	}
+	// Drop aggregation fields from virtual field
+	if isIncrementalVirtualField(existingField) {
+		emitVirtualFieldDropExtensions(output, typeName, f.Name, existingField, typeExists)
+	}
+	// Drop extra fields (e.g., Timestamp -> _field_part)
+	rules.EmitExtraFieldDrop(output.AddExtension, typeName, f.Name, scalarLookup, existingField.Type.Name(), typeExists)
+}
+
+// processFieldReplace handles a single @replace field: drops old derived types,
+// replaces on base type, handles extra field replacement.
+func processFieldReplace(
+	output *indexedOutput,
+	kind ast.DefinitionKind,
+	typeName string,
+	f *ast.FieldDefinition,
+	opts base.Options,
+	scalarLookup func(string) types.ScalarType,
+	typeExists func(string) bool,
+	providerLookup func(string) *ast.Definition,
+) {
+	stripped := stripControlDirectivesFromField(f)
+	emitFieldReplaceExtensions(output, typeName, stripped, opts, scalarLookup, typeExists)
+
+	pos := base.CompiledPos("incremental-field-replace")
+	rules.EmitDropFieldOnType(output.AddExtension, typeName, f.Name, pos)
+	output.AddExtension(&ast.Definition{
+		Kind: kind, Name: typeName, Position: pos,
+		Fields: ast.FieldList{stripped},
+	})
+
+	// Drop old extra fields
+	if providerLookup != nil {
+		if typeDef := providerLookup(typeName); typeDef != nil {
+			if existingField := typeDef.Fields.ForName(f.Name); existingField != nil {
+				rules.EmitExtraFieldDrop(output.AddExtension, typeName, f.Name, scalarLookup, existingField.Type.Name(), typeExists)
 			}
 		}
+	}
+	// Generate new extra fields
+	rules.EmitExtraFieldAdd(output.AddExtension, typeName, stripped, scalarLookup)
+}
+
+// processFieldAdd handles a new field addition: adds to derived types, base type,
+// and generates extra fields.
+func processFieldAdd(
+	output *indexedOutput,
+	kind ast.DefinitionKind,
+	typeName string,
+	f *ast.FieldDefinition,
+	opts base.Options,
+	scalarLookup func(string) types.ScalarType,
+	typeExists func(string) bool,
+	providerLookup func(string) *ast.Definition,
+) {
+	if isIncrementalVirtualField(f) {
+		emitVirtualFieldAddExtensions(output, typeName, f, opts, scalarLookup, typeExists, providerLookup)
+	} else {
+		emitFieldAddExtensions(output, typeName, f, opts, scalarLookup)
+		rules.EmitExtraFieldAdd(output.AddExtension, typeName, f, scalarLookup)
+	}
+	output.AddExtension(&ast.Definition{
+		Kind: kind, Name: typeName, Position: f.Position,
+		Fields: ast.FieldList{f},
+	})
+}
+
+// processExtensionDirectives passes through extension directives and handles
+// module change detection with guard clauses.
+func processExtensionDirectives(
+	output *indexedOutput,
+	ext *ast.Definition,
+	opts base.Options,
+	typeExists func(string) bool,
+	providerLookup func(string) *ast.Definition,
+) {
+	if len(ext.Directives) == 0 {
+		return
+	}
+
+	typeName := ext.Name
+	output.AddExtension(&ast.Definition{
+		Kind:       ext.Kind,
+		Name:       typeName,
+		Position:   ext.Position,
+		Directives: ext.Directives,
+	})
+
+	// Detect module change and emit module restructuring
+	oldModule, newModule := detectModuleChange(ext.Directives)
+	if newModule == "" || providerLookup == nil {
+		return
+	}
+	typeDef := providerLookup(typeName)
+	if typeDef == nil {
+		return
+	}
+	if oldModule == "" {
+		if md := typeDef.Directives.ForName(base.ModuleDirectiveName); md != nil {
+			oldModule = base.DirectiveArgString(md, base.ArgName)
+		}
+	}
+	if oldModule != "" {
+		emitModuleChangeExtensions(output, typeDef, oldModule, newModule, opts, typeExists, providerLookup)
 	}
 }
 
@@ -444,18 +490,6 @@ func dropDefinition(name string, kind ast.DefinitionKind, pos *ast.Position) *as
 	}
 }
 
-// catalogDirective creates a @catalog(name, engine) directive.
-func catalogDirective(name, engine string) *ast.Directive {
-	pos := base.CompiledPos("incremental")
-	return &ast.Directive{
-		Name: base.CatalogDirectiveName,
-		Arguments: ast.ArgumentList{
-			{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue, Position: pos}, Position: pos},
-			{Name: "engine", Value: &ast.Value{Raw: engine, Kind: ast.StringValue, Position: pos}, Position: pos},
-		},
-		Position: pos,
-	}
-}
 
 // recoverProviderObjects registers ObjectInfo for all compiled types in the
 // provider that belong to the same catalog. GENERATE rules need this info
@@ -486,6 +520,220 @@ func providerDefsForCatalog(ctx context.Context, provider base.Provider, catalog
 		}
 	}
 	return defs
+}
+
+// runRulePipeline runs GENERATE → ASSEMBLE → FINALIZE phases on the given
+// source using the compiler's rules. Used by both full type compilation and
+// function add compilation in incremental mode.
+func (c *Compiler) runRulePipeline(
+	ctx context.Context,
+	source *incrementalSource,
+	cctx *compilationContext,
+) error {
+	for _, phase := range []base.Phase{base.PhaseGenerate, base.PhaseAssemble, base.PhaseFinalize} {
+		phaseRules := c.rules[phase]
+		if len(phaseRules) == 0 {
+			continue
+		}
+
+		var defRules []base.DefinitionRule
+		var batchRules []base.BatchRule
+		for _, r := range phaseRules {
+			switch rule := r.(type) {
+			case base.DefinitionRule:
+				defRules = append(defRules, rule)
+			case base.BatchRule:
+				batchRules = append(batchRules, rule)
+			}
+		}
+
+		if len(defRules) > 0 {
+			for def := range source.Definitions(ctx) {
+				for _, rule := range defRules {
+					if rule.Match(def) {
+						if err := rule.Process(cctx, def); err != nil {
+							return wrapRuleError(phase, rule.Name(), def, err)
+						}
+					}
+				}
+			}
+			for _, def := range cctx.promoted {
+				for _, rule := range defRules {
+					if rule.Match(def) {
+						if err := rule.Process(cctx, def); err != nil {
+							return wrapRuleError(phase, rule.Name(), def, err)
+						}
+					}
+				}
+			}
+		}
+
+		for _, rule := range batchRules {
+			if err := rule.ProcessAll(cctx); err != nil {
+				return wrapRuleError(phase, rule.Name(), nil, err)
+			}
+		}
+	}
+	return nil
+}
+
+// processFunctionExtensions handles extensions targeting Function/MutationFunction types.
+//
+// Function adds (fields without @drop/@replace): converted to definitions and processed
+// through GENERATE→ASSEMBLE→FINALIZE pipeline. FunctionRule adds @catalog, handles @module
+// for AsModule, emits aggregation fields. ModuleAssembler places function fields into
+// module hierarchy. RootTypeAssembler wires Function gateway on Query.
+//
+// Function drops (fields with @drop): drop the field + aggregation fields from the
+// function type (or module function type where it was assembled).
+//
+// Function replaces (fields with @replace): drop old + add new.
+// funcFieldOp pairs a function type name ("Function" or "MutationFunction")
+// with a field from an extension.
+type funcFieldOp struct {
+	funcType string
+	field    *ast.FieldDefinition
+}
+
+func processFunctionExtensions(
+	ctx context.Context,
+	c *Compiler,
+	output *indexedOutput,
+	provider base.Provider,
+	baseCatalog base.DefinitionsSource,
+	funcExtensions []*ast.Definition,
+	opts base.Options,
+) error {
+	typeExists := func(name string) bool {
+		return provider.ForName(ctx, name) != nil
+	}
+	providerLookup := func(name string) *ast.Definition {
+		return provider.ForName(ctx, name)
+	}
+
+	// Separate function fields into add/drop/replace buckets.
+	var funcAdds []funcFieldOp
+	var funcDrops []funcFieldOp
+
+	for _, ext := range funcExtensions {
+		for _, f := range ext.Fields {
+			if f.Name == "_stub" || f.Name == "_placeholder" {
+				continue
+			}
+			switch {
+			case base.IsDropField(f):
+				funcDrops = append(funcDrops, funcFieldOp{funcType: ext.Name, field: f})
+			case base.IsReplaceField(f):
+				funcDrops = append(funcDrops, funcFieldOp{funcType: ext.Name, field: f})
+				stripped := stripControlDirectivesFromField(f)
+				funcAdds = append(funcAdds, funcFieldOp{funcType: ext.Name, field: stripped})
+			default:
+				funcAdds = append(funcAdds, funcFieldOp{funcType: ext.Name, field: f})
+			}
+		}
+
+		if len(ext.Directives) > 0 {
+			output.AddExtension(&ast.Definition{
+				Kind:       ext.Kind,
+				Name:       ext.Name,
+				Position:   ext.Position,
+				Directives: ext.Directives,
+			})
+		}
+	}
+
+	// Process function drops.
+	for _, drop := range funcDrops {
+		target, err := resolveFunctionDropTarget(ctx, provider, drop, opts, providerLookup)
+		if err != nil {
+			return err
+		}
+		emitFunctionFieldDrop(output, target, drop.field.Name, typeExists)
+	}
+
+	// Process function adds: build synthetic definitions and run the pipeline.
+	if len(funcAdds) > 0 {
+		addsByType := make(map[string]ast.FieldList)
+		for _, add := range funcAdds {
+			addsByType[add.funcType] = append(addsByType[add.funcType], add.field)
+		}
+
+		var addDefs []*ast.Definition
+		for funcType, fields := range addsByType {
+			addDefs = append(addDefs, &ast.Definition{
+				Kind:     ast.Object,
+				Name:     funcType,
+				Position: base.CompiledPos("incremental-func-add"),
+				Fields:   fields,
+			})
+		}
+
+		source := newIncrementalSourceWithExtensions(addDefs, baseCatalog, nil)
+		cctx := newCompilationContext(ctx, source, provider, opts, output)
+		recoverProviderObjects(ctx, provider, cctx, opts)
+
+		// Non-fatal errors — skip and continue
+		_ = c.runRulePipeline(ctx, source, cctx)
+	}
+	return nil
+}
+
+// resolveFunctionDropTarget resolves the provider type that contains a function
+// field to be dropped. Uses @module directive for direct lookup, falls back to
+// the base function type, then scans module function types.
+func resolveFunctionDropTarget(
+	ctx context.Context,
+	provider base.Provider,
+	drop funcFieldOp,
+	opts base.Options,
+	providerLookup func(string) *ast.Definition,
+) (string, error) {
+	fieldName := drop.field.Name
+
+	// 1. @module specified → direct lookup
+	if modDir := drop.field.Directives.ForName(base.ModuleDirectiveName); modDir != nil {
+		modName := base.DirectiveArgString(modDir, base.ArgName)
+		if modName != "" {
+			if opts.AsModule {
+				modName = opts.Name + "." + modName
+			}
+			target := moduleLeafTypeName(modName, "function")
+			if def := providerLookup(target); def != nil && def.Fields.ForName(fieldName) != nil {
+				return target, nil
+			}
+			return "", fmt.Errorf("function field %q not found on %s (module function type)", fieldName, target)
+		}
+	}
+
+	// 2. Direct Function/MutationFunction type
+	if def := providerLookup(drop.funcType); def != nil && def.Fields.ForName(fieldName) != nil {
+		return drop.funcType, nil
+	}
+
+	// 3. Scan module function types
+	if found := findFunctionFieldType(ctx, provider, fieldName, opts); found != "" {
+		return found, nil
+	}
+
+	return "", fmt.Errorf("function field %q not found on %s or any module function type", fieldName, drop.funcType)
+}
+
+// findFunctionFieldType searches module function types in the provider to find
+// which type contains a specific function field. Used when dropping function
+// fields that have been moved to module types by ModuleAssembler.
+func findFunctionFieldType(ctx context.Context, provider base.Provider, fieldName string, opts base.Options) string {
+	prefix := "_module_"
+	suffix := "_function"
+	for _, def := range provider.Types(ctx) {
+		name := def.Name
+		if len(name) > len(prefix)+len(suffix) && name[:len(prefix)] == prefix && name[len(name)-len(suffix):] == suffix {
+			if def.Fields.ForName(fieldName) != nil {
+				return name
+			}
+		}
+	}
+	_ = opts // used for potential future filtering by catalog
+	return ""
 }
 
 // incrementalSource wraps change definitions as a DefinitionsSource (and

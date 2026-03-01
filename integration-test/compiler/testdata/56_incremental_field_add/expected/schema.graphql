@@ -426,6 +426,20 @@ enum OrderDirection @system {
   DESC
 }
 type Product @table(name: "products") @catalog(name: "test", engine: "duckdb") @filter_input(name: "Product_filter") @data_input(name: "Product_mut_input_data") @data_input(name: "Product_mut_data") @query(name: "Product", type: SELECT) @query(name: "Product_by_pk", type: SELECT_ONE) @mutation(name: "insert_Product", type: INSERT, data_input: "Product_mut_input_data") @mutation(name: "update_Product", type: UPDATE, data_input: "Product_mut_data") @mutation(name: "delete_Product", type: DELETE, data_input: "") @query(name: "Product_aggregation", type: AGGREGATE) @query(name: "Product_bucket_aggregation", type: AGGREGATE_BUCKET) {
+  """
+  Extract part of Timestamp field created_at
+  """
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(name: "Extract", base_field: "created_at", base_type: Timestamp) @sql(exp: "[created_at]")
   _join(fields: [String!]!): _join
   active: Boolean
   created_at: Timestamp
@@ -784,6 +798,17 @@ input VectorSearchInput @system {
   vector: Vector!
 }
 type _Product_aggregation @aggregation(name: "Product", is_bucket: false, level: 1) @catalog(name: "test", engine: "duckdb") {
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_created_at_part")
   _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
   _rows_count: BigInt
   active: BooleanAggregation @field_aggregation(name: "active")
@@ -828,6 +853,17 @@ type _Product_aggregation_bucket @aggregation(name: "Product", is_bucket: true, 
   key: Product
 }
 type _Product_aggregation_sub_aggregation @aggregation(name: "_Product_aggregation", is_bucket: false, level: 2) @catalog(name: "test", engine: "duckdb") {
+  _created_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_created_at_part")
   _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
   active: BooleanSubAggregation @field_aggregation(name: "active")
   created_at(
