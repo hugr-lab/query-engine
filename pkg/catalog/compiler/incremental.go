@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"log/slog"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
@@ -672,8 +673,10 @@ func processFunctionExtensions(
 		cctx := newCompilationContext(ctx, source, provider, opts, output)
 		recoverProviderObjects(ctx, provider, cctx, opts)
 
-		// Non-fatal errors — skip and continue
-		_ = c.runRulePipeline(ctx, source, cctx)
+		// Non-fatal: log and continue (function rules may fail on partial schemas)
+		if err := c.runRulePipeline(ctx, source, cctx); err != nil {
+			slog.Warn("incremental function pipeline error", "error", err)
+		}
 	}
 	return nil
 }
