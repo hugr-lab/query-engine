@@ -545,13 +545,3 @@ func joinVectorArgs(obj *joinObjectEntry, pos *ast.Position) ast.ArgumentDefinit
 	return args
 }
 
-// fieldAggregationDirective creates a @field_aggregation(name=X) directive.
-func fieldAggregationDirective(name string, pos *ast.Position) *ast.Directive {
-	return &ast.Directive{
-		Name: "field_aggregation",
-		Arguments: ast.ArgumentList{
-			{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue, Position: pos}, Position: pos},
-		},
-		Position: pos,
-	}
-}

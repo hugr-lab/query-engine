@@ -1,0 +1,12 @@
+type Widget @table(name: "widgets") {
+  id: Int! @pk
+  name: String!
+  price: Float
+  active: Boolean
+}
+
+type Gadget @table(name: "gadgets") {
+  id: Int! @pk
+  label: String!
+  weight: Float
+}

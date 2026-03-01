@@ -1,0 +1,5 @@
+# Add a new table-returning function via incremental extension
+extend type Function {
+  find_nearby(iata_code: String!, radius: Float): [Airport]
+    @function(name: "find_nearby_airports")
+}

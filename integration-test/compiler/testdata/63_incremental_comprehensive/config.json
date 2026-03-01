@@ -1,0 +1,30 @@
+{
+  "catalogs": [
+    {
+      "file": "base.graphql",
+      "name": "test",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    }
+  ],
+  "incrementals": [
+    {
+      "file": "step1_add_fields.graphql",
+      "catalog": "test",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "step2_drop_and_change.graphql",
+      "catalog": "test",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "step3_drop_virtual.graphql",
+      "catalog": "test",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    }
+  ]
+}

@@ -41,7 +41,7 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 	// Also add @field_references directive to the corresponding filter field
 	for _, f := range def.Fields {
 		for _, dir := range f.Directives.ForNames(base.FieldReferencesDirectiveName) {
-			refDir := fieldReferencesToReferences(f.Name, dir, def, ctx, pos)
+			refDir := FieldReferencesToReferences(f.Name, dir, def, ctx, pos)
 			if refDir != nil {
 				def.Directives = append(def.Directives, refDir)
 			}
@@ -192,7 +192,7 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		var forwardArgs ast.ArgumentDefinitionList
 		if isM2MRef {
 			forwardType = ast.ListType(ast.NamedType(refName, pos), pos)
-			forwardArgs = subQueryArgs(targetFilterName, pos)
+			forwardArgs = SubQueryArgs(targetFilterName, pos)
 		} else {
 			forwardType = &ast.Type{NamedType: refName}
 			forwardArgs = ast.ArgumentDefinitionList{
@@ -245,7 +245,7 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 					{
 						Name:      refQuery,
 						Type:      ast.ListType(ast.NamedType(def.Name, pos), pos),
-						Arguments: subQueryArgs(sourceFilterName, pos),
+						Arguments: SubQueryArgs(sourceFilterName, pos),
 						Directives: ast.DirectiveList{
 							backRefQueryDir,
 							optsCatalogDirective(opts),
@@ -337,7 +337,7 @@ func addM2MReferenceSide(ctx base.CompilationContext, m2mDef *ast.Definition, si
 			{
 				Name:      fieldName,
 				Type:      ast.ListType(ast.NamedType(targetObj, pos), pos),
-				Arguments: subQueryArgs(targetFilterName, pos),
+				Arguments: SubQueryArgs(targetFilterName, pos),
 				Directives: ast.DirectiveList{
 					refQueryDir,
 					optsCatalogDirective(opts),
@@ -452,7 +452,7 @@ func addReferenceAggregationFields(ctx base.CompilationContext, parentObject, re
 				Name:        refFieldName + "_aggregation",
 				Description: "The aggregation for " + refFieldName,
 				Type:        ast.NamedType(aggTypeName, pos),
-				Arguments:   subQueryArgs(targetFilterName, pos),
+				Arguments:   SubQueryArgs(targetFilterName, pos),
 				Directives: ast.DirectiveList{
 					{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
 						{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -466,7 +466,7 @@ func addReferenceAggregationFields(ctx base.CompilationContext, parentObject, re
 				Name:        refFieldName + "_bucket_aggregation",
 				Description: "The bucket aggregation for " + refFieldName,
 				Type:        ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
-				Arguments:   subQueryArgs(targetFilterName, pos),
+				Arguments:   SubQueryArgs(targetFilterName, pos),
 				Directives: ast.DirectiveList{
 					{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
 						{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -481,9 +481,9 @@ func addReferenceAggregationFields(ctx base.CompilationContext, parentObject, re
 	ctx.AddExtension(aggExt)
 }
 
-// fieldReferencesToReferences converts a @field_references directive on a field
+// FieldReferencesToReferences converts a @field_references directive on a field
 // to an object-level @references directive.
-func fieldReferencesToReferences(fieldName string, dir *ast.Directive, def *ast.Definition, ctx base.CompilationContext, pos *ast.Position) *ast.Directive {
+func FieldReferencesToReferences(fieldName string, dir *ast.Directive, def *ast.Definition, ctx base.CompilationContext, pos *ast.Position) *ast.Directive {
 	refName := base.DirectiveArgString(dir, base.ArgReferencesName)
 	if refName == "" {
 		return nil
@@ -632,9 +632,6 @@ func addReferenceToMutInput(ctx base.CompilationContext, sourceObject, fieldName
 	ctx.AddExtension(mutInputExt)
 }
 
-// maxAggDepth limits sub-aggregation recursion (matches old compiler's maxAggLevel=2).
-const maxAggDepth = 2
-
 // addReferenceToAggregationType adds reference fields to the parent object's aggregation type.
 // For single (forward) references: adds the aggregation type field.
 // For list (back/M2M) references: adds the aggregation type field + _aggregation sub-field.
@@ -647,7 +644,7 @@ func addReferenceToAggregationType(ctx base.CompilationContext, parentObject, re
 // depth 1 = sub-aggregation (_Type_aggregation_sub_aggregation)
 // depth >= maxAggDepth = stop recursion
 func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName, targetObject, targetFilterName string, isList bool, opts base.Options, pos *ast.Position, depth int) {
-	parentAggName := aggTypeNameAtDepth(parentObject, depth)
+	parentAggName := AggTypeNameAtDepth(parentObject, depth)
 
 	// At depth > 0, skip single reference fields (only list refs are added to sub-aggs)
 	if depth > 0 && !isList {
@@ -658,7 +655,7 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 
 	if isList {
 		// Direct reference field: uses target's agg at same depth
-		targetAggName := aggTypeNameAtDepth(targetObject, depth)
+		targetAggName := AggTypeNameAtDepth(targetObject, depth)
 		// Ensure the target agg type exists at this depth
 		if depth > 0 {
 			baseTargetAgg := "_" + targetObject + "_aggregation"
@@ -668,7 +665,7 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 		fields = append(fields, &ast.FieldDefinition{
 			Name:      refFieldName,
 			Type:      ast.NamedType(targetAggName, pos),
-			Arguments: aggRefArgs(targetFilterName, pos),
+			Arguments: AggRefArgs(targetFilterName, pos),
 			Directives: ast.DirectiveList{
 				fieldAggregationDirective(refFieldName, pos),
 			},
@@ -676,9 +673,9 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 		})
 
 		// The _aggregation sub-field uses a sub-aggregation type (one level deeper)
-		targetSubAggName := aggTypeNameAtDepth(targetObject, depth+1)
+		targetSubAggName := AggTypeNameAtDepth(targetObject, depth+1)
 		// For the _aggregation sub-field, the parent is the current depth's target agg type
-		parentTargetAgg := aggTypeNameAtDepth(targetObject, depth)
+		parentTargetAgg := AggTypeNameAtDepth(targetObject, depth)
 		ensureSubAggregationType(ctx, targetObject, targetSubAggName, parentTargetAgg, depth+1, opts, pos)
 
 		// At depth > 0, the @field_aggregation uses full field name including _aggregation
@@ -690,7 +687,7 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 		fields = append(fields, &ast.FieldDefinition{
 			Name:      refFieldName + "_aggregation",
 			Type:      ast.NamedType(targetSubAggName, pos),
-			Arguments: aggSubRefArgs(targetFilterName, pos),
+			Arguments: AggSubRefArgs(targetFilterName, pos),
 			Directives: ast.DirectiveList{
 				fieldAggregationDirective(aggFieldDirectiveName, pos),
 			},
@@ -723,45 +720,44 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 	// Sub-aggregation types are only created by ensureSubAggregationType when another
 	// reference's *_aggregation suffix field needs them. We don't force-create here.
 	if depth+1 < maxAggDepth {
-		parentSubAggName := aggTypeNameAtDepth(parentObject, depth+1)
+		parentSubAggName := AggTypeNameAtDepth(parentObject, depth+1)
 		if ctx.LookupType(parentSubAggName) != nil {
 			addRefToAggAtDepth(ctx, parentObject, refFieldName, targetObject, targetFilterName, isList, opts, pos, depth+1)
 		}
 	}
 }
 
-// aggTypeNameAtDepth returns the aggregation type name at a given depth.
-// depth 0: _Type_aggregation
-// depth 1: _Type_aggregation_sub_aggregation
-// depth 2: _Type_aggregation_sub_aggregation_sub_aggregation
-func aggTypeNameAtDepth(objectName string, depth int) string {
-	name := "_" + objectName + "_aggregation"
-	for i := 0; i < depth; i++ {
-		name += "_sub_aggregation"
-	}
-	return name
-}
 
 // ensureSubAggregationType lazily creates a sub-aggregation type from the base
 // aggregation type's scalar fields, mapping them to SubAggregation variants.
-// depth 1: includes _rows_count + scalar fields (SubAgg types) + extra fields
+// Includes ExtraFieldProvider extra fields (e.g., _founded_part for Date).
+// depth 1: _rows_count + scalar fields (SubAgg types) + extra fields
 // depth >= 2: only _rows_count
 func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTypeName, _ string, depth int, opts base.Options, pos *ast.Position) {
+	buildSubAggregationType(ctx, objectName, subAggTypeName, depth, opts, pos, true)
+}
+
+// ensureSubAggregationTypeNoExtra creates a sub-aggregation type without ExtraFieldProvider fields.
+// This matches the old compiler's behavior for table_function_call_join-triggered sub-aggs,
+// which are created during field iteration before extra fields are added to the base agg type.
+func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, subAggTypeName string, depth int, opts base.Options, pos *ast.Position) {
+	buildSubAggregationType(ctx, objectName, subAggTypeName, depth, opts, pos, false)
+}
+
+// buildSubAggregationType is the shared implementation for creating sub-aggregation types.
+// When includeExtraFields is true, ExtraFieldProvider-generated fields are included.
+func buildSubAggregationType(ctx base.CompilationContext, objectName, subAggTypeName string, depth int, opts base.Options, pos *ast.Position, includeExtraFields bool) {
 	if ctx.LookupType(subAggTypeName) != nil {
 		return // already created
 	}
 
-	// Always source scalar fields from the base aggregation type
 	baseAggName := "_" + objectName + "_aggregation"
 	baseAgg := ctx.LookupType(baseAggName)
 	if baseAgg == nil {
 		return
 	}
 
-	// The @aggregation directive references the parent (one level up)
-	parentAggName := aggTypeNameAtDepth(objectName, depth-1)
-
-	// level = depth + 1 (base = level 1, sub = level 2, sub-sub = level 3)
+	parentAggName := AggTypeNameAtDepth(objectName, depth-1)
 	level := depth + 1
 
 	var fields ast.FieldList
@@ -806,8 +802,6 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 				}
 				fields = append(fields, subField)
 			} else if isStructuralAggFieldByConvention(f) {
-				// Structural Object aggregation fields — reference sub-agg type by name
-				// (created eagerly by PassthroughRule)
 				structSubAggName := f.Type.Name() + "_sub_aggregation"
 				subField := &ast.FieldDefinition{
 					Name:     f.Name,
@@ -823,51 +817,51 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 		}
 
 		// Add extra fields (e.g., _founded_part for Date, _booking_time_part for Timestamp)
-		// by checking the original object's fields for ExtraFieldProvider scalars
-		origObj := ctx.LookupType(objectName)
-		if origObj != nil {
-			for _, f := range origObj.Fields {
-				if f.Name == "_stub" {
-					continue
+		if includeExtraFields {
+			origObj := ctx.LookupType(objectName)
+			if origObj != nil {
+				for _, f := range origObj.Fields {
+					if f.Name == "_stub" {
+						continue
+					}
+					s := ctx.ScalarLookup(f.Type.Name())
+					if s == nil {
+						continue
+					}
+					efp, ok := s.(types.ExtraFieldProvider)
+					if !ok {
+						continue
+					}
+					extraField := efp.GenerateExtraField(f.Name)
+					if extraField == nil {
+						continue
+					}
+					retScalar := ctx.ScalarLookup(extraField.Type.Name())
+					if retScalar == nil {
+						continue
+					}
+					retAgg, ok := retScalar.(types.Aggregatable)
+					if !ok {
+						continue
+					}
+					subTypeName := scalarSubAggTypeName(retAgg.AggregationTypeName())
+					if subTypeName == "" {
+						continue
+					}
+					extraAggField := &ast.FieldDefinition{
+						Name:     extraField.Name,
+						Type:     ast.NamedType(subTypeName, pos),
+						Position: pos,
+						Directives: ast.DirectiveList{
+							fieldAggregationDirective(extraField.Name, pos),
+						},
+					}
+					if len(extraField.Arguments) > 0 {
+						extraAggField.Arguments = make(ast.ArgumentDefinitionList, len(extraField.Arguments))
+						copy(extraAggField.Arguments, extraField.Arguments)
+					}
+					fields = append(fields, extraAggField)
 				}
-				s := ctx.ScalarLookup(f.Type.Name())
-				if s == nil {
-					continue
-				}
-				efp, ok := s.(types.ExtraFieldProvider)
-				if !ok {
-					continue
-				}
-				extraField := efp.GenerateExtraField(f.Name)
-				if extraField == nil {
-					continue
-				}
-				// Map extra field's return type to SubAggregation
-				retScalar := ctx.ScalarLookup(extraField.Type.Name())
-				if retScalar == nil {
-					continue
-				}
-				retAgg, ok := retScalar.(types.Aggregatable)
-				if !ok {
-					continue
-				}
-				subTypeName := scalarSubAggTypeName(retAgg.AggregationTypeName())
-				if subTypeName == "" {
-					continue
-				}
-				extraAggField := &ast.FieldDefinition{
-					Name:     extraField.Name,
-					Type:     ast.NamedType(subTypeName, pos),
-					Position: pos,
-					Directives: ast.DirectiveList{
-						fieldAggregationDirective(extraField.Name, pos),
-					},
-				}
-				if len(extraField.Arguments) > 0 {
-					extraAggField.Arguments = make(ast.ArgumentDefinitionList, len(extraField.Arguments))
-					copy(extraAggField.Arguments, extraField.Arguments)
-				}
-				fields = append(fields, extraAggField)
 			}
 		}
 	}
@@ -889,169 +883,6 @@ func ensureSubAggregationType(ctx base.CompilationContext, objectName, subAggTyp
 	ctx.AddDefinition(subAgg)
 }
 
-// ensureSubAggregationTypeNoExtra creates a sub-aggregation type that includes only
-// scalar fields from the base aggregation (no ExtraFieldProvider extra fields).
-// This matches the old compiler's behavior for table_function_call_join-triggered sub-aggs,
-// which are created during field iteration before extra fields are added to the base agg type.
-func ensureSubAggregationTypeNoExtra(ctx base.CompilationContext, objectName, subAggTypeName string, depth int, opts base.Options, pos *ast.Position) {
-	if ctx.LookupType(subAggTypeName) != nil {
-		return // already created
-	}
-
-	baseAggName := "_" + objectName + "_aggregation"
-	baseAgg := ctx.LookupType(baseAggName)
-	if baseAgg == nil {
-		return
-	}
-
-	parentAggName := aggTypeNameAtDepth(objectName, depth-1)
-	level := depth + 1
-
-	var fields ast.FieldList
-
-	rowsCountType := "BigIntAggregation"
-	if depth >= maxAggDepth {
-		rowsCountType = "BigIntSubAggregation"
-	}
-	fields = append(fields, &ast.FieldDefinition{
-		Name:     "_rows_count",
-		Type:     ast.NamedType(rowsCountType, pos),
-		Position: pos,
-		Directives: ast.DirectiveList{
-			{Name: base.ObjectFieldAggregationDirectiveName, Arguments: ast.ArgumentList{
-				{Name: base.ArgName, Value: &ast.Value{Raw: "aggregation_field", Kind: ast.StringValue, Position: pos}, Position: pos},
-			}, Position: pos},
-		},
-	})
-
-	if depth < maxAggDepth {
-		for _, f := range baseAgg.Fields {
-			if f.Name == "_rows_count" {
-				continue
-			}
-			subTypeName := scalarSubAggTypeName(f.Type.Name())
-			if subTypeName != "" {
-				subField := &ast.FieldDefinition{
-					Name:     f.Name,
-					Type:     ast.NamedType(subTypeName, pos),
-					Position: pos,
-				}
-				if len(f.Directives) > 0 {
-					subField.Directives = make(ast.DirectiveList, len(f.Directives))
-					copy(subField.Directives, f.Directives)
-				}
-				if len(f.Arguments) > 0 {
-					subField.Arguments = make(ast.ArgumentDefinitionList, len(f.Arguments))
-					copy(subField.Arguments, f.Arguments)
-				}
-				fields = append(fields, subField)
-			} else if isStructuralAggFieldByConvention(f) {
-				// Structural Object aggregation fields — reference sub-agg type by name
-				// (created eagerly by PassthroughRule)
-				structSubAggName := f.Type.Name() + "_sub_aggregation"
-				subField := &ast.FieldDefinition{
-					Name:     f.Name,
-					Type:     ast.NamedType(structSubAggName, pos),
-					Position: pos,
-				}
-				if len(f.Directives) > 0 {
-					subField.Directives = make(ast.DirectiveList, len(f.Directives))
-					copy(subField.Directives, f.Directives)
-				}
-				fields = append(fields, subField)
-			}
-		}
-		// No extra fields from ExtraFieldProvider — intentionally omitted
-	}
-
-	subAgg := &ast.Definition{
-		Kind:     ast.Object,
-		Name:     subAggTypeName,
-		Position: pos,
-		Directives: ast.DirectiveList{
-			{Name: base.ObjectAggregationDirectiveName, Arguments: ast.ArgumentList{
-				{Name: base.ArgName, Value: &ast.Value{Raw: parentAggName, Kind: ast.StringValue, Position: pos}, Position: pos},
-				{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
-				{Name: "level", Value: &ast.Value{Raw: fmt.Sprintf("%d", level), Kind: ast.IntValue, Position: pos}, Position: pos},
-			}, Position: pos},
-			optsCatalogDirective(opts),
-		},
-		Fields: fields,
-	}
-	ctx.AddDefinition(subAgg)
-}
-
-// scalarSubAggTypeName maps a scalar aggregation type to its SubAggregation variant.
-// Returns "" if the type is not a known scalar aggregation type.
-// Delegates to the type registry.
-func scalarSubAggTypeName(aggTypeName string) string {
-	return types.SubAggregationTypeName(aggTypeName)
-}
-
-// isStructuralAggFieldByConvention returns true if the field on an aggregation type
-// represents a structural Object aggregation (e.g., specs: _Specs_aggregation).
-// Uses convention-based detection: non-scalar, no-arguments fields are structural.
-// Reference fields always have arguments (inner, filter, order_by, etc.).
-// Extra fields always have arguments and scalar agg types.
-func isStructuralAggFieldByConvention(f *ast.FieldDefinition) bool {
-	if f.Name == "_rows_count" {
-		return false
-	}
-	if scalarSubAggTypeName(f.Type.Name()) != "" {
-		return false
-	}
-	if len(f.Arguments) > 0 {
-		return false
-	}
-	return true
-}
-
-
-
-// cloneArgDefs creates a shallow copy of an argument definition list.
-func cloneArgDefs(args ast.ArgumentDefinitionList, _ *ast.Position) ast.ArgumentDefinitionList {
-	if len(args) == 0 {
-		return nil
-	}
-	out := make(ast.ArgumentDefinitionList, len(args))
-	copy(out, args)
-	return out
-}
-
-// cloneASTType creates a shallow copy of an ast.Type tree.
-// aggRefArgs returns reference field args on aggregation types:
-// filter + order_by + distinct_on + inner + nested_*.
-func aggRefArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
-	return ast.ArgumentDefinitionList{
-		{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
-		{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
-		{Name: "inner", Description: base.DescInnerJoin, Type: ast.NamedType("Boolean", pos), Position: pos,
-			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue}},
-		{Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos},
-		{Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos},
-	}
-}
-
-// aggSubRefArgs returns args for the _aggregation sub-field on aggregation types.
-// Includes filter + order_by + limit/offset + distinct_on + inner + nested_*.
-func aggSubRefArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
-	return ast.ArgumentDefinitionList{
-		{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
-		{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "limit", Description: base.DescLimit, Type: ast.NamedType("Int", pos), Position: pos,
-			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue}},
-		{Name: "offset", Description: base.DescOffset, Type: ast.NamedType("Int", pos), Position: pos,
-			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue}},
-		{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
-		{Name: "inner", Description: base.DescInnerJoin, Type: ast.NamedType("Boolean", pos), Position: pos,
-			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue}},
-		{Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		{Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos},
-		{Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos},
-	}
-}
 
 // addFieldReferencesToFilter adds a @field_references directive to the filter field
 // matching a @field_references directive on the source object field.

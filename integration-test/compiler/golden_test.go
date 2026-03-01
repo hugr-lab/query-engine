@@ -18,9 +18,21 @@ import (
 
 // testConfig represents the config.json for a golden test case.
 type testConfig struct {
-	Catalogs      []catalogConfig `json:"catalogs"`
-	ExpectedError string          `json:"expected_error"`
-	SkipTypes     []string        `json:"skip_types"`
+	Catalogs      []catalogConfig      `json:"catalogs"`
+	Incremental   *incrementalConfig   `json:"incremental"`
+	Incrementals  []incrementalConfig  `json:"incrementals"` // multiple sequential steps
+	ExpectedError string               `json:"expected_error"`
+	SkipTypes     []string             `json:"skip_types"`
+}
+
+// incrementalConfig describes an incremental compilation step after base catalogs.
+type incrementalConfig struct {
+	File         string `json:"file"`         // path to changes SDL (relative to schemes/)
+	Catalog      string `json:"catalog"`      // which catalog these changes apply to
+	Engine       string `json:"engine"`       // engine type
+	Capabilities string `json:"capabilities"` // capabilities preset
+	Prefix       string `json:"prefix"`       // prefix (must match the base catalog's prefix)
+	AsModule     bool   `json:"as_module"`    // must match the base catalog's as_module
 }
 
 // catalogConfig represents one catalog entry in config.json.
@@ -60,6 +72,9 @@ func TestGolden(t *testing.T) {
 			provider, compiler := setupMultiCatalogProvider(t)
 			ctx := context.Background()
 
+			// Track base catalog sources for incremental compilation
+			catalogSources := make(map[string]*testSource)
+
 			for i, cat := range cfg.Catalogs {
 				sdlPath := filepath.Join(testDir, "schemes", cat.File)
 				sdlBytes, err := os.ReadFile(sdlPath)
@@ -73,6 +88,7 @@ func TestGolden(t *testing.T) {
 					t.Fatalf("parse %s: %v", cat.File, err)
 				}
 				source := extractSourceDefs(sd)
+				catalogSources[cat.Name] = source
 				opts := buildOptions(cat)
 
 				var p base.Provider
@@ -96,6 +112,58 @@ func TestGolden(t *testing.T) {
 						return // pass — error matched during update
 					}
 					t.Fatalf("update %s: %v", cat.Name, err)
+				}
+			}
+
+			// Incremental compilation steps (if configured)
+			incSteps := cfg.Incrementals
+			if cfg.Incremental != nil {
+				incSteps = append([]incrementalConfig{*cfg.Incremental}, incSteps...)
+			}
+			for stepIdx, inc := range incSteps {
+				sdlPath := filepath.Join(testDir, "schemes", inc.File)
+				sdlBytes, err := os.ReadFile(sdlPath)
+				if err != nil {
+					t.Fatalf("step %d: read incremental %s: %v", stepIdx+1, sdlPath, err)
+				}
+
+				sd, err := parser.ParseSchema(&ast.Source{Name: inc.File, Input: string(sdlBytes)})
+				if err != nil {
+					t.Fatalf("step %d: parse incremental %s: %v", stepIdx+1, inc.File, err)
+				}
+				changeSource := extractSourceDefs(sd)
+
+				baseCatalog := catalogSources[inc.Catalog]
+				if baseCatalog == nil {
+					t.Fatalf("step %d: incremental catalog %q not found in base catalogs", stepIdx+1, inc.Catalog)
+				}
+
+				opts := buildIncrementalOptions(&inc)
+
+				compiled, err := compiler.CompileChanges(ctx, provider, baseCatalog, changeSource, opts)
+				if cfg.ExpectedError != "" && err != nil {
+					if !strings.Contains(err.Error(), cfg.ExpectedError) {
+						t.Fatalf("step %d: expected error containing %q, got: %v", stepIdx+1, cfg.ExpectedError, err)
+					}
+					return // pass — error matched
+				}
+				if err != nil {
+					t.Fatalf("step %d: incremental compile: %v", stepIdx+1, err)
+				}
+
+				if err := provider.Update(ctx, compiled); err != nil {
+					if cfg.ExpectedError != "" && strings.Contains(err.Error(), cfg.ExpectedError) {
+						return // pass — error matched during update
+					}
+					t.Fatalf("step %d: incremental update: %v", stepIdx+1, err)
+				}
+
+				// Validate schema integrity after each incremental apply
+				if errs := provider.ValidateSchema(); len(errs) > 0 {
+					for _, e := range errs {
+						t.Errorf("step %d: schema validation: %v", stepIdx+1, e)
+					}
+					t.Fatalf("step %d: schema invalid after incremental apply", stepIdx+1)
 				}
 			}
 
@@ -158,6 +226,19 @@ func buildOptions(cat catalogConfig) base.Options {
 		Prefix:      cat.Prefix,
 	}
 	if cap := capabilitiesPreset(cat.Capabilities); cap != nil {
+		opts.Capabilities = cap
+	}
+	return opts
+}
+
+func buildIncrementalOptions(inc *incrementalConfig) base.Options {
+	opts := base.Options{
+		Name:       inc.Catalog,
+		EngineType: inc.Engine,
+		Prefix:     inc.Prefix,
+		AsModule:   inc.AsModule,
+	}
+	if cap := capabilitiesPreset(inc.Capabilities); cap != nil {
 		opts.Capabilities = cap
 	}
 	return opts

@@ -1,0 +1,6 @@
+type Hotel @table(name: "hotels") {
+  id: Int! @pk
+  name: String!
+  city: String!
+  stars: Int
+}

@@ -1,0 +1,2 @@
+# Drop an existing @unique directive and add a new one
+extend type Airport @drop_directive(name: "unique", match: {fields: ["name", "city"]}) @unique(fields: ["iata_code", "city"], type: EQUALS)

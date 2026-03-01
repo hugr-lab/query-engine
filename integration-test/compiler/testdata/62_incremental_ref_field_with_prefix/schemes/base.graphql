@@ -1,0 +1,12 @@
+"""Airport"""
+type Airport @table(name: "airports") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+}
+
+"""Route between airports"""
+type Route @table(name: "routes") {
+  id: Int! @pk
+  stops: Int!
+}

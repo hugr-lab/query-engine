@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"sync"
@@ -61,8 +62,9 @@ func (c *memoryCatalog) AddCatalog(ctx context.Context, name string, catalog Cat
 	if err != nil {
 		return err
 	}
-	slog.Info("catalog added", "catalog", name, "dependencies", deps)
-	c.catalogs[name] = registeredCatalog{source: catalog, dependencies: deps}
+	version, _ := catalog.Version(ctx)
+	slog.Info("catalog added", "catalog", name, "dependencies", deps, "version", version)
+	c.catalogs[name] = registeredCatalog{source: catalog, version: version, dependencies: deps}
 
 	// Re-activate any suspended catalogs whose dependencies are now all satisfied.
 	c.reactivateSuspended(ctx)
@@ -92,6 +94,103 @@ func (c *memoryCatalog) ExistsCatalog(name string) bool {
 	defer c.mu.RUnlock()
 	_, ok := c.catalogs[name]
 	return ok
+}
+
+// ReloadCatalog reloads a catalog by name. If the source supports incremental
+// changes (IncrementalCatalog), only the delta is compiled and applied.
+// Otherwise falls back to full recompilation (drop + recompile).
+func (c *memoryCatalog) ReloadCatalog(ctx context.Context, name string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	reg, ok := c.catalogs[name]
+	if !ok {
+		return ErrCatalogNotFound
+	}
+	if reg.suspended {
+		return errors.New("cannot reload suspended catalog")
+	}
+
+	// Refresh source data if the catalog supports it.
+	if rc, ok := reg.source.(ReloadableCatalog); ok {
+		if err := rc.Reload(ctx); err != nil {
+			return fmt.Errorf("reload source: %w", err)
+		}
+	}
+
+	// Check version — skip if unchanged.
+	newVersion, err := reg.source.Version(ctx)
+	if err != nil {
+		return fmt.Errorf("get version: %w", err)
+	}
+	if newVersion == reg.version {
+		slog.Debug("catalog version unchanged, skipping reload", "catalog", name, "version", newVersion)
+		return nil
+	}
+
+	// Try incremental compilation if supported.
+	if ic, ok := reg.source.(IncrementalCatalog); ok {
+		if err := c.reloadIncremental(ctx, name, &reg, ic); err != nil {
+			slog.Warn("incremental reload failed, falling back to full recompilation",
+				"catalog", name, "error", err)
+		} else {
+			return nil
+		}
+	}
+
+	// Full recompilation fallback: drop existing catalog, recompile from scratch.
+	return c.reloadFull(ctx, name, &reg)
+}
+
+// reloadIncremental attempts an incremental reload using IncrementalCatalog.Changes().
+// On success, updates the registered catalog entry with the new version.
+func (c *memoryCatalog) reloadIncremental(ctx context.Context, name string, reg *registeredCatalog, ic IncrementalCatalog) error {
+	p, ok := c.provider.(base.MutableProvider)
+	if !ok {
+		return errors.New("provider does not support mutable operations")
+	}
+
+	changes, newVersion, err := ic.Changes(ctx, reg.version)
+	if err != nil {
+		return fmt.Errorf("get changes: %w", err)
+	}
+
+	compiled, err := c.compiler.CompileChanges(ctx, p, reg.source, changes, reg.source.CompileOptions())
+	if err != nil {
+		return fmt.Errorf("compile changes: %w", err)
+	}
+
+	if err := p.Update(ctx, compiled); err != nil {
+		return fmt.Errorf("apply changes: %w", err)
+	}
+
+	reg.version = newVersion
+	c.catalogs[name] = *reg
+	slog.Info("catalog reloaded incrementally", "catalog", name, "version", newVersion)
+	return nil
+}
+
+// reloadFull drops the existing catalog from the provider and recompiles from scratch.
+func (c *memoryCatalog) reloadFull(ctx context.Context, name string, reg *registeredCatalog) error {
+	// Suspend dependents before dropping.
+	c.suspendDependents(ctx, name)
+
+	_ = c.removeCatalog(ctx, name)
+
+	deps, err := c.compileAndApply(ctx, name, reg.source)
+	if err != nil {
+		return fmt.Errorf("full recompilation: %w", err)
+	}
+
+	version, _ := reg.source.Version(ctx)
+	reg.version = version
+	reg.dependencies = deps
+	reg.suspended = false
+	c.catalogs[name] = *reg
+	slog.Info("catalog reloaded (full recompilation)", "catalog", name, "version", version)
+
+	c.reactivateSuspended(ctx)
+	return nil
 }
 
 // compileAndApply compiles a catalog and applies it to the provider.

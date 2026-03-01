@@ -50,7 +50,7 @@ func (r *ExtensionFieldAggregationRule) ProcessAll(ctx base.CompilationContext) 
 
 		// Process @references directives on the extension
 		for _, dir := range ext.Directives.ForNames(base.ReferencesDirectiveName) {
-			processExtensionReferences(ctx, ext, dir, pos)
+			ProcessExtensionReferences(ctx, ext, dir, pos)
 		}
 
 		// Process individual fields
@@ -93,7 +93,7 @@ func processExtensionJoinField(ctx base.CompilationContext, parentName string, f
 
 	targetFilterName := targetName + "_filter"
 	targetAggName := "_" + targetName + "_aggregation"
-	subAggName := aggTypeNameAtDepth(targetName, 1)
+	subAggName := AggTypeNameAtDepth(targetName, 1)
 	targetOpts := optsFromTargetCatalog(targetDef)
 
 	// Add @catalog from the target type so the planner knows which engine
@@ -119,7 +119,7 @@ func processExtensionJoinField(ctx base.CompilationContext, parentName string, f
 			{
 				Name:      f.Name,
 				Type:      ast.NamedType(targetAggName, pos),
-				Arguments: aggRefArgs(targetFilterName, pos),
+				Arguments: AggRefArgs(targetFilterName, pos),
 				Directives: ast.DirectiveList{
 					fieldAggregationDirective(f.Name, pos),
 				},
@@ -128,7 +128,7 @@ func processExtensionJoinField(ctx base.CompilationContext, parentName string, f
 			{
 				Name:      f.Name + "_aggregation",
 				Type:      ast.NamedType(subAggName, pos),
-				Arguments: aggSubRefArgs(targetFilterName, pos),
+				Arguments: AggSubRefArgs(targetFilterName, pos),
 				Directives: ast.DirectiveList{
 					fieldAggregationDirective(f.Name, pos),
 				},
@@ -156,7 +156,7 @@ func processExtensionTFCJField(ctx base.CompilationContext, parentName string, f
 
 	targetAggName := "_" + targetName + "_aggregation"
 	bucketAggName := "_" + targetName + "_aggregation_bucket"
-	subAggName := aggTypeNameAtDepth(targetName, 1)
+	subAggName := AggTypeNameAtDepth(targetName, 1)
 	targetCatDir := targetCatalogDirective(targetDef)
 
 	// Add @catalog from the target type so the planner knows which engine
@@ -165,7 +165,7 @@ func processExtensionTFCJField(ctx base.CompilationContext, parentName string, f
 		f.Directives = append(f.Directives, targetCatDir)
 	}
 
-	origArgs := cloneArgDefs(f.Arguments, pos)
+	origArgs := CloneArgDefs(f.Arguments, pos)
 
 	// Add {name}_aggregation and {name}_bucket_aggregation on base object (with original args)
 	ctx.AddExtension(&ast.Definition{
@@ -191,7 +191,7 @@ func processExtensionTFCJField(ctx base.CompilationContext, parentName string, f
 				Name:        f.Name + "_bucket_aggregation",
 				Description: "The bucket aggregation for " + f.Name,
 				Type:        ast.ListType(ast.NamedType(bucketAggName, pos), pos),
-				Arguments:   cloneArgDefs(f.Arguments, pos),
+				Arguments:   CloneArgDefs(f.Arguments, pos),
 				Directives: ast.DirectiveList{
 					{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
 						{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -213,7 +213,7 @@ func processExtensionTFCJField(ctx base.CompilationContext, parentName string, f
 			{
 				Name:      f.Name,
 				Type:      ast.NamedType(targetAggName, pos),
-				Arguments: cloneArgDefs(f.Arguments, pos),
+				Arguments: CloneArgDefs(f.Arguments, pos),
 				Directives: ast.DirectiveList{
 					fieldAggregationDirective(f.Name, pos),
 				},
@@ -222,7 +222,7 @@ func processExtensionTFCJField(ctx base.CompilationContext, parentName string, f
 			{
 				Name:      f.Name + "_aggregation",
 				Type:      ast.NamedType(subAggName, pos),
-				Arguments: cloneArgDefs(f.Arguments, pos),
+				Arguments: CloneArgDefs(f.Arguments, pos),
 				Directives: ast.DirectiveList{
 					fieldAggregationDirective(f.Name, pos),
 				},
@@ -263,10 +263,10 @@ func processExtensionScalarAggField(ctx base.CompilationContext, f *ast.FieldDef
 	})
 }
 
-// processExtensionReferences handles @references directives on extension `extend type` blocks.
+// ProcessExtensionReferences handles @references directives on extension `extend type` blocks.
 // Generates forward/back query fields, filter extensions, and aggregation extensions.
 // MUST NOT modify mutation input types (cross-catalog mutations not supported).
-func processExtensionReferences(ctx base.CompilationContext, ext *ast.Definition, dir *ast.Directive, pos *ast.Position) {
+func ProcessExtensionReferences(ctx base.CompilationContext, ext *ast.Definition, dir *ast.Directive, pos *ast.Position) {
 	refName := base.DirectiveArgString(dir, base.ArgReferencesName)
 	if refName == "" {
 		return
@@ -334,7 +334,7 @@ func processExtensionReferences(ctx base.CompilationContext, ext *ast.Definition
 	var forwardArgs ast.ArgumentDefinitionList
 	if isM2MRef {
 		forwardType = ast.ListType(ast.NamedType(refName, pos), pos)
-		forwardArgs = subQueryArgs(targetFilterName, pos)
+		forwardArgs = SubQueryArgs(targetFilterName, pos)
 	} else {
 		forwardType = &ast.Type{NamedType: refName}
 		forwardArgs = ast.ArgumentDefinitionList{
@@ -384,7 +384,7 @@ func processExtensionReferences(ctx base.CompilationContext, ext *ast.Definition
 				{
 					Name:      refQuery,
 					Type:      ast.ListType(ast.NamedType(ext.Name, pos), pos),
-					Arguments: subQueryArgs(sourceFilterName, pos),
+					Arguments: SubQueryArgs(sourceFilterName, pos),
 					Directives: ast.DirectiveList{
 						backRefQueryDir,
 						targetCatalogDirective(sourceDef),
@@ -429,7 +429,7 @@ func targetCatalogDirective(targetDef *ast.Definition) *ast.Directive {
 // If the target is a parameterized view (has @args directive), the `args` parameter
 // is prepended so the user can pass view arguments through the extension field.
 func extensionSubQueryArgs(targetDef *ast.Definition, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
-	args := subQueryArgs(filterName, pos)
+	args := SubQueryArgs(filterName, pos)
 	if targetDef == nil {
 		return args
 	}

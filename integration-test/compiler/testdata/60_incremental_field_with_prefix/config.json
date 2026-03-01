@@ -1,0 +1,18 @@
+{
+  "catalogs": [
+    {
+      "file": "base.graphql",
+      "name": "extra",
+      "engine": "duckdb",
+      "capabilities": "duckdb",
+      "prefix": "ext"
+    }
+  ],
+  "incremental": {
+    "file": "changes.graphql",
+    "catalog": "extra",
+    "engine": "duckdb",
+    "capabilities": "duckdb",
+    "prefix": "ext"
+  }
+}

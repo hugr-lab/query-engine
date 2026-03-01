@@ -127,7 +127,7 @@ func addFunctionAggregationFields(ctx base.CompilationContext, def *ast.Definiti
 		aggFields = append(aggFields, &ast.FieldDefinition{
 			Name:      field.Name + "_aggregation",
 			Type:      ast.NamedType(aggTypeName, pos),
-			Arguments: cloneArgDefs(field.Arguments, pos),
+			Arguments: CloneArgDefs(field.Arguments, pos),
 			Directives: ast.DirectiveList{
 				{Name: "aggregation_query", Arguments: ast.ArgumentList{
 					{Name: "name", Value: &ast.Value{Raw: field.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
@@ -142,7 +142,7 @@ func addFunctionAggregationFields(ctx base.CompilationContext, def *ast.Definiti
 		aggFields = append(aggFields, &ast.FieldDefinition{
 			Name:      field.Name + "_bucket_aggregation",
 			Type:      ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
-			Arguments: cloneArgDefs(field.Arguments, pos),
+			Arguments: CloneArgDefs(field.Arguments, pos),
 			Directives: ast.DirectiveList{
 				{Name: "aggregation_query", Arguments: ast.ArgumentList{
 					{Name: "name", Value: &ast.Value{Raw: field.Name, Kind: ast.StringValue, Position: pos}, Position: pos},

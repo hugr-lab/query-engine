@@ -47,6 +47,15 @@ func IsDropField(field *ast.FieldDefinition) bool {
 	return field.Directives.ForName(DropDirectiveName) != nil
 }
 
+func DropFieldIfExists(field *ast.FieldDefinition) bool {
+	dir := field.Directives.ForName(DropDirectiveName)
+	if dir == nil {
+		return false
+	}
+	arg := dir.Arguments.ForName("if_exists")
+	return arg != nil && arg.Value != nil && arg.Value.Raw == "true"
+}
+
 func IsReplaceField(field *ast.FieldDefinition) bool {
 	return field.Directives.ForName(ReplaceDirectiveName) != nil
 }

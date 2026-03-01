@@ -1,0 +1,9 @@
+# Add a new field to an existing type (with prefix)
+extend type Airport {
+  country: String
+}
+
+# Drop an existing field (with prefix)
+extend type Airport {
+  city: Boolean @drop
+}

@@ -34,3 +34,26 @@ type ExtensionCatalog interface {
 	base.ExtensionsSource
 	Deps() []string // Names of other catalog extensions this extension depends on
 }
+
+// IncrementalCatalog is implemented by catalogs that support providing
+// incremental schema changes instead of requiring full recompilation.
+// This is the pull-based model: the catalog manager calls Changes() with
+// the last known version and receives only the definitions that changed.
+//
+// Changes supports two granularities:
+//   - Type-level: definitions with @drop (type removal) or no directive (type addition)
+//   - Field-level: if the returned source also implements ExtensionsSource,
+//     extensions provide field add/drop/replace and directive changes
+//
+// Use DiffSchemas to compute field-level changes between two schema snapshots.
+type IncrementalCatalog interface {
+	Catalog
+
+	// Changes returns incremental DDL changes since fromVersion.
+	// Returns:
+	//   - changes: definitions with @drop or new additions;
+	//     may also implement ExtensionsSource for field-level changes
+	//   - newVersion: the version after these changes are applied
+	//   - error: if changes cannot be computed (caller should fall back to full reload)
+	Changes(ctx context.Context, fromVersion string) (changes base.DefinitionsSource, newVersion string, err error)
+}

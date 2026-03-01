@@ -1,0 +1,11 @@
+type Airport @table(name: "airports") @module(name: "transport") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+}
+
+extend type Function {
+  search_airports(query: String!, limit: Int): Airport
+    @function(name: "search_airports")
+    @module(name: "transport")
+}

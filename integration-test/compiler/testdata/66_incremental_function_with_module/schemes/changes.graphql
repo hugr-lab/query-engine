@@ -1,0 +1,6 @@
+# Add a new function with @module
+extend type Function {
+  find_nearby(iata_code: String!, radius: Float): [Airport]
+    @function(name: "find_nearby_airports")
+    @module(name: "transport")
+}

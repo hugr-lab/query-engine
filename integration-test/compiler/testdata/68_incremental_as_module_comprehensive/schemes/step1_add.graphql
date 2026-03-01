@@ -1,0 +1,20 @@
+# Step 1: Add new type, add field to existing type, add function
+
+# Add new type Ship in new module "sea"
+type Ship @table(name: "ships") @module(name: "sea") {
+  id: Int! @pk
+  name: String!
+  tonnage: Float
+}
+
+# Add field to existing type Airport
+extend type Airport {
+  country: String
+}
+
+# Add new table-returning function in module "air"
+extend type Function {
+  find_nearby(iata_code: String!, radius: Float): [Airport]
+    @function(name: "find_nearby_airports")
+    @module(name: "air")
+}
