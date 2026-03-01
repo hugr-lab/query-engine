@@ -1,0 +1,13 @@
+# Drop @field_references field from Order (triggers reference cleanup)
+extend type Order {
+  product_id: Boolean @drop
+}
+
+# Drop parameterized view and its input type
+type SalesReport @drop { _stub: Boolean }
+input SalesReportArgs @drop { _stub: Boolean }
+
+# Module change: move Category from "commerce" to "inventory"
+extend type Category
+  @drop_directive(name: "module", match: {name: "commerce"})
+  @module(name: "inventory")

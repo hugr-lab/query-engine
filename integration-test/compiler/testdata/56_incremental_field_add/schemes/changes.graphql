@@ -1,0 +1,7 @@
+# Add new fields to existing Product type via extension
+extend type Product {
+  description: String
+  weight: Float
+  created_at: Timestamp
+  active: Boolean
+}

@@ -1,0 +1,9 @@
+# Add a reference field with prefix — references_name uses the unprefixed name
+extend type Route {
+  src_airport: String! @field_references(
+    references_name: "Airport"
+    field: "iata_code"
+    query: "source_airport"
+    references_query: "departing_routes"
+  )
+}

@@ -1,0 +1,11 @@
+"""Route added incrementally to base catalog"""
+type Route @table(name: "routes") {
+  id: Int! @pk
+  src_airport: String! @field_references(
+    references_name: "Airport"
+    field: "iata_code"
+    query: "source_airport"
+    references_query: "departing_routes"
+  )
+  stops: Int!
+}

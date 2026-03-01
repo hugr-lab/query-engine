@@ -1,0 +1,8 @@
+"""Station added incrementally to transport.ground module"""
+type Station
+  @table(name: "stations")
+  @module(name: "ground") {
+  id: Int! @pk
+  name: String!
+  city: String!
+}

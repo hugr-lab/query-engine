@@ -1,0 +1,23 @@
+type Airport @table(name: "airports") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+}
+
+"""Route between airports with forward and back references"""
+type Route @table(name: "routes") {
+  id: Int! @pk
+  src_airport: String! @field_references(
+    references_name: "Airport"
+    field: "iata_code"
+    query: "source_airport"
+    references_query: "departing_routes"
+  )
+  dst_airport: String! @field_references(
+    references_name: "Airport"
+    field: "iata_code"
+    query: "destination_airport"
+    references_query: "arriving_routes"
+  )
+  stops: Int!
+}

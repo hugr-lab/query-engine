@@ -1,0 +1,23 @@
+# Add @join field to Product
+extend type Product {
+  category: Category @join(
+    references_name: "Category"
+    source_fields: ["category_id"]
+    references_fields: ["id"]
+  )
+}
+
+# Add @function_call field to Product
+extend type Product {
+  discount: Float @function_call(references_name: "get_discount", args: {product_id: "id"})
+}
+
+# Add @table_function_call_join field to Product
+extend type Product {
+  similar: [Product] @table_function_call_join(references_name: "find_similar", args: {product_id: "id"})
+}
+
+# Add @sql computed field to Product
+extend type Product {
+  name_upper: String @sql(exp: "UPPER([name])")
+}

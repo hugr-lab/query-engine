@@ -1,0 +1,5 @@
+# Drop fields from existing Article type
+extend type Article {
+  body: String @drop
+  rating: Float @drop
+}

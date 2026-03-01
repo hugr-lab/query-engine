@@ -1,0 +1,5 @@
+type Product @table(name: "products") {
+  id: Int! @pk
+  name: String!
+  price: Float
+}

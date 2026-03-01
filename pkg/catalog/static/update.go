@@ -69,6 +69,11 @@ func (p *Provider) Update(ctx context.Context, changes base.DefinitionsSource) e
 	// Phase 3: update relationships — incremental, only for changed defs
 	p.updateRelationships(cs)
 
+	// Phase 4: clean up dangling references left by dropped types
+	if len(cs.toDrop) > 0 {
+		p.cleanupDanglingReferences()
+	}
+
 	return nil
 }
 
@@ -210,9 +215,19 @@ func (p *Provider) validateExtensionField(target *ast.Definition, field *ast.Fie
 		existing = target.Fields.ForName(field.Name)
 	}
 
+	// If this field was already scheduled for drop in this extension,
+	// treat subsequent operations as if the field doesn't exist (drop+add pattern).
+	pendingDrop := slices.Contains(ec.fieldsToDrop, field.Name)
+	if pendingDrop {
+		existing = nil
+	}
+
 	switch {
 	case base.IsDropField(field):
 		if existing == nil {
+			if base.DropFieldIfExists(field) {
+				return nil // silently skip
+			}
 			return base.ErrDefinitionNotFound
 		}
 		ec.fieldsToDrop = append(ec.fieldsToDrop, field.Name)
@@ -476,6 +491,31 @@ func (p *Provider) validateDirectives(dirs ast.DirectiveList) error {
 		}
 	}
 	return nil
+}
+
+// --- Phase 4: Dangling reference cleanup ---
+
+// cleanupDanglingReferences removes fields from surviving types whose return type
+// or argument types reference types that no longer exist in the schema.
+// This handles back-reference fields (e.g. @field_references with references_query)
+// that point to dropped types and their derived types.
+func (p *Provider) cleanupDanglingReferences() {
+	for _, def := range p.schema.Types {
+		if def.Kind != ast.Object && def.Kind != ast.InputObject {
+			continue
+		}
+		def.Fields = slices.DeleteFunc(def.Fields, func(f *ast.FieldDefinition) bool {
+			if !isKnownType(p.schema, f.Type.Name()) {
+				return true
+			}
+			for _, arg := range f.Arguments {
+				if !isKnownType(p.schema, arg.Type.Name()) {
+					return true
+				}
+			}
+			return false
+		})
+	}
 }
 
 // --- helpers ---

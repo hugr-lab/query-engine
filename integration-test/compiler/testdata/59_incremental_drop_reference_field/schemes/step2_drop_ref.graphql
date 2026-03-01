@@ -1,0 +1,4 @@
+# Drop src_airport field which has @field_references
+extend type Route {
+  src_airport: Boolean @drop
+}

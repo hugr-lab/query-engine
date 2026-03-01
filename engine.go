@@ -11,7 +11,9 @@ import (
 	adminui "github.com/hugr-lab/query-engine/pkg/admin-ui"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
@@ -20,8 +22,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/gis"
 	permissions "github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/planner"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -58,7 +58,6 @@ type Config struct {
 	CoreDB *coredb.Source
 	Auth   *auth.Config
 	Cache  cache.Config
-
 }
 
 type Info struct {
@@ -248,9 +247,7 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	catalog := r.URL.Query().Get("catalog")
-
-	res := s.ProcessQuery(r.Context(), catalog, req)
+	res := s.ProcessQuery(r.Context(), req)
 	defer res.Close()
 
 	err = json.NewEncoder(w).Encode(res)
@@ -284,7 +281,7 @@ func (s *Service) parseRequest(r *http.Request) (req types.Request, err error) {
 	return req, err
 }
 
-func (s *Service) ProcessQuery(ctx context.Context, _ string, req types.Request) types.Response {
+func (s *Service) ProcessQuery(ctx context.Context, req types.Request) types.Response {
 	start := time.Now()
 	op, err := s.schema.ParseQuery(ctx, req.Query, req.Variables, req.OperationName)
 	if err != nil {
@@ -334,11 +331,7 @@ func (s *Service) ProcessOperation(ctx context.Context, provider catalog.Provide
 }
 
 func (s *Service) Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error) {
-	return s.QueryCatalog(ctx, "", query, vars)
-}
-
-func (s *Service) QueryCatalog(ctx context.Context, catalog, query string, vars map[string]any) (*types.Response, error) {
-	res := s.ProcessQuery(ctx, catalog, types.Request{
+	res := s.ProcessQuery(ctx, types.Request{
 		Query:     query,
 		Variables: vars,
 	})

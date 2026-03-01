@@ -189,6 +189,13 @@ func (s *Service) ExistsCatalog(name string) bool {
 	return s.manager.ExistsCatalog(name)
 }
 
+func (s *Service) ReloadCatalog(ctx context.Context, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.manager.ReloadCatalog(ctx, name)
+}
+
 // Schema access
 func (s *Service) SchemaProvider() Provider {
 	return s

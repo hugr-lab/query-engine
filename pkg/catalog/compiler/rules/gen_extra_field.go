@@ -79,7 +79,7 @@ func (r *ExtraFieldRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		})
 
 		// Add SubAggregation variants to the sub-aggregation type
-		subAggName := aggTypeNameAtDepth(def.Name, 1)
+		subAggName := AggTypeNameAtDepth(def.Name, 1)
 		var subAggExtraFields ast.FieldList
 		for _, f := range aggExtraFields {
 			subTypeName := scalarSubAggTypeName(f.Type.Name())

@@ -175,58 +175,6 @@ func (r *TableRule) Process(ctx base.CompilationContext, def *ast.Definition) er
 	return nil
 }
 
-// compiledPos creates an ast.Position tagged with a compiled-instruction source.
-func compiledPos(name string) *ast.Position {
-	src := "compiled-instruction"
-	if name != "" {
-		src = "compiled-instruction-" + name
-	}
-	return &ast.Position{Src: &ast.Source{Name: src}}
-}
-
-// addModuleToFuncCallDirective adds module=<name> to a function_call or table_function_call_join directive.
-func addModuleToFuncCallDirective(f *ast.FieldDefinition, moduleName string) {
-	for _, dirName := range []string{"function_call", "table_function_call_join"} {
-		d := f.Directives.ForName(dirName)
-		if d == nil {
-			continue
-		}
-		if a := d.Arguments.ForName(base.ArgModule); a != nil {
-			a.Value.Raw = moduleName
-		} else {
-			d.Arguments = append(d.Arguments, &ast.Argument{
-				Name:     "module",
-				Value:    &ast.Value{Kind: ast.StringValue, Raw: moduleName},
-				Position: d.Position,
-			})
-		}
-	}
-}
-
-// isVirtualField returns true for fields that are "virtual" — they don't correspond
-// to real database columns and should be excluded from filters and mutation inputs.
-// This includes @function_call, @table_function_call_join, and @join fields.
-func isVirtualField(f *ast.FieldDefinition) bool {
-	return f.Directives.ForName("function_call") != nil ||
-		f.Directives.ForName("table_function_call_join") != nil ||
-		f.Directives.ForName("join") != nil
-}
-
-// isTableOrView returns true if the definition is a @table or @view.
-func isTableOrView(def *ast.Definition) bool {
-	return def.Directives.ForName("table") != nil || def.Directives.ForName("view") != nil
-}
-
-// lookupObjectDef looks up a definition by name, checking compilation output first,
-// then falling back to source definitions. This handles cases where a structural
-// Object (e.g. DictionaryRecordsData) hasn't been processed by PassthroughRule yet
-// when a table referencing it is compiled during the same GENERATE phase.
-func lookupObjectDef(ctx base.CompilationContext, name string) *ast.Definition {
-	if def := ctx.LookupType(name); def != nil {
-		return def
-	}
-	return ctx.Source().ForName(ctx.Context(), name)
-}
 
 // generateFilterInput creates a <Name>_filter input object with scalar filter
 // fields and logical operators (_and, _or, _not).
@@ -713,79 +661,6 @@ func generateBucketAggregationType(def *ast.Definition, aggTypeName, filterName,
 	}
 }
 
-// queryArgs returns the standard query arguments for list queries.
-func queryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
-	return queryArgsWithViewArgs(nil, filterName, pos)
-}
-
-// queryArgsWithViewArgs returns standard query arguments, optionally prepending
-// an "args" parameter for parameterized views (@args directive).
-func queryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
-	var args ast.ArgumentDefinitionList
-	if info != nil && info.InputArgsName != "" {
-		var argType *ast.Type
-		if info.RequiredArgs {
-			argType = ast.NonNullNamedType(info.InputArgsName, pos)
-		} else {
-			argType = ast.NamedType(info.InputArgsName, pos)
-		}
-		args = append(args, &ast.ArgumentDefinition{
-			Name:        "args",
-			Description: base.DescArgs,
-			Type:        argType,
-			Position:    pos,
-		})
-	}
-	args = append(args,
-		&ast.ArgumentDefinition{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
-		&ast.ArgumentDefinition{Name: "order_by", Description: base.DescOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos},
-		&ast.ArgumentDefinition{Name: "limit", Description: base.DescLimit, Type: ast.NamedType("Int", pos), Position: pos,
-			DefaultValue: &ast.Value{Raw: "2000", Kind: ast.IntValue}},
-		&ast.ArgumentDefinition{Name: "offset", Description: base.DescOffset, Type: ast.NamedType("Int", pos), Position: pos,
-			DefaultValue: &ast.Value{Raw: "0", Kind: ast.IntValue}},
-		&ast.ArgumentDefinition{Name: "distinct_on", Description: base.DescDistinctOn, Type: ast.ListType(ast.NamedType("String", pos), pos), Position: pos},
-	)
-	return args
-}
-
-// subQueryArgs returns the standard query arguments for sub-queries (references).
-func subQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
-	args := queryArgs(filterName, pos)
-	args = append(args,
-		&ast.ArgumentDefinition{
-			Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", pos), Position: pos,
-			DefaultValue: &ast.Value{Raw: "false", Kind: ast.BooleanValue},
-		},
-		&ast.ArgumentDefinition{
-			Name: "nested_order_by", Description: base.DescNestedOrderBy, Type: ast.ListType(ast.NamedType("OrderByField", pos), pos), Position: pos,
-		},
-		&ast.ArgumentDefinition{
-			Name: "nested_limit", Description: base.DescNestedLimit, Type: ast.NamedType("Int", pos), Position: pos,
-		},
-		&ast.ArgumentDefinition{
-			Name: "nested_offset", Description: base.DescNestedOffset, Type: ast.NamedType("Int", pos), Position: pos,
-		},
-	)
-	return args
-}
-
-// setScalarFieldArguments sets field arguments from scalar type definitions
-// (e.g., bucket for Timestamp, transforms for Geometry, struct for JSON).
-// Must be called before generateAggregationType so args get copied.
-func setScalarFieldArguments(ctx base.CompilationContext, def *ast.Definition) {
-	for _, f := range def.Fields {
-		if f.Name == "_stub" || f.Type.NamedType == "" {
-			continue
-		}
-		s := ctx.ScalarLookup(f.Type.Name())
-		if s == nil {
-			continue
-		}
-		if fap, ok := s.(types.FieldArgumentsProvider); ok {
-			f.Arguments = fap.FieldArguments()
-		}
-	}
-}
 
 // generateQueryFields produces the list query (with filter/order/limit/offset),
 // the by-PK query, and aggregation query fields for a data object.
@@ -899,11 +774,6 @@ func generateQueryFields(ctx base.CompilationContext, def *ast.Definition, info 
 	fields = append(fields, bucketAggField)
 
 	return fields
-}
-
-// optsCatalogDirective creates a @catalog directive from compile options.
-func optsCatalogDirective(opts base.Options) *ast.Directive {
-	return catalogDirective(opts.Name, opts.EngineType)
 }
 
 // generateMutationFields produces insert, update, and delete mutation fields
@@ -1022,12 +892,12 @@ func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definitio
 		targetFilterName := targetName + "_filter"
 		targetAggName := "_" + targetName + "_aggregation"
 		bucketAggName := "_" + targetName + "_aggregation_bucket"
-		subAggName := aggTypeNameAtDepth(targetName, 1)
+		subAggName := AggTypeNameAtDepth(targetName, 1)
 
 		if isJoin {
 			// @join fields: add subquery args to the field itself
 			if len(f.Arguments) == 0 {
-				f.Arguments = subQueryArgs(targetFilterName, pos)
+				f.Arguments = SubQueryArgs(targetFilterName, pos)
 			}
 
 			// Add {name}_aggregation and {name}_bucket_aggregation on base object (with subQueryArgs)
@@ -1042,7 +912,7 @@ func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definitio
 					{
 						Name:      f.Name,
 						Type:      ast.NamedType(targetAggName, pos),
-						Arguments: aggRefArgs(targetFilterName, pos),
+						Arguments: AggRefArgs(targetFilterName, pos),
 						Directives: ast.DirectiveList{
 							fieldAggregationDirective(f.Name, pos),
 						},
@@ -1051,7 +921,7 @@ func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definitio
 					{
 						Name:      f.Name + "_aggregation",
 						Type:      ast.NamedType(subAggName, pos),
-						Arguments: aggSubRefArgs(targetFilterName, pos),
+						Arguments: AggSubRefArgs(targetFilterName, pos),
 						Directives: ast.DirectiveList{
 							fieldAggregationDirective(f.Name, pos),
 						},
@@ -1063,7 +933,7 @@ func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definitio
 			// @table_function_call_join: use original field's arguments everywhere.
 			// TFCJ fields may have function call arguments that aren't in the args mapping,
 			// so we must preserve them exactly as-is rather than using standard subquery args.
-			origArgs := cloneArgDefs(f.Arguments, pos)
+			origArgs := CloneArgDefs(f.Arguments, pos)
 
 			// Add {name}_aggregation and {name}_bucket_aggregation on base object (with original args)
 			ctx.AddExtension(&ast.Definition{
@@ -1089,7 +959,7 @@ func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definitio
 						Name:        f.Name + "_bucket_aggregation",
 						Description: "The bucket aggregation for " + f.Name,
 						Type:        ast.ListType(ast.NamedType(bucketAggName, pos), pos),
-						Arguments:   cloneArgDefs(f.Arguments, pos),
+						Arguments:   CloneArgDefs(f.Arguments, pos),
 						Directives: ast.DirectiveList{
 							{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
 								{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -1111,7 +981,7 @@ func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definitio
 					{
 						Name:      f.Name,
 						Type:      ast.NamedType(targetAggName, pos),
-						Arguments: cloneArgDefs(f.Arguments, pos),
+						Arguments: CloneArgDefs(f.Arguments, pos),
 						Directives: ast.DirectiveList{
 							fieldAggregationDirective(f.Name, pos),
 						},
@@ -1120,7 +990,7 @@ func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definitio
 					{
 						Name:      f.Name + "_aggregation",
 						Type:      ast.NamedType(subAggName, pos),
-						Arguments: cloneArgDefs(f.Arguments, pos),
+						Arguments: CloneArgDefs(f.Arguments, pos),
 						Directives: ast.DirectiveList{
 							fieldAggregationDirective(f.Name, pos),
 						},
