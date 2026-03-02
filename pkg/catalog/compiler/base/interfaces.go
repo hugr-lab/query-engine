@@ -51,8 +51,14 @@ type Provider interface {
 type MutableProvider interface {
 	Provider
 
-	// Change the definition description
-	SetDefinitionDescription(ctx context.Context, name, desc string) error
+	// SetDefinitionDescription updates a type's description and long description.
+	SetDefinitionDescription(ctx context.Context, name, desc, longDesc string) error
+	// SetFieldDescription updates a field's description and long description.
+	SetFieldDescription(ctx context.Context, typeName, fieldName, desc, longDesc string) error
+	// SetModuleDescription updates a module's description and long description.
+	SetModuleDescription(ctx context.Context, name, desc, longDesc string) error
+	// SetCatalogDescription updates a catalog's description and long description.
+	SetCatalogDescription(ctx context.Context, name, desc, longDesc string) error
 
 	DropCatalog(ctx context.Context, name string, cascade bool) error
 	Update(ctx context.Context, changes DefinitionsSource) error

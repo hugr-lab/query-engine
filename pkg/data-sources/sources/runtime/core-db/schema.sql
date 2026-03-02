@@ -99,6 +99,8 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_types 
     module VARCHAR NOT NULL DEFAULT '',
     catalog VARCHAR,
     directives {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL DEFAULT '[]',
+    interfaces VARCHAR NOT NULL DEFAULT '',
+    union_types VARCHAR NOT NULL DEFAULT '',
     is_summarized BOOLEAN NOT NULL DEFAULT FALSE,
     vec {{if isPostgres }} vector({{ .VectorSize }}) {{ else }} FLOAT[{{ .VectorSize }}] {{ end }}
 );
@@ -175,6 +177,11 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_data_o
     query_root VARCHAR NOT NULL,
     query_type VARCHAR NOT NULL,
     PRIMARY KEY (name, object_name)
+);
+
+CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_settings (
+    key VARCHAR NOT NULL PRIMARY KEY,
+    value {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL
 );
 
 {{ if isPostgres }}
