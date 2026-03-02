@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	Version = "0.0.8"
-	dbName  = "core"
+	Version           = "0.0.10"
+	dbName            = "core"
+	DefaultVectorSize = 768
 )
 
 var (
@@ -35,12 +36,21 @@ type Config struct {
 	Path     string `json:"path"`
 	ReadOnly bool   `json:"read_only"`
 
+	// VectorSize is the dimension of embedding vectors stored in _schema_* tables.
+	// Used for vector(N) in PostgreSQL and FLOAT[N] in DuckDB.
+	VectorSize int `json:"vector_size"`
+
 	// S3 for now only supports s3://
 	S3Region   string `json:"s3_region"`
 	S3Key      string `json:"s3_key"`
 	S3Secret   string `json:"s3_secret"`
 	S3UseSSL   bool   `json:"s3_use_ssl"`
 	S3Endpoint string `json:"s3_endpoint"`
+}
+
+// SchemaTemplateParams contains parameters passed to the schema.sql Go template.
+type SchemaTemplateParams struct {
+	VectorSize int
 }
 
 type Source struct {
@@ -205,7 +215,13 @@ func (s *Source) applySchema(ctx context.Context, pool *db.Pool) error {
 	if s.dbType == sources.Postgres {
 		dbType = db.SDBAttachedPostgres
 	}
-	sql, err := db.ParseSQLScriptTemplate(dbType, InitSchema)
+	vecSize := s.c.VectorSize
+	if vecSize == 0 {
+		vecSize = DefaultVectorSize
+	}
+	sql, err := db.ParseSQLScriptTemplate(dbType, InitSchema, SchemaTemplateParams{
+		VectorSize: vecSize,
+	})
 	if err != nil {
 		return fmt.Errorf("core db initialization: %w", err)
 	}
