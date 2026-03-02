@@ -54,6 +54,18 @@ func (p *Provider) DropCatalog(ctx context.Context, name string, cascade bool) e
 		return fmt.Errorf("drop catalog arguments: %w", err)
 	}
 
+	// 3b. Delete arguments for extension fields depending on this catalog
+	// (step 3 only deletes args for types owned by this catalog, not for
+	// extension fields on types owned by OTHER catalogs)
+	if _, err := p.execWrite(txCtx, conn, fmt.Sprintf(
+		`DELETE FROM %s WHERE (type_name, field_name) IN (
+		   SELECT type_name, name FROM %s WHERE dependency_catalog = $1
+		 )`,
+		p.table("_schema_arguments"), p.table("_schema_fields"),
+	), name); err != nil {
+		return fmt.Errorf("drop catalog extension field arguments: %w", err)
+	}
+
 	// 4. Delete fields owned by this catalog + extension fields depending on it
 	if _, err := p.execWrite(txCtx, conn, fmt.Sprintf(
 		`DELETE FROM %s WHERE type_name IN (SELECT name FROM %s WHERE catalog = $1)`,

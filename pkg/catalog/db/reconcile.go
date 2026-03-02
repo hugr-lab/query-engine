@@ -3,9 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"strings"
-
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 )
 
 // reconcileMetadata populates derived metadata tables from compiled types
@@ -24,44 +21,36 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 	}
 	defer conn.Close()
 
-	// Reconcile modules: find types with @module_root directive for this catalog
-	rows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT name, CAST(directives AS VARCHAR) FROM %s WHERE catalog = $1`,
-		p.table("_schema_types"),
-	), catalogName)
-	if err != nil {
-		return fmt.Errorf("reconcile modules query: %w", err)
+	// Delete stale metadata for this catalog before reinserting.
+	// This ensures removed modules/dependencies/data_objects are cleaned up.
+	if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
+		`DELETE FROM %s WHERE catalog_name = $1`,
+		p.table("_schema_module_catalogs"),
+	), catalogName); err != nil {
+		return fmt.Errorf("reconcile clean module_catalogs: %w", err)
+	}
+	if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
+		`DELETE FROM %s WHERE catalog_name = $1`,
+		p.table("_schema_catalog_dependencies"),
+	), catalogName); err != nil {
+		return fmt.Errorf("reconcile clean catalog_dependencies: %w", err)
+	}
+	if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
+		`DELETE FROM %s WHERE name IN (SELECT name FROM %s WHERE catalog = $1)`,
+		p.table("_schema_data_objects"), p.table("_schema_types"),
+	), catalogName); err != nil {
+		return fmt.Errorf("reconcile clean data_objects: %w", err)
 	}
 
-	for rows.Next() {
-		var typeName, dirJSON string
-		if err := rows.Scan(&typeName, &dirJSON); err != nil {
-			continue
-		}
+	// Step 1: Collect module names from types that define modules (have @module_root).
+	// Query the module column directly instead of parsing directive JSON in Go.
+	moduleNames, err := p.collectModuleNames(ctx, conn, catalogName)
+	if err != nil {
+		return fmt.Errorf("reconcile collect modules: %w", err)
+	}
 
-		// Check if this type has @module_root directive
-		if !strings.Contains(dirJSON, base.ModuleRootDirectiveName) {
-			continue
-		}
-
-		// Extract module name from @module directive
-		moduleName := ""
-		if idx := strings.Index(dirJSON, `"module"`); idx >= 0 {
-			// Extract module from the type's module column
-			var mod string
-			err := conn.QueryRow(ctx, fmt.Sprintf(
-				`SELECT module FROM %s WHERE name = $1`,
-				p.table("_schema_types"),
-			), typeName).Scan(&mod)
-			if err == nil && mod != "" {
-				moduleName = mod
-			}
-		}
-		if moduleName == "" {
-			continue
-		}
-
-		// Upsert module record
+	// Write module records and links
+	for _, moduleName := range moduleNames {
 		if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
 			`INSERT INTO %s (name) VALUES ($1)
 			 ON CONFLICT (name) DO NOTHING`,
@@ -69,8 +58,6 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 		), moduleName); err != nil {
 			return fmt.Errorf("reconcile module upsert: %w", err)
 		}
-
-		// Link module to catalog
 		if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
 			`INSERT INTO %s (module_name, catalog_name) VALUES ($1, $2)
 			 ON CONFLICT (module_name, catalog_name) DO NOTHING`,
@@ -79,24 +66,14 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 			return fmt.Errorf("reconcile module_catalog: %w", err)
 		}
 	}
-	rows.Close()
 
-	// Reconcile catalog dependencies: scan fields with dependency_catalog
-	depRows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT DISTINCT dependency_catalog FROM %s
-		 WHERE dependency_catalog IS NOT NULL AND dependency_catalog != $1
-		   AND type_name IN (SELECT name FROM %s WHERE catalog = $1)`,
-		p.table("_schema_fields"), p.table("_schema_types"),
-	), catalogName)
+	// Step 2: Collect catalog dependencies (fields with dependency_catalog).
+	depCatalogs, err := p.collectDependencies(ctx, conn, catalogName)
 	if err != nil {
-		return fmt.Errorf("reconcile dependencies query: %w", err)
+		return fmt.Errorf("reconcile collect dependencies: %w", err)
 	}
 
-	for depRows.Next() {
-		var depCatalog string
-		if err := depRows.Scan(&depCatalog); err != nil {
-			continue
-		}
+	for _, depCatalog := range depCatalogs {
 		if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
 			`INSERT INTO %s (catalog_name, depends_on) VALUES ($1, $2)
 			 ON CONFLICT (catalog_name, depends_on) DO NOTHING`,
@@ -105,77 +82,169 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 			return fmt.Errorf("reconcile dependency: %w", err)
 		}
 	}
-	depRows.Close()
 
-	// Reconcile data_objects: types classified as Table or View
-	doRows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT t.name, t.hugr_type FROM %s t
+	// Step 3: Collect and write data_objects for Table/View/ParameterizedView types.
+	dataObjects, err := p.collectDataObjects(ctx, conn, catalogName)
+	if err != nil {
+		return fmt.Errorf("reconcile collect data_objects: %w", err)
+	}
+
+	for _, do := range dataObjects {
+		if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
+			`INSERT INTO %s (name, filter_type_name, args_type_name) VALUES ($1, $2, $3)
+			 ON CONFLICT (name) DO UPDATE SET filter_type_name=$2, args_type_name=$3`,
+			p.table("_schema_data_objects"),
+		), do.name, do.filterType, do.argsType); err != nil {
+			return fmt.Errorf("reconcile data_object: %w", err)
+		}
+	}
+
+	// Step 4: Collect and write reverse dependencies.
+	revDeps, err := p.collectReverseDependencies(ctx, conn, catalogName)
+	if err != nil {
+		return fmt.Errorf("reconcile collect reverse deps: %w", err)
+	}
+
+	for _, depCatalog := range revDeps {
+		if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
+			`INSERT INTO %s (catalog_name, depends_on) VALUES ($1, $2)
+			 ON CONFLICT (catalog_name, depends_on) DO NOTHING`,
+			p.table("_schema_catalog_dependencies"),
+		), depCatalog, catalogName); err != nil {
+			return fmt.Errorf("reconcile reverse dependency: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// dataObjectInfo holds collected data object metadata.
+type dataObjectInfo struct {
+	name       string
+	filterType any // nil or string
+	argsType   any // nil or string
+}
+
+// collectModuleNames queries types with @module_root directive and returns their module names.
+func (p *Provider) collectModuleNames(ctx context.Context, conn *Connection, catalogName string) ([]string, error) {
+	rows, err := conn.Query(ctx, fmt.Sprintf(
+		`SELECT DISTINCT module FROM %s
+		 WHERE catalog = $1 AND module != ''
+		   AND CAST(directives AS VARCHAR) LIKE '%%module_root%%'`,
+		p.table("_schema_types"),
+	), catalogName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var modules []string
+	for rows.Next() {
+		var mod string
+		if err := rows.Scan(&mod); err != nil {
+			continue
+		}
+		modules = append(modules, mod)
+	}
+	return modules, nil
+}
+
+// collectDependencies returns distinct dependency catalog names for this catalog's fields.
+func (p *Provider) collectDependencies(ctx context.Context, conn *Connection, catalogName string) ([]string, error) {
+	rows, err := conn.Query(ctx, fmt.Sprintf(
+		`SELECT DISTINCT dependency_catalog FROM %s
+		 WHERE dependency_catalog IS NOT NULL AND dependency_catalog != $1
+		   AND type_name IN (SELECT name FROM %s WHERE catalog = $1)`,
+		p.table("_schema_fields"), p.table("_schema_types"),
+	), catalogName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deps []string
+	for rows.Next() {
+		var dep string
+		if err := rows.Scan(&dep); err != nil {
+			continue
+		}
+		deps = append(deps, dep)
+	}
+	return deps, nil
+}
+
+// collectDataObjects returns data object info for Table/View/ParameterizedView types.
+func (p *Provider) collectDataObjects(ctx context.Context, conn *Connection, catalogName string) ([]dataObjectInfo, error) {
+	rows, err := conn.Query(ctx, fmt.Sprintf(
+		`SELECT t.name FROM %s t
 		 WHERE t.catalog = $1
 		   AND t.hugr_type IN ('Table', 'View', 'ParameterizedView')`,
 		p.table("_schema_types"),
 	), catalogName)
-	if err == nil {
-		for doRows.Next() {
-			var typeName, hugrType string
-			if err := doRows.Scan(&typeName, &hugrType); err != nil {
-				continue
-			}
-			// Look for corresponding filter type
-			filterTypeName := typeName + "_filter"
-			var filterExists int
-			_ = conn.QueryRow(ctx, fmt.Sprintf(
-				`SELECT count(*) FROM %s WHERE name = $1`,
-				p.table("_schema_types"),
-			), filterTypeName).Scan(&filterExists)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-			var filterPtr any
-			if filterExists > 0 {
-				filterPtr = filterTypeName
-			}
-
-			// Look for args type (for parameterized views)
-			argsTypeName := typeName + "_args"
-			var argsExists int
-			_ = conn.QueryRow(ctx, fmt.Sprintf(
-				`SELECT count(*) FROM %s WHERE name = $1`,
-				p.table("_schema_types"),
-			), argsTypeName).Scan(&argsExists)
-
-			var argsPtr any
-			if argsExists > 0 {
-				argsPtr = argsTypeName
-			}
-
-			_, _ = p.execWrite(ctx, conn, fmt.Sprintf(
-				`INSERT INTO %s (name, filter_type_name, args_type_name) VALUES ($1, $2, $3)
-				 ON CONFLICT (name) DO UPDATE SET filter_type_name=$2, args_type_name=$3`,
-				p.table("_schema_data_objects"),
-			), typeName, filterPtr, argsPtr)
+	var typeNames []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			continue
 		}
-		doRows.Close()
+		typeNames = append(typeNames, name)
 	}
 
-	// Also record reverse dependencies: other catalogs that extend types in this catalog
-	revDepRows, err := conn.Query(ctx, fmt.Sprintf(
+	// Now check filter/args types for each data object
+	var objects []dataObjectInfo
+	for _, typeName := range typeNames {
+		do := dataObjectInfo{name: typeName}
+
+		filterTypeName := typeName + "_filter"
+		var filterExists int
+		_ = conn.QueryRow(ctx, fmt.Sprintf(
+			`SELECT count(*) FROM %s WHERE name = $1`,
+			p.table("_schema_types"),
+		), filterTypeName).Scan(&filterExists)
+		if filterExists > 0 {
+			do.filterType = filterTypeName
+		}
+
+		argsTypeName := typeName + "_args"
+		var argsExists int
+		_ = conn.QueryRow(ctx, fmt.Sprintf(
+			`SELECT count(*) FROM %s WHERE name = $1`,
+			p.table("_schema_types"),
+		), argsTypeName).Scan(&argsExists)
+		if argsExists > 0 {
+			do.argsType = argsTypeName
+		}
+
+		objects = append(objects, do)
+	}
+	return objects, nil
+}
+
+// collectReverseDependencies returns catalogs that extend types owned by this catalog.
+func (p *Provider) collectReverseDependencies(ctx context.Context, conn *Connection, catalogName string) ([]string, error) {
+	rows, err := conn.Query(ctx, fmt.Sprintf(
 		`SELECT DISTINCT f.catalog FROM %s f
 		 INNER JOIN %s t ON f.type_name = t.name
 		 WHERE f.dependency_catalog = $1 AND f.catalog IS NOT NULL AND f.catalog != $1`,
 		p.table("_schema_fields"), p.table("_schema_types"),
 	), catalogName)
-	if err == nil {
-		for revDepRows.Next() {
-			var depCatalog string
-			if err := revDepRows.Scan(&depCatalog); err != nil {
-				continue
-			}
-			_, _ = p.execWrite(ctx, conn, fmt.Sprintf(
-				`INSERT INTO %s (catalog_name, depends_on) VALUES ($1, $2)
-				 ON CONFLICT (catalog_name, depends_on) DO NOTHING`,
-				p.table("_schema_catalog_dependencies"),
-			), depCatalog, catalogName)
-		}
-		revDepRows.Close()
+	if err != nil {
+		return nil, err
 	}
+	defer rows.Close()
 
-	return nil
+	var deps []string
+	for rows.Next() {
+		var dep string
+		if err := rows.Scan(&dep); err != nil {
+			continue
+		}
+		deps = append(deps, dep)
+	}
+	return deps, nil
 }

@@ -19,9 +19,16 @@ import (
 // a single transaction. Computes hugr_type and embeddings. Reconciles
 // module and data object metadata. Invalidates cache after commit.
 func (p *Provider) Update(ctx context.Context, changes base.DefinitionsSource) error {
+	// Collect all definitions first — iterators may be one-shot (iter.Seq),
+	// so we must not iterate twice.
+	var defs []*ast.Definition
+	for def := range changes.Definitions(ctx) {
+		defs = append(defs, def)
+	}
+
 	// Extract catalog name from the first definition with a @catalog directive
 	catalogName := ""
-	for def := range changes.Definitions(ctx) {
+	for _, def := range defs {
 		catalogName = base.DefinitionCatalog(def)
 		if catalogName != "" {
 			break
@@ -42,8 +49,8 @@ func (p *Provider) Update(ctx context.Context, changes base.DefinitionsSource) e
 		}
 	}
 
-	// Process definitions
-	for def := range changes.Definitions(txCtx) {
+	// Process definitions from collected slice
+	for _, def := range defs {
 		switch {
 		case base.IsDropDefinition(def):
 			if err := p.processDropDefinition(txCtx, def); err != nil {
@@ -195,7 +202,7 @@ func (p *Provider) upsertType(ctx context.Context, def *ast.Definition, catalogN
 			`INSERT INTO %s (name, kind, description, long_description, hugr_type, module, catalog, directives, interfaces, union_types, is_summarized, vec)
 			 VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, $9, false, $10)
 			 ON CONFLICT (name) DO UPDATE SET
-			   kind=$2, description=$3, hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9, vec=$10`,
+			   kind=$2, description=$3, long_description='', hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9, is_summarized=false, vec=$10`,
 			p.table("_schema_types"),
 		), def.Name, string(def.Kind), def.Description, hugrType, module, catalogName, string(dirJSON), ifaces, unionTypes, vec)
 	} else {
@@ -203,7 +210,7 @@ func (p *Provider) upsertType(ctx context.Context, def *ast.Definition, catalogN
 			`INSERT INTO %s (name, kind, description, long_description, hugr_type, module, catalog, directives, interfaces, union_types, is_summarized)
 			 VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, $9, false)
 			 ON CONFLICT (name) DO UPDATE SET
-			   kind=$2, description=$3, hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9`,
+			   kind=$2, description=$3, long_description='', hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9, is_summarized=false`,
 			p.table("_schema_types"),
 		), def.Name, string(def.Kind), def.Description, hugrType, module, catalogName, string(dirJSON), ifaces, unionTypes)
 	}
@@ -397,7 +404,11 @@ func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition,
 				return fmt.Errorf("drop field %s.%s: %w", typeName, field.Name, err)
 			}
 		case base.IsReplaceField(field):
-			_ = p.deleteField(ctx, typeName, field.Name) // ignore error if doesn't exist
+			// Delete old field if it exists; ignore "not found" errors since
+			// replace should work even if the field doesn't exist yet.
+			if err := p.deleteField(ctx, typeName, field.Name); err != nil {
+				// Only log, don't fail — the field might not exist yet
+			}
 			cleanField := base.CloneFieldDefinition(field)
 			cleanField.Directives = base.StripControlDirectives(cleanField.Directives)
 			if err := p.upsertField(ctx, typeName, cleanField, catalogName, catalogName); err != nil {

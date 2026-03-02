@@ -50,31 +50,17 @@ func (p *Provider) DirectiveForName(ctx context.Context, name string) *ast.Direc
 }
 
 // Definitions returns an iterator over all type definitions.
-// Streams from DB; populates LRU cache as a side effect.
+// Collects type names from DB first, then loads each definition
+// via ForName (which uses cache + DB fallback).
 func (p *Provider) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {
 	return func(yield func(*ast.Definition) bool) {
-		conn, err := p.pool.Conn(ctx)
+		// Collect names first to avoid holding a connection while
+		// ForName/loadTypeFromDB acquires its own connection.
+		names, err := p.collectActiveTypeNames(ctx)
 		if err != nil {
 			return
 		}
-		defer conn.Close()
-
-		rows, err := conn.Query(ctx, fmt.Sprintf(
-			`SELECT t.name FROM %s t
-			 WHERE t.catalog IS NULL
-			    OR t.catalog NOT IN (SELECT name FROM %s WHERE disabled = true OR suspended = true)`,
-			p.table("_schema_types"), p.table("_schema_catalogs"),
-		))
-		if err != nil {
-			return
-		}
-		defer rows.Close()
-
-		for rows.Next() {
-			var name string
-			if err := rows.Scan(&name); err != nil {
-				return
-			}
+		for _, name := range names {
 			def := p.ForName(ctx, name)
 			if def != nil {
 				if !yield(def) {
@@ -83,6 +69,36 @@ func (p *Provider) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {
 			}
 		}
 	}
+}
+
+// collectActiveTypeNames returns names of all types not in disabled/suspended catalogs.
+func (p *Provider) collectActiveTypeNames(ctx context.Context) ([]string, error) {
+	conn, err := p.pool.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	rows, err := conn.Query(ctx, fmt.Sprintf(
+		`SELECT t.name FROM %s t
+		 WHERE t.catalog IS NULL
+		    OR t.catalog NOT IN (SELECT name FROM %s WHERE disabled = true OR suspended = true)`,
+		p.table("_schema_types"), p.table("_schema_catalogs"),
+	))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names, nil
 }
 
 // DirectiveDefinitions returns an iterator over all directive definitions.
@@ -172,38 +188,13 @@ func (p *Provider) PossibleTypes(ctx context.Context, name string) iter.Seq[*ast
 
 		switch def.Kind {
 		case ast.Interface:
-			// Query using the interfaces column instead of scanning all objects
-			conn, err := p.pool.Conn(ctx)
+			// Collect implementor names in a separate scope so the connection
+			// is released before we call ForName below.
+			implNames, err := p.findInterfaceImplementors(ctx, name)
 			if err != nil {
 				return
 			}
-			defer conn.Close()
-
-			rows, err := conn.Query(ctx, fmt.Sprintf(
-				`SELECT t.name, t.interfaces FROM %s t
-				 WHERE t.kind = 'OBJECT' AND t.interfaces != ''
-				   AND (t.catalog IS NULL OR t.catalog NOT IN
-				     (SELECT name FROM %s WHERE disabled = true OR suspended = true))`,
-				p.table("_schema_types"), p.table("_schema_catalogs"),
-			))
-			if err != nil {
-				return
-			}
-			defer rows.Close()
-
-			for rows.Next() {
-				var typeName, ifaces string
-				if err := rows.Scan(&typeName, &ifaces); err != nil {
-					return
-				}
-				// Check if this type implements the interface
-				for _, iface := range strings.Split(ifaces, "|") {
-					if iface == name {
-						implementors = append(implementors, typeName)
-						break
-					}
-				}
-			}
+			implementors = implNames
 
 		case ast.Union:
 			// Union types: members are in the Types field
@@ -254,6 +245,42 @@ func (p *Provider) Types(ctx context.Context) iter.Seq2[string, *ast.Definition]
 	}
 }
 
+// findInterfaceImplementors returns type names that implement the given interface.
+func (p *Provider) findInterfaceImplementors(ctx context.Context, ifaceName string) ([]string, error) {
+	conn, err := p.pool.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	rows, err := conn.Query(ctx, fmt.Sprintf(
+		`SELECT t.name, t.interfaces FROM %s t
+		 WHERE t.kind = 'OBJECT' AND t.interfaces != ''
+		   AND (t.catalog IS NULL OR t.catalog NOT IN
+		     (SELECT name FROM %s WHERE disabled = true OR suspended = true))`,
+		p.table("_schema_types"), p.table("_schema_catalogs"),
+	))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var implementors []string
+	for rows.Next() {
+		var typeName, ifaces string
+		if err := rows.Scan(&typeName, &ifaces); err != nil {
+			continue
+		}
+		for _, iface := range strings.Split(ifaces, "|") {
+			if iface == ifaceName {
+				implementors = append(implementors, typeName)
+				break
+			}
+		}
+	}
+	return implementors, nil
+}
+
 // ensureRoots loads the Query and Mutation root type pointers on first access.
 func (p *Provider) ensureRoots(ctx context.Context) {
 	p.mu.RLock()
@@ -263,13 +290,18 @@ func (p *Provider) ensureRoots(ctx context.Context) {
 	}
 	p.mu.RUnlock()
 
+	// Load outside the lock to avoid holding the write lock during
+	// potentially slow DB queries.
+	q := p.ForName(ctx, base.QueryBaseName)
+	m := p.ForName(ctx, base.MutationBaseName)
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.rootsLoaded {
-		return
+		return // another goroutine loaded while we were querying
 	}
-	p.queryType = p.ForName(ctx, base.QueryBaseName)
-	p.mutationType = p.ForName(ctx, base.MutationBaseName)
+	p.queryType = q
+	p.mutationType = m
 	p.rootsLoaded = true
 }
 

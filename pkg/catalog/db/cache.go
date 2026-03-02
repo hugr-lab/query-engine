@@ -113,9 +113,15 @@ func (sc *schemaCache) invalidateCatalog(catalog string) {
 	sc.mu.Lock()
 	names := sc.catalogIndex[catalog]
 	delete(sc.catalogIndex, catalog)
+	// Copy names before unlocking to avoid race with concurrent
+	// putType or onEvict operating on the same map.
+	namesCopy := make([]string, 0, len(names))
+	for name := range names {
+		namesCopy = append(namesCopy, name)
+	}
 	sc.mu.Unlock()
 
-	for name := range names {
+	for _, name := range namesCopy {
 		sc.types.Remove(name)
 	}
 	// Adding/removing types can change interface implementations
