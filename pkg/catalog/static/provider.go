@@ -123,13 +123,34 @@ func (p *Provider) Schema() *ast.Schema {
 // MutableProvider implementation
 var _ base.MutableProvider = (*Provider)(nil)
 
-func (p *Provider) SetDefinitionDescription(ctx context.Context, name, desc string) error {
+func (p *Provider) SetDefinitionDescription(_ context.Context, name, desc, _ string) error {
 	def := p.schema.Types[name]
 	if def == nil {
 		return base.ErrDefinitionNotFound
 	}
 	def.Description = desc
 	return nil
+}
+
+func (p *Provider) SetFieldDescription(_ context.Context, typeName, fieldName, desc, _ string) error {
+	def := p.schema.Types[typeName]
+	if def == nil {
+		return base.ErrDefinitionNotFound
+	}
+	field := def.Fields.ForName(fieldName)
+	if field == nil {
+		return base.ErrDefinitionNotFound
+	}
+	field.Description = desc
+	return nil
+}
+
+func (p *Provider) SetModuleDescription(_ context.Context, _, _, _ string) error {
+	return nil // static provider has no module table
+}
+
+func (p *Provider) SetCatalogDescription(_ context.Context, _, _, _ string) error {
+	return nil // static provider has no catalog table
 }
 
 var ErrCascadeDependency = errors.New("cannot drop catalog with dependent definitions without cascade")
