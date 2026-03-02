@@ -18,7 +18,21 @@ import (
 // and extensions (field add/drop/replace, directive changes) within
 // a single transaction. Computes hugr_type and embeddings. Reconciles
 // module and data object metadata. Invalidates cache after commit.
+//
+// The catalog name is extracted from the first definition with a @catalog directive.
 func (p *Provider) Update(ctx context.Context, changes base.DefinitionsSource) error {
+	return p.updateImpl(ctx, changes, "")
+}
+
+// UpdateWithCatalog persists compiled schema changes with an explicit catalog name override.
+// When catalogOverride is non-empty, it is used instead of extracting from @catalog directives.
+// Used for system types which don't carry @catalog directives.
+func (p *Provider) UpdateWithCatalog(ctx context.Context, changes base.DefinitionsSource, catalogOverride string) error {
+	return p.updateImpl(ctx, changes, catalogOverride)
+}
+
+// updateImpl is the shared implementation for Update and UpdateWithCatalog.
+func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSource, catalogOverride string) error {
 	// Collect all definitions first — iterators may be one-shot (iter.Seq),
 	// so we must not iterate twice.
 	var defs []*ast.Definition
@@ -26,13 +40,22 @@ func (p *Provider) Update(ctx context.Context, changes base.DefinitionsSource) e
 		defs = append(defs, def)
 	}
 
-	// Extract catalog name from the first definition with a @catalog directive
-	catalogName := ""
-	for _, def := range defs {
-		catalogName = base.DefinitionCatalog(def)
-		if catalogName != "" {
-			break
+	// Determine catalog name: use override if provided, otherwise extract from @catalog directive.
+	catalogName := catalogOverride
+	if catalogName == "" {
+		for _, def := range defs {
+			catalogName = base.DefinitionCatalog(def)
+			if catalogName != "" {
+				break
+			}
 		}
+	}
+
+	// Validate references before persisting: field types, argument types,
+	// interface references, and union member types must all exist in
+	// _schema_types or in the current batch. Fail fast on first missing reference.
+	if err := p.validateReferences(ctx, defs); err != nil {
+		return err
 	}
 
 	// Begin transaction
@@ -135,19 +158,19 @@ func (p *Provider) persistDefinition(ctx context.Context, def *ast.Definition, c
 		return err
 	}
 
-	for _, field := range cleanDef.Fields {
-		if err := p.upsertField(ctx, cleanDef.Name, field, catalogName, ""); err != nil {
+	for i, field := range cleanDef.Fields {
+		if err := p.upsertField(ctx, cleanDef.Name, field, catalogName, "", i); err != nil {
 			return err
 		}
-		for _, arg := range field.Arguments {
-			if err := p.upsertArgument(ctx, cleanDef.Name, field.Name, arg); err != nil {
+		for j, arg := range field.Arguments {
+			if err := p.upsertArgument(ctx, cleanDef.Name, field.Name, arg, j); err != nil {
 				return err
 			}
 		}
 	}
 
-	for _, ev := range cleanDef.EnumValues {
-		if err := p.upsertEnumValue(ctx, cleanDef.Name, ev); err != nil {
+	for i, ev := range cleanDef.EnumValues {
+		if err := p.upsertEnumValue(ctx, cleanDef.Name, ev, i); err != nil {
 			return err
 		}
 	}
@@ -218,7 +241,8 @@ func (p *Provider) upsertType(ctx context.Context, def *ast.Definition, catalogN
 }
 
 // upsertField inserts or updates a field in _schema_fields.
-func (p *Provider) upsertField(ctx context.Context, typeName string, field *ast.FieldDefinition, catalogName, depCatalog string) error {
+// ordinal preserves the original definition order of the field within its type.
+func (p *Provider) upsertField(ctx context.Context, typeName string, field *ast.FieldDefinition, catalogName, depCatalog string, ordinal int) error {
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert field: %w", err)
@@ -246,10 +270,10 @@ func (p *Provider) upsertField(ctx context.Context, typeName string, field *ast.
 
 	if err == nil && isSummarized {
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`UPDATE %s SET field_type=$3, hugr_type=$4, catalog=$5, dependency_catalog=$6, directives=$7
+			`UPDATE %s SET field_type=$3, hugr_type=$4, catalog=$5, dependency_catalog=$6, directives=$7, ordinal=$8
 			 WHERE type_name=$1 AND name=$2`,
 			p.table("_schema_fields"),
-		), typeName, field.Name, fieldType, hugrType, catalogName, nullStr(depCatalog), string(dirJSON))
+		), typeName, field.Name, fieldType, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), ordinal)
 		return err
 	}
 
@@ -262,26 +286,27 @@ func (p *Provider) upsertField(ctx context.Context, typeName string, field *ast.
 		}
 
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (type_name, name, field_type, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, vec)
-			 VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, false, $9)
+			`INSERT INTO %s (type_name, name, field_type, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, vec, ordinal)
+			 VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, false, $9, $10)
 			 ON CONFLICT (type_name, name) DO UPDATE SET
-			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, vec=$9`,
+			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, vec=$9, ordinal=$10`,
 			p.table("_schema_fields"),
-		), typeName, field.Name, fieldType, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), vec)
+		), typeName, field.Name, fieldType, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), vec, ordinal)
 	} else {
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (type_name, name, field_type, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized)
-			 VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, false)
+			`INSERT INTO %s (type_name, name, field_type, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, ordinal)
+			 VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, false, $9)
 			 ON CONFLICT (type_name, name) DO UPDATE SET
-			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8`,
+			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, ordinal=$9`,
 			p.table("_schema_fields"),
-		), typeName, field.Name, fieldType, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON))
+		), typeName, field.Name, fieldType, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), ordinal)
 	}
 	return err
 }
 
 // upsertArgument inserts or updates an argument in _schema_arguments.
-func (p *Provider) upsertArgument(ctx context.Context, typeName, fieldName string, arg *ast.ArgumentDefinition) error {
+// ordinal preserves the original definition order of the argument within its field.
+func (p *Provider) upsertArgument(ctx context.Context, typeName, fieldName string, arg *ast.ArgumentDefinition, ordinal int) error {
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert argument: %w", err)
@@ -301,17 +326,18 @@ func (p *Provider) upsertArgument(ctx context.Context, typeName, fieldName strin
 	}
 
 	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-		`INSERT INTO %s (type_name, field_name, name, arg_type, default_value, description, directives)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO %s (type_name, field_name, name, arg_type, default_value, description, directives, ordinal)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 ON CONFLICT (type_name, field_name, name) DO UPDATE SET
-		   arg_type=$4, default_value=$5, description=$6, directives=$7`,
+		   arg_type=$4, default_value=$5, description=$6, directives=$7, ordinal=$8`,
 		p.table("_schema_arguments"),
-	), typeName, fieldName, arg.Name, argType, defaultValue, arg.Description, string(dirJSON))
+	), typeName, fieldName, arg.Name, argType, defaultValue, arg.Description, string(dirJSON), ordinal)
 	return err
 }
 
 // upsertEnumValue inserts or updates an enum value in _schema_enum_values.
-func (p *Provider) upsertEnumValue(ctx context.Context, typeName string, ev *ast.EnumValueDefinition) error {
+// ordinal preserves the original definition order of the enum value within its type.
+func (p *Provider) upsertEnumValue(ctx context.Context, typeName string, ev *ast.EnumValueDefinition, ordinal int) error {
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("upsert enum value: %w", err)
@@ -324,11 +350,11 @@ func (p *Provider) upsertEnumValue(ctx context.Context, typeName string, ev *ast
 	}
 
 	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-		`INSERT INTO %s (type_name, name, description, directives)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (type_name, name) DO UPDATE SET description=$3, directives=$4`,
+		`INSERT INTO %s (type_name, name, description, directives, ordinal)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (type_name, name) DO UPDATE SET description=$3, directives=$4, ordinal=$5`,
 		p.table("_schema_enum_values"),
-	), typeName, ev.Name, ev.Description, string(dirJSON))
+	), typeName, ev.Name, ev.Description, string(dirJSON), ordinal)
 	return err
 }
 
@@ -346,12 +372,17 @@ func (p *Provider) persistDirectiveDefinition(ctx context.Context, name string, 
 	}
 	locStr := strings.Join(locations, "|")
 
+	argsJSON, err := schema.MarshalArgumentDefinitions(dir.Arguments)
+	if err != nil {
+		return fmt.Errorf("marshal directive arguments: %w", err)
+	}
+
 	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-		`INSERT INTO %s (name, description, locations, is_repeatable)
-		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (name) DO UPDATE SET description=$2, locations=$3, is_repeatable=$4`,
+		`INSERT INTO %s (name, description, locations, is_repeatable, arguments)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (name) DO UPDATE SET description=$2, locations=$3, is_repeatable=$4, arguments=$5`,
 		p.table("_schema_directives"),
-	), name, dir.Description, locStr, dir.IsRepeatable)
+	), name, dir.Description, locStr, dir.IsRepeatable, string(argsJSON))
 	return err
 }
 
@@ -393,8 +424,24 @@ func (p *Provider) processIfNotExistsDefinition(ctx context.Context, def *ast.De
 func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition, catalogName string) error {
 	typeName := extDef.Name
 
+	// Determine the dependency catalog: use @dependency if present, otherwise
+	// look up the type's owning catalog from DB. If the type is owned by a
+	// different catalog, that catalog is the dependency.
+	resolveDepCat := func(field *ast.FieldDefinition) string {
+		depCat := base.FieldDefDependency(field)
+		if depCat != "" {
+			return depCat
+		}
+		// Auto-detect from the type's owning catalog in _schema_types.
+		ownerCat := p.typeOwnerCatalog(ctx, typeName)
+		if ownerCat != "" && ownerCat != catalogName {
+			return ownerCat
+		}
+		return catalogName
+	}
+
 	// Process field-level changes
-	for _, field := range extDef.Fields {
+	for fieldIdx, field := range extDef.Fields {
 		switch {
 		case base.IsDropField(field):
 			if err := p.deleteField(ctx, typeName, field.Name); err != nil {
@@ -411,11 +458,12 @@ func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition,
 			}
 			cleanField := base.CloneFieldDefinition(field)
 			cleanField.Directives = base.StripControlDirectives(cleanField.Directives)
-			if err := p.upsertField(ctx, typeName, cleanField, catalogName, catalogName); err != nil {
+			depCat := resolveDepCat(field)
+			if err := p.upsertField(ctx, typeName, cleanField, catalogName, depCat, fieldIdx); err != nil {
 				return fmt.Errorf("replace field %s.%s: %w", typeName, field.Name, err)
 			}
-			for _, arg := range cleanField.Arguments {
-				if err := p.upsertArgument(ctx, typeName, cleanField.Name, arg); err != nil {
+			for i, arg := range cleanField.Arguments {
+				if err := p.upsertArgument(ctx, typeName, cleanField.Name, arg, i); err != nil {
 					return err
 				}
 			}
@@ -423,15 +471,12 @@ func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition,
 			// Add new field
 			cleanField := base.CloneFieldDefinition(field)
 			cleanField.Directives = base.StripControlDirectives(cleanField.Directives)
-			depCat := base.FieldDefDependency(field)
-			if depCat == "" {
-				depCat = catalogName
-			}
-			if err := p.upsertField(ctx, typeName, cleanField, catalogName, depCat); err != nil {
+			depCat := resolveDepCat(field)
+			if err := p.upsertField(ctx, typeName, cleanField, catalogName, depCat, fieldIdx); err != nil {
 				return fmt.Errorf("add field %s.%s: %w", typeName, field.Name, err)
 			}
-			for _, arg := range cleanField.Arguments {
-				if err := p.upsertArgument(ctx, typeName, cleanField.Name, arg); err != nil {
+			for i, arg := range cleanField.Arguments {
+				if err := p.upsertArgument(ctx, typeName, cleanField.Name, arg, i); err != nil {
 					return err
 				}
 			}
@@ -439,13 +484,37 @@ func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition,
 	}
 
 	// Process enum value changes
-	for _, ev := range extDef.EnumValues {
-		if err := p.upsertEnumValue(ctx, typeName, ev); err != nil {
+	for i, ev := range extDef.EnumValues {
+		if err := p.upsertEnumValue(ctx, typeName, ev, i); err != nil {
 			return err
 		}
 	}
 
+	// Evict the extended type from cache since its fields/enum values changed.
+	// This is needed because InvalidateCatalog only clears types owned by the
+	// current catalog, not types from other catalogs that were extended.
+	p.cache.evictType(typeName)
+
 	return nil
+}
+
+// typeOwnerCatalog returns the catalog that owns the given type, or "" if not found.
+func (p *Provider) typeOwnerCatalog(ctx context.Context, typeName string) string {
+	conn, err := p.pool.Conn(ctx)
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+
+	var catalog string
+	err = conn.QueryRow(ctx, fmt.Sprintf(
+		`SELECT COALESCE(catalog, '') FROM %s WHERE name = $1`,
+		p.table("_schema_types"),
+	), typeName).Scan(&catalog)
+	if err != nil {
+		return ""
+	}
+	return catalog
 }
 
 // deleteType removes a type and all its children from the database.
@@ -489,6 +558,109 @@ func (p *Provider) deleteField(ctx context.Context, typeName, fieldName string) 
 		p.table("_schema_fields"),
 	), typeName, fieldName)
 	return err
+}
+
+// validateReferences checks that all type references in the batch are resolvable:
+// field types, argument types, interface references, and union member types must
+// exist either in _schema_types or in the current batch being added.
+// Returns an error on the first missing reference with the type name in the message.
+func (p *Provider) validateReferences(ctx context.Context, defs []*ast.Definition) error {
+	// Build set of type names being added in this batch (skip drops).
+	batchTypes := make(map[string]struct{})
+	for _, def := range defs {
+		if !base.IsDropDefinition(def) {
+			batchTypes[def.Name] = struct{}{}
+		}
+	}
+
+	// typeExists checks if a type name exists in DB or batch.
+	typeExists := func(name string) (bool, error) {
+		if _, ok := batchTypes[name]; ok {
+			return true, nil
+		}
+		conn, err := p.pool.Conn(ctx)
+		if err != nil {
+			return false, err
+		}
+		defer conn.Close()
+		var count int
+		err = conn.QueryRow(ctx, fmt.Sprintf(
+			`SELECT count(*) FROM %s WHERE name = $1`, p.table("_schema_types"),
+		), name).Scan(&count)
+		if err != nil {
+			return false, err
+		}
+		return count > 0, nil
+	}
+
+	// Check each non-drop definition.
+	for _, def := range defs {
+		if base.IsDropDefinition(def) {
+			continue
+		}
+
+		// Validate interface references.
+		for _, iface := range def.Interfaces {
+			exists, err := typeExists(iface)
+			if err != nil {
+				return fmt.Errorf("validate references: %w", err)
+			}
+			if !exists {
+				return fmt.Errorf("validate references: type %q referenced as interface by %q does not exist", iface, def.Name)
+			}
+		}
+
+		// Validate union member types.
+		for _, member := range def.Types {
+			exists, err := typeExists(member)
+			if err != nil {
+				return fmt.Errorf("validate references: %w", err)
+			}
+			if !exists {
+				return fmt.Errorf("validate references: type %q referenced as union member by %q does not exist", member, def.Name)
+			}
+		}
+
+		// Validate field type references.
+		for _, field := range def.Fields {
+			if typeName := baseTypeName(field.Type); typeName != "" {
+				exists, err := typeExists(typeName)
+				if err != nil {
+					return fmt.Errorf("validate references: %w", err)
+				}
+				if !exists {
+					return fmt.Errorf("validate references: type %q referenced by field %s.%s does not exist", typeName, def.Name, field.Name)
+				}
+			}
+
+			// Validate argument type references.
+			for _, arg := range field.Arguments {
+				if typeName := baseTypeName(arg.Type); typeName != "" {
+					exists, err := typeExists(typeName)
+					if err != nil {
+						return fmt.Errorf("validate references: %w", err)
+					}
+					if !exists {
+						return fmt.Errorf("validate references: type %q referenced by argument %s.%s.%s does not exist", typeName, def.Name, field.Name, arg.Name)
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// baseTypeName extracts the underlying named type from an *ast.Type,
+// unwrapping list wrappers and non-null markers.
+func baseTypeName(t *ast.Type) string {
+	if t == nil {
+		return ""
+	}
+	if t.NamedType != "" {
+		return t.NamedType
+	}
+	return baseTypeName(t.Elem)
 }
 
 // nullStr returns nil for empty string, otherwise the string value.

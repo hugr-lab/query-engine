@@ -2,10 +2,11 @@ package sources
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"iter"
+	"sort"
 	"strings"
-	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
@@ -123,8 +124,59 @@ func (s *DBInfo) Build(ctx context.Context, engine engines.Engine, opts compiler
 	s.opts = opts
 	s.engine = engine
 	s.provider = static.NewDocumentProvider(doc)
-	s.version = time.Now().Format(time.RFC3339Nano)
+	s.version = s.contentHash()
 	return nil
+}
+
+// contentHash computes a stable SHA256 hash from the schema structure.
+// Schemas, tables, views, columns, and constraints are sorted deterministically.
+func (s *DBInfo) contentHash() string {
+	h := sha256.New()
+	fmt.Fprintf(h, "db:%s\n", s.Type)
+
+	schemas := make([]DBSchemaInfo, len(s.SchemaInfo))
+	copy(schemas, s.SchemaInfo)
+	sort.Slice(schemas, func(i, j int) bool { return schemas[i].Name < schemas[j].Name })
+
+	for _, schema := range schemas {
+		fmt.Fprintf(h, "schema:%s\n", schema.Name)
+
+		tables := make([]DBTableInfo, len(schema.Tables))
+		copy(tables, schema.Tables)
+		sort.Slice(tables, func(i, j int) bool { return tables[i].Name < tables[j].Name })
+		for _, t := range tables {
+			fmt.Fprintf(h, "table:%s.%s\n", t.SchemaName, t.Name)
+			cols := make([]DBColumnInfo, len(t.Columns))
+			copy(cols, t.Columns)
+			sort.Slice(cols, func(i, j int) bool { return cols[i].Name < cols[j].Name })
+			for _, c := range cols {
+				fmt.Fprintf(h, "col:%s:%s:%v\n", c.Name, c.DataType, c.IsNullable)
+			}
+			cons := make([]DBConstraintInfo, len(t.Constraints))
+			copy(cons, t.Constraints)
+			sort.Slice(cons, func(i, j int) bool { return cons[i].Name < cons[j].Name })
+			for _, c := range cons {
+				fmt.Fprintf(h, "con:%s:%s:%v:%s.%s:%v\n",
+					c.Name, c.Type, c.Columns,
+					c.ReferencesSchema, c.ReferencesTable, c.ReferencesColumns)
+			}
+		}
+
+		views := make([]DBViewInfo, len(schema.Views))
+		copy(views, schema.Views)
+		sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
+		for _, v := range views {
+			fmt.Fprintf(h, "view:%s.%s\n", v.SchemaName, v.Name)
+			cols := make([]DBColumnInfo, len(v.Columns))
+			copy(cols, v.Columns)
+			sort.Slice(cols, func(i, j int) bool { return cols[i].Name < cols[j].Name })
+			for _, c := range cols {
+				fmt.Fprintf(h, "col:%s:%s:%v\n", c.Name, c.DataType, c.IsNullable)
+			}
+		}
+	}
+
+	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
 func (s *DBInfo) ForName(ctx context.Context, name string) *ast.Definition {

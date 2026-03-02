@@ -49,7 +49,7 @@ func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource)
 	}
 
 	err := source.Attach(ctx, s.db)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrDataSourceAttached) {
 		return err
 	}
 
@@ -116,9 +116,6 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 	err := ds.Attach(ctx, s.db)
 	if err != nil {
 		return err
-	}
-	if s.catalogs.ExistsCatalog(name) {
-		return ErrDataSourceExists
 	}
 
 	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {

@@ -17,6 +17,8 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	dbprovider "github.com/hugr-lab/query-engine/pkg/catalog/db"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -117,10 +119,11 @@ func TestDuckDB_TypesStreamAndEnums(t *testing.T) {
 		names = append(names, name)
 		assert.NotNil(t, def)
 	}
-	assert.Len(t, names, 3)
+	// System types are seeded by initDuckDBSchema, so total count includes them.
 	assert.Contains(t, names, "TypeA")
 	assert.Contains(t, names, "TypeB")
 	assert.Contains(t, names, "StatusEnum")
+	assert.GreaterOrEqual(t, len(names), 3, "should have at least the 3 test types")
 
 	// Check enum values
 	enumDef := p.ForName(ctx, "StatusEnum")
@@ -393,6 +396,11 @@ func TestDuckDB_DirectiveDefinitions(t *testing.T) {
 			Description:  "Cache directive",
 			IsRepeatable: false,
 			Locations:    []ast.DirectiveLocation{ast.LocationField, ast.LocationObject},
+			Arguments: ast.ArgumentDefinitionList{
+				{Name: "ttl", Type: ast.NamedType("Int", nil), Description: "TTL in seconds"},
+				{Name: "key", Type: ast.NamedType("String", nil), Description: "Cache key"},
+				{Name: "tags", Type: ast.ListType(ast.NonNullNamedType("String", nil), nil), Description: "Cache tags"},
+			},
 		},
 	})
 	require.NoError(t, p.Update(ctx, source))
@@ -405,6 +413,26 @@ func TestDuckDB_DirectiveDefinitions(t *testing.T) {
 	assert.Len(t, dir.Locations, 2)
 	assert.Contains(t, dir.Locations, ast.LocationField)
 	assert.Contains(t, dir.Locations, ast.LocationObject)
+
+	// Verify directive arguments are persisted and round-tripped.
+	require.Len(t, dir.Arguments, 3)
+
+	ttlArg := dir.Arguments.ForName("ttl")
+	require.NotNil(t, ttlArg)
+	assert.Equal(t, "Int", ttlArg.Type.NamedType)
+	assert.Equal(t, "TTL in seconds", ttlArg.Description)
+
+	keyArg := dir.Arguments.ForName("key")
+	require.NotNil(t, keyArg)
+	assert.Equal(t, "String", keyArg.Type.NamedType)
+	assert.Equal(t, "Cache key", keyArg.Description)
+
+	tagsArg := dir.Arguments.ForName("tags")
+	require.NotNil(t, tagsArg)
+	assert.NotNil(t, tagsArg.Type.Elem)
+	assert.Equal(t, "String", tagsArg.Type.Elem.NamedType)
+	assert.True(t, tagsArg.Type.Elem.NonNull)
+	assert.Equal(t, "Cache tags", tagsArg.Description)
 }
 
 func TestDuckDB_QueryAndMutationType(t *testing.T) {
@@ -1061,6 +1089,9 @@ func TestDuckDB_AttachedMode(t *testing.T) {
 	require.NoError(t, err)
 	_, err = pool.Exec(ctx, sqlStr)
 	require.NoError(t, err)
+
+	// Seed system types in the attached "core" schema.
+	seedSystemTypesWithPrefix(t, pool, "core.", 128)
 
 	// AC-18: SQL prefix works
 	p, err := dbprovider.New(pool, dbprovider.Config{
@@ -1962,6 +1993,71 @@ func initDuckDBSchema(t *testing.T, pool *db.Pool, vecSize int) {
 	require.NoError(t, err)
 	_, err = pool.Exec(context.Background(), sqlStr)
 	require.NoError(t, err)
+
+	// Seed basic system scalar types so Update() validation passes
+	// when test definitions reference Int, String, Float, Boolean, etc.
+	seedSystemTypes(t, pool, vecSize)
+}
+
+// seedSystemTypesWithPrefix seeds system types into tables with a given prefix.
+func seedSystemTypesWithPrefix(t *testing.T, pool *db.Pool, prefix string, vecSize int) {
+	t.Helper()
+	ctx := context.Background()
+	scalars := []string{
+		"Int", "Float", "String", "Boolean", "ID",
+		"BigInt", "Timestamp", "Date", "Time",
+		"JSON", "Geometry", "Vector", "Blob",
+	}
+	for _, s := range scalars {
+		_, err := pool.Exec(ctx, fmt.Sprintf(
+			`INSERT INTO %s_schema_types (name, kind, hugr_type, description, long_description, module, catalog, interfaces, union_types, directives, vec)
+			 VALUES ('%s', 'SCALAR', 'Scalar', '%s scalar', '', '', '_system', '', '', '[]', NULL)
+			 ON CONFLICT (name) DO NOTHING`, prefix, s, s,
+		))
+		require.NoError(t, err)
+	}
+	for _, root := range []string{"Query", "Mutation"} {
+		_, err := pool.Exec(ctx, fmt.Sprintf(
+			`INSERT INTO %s_schema_types (name, kind, hugr_type, description, long_description, module, catalog, interfaces, union_types, directives, vec)
+			 VALUES ('%s', 'OBJECT', 'Object', '%s root type', '', '', '_system', '', '', '[]', NULL)
+			 ON CONFLICT (name) DO NOTHING`, prefix, root, root,
+		))
+		require.NoError(t, err)
+	}
+}
+
+// seedSystemTypes inserts basic scalar types into _schema_types so that
+// validation in Update() can resolve references like "Int", "String", etc.
+func seedSystemTypes(t *testing.T, pool *db.Pool, vecSize int) {
+	t.Helper()
+	ctx := context.Background()
+	scalars := []string{
+		"Int", "Float", "String", "Boolean", "ID",
+		"BigInt", "Timestamp", "Date", "Time",
+		"JSON", "Geometry", "Vector", "Blob",
+	}
+	vecPlaceholder := "NULL"
+	if vecSize > 0 {
+		vecPlaceholder = "NULL"
+	}
+	for _, s := range scalars {
+		_, err := pool.Exec(ctx, fmt.Sprintf(
+			`INSERT INTO _schema_types (name, kind, hugr_type, description, long_description, module, catalog, interfaces, union_types, directives, vec)
+			 VALUES ('%s', 'SCALAR', 'Scalar', '%s scalar', '', '', '_system', '', '', '[]', %s)
+			 ON CONFLICT (name) DO NOTHING`, s, s, vecPlaceholder,
+		))
+		require.NoError(t, err)
+	}
+
+	// Also seed Query and Mutation root types.
+	for _, root := range []string{"Query", "Mutation"} {
+		_, err := pool.Exec(ctx, fmt.Sprintf(
+			`INSERT INTO _schema_types (name, kind, hugr_type, description, long_description, module, catalog, interfaces, union_types, directives, vec)
+			 VALUES ('%s', 'OBJECT', 'Object', '%s root type', '', '', '_system', '', '', '[]', NULL)
+			 ON CONFLICT (name) DO NOTHING`, root, root,
+		))
+		require.NoError(t, err)
+	}
 }
 
 func pgDSN(t *testing.T) string {
@@ -2213,6 +2309,65 @@ func makeVector(size int) types.Vector {
 		v[i] = float64(i) * 0.01
 	}
 	return v
+}
+
+// ─── Real Embedder Tests (requires running embedding server) ─────────────────
+
+func TestDuckDB_RealEmbedder(t *testing.T) {
+	embedderURL := os.Getenv("EMBEDDER_URL")
+	if embedderURL == "" {
+		t.Skip("EMBEDDER_URL not set, skipping real embedder test")
+	}
+
+	pool := newDuckDBPool(t)
+	vecSize := 768
+	initDuckDBSchema(t, pool, vecSize)
+
+	ctx := context.Background()
+
+	// Create embedding source from URL (same path as engine.go Init step 3b).
+	src, err := embedding.New(types.DataSource{
+		Name: "_system_embedder",
+		Type: sources.Embedding,
+		Path: embedderURL,
+	}, false)
+	require.NoError(t, err)
+
+	err = src.Attach(ctx, pool)
+	require.NoError(t, err)
+
+	// Verify embedding source works directly.
+	vec, err := src.CreateEmbedding(ctx, "hello world")
+	require.NoError(t, err)
+	assert.Equal(t, vecSize, len(vec), "expected %d-dim vector", vecSize)
+
+	// Create DB provider with real embedder.
+	p, err := dbprovider.New(pool, dbprovider.Config{
+		Cache:   dbprovider.DefaultCacheConfig(),
+		VecSize: vecSize,
+	}, src)
+	require.NoError(t, err)
+
+	// Persist a type — should compute embeddings via real server.
+	source := newTestSource([]*ast.Definition{
+		objectType("RealEmbType", "real_emb", "A type with real embeddings", []*ast.FieldDefinition{
+			fieldWithDesc("name", "String", false, "The name field", nil),
+		}),
+	})
+	require.NoError(t, p.Update(ctx, source))
+
+	// Verify the type is stored and readable.
+	def := p.ForName(ctx, "RealEmbType")
+	require.NotNil(t, def)
+	assert.Equal(t, "A type with real embeddings", def.Description)
+
+	// Update description — should recompute embedding via real server.
+	err = p.SetDefinitionDescription(ctx, "RealEmbType", "updated desc", "long updated description")
+	require.NoError(t, err)
+
+	def = p.ForName(ctx, "RealEmbType")
+	require.NotNil(t, def)
+	assert.Equal(t, "updated desc", def.Description)
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

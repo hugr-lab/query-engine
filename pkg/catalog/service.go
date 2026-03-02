@@ -161,9 +161,6 @@ func (s *Service) Engine(name string) (engines.Engine, error) {
 }
 
 func (s *Service) AddCatalog(ctx context.Context, name string, catalog Catalog) error {
-	if s.ExistsCatalog(name) {
-		return ErrCatalogAlreadyExists
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

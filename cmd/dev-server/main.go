@@ -51,6 +51,7 @@ func main() {
 		CoreDB:             coredb.New(conf.CoreDB),
 		Auth:               auth,
 		Cache:              conf.Cache,
+		Embedder:           conf.Embedder,
 	})
 	if err != nil {
 		log.Println("Engine initialization error:", err)

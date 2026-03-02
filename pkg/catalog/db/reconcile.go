@@ -149,12 +149,14 @@ func (p *Provider) collectModuleNames(ctx context.Context, conn *Connection, cat
 	return modules, nil
 }
 
-// collectDependencies returns distinct dependency catalog names for this catalog's fields.
+// collectDependencies returns distinct catalog names that this catalog depends on.
+// Detected by finding types owned by OTHER catalogs where this catalog contributes fields.
+// E.g., ext catalog adds fields to base_Item (owned by base) → ext depends on base.
 func (p *Provider) collectDependencies(ctx context.Context, conn *Connection, catalogName string) ([]string, error) {
 	rows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT DISTINCT dependency_catalog FROM %s
-		 WHERE dependency_catalog IS NOT NULL AND dependency_catalog != $1
-		   AND type_name IN (SELECT name FROM %s WHERE catalog = $1)`,
+		`SELECT DISTINCT t.catalog FROM %s f
+		 INNER JOIN %s t ON f.type_name = t.name
+		 WHERE f.catalog = $1 AND t.catalog IS NOT NULL AND t.catalog != $1`,
 		p.table("_schema_fields"), p.table("_schema_types"),
 	), catalogName)
 	if err != nil {

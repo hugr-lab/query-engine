@@ -1,6 +1,6 @@
 {{ if isPostgres }}CREATE EXTENSION IF NOT EXISTS vector;{{ end }}
 
-CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.10' AS "version";
+CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.12' AS "version";
 
 CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}catalog_sources (
     name VARCHAR NOT NULL PRIMARY KEY,
@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_fields
     directives {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL DEFAULT '[]',
     is_summarized BOOLEAN NOT NULL DEFAULT FALSE,
     vec {{if isPostgres }} vector({{ .VectorSize }}) {{ else }} FLOAT[{{ .VectorSize }}] {{ end }},
+    ordinal INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (type_name, name)
 );
 
@@ -128,6 +129,7 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_argume
     default_value VARCHAR,
     description VARCHAR NOT NULL DEFAULT '',
     directives {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL DEFAULT '[]',
+    ordinal INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (type_name, field_name, name)
 );
 
@@ -136,6 +138,7 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_enum_v
     name VARCHAR NOT NULL,
     description VARCHAR NOT NULL DEFAULT '',
     directives {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL DEFAULT '[]',
+    ordinal INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (type_name, name)
 );
 
@@ -143,7 +146,8 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_direct
     name VARCHAR NOT NULL PRIMARY KEY,
     description VARCHAR NOT NULL DEFAULT '',
     locations VARCHAR NOT NULL DEFAULT '', -- pipe-separated: e.g. "FIELD_DEFINITION|ARGUMENT_DEFINITION"
-    is_repeatable BOOLEAN NOT NULL DEFAULT FALSE
+    is_repeatable BOOLEAN NOT NULL DEFAULT FALSE,
+    arguments VARCHAR NOT NULL DEFAULT '[]' -- JSON array of argument definitions
 );
 
 CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_modules (

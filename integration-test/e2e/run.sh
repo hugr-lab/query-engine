@@ -3,21 +3,22 @@
 # Full lifecycle: prepare → start → provision → test → teardown.
 #
 # Usage:
-#   ./run.sh              # Full run with teardown
+#   ./run.sh              # Full run with teardown (DuckDB + PG CoreDB)
 #   ./run.sh --keep       # Keep containers running after tests
+#   ./run.sh --duckdb-only  # Skip PostgreSQL CoreDB tests
 #   UPDATE_EXPECTED=1 ./run.sh  # Update expected output files
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
-ENGINE_URL="http://localhost:15000"
 QUERIES_DIR="$SCRIPT_DIR/testdata/queries"
 
 PASS=0
 FAIL=0
 SKIP=0
 KEEP=false
+DUCKDB_ONLY=false
 
 # jq filter to recursively sort arrays of objects by "name" field for deterministic comparison
 JQ_DEEP_SORT='def sort_arrays: if type == "array" then map(sort_arrays) | sort_by(if type == "object" and has("name") then .name else tostring end) elif type == "object" then to_entries | sort_by(.key) | map(.value = (.value | sort_arrays)) | from_entries else . end; . | sort_arrays'
@@ -25,6 +26,7 @@ JQ_DEEP_SORT='def sort_arrays: if type == "array" then map(sort_arrays) | sort_b
 for arg in "$@"; do
   case $arg in
     --keep) KEEP=true ;;
+    --duckdb-only) DUCKDB_ONLY=true ;;
   esac
 done
 
@@ -49,28 +51,20 @@ echo "Preparing DuckDB test data..."
 # 2. Build and start
 echo ""
 echo "Starting E2E environment..."
-docker compose -f "$COMPOSE_FILE" up -d --build --wait
+if [ "$DUCKDB_ONLY" = true ]; then
+  docker compose -f "$COMPOSE_FILE" up -d --build --wait query-engine
+else
+  docker compose -f "$COMPOSE_FILE" up -d --build --wait
+fi
 if [ $? -ne 0 ]; then
   echo "ERROR: Failed to start environment"
   exit 2
 fi
 
-# 3. Provision data sources
-echo ""
-echo "Provisioning data sources..."
-"$SCRIPT_DIR/provision-sources.sh" "$ENGINE_URL"
-if [ $? -ne 0 ]; then
-  echo "ERROR: Failed to provision data sources"
-  exit 2
-fi
-
-# 4. Run tests
-echo ""
-echo "Running tests..."
-
 run_single_test() {
-  local test_dir="$1"
-  local test_name="$2"
+  local engine_url="$1"
+  local test_dir="$2"
+  local test_name="$3"
   local query_file="$test_dir/query.graphql"
   local expected_file="$test_dir/expected.json"
 
@@ -81,7 +75,7 @@ run_single_test() {
   local query
   query=$(cat "$query_file")
   local actual
-  actual=$(curl -sf -X POST "$ENGINE_URL/query" \
+  actual=$(curl -sf -X POST "$engine_url/query" \
     -H "Content-Type: application/json" \
     -d "{\"query\": $(echo "$query" | jq -Rs .)}" 2>/dev/null) || {
     echo "  FAIL: $test_name (request failed)"
@@ -117,8 +111,9 @@ run_single_test() {
 }
 
 run_multistep_test() {
-  local test_dir="$1"
-  local test_name="$2"
+  local engine_url="$1"
+  local test_dir="$2"
+  local test_name="$3"
 
   # Find all numbered step files: 01_name.graphql, 02_name.graphql, ...
   local steps
@@ -144,7 +139,7 @@ run_multistep_test() {
     local query
     query=$(cat "$query_file")
     local actual
-    actual=$(curl -sf -X POST "$ENGINE_URL/query" \
+    actual=$(curl -sf -X POST "$engine_url/query" \
       -H "Content-Type: application/json" \
       -d "{\"query\": $(echo "$query" | jq -Rs .)}" 2>/dev/null) || {
       echo "  FAIL: $test_name (step $step_num request failed)"
@@ -190,13 +185,14 @@ run_multistep_test() {
 }
 
 run_jq_test() {
-  local test_dir="$1"
-  local test_name="$2"
+  local engine_url="$1"
+  local test_dir="$2"
+  local test_name="$3"
   local request_file="$test_dir/request.json"
   local expected_file="$test_dir/expected.json"
 
   local actual
-  actual=$(curl -sf -X POST "$ENGINE_URL/jq-query" \
+  actual=$(curl -sf -X POST "$engine_url/jq-query" \
     -H "Content-Type: application/json" \
     -d @"$request_file" 2>/dev/null) || {
     echo "  FAIL: $test_name (request failed)"
@@ -231,27 +227,60 @@ run_jq_test() {
   fi
 }
 
-# Walk query directories
-for category_dir in "$QUERIES_DIR"/*/; do
-  [ -d "$category_dir" ] || continue
-  category=$(basename "$category_dir")
+# run_tests_against runs the full test suite against the given engine URL.
+run_tests_against() {
+  local engine_url="$1"
+  local label="$2"
 
-  for test_dir in "$category_dir"*/; do
-    [ -d "$test_dir" ] || continue
-    test_name="$category/$(basename "$test_dir")"
+  echo ""
+  echo "Running tests against $label ($engine_url)..."
 
-    if [ -f "$test_dir/request.json" ]; then
-      # JQ test (POST to /jq endpoint)
-      run_jq_test "$test_dir" "$test_name"
-    elif [ -f "$test_dir/query.graphql" ]; then
-      # Single-step test
-      run_single_test "$test_dir" "$test_name"
-    elif ls "$test_dir"/*.graphql &>/dev/null; then
-      # Multi-step test
-      run_multistep_test "$test_dir" "$test_name"
-    fi
+  for category_dir in "$QUERIES_DIR"/*/; do
+    [ -d "$category_dir" ] || continue
+    category=$(basename "$category_dir")
+
+    for test_dir in "$category_dir"*/; do
+      [ -d "$test_dir" ] || continue
+      test_name="$category/$(basename "$test_dir")"
+
+      if [ -f "$test_dir/request.json" ]; then
+        run_jq_test "$engine_url" "$test_dir" "$test_name"
+      elif [ -f "$test_dir/query.graphql" ]; then
+        run_single_test "$engine_url" "$test_dir" "$test_name"
+      elif ls "$test_dir"/*.graphql &>/dev/null; then
+        run_multistep_test "$engine_url" "$test_dir" "$test_name"
+      fi
+    done
   done
-done
+}
+
+# 3. Provision and test DuckDB-backed engine
+ENGINE_URL_DUCKDB="http://localhost:15000"
+
+echo ""
+echo "Provisioning data sources (DuckDB CoreDB)..."
+"$SCRIPT_DIR/provision-sources.sh" "$ENGINE_URL_DUCKDB"
+if [ $? -ne 0 ]; then
+  echo "ERROR: Failed to provision data sources (DuckDB CoreDB)"
+  exit 2
+fi
+
+run_tests_against "$ENGINE_URL_DUCKDB" "DuckDB CoreDB"
+
+# 4. Provision and test PG-backed engine
+if [ "$DUCKDB_ONLY" = false ]; then
+  ENGINE_URL_PG="http://localhost:15001"
+
+  echo ""
+  echo "Provisioning data sources (PostgreSQL CoreDB)..."
+  "$SCRIPT_DIR/provision-sources.sh" "$ENGINE_URL_PG"
+  if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to provision data sources (PostgreSQL CoreDB)"
+    exit 2
+  fi
+
+  run_tests_against "$ENGINE_URL_PG" "PostgreSQL CoreDB"
+fi
 
 # 5. Summary
 echo ""

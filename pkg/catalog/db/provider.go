@@ -8,7 +8,9 @@ import (
 
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 )
 
@@ -40,6 +42,10 @@ type Config struct {
 // Provider is the DB-backed schema provider.
 // It stores compiled GraphQL types in _schema_* tables and serves
 // lookups via an LRU cache with DB fallback.
+//
+// When a *compiler.Compiler is set (via NewWithCompiler), the provider
+// also implements CatalogManager — managing catalog lifecycle (add/remove/
+// reload/disable/enable) with version-based skip-if-unchanged logic.
 type Provider struct {
 	pool     *db.Pool
 	prefix   string
@@ -54,6 +60,11 @@ type Provider struct {
 	queryType    *ast.Definition
 	mutationType *ast.Definition
 	rootsLoaded  bool
+
+	// CatalogManager support: compiler for self-contained compilation,
+	// catalogs map for runtime source handles only (all state in DB).
+	compiler *compiler.Compiler
+	catalogs map[string]sources.Catalog
 
 	mu sync.RWMutex
 }
@@ -88,6 +99,18 @@ func New(pool *db.Pool, cfg Config, embedder Embedder) (*Provider, error) {
 		return nil, fmt.Errorf("db provider init: %w", err)
 	}
 
+	return p, nil
+}
+
+// NewWithCompiler creates a DB-backed provider with CatalogManager support.
+// The compiler is used for self-contained catalog compilation via AddCatalog/ReloadCatalog.
+func NewWithCompiler(pool *db.Pool, cfg Config, embedder Embedder, c *compiler.Compiler) (*Provider, error) {
+	p, err := New(pool, cfg, embedder)
+	if err != nil {
+		return nil, err
+	}
+	p.compiler = c
+	p.catalogs = make(map[string]sources.Catalog)
 	return p, nil
 }
 

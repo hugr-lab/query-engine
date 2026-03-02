@@ -50,3 +50,44 @@ services:
       interval: 3s
       timeout: 5s
       retries: 20
+
+  core-postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: coredb_e2e
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports: ["5436:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d coredb_e2e"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  query-engine-pg:
+    build:
+      context: ../../
+      dockerfile: integration-test/e2e/Dockerfile
+    ports: ["15001:15001"]
+    environment:
+      BIND: ":15001"
+      DB_PATH: ""
+      DB_ALLOWED_DIRECTORIES: "/workspace"
+      CORE_DB_PATH: "postgres://test:test@core-postgres:5432/coredb_e2e"
+      ADMIN_UI: "false"
+      ALLOWED_ANONYMOUS: "true"
+      ANONYMOUS_ROLE: "admin"
+    depends_on:
+      core-postgres:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      http-service:
+        condition: service_healthy
+    volumes:
+      - ./testdata:/workspace
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:15001/query?query={__typename} || exit 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 20

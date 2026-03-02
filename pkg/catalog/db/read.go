@@ -81,7 +81,7 @@ func (p *Provider) collectActiveTypeNames(ctx context.Context) ([]string, error)
 
 	rows, err := conn.Query(ctx, fmt.Sprintf(
 		`SELECT t.name FROM %s t
-		 WHERE t.catalog IS NULL
+		 WHERE t.catalog IS NULL OR t.catalog = ''
 		    OR t.catalog NOT IN (SELECT name FROM %s WHERE disabled = true OR suspended = true)`,
 		p.table("_schema_types"), p.table("_schema_catalogs"),
 	))
@@ -111,7 +111,7 @@ func (p *Provider) DirectiveDefinitions(ctx context.Context) iter.Seq2[string, *
 		defer conn.Close()
 
 		rows, err := conn.Query(ctx, fmt.Sprintf(
-			`SELECT name, description, locations, is_repeatable FROM %s`,
+			`SELECT name, description, locations, is_repeatable, arguments FROM %s`,
 			p.table("_schema_directives"),
 		))
 		if err != nil {
@@ -120,9 +120,9 @@ func (p *Provider) DirectiveDefinitions(ctx context.Context) iter.Seq2[string, *
 		defer rows.Close()
 
 		for rows.Next() {
-			var name, desc, locs string
+			var name, desc, locs, argsJSON string
 			var repeatable bool
-			if err := rows.Scan(&name, &desc, &locs, &repeatable); err != nil {
+			if err := rows.Scan(&name, &desc, &locs, &repeatable, &argsJSON); err != nil {
 				return
 			}
 			dir := &ast.DirectiveDefinition{
@@ -133,6 +133,12 @@ func (p *Provider) DirectiveDefinitions(ctx context.Context) iter.Seq2[string, *
 			if locs != "" {
 				for _, loc := range strings.Split(locs, "|") {
 					dir.Locations = append(dir.Locations, ast.DirectiveLocation(loc))
+				}
+			}
+			if argsJSON != "" && argsJSON != "[]" {
+				args, err := schema.UnmarshalArgumentDefinitions([]byte(argsJSON))
+				if err == nil {
+					dir.Arguments = args
 				}
 			}
 			if !yield(name, dir) {
@@ -379,7 +385,7 @@ func (p *Provider) loadFieldsFromDB(ctx context.Context, conn *Connection, typeN
 		   AND (f.dependency_catalog IS NULL
 		     OR f.dependency_catalog NOT IN
 		       (SELECT name FROM %s WHERE disabled = true OR suspended = true))
-		 ORDER BY f.name`,
+		 ORDER BY f.ordinal, f.name`,
 		p.table("_schema_fields"), p.table("_schema_catalogs"),
 	), typeName)
 	if err != nil {
@@ -424,7 +430,7 @@ func (p *Provider) loadArgumentsFromDB(ctx context.Context, conn *Connection, ty
 		`SELECT name, arg_type, default_value, description, CAST(directives AS VARCHAR)
 		 FROM %s
 		 WHERE type_name = $1 AND field_name = $2
-		 ORDER BY name`,
+		 ORDER BY ordinal, name`,
 		p.table("_schema_arguments"),
 	), typeName, fieldName)
 	if err != nil {
@@ -471,7 +477,7 @@ func (p *Provider) loadArgumentsFromDB(ctx context.Context, conn *Connection, ty
 // loadEnumValuesFromDB loads all enum values for a type.
 func (p *Provider) loadEnumValuesFromDB(ctx context.Context, conn *Connection, typeName string) ast.EnumValueList {
 	rows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT name, description, CAST(directives AS VARCHAR) FROM %s WHERE type_name = $1 ORDER BY name`,
+		`SELECT name, description, CAST(directives AS VARCHAR) FROM %s WHERE type_name = $1 ORDER BY ordinal, name`,
 		p.table("_schema_enum_values"),
 	), typeName)
 	if err != nil {
@@ -506,12 +512,12 @@ func (p *Provider) loadDirectiveFromDB(ctx context.Context, name string) *ast.Di
 	}
 	defer conn.Close()
 
-	var desc, locs string
+	var desc, locs, argsJSON string
 	var repeatable bool
 	err = conn.QueryRow(ctx, fmt.Sprintf(
-		`SELECT description, locations, is_repeatable FROM %s WHERE name = $1`,
+		`SELECT description, locations, is_repeatable, arguments FROM %s WHERE name = $1`,
 		p.table("_schema_directives"),
-	), name).Scan(&desc, &locs, &repeatable)
+	), name).Scan(&desc, &locs, &repeatable, &argsJSON)
 	if err != nil {
 		return nil
 	}
@@ -524,6 +530,12 @@ func (p *Provider) loadDirectiveFromDB(ctx context.Context, name string) *ast.Di
 	if locs != "" {
 		for _, loc := range strings.Split(locs, "|") {
 			dir.Locations = append(dir.Locations, ast.DirectiveLocation(loc))
+		}
+	}
+	if argsJSON != "" && argsJSON != "[]" {
+		args, err := schema.UnmarshalArgumentDefinitions([]byte(argsJSON))
+		if err == nil {
+			dir.Arguments = args
 		}
 	}
 	return dir

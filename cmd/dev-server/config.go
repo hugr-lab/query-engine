@@ -1,6 +1,7 @@
 package main
 
 import (
+	hugr "github.com/hugr-lab/query-engine"
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -26,7 +27,8 @@ type Config struct {
 	Cors CorsConfig
 	Auth AuthConfig
 
-	Cache cache.Config
+	Cache    cache.Config
+	Embedder hugr.EmbedderConfig
 }
 
 func init() {
@@ -97,6 +99,9 @@ func loadConfig() Config {
 			AnonymousRole:    viper.GetString("ANONYMOUS_ROLE"),
 			SecretKey:        viper.GetString("SECRET_KEY"),
 			ConfigFile:       viper.GetString("AUTH_CONFIG_FILE"),
+		},
+		Embedder: hugr.EmbedderConfig{
+			URL: viper.GetString("EMBEDDER_URL"),
 		},
 		Cache: cache.Config{
 			TTL: types.Interval(viper.GetDuration("CACHE_TTL")),

@@ -2,10 +2,11 @@ package sources
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"iter"
 	"strings"
-	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
@@ -55,6 +56,7 @@ func (s *URISource) Reload(ctx context.Context) error {
 	defer rows.Close()
 
 	var astSrcs []*ast.Source
+	h := sha256.New()
 	for rows.Next() {
 		var name, content string
 		err = rows.Scan(&name, &content)
@@ -62,6 +64,7 @@ func (s *URISource) Reload(ctx context.Context) error {
 			return err
 		}
 		astSrcs = append(astSrcs, &ast.Source{Name: name, Input: content})
+		h.Write([]byte(content))
 	}
 	if len(astSrcs) == 0 {
 		return ErrNoSourcesByURI
@@ -72,7 +75,7 @@ func (s *URISource) Reload(ctx context.Context) error {
 		return err
 	}
 	s.provider = static.NewDocumentProvider(doc)
-	s.version = time.Now().Format(time.RFC3339Nano)
+	s.version = fmt.Sprintf("%x", h.Sum(nil))
 	return nil
 }
 
