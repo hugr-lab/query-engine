@@ -83,3 +83,18 @@ func TestMarshalType_Simple(t *testing.T) {
 	typ := &ast.Type{NamedType: "Int", NonNull: true}
 	assert.Equal(t, "Int!", MarshalType(typ))
 }
+
+func TestTypeStringRoundTrip_NestedList(t *testing.T) {
+	cases := []string{
+		"[[String]]",
+		"[[Int!]!]!",
+		"[[Float]]!",
+	}
+	for _, s := range cases {
+		t.Run(s, func(t *testing.T) {
+			typ, err := UnmarshalType(s)
+			require.NoError(t, err)
+			assert.Equal(t, s, MarshalType(typ))
+		})
+	}
+}

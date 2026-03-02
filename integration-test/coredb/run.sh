@@ -41,6 +41,9 @@ cleanup() {
 trap cleanup EXIT
 
 PROJECT_ROOT="$SCRIPT_DIR/../../"
+# Resolve hugr migrations path (sibling repo)
+HUGR_MIGRATIONS_PATH="${HUGR_MIGRATIONS_PATH:-$(cd "$SCRIPT_DIR/../../../hugr/migrations" 2>/dev/null && pwd)}"
+export HUGR_MIGRATIONS_PATH
 
 # 1. Run DuckDB tests (no Docker needed)
 echo "Running DuckDB tests..."

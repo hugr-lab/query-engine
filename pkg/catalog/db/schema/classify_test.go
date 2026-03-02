@@ -109,6 +109,25 @@ func TestClassifyType_Nil(t *testing.T) {
 	assert.Equal(t, base.HugrType(""), ClassifyType(nil))
 }
 
+func TestClassifyType_OtherKinds(t *testing.T) {
+	// Enum, Union, Interface, Scalar — all return empty string (unclassified)
+	cases := []struct {
+		kind ast.DefinitionKind
+		name string
+	}{
+		{ast.Enum, "SortOrder"},
+		{ast.Union, "SearchResult"},
+		{ast.Interface, "Node"},
+		{ast.Scalar, "DateTime"},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.kind), func(t *testing.T) {
+			def := &ast.Definition{Kind: tc.kind, Name: tc.name}
+			assert.Equal(t, base.HugrType(""), ClassifyType(def))
+		})
+	}
+}
+
 // --- ClassifyField tests ---
 
 func TestClassifyField_Submodule(t *testing.T) {
@@ -255,104 +274,89 @@ func TestClassifyField_MutationDelete(t *testing.T) {
 }
 
 func TestClassifyField_JoinFieldName(t *testing.T) {
-	// In the real schema, the _join field on a data object returns the _join type,
-	// which is NOT a module root. The classification checks td.Name == "Query"
-	// where td is the field's return type definition. In practice, this pattern
-	// fires when the field's return type resolves to a definition named "Query"
-	// that is NOT a module root (the submodule check would catch it first otherwise).
-	//
-	// Since "Query" is always a module root (well-known name), this field-name
-	// pattern can only fire if the lookup returns a definition that won't trigger
-	// ModuleRootInfo. We test with a non-module-root definition to verify the
-	// classification logic works correctly.
+	// _join field on a @table parent → classified as join
+	tableDef := &ast.Definition{
+		Kind:       ast.Object,
+		Name:       "users",
+		Directives: ast.DirectiveList{{Name: base.ObjectTableDirectiveName}},
+	}
 	field := &ast.FieldDefinition{
 		Name: base.QueryTimeJoinsFieldName,
-		Type: &ast.Type{NamedType: "SomeQueryType"},
+		Type: &ast.Type{NamedType: base.QueryTimeJoinsTypeName},
 	}
-	lookup := func(name string) *ast.Definition {
-		if name == "SomeQueryType" {
-			// Return a definition with Name == QueryBaseName but no @module_root.
-			// This won't trigger ModuleRootInfo because well-known names (Query)
-			// DO trigger it. So we use a custom name that happens to match.
-			return &ast.Definition{Kind: ast.Object, Name: base.QueryBaseName}
-		}
-		return nil
+	assert.Equal(t, base.HugrTypeFieldJoin, ClassifyField(field, tableDef, nil))
+}
+
+func TestClassifyField_JoinFieldName_NoParent(t *testing.T) {
+	// _join field without parentDef → unclassified
+	field := &ast.FieldDefinition{
+		Name: base.QueryTimeJoinsFieldName,
+		Type: &ast.Type{NamedType: base.QueryTimeJoinsTypeName},
 	}
-	// "Query" as Name triggers ModuleRootInfo (well-known root), so submodule fires first.
-	// This is consistent with the original code. Let's verify the _join field on a
-	// table where the return type is _join (not Query):
-	field.Type = &ast.Type{NamedType: base.QueryTimeJoinsTypeName}
-	lookup = func(name string) *ast.Definition {
-		if name == base.QueryTimeJoinsTypeName {
-			return &ast.Definition{Kind: ast.Object, Name: base.QueryTimeJoinsTypeName}
-		}
-		return nil
-	}
-	// _join type is not a module root, and td.Name != "Query", so neither
-	// submodule nor join classification fires → unclassified.
-	assert.Equal(t, base.HugrTypeField(""), ClassifyField(field, nil, lookup))
+	assert.Equal(t, base.HugrTypeField(""), ClassifyField(field, nil, nil))
 }
 
 func TestClassifyField_SpatialFieldName(t *testing.T) {
-	// _spatial field returning _spatial type — not a module root, td.Name != "Query"
+	// _spatial field on a @view parent → classified as spatial
+	viewDef := &ast.Definition{
+		Kind:       ast.Object,
+		Name:       "geo_data",
+		Directives: ast.DirectiveList{{Name: base.ObjectViewDirectiveName}},
+	}
 	field := &ast.FieldDefinition{
 		Name: base.QueryTimeSpatialFieldName,
 		Type: &ast.Type{NamedType: base.QueryTimeSpatialTypeName},
 	}
-	lookup := func(name string) *ast.Definition {
-		if name == base.QueryTimeSpatialTypeName {
-			return &ast.Definition{Kind: ast.Object, Name: base.QueryTimeSpatialTypeName}
-		}
-		return nil
-	}
-	assert.Equal(t, base.HugrTypeField(""), ClassifyField(field, nil, lookup))
+	assert.Equal(t, base.HugrTypeFieldSpatial, ClassifyField(field, viewDef, nil))
 }
 
 func TestClassifyField_JQFieldName(t *testing.T) {
-	// jq field returning JSON type — not a module root, td.Name != "Query"
+	// jq field on a @table parent → classified as jq
+	tableDef := &ast.Definition{
+		Kind:       ast.Object,
+		Name:       "users",
+		Directives: ast.DirectiveList{{Name: base.ObjectTableDirectiveName}},
+	}
 	field := &ast.FieldDefinition{
 		Name: base.JQTransformQueryName,
 		Type: &ast.Type{NamedType: "JSON"},
 	}
-	lookup := func(name string) *ast.Definition {
-		if name == "JSON" {
-			return &ast.Definition{Kind: ast.Scalar, Name: "JSON"}
-		}
-		return nil
-	}
-	assert.Equal(t, base.HugrTypeField(""), ClassifyField(field, nil, lookup))
+	assert.Equal(t, base.HugrTypeFieldJQ, ClassifyField(field, tableDef, nil))
 }
 
 func TestClassifyField_H3AggFieldName(t *testing.T) {
-	// h3 field returning a type defined as _h3_query
+	// h3 field on a @table parent → classified as h3_aggregate
+	tableDef := &ast.Definition{
+		Kind:       ast.Object,
+		Name:       "locations",
+		Directives: ast.DirectiveList{{Name: base.ObjectTableDirectiveName}},
+	}
 	field := &ast.FieldDefinition{
 		Name: base.H3QueryFieldName,
 		Type: &ast.Type{NamedType: base.H3QueryTypeName},
 	}
-	lookup := func(name string) *ast.Definition {
-		if name == base.H3QueryTypeName {
-			return &ast.Definition{Kind: ast.Object, Name: base.H3QueryTypeName}
-		}
-		return nil
-	}
-	assert.Equal(t, base.HugrTypeFieldH3Agg, ClassifyField(field, nil, lookup))
+	assert.Equal(t, base.HugrTypeFieldH3Agg, ClassifyField(field, tableDef, nil))
 }
 
 func TestClassifyField_SubmodulePrecedence(t *testing.T) {
 	// If a field returns a module root type, submodule takes precedence over
 	// field name patterns — even if the field is named "_join".
+	tableDef := &ast.Definition{
+		Kind:       ast.Object,
+		Name:       "users",
+		Directives: ast.DirectiveList{{Name: base.ObjectTableDirectiveName}},
+	}
 	field := &ast.FieldDefinition{
 		Name: base.QueryTimeJoinsFieldName,
 		Type: &ast.Type{NamedType: "Query"},
 	}
 	lookup := func(name string) *ast.Definition {
 		if name == "Query" {
-			// Query is a well-known module root
 			return &ast.Definition{Kind: ast.Object, Name: base.QueryBaseName}
 		}
 		return nil
 	}
-	assert.Equal(t, base.HugrTypeFieldSubmodule, ClassifyField(field, nil, lookup))
+	assert.Equal(t, base.HugrTypeFieldSubmodule, ClassifyField(field, tableDef, lookup))
 }
 
 func TestClassifyField_Unclassified(t *testing.T) {

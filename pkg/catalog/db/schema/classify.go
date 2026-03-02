@@ -130,19 +130,28 @@ func ClassifyField(field *ast.FieldDefinition, parentDef *ast.Definition, typeLo
 	}
 
 	// Well-known field names on specific parent types.
-	if typeLookup != nil && field.Type != nil {
-		td := typeLookup(field.Type.Name())
-		if td != nil {
-			if field.Name == base.QueryTimeJoinsFieldName && td.Name == base.QueryBaseName {
+	// These fields are classified by their name + the parent type they belong to,
+	// not by their return type.
+	if parentDef != nil {
+		switch field.Name {
+		case base.QueryTimeJoinsFieldName:
+			if parentDef.Directives.ForName(base.ObjectTableDirectiveName) != nil ||
+				parentDef.Directives.ForName(base.ObjectViewDirectiveName) != nil {
 				return base.HugrTypeFieldJoin
 			}
-			if field.Name == base.QueryTimeSpatialFieldName && td.Name == base.QueryBaseName {
+		case base.QueryTimeSpatialFieldName:
+			if parentDef.Directives.ForName(base.ObjectTableDirectiveName) != nil ||
+				parentDef.Directives.ForName(base.ObjectViewDirectiveName) != nil {
 				return base.HugrTypeFieldSpatial
 			}
-			if field.Name == base.JQTransformQueryName && td.Name == base.QueryBaseName {
+		case base.JQTransformQueryName:
+			if parentDef.Directives.ForName(base.ObjectTableDirectiveName) != nil ||
+				parentDef.Directives.ForName(base.ObjectViewDirectiveName) != nil {
 				return base.HugrTypeFieldJQ
 			}
-			if field.Name == base.H3QueryFieldName && td.Name == base.H3QueryTypeName {
+		case base.H3QueryFieldName:
+			if parentDef.Directives.ForName(base.ObjectTableDirectiveName) != nil ||
+				parentDef.Directives.ForName(base.ObjectViewDirectiveName) != nil {
 				return base.HugrTypeFieldH3Agg
 			}
 		}

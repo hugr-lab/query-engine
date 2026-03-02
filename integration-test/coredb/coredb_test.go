@@ -40,9 +40,18 @@ var vectorTables = []string{
 	"_schema_modules",
 }
 
-func migrationFilePath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "projects", "hugr-lab", "hugr", "migrations", "0.0.9", "1-add-schema-tables.sql")
+func migrationFilePath(t *testing.T) string {
+	t.Helper()
+	if p := os.Getenv("HUGR_MIGRATIONS_PATH"); p != "" {
+		return filepath.Join(p, "0.0.9", "1-add-schema-tables.sql")
+	}
+	// fallback: sibling repo relative to test package dir (go test cwd = package dir)
+	root := filepath.Join("..", "..", "..", "hugr", "migrations")
+	p := filepath.Join(root, "0.0.9", "1-add-schema-tables.sql")
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("migration file not found at %s (set HUGR_MIGRATIONS_PATH)", p)
+	}
+	return p
 }
 
 // ─── DuckDB tests ───────────────────────────────────────────────────────────
@@ -184,7 +193,7 @@ func TestDuckDB_Migration(t *testing.T) {
 	require.NoError(t, err)
 
 	// apply migration
-	migrationSQL, err := os.ReadFile(migrationFilePath())
+	migrationSQL, err := os.ReadFile(migrationFilePath(t))
 	require.NoError(t, err, "migration file not found")
 
 	parsed, err := db.ParseSQLScriptTemplate(db.SDBDuckDB, string(migrationSQL), coredb.SchemaTemplateParams{
@@ -232,7 +241,7 @@ func TestDuckDB_MigrationIdempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	// apply migration on top — should be idempotent
-	migrationSQL, err := os.ReadFile(migrationFilePath())
+	migrationSQL, err := os.ReadFile(migrationFilePath(t))
 	require.NoError(t, err)
 
 	parsed, err := db.ParseSQLScriptTemplate(db.SDBDuckDB, string(migrationSQL), coredb.SchemaTemplateParams{
@@ -431,7 +440,7 @@ func TestPostgres_Migration(t *testing.T) {
 	}
 
 	// apply migration
-	migrationSQL, err := os.ReadFile(migrationFilePath())
+	migrationSQL, err := os.ReadFile(migrationFilePath(t))
 	require.NoError(t, err)
 
 	parsed, err := db.ParseSQLScriptTemplate(db.SDBPostgres, string(migrationSQL), coredb.SchemaTemplateParams{
@@ -485,7 +494,7 @@ func TestPostgres_MigrationIdempotent(t *testing.T) {
 	require.NoError(t, err)
 
 	// apply migration on top — should be idempotent
-	migrationSQL, err := os.ReadFile(migrationFilePath())
+	migrationSQL, err := os.ReadFile(migrationFilePath(t))
 	require.NoError(t, err)
 
 	parsed, err := db.ParseSQLScriptTemplate(db.SDBPostgres, string(migrationSQL), coredb.SchemaTemplateParams{

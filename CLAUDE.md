@@ -17,6 +17,9 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag for tests), `crypto/sha256` (version hashing) (001-sources-cleanup-docs)
 - N/A (in-memory schema compilation) (001-sources-cleanup-docs)
 - Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST parsing), `duckdb-go/v2` (build tag for tests), `crypto/sha256` (version hashing) (010-incremental-schema-compilation)
+- Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST) + `gqlparser/v2/ast` (AST types), `pkg/catalog/compiler/base` (HugrType constants, directive name constants) (011-db-schema-serialization)
+- N/A (this package generates DDL strings; no direct DB access) (011-db-schema-serialization)
+- CoreDB (DuckDB / attached PostgreSQL) — DDL added to existing `schema.sql` init + migration in `hugr/migrations/0.0.9/` (011-db-schema-serialization)
 
 - Go 1.25 + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag), `apache/arrow-go/v18` (001-compiler-generators-decouple)
 
@@ -36,9 +39,9 @@ tests/
 Go 1.25: Follow standard conventions
 
 ## Recent Changes
+- 011-db-schema-serialization: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST) + `gqlparser/v2/ast` (AST types), `pkg/catalog/compiler/base` (HugrType constants, directive name constants)
+- 011-db-schema-serialization: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST) + `gqlparser/v2/ast` (AST types), `pkg/catalog/compiler/base` (HugrType constants, directive name constants)
 - 010-incremental-schema-compilation: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST parsing), `duckdb-go/v2` (build tag for tests), `crypto/sha256` (version hashing)
-- 008-extension-compiler: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag), `pkg/types` (runtime parsing)
-- 001-sources-cleanup-docs: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag for tests), `crypto/sha256` (version hashing)
 
 
 <!-- MANUAL ADDITIONS START -->

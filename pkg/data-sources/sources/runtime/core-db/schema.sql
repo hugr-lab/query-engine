@@ -69,7 +69,9 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}api_keys (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Schema storage tables for DB-backed schema provider
+-- Schema storage tables for DB-backed schema provider.
+-- FK constraints are intentionally omitted for DuckDB compatibility;
+-- referential integrity is maintained at the application level.
 
 CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_catalogs (
     name VARCHAR NOT NULL PRIMARY KEY,
@@ -106,6 +108,7 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_fields
     name VARCHAR NOT NULL,
     field_type VARCHAR NOT NULL,
     description VARCHAR NOT NULL DEFAULT '',
+    long_description VARCHAR NOT NULL DEFAULT '',
     hugr_type VARCHAR NOT NULL DEFAULT '',
     catalog VARCHAR,
     dependency_catalog VARCHAR,
@@ -120,6 +123,7 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_argume
     field_name VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
     arg_type VARCHAR NOT NULL,
+    default_value VARCHAR,
     description VARCHAR NOT NULL DEFAULT '',
     directives {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL DEFAULT '[]',
     PRIMARY KEY (type_name, field_name, name)
@@ -136,7 +140,7 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_enum_v
 CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_directives (
     name VARCHAR NOT NULL PRIMARY KEY,
     description VARCHAR NOT NULL DEFAULT '',
-    locations VARCHAR NOT NULL DEFAULT '',
+    locations VARCHAR NOT NULL DEFAULT '', -- pipe-separated: e.g. "FIELD_DEFINITION|ARGUMENT_DEFINITION"
     is_repeatable BOOLEAN NOT NULL DEFAULT FALSE
 );
 

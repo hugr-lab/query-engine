@@ -34,14 +34,10 @@ func MarshalDirectives(dirs ast.DirectiveList) ([]byte, error) {
 		}
 		result = append(result, dj)
 	}
-	// Use a custom encoder for deterministic output with sorted keys.
-	return marshalDeterministic(result)
-}
-
-// marshalDeterministic produces JSON with sorted map keys for deterministic output.
-func marshalDeterministic(v any) ([]byte, error) {
-	// json.Marshal sorts map keys by default in Go, so this is already deterministic.
-	return json.Marshal(v)
+	// Go's json.Marshal sorts map keys alphabetically, so the output is
+	// deterministic. Note: argument order within each directive is alphabetical
+	// after round-trip, not the original declaration order.
+	return json.Marshal(result)
 }
 
 // marshalValue converts an ast.Value to a Go value suitable for JSON marshaling.
@@ -67,7 +63,10 @@ func marshalValue(v *ast.Value) any {
 	case ast.StringValue:
 		return v.Raw
 	case ast.EnumValue:
-		// Wrap enum values to distinguish from plain strings.
+		// Wrap enum values to distinguish from plain strings in JSON.
+		// Known limitation: an object value with a single key "$enum" would be
+		// incorrectly deserialized as an enum. This is acceptable because "$enum"
+		// is not a valid GraphQL directive argument name.
 		return map[string]any{"$enum": v.Raw}
 	case ast.ListValue:
 		items := make([]any, 0, len(v.Children))
