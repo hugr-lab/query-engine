@@ -14,6 +14,9 @@ extend type MutationFunction {
     name: String!
   ): OperationResult @module(name: "core")
     @function(name: "unload_data_source")
+
+  checkpoint(name: String = ""): OperationResult @module(name: "core")
+    @function(name: "checkpoint_db")
 }
 
 extend type Function {
