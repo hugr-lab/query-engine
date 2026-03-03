@@ -48,9 +48,9 @@ query {
 }
 ```
 
-## Sub-Aggregation on Relations
+## Aggregation Over Relations (Subquery Aggregation)
 
-Aggregate over one-to-many / many-to-many relations:
+Aggregate related data for each parent record. Works with references, joins, and function calls:
 
 ```graphql
 query {
@@ -69,6 +69,26 @@ query {
   }
 }
 ```
+
+## Sub-Aggregation (Aggregation of Aggregations)
+
+Sub-aggregation applies aggregation functions to already-aggregated results. For aggregated subquery fields, each aggregation field exposes sub-aggregation functions:
+
+```graphql
+query {
+  module {
+    categories_aggregation {
+      _rows_count
+      products_aggregation {
+        _rows_count { sum }
+        price { avg { avg min max } }
+      }
+    }
+  }
+}
+```
+
+Here `products_aggregation` is a sub-aggregation: `_rows_count { sum }` computes the sum of per-category product counts, and `price { avg { avg } }` computes the average of per-category average prices.
 
 ## Ordering Bucket Aggregations
 

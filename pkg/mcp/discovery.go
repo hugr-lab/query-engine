@@ -29,7 +29,7 @@ func (s *Server) searchModules(ctx context.Context, req mcp.CallToolRequest) (*m
 	err := s.queryScan(ctx, fmt.Sprintf(`query {
 		core {
 			catalog {
-				_schema_modules(
+				modules(
 					order_by: [{field: "_distance_to_query", direction: ASC, args: {query: %q}}]
 					limit: %d
 				) {
@@ -39,7 +39,7 @@ func (s *Server) searchModules(ctx context.Context, req mcp.CallToolRequest) (*m
 				}
 			}
 		}
-	}`, query, topK, query), nil, "core.catalog._schema_modules", &items)
+	}`, query, topK, query), nil, "core.catalog.modules", &items)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
@@ -59,7 +59,7 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 	err := s.queryScan(ctx, fmt.Sprintf(`query {
 		core {
 			catalog {
-				_schema_catalogs(
+				catalogs(
 					order_by: [{field: "_distance_to_query", direction: ASC, args: {query: %q}}]
 					limit: %d
 				) {
@@ -69,7 +69,7 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 				}
 			}
 		}
-	}`, query, topK, query), nil, "core.catalog._schema_catalogs", &items)
+	}`, query, topK, query), nil, "core.catalog.catalogs", &items)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
@@ -94,7 +94,7 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 	err := s.queryScan(ctx, fmt.Sprintf(`query {
 		core {
 			catalog {
-				_schema_types(
+				types(
 					filter: {
 						hugr_type: {in: ["table", "view"]}
 						module: %s
@@ -111,7 +111,7 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 				}
 			}
 		}
-	}`, moduleFilter, query, topK, query), nil, "core.catalog._schema_types", &items)
+	}`, moduleFilter, query, topK, query), nil, "core.catalog.types", &items)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
@@ -143,7 +143,7 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 	err := s.queryScan(ctx, fmt.Sprintf(`query {
 		core {
 			catalog {
-				_schema_module_intro(
+				module_intro(
 					filter: {
 						module: {eq: %q}
 						type_type: {in: %s}
@@ -158,7 +158,7 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 				}
 			}
 		}
-	}`, module, typeTypes, topK), nil, "core.catalog._schema_module_intro", &items)
+	}`, module, typeTypes, topK), nil, "core.catalog.module_intro", &items)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}

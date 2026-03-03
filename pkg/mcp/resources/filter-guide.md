@@ -6,16 +6,22 @@ Operators depend on the field type (check with `schema-type_fields`):
 
 | Operator | Types | Description |
 |----------|-------|-------------|
-| `eq` | all | Equal to |
-| `neq` | all | Not equal to |
-| `gt`, `gte` | numeric, temporal | Greater than (or equal) |
-| `lt`, `lte` | numeric, temporal | Less than (or equal) |
-| `in` | all | In list |
-| `nin` | all | Not in list |
+| `eq` | all scalars | Equal to |
+| `gt`, `gte` | numeric, temporal, Interval | Greater than (or equal) |
+| `lt`, `lte` | numeric, temporal, Interval | Less than (or equal) |
+| `in` | String, numeric, Date, Time, Timestamp | In list |
 | `is_null` | all | Is null check |
-| `like` | String | SQL LIKE pattern |
+| `like` | String | SQL LIKE pattern (`%` wildcard) |
 | `ilike` | String | Case-insensitive LIKE |
 | `regex` | String | Regular expression |
+| `has` | JSON | Has key |
+| `has_all` | JSON | Has all keys |
+| `contains` | JSON, Geometry, List, Range | Contains value/geometry/list/range |
+| `intersects` | Geometry, List, Range | Intersects with |
+| `includes` | Range | Range includes another range |
+| `eq` (List) | List types | List contains value |
+
+Boolean type supports only: `eq`, `is_null`.
 
 ## Logical Operators
 

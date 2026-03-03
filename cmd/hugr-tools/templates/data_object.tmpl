@@ -1,0 +1,102 @@
+Produce descriptions for a Hugr data object - table/view, using the data-source context, the module context and recursive relations.
+
+[INPUT JSON]
+{
+  "object": {{ .ObjectJSON }},
+  "columns": {{ .ColumnsJSON }},
+  "relations": {{ .RelationsJSON }},
+  "function_calls": {{ .FunctionCallsJSON }},
+  "queries": {{ .QueriesJSON }},
+  "mutations": {{ .MutationsJSON }},
+  "arguments": {{ .ArgumentsJSON }},
+
+  "data_source_context": {{ .DataSourceContextJSON }},
+
+  "module_context": {{ .ModuleContextJSON }},
+
+  "related_graph": {
+    "max_depth": {{ .RelatedGraphMaxDepth }},
+    "nodes": {{ .RelatedGraphNodesJSON }},
+    "edges": {{ .RelatedGraphEdgesJSON }}
+  }
+}
+
+[TASK]
+Return ONE JSON with the exact shape below (English only; no extra keys):
+
+{
+  "short": "1-2 sentences: what this object stores; mention module/source to avoid vacuum context",
+  "long":  "~400 tokens: business meaning & typical use; key fields (PK/date/geometry) and why;
+            relations (N-1/1-1/1-N/M-N) and how to filter through them; value of query-time joins and spatial joins;
+            characteristic filters incl. any_of/all_of/none_of for list relations; single & bucket aggregations and typical group-bys;
+            notes for hypertable/cube; consider data-source context",
+  "aggregation_type_short": "1-2 sentences: what this object stores in the context of single row aggregations; mention module/source to avoid vacuum context",
+  "aggregation_type_long": "~400 tokens: business meaning & typical use of single row aggregations;
+            relations (N-1/1-1/1-N/M-N) and how to filter through them; value of query-time joins and spatial joins;
+            characteristic filters incl. any_of/all_of/none_of for list relations; single & bucket aggregations and typical group-bys;
+            notes for hypertable/cube; consider data-source context",
+  "sub_aggregation_type_short": "1-2 sentences: what this object stores in the context of sub-aggregations; mention module/source to avoid vacuum context",
+  "sub_aggregation_type_long": "~400 tokens: business meaning & typical use of sub-aggregations;
+            relations (N-1/1-1/1-N/M-N) and how to filter through them; value of query-time joins and spatial joins;
+            characteristic filters incl. any_of/all_of/none_of for list relations; single & bucket aggregations and typical group-bys;
+            notes for hypertable/cube; consider data-source context",
+  "bucket_aggregation_type_short": "1-2 sentences: what this object stores in the context of bucket aggregations; mention module/source to avoid vacuum context",
+  "bucket_aggregation_type_long": "~400 tokens: business meaning & typical use of bucket aggregations;
+            relations (N-1/1-1/1-N/M-N) and how to filter through them; value of query-time joins and spatial joins;
+            characteristic filters incl. any_of/all_of/none_of for list relations; single & bucket aggregations and typical group-bys;
+            notes for hypertable/cube; consider data-source context",
+  "filter": {
+    "row": "<=1 line: filter object description, only business meaning",
+    "fields": {
+      "<field_name>": "<=1 line: filter object field description, only business meaning"
+    },
+    "references": {
+      "<reference_name>": "<=1 line: business meaning of the filter by referenced record/records, mention yields array; mention module/source to avoid vacuum context"
+    }
+  },
+  "fields": {
+    "<field_name>": "<=1 line: business meaning; note PK/array/calculated"
+  },
+  "extra_fields": {
+    "<extra_field_name>": "<=1 line: business meaning; note PK/array/calculated"
+  },
+  "relations": {
+    "<relation_name>": {
+        "short": "<=1 line: business meaning of the relation; mention module/source to avoid vacuum context",
+        "select":"<=1-2 lines: meaning of the joined data, what it returns, common filters/aggregations",
+        "select_agg": "<=1-2 lines: aggregation of the joined data if applicable; references type; typical filtering/joins",
+        "select_bucket_agg": "<=1-2 lines: grouping and aggregation of the joined data if applicable; references type; typical filtering/joins"
+    }
+  },
+  "function_calls": {
+    "<call_name>": "<=1-2 lines: what it computes/returns; scalar vs table; yields array? typical usage. Important: use provided function_call names"
+  },
+  "arguments": {
+    "short": "<=1 line: purpose; name for the argument data type, if applicable",
+    "fields": {
+      "<field_name>": "<=1 line: business meaning of the argument field, if applicable"
+    }
+  },
+  "queries": {
+    "<query_name>": "~250 tokens: what it retrieves/type of query, without links to the other queries; common filters, fields, subqueries, relations. Important: Use provided query names."
+  },
+  "mutations": {
+    "<mutation_name>": "<=1-2 lines: what it modifies; key args if any"
+  }
+}
+
+Constraints:
+- Respect recursion depth and de-duplication from the provided related_graph.
+- Do NOT invent queries, fields, relations, function calls or capabilities not present in the input.
+- Do not use in descriptions type names, use their business meaning.
+- Do not use in the description table and view names, use their business meaning.
+- Do not use the table or view name in the short and long description, instead use their business meaning.
+- Do not use field names in descriptions, instead use their business meaning.
+- Keep "short" succinct; keep "long" around 400 tokens; keep blurbs within the given limits.
+- Query and Mutation names in output JSON must be equal to provided query names. Use the their names literally (<query_name> and <mutation_name> placeholders).
+- Aggregation Type: The data object aggregation type is GraphQL representation of aggregation results, user can select field and aggregation functions (for scalar types).
+- Aggregation Type: Includes all fields, references, subqueries and function calls that are available for the data object. It also contains the sub aggregations for the one-to-many and many-to-many references and subqueries, that returns arrays.
+- Sub-Aggregation Type: If this data object referenced or subqueried from other data object aggregations, it can be used as sub-aggregation type, e.g. to get average count of related records or an average value of a sum of the field this data object.
+- Sub-Aggregation Type: This type contains all fields, references, subqueries and function calls that are available for the data object.
+- Bucket Aggregation Type: The data object bucket aggregation type is GraphQL representation of the result group by queries on data object. It can be used as bucket aggregation type, e.g. to get count of records per group. This type contains two fields: `key`, the same type of data object, and `aggregations` the Aggregation Type of the data object. For aggregations the filter, order by and other arguments can be applied.
+- Aggregation Types: Aggregation types can be not generated for some data objects (Check input JSON to be sure).

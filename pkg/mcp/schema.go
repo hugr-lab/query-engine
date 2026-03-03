@@ -30,7 +30,7 @@ func (s *Server) typeInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	err := s.queryScan(ctx, `query($name: String!) {
 		core {
 			catalog {
-				_schema_types_by_pk(name: $name) {
+				types_by_pk(name: $name) {
 					name
 					kind
 					hugr_type
@@ -41,7 +41,7 @@ func (s *Server) typeInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 				}
 			}
 		}
-	}`, map[string]any{"name": typeName}, "core.catalog._schema_types_by_pk", &result)
+	}`, map[string]any{"name": typeName}, "core.catalog.types_by_pk", &result)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
@@ -73,7 +73,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	err := s.queryScan(ctx, `query($filter: _schema_fields_filter, $limit: Int, $offset: Int) {
 		core {
 			catalog {
-				_schema_fields(
+				fields(
 					filter: $filter
 					order_by: [{field: "name", direction: ASC}]
 					limit: $limit
@@ -94,7 +94,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		},
 		"limit":  limit,
 		"offset": offset,
-	}, "core.catalog._schema_fields", &fields)
+	}, "core.catalog.fields", &fields)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
@@ -131,7 +131,7 @@ func (s *Server) enumValues(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	err := s.queryScan(ctx, `query($name: String!) {
 		core {
 			catalog {
-				_schema_types_by_pk(name: $name) {
+				types_by_pk(name: $name) {
 					name
 					kind
 					fields {
@@ -141,7 +141,7 @@ func (s *Server) enumValues(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 				}
 			}
 		}
-	}`, map[string]any{"name": typeName}, "core.catalog._schema_types_by_pk", &result)
+	}`, map[string]any{"name": typeName}, "core.catalog.types_by_pk", &result)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}

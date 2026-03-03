@@ -41,9 +41,11 @@ func (s *CatalogRuntimeSource) Catalog(_ context.Context) (sources.Catalog, erro
 	params := struct {
 		EmbeddingsEnabled bool
 		VectorSize        int
+		IsPostgres        bool
 	}{
 		EmbeddingsEnabled: s.provider.HasEmbeddings(),
 		VectorSize:        s.provider.VecSize(),
+		IsPostgres:        s.provider.isPostgres,
 	}
 
 	tmpl, err := template.New("schema").Parse(catalogSchemaTmpl)

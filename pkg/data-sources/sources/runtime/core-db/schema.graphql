@@ -155,3 +155,52 @@ type api_keys @module(name: "core")
   """
   claims: JSON
 }
+
+# --- Schema Management UDFs (registered by db.Provider.RegisterUDFs) ---
+
+extend type MutationFunction {
+  "Hard-delete a catalog and all its schema objects. Rejects if catalog has active engine."
+  _schema_hard_remove(name: String!): OperationResult
+    @module(name: "core") @function(name: "_schema_hard_remove")
+
+  "Reset catalog version to force recompilation on next startup."
+  _schema_version_clean(name: String!): OperationResult
+    @module(name: "core") @function(name: "_schema_version_clean")
+
+  "Update type description and mark as summarized."
+  _schema_update_type_desc(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core") @function(name: "_schema_update_type_desc")
+
+  "Update field description and mark as summarized."
+  _schema_update_field_desc(
+    type_name: String!
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core") @function(name: "_schema_update_field_desc")
+
+  "Update module description and mark as summarized."
+  _schema_update_module_desc(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core") @function(name: "_schema_update_module_desc")
+
+  "Update catalog description and mark as summarized."
+  _schema_update_catalog_desc(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core") @function(name: "_schema_update_catalog_desc")
+
+  "Recompute embeddings. Empty name = all entities."
+  _schema_reindex(name: String = "", batch_size: Int = 50): OperationResult
+    @module(name: "core") @function(name: "_schema_reindex")
+}

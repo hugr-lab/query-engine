@@ -5,20 +5,23 @@
 # --- Catalogs (data sources) ---
 
 "Schema catalogs (data sources)"
-type catalogs @view(name: "_schema_catalogs", sql: "FROM core._schema_catalogs")
+type catalogs @view(name: "_schema_catalogs", sql: """
+  FROM {{ if .IsPostgres }}[_schema_catalogs]{{ else }}core._schema_catalogs{{ end }} c
+  LEFT JOIN {{ if .IsPostgres }}[data_sources]{{ else }}core.data_sources{{ end }} ds ON c.name = ds.name
+""")
   {{ if .EmbeddingsEnabled }}@embeddings(model: "system", vector: "vec", distance: Cosine){{ end }} {
-  name: String! @pk
-  version: String!
-  description: String!
-  long_description: String!
-  type: String!
-  prefix: String!
-  as_module: Boolean!
-  read_only: Boolean!
-  disabled: Boolean!
-  suspended: Boolean!
-  is_summarized: Boolean!
-  {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}){{ end }}
+  name: String! @pk @sql(expression: "c.name")
+  version: String! @sql(expression: "c.version")
+  description: String! @sql(expression: "c.description")
+  long_description: String! @sql(expression: "c.long_description")
+  type: String @sql(expression: "ds.type")
+  prefix: String @sql(expression: "COALESCE(ds.prefix, '')")
+  as_module: Boolean @sql(expression: "COALESCE(ds.as_module, false)")
+  read_only: Boolean @sql(expression: "COALESCE(ds.read_only, false)")
+  disabled: Boolean! @sql(expression: "c.disabled")
+  suspended: Boolean! @sql(expression: "c.suspended")
+  is_summarized: Boolean! @sql(expression: "c.is_summarized")
+  {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}) @sql(expression: "c.vec"){{ end }}
 }
 
 # --- Catalog Dependencies ---
@@ -319,24 +322,24 @@ type module_intro @view(
   SELECT m.name AS module, 'queries' AS type_type,
          qt.name AS type_name, qft.name AS field_name,
          qft.description AS field_description, qft.hugr_type, qft.catalog
-  FROM core._schema_modules AS m
-      INNER JOIN core._schema_types AS qt ON m.query_root = qt.name
-      INNER JOIN core._schema_fields AS qft ON qt.name = qft.type_name
+  FROM {{ if .IsPostgres }}[_schema_modules]{{ else }}core._schema_modules{{ end }} AS m
+      INNER JOIN {{ if .IsPostgres }}[_schema_types]{{ else }}core._schema_types{{ end }} AS qt ON m.query_root = qt.name
+      INNER JOIN {{ if .IsPostgres }}[_schema_fields]{{ else }}core._schema_fields{{ end }} AS qft ON qt.name = qft.type_name
   UNION ALL
   SELECT m.name, 'mutation', qt.name, qft.name, qft.description, qft.hugr_type, qft.catalog
-  FROM core._schema_modules AS m
-      INNER JOIN core._schema_types AS qt ON m.mutation_root = qt.name
-      INNER JOIN core._schema_fields AS qft ON qt.name = qft.type_name
+  FROM {{ if .IsPostgres }}[_schema_modules]{{ else }}core._schema_modules{{ end }} AS m
+      INNER JOIN {{ if .IsPostgres }}[_schema_types]{{ else }}core._schema_types{{ end }} AS qt ON m.mutation_root = qt.name
+      INNER JOIN {{ if .IsPostgres }}[_schema_fields]{{ else }}core._schema_fields{{ end }} AS qft ON qt.name = qft.type_name
   UNION ALL
   SELECT m.name, 'function', qt.name, qft.name, qft.description, qft.hugr_type, qft.catalog
-  FROM core._schema_modules AS m
-      INNER JOIN core._schema_types AS qt ON m.function_root = qt.name
-      INNER JOIN core._schema_fields AS qft ON qt.name = qft.type_name
+  FROM {{ if .IsPostgres }}[_schema_modules]{{ else }}core._schema_modules{{ end }} AS m
+      INNER JOIN {{ if .IsPostgres }}[_schema_types]{{ else }}core._schema_types{{ end }} AS qt ON m.function_root = qt.name
+      INNER JOIN {{ if .IsPostgres }}[_schema_fields]{{ else }}core._schema_fields{{ end }} AS qft ON qt.name = qft.type_name
   UNION ALL
   SELECT m.name, 'mut_function', qt.name, qft.name, qft.description, qft.hugr_type, qft.catalog
-  FROM core._schema_modules AS m
-      INNER JOIN core._schema_types AS qt ON m.mut_function_root = qt.name
-      INNER JOIN core._schema_fields AS qft ON qt.name = qft.type_name
+  FROM {{ if .IsPostgres }}[_schema_modules]{{ else }}core._schema_modules{{ end }} AS m
+      INNER JOIN {{ if .IsPostgres }}[_schema_types]{{ else }}core._schema_types{{ end }} AS qt ON m.mut_function_root = qt.name
+      INNER JOIN {{ if .IsPostgres }}[_schema_fields]{{ else }}core._schema_fields{{ end }} AS qft ON qt.name = qft.type_name
   """
 ) {
   module: String! @field_references(
@@ -364,51 +367,5 @@ type module_intro @view(
   )
 }
 
-# --- Schema Management UDFs ---
-
-extend type MutationFunction {
-  "Hard-delete a catalog and all its schema objects. Rejects if catalog has active engine."
-  hard_remove(name: String!): OperationResult
-    @module(name: "core") @function(name: "_schema_hard_remove")
-
-  "Reset catalog version to force recompilation on next startup."
-  version_clean(name: String!): OperationResult
-    @module(name: "core") @function(name: "_schema_version_clean")
-
-  "Update type description and mark as summarized."
-  update_type_desc(
-    name: String!
-    description: String!
-    long_description: String!
-  ): OperationResult
-    @module(name: "core") @function(name: "_schema_update_type_desc")
-
-  "Update field description and mark as summarized."
-  update_field_desc(
-    type_name: String!
-    name: String!
-    description: String!
-    long_description: String!
-  ): OperationResult
-    @module(name: "core") @function(name: "_schema_update_field_desc")
-
-  "Update module description and mark as summarized."
-  update_module_desc(
-    name: String!
-    description: String!
-    long_description: String!
-  ): OperationResult
-    @module(name: "core") @function(name: "_schema_update_module_desc")
-
-  "Update catalog description and mark as summarized."
-  update_catalog_desc(
-    name: String!
-    description: String!
-    long_description: String!
-  ): OperationResult
-    @module(name: "core") @function(name: "_schema_update_catalog_desc")
-
-  "Recompute embeddings. Empty name = all entities. batch_size controls concurrency (default 50, max 200)."
-  reindex(name: String = "", batch_size: Int = 50): OperationResult
-    @module(name: "core") @function(name: "_schema_reindex")
-}
+# UDFs are declared in core-db schema.graphql (not here) because they use
+# @module(name: "core") and must not be affected by the _schema prefix.

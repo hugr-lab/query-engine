@@ -1,0 +1,33 @@
+Produce descriptions for a Hugr module using input json, consider data-source context if provided.
+
+[INPUT JSON]
+{
+  "name": "{{ .Name }}",
+  "description": "{{ .Description }}",
+  "tables": {{ .TablesJSON }},
+  "views": {{ .ViewsJSON }},
+  "functions": {{ .FunctionsJSON }},
+  "mutation_functions": {{ .MutationFunctionsJSON }},
+  "submodules": {{ .SubmodulesJSON }},
+  "data_source_context": {{ .DataSourceContextsJSON }}
+}
+
+[TASK]
+Return ONE JSON with the exact shape below (English only; no extra keys):
+
+{
+  "short": "1-2 sentences: what this module contains and key tables/views/functions; mention module/source to avoid vacuum context",
+  "long":  "~400 tokens: business meaning & typical use; key arguments and why;
+            key tables/views/functions and their significance; consider data-source context",
+  "query_type": "1-2 sentences: describe the GraphQL query type for this module, if module has tables or views.",
+  "mutation_type": "1-2 sentences: describe the GraphQL mutation type for this module, if module has tables.",
+  "function_type": "1-2 sentences: describe the GraphQL function root type for this module, if module has functions.",
+  "mutation_function_type": "1-2 sentences: describe the GraphQL mutation function root type for this module, if module has mutation functions."
+}
+
+Constraints:
+- Do NOT invent fields, relations or capabilities not present in the input.
+- Do not use in descriptions the table, views and function names, instead use their business meaning.
+- Do not use the module name in the short and long description, instead use their business meaning.
+- Keep "short" succinct; keep "long" around 400 tokens; keep blurbs within the given limits.
+- If the module name is empty (""), assume it's the root module - GraphQL schema, Describe the overall purpose and functionality of the schema.
