@@ -26,6 +26,16 @@ gql() {
 
 echo "Provisioning data sources..."
 
+# Remove existing sources first (idempotent for --keep reruns on PG CoreDB).
+# No cascade deletes in DB, so delete from all 3 tables manually:
+# data_source_catalogs (M2M) → catalog_sources → data_sources.
+echo "  Cleaning existing data sources..."
+for src in ext_bridge rest_api local_db pg_store; do
+  gql "mutation { core { delete_data_source_catalogs(filter: { data_source_name: { _eq: \\\"$src\\\" } }) { data_source_name } } }" > /dev/null 2>&1 || true
+  gql "mutation { core { delete_catalog_sources(filter: { name: { _eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
+  gql "mutation { core { delete_data_sources(filter: { name: { _eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
+done
+
 # 1. Add PostgreSQL data source
 echo "  Registering pg_store..."
 gql 'mutation { core { insert_data_sources(data: { name: \"pg_store\", prefix: \"pg_store\", type: \"postgres\", path: \"postgres://test:test@postgres:5432/testdb\", as_module: true, catalogs: [{ name: \"pg_store\", type: \"localFS\", path: \"/workspace/schemas/pg_store\" }] }) { name } } }'
