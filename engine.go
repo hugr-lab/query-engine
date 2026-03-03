@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/pprof"
 	"time"
@@ -46,6 +47,8 @@ type Service struct {
 	gis      *gis.Service
 	embedder *embedding.Source
 
+	dbProvider *catalogdb.Provider
+
 	pendingSources []sources.RuntimeSource
 	initialized    bool
 }
@@ -60,6 +63,10 @@ type Config struct {
 	AllowParallel      bool
 	MaxParallelQueries int
 	MaxDepth           int
+
+	ClusterWorker         bool          // true = worker node, skip orphan cleanup
+	SchemaCacheMaxEntries int           // LRU cache max entries (0 = default 10000)
+	SchemaCacheTTL        time.Duration // LRU cache TTL (0 = default 10m)
 
 	CoreDB   *coredb.Source
 	Auth     *auth.Config
@@ -135,14 +142,23 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	isPostgres := s.config.CoreDB.Info().Type == sources.Postgres
 	tablePrefix := "core."
 	c := compiler.New(compiler.GlobalRules()...)
+	cacheConfig := catalogdb.CacheConfig{
+		MaxEntries: s.config.SchemaCacheMaxEntries,
+		TTL:        s.config.SchemaCacheTTL,
+	}
+	if cacheConfig.MaxEntries == 0 && cacheConfig.TTL == 0 {
+		cacheConfig = catalogdb.DefaultCacheConfig()
+	}
 	dbProvider, err := catalogdb.NewWithCompiler(s.db, catalogdb.Config{
 		TablePrefix: tablePrefix,
-		Cache:       catalogdb.DefaultCacheConfig(),
+		Cache:       cacheConfig,
 		IsPostgres:  isPostgres,
 	}, embedder, c)
 	if err != nil {
 		return fmt.Errorf("create db provider: %w", err)
 	}
+
+	s.dbProvider = dbProvider
 
 	// 5. Persist system types (version-checked, skips if unchanged on restart).
 	err = dbProvider.InitSystemTypes(ctx)
@@ -226,7 +242,16 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		s.config.MaxDepth = 7
 	}
 
-	// 13. Load stored data sources.
+	// 13. Clean orphaned catalogs (standalone/manager mode only).
+	// All runtime catalogs are now registered in dbProvider.catalogs;
+	// only data-source catalogs missing from the data_sources table are removed.
+	if !s.config.ClusterWorker {
+		if err := s.dbProvider.CleanOrphanedCatalogs(ctx); err != nil {
+			slog.Error("failed to clean orphaned catalogs", "error", err)
+		}
+	}
+
+	// 14. Load stored data sources.
 	err = s.loadDataSources(ctx)
 	if err != nil {
 		return fmt.Errorf("load data sources: %w", err)

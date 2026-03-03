@@ -464,4 +464,55 @@ func (p *Provider) allDependenciesSatisfied(ctx context.Context, name string) (b
 	return unsatisfied == 0, nil
 }
 
+// CleanOrphanedCatalogs detects catalogs in _schema_catalogs that have no
+// corresponding record in data_sources and are not runtime catalogs, then
+// removes them. This handles the case where a data source was deleted via
+// GraphQL mutation while the engine was stopped — its schema objects would
+// otherwise remain stale in _schema_* tables.
+//
+// Call after all runtime sources are registered via AddCatalog so that
+// p.catalogs contains the full set of runtime catalog names to skip.
+func (p *Provider) CleanOrphanedCatalogs(ctx context.Context) error {
+	conn, err := p.pool.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("clean orphaned catalogs: %w", err)
+	}
+	defer conn.Close()
+
+	rows, err := conn.Query(ctx, fmt.Sprintf(
+		`SELECT c.name FROM %s c
+		 LEFT JOIN %s ds ON ds.name = c.name
+		 WHERE ds.name IS NULL AND c.name != '%s'`,
+		p.table("_schema_catalogs"), p.table("data_sources"),
+		SystemCatalogName,
+	))
+	if err != nil {
+		return fmt.Errorf("clean orphaned catalogs query: %w", err)
+	}
+
+	var orphans []string
+	p.mu.RLock()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			continue
+		}
+		if _, isRuntime := p.catalogs[name]; isRuntime {
+			continue
+		}
+		orphans = append(orphans, name)
+	}
+	p.mu.RUnlock()
+	rows.Close()
+
+	for _, name := range orphans {
+		slog.Info("removing orphaned catalog", "catalog", name)
+		if err := p.DropCatalog(ctx, name, true); err != nil {
+			slog.Error("failed to drop orphaned catalog", "catalog", name, "error", err)
+		}
+	}
+
+	return nil
+}
+
 // dropCatalogSchemaObjects and deleteSchemaObjectsForCatalog are in drop.go.
