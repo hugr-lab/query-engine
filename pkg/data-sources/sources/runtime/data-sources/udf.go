@@ -9,6 +9,7 @@ import (
 
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -74,6 +75,35 @@ func (s *Source) registerUDF(ctx context.Context) error {
 				return types.ErrResult(err), nil
 			}
 			return types.Result("Datasource was unloaded", 0, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) (string, error) {
+			if len(args) != 1 {
+				return "", errors.New("invalid number of arguments")
+			}
+			name := args[0].(string)
+			return name, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) {
+			return out.ToDuckdb(), nil
+		},
+		InputTypes: []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
+		OutputType: types.DuckDBOperationResult(),
+	})
+	if err != nil {
+		return err
+	}
+
+	err = s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[string, *types.OperationResult]{
+		Name: "checkpoint_db",
+		Execute: func(ctx context.Context, name string) (*types.OperationResult, error) {
+			if name != "" {
+				name = base.Ident(name)
+			}
+			_, err := s.db.Exec(ctx, "CHECKPOINT "+name)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result("Datasource was checkpointed", 0, 0), nil
 		},
 		ConvertInput: func(args []driver.Value) (string, error) {
 			if len(args) != 1 {

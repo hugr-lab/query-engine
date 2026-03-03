@@ -7,8 +7,11 @@ import (
 	"time"
 
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/sync/singleflight"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 )
 
@@ -40,6 +43,10 @@ type Config struct {
 // Provider is the DB-backed schema provider.
 // It stores compiled GraphQL types in _schema_* tables and serves
 // lookups via an LRU cache with DB fallback.
+//
+// When a *compiler.Compiler is set (via NewWithCompiler), the provider
+// also implements CatalogManager — managing catalog lifecycle (add/remove/
+// reload/disable/enable) with version-based skip-if-unchanged logic.
 type Provider struct {
 	pool     *db.Pool
 	prefix   string
@@ -55,6 +62,12 @@ type Provider struct {
 	mutationType *ast.Definition
 	rootsLoaded  bool
 
+	// CatalogManager support: compiler for self-contained compilation,
+	// catalogs map for runtime source handles only (all state in DB).
+	compiler *compiler.Compiler
+	catalogs map[string]sources.Catalog
+
+	sf singleflight.Group
 	mu sync.RWMutex
 }
 
@@ -88,6 +101,18 @@ func New(pool *db.Pool, cfg Config, embedder Embedder) (*Provider, error) {
 		return nil, fmt.Errorf("db provider init: %w", err)
 	}
 
+	return p, nil
+}
+
+// NewWithCompiler creates a DB-backed provider with CatalogManager support.
+// The compiler is used for self-contained catalog compilation via AddCatalog/ReloadCatalog.
+func NewWithCompiler(pool *db.Pool, cfg Config, embedder Embedder, c *compiler.Compiler) (*Provider, error) {
+	p, err := New(pool, cfg, embedder)
+	if err != nil {
+		return nil, err
+	}
+	p.compiler = c
+	p.catalogs = make(map[string]sources.Catalog)
 	return p, nil
 }
 
@@ -229,9 +254,17 @@ func (p *Provider) SetCatalogDescription(ctx context.Context, name, desc, longDe
 }
 
 // InvalidateCatalog evicts all cached entries for the given catalog name.
+// Also evicts root types (Query, Mutation) since their fields may include
+// module fields from the invalidated catalog.
+// Types from other catalogs that had extension fields from this catalog
+// will be refreshed from DB on next access (cache TTL or LRU eviction).
 func (p *Provider) InvalidateCatalog(catalog string) {
 	p.cache.invalidateCatalog(catalog)
-	// Reset root type pointers so they're reloaded on next access
+	// Root types aggregate fields from all modules; must be evicted
+	// so they're re-read from DB without the dropped catalog's fields.
+	p.cache.evictType("Query")
+	p.cache.evictType("Mutation")
+	// Reset root type pointers so they're reloaded on next access.
 	p.mu.Lock()
 	p.rootsLoaded = false
 	p.queryType = nil

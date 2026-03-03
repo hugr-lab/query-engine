@@ -3,6 +3,7 @@ package metadata
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -22,11 +23,21 @@ func ProcessQuery(ctx context.Context, provider catalog.Provider, query sdl.Quer
 		return nil, ErrInvalidMetaDataQuery
 	}
 
+	slog.Debug("metadata query", "field", query.Field.Name, "maxDepth", maxDepth)
+
 	switch query.Field.Name {
 	case "__schema":
-		return processSchemaQuery(ctx, provider, query.Field, maxDepth)
+		res, err := processSchemaQuery(ctx, provider, query.Field, maxDepth)
+		if err != nil {
+			slog.Error("metadata __schema query failed", "error", err)
+		}
+		return res, err
 	case "__type":
-		return processTypeQuery(ctx, provider, query.Field, maxDepth, vars)
+		res, err := processTypeQuery(ctx, provider, query.Field, maxDepth, vars)
+		if err != nil {
+			slog.Error("metadata __type query failed", "error", err)
+		}
+		return res, err
 	}
 
 	return nil, nil

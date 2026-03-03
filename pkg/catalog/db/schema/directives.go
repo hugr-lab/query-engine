@@ -209,3 +209,91 @@ func unmarshalValue(data json.RawMessage) (*ast.Value, error) {
 
 	return nil, fmt.Errorf("cannot unmarshal value: %s", string(data))
 }
+
+// argDefJSON is the JSON representation of a directive argument definition.
+type argDefJSON struct {
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Description  string `json:"description,omitempty"`
+	DefaultValue any    `json:"default,omitempty"`
+}
+
+// MarshalArgumentDefinitions serializes an ast.ArgumentDefinitionList to JSON.
+// Used for storing directive argument schemas in _schema_directives.
+func MarshalArgumentDefinitions(args ast.ArgumentDefinitionList) ([]byte, error) {
+	if len(args) == 0 {
+		return []byte("[]"), nil
+	}
+	result := make([]argDefJSON, 0, len(args))
+	for _, arg := range args {
+		ad := argDefJSON{
+			Name:        arg.Name,
+			Type:        MarshalType(arg.Type),
+			Description: arg.Description,
+		}
+		if arg.DefaultValue != nil {
+			ad.DefaultValue = marshalValue(arg.DefaultValue)
+		}
+		result = append(result, ad)
+	}
+	return json.Marshal(result)
+}
+
+// UnmarshalArgumentDefinitions deserializes JSON back into an ast.ArgumentDefinitionList.
+func UnmarshalArgumentDefinitions(data []byte) (ast.ArgumentDefinitionList, error) {
+	if len(data) == 0 || string(data) == "[]" || string(data) == "" {
+		return nil, nil
+	}
+
+	var raw []json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("unmarshal argument definitions: %w", err)
+	}
+
+	args := make(ast.ArgumentDefinitionList, 0, len(raw))
+	for i, r := range raw {
+		var adj struct {
+			Name         string          `json:"name"`
+			Type         string          `json:"type"`
+			Description  string          `json:"description"`
+			DefaultValue json.RawMessage `json:"default"`
+		}
+		if err := json.Unmarshal(r, &adj); err != nil {
+			return nil, fmt.Errorf("unmarshal argument definition %d: %w", i, err)
+		}
+
+		argType, err := UnmarshalType(adj.Type)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal argument %q type: %w", adj.Name, err)
+		}
+
+		arg := &ast.ArgumentDefinition{
+			Name:        adj.Name,
+			Type:        argType,
+			Description: adj.Description,
+		}
+
+		if len(adj.DefaultValue) > 0 && string(adj.DefaultValue) != "null" {
+			val, err := unmarshalValue(adj.DefaultValue)
+			if err != nil {
+				return nil, fmt.Errorf("unmarshal argument %q default: %w", adj.Name, err)
+			}
+			arg.DefaultValue = val
+		}
+
+		args = append(args, arg)
+	}
+	return args, nil
+}
+
+// MarshalValue serializes an *ast.Value to a JSON-compatible Go value.
+// Exported wrapper for the internal marshalValue function.
+func MarshalValue(v *ast.Value) any {
+	return marshalValue(v)
+}
+
+// UnmarshalValue deserializes a JSON value back into an *ast.Value.
+// Exported wrapper for the internal unmarshalValue function.
+func UnmarshalValue(data json.RawMessage) (*ast.Value, error) {
+	return unmarshalValue(data)
+}

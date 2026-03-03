@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -185,4 +186,87 @@ func TestStaticProvider_Description(t *testing.T) {
 	s := newTestSchema(t, `type Query { id: ID }`)
 	p := static.NewWithSchema(s)
 	assert.Equal(t, "test schema", p.Description(context.Background()))
+}
+
+func TestStaticProvider_SetDefinitionDescription(t *testing.T) {
+	s := newTestSchema(t, `
+		type Query { user: User }
+		"Original description"
+		type User { id: ID!, name: String }
+	`)
+	p := static.NewWithSchema(s)
+	ctx := context.Background()
+
+	// Verify original description
+	def := p.ForName(ctx, "User")
+	require.NotNil(t, def)
+	assert.Equal(t, "Original description", def.Description)
+
+	// Update description
+	err := p.SetDefinitionDescription(ctx, "User", "Updated description", "long desc ignored in static")
+	require.NoError(t, err)
+
+	// Verify updated
+	def = p.ForName(ctx, "User")
+	require.NotNil(t, def)
+	assert.Equal(t, "Updated description", def.Description)
+
+	// Non-existent type returns error
+	err = p.SetDefinitionDescription(ctx, "NonExistent", "desc", "long")
+	assert.ErrorIs(t, err, base.ErrDefinitionNotFound)
+}
+
+func TestStaticProvider_SetFieldDescription(t *testing.T) {
+	s := newTestSchema(t, `
+		type Query { user: User }
+		type User {
+			id: ID!
+			"Original field desc"
+			name: String
+		}
+	`)
+	p := static.NewWithSchema(s)
+	ctx := context.Background()
+
+	// Verify original field description
+	def := p.ForName(ctx, "User")
+	require.NotNil(t, def)
+	nameField := def.Fields.ForName("name")
+	require.NotNil(t, nameField)
+	assert.Equal(t, "Original field desc", nameField.Description)
+
+	// Update field description
+	err := p.SetFieldDescription(ctx, "User", "name", "Updated field desc", "long desc ignored")
+	require.NoError(t, err)
+
+	// Verify updated
+	def = p.ForName(ctx, "User")
+	nameField = def.Fields.ForName("name")
+	assert.Equal(t, "Updated field desc", nameField.Description)
+
+	// Non-existent type returns error
+	err = p.SetFieldDescription(ctx, "NonExistent", "name", "desc", "long")
+	assert.ErrorIs(t, err, base.ErrDefinitionNotFound)
+
+	// Non-existent field returns error
+	err = p.SetFieldDescription(ctx, "User", "nonexistent", "desc", "long")
+	assert.ErrorIs(t, err, base.ErrDefinitionNotFound)
+}
+
+func TestStaticProvider_SetModuleDescription(t *testing.T) {
+	s := newTestSchema(t, `type Query { id: ID }`)
+	p := static.NewWithSchema(s)
+
+	// SetModuleDescription is a no-op for static provider
+	err := p.SetModuleDescription(context.Background(), "mod", "desc", "long")
+	assert.NoError(t, err)
+}
+
+func TestStaticProvider_SetCatalogDescription(t *testing.T) {
+	s := newTestSchema(t, `type Query { id: ID }`)
+	p := static.NewWithSchema(s)
+
+	// SetCatalogDescription is a no-op for static provider
+	err := p.SetCatalogDescription(context.Background(), "cat", "desc", "long")
+	assert.NoError(t, err)
 }

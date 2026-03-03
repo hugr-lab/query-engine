@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/pprof"
 	"time"
@@ -12,10 +13,12 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	catalogdb "github.com/hugr-lab/query-engine/pkg/catalog/db"
 	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/storage"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -40,8 +43,14 @@ type Service struct {
 	db      *db.Pool
 	perm    permissions.Store
 	cache   *cache.Service
-	s3      *storage.Source
-	gis     *gis.Service
+	s3       *storage.Source
+	gis      *gis.Service
+	embedder *embedding.Source
+
+	dbProvider *catalogdb.Provider
+
+	pendingSources []sources.RuntimeSource
+	initialized    bool
 }
 
 type Config struct {
@@ -55,9 +64,18 @@ type Config struct {
 	MaxParallelQueries int
 	MaxDepth           int
 
-	CoreDB *coredb.Source
-	Auth   *auth.Config
-	Cache  cache.Config
+	ClusterWorker         bool          // true = worker node, skip orphan cleanup
+	SchemaCacheMaxEntries int           // LRU cache max entries (0 = default 10000)
+	SchemaCacheTTL        time.Duration // LRU cache TTL (0 = default 10m)
+
+	CoreDB   *coredb.Source
+	Auth     *auth.Config
+	Cache    cache.Config
+	Embedder EmbedderConfig
+}
+
+type EmbedderConfig struct {
+	URL string // Full URL with query params: model, api_key, api_key_header, timeout
 }
 
 type Info struct {
@@ -75,53 +93,128 @@ type Info struct {
 }
 
 func New(config Config) (*Service, error) {
-	provider, err := static.New()
-	if err != nil {
-		return nil, fmt.Errorf("init system schema: %w", err)
-	}
-	ss := catalog.NewService(provider)
-
 	return &Service{
-		config:  config,
-		router:  http.NewServeMux(),
-		schema:  ss,
-		catalog: ss,
-		cache:   cache.New(config.Cache),
-		s3:      storage.New(),
+		config: config,
+		router: http.NewServeMux(),
+		cache:  cache.New(config.Cache),
+		s3:     storage.New(),
 	}, nil
 }
 
 func (s *Service) Init(ctx context.Context) (err error) {
+	// 1. Connect to DuckDB.
 	s.db, err = db.Connect(ctx, s.config.DB)
 	if err != nil {
 		return fmt.Errorf("connect db: %w", err)
 	}
+
+	// 2. Ensure CoreDB source exists (default: in-memory).
+	if s.config.CoreDB == nil {
+		s.config.CoreDB = coredb.New(coredb.Config{})
+	}
+
+	// 3. Attach CoreDB early — creates _schema_* tables on first start.
+	//    The DB must exist before creating db.Provider.
+	err = s.config.CoreDB.Attach(ctx, s.db)
+	if err != nil {
+		return fmt.Errorf("attach core db: %w", err)
+	}
+
+	// 3b. Create system embedder from config (if EMBEDDER_URL set).
+	var embedder catalogdb.Embedder
+	if s.config.Embedder.URL != "" {
+		src, err := embedding.New(types.DataSource{
+			Name: "_system_embedder",
+			Type: sources.Embedding,
+			Path: s.config.Embedder.URL,
+		}, false)
+		if err != nil {
+			return fmt.Errorf("create system embedder: %w", err)
+		}
+		if err := src.Attach(ctx, s.db); err != nil {
+			return fmt.Errorf("attach system embedder: %w", err)
+		}
+		s.embedder = src
+		embedder = src
+	}
+
+	// 4. Create db.Provider with compiler for CatalogManager support.
+	isPostgres := s.config.CoreDB.Info().Type == sources.Postgres
+	tablePrefix := "core."
+	c := compiler.New(compiler.GlobalRules()...)
+	cacheConfig := catalogdb.CacheConfig{
+		MaxEntries: s.config.SchemaCacheMaxEntries,
+		TTL:        s.config.SchemaCacheTTL,
+	}
+	if cacheConfig.MaxEntries == 0 && cacheConfig.TTL == 0 {
+		cacheConfig = catalogdb.DefaultCacheConfig()
+	}
+	dbProvider, err := catalogdb.NewWithCompiler(s.db, catalogdb.Config{
+		TablePrefix: tablePrefix,
+		Cache:       cacheConfig,
+		IsPostgres:  isPostgres,
+	}, embedder, c)
+	if err != nil {
+		return fmt.Errorf("create db provider: %w", err)
+	}
+
+	s.dbProvider = dbProvider
+
+	// 5. Persist system types (version-checked, skips if unchanged on restart).
+	err = dbProvider.InitSystemTypes(ctx)
+	if err != nil {
+		return fmt.Errorf("init system types: %w", err)
+	}
+
+	// 6. Create catalog.Service (auto-detects CatalogManager on dbProvider).
+	ss := catalog.NewService(dbProvider)
+	s.schema = ss
+	s.catalog = ss
+
+	// 7. Create datasources service and register UDFs.
 	s.ds = datasources.New(s, s.db, s.catalog)
 	err = s.ds.RegisterUDF(ctx)
 	if err != nil {
 		return fmt.Errorf("register udf: %w", err)
 	}
 
-	// load core-db runtime data sources
-	// if core-db is not provided, it will be created with default config (in-memory)
-	if s.config.CoreDB == nil {
-		s.config.CoreDB = coredb.New(coredb.Config{})
-	}
-	err = s.ds.AttachRuntimeSource(ctx, s.config.CoreDB)
-	if err != nil {
-		return fmt.Errorf("attach runtime source: %w", err)
+	// 7b. Register system embedder as data-source.
+	if s.embedder != nil {
+		if err := s.ds.Register(ctx, "_system_embedder", s.embedder); err != nil {
+			return fmt.Errorf("register system embedder: %w", err)
+		}
 	}
 
-	// init cache
+	// 8. Attach CoreDB runtime source — Attach is idempotent (skips since
+	//    already attached), but compiles CoreDB's GraphQL schema into the
+	//    catalog via AddCatalog (version-checked, skips if unchanged).
+	err = s.ds.AttachRuntimeSource(ctx, s.config.CoreDB)
+	if err != nil {
+		return fmt.Errorf("attach core db catalog: %w", err)
+	}
+
+	// 9. Init cache.
 	err = s.cache.Init(ctx)
 	if err != nil {
 		return fmt.Errorf("init cache: %w", err)
 	}
+
+	// 10. Attach other runtime sources.
 	err = s.attachRuntimeSources(ctx)
 	if err != nil {
 		return fmt.Errorf("attach runtime sources: %w", err)
 	}
 
+	// 11. Process pending runtime sources registered before Init().
+	for _, source := range s.pendingSources {
+		if err := s.ds.AttachRuntimeSource(ctx, source); err != nil {
+			return fmt.Errorf("attach pending runtime source %q: %w", source.Name(), err)
+		}
+	}
+	s.pendingSources = nil
+	s.initialized = true
+
+	// 12. Setup services.
 	s.schema.SetVariableTransformer(catalog.NewJQVariableTransformer(s))
 	s.planner = planner.New(s.catalog, s)
 
@@ -149,12 +242,19 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		s.config.MaxDepth = 7
 	}
 
-	// load stored data sources
-	if s.config.CoreDB != nil {
-		err = s.loadDataSources(ctx)
-		if err != nil {
-			return fmt.Errorf("load data sources: %w", err)
+	// 13. Clean orphaned catalogs (standalone/manager mode only).
+	// All runtime catalogs are now registered in dbProvider.catalogs;
+	// only data-source catalogs missing from the data_sources table are removed.
+	if !s.config.ClusterWorker {
+		if err := s.dbProvider.CleanOrphanedCatalogs(ctx); err != nil {
+			slog.Error("failed to clean orphaned catalogs", "error", err)
 		}
+	}
+
+	// 14. Load stored data sources.
+	err = s.loadDataSources(ctx)
+	if err != nil {
+		return fmt.Errorf("load data sources: %w", err)
 	}
 
 	err = s.gis.Init()
@@ -188,7 +288,11 @@ func (s *Service) CoreDBVersion() coredb.Info {
 }
 
 func (s *Service) AttachRuntimeSource(ctx context.Context, source sources.RuntimeSource) error {
-	return s.ds.AttachRuntimeSource(ctx, source)
+	if s.initialized {
+		return fmt.Errorf("engine already initialized: AttachRuntimeSource must be called before Init()")
+	}
+	s.pendingSources = append(s.pendingSources, source)
+	return nil
 }
 
 func (s *Service) Close() error {
@@ -239,11 +343,12 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/json")
 
 	req, err := s.parseRequest(r)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(types.ErrResponse(err))
 		return
 	}
 
@@ -252,7 +357,8 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 
 	err = json.NewEncoder(w).Encode(res)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(types.ErrResponse(err))
 	}
 }
 

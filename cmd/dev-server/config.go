@@ -1,6 +1,9 @@
 package main
 
 import (
+	"time"
+
+	hugr "github.com/hugr-lab/query-engine"
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -17,7 +20,11 @@ type Config struct {
 	HttpProfiling      bool
 	AllowParallel      bool
 	MaxParallelQueries int
-	MaxDepthInTypes int
+	MaxDepthInTypes    int
+
+	ClusterWorker         bool
+	SchemaCacheMaxEntries int
+	SchemaCacheTTL        time.Duration
 
 	DB db.Config
 
@@ -26,7 +33,8 @@ type Config struct {
 	Cors CorsConfig
 	Auth AuthConfig
 
-	Cache cache.Config
+	Cache    cache.Config
+	Embedder hugr.EmbedderConfig
 }
 
 func init() {
@@ -45,6 +53,9 @@ func initEnvs() {
 	viper.SetDefault("DB_PATH", "")
 	viper.SetDefault("DB_MAX_OPEN_CONNS", 0)
 	viper.SetDefault("DB_MAX_IDLE_CONNS", 0)
+	viper.SetDefault("CLUSTER_WORKER", false)
+	viper.SetDefault("SCHEMA_CACHE_MAX_ENTRIES", 0)
+	viper.SetDefault("SCHEMA_CACHE_TTL", "0s")
 	viper.SetDefault("ALLOWED_ANONYMOUS", true)
 	viper.SetDefault("ANONYMOUS_ROLE", "admin")
 	viper.AutomaticEnv()
@@ -59,7 +70,10 @@ func loadConfig() Config {
 		HttpProfiling:      viper.GetBool("HTTP_PROFILING"),
 		AllowParallel:      viper.GetBool("ALLOW_PARALLEL"),
 		MaxParallelQueries: viper.GetInt("MAX_PARALLEL_QUERIES"),
-		MaxDepthInTypes:    viper.GetInt("MAX_DEPTH"),
+		MaxDepthInTypes:       viper.GetInt("MAX_DEPTH"),
+		ClusterWorker:         viper.GetBool("CLUSTER_WORKER"),
+		SchemaCacheMaxEntries: viper.GetInt("SCHEMA_CACHE_MAX_ENTRIES"),
+		SchemaCacheTTL:        viper.GetDuration("SCHEMA_CACHE_TTL"),
 		DB: db.Config{
 			Path:         viper.GetString("DB_PATH"),
 			MaxOpenConns: viper.GetInt("DB_MAX_OPEN_CONNS"),
@@ -97,6 +111,9 @@ func loadConfig() Config {
 			AnonymousRole:    viper.GetString("ANONYMOUS_ROLE"),
 			SecretKey:        viper.GetString("SECRET_KEY"),
 			ConfigFile:       viper.GetString("AUTH_CONFIG_FILE"),
+		},
+		Embedder: hugr.EmbedderConfig{
+			URL: viper.GetString("EMBEDDER_URL"),
 		},
 		Cache: cache.Config{
 			TTL: types.Interval(viper.GetDuration("CACHE_TTL")),

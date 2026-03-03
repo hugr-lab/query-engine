@@ -4,17 +4,17 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	"github.com/hugr-lab/query-engine/pkg/engines"
 
 	_ "embed"
 )
 
-//go:embed schema.graphql
+//go:embed schema_test.graphql
 var testSchemaData string
 
 func TestProcessQuery(t *testing.T) {

@@ -274,3 +274,37 @@ func (c *memoryCatalog) removeCatalog(ctx context.Context, name string) error {
 	}
 	return p.DropCatalog(ctx, name, true)
 }
+
+// Description delegation — proxies to the underlying MutableProvider.
+
+func (c *memoryCatalog) SetDefinitionDescription(ctx context.Context, name, desc, longDesc string) error {
+	p, ok := c.provider.(base.MutableProvider)
+	if !ok {
+		return errors.New("provider does not support mutable operations")
+	}
+	return p.SetDefinitionDescription(ctx, name, desc, longDesc)
+}
+
+func (c *memoryCatalog) SetFieldDescription(ctx context.Context, typeName, fieldName, desc, longDesc string) error {
+	p, ok := c.provider.(base.MutableProvider)
+	if !ok {
+		return errors.New("provider does not support mutable operations")
+	}
+	return p.SetFieldDescription(ctx, typeName, fieldName, desc, longDesc)
+}
+
+func (c *memoryCatalog) SetModuleDescription(ctx context.Context, name, desc, longDesc string) error {
+	p, ok := c.provider.(base.MutableProvider)
+	if !ok {
+		return errors.New("provider does not support mutable operations")
+	}
+	return p.SetModuleDescription(ctx, name, desc, longDesc)
+}
+
+func (c *memoryCatalog) SetCatalogDescription(ctx context.Context, name, desc, longDesc string) error {
+	p, ok := c.provider.(base.MutableProvider)
+	if !ok {
+		return errors.New("provider does not support mutable operations")
+	}
+	return p.SetCatalogDescription(ctx, name, desc, longDesc)
+}

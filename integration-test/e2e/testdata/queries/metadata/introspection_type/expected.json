@@ -3,10 +3,38 @@
     "__type": {
       "fields": [
         {
+          "name": "category",
+          "type": {
+            "kind": "OBJECT",
+            "name": "pg_store_categories"
+          }
+        },
+        {
           "name": "id",
           "type": {
             "kind": "NON_NULL",
             "name": null
+          }
+        },
+        {
+          "name": "matching_items",
+          "type": {
+            "kind": "LIST",
+            "name": null
+          }
+        },
+        {
+          "name": "_created_at_part",
+          "type": {
+            "kind": "SCALAR",
+            "name": "BigInt"
+          }
+        },
+        {
+          "name": "matching_items_aggregation",
+          "type": {
+            "kind": "OBJECT",
+            "name": "_local_db_items_aggregation"
           }
         },
         {
@@ -17,9 +45,30 @@
           }
         },
         {
+          "name": "matching_items_bucket_aggregation",
+          "type": {
+            "kind": "LIST",
+            "name": null
+          }
+        },
+        {
           "name": "price",
           "type": {
             "kind": "NON_NULL",
+            "name": null
+          }
+        },
+        {
+          "name": "_updated_at_part",
+          "type": {
+            "kind": "SCALAR",
+            "name": "BigInt"
+          }
+        },
+        {
+          "name": "product_tags",
+          "type": {
+            "kind": "LIST",
             "name": null
           }
         },
@@ -38,69 +87,6 @@
           }
         },
         {
-          "name": "tags",
-          "type": {
-            "kind": "SCALAR",
-            "name": "JSON"
-          }
-        },
-        {
-          "name": "created_at",
-          "type": {
-            "kind": "SCALAR",
-            "name": "Timestamp"
-          }
-        },
-        {
-          "name": "updated_at",
-          "type": {
-            "kind": "SCALAR",
-            "name": "Timestamp"
-          }
-        },
-        {
-          "name": "description",
-          "type": {
-            "kind": "SCALAR",
-            "name": "String"
-          }
-        },
-        {
-          "name": "category_id",
-          "type": {
-            "kind": "SCALAR",
-            "name": "Int"
-          }
-        },
-        {
-          "name": "category",
-          "type": {
-            "kind": "OBJECT",
-            "name": "pg_store_categories"
-          }
-        },
-        {
-          "name": "_created_at_part",
-          "type": {
-            "kind": "SCALAR",
-            "name": "BigInt"
-          }
-        },
-        {
-          "name": "_updated_at_part",
-          "type": {
-            "kind": "SCALAR",
-            "name": "BigInt"
-          }
-        },
-        {
-          "name": "product_tags",
-          "type": {
-            "kind": "LIST",
-            "name": null
-          }
-        },
-        {
           "name": "product_tags_aggregation",
           "type": {
             "kind": "OBJECT",
@@ -112,6 +98,20 @@
           "type": {
             "kind": "LIST",
             "name": null
+          }
+        },
+        {
+          "name": "tags",
+          "type": {
+            "kind": "SCALAR",
+            "name": "JSON"
+          }
+        },
+        {
+          "name": "created_at",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Timestamp"
           }
         },
         {
@@ -129,10 +129,31 @@
           }
         },
         {
+          "name": "updated_at",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Timestamp"
+          }
+        },
+        {
+          "name": "description",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String"
+          }
+        },
+        {
           "name": "details_bucket_aggregation",
           "type": {
             "kind": "LIST",
             "name": null
+          }
+        },
+        {
+          "name": "category_id",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Int"
           }
         },
         {
@@ -161,27 +182,6 @@
           "type": {
             "kind": "OBJECT",
             "name": "_join"
-          }
-        },
-        {
-          "name": "matching_items",
-          "type": {
-            "kind": "LIST",
-            "name": null
-          }
-        },
-        {
-          "name": "matching_items_aggregation",
-          "type": {
-            "kind": "OBJECT",
-            "name": "_local_db_items_aggregation"
-          }
-        },
-        {
-          "name": "matching_items_bucket_aggregation",
-          "type": {
-            "kind": "LIST",
-            "name": null
           }
         }
       ],
