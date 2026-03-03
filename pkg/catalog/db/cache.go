@@ -27,8 +27,8 @@ type schemaCache struct {
 
 	// catalogIndex maps catalog name → set of cached type names.
 	// Protected by mu.
-	catalogIndex map[string]map[string]struct{}
 	mu           sync.RWMutex
+	catalogIndex map[string]map[string]struct{}
 }
 
 // newSchemaCache creates a new schema cache with the given configuration.

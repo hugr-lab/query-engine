@@ -21,15 +21,40 @@ import (
 // Checks LRU cache first, falls back to DB query.
 // Returns nil if the type doesn't exist or its catalog is disabled/suspended.
 func (p *Provider) ForName(ctx context.Context, name string) *ast.Definition {
-	// Check cache first
 	if def := p.cache.getType(name); def != nil {
 		return def
 	}
 
-	// Load from DB
-	def, catalog, err := p.loadTypeFromDB(ctx, name)
+	d, err, _ := p.sf.Do("DEF:"+name, func() (interface{}, error) {
+		if def := p.cache.getType(name); def != nil {
+			return def, nil
+		}
+		conn, err := p.pool.Conn(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+
+		return p.forName(ctx, conn, name), nil
+	})
 	if err != nil {
-		log.Printf("ERR: ForName(%q): %v", name, err)
+		log.Printf("[LOAD TYPE]: %s", err.Error())
+		return nil
+	}
+	if d == nil {
+		return nil
+	}
+	return d.(*ast.Definition)
+}
+
+func (p *Provider) forName(ctx context.Context, conn *dbpkg.Connection, name string) *ast.Definition {
+	if def := p.cache.getType(name); def != nil {
+		return def
+	}
+
+	def, catalog, err := p.loadTypeFromDB(ctx, conn, name)
+	if err != nil {
+		log.Printf("[LOAD TYPE] loadTypeFromDB(%q): %v", name, err)
 		return nil
 	}
 	if def == nil {
@@ -48,16 +73,25 @@ func (p *Provider) DirectiveForName(ctx context.Context, name string) *ast.Direc
 		return dir
 	}
 
-	// Load from DB
-	dir, err := p.loadDirectiveFromDB(ctx, name)
+	d, err, _ := p.sf.Do("DIR:"+name, func() (interface{}, error) {
+		if dir := p.cache.getDirective(name); dir != nil {
+			return dir, nil
+		}
+		dir, err := p.loadDirectiveFromDB(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if dir != nil {
+			p.cache.putDirective(name, dir)
+		}
+		return dir, nil
+	})
 	if err != nil {
 		log.Printf("ERR: DirectiveForName(%q): %v", name, err)
 		return nil
 	}
-	if dir != nil {
-		p.cache.putDirective(name, dir)
-	}
-	return dir
+
+	return d.(*ast.DirectiveDefinition)
 }
 
 // Definitions returns an iterator over all type definitions.
@@ -67,12 +101,14 @@ func (p *Provider) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {
 	return func(yield func(*ast.Definition) bool) {
 		// Collect names first to avoid holding a connection while
 		// ForName/loadTypeFromDB acquires its own connection.
-		names, err := p.collectActiveTypeNames(ctx)
+		conn, err := p.pool.Conn(ctx)
 		if err != nil {
+			log.Printf("[LOAD TYPE NAMES] open connection: %s", err.Error())
 			return
 		}
-		for _, name := range names {
-			def := p.ForName(ctx, name)
+		defer conn.Close()
+		for name := range p.collectActiveTypeNames(ctx) {
+			def := p.forName(ctx, conn, name)
 			if def != nil {
 				if !yield(def) {
 					return
@@ -83,15 +119,17 @@ func (p *Provider) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {
 }
 
 // collectActiveTypeNames returns names of all types not in disabled/suspended catalogs.
-func (p *Provider) collectActiveTypeNames(ctx context.Context) ([]string, error) {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
+func (p *Provider) collectActiveTypeNames(ctx context.Context) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		conn, err := p.pool.Conn(ctx)
+		if err != nil {
+			log.Printf("[LOAD TYPE NAMES] open connection: %s", err.Error())
+			return
+		}
+		defer conn.Close()
 
-	rows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT t.name FROM %s t
+		rows, err := conn.Query(ctx, fmt.Sprintf(
+			`SELECT t.name FROM %s t
 		 WHERE
 		   CASE
 		     WHEN t.catalog = '%s' THEN true
@@ -108,26 +146,29 @@ func (p *Provider) collectActiveTypeNames(ctx context.Context) ([]string, error)
 		         SELECT 1 FROM %s c
 		         WHERE c.name = t.catalog AND (c.disabled = true OR c.suspended = true)
 		       )
-		   END`,
-		p.table("_schema_types"),
-		SystemCatalogName,
-		p.table("_schema_module_type_catalogs"), p.table("_schema_catalogs"),
-		p.table("_schema_catalogs"),
-	))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var names []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			continue
+		   END
+		ORDER BY t.name;`,
+			p.table("_schema_types"),
+			SystemCatalogName,
+			p.table("_schema_module_type_catalogs"), p.table("_schema_catalogs"),
+			p.table("_schema_catalogs"),
+		))
+		if err != nil {
+			log.Printf("[LOAD TYPE NAMES] query error: %s", err.Error())
+			return
 		}
-		names = append(names, name)
+		defer rows.Close()
+
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				continue
+			}
+			if !yield(name) {
+				return
+			}
+		}
 	}
-	return names, nil
 }
 
 // DirectiveDefinitions returns an iterator over all directive definitions.
@@ -377,66 +418,16 @@ type enumValJSON struct {
 	Directives  string `json:"directives"`
 }
 
-/*
-func (p *Provider) loadTypesFromDB(ctx context.Context) iter.Seq[*ast.Definition] {
-	return func(yield func(*ast.Definition) bool) {
-		conn, err := p.pool.Conn(ctx)
-		if err != nil {
-			log.Printf("[LOAD TYPES] open connection: %s", err.Error())
-			return
-		}
-		defer conn.Close()
-
-		var q string
-		if p.isPostgres {
-			q = p.buildTypeQueryPG("")
-		} else {
-			q = p.buildTypeQueryDuckDB("")
-		}
-		rows, err := conn.Query(ctx, q)
-		if err != nil {
-			log.Printf("[LOAD TYPES] query: %s", err.Error())
-			return
-		}
-		defer rows.Close()
-		var defJSON string
-		for rows.Next() {
-			if err := rows.Scan(&defJSON); err != nil {
-				log.Printf("[LOAD TYPES] scan: %s", err.Error())
-				continue
-			}
-			var rec typeDefJSON
-			if err := json.Unmarshal([]byte(defJSON), &rec); err != nil {
-				log.Printf("[LOAD TYPES] unmarshal: %s", err.Error())
-				continue
-			}
-			def, _ := rec.toDefinition()
-			if def != nil {
-				if !yield(def) {
-					return
-				}
-			}
-		}
-	}
-}
-*/
-
 // loadTypeFromDB reconstructs a *ast.Definition from the database using a single
 // CTE query that fetches the type, its fields (with arguments), and enum values.
 // Returns (nil, "", nil) if the type doesn't exist or is in a disabled/suspended catalog.
 //
 // For DuckDB: uses struct literals + try_cast(... AS JSON) with LATERAL JOINs.
 // For PostgreSQL: wraps the PG-native query in postgres_query('core', ...).
-func (p *Provider) loadTypeFromDB(ctx context.Context, name string) (*ast.Definition, string, error) {
+func (p *Provider) loadTypeFromDB(ctx context.Context, conn *dbpkg.Connection, name string) (*ast.Definition, string, error) {
 	if name == "" {
 		return nil, "", errors.New("[LOAD TYPE] query: name cannot be empty")
 	}
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("conn: %w", err)
-	}
-	defer conn.Close()
-
 	var q string
 	if p.isPostgres {
 		q = p.buildTypeQueryPG(name)
@@ -445,7 +436,7 @@ func (p *Provider) loadTypeFromDB(ctx context.Context, name string) (*ast.Defini
 	}
 
 	var defJSON string
-	err = conn.QueryRow(ctx, q).Scan(&defJSON)
+	err := conn.QueryRow(ctx, q).Scan(&defJSON)
 	if err == sql.ErrNoRows {
 		return nil, "", nil
 	}

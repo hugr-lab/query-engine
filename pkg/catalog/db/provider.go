@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
@@ -66,6 +67,7 @@ type Provider struct {
 	compiler *compiler.Compiler
 	catalogs map[string]sources.Catalog
 
+	sf singleflight.Group
 	mu sync.RWMutex
 }
 
