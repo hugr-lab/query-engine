@@ -22,6 +22,9 @@ import (
 //
 // The catalog name is extracted from the first definition with a @catalog directive.
 func (p *Provider) Update(ctx context.Context, changes base.DefinitionsSource) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	return p.updateImpl(ctx, changes, "")
 }
 
@@ -29,6 +32,9 @@ func (p *Provider) Update(ctx context.Context, changes base.DefinitionsSource) e
 // When catalogOverride is non-empty, it is used instead of extracting from @catalog directives.
 // Used for system types which don't carry @catalog directives.
 func (p *Provider) UpdateWithCatalog(ctx context.Context, changes base.DefinitionsSource, catalogOverride string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	return p.updateImpl(ctx, changes, catalogOverride)
 }
 
@@ -289,22 +295,24 @@ func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName s
 		depCatalog = base.FieldDefDependency(field)
 	}
 
+	fieldTypeName := baseTypeName(field.Type)
+
 	if p.vecSize > 0 {
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (type_name, name, field_type, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, vec, ordinal)
-			 VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, false, $9, $10)
+			`INSERT INTO %s (type_name, name, field_type, field_type_name, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, vec, ordinal)
+			 VALUES ($1, $2, $3, $4, $5, '', $6, $7, $8, $9, false, $10, $11)
 			 ON CONFLICT (type_name, name) DO UPDATE SET
-			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, is_summarized=false, vec=$9, ordinal=$10`,
+			   field_type=$3, field_type_name=$4, description=$5, hugr_type=$6, catalog=$7, dependency_catalog=$8, directives=$9, is_summarized=false, vec=$10, ordinal=$11`,
 			p.table("_schema_fields"),
-		), typeName, field.Name, fieldType, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), vec, ordinal)
+		), typeName, field.Name, fieldType, fieldTypeName, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), vec, ordinal)
 	} else {
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (type_name, name, field_type, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, ordinal)
-			 VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, false, $9)
+			`INSERT INTO %s (type_name, name, field_type, field_type_name, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, ordinal)
+			 VALUES ($1, $2, $3, $4, $5, '', $6, $7, $8, $9, false, $10)
 			 ON CONFLICT (type_name, name) DO UPDATE SET
-			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, is_summarized=false, ordinal=$9`,
+			   field_type=$3, field_type_name=$4, description=$5, hugr_type=$6, catalog=$7, dependency_catalog=$8, directives=$9, is_summarized=false, ordinal=$10`,
 			p.table("_schema_fields"),
-		), typeName, field.Name, fieldType, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), ordinal)
+		), typeName, field.Name, fieldType, fieldTypeName, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), ordinal)
 	}
 	return err
 }
@@ -318,6 +326,7 @@ func (p *Provider) upsertArgument(ctx context.Context, conn *Connection, typeNam
 	}
 
 	argType := schema.MarshalType(arg.Type)
+	argTypeName := baseTypeName(arg.Type)
 	var defaultValue *string
 	if arg.DefaultValue != nil {
 		// Store as JSON to preserve the value Kind (IntValue, BooleanValue, etc.)
@@ -330,12 +339,12 @@ func (p *Provider) upsertArgument(ctx context.Context, conn *Connection, typeNam
 	}
 
 	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-		`INSERT INTO %s (type_name, field_name, name, arg_type, default_value, description, directives, ordinal)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`INSERT INTO %s (type_name, field_name, name, arg_type, arg_type_name, default_value, description, directives, ordinal)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 ON CONFLICT (type_name, field_name, name) DO UPDATE SET
-		   arg_type=$4, default_value=$5, description=$6, directives=$7, ordinal=$8`,
+		   arg_type=$4, arg_type_name=$5, default_value=$6, description=$7, directives=$8, ordinal=$9`,
 		p.table("_schema_arguments"),
-	), typeName, fieldName, arg.Name, argType, defaultValue, arg.Description, string(dirJSON), ordinal)
+	), typeName, fieldName, arg.Name, argType, argTypeName, defaultValue, arg.Description, string(dirJSON), ordinal)
 	return err
 }
 

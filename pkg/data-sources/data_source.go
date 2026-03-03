@@ -76,6 +76,30 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 	return s.Attach(ctx, item.Name)
 }
 
+// LoadDataSourceReadonly connects a data source to DuckDB without compiling
+// its schema. Used in read-only mode where schemas are already persisted.
+func (s *Service) LoadDataSourceReadonly(ctx context.Context, name string) error {
+	item, err := s.dataSource(ctx, name)
+	if errors.Is(err, types.ErrNoData) {
+		return ErrDataSourceNotFound
+	}
+	if err != nil {
+		return err
+	}
+
+	ds, err := NewDataSource(ctx, item, false)
+	if err != nil {
+		return err
+	}
+
+	if err := s.Register(ctx, item.Name, ds); err != nil {
+		return err
+	}
+
+	// Attach to DuckDB for DB connections only; skip schema compilation.
+	return ds.Attach(ctx, s.db)
+}
+
 var errAlreadyUnloaded = errors.New("data source already unloaded")
 
 func (s *Service) UnloadDataSource(ctx context.Context, name string) error {

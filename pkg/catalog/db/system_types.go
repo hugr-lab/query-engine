@@ -65,6 +65,9 @@ func computeSystemVersion(ctx context.Context, prov *static.Provider) string {
 // Called during engine bootstrap to ensure the DB provider can resolve
 // basic types like Int, String, Boolean, etc.
 func (p *Provider) InitSystemTypes(ctx context.Context) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	// Create static provider to get all system definitions.
 	staticProv, err := static.New()
 	if err != nil {

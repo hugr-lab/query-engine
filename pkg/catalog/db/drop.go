@@ -94,6 +94,9 @@ func (p *Provider) dropCatalogSchemaObjects(ctx context.Context, name string) er
 //
 //	cascade suspension → schema objects → catalog_dependencies → catalog record
 func (p *Provider) DropCatalog(ctx context.Context, name string, cascade bool) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	txCtx, err := p.pool.WithTx(ctx)
 	if err != nil {
 		return fmt.Errorf("drop catalog: begin tx: %w", err)

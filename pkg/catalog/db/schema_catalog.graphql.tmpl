@@ -1,0 +1,414 @@
+# core.catalog Schema Views
+# Mounted as module core.catalog — types accessed as core.catalog.catalogs, core.catalog.types, etc.
+# Conditional: @embeddings directives included only when EmbeddingsEnabled=true
+
+# --- Catalogs (data sources) ---
+
+"Schema catalogs (data sources)"
+type catalogs @view(name: "_schema_catalogs", sql: "FROM core._schema_catalogs")
+  {{ if .EmbeddingsEnabled }}@embeddings(model: "system", vector: "vec", distance: Cosine){{ end }} {
+  name: String! @pk
+  version: String!
+  description: String!
+  long_description: String!
+  type: String!
+  prefix: String!
+  as_module: Boolean!
+  read_only: Boolean!
+  disabled: Boolean!
+  suspended: Boolean!
+  is_summarized: Boolean!
+  {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}){{ end }}
+}
+
+# --- Catalog Dependencies ---
+
+"Catalog dependency tracking"
+type catalog_dependencies @view(name: "_schema_catalog_dependencies", sql: "FROM core._schema_catalog_dependencies")
+  @references(
+    name: "catalog_dep_catalog"
+    source_fields: ["catalog"]
+    references_fields: ["name"]
+    references_name: "catalogs"
+    query: "catalog_info"
+    description: "The dependent catalog"
+    references_query: "dependencies"
+    references_description: "Catalogs this catalog depends on"
+  )
+  @references(
+    name: "catalog_dep_depends_on"
+    source_fields: ["depends_on"]
+    references_fields: ["name"]
+    references_name: "catalogs"
+    query: "depends_on_info"
+    description: "The dependency catalog"
+    references_query: "dependents"
+    references_description: "Catalogs that depend on this catalog"
+  ) {
+  catalog: String! @pk
+  depends_on: String! @pk
+}
+
+# --- Types ---
+
+"Schema type definitions"
+type types @view(name: "_schema_types", sql: "FROM core._schema_types")
+  {{ if .EmbeddingsEnabled }}@embeddings(model: "system", vector: "vec", distance: Cosine){{ end }} {
+  name: String! @pk
+  kind: String!
+  description: String!
+  long_description: String!
+  hugr_type: String!
+  module: String! @field_references(
+    name: "types_module_ref"
+    field: "name"
+    references_name: "modules"
+    query: "module_info"
+    description: "Module this type belongs to"
+    references_query: "types_in_module"
+    references_description: "Types in this module"
+  )
+  catalog: String @field_references(
+    name: "types_catalog_ref"
+    field: "name"
+    references_name: "catalogs"
+    query: "catalog_info"
+    description: "Catalog this type belongs to"
+    references_query: "types_in_catalog"
+    references_description: "Types in this catalog"
+  )
+  is_summarized: Boolean!
+  {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}){{ end }}
+}
+
+# --- Fields ---
+
+"Schema field definitions"
+type fields @view(name: "_schema_fields", sql: "FROM core._schema_fields")
+  {{ if .EmbeddingsEnabled }}@embeddings(model: "system", vector: "vec", distance: Cosine){{ end }} {
+  type_name: String! @pk @field_references(
+    name: "fields_type_name_ref"
+    field: "name"
+    references_name: "types"
+    query: "root_type"
+    description: "The type this field belongs to"
+    references_query: "fields"
+    references_description: "Fields of this type"
+  )
+  name: String! @pk
+  description: String!
+  long_description: String!
+  field_type: String!
+  field_type_name: String! @field_references(
+    name: "fields_type_ref"
+    field: "name"
+    references_name: "types"
+    query: "type"
+    description: "The GraphQL type of this field"
+    references_query: "typed_fields"
+    references_description: "Fields with this type"
+  )
+  hugr_type: String!
+  catalog: String @field_references(
+    name: "fields_catalog_ref"
+    field: "name"
+    references_name: "catalogs"
+    query: "catalog_info"
+    description: "Catalog this field belongs to"
+    references_query: "fields_in_catalog"
+    references_description: "Fields in this catalog"
+  )
+  dependency_catalog: String @field_references(
+    name: "fields_dep_catalog_ref"
+    field: "name"
+    references_name: "catalogs"
+    query: "dependency_catalog_info"
+    description: "Extension source catalog"
+    references_query: "extension_fields"
+    references_description: "Extension fields from this catalog"
+  )
+  is_summarized: Boolean!
+  ordinal: Int!
+  {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}){{ end }}
+}
+
+# --- Arguments ---
+
+"Schema field arguments"
+type arguments @view(name: "_schema_arguments", sql: "FROM core._schema_arguments")
+  @references(
+    name: "args_field_ref"
+    source_fields: ["type_name", "field_name"]
+    references_fields: ["type_name", "name"]
+    references_name: "fields"
+    query: "field"
+    description: "The field this argument belongs to"
+    references_query: "arguments"
+    references_description: "Arguments of this field"
+  ) {
+  type_name: String! @pk
+  field_name: String! @pk
+  name: String! @pk
+  description: String!
+  arg_type: String!
+  arg_type_name: String! @field_references(
+    name: "args_type_ref"
+    field: "name"
+    references_name: "types"
+    query: "argument_type"
+    description: "The type of this argument"
+    references_query: "argument_usages"
+    references_description: "Arguments with this type"
+  )
+  is_list: Boolean!
+  is_non_null: Boolean!
+  default_value: String
+}
+
+# --- Modules ---
+
+"Schema modules"
+type modules @view(name: "_schema_modules", sql: "FROM core._schema_modules")
+  {{ if .EmbeddingsEnabled }}@embeddings(model: "system", vector: "vec", distance: Cosine){{ end }} {
+  name: String! @pk
+  description: String!
+  long_description: String!
+  query_root: String @field_references(
+    name: "modules_query_ref"
+    field: "name"
+    references_name: "types"
+    query: "query"
+    description: "Root query type"
+    references_query: "module_query"
+    references_description: "Module query type"
+  )
+  mutation_root: String @field_references(
+    name: "modules_mutation_ref"
+    field: "name"
+    references_name: "types"
+    query: "mutation"
+    description: "Root mutation type"
+    references_query: "module_mutations"
+    references_description: "Module mutation type"
+  )
+  function_root: String @field_references(
+    name: "modules_function_ref"
+    field: "name"
+    references_name: "types"
+    query: "function"
+    description: "Root function type"
+    references_query: "module_functions"
+    references_description: "Module function type"
+  )
+  mut_function_root: String @field_references(
+    name: "modules_mut_function_ref"
+    field: "name"
+    references_name: "types"
+    query: "mut_function"
+    description: "Root mutation function type"
+    references_query: "module_mut_functions"
+    references_description: "Module mutation function type"
+  )
+  is_summarized: Boolean!
+  {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}){{ end }}
+}
+
+# --- Module-Catalog M2M ---
+
+"Module-catalog associations"
+type module_catalogs @view(name: "_schema_module_catalogs", sql: "FROM core._schema_module_catalogs")
+  @references(
+    name: "mod_cat_module_ref"
+    source_fields: ["module"]
+    references_fields: ["name"]
+    references_name: "modules"
+    query: "module_info"
+    description: "The module"
+    references_query: "catalog_modules"
+    references_description: "Catalogs contributing to this module"
+  )
+  @references(
+    name: "mod_cat_catalog_ref"
+    source_fields: ["catalog"]
+    references_fields: ["name"]
+    references_name: "catalogs"
+    query: "catalog_info"
+    description: "The catalog"
+    references_query: "module_catalogs"
+    references_description: "Modules this catalog contributes to"
+  ) {
+  module: String! @pk
+  catalog: String! @pk
+}
+
+# --- Data Objects ---
+
+"Data objects (tables/views with query capabilities)"
+type data_objects @view(name: "_schema_data_objects", sql: "FROM core._schema_data_objects") {
+  name: String! @pk @field_references(
+    name: "do_name_ref"
+    field: "name"
+    references_name: "types"
+    query: "type"
+    description: "The type of this data object"
+    references_query: "data_object"
+    references_description: "Data object for this type"
+  )
+  filter_type_name: String @field_references(
+    name: "do_filter_ref"
+    field: "name"
+    references_name: "types"
+    query: "filter_type"
+    description: "Filter input type"
+    references_query: "filter_for_data_objects"
+    references_description: "Data objects with this filter"
+  )
+  args_type_name: String @field_references(
+    name: "do_args_ref"
+    field: "name"
+    references_name: "types"
+    query: "args_type"
+    description: "Args input type"
+    references_query: "args_for_data_objects"
+    references_description: "Data objects with these args"
+  )
+}
+
+# --- Data Object Queries ---
+
+"Query fields for data objects"
+type data_object_queries @view(name: "_schema_data_object_queries", sql: "FROM core._schema_data_object_queries")
+  @references(
+    name: "doq_field_ref"
+    source_fields: ["query_root", "name"]
+    references_fields: ["type_name", "name"]
+    references_name: "fields"
+    query: "field"
+    description: "The query field"
+    references_query: "data_object_queries"
+    references_description: "Data object queries"
+  ) {
+  name: String! @pk
+  object_name: String! @pk @field_references(
+    name: "doq_object_ref"
+    field: "name"
+    references_name: "data_objects"
+    query: "data_object"
+    description: "The data object"
+    references_query: "queries"
+    references_description: "Queries for this data object"
+  )
+  query_root: String! @field_references(
+    name: "doq_root_ref"
+    field: "name"
+    references_name: "types"
+    query: "module_query_type"
+    description: "Root type"
+    references_query: "data_object_queries_for_root"
+    references_description: "Data object queries on this root"
+  )
+  query_type: String!
+}
+
+# --- Module Intro View ---
+
+"Module operations overview (SQL view)"
+type module_intro @view(
+  name: "_schema_module_intro"
+  sql: """
+  SELECT m.name AS module, 'queries' AS type_type,
+         qt.name AS type_name, qft.name AS field_name,
+         qft.description AS field_description, qft.hugr_type, qft.catalog
+  FROM core._schema_modules AS m
+      INNER JOIN core._schema_types AS qt ON m.query_root = qt.name
+      INNER JOIN core._schema_fields AS qft ON qt.name = qft.type_name
+  UNION ALL
+  SELECT m.name, 'mutation', qt.name, qft.name, qft.description, qft.hugr_type, qft.catalog
+  FROM core._schema_modules AS m
+      INNER JOIN core._schema_types AS qt ON m.mutation_root = qt.name
+      INNER JOIN core._schema_fields AS qft ON qt.name = qft.type_name
+  UNION ALL
+  SELECT m.name, 'function', qt.name, qft.name, qft.description, qft.hugr_type, qft.catalog
+  FROM core._schema_modules AS m
+      INNER JOIN core._schema_types AS qt ON m.function_root = qt.name
+      INNER JOIN core._schema_fields AS qft ON qt.name = qft.type_name
+  UNION ALL
+  SELECT m.name, 'mut_function', qt.name, qft.name, qft.description, qft.hugr_type, qft.catalog
+  FROM core._schema_modules AS m
+      INNER JOIN core._schema_types AS qt ON m.mut_function_root = qt.name
+      INNER JOIN core._schema_fields AS qft ON qt.name = qft.type_name
+  """
+) {
+  module: String! @field_references(
+    name: "mi_module_ref"
+    field: "name"
+    references_name: "modules"
+    query: "module_info"
+    description: "The module"
+    references_query: "module_intro"
+    references_description: "Module intro entries"
+  )
+  type_type: String!
+  type_name: String!
+  field_name: String!
+  field_description: String!
+  hugr_type: String!
+  catalog: String @field_references(
+    name: "mi_catalog_ref"
+    field: "name"
+    references_name: "catalogs"
+    query: "catalog_info"
+    description: "Owning catalog"
+    references_query: "module_intro_in_catalog"
+    references_description: "Module intro fields from this catalog"
+  )
+}
+
+# --- Schema Management UDFs ---
+
+extend type MutationFunction {
+  "Hard-delete a catalog and all its schema objects. Rejects if catalog has active engine."
+  hard_remove(name: String!): OperationResult
+    @module(name: "core") @function(name: "_schema_hard_remove")
+
+  "Reset catalog version to force recompilation on next startup."
+  version_clean(name: String!): OperationResult
+    @module(name: "core") @function(name: "_schema_version_clean")
+
+  "Update type description and mark as summarized."
+  update_type_desc(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core") @function(name: "_schema_update_type_desc")
+
+  "Update field description and mark as summarized."
+  update_field_desc(
+    type_name: String!
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core") @function(name: "_schema_update_field_desc")
+
+  "Update module description and mark as summarized."
+  update_module_desc(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core") @function(name: "_schema_update_module_desc")
+
+  "Update catalog description and mark as summarized."
+  update_catalog_desc(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core") @function(name: "_schema_update_catalog_desc")
+
+  "Recompute embeddings. Empty name = all entities. batch_size controls concurrency (default 50, max 200)."
+  reindex(name: String = "", batch_size: Int = 50): OperationResult
+    @module(name: "core") @function(name: "_schema_reindex")
+}

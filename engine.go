@@ -23,6 +23,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/storage"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/gis"
+	mcpserver "github.com/hugr-lab/query-engine/pkg/mcp"
 	permissions "github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -64,9 +65,10 @@ type Config struct {
 	MaxParallelQueries int
 	MaxDepth           int
 
-	ClusterWorker         bool          // true = worker node, skip orphan cleanup
 	SchemaCacheMaxEntries int           // LRU cache max entries (0 = default 10000)
 	SchemaCacheTTL        time.Duration // LRU cache TTL (0 = default 10m)
+
+	MCPEnabled bool // Enable MCP endpoint on /mcp
 
 	CoreDB   *coredb.Source
 	Auth     *auth.Config
@@ -102,6 +104,11 @@ func New(config Config) (*Service, error) {
 }
 
 func (s *Service) Init(ctx context.Context) (err error) {
+	// 0. Validate MCP config — fail fast before expensive operations.
+	if s.config.MCPEnabled && s.config.Embedder.URL == "" {
+		return fmt.Errorf("MCP endpoint requires system embedder (EMBEDDER_URL)")
+	}
+
 	// 1. Connect to DuckDB.
 	s.db, err = db.Connect(ctx, s.config.DB)
 	if err != nil {
@@ -149,10 +156,12 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	if cacheConfig.MaxEntries == 0 && cacheConfig.TTL == 0 {
 		cacheConfig = catalogdb.DefaultCacheConfig()
 	}
+	isReadonly := s.config.CoreDB.IsReadonly()
 	dbProvider, err := catalogdb.NewWithCompiler(s.db, catalogdb.Config{
 		TablePrefix: tablePrefix,
 		Cache:       cacheConfig,
 		IsPostgres:  isPostgres,
+		IsReadonly:  isReadonly,
 	}, embedder, c)
 	if err != nil {
 		return fmt.Errorf("create db provider: %w", err)
@@ -161,9 +170,12 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	s.dbProvider = dbProvider
 
 	// 5. Persist system types (version-checked, skips if unchanged on restart).
-	err = dbProvider.InitSystemTypes(ctx)
-	if err != nil {
-		return fmt.Errorf("init system types: %w", err)
+	//    Skip in read-only mode — system types were persisted by the writer node.
+	if !isReadonly {
+		err = dbProvider.InitSystemTypes(ctx)
+		if err != nil {
+			return fmt.Errorf("init system types: %w", err)
+		}
 	}
 
 	// 6. Create catalog.Service (auto-detects CatalogManager on dbProvider).
@@ -171,11 +183,18 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	s.schema = ss
 	s.catalog = ss
 
+	// 6b. Register schema management UDFs (description updates, hard remove, reindex).
+	if err := dbProvider.RegisterUDFs(ctx, ss); err != nil {
+		return fmt.Errorf("register schema UDFs: %w", err)
+	}
+
 	// 7. Create datasources service and register UDFs.
 	s.ds = datasources.New(s, s.db, s.catalog)
-	err = s.ds.RegisterUDF(ctx)
-	if err != nil {
-		return fmt.Errorf("register udf: %w", err)
+	if !isReadonly {
+		err = s.ds.RegisterUDF(ctx)
+		if err != nil {
+			return fmt.Errorf("register udf: %w", err)
+		}
 	}
 
 	// 7b. Register system embedder as data-source.
@@ -188,9 +207,15 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	// 8. Attach CoreDB runtime source — Attach is idempotent (skips since
 	//    already attached), but compiles CoreDB's GraphQL schema into the
 	//    catalog via AddCatalog (version-checked, skips if unchanged).
-	err = s.ds.AttachRuntimeSource(ctx, s.config.CoreDB)
-	if err != nil {
-		return fmt.Errorf("attach core db catalog: %w", err)
+	//    Skip in read-only mode — schema was compiled by the writer node.
+	if !isReadonly {
+		err = s.ds.AttachRuntimeSource(ctx, s.config.CoreDB)
+		if err != nil {
+			return fmt.Errorf("attach core db catalog: %w", err)
+		}
+	} else {
+		// Schema already persisted by writer; just register engine for routing.
+		s.schema.RegisterEngine(s.config.CoreDB.Name(), s.config.CoreDB.Engine())
 	}
 
 	// 9. Init cache.
@@ -200,15 +225,21 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	}
 
 	// 10. Attach other runtime sources.
-	err = s.attachRuntimeSources(ctx)
+	err = s.attachRuntimeSources(ctx, isReadonly)
 	if err != nil {
 		return fmt.Errorf("attach runtime sources: %w", err)
 	}
 
 	// 11. Process pending runtime sources registered before Init().
 	for _, source := range s.pendingSources {
-		if err := s.ds.AttachRuntimeSource(ctx, source); err != nil {
-			return fmt.Errorf("attach pending runtime source %q: %w", source.Name(), err)
+		if isReadonly {
+			if err := s.attachRuntimeSourceReadonly(ctx, source); err != nil {
+				return fmt.Errorf("attach pending runtime source %q: %w", source.Name(), err)
+			}
+		} else {
+			if err := s.ds.AttachRuntimeSource(ctx, source); err != nil {
+				return fmt.Errorf("attach pending runtime source %q: %w", source.Name(), err)
+			}
 		}
 	}
 	s.pendingSources = nil
@@ -245,16 +276,26 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	// 13. Clean orphaned catalogs (standalone/manager mode only).
 	// All runtime catalogs are now registered in dbProvider.catalogs;
 	// only data-source catalogs missing from the data_sources table are removed.
-	if !s.config.ClusterWorker {
+	// Skip when CoreDB is read-only (worker/cluster node).
+	if !isReadonly {
 		if err := s.dbProvider.CleanOrphanedCatalogs(ctx); err != nil {
 			slog.Error("failed to clean orphaned catalogs", "error", err)
 		}
 	}
 
 	// 14. Load stored data sources.
-	err = s.loadDataSources(ctx)
-	if err != nil {
-		return fmt.Errorf("load data sources: %w", err)
+	//     In read-only mode, data sources were already compiled by the writer.
+	//     We register engines for planner routing from _schema_catalogs.
+	if !isReadonly {
+		err = s.loadDataSources(ctx)
+		if err != nil {
+			return fmt.Errorf("load data sources: %w", err)
+		}
+	} else {
+		err = s.registerReadonlyEngines(ctx)
+		if err != nil {
+			return fmt.Errorf("register readonly engines: %w", err)
+		}
 	}
 
 	err = s.gis.Init()
@@ -335,6 +376,11 @@ func (s *Service) endpoints() {
 
 	if s.gis != nil {
 		s.router.Handle("/gis/", mw(http.StripPrefix("/gis", s.gis)))
+	}
+
+	if s.config.MCPEnabled {
+		mcpSrv := mcpserver.New(s)
+		s.router.Handle("/mcp", mcpSrv.Handler())
 	}
 }
 

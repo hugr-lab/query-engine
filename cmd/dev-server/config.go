@@ -22,9 +22,9 @@ type Config struct {
 	MaxParallelQueries int
 	MaxDepthInTypes    int
 
-	ClusterWorker         bool
 	SchemaCacheMaxEntries int
 	SchemaCacheTTL        time.Duration
+	MCPEnabled            bool
 
 	DB db.Config
 
@@ -53,9 +53,9 @@ func initEnvs() {
 	viper.SetDefault("DB_PATH", "")
 	viper.SetDefault("DB_MAX_OPEN_CONNS", 0)
 	viper.SetDefault("DB_MAX_IDLE_CONNS", 0)
-	viper.SetDefault("CLUSTER_WORKER", false)
 	viper.SetDefault("SCHEMA_CACHE_MAX_ENTRIES", 0)
 	viper.SetDefault("SCHEMA_CACHE_TTL", "0s")
+	viper.SetDefault("MCP_ENABLED", false)
 	viper.SetDefault("ALLOWED_ANONYMOUS", true)
 	viper.SetDefault("ANONYMOUS_ROLE", "admin")
 	viper.AutomaticEnv()
@@ -71,9 +71,9 @@ func loadConfig() Config {
 		AllowParallel:      viper.GetBool("ALLOW_PARALLEL"),
 		MaxParallelQueries: viper.GetInt("MAX_PARALLEL_QUERIES"),
 		MaxDepthInTypes:       viper.GetInt("MAX_DEPTH"),
-		ClusterWorker:         viper.GetBool("CLUSTER_WORKER"),
 		SchemaCacheMaxEntries: viper.GetInt("SCHEMA_CACHE_MAX_ENTRIES"),
 		SchemaCacheTTL:        viper.GetDuration("SCHEMA_CACHE_TTL"),
+		MCPEnabled:            viper.GetBool("MCP_ENABLED"),
 		DB: db.Config{
 			Path:         viper.GetString("DB_PATH"),
 			MaxOpenConns: viper.GetInt("DB_MAX_OPEN_CONNS"),

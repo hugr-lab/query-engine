@@ -428,6 +428,10 @@ func insertDataObjectNode(ctx context.Context, provider catalog.Provider, e engi
 				return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "object %s is not defined", ref.M2MName)
 			}
 			m2mRef := m2mInfo.M2MReferencesQueryInfo(ctx, provider, ref.Name)
+			if m2mRef == nil {
+				return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position,
+					"M2M table %s: @references for %q not found (check that @field_references compile to @references)", ref.M2MName, ref.Name)
+			}
 			m2mSourceFields := m2mRef.SourceFields()
 			m2mRefFields := m2mRef.ReferencesFields()
 			m2mData := map[string]string{}

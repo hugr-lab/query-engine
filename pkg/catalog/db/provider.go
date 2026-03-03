@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -17,6 +18,9 @@ import (
 
 // Compile-time check that Provider implements base.MutableProvider.
 var _ base.MutableProvider = (*Provider)(nil)
+
+// ErrReadOnly is returned when a write operation is attempted on a read-only provider.
+var ErrReadOnly = errors.New("schema store is in read-only mode")
 
 // CacheConfig controls the LRU cache behavior.
 type CacheConfig struct {
@@ -38,6 +42,7 @@ type Config struct {
 	TablePrefix string // "core." for attached DuckDB, "" for native
 	VecSize     int    // Embedding vector dimension; 0 = skip vec operations
 	IsPostgres  bool   // true when CoreDB is PostgreSQL (affects vec column DDL)
+	IsReadonly  bool   // true when CoreDB is read-only (rejects all writes)
 }
 
 // Provider is the DB-backed schema provider.
@@ -54,6 +59,7 @@ type Provider struct {
 	vecSize  int
 
 	isPostgres bool
+	isReadonly bool
 
 	cache *schemaCache
 
@@ -86,6 +92,7 @@ func New(pool *db.Pool, cfg Config, embedder Embedder) (*Provider, error) {
 		embedder:   embedder,
 		vecSize:    cfg.VecSize,
 		isPostgres: cfg.IsPostgres,
+		isReadonly: cfg.IsReadonly,
 		cache:      newSchemaCache(cfg.Cache),
 	}
 
@@ -116,6 +123,21 @@ func NewWithCompiler(pool *db.Pool, cfg Config, embedder Embedder, c *compiler.C
 	return p, nil
 }
 
+// IsReadonly returns whether this provider is in read-only mode.
+func (p *Provider) IsReadonly() bool {
+	return p.isReadonly
+}
+
+// HasEmbeddings returns true when the provider has an embedder and vec columns.
+func (p *Provider) HasEmbeddings() bool {
+	return p.vecSize > 0 && p.embedder != nil
+}
+
+// VecSize returns the embedding vector dimension.
+func (p *Provider) VecSize() int {
+	return p.vecSize
+}
+
 // Description returns a static provider description.
 func (p *Provider) Description(_ context.Context) string {
 	return "DB-backed schema provider"
@@ -124,6 +146,9 @@ func (p *Provider) Description(_ context.Context) string {
 // SetDefinitionDescription updates a type's description and long description,
 // and recomputes its embedding vector (if embedder is available).
 func (p *Provider) SetDefinitionDescription(ctx context.Context, name, desc, longDesc string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("set description: %w", err)
@@ -158,6 +183,9 @@ func (p *Provider) SetDefinitionDescription(ctx context.Context, name, desc, lon
 // SetFieldDescription updates a field's description and long description,
 // and recomputes its embedding vector (if embedder is available).
 func (p *Provider) SetFieldDescription(ctx context.Context, typeName, fieldName, desc, longDesc string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("set field description: %w", err)
@@ -192,6 +220,9 @@ func (p *Provider) SetFieldDescription(ctx context.Context, typeName, fieldName,
 // SetModuleDescription updates a module's description and long description,
 // and recomputes its embedding vector (if embedder is available).
 func (p *Provider) SetModuleDescription(ctx context.Context, name, desc, longDesc string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("set module description: %w", err)
@@ -224,6 +255,9 @@ func (p *Provider) SetModuleDescription(ctx context.Context, name, desc, longDes
 // SetCatalogDescription updates a catalog's description and long description,
 // and recomputes its embedding vector (if embedder is available).
 func (p *Provider) SetCatalogDescription(ctx context.Context, name, desc, longDesc string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("set catalog description: %w", err)
