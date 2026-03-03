@@ -70,7 +70,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		Catalog       string `json:"catalog"`
 	}
 
-	err := s.queryScan(ctx, `query($filter: _schema_fields_filter, $limit: Int, $offset: Int) {
+	err := s.queryScan(ctx, `query($filter: core_catalog_fields_filter, $limit: Int, $offset: Int) {
 		core {
 			catalog {
 				fields(

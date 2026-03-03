@@ -27,7 +27,7 @@ type CatalogRuntimeSource struct {
 	provider *Provider
 }
 
-func (s *CatalogRuntimeSource) Name() string          { return "core.catalog" }
+func (s *CatalogRuntimeSource) Name() string           { return "core.catalog" }
 func (s *CatalogRuntimeSource) Engine() engines.Engine { return engines.NewDuckDB() }
 func (s *CatalogRuntimeSource) IsReadonly() bool       { return true }
 func (s *CatalogRuntimeSource) AsModule() bool         { return true }
@@ -61,7 +61,7 @@ func (s *CatalogRuntimeSource) Catalog(_ context.Context) (sources.Catalog, erro
 	e := engines.NewDuckDB()
 	opts := compiler.Options{
 		Name:         s.Name(),
-		Prefix:       "_schema",
+		Prefix:       "core_catalog",
 		ReadOnly:     s.IsReadonly(),
 		AsModule:     s.AsModule(),
 		EngineType:   string(e.Type()),

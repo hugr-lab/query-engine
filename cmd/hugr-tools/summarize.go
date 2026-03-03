@@ -1194,7 +1194,7 @@ func (s *summarizer) summarizeDataObjects(ctx context.Context) (int, error) {
 		filter["catalog"] = map[string]any{"eq": s.catalog}
 	}
 
-	res, err := s.client.Query(ctx, `query($filter: _schema_types_filter) {
+	res, err := s.client.Query(ctx, `query($filter: core_catalog_types_filter) {
 		core {
 			catalog {
 				types(filter: $filter) {
@@ -1261,7 +1261,7 @@ func (s *summarizer) summarizeDataObjects(ctx context.Context) (int, error) {
 // prepareFunctionContext queries all context needed for a function.
 func (s *summarizer) prepareFunctionContext(ctx context.Context, typeName, fieldName string) (*functionTemplateData, *functionMeta, error) {
 	// Fetch function field info.
-	res, err := s.client.Query(ctx, `query($filter: _schema_fields_filter) {
+	res, err := s.client.Query(ctx, `query($filter: core_catalog_fields_filter) {
 		core {
 			catalog {
 				fields(filter: $filter, limit: 1) {
@@ -1460,7 +1460,7 @@ func (s *summarizer) summarizeFunctions(ctx context.Context) (int, error) {
 		filter["catalog"] = map[string]any{"eq": s.catalog}
 	}
 
-	res, err := s.client.Query(ctx, `query($filter: _schema_fields_filter) {
+	res, err := s.client.Query(ctx, `query($filter: core_catalog_fields_filter) {
 		core {
 			catalog {
 				fields(filter: $filter) {
@@ -1648,7 +1648,7 @@ func (s *summarizer) summarizeDataSources(ctx context.Context) (int, error) {
 		filter["name"] = map[string]any{"eq": s.catalog}
 	}
 
-	res, err := s.client.Query(ctx, `query($filter: _schema_catalogs_filter) {
+	res, err := s.client.Query(ctx, `query($filter: core_catalog_catalogs_filter) {
 		core {
 			catalog {
 				catalogs(filter: $filter) {
@@ -1747,7 +1747,7 @@ func (s *summarizer) prepareModuleContext(ctx context.Context, name string) (*mo
 	}
 
 	// Fetch tables/views with descriptions.
-	typesRes, err := s.client.Query(ctx, `query($filter: _schema_types_filter) {
+	typesRes, err := s.client.Query(ctx, `query($filter: core_catalog_types_filter) {
 		core { catalog { types(filter: $filter) { name hugr_type description catalog } } }
 	}`, map[string]any{
 		"filter": map[string]any{
@@ -1973,7 +1973,7 @@ func (s *summarizer) summarizeModules(ctx context.Context) (int, error) {
 		"is_summarized": map[string]any{"eq": false},
 	}
 
-	res, err := s.client.Query(ctx, `query($filter: _schema_modules_filter) {
+	res, err := s.client.Query(ctx, `query($filter: core_catalog_modules_filter) {
 		core {
 			catalog {
 				modules(filter: $filter, order_by: [{field: "name", direction: DESC}]) {
