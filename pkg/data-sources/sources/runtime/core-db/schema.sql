@@ -1,6 +1,6 @@
 {{ if isPostgres }}CREATE EXTENSION IF NOT EXISTS vector;{{ end }}
 
-CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.12' AS "version";
+CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.9' AS "version";
 
 CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}catalog_sources (
     name VARCHAR NOT NULL PRIMARY KEY,
@@ -163,10 +163,11 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_module
     vec {{if isPostgres }} vector({{ .VectorSize }}) {{ else }} FLOAT[{{ .VectorSize }}] {{ end }}
 );
 
-CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_module_catalogs (
+CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_module_type_catalogs (
     module_name VARCHAR NOT NULL,
+    type_name VARCHAR NOT NULL,
     catalog_name VARCHAR NOT NULL,
-    PRIMARY KEY (module_name, catalog_name)
+    PRIMARY KEY (type_name, catalog_name)
 );
 
 CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_data_objects (
@@ -188,7 +189,37 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_settin
     value {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL
 );
 
+-- Non-PK indexes for query performance (both DuckDB and PostgreSQL).
+
+-- _schema_types: frequent filters in type loading CTE and reconcile queries
+CREATE INDEX IF NOT EXISTS idx_schema_types_catalog   ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_types (catalog);
+CREATE INDEX IF NOT EXISTS idx_schema_types_hugr_type ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_types (hugr_type);
+CREATE INDEX IF NOT EXISTS idx_schema_types_kind      ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_types (kind);
+
+-- _schema_fields: FK-like lookups on type_name, field filtering, dependency detection
+CREATE INDEX IF NOT EXISTS idx_schema_fields_type_name          ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_fields (type_name);
+CREATE INDEX IF NOT EXISTS idx_schema_fields_catalog            ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_fields (catalog);
+CREATE INDEX IF NOT EXISTS idx_schema_fields_hugr_type          ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_fields (hugr_type);
+CREATE INDEX IF NOT EXISTS idx_schema_fields_dependency_catalog ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_fields (dependency_catalog);
+
+-- _schema_arguments: FK-like lookups on type_name and (type_name, field_name)
+CREATE INDEX IF NOT EXISTS idx_schema_args_type_name  ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_arguments (type_name);
+CREATE INDEX IF NOT EXISTS idx_schema_args_type_field ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_arguments (type_name, field_name);
+
+-- _schema_enum_values: FK-like lookups on type_name
+CREATE INDEX IF NOT EXISTS idx_schema_enumvals_type_name ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_enum_values (type_name);
+
+-- _schema_module_type_catalogs: catalog_name-only lookups for reconcile/cascade
+CREATE INDEX IF NOT EXISTS idx_schema_mtc_catalog_name ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_module_type_catalogs (catalog_name);
+
+-- _schema_data_object_queries: object_name-only lookups for cleanup DELETEs
+CREATE INDEX IF NOT EXISTS idx_schema_doq_object_name ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_data_object_queries (object_name);
+
+-- _schema_catalog_dependencies: reverse lookup by depends_on
+CREATE INDEX IF NOT EXISTS idx_schema_catdeps_depends_on ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_catalog_dependencies (depends_on);
+
 {{ if isPostgres }}
+-- PostgreSQL-specific: vector similarity indexes (HNSW)
 CREATE INDEX IF NOT EXISTS _schema_catalogs_vec_idx ON _schema_catalogs USING hnsw (vec vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS _schema_types_vec_idx ON _schema_types USING hnsw (vec vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS _schema_fields_vec_idx ON _schema_fields USING hnsw (vec vector_cosine_ops);

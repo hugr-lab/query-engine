@@ -27,7 +27,7 @@ var allSchemaTables = []string{
 	"_schema_enum_values",
 	"_schema_directives",
 	"_schema_modules",
-	"_schema_module_catalogs",
+	"_schema_module_type_catalogs",
 	"_schema_data_objects",
 	"_schema_data_object_queries",
 }
@@ -282,7 +282,7 @@ func cleanPG(t *testing.T, conn *sql.DB) {
 	tables := []string{
 		"_schema_data_object_queries",
 		"_schema_data_objects",
-		"_schema_module_catalogs",
+		"_schema_module_type_catalogs",
 		"_schema_modules",
 		"_schema_directives",
 		"_schema_enum_values",

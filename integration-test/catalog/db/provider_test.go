@@ -964,7 +964,7 @@ func TestDuckDB_ReconcileModules(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 
-	err = conn.QueryRow(ctx, `SELECT count(*) FROM _schema_module_catalogs WHERE module_name = 'geo' AND catalog_name = 'geo_cat'`).Scan(&count)
+	err = conn.QueryRow(ctx, `SELECT count(*) FROM _schema_module_type_catalogs WHERE type_name = 'geo_Query' AND catalog_name = 'geo_cat'`).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
@@ -1862,7 +1862,7 @@ func TestPostgres_ReconcileModules(t *testing.T) {
 	require.NoError(t, env.p.Update(env.ctx, source))
 
 	assert.Equal(t, 1, env.pgCount(t, `SELECT count(*) FROM _schema_modules WHERE name = 'pg_geo'`))
-	assert.Equal(t, 1, env.pgCount(t, `SELECT count(*) FROM _schema_module_catalogs WHERE module_name = 'pg_geo' AND catalog_name = 'geo_cat'`))
+	assert.Equal(t, 1, env.pgCount(t, `SELECT count(*) FROM _schema_module_type_catalogs WHERE module_name = 'pg_geo' AND catalog_name = 'geo_cat'`))
 }
 
 func TestPostgres_CatalogGetters(t *testing.T) {
@@ -2084,7 +2084,7 @@ func cleanPG(t *testing.T, conn *sql.DB) {
 	tables := []string{
 		"_schema_data_object_queries",
 		"_schema_data_objects",
-		"_schema_module_catalogs",
+		"_schema_module_type_catalogs",
 		"_schema_modules",
 		"_schema_directives",
 		"_schema_enum_values",

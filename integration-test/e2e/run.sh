@@ -65,8 +65,13 @@ run_single_test() {
   local engine_url="$1"
   local test_dir="$2"
   local test_name="$3"
+  local variant="${4:-}"
   local query_file="$test_dir/query.graphql"
+  # Use engine-specific expected file if available (e.g., expected_pg.json)
   local expected_file="$test_dir/expected.json"
+  if [ -n "$variant" ] && [ -f "$test_dir/expected_${variant}.json" ]; then
+    expected_file="$test_dir/expected_${variant}.json"
+  fi
 
   if [ ! -f "$query_file" ]; then
     return 1
@@ -228,9 +233,11 @@ run_jq_test() {
 }
 
 # run_tests_against runs the full test suite against the given engine URL.
+# $3 is an optional variant suffix for engine-specific expected files (e.g., "pg").
 run_tests_against() {
   local engine_url="$1"
   local label="$2"
+  local variant="${3:-}"
 
   echo ""
   echo "Running tests against $label ($engine_url)..."
@@ -246,7 +253,7 @@ run_tests_against() {
       if [ -f "$test_dir/request.json" ]; then
         run_jq_test "$engine_url" "$test_dir" "$test_name"
       elif [ -f "$test_dir/query.graphql" ]; then
-        run_single_test "$engine_url" "$test_dir" "$test_name"
+        run_single_test "$engine_url" "$test_dir" "$test_name" "$variant"
       elif ls "$test_dir"/*.graphql &>/dev/null; then
         run_multistep_test "$engine_url" "$test_dir" "$test_name"
       fi
@@ -265,21 +272,32 @@ if [ $? -ne 0 ]; then
   exit 2
 fi
 
-run_tests_against "$ENGINE_URL_DUCKDB" "DuckDB CoreDB"
+run_tests_against "$ENGINE_URL_DUCKDB" "DuckDB CoreDB" ""
 
 # 4. Provision and test PG-backed engine
 if [ "$DUCKDB_ONLY" = false ]; then
   ENGINE_URL_PG="http://localhost:15001"
 
+  # Reset shared PostgreSQL data before PG engine tests (DuckDB engine mutations
+  # may have modified rows/sequences during its test run).
+  echo ""
+  echo "Resetting shared PostgreSQL data..."
+  docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U test -d testdb -c "
+    DROP SCHEMA public CASCADE;
+    CREATE SCHEMA public;
+  " > /dev/null 2>&1
+  docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U test -d testdb \
+    < "$SCRIPT_DIR/testdata/postgres/init.sql" > /dev/null 2>&1
+
   echo ""
   echo "Provisioning data sources (PostgreSQL CoreDB)..."
-  "$SCRIPT_DIR/provision-sources.sh" "$ENGINE_URL_PG"
+  "$SCRIPT_DIR/provision-sources.sh" "$ENGINE_URL_PG" "/workspace/duckdb/local_pg.duckdb"
   if [ $? -ne 0 ]; then
     echo "ERROR: Failed to provision data sources (PostgreSQL CoreDB)"
     exit 2
   fi
 
-  run_tests_against "$ENGINE_URL_PG" "PostgreSQL CoreDB"
+  run_tests_against "$ENGINE_URL_PG" "PostgreSQL CoreDB" "pg"
 fi
 
 # 5. Summary

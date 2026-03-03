@@ -1,0 +1,60 @@
+{
+  "data": {
+    "core": {
+      "meta": {
+        "tables": [
+          {
+            "database_name": "pg_store",
+            "name": "categories",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "geography_columns",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "geometry_columns",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "locations",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "price_ranges",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "product_details",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "product_tags",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "products",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "spatial_ref_sys",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
+            "name": "tags",
+            "schema_name": "public"
+          }
+        ]
+      }
+    }
+  }
+}

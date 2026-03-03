@@ -27,19 +27,26 @@ func (p *Provider) pgDatabaseName() string {
 // Parameters are always inlined into the SQL for uniform behavior.
 // For attached PostgreSQL, additionally wraps with postgres_execute().
 func (p *Provider) execWrite(ctx context.Context, conn *Connection, query string, args ...any) (sql.Result, error) {
-	// Always inline parameters — uniform for both DuckDB and PostgreSQL
-	inlined, err := inlineParams(query, args)
-	if err != nil {
-		return nil, fmt.Errorf("inline params: %w", err)
-	}
-
 	if !p.isPostgres {
+		// DuckDB: inline parameters and execute directly.
+		inlined, err := inlineParams(query, args)
+		if err != nil {
+			return nil, fmt.Errorf("inline params: %w", err)
+		}
 		return conn.Exec(ctx, inlined)
 	}
 
-	// Strip table prefix — inside postgres_execute we're already targeting that DB
+	// PostgreSQL: strip table prefix from query template BEFORE inlining
+	// parameters. This avoids corrupting literal values that contain the
+	// prefix string (e.g., catalog name "core.meta" → "meta").
+	stripped := query
 	if p.prefix != "" {
-		inlined = strings.ReplaceAll(inlined, p.prefix, "")
+		stripped = strings.ReplaceAll(stripped, p.prefix, "")
+	}
+
+	inlined, err := inlineParams(stripped, args)
+	if err != nil {
+		return nil, fmt.Errorf("inline params: %w", err)
 	}
 
 	// Escape single quotes for the postgres_execute string wrapper

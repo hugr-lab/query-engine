@@ -252,9 +252,17 @@ func (p *Provider) SetCatalogDescription(ctx context.Context, name, desc, longDe
 }
 
 // InvalidateCatalog evicts all cached entries for the given catalog name.
+// Also evicts root types (Query, Mutation) since their fields may include
+// module fields from the invalidated catalog.
+// Types from other catalogs that had extension fields from this catalog
+// will be refreshed from DB on next access (cache TTL or LRU eviction).
 func (p *Provider) InvalidateCatalog(catalog string) {
 	p.cache.invalidateCatalog(catalog)
-	// Reset root type pointers so they're reloaded on next access
+	// Root types aggregate fields from all modules; must be evicted
+	// so they're re-read from DB without the dropped catalog's fields.
+	p.cache.evictType("Query")
+	p.cache.evictType("Mutation")
+	// Reset root type pointers so they're reloaded on next access.
 	p.mu.Lock()
 	p.rootsLoaded = false
 	p.queryType = nil

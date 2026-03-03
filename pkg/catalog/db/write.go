@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -65,9 +66,16 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 	}
 	defer p.pool.Rollback(txCtx)
 
+	// Acquire a single connection for all write operations within this transaction.
+	conn, err := p.pool.Conn(txCtx)
+	if err != nil {
+		return fmt.Errorf("update: conn: %w", err)
+	}
+	defer conn.Close()
+
 	// Upsert catalog record
 	if catalogName != "" {
-		if err := p.upsertCatalog(txCtx, catalogName); err != nil {
+		if err := p.upsertCatalog(txCtx, conn, catalogName); err != nil {
 			return fmt.Errorf("update: %w", err)
 		}
 	}
@@ -76,19 +84,19 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 	for _, def := range defs {
 		switch {
 		case base.IsDropDefinition(def):
-			if err := p.processDropDefinition(txCtx, def); err != nil {
+			if err := p.processDropDefinition(txCtx, conn, def); err != nil {
 				return fmt.Errorf("update drop: %w", err)
 			}
 		case base.IsReplaceDefinition(def):
-			if err := p.processReplaceDefinition(txCtx, def, catalogName); err != nil {
+			if err := p.processReplaceDefinition(txCtx, conn, def, catalogName); err != nil {
 				return fmt.Errorf("update replace: %w", err)
 			}
 		case base.IsIfNotExistsDefinition(def):
-			if err := p.processIfNotExistsDefinition(txCtx, def, catalogName); err != nil {
+			if err := p.processIfNotExistsDefinition(txCtx, conn, def, catalogName); err != nil {
 				return fmt.Errorf("update if_not_exists: %w", err)
 			}
 		default:
-			if err := p.persistDefinition(txCtx, def, catalogName); err != nil {
+			if err := p.persistDefinition(txCtx, conn, def, catalogName); err != nil {
 				return fmt.Errorf("update add: %w", err)
 			}
 		}
@@ -96,7 +104,7 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 
 	// Process directive definitions
 	for name, dir := range changes.DirectiveDefinitions(txCtx) {
-		if err := p.persistDirectiveDefinition(txCtx, name, dir); err != nil {
+		if err := p.persistDirectiveDefinition(txCtx, conn, name, dir); err != nil {
 			return fmt.Errorf("update directive %s: %w", name, err)
 		}
 	}
@@ -105,11 +113,14 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 	ext, hasExtensions := changes.(base.ExtensionsSource)
 	if hasExtensions {
 		for extDef := range ext.Extensions(txCtx) {
-			if err := p.processExtension(txCtx, extDef, catalogName); err != nil {
+			if err := p.processExtension(txCtx, conn, extDef, catalogName); err != nil {
 				return fmt.Errorf("update extension: %w", err)
 			}
 		}
 	}
+
+	// Release connection before reconcile (which acquires its own).
+	conn.Close()
 
 	// Reconcile metadata
 	if catalogName != "" {
@@ -134,14 +145,8 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 }
 
 // upsertCatalog inserts or updates a catalog record.
-func (p *Provider) upsertCatalog(ctx context.Context, name string) error {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("upsert catalog: %w", err)
-	}
-	defer conn.Close()
-
-	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
+func (p *Provider) upsertCatalog(ctx context.Context, conn *Connection, name string) error {
+	_, err := p.execWrite(ctx, conn, fmt.Sprintf(
 		`INSERT INTO %s (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
 		p.table("_schema_catalogs"),
 	), name)
@@ -149,28 +154,28 @@ func (p *Provider) upsertCatalog(ctx context.Context, name string) error {
 }
 
 // persistDefinition stores a type definition and all its children (fields, arguments, enum values).
-func (p *Provider) persistDefinition(ctx context.Context, def *ast.Definition, catalogName string) error {
+func (p *Provider) persistDefinition(ctx context.Context, conn *Connection, def *ast.Definition, catalogName string) error {
 	// Strip control directives before persisting
 	cleanDef := base.CloneDefinition(def, nil)
 	cleanDef.Directives = base.StripControlDirectives(cleanDef.Directives)
 
-	if err := p.upsertType(ctx, cleanDef, catalogName); err != nil {
+	if err := p.upsertType(ctx, conn, cleanDef, catalogName); err != nil {
 		return err
 	}
 
 	for i, field := range cleanDef.Fields {
-		if err := p.upsertField(ctx, cleanDef.Name, field, catalogName, "", i); err != nil {
+		if err := p.upsertField(ctx, conn, cleanDef.Name, field, catalogName, "", i); err != nil {
 			return err
 		}
 		for j, arg := range field.Arguments {
-			if err := p.upsertArgument(ctx, cleanDef.Name, field.Name, arg, j); err != nil {
+			if err := p.upsertArgument(ctx, conn, cleanDef.Name, field.Name, arg, j); err != nil {
 				return err
 			}
 		}
 	}
 
 	for i, ev := range cleanDef.EnumValues {
-		if err := p.upsertEnumValue(ctx, cleanDef.Name, ev, i); err != nil {
+		if err := p.upsertEnumValue(ctx, conn, cleanDef.Name, ev, i); err != nil {
 			return err
 		}
 	}
@@ -179,13 +184,7 @@ func (p *Provider) persistDefinition(ctx context.Context, def *ast.Definition, c
 }
 
 // upsertType inserts or updates a type in _schema_types.
-func (p *Provider) upsertType(ctx context.Context, def *ast.Definition, catalogName string) error {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("upsert type: %w", err)
-	}
-	defer conn.Close()
-
+func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.Definition, catalogName string) error {
 	dirJSON, err := schema.MarshalDirectives(def.Directives)
 	if err != nil {
 		return fmt.Errorf("marshal directives for %s: %w", def.Name, err)
@@ -242,20 +241,28 @@ func (p *Provider) upsertType(ctx context.Context, def *ast.Definition, catalogN
 
 // upsertField inserts or updates a field in _schema_fields.
 // ordinal preserves the original definition order of the field within its type.
-func (p *Provider) upsertField(ctx context.Context, typeName string, field *ast.FieldDefinition, catalogName, depCatalog string, ordinal int) error {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("upsert field: %w", err)
-	}
-	defer conn.Close()
-
+func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName string, field *ast.FieldDefinition, catalogName, depCatalog string, ordinal int) error {
 	dirJSON, err := schema.MarshalDirectives(field.Directives)
 	if err != nil {
 		return fmt.Errorf("marshal field directives for %s.%s: %w", typeName, field.Name, err)
 	}
 
-	fieldType := schema.MarshalType(field.Type)
 	hugrType := string(schema.ClassifyField(field, nil, nil))
+
+	// Module entry fields have @module_catalog but ClassifyField can't detect
+	// them without typeLookup; mark them explicitly.
+	if hugrType == "" && field.Directives.ForName(base.ModuleCatalogDirectiveName) != nil {
+		hugrType = string(base.HugrTypeFieldSubmodule)
+	}
+
+	// For submodule fields, store just the base type name (no nullable/list wrappers).
+	// This enables direct JOIN with _schema_module_type_catalogs.type_name for filtering.
+	var fieldType string
+	if hugrType == string(base.HugrTypeFieldSubmodule) {
+		fieldType = baseTypeName(field.Type)
+	} else {
+		fieldType = schema.MarshalType(field.Type)
+	}
 
 	// Determine dependency catalog from field directives if not explicitly provided
 	if depCatalog == "" {
@@ -306,13 +313,7 @@ func (p *Provider) upsertField(ctx context.Context, typeName string, field *ast.
 
 // upsertArgument inserts or updates an argument in _schema_arguments.
 // ordinal preserves the original definition order of the argument within its field.
-func (p *Provider) upsertArgument(ctx context.Context, typeName, fieldName string, arg *ast.ArgumentDefinition, ordinal int) error {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("upsert argument: %w", err)
-	}
-	defer conn.Close()
-
+func (p *Provider) upsertArgument(ctx context.Context, conn *Connection, typeName, fieldName string, arg *ast.ArgumentDefinition, ordinal int) error {
 	dirJSON, err := schema.MarshalDirectives(arg.Directives)
 	if err != nil {
 		return fmt.Errorf("marshal arg directives for %s.%s.%s: %w", typeName, fieldName, arg.Name, err)
@@ -321,8 +322,13 @@ func (p *Provider) upsertArgument(ctx context.Context, typeName, fieldName strin
 	argType := schema.MarshalType(arg.Type)
 	var defaultValue *string
 	if arg.DefaultValue != nil {
-		raw := arg.DefaultValue.Raw
-		defaultValue = &raw
+		// Store as JSON to preserve the value Kind (IntValue, BooleanValue, etc.)
+		encoded, err := json.Marshal(schema.MarshalValue(arg.DefaultValue))
+		if err != nil {
+			return fmt.Errorf("marshal default value for %s.%s.%s: %w", typeName, fieldName, arg.Name, err)
+		}
+		s := string(encoded)
+		defaultValue = &s
 	}
 
 	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
@@ -337,13 +343,7 @@ func (p *Provider) upsertArgument(ctx context.Context, typeName, fieldName strin
 
 // upsertEnumValue inserts or updates an enum value in _schema_enum_values.
 // ordinal preserves the original definition order of the enum value within its type.
-func (p *Provider) upsertEnumValue(ctx context.Context, typeName string, ev *ast.EnumValueDefinition, ordinal int) error {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("upsert enum value: %w", err)
-	}
-	defer conn.Close()
-
+func (p *Provider) upsertEnumValue(ctx context.Context, conn *Connection, typeName string, ev *ast.EnumValueDefinition, ordinal int) error {
 	dirJSON, err := schema.MarshalDirectives(ev.Directives)
 	if err != nil {
 		return fmt.Errorf("marshal enum directives for %s.%s: %w", typeName, ev.Name, err)
@@ -359,13 +359,7 @@ func (p *Provider) upsertEnumValue(ctx context.Context, typeName string, ev *ast
 }
 
 // persistDirectiveDefinition stores a directive definition in _schema_directives.
-func (p *Provider) persistDirectiveDefinition(ctx context.Context, name string, dir *ast.DirectiveDefinition) error {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("persist directive: %w", err)
-	}
-	defer conn.Close()
-
+func (p *Provider) persistDirectiveDefinition(ctx context.Context, conn *Connection, name string, dir *ast.DirectiveDefinition) error {
 	locations := make([]string, len(dir.Locations))
 	for i, loc := range dir.Locations {
 		locations[i] = string(loc)
@@ -387,28 +381,22 @@ func (p *Provider) persistDirectiveDefinition(ctx context.Context, name string, 
 }
 
 // processDropDefinition handles @drop directive on a definition.
-func (p *Provider) processDropDefinition(ctx context.Context, def *ast.Definition) error {
-	return p.deleteType(ctx, def.Name)
+func (p *Provider) processDropDefinition(ctx context.Context, conn *Connection, def *ast.Definition) error {
+	return p.deleteType(ctx, conn, def.Name)
 }
 
 // processReplaceDefinition handles @replace directive: delete old, insert new.
-func (p *Provider) processReplaceDefinition(ctx context.Context, def *ast.Definition, catalogName string) error {
-	if err := p.deleteType(ctx, def.Name); err != nil {
+func (p *Provider) processReplaceDefinition(ctx context.Context, conn *Connection, def *ast.Definition, catalogName string) error {
+	if err := p.deleteType(ctx, conn, def.Name); err != nil {
 		return err
 	}
-	return p.persistDefinition(ctx, def, catalogName)
+	return p.persistDefinition(ctx, conn, def, catalogName)
 }
 
 // processIfNotExistsDefinition handles @if_not_exists directive: skip if already exists.
-func (p *Provider) processIfNotExistsDefinition(ctx context.Context, def *ast.Definition, catalogName string) error {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
+func (p *Provider) processIfNotExistsDefinition(ctx context.Context, conn *Connection, def *ast.Definition, catalogName string) error {
 	var count int
-	err = conn.QueryRow(ctx, fmt.Sprintf(
+	err := conn.QueryRow(ctx, fmt.Sprintf(
 		`SELECT count(*) FROM %s WHERE name = $1`, p.table("_schema_types"),
 	), def.Name).Scan(&count)
 	if err != nil {
@@ -417,11 +405,11 @@ func (p *Provider) processIfNotExistsDefinition(ctx context.Context, def *ast.De
 	if count > 0 {
 		return nil // already exists, skip
 	}
-	return p.persistDefinition(ctx, def, catalogName)
+	return p.persistDefinition(ctx, conn, def, catalogName)
 }
 
 // processExtension handles a type extension (field add/drop/replace, directive changes).
-func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition, catalogName string) error {
+func (p *Provider) processExtension(ctx context.Context, conn *Connection, extDef *ast.Definition, catalogName string) error {
 	typeName := extDef.Name
 
 	// Determine the dependency catalog: use @dependency if present, otherwise
@@ -433,7 +421,7 @@ func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition,
 			return depCat
 		}
 		// Auto-detect from the type's owning catalog in _schema_types.
-		ownerCat := p.typeOwnerCatalog(ctx, typeName)
+		ownerCat := p.typeOwnerCatalogConn(ctx, conn, typeName)
 		if ownerCat != "" && ownerCat != catalogName {
 			return ownerCat
 		}
@@ -444,7 +432,7 @@ func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition,
 	for fieldIdx, field := range extDef.Fields {
 		switch {
 		case base.IsDropField(field):
-			if err := p.deleteField(ctx, typeName, field.Name); err != nil {
+			if err := p.deleteField(ctx, conn, typeName, field.Name); err != nil {
 				if base.DropFieldIfExists(field) {
 					continue
 				}
@@ -453,17 +441,17 @@ func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition,
 		case base.IsReplaceField(field):
 			// Delete old field if it exists; ignore "not found" errors since
 			// replace should work even if the field doesn't exist yet.
-			if err := p.deleteField(ctx, typeName, field.Name); err != nil {
+			if err := p.deleteField(ctx, conn, typeName, field.Name); err != nil {
 				// Only log, don't fail — the field might not exist yet
 			}
 			cleanField := base.CloneFieldDefinition(field)
 			cleanField.Directives = base.StripControlDirectives(cleanField.Directives)
 			depCat := resolveDepCat(field)
-			if err := p.upsertField(ctx, typeName, cleanField, catalogName, depCat, fieldIdx); err != nil {
+			if err := p.upsertField(ctx, conn, typeName, cleanField, catalogName, depCat, fieldIdx); err != nil {
 				return fmt.Errorf("replace field %s.%s: %w", typeName, field.Name, err)
 			}
 			for i, arg := range cleanField.Arguments {
-				if err := p.upsertArgument(ctx, typeName, cleanField.Name, arg, i); err != nil {
+				if err := p.upsertArgument(ctx, conn, typeName, cleanField.Name, arg, i); err != nil {
 					return err
 				}
 			}
@@ -472,11 +460,11 @@ func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition,
 			cleanField := base.CloneFieldDefinition(field)
 			cleanField.Directives = base.StripControlDirectives(cleanField.Directives)
 			depCat := resolveDepCat(field)
-			if err := p.upsertField(ctx, typeName, cleanField, catalogName, depCat, fieldIdx); err != nil {
+			if err := p.upsertField(ctx, conn, typeName, cleanField, catalogName, depCat, fieldIdx); err != nil {
 				return fmt.Errorf("add field %s.%s: %w", typeName, field.Name, err)
 			}
 			for i, arg := range cleanField.Arguments {
-				if err := p.upsertArgument(ctx, typeName, cleanField.Name, arg, i); err != nil {
+				if err := p.upsertArgument(ctx, conn, typeName, cleanField.Name, arg, i); err != nil {
 					return err
 				}
 			}
@@ -485,8 +473,18 @@ func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition,
 
 	// Process enum value changes
 	for i, ev := range extDef.EnumValues {
-		if err := p.upsertEnumValue(ctx, typeName, ev, i); err != nil {
+		if err := p.upsertEnumValue(ctx, conn, typeName, ev, i); err != nil {
 			return err
+		}
+	}
+
+	// Merge type-level directives from the extension into the existing type.
+	// Extensions can carry directives like @references that must be persisted
+	// on the base type definition for the planner to resolve reference joins.
+	extDirs := base.StripControlDirectives(extDef.Directives)
+	if len(extDirs) > 0 {
+		if err := p.mergeTypeDirectives(ctx, conn, typeName, extDirs); err != nil {
+			return fmt.Errorf("merge directives for %s: %w", typeName, err)
 		}
 	}
 
@@ -498,16 +496,80 @@ func (p *Provider) processExtension(ctx context.Context, extDef *ast.Definition,
 	return nil
 }
 
+// mergeTypeDirectives appends extension directives to an existing type's directives in the DB.
+// Deduplicates repeatable directives (like @references) by their "name" argument.
+func (p *Provider) mergeTypeDirectives(ctx context.Context, conn *Connection, typeName string, newDirs ast.DirectiveList) error {
+	// Load current directives from DB
+	var dirJSON string
+	err := conn.QueryRow(ctx, fmt.Sprintf(
+		`SELECT CAST(directives AS VARCHAR) FROM %s WHERE name = $1`,
+		p.table("_schema_types"),
+	), typeName).Scan(&dirJSON)
+	if err != nil {
+		return fmt.Errorf("load directives: %w", err)
+	}
+
+	existing, err := schema.UnmarshalDirectives([]byte(dirJSON))
+	if err != nil {
+		return fmt.Errorf("unmarshal directives: %w", err)
+	}
+
+	// Build a set of existing directive identifiers for deduplication.
+	// For repeatable directives (like @references), use "name" + the "name" arg value as key.
+	existingKeys := make(map[string]struct{}, len(existing))
+	for _, d := range existing {
+		existingKeys[directiveKey(d)] = struct{}{}
+	}
+
+	// Append only new directives that don't already exist
+	for _, d := range newDirs {
+		key := directiveKey(d)
+		if _, exists := existingKeys[key]; exists {
+			continue
+		}
+		existing = append(existing, d)
+		existingKeys[key] = struct{}{}
+	}
+
+	// Write updated directives back
+	merged, err := schema.MarshalDirectives(existing)
+	if err != nil {
+		return fmt.Errorf("marshal merged directives: %w", err)
+	}
+
+	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
+		`UPDATE %s SET directives = $2 WHERE name = $1`,
+		p.table("_schema_types"),
+	), typeName, string(merged))
+	return err
+}
+
+// directiveKey returns a string key for deduplicating directives.
+// For directives with a "name" argument (like @references), uses "directiveName:nameArg".
+// For others, uses just the directive name.
+func directiveKey(d *ast.Directive) string {
+	nameArg := d.Arguments.ForName("name")
+	if nameArg != nil && nameArg.Value != nil {
+		return d.Name + ":" + nameArg.Value.Raw
+	}
+	return d.Name
+}
+
 // typeOwnerCatalog returns the catalog that owns the given type, or "" if not found.
+// Acquires its own connection — used by external callers.
 func (p *Provider) typeOwnerCatalog(ctx context.Context, typeName string) string {
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return ""
 	}
 	defer conn.Close()
+	return p.typeOwnerCatalogConn(ctx, conn, typeName)
+}
 
+// typeOwnerCatalogConn returns the catalog that owns the given type, using the provided connection.
+func (p *Provider) typeOwnerCatalogConn(ctx context.Context, conn *Connection, typeName string) string {
 	var catalog string
-	err = conn.QueryRow(ctx, fmt.Sprintf(
+	err := conn.QueryRow(ctx, fmt.Sprintf(
 		`SELECT COALESCE(catalog, '') FROM %s WHERE name = $1`,
 		p.table("_schema_types"),
 	), typeName).Scan(&catalog)
@@ -518,13 +580,7 @@ func (p *Provider) typeOwnerCatalog(ctx context.Context, typeName string) string
 }
 
 // deleteType removes a type and all its children from the database.
-func (p *Provider) deleteType(ctx context.Context, name string) error {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("delete type: %w", err)
-	}
-	defer conn.Close()
-
+func (p *Provider) deleteType(ctx context.Context, conn *Connection, name string) error {
 	// Cascading deletes: enum_values → arguments → fields → types
 	if _, err := p.execWrite(ctx, conn, fmt.Sprintf(`DELETE FROM %s WHERE type_name = $1`, p.table("_schema_enum_values")), name); err != nil {
 		return err
@@ -535,25 +591,19 @@ func (p *Provider) deleteType(ctx context.Context, name string) error {
 	if _, err := p.execWrite(ctx, conn, fmt.Sprintf(`DELETE FROM %s WHERE type_name = $1`, p.table("_schema_fields")), name); err != nil {
 		return err
 	}
-	_, err = p.execWrite(ctx, conn, fmt.Sprintf(`DELETE FROM %s WHERE name = $1`, p.table("_schema_types")), name)
+	_, err := p.execWrite(ctx, conn, fmt.Sprintf(`DELETE FROM %s WHERE name = $1`, p.table("_schema_types")), name)
 	return err
 }
 
 // deleteField removes a field and its arguments from the database.
-func (p *Provider) deleteField(ctx context.Context, typeName, fieldName string) error {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("delete field: %w", err)
-	}
-	defer conn.Close()
-
+func (p *Provider) deleteField(ctx context.Context, conn *Connection, typeName, fieldName string) error {
 	if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
 		`DELETE FROM %s WHERE type_name = $1 AND field_name = $2`,
 		p.table("_schema_arguments"),
 	), typeName, fieldName); err != nil {
 		return err
 	}
-	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
+	_, err := p.execWrite(ctx, conn, fmt.Sprintf(
 		`DELETE FROM %s WHERE type_name = $1 AND name = $2`,
 		p.table("_schema_fields"),
 	), typeName, fieldName)

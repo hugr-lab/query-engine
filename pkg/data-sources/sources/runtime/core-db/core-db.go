@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	Version           = "0.0.12"
+	Version           = "0.0.10"
 	dbName            = "core"
 	DefaultVectorSize = 768
 )

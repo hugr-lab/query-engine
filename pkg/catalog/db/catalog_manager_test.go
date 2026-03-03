@@ -1084,6 +1084,89 @@ func TestAddCatalogReactivatesSuspended(t *testing.T) {
 	}
 }
 
+// ─── Back-reference field persistence via @references ────────────────────────
+
+func TestBackReferenceFieldPersisted(t *testing.T) {
+	p, ctx := newTestProviderWithCompiler(t)
+
+	// Add two base catalog sources: items and events in the same catalog.
+	base := newTestCatalogSource(t, "local",
+		"v1",
+		`type local_items @table(name: "items") {
+			id: Int! @pk
+			name: String!
+		}
+		type local_events @table(name: "events") {
+			id: Int! @pk
+			title: String!
+		}`,
+	)
+	err := p.AddCatalog(ctx, "local", base)
+	require.NoError(t, err)
+
+	// Verify both types exist.
+	require.NotNil(t, p.ForName(ctx, "local_items"))
+	require.NotNil(t, p.ForName(ctx, "local_events"))
+
+	// Add extension source with @references bridging items→events,
+	// plus additional extend blocks (mimics real ext_bridge with multiple blocks).
+	ext := newTestExtCatalogSource(t, "bridge", "v1",
+		`extend type local_items
+		  @dependency(name: "local")
+		  @references(
+		    name: "item_event"
+		    references_name: "local_events"
+		    source_fields: ["id"]
+		    references_fields: ["id"]
+		    query: "event"
+		    references_query: "item"
+		  ) {
+		  _stub: String
+		}
+		extend type local_items
+		  @dependency(name: "local") {
+		  extra_field: String
+		}`,
+	)
+	err = p.AddCatalog(ctx, "bridge", ext)
+	require.NoError(t, err)
+
+	// Forward reference: "event" field should exist on local_items.
+	items := p.ForName(ctx, "local_items")
+	require.NotNil(t, items)
+	eventField := items.Fields.ForName("event")
+	assert.NotNil(t, eventField, "forward reference field 'event' should exist on local_items")
+
+	// Back-reference: "item" field should exist on local_events.
+	events := p.ForName(ctx, "local_events")
+	require.NotNil(t, events)
+	itemField := events.Fields.ForName("item")
+	assert.NotNil(t, itemField, "back-reference field 'item' should exist on local_events")
+
+	if itemField != nil {
+		// Should be a list type: [local_items]
+		assert.True(t, itemField.Type.Elem != nil, "back-reference should be a list type")
+	}
+}
+
+// newTestExtCatalogSource creates a catalog source with IsExtension=true.
+func newTestExtCatalogSource(t *testing.T, name, version, sdl string) *testCatalogSource {
+	t.Helper()
+	src, err := sources.NewStringSource(name, nil, compiler.Options{
+		Name:        name,
+		Prefix:      name,
+		EngineType:  "duckdb",
+		IsExtension: true,
+	}, sdl)
+	require.NoError(t, err)
+	return &testCatalogSource{
+		name:    name,
+		version: version,
+		sdl:     sdl,
+		src:     src,
+	}
+}
+
 // ─── T038: System types version change triggers re-persist ──────────────────
 
 func TestSystemTypesVersionChange(t *testing.T) {

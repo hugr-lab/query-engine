@@ -14,28 +14,30 @@ import (
 //
 // Delete order respects DuckDB's lack of FK CASCADE:
 //
-//	enum_values → arguments (owned + extension) → fields (owned + extension) →
-//	types → data_object_queries (orphan) → data_objects (orphan) → module_catalogs
+//	enum_values → arguments (by field.catalog + dependency_catalog) →
+//	fields (by catalog + dependency_catalog) → types →
+//	data_object_queries (orphan) → data_objects (orphan) → module_catalogs
 func (p *Provider) deleteSchemaObjectsForCatalog(ctx context.Context, conn *Connection, name string) error {
 	script := fmt.Sprintf(`
 DELETE FROM %s WHERE type_name IN (SELECT name FROM %s WHERE catalog = $1);
-DELETE FROM %s WHERE type_name IN (SELECT name FROM %s WHERE catalog = $1);
+DELETE FROM %s WHERE (type_name, field_name) IN (SELECT type_name, name FROM %s WHERE catalog = $1);
 DELETE FROM %s WHERE (type_name, field_name) IN (SELECT type_name, name FROM %s WHERE dependency_catalog = $1);
-DELETE FROM %s WHERE type_name IN (SELECT name FROM %s WHERE catalog = $1);
+DELETE FROM %s WHERE catalog = $1;
 DELETE FROM %s WHERE dependency_catalog = $1;
 DELETE FROM %s WHERE catalog = $1;
 DELETE FROM %s WHERE object_name NOT IN (SELECT name FROM %s);
 DELETE FROM %s WHERE name NOT IN (SELECT name FROM %s);
-DELETE FROM %s WHERE catalog_name = $1`,
+DELETE FROM %s WHERE catalog_name = $1;
+DELETE FROM %s WHERE name != '' AND name NOT IN (SELECT DISTINCT module_name FROM %s)`,
 		// 1. enum_values for owned types
 		p.table("_schema_enum_values"), p.table("_schema_types"),
-		// 2. arguments for owned types
-		p.table("_schema_arguments"), p.table("_schema_types"),
-		// 3. arguments for extension fields
+		// 2. arguments for catalog-owned fields (on owned types AND module extension fields)
 		p.table("_schema_arguments"), p.table("_schema_fields"),
-		// 4. fields for owned types
-		p.table("_schema_fields"), p.table("_schema_types"),
-		// 5. extension fields
+		// 3. arguments for extension fields from other catalogs depending on this one
+		p.table("_schema_arguments"), p.table("_schema_fields"),
+		// 4. fields owned by this catalog (covers owned types + module extension fields on Query/Mutation/_join etc.)
+		p.table("_schema_fields"),
+		// 5. extension fields from other catalogs that depend on this catalog
 		p.table("_schema_fields"),
 		// 6. types
 		p.table("_schema_types"),
@@ -43,8 +45,10 @@ DELETE FROM %s WHERE catalog_name = $1`,
 		p.table("_schema_data_object_queries"), p.table("_schema_types"),
 		// 8. orphan data_objects
 		p.table("_schema_data_objects"), p.table("_schema_types"),
-		// 9. module_catalogs
-		p.table("_schema_module_catalogs"),
+		// 9. module_catalogs for this catalog
+		p.table("_schema_module_type_catalogs"),
+		// 10. orphan modules (no remaining catalog links, excluding root module '')
+		p.table("_schema_modules"), p.table("_schema_module_type_catalogs"),
 	)
 
 	_, err := p.execWrite(ctx, conn, script, name)

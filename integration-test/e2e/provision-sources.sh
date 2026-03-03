@@ -1,10 +1,12 @@
 #!/bin/bash
 # Registers and loads data sources via GraphQL mutations.
-# Usage: ./provision-sources.sh <engine_url>
+# Usage: ./provision-sources.sh <engine_url> [duckdb_path]
+#   duckdb_path defaults to /workspace/duckdb/local.duckdb
 
 set -e
 
 ENGINE_URL="${1:-http://localhost:15000}"
+DUCKDB_PATH="${2:-/workspace/duckdb/local.duckdb}"
 
 gql() {
   local result
@@ -30,7 +32,7 @@ gql 'mutation { core { insert_data_sources(data: { name: \"pg_store\", prefix: \
 
 # 2. Add DuckDB data source
 echo "  Registering local_db..."
-gql 'mutation { core { insert_data_sources(data: { name: \"local_db\", prefix: \"local_db\", type: \"duckdb\", path: \"/workspace/duckdb/local.duckdb\", as_module: true, catalogs: [{ name: \"local_db\", type: \"localFS\", path: \"/workspace/schemas/local_db\" }] }) { name } } }'
+gql "mutation { core { insert_data_sources(data: { name: \\\"local_db\\\", prefix: \\\"local_db\\\", type: \\\"duckdb\\\", path: \\\"$DUCKDB_PATH\\\", as_module: true, catalogs: [{ name: \\\"local_db\\\", type: \\\"localFS\\\", path: \\\"/workspace/schemas/local_db\\\" }] }) { name } } }"
 
 # 3. Add HTTP data source
 echo "  Registering rest_api..."

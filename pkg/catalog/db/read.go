@@ -3,8 +3,11 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
+	"log"
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -24,7 +27,11 @@ func (p *Provider) ForName(ctx context.Context, name string) *ast.Definition {
 	}
 
 	// Load from DB
-	def, catalog := p.loadTypeFromDB(ctx, name)
+	def, catalog, err := p.loadTypeFromDB(ctx, name)
+	if err != nil {
+		log.Printf("ERR: ForName(%q): %v", name, err)
+		return nil
+	}
 	if def == nil {
 		return nil
 	}
@@ -42,7 +49,11 @@ func (p *Provider) DirectiveForName(ctx context.Context, name string) *ast.Direc
 	}
 
 	// Load from DB
-	dir := p.loadDirectiveFromDB(ctx, name)
+	dir, err := p.loadDirectiveFromDB(ctx, name)
+	if err != nil {
+		log.Printf("ERR: DirectiveForName(%q): %v", name, err)
+		return nil
+	}
 	if dir != nil {
 		p.cache.putDirective(name, dir)
 	}
@@ -81,9 +92,27 @@ func (p *Provider) collectActiveTypeNames(ctx context.Context) ([]string, error)
 
 	rows, err := conn.Query(ctx, fmt.Sprintf(
 		`SELECT t.name FROM %s t
-		 WHERE t.catalog IS NULL OR t.catalog = ''
-		    OR t.catalog NOT IN (SELECT name FROM %s WHERE disabled = true OR suspended = true)`,
-		p.table("_schema_types"), p.table("_schema_catalogs"),
+		 WHERE
+		   CASE
+		     WHEN t.catalog = '%s' THEN true
+		     WHEN t.hugr_type = 'module' THEN
+		       EXISTS (
+		         SELECT 1 FROM %s mtc
+		         INNER JOIN %s c ON mtc.catalog_name = c.name
+		         WHERE mtc.type_name = t.name
+		           AND c.disabled = false AND c.suspended = false
+		       )
+		     ELSE
+		       t.catalog IS NULL OR t.catalog = ''
+		       OR NOT EXISTS (
+		         SELECT 1 FROM %s c
+		         WHERE c.name = t.catalog AND (c.disabled = true OR c.suspended = true)
+		       )
+		   END`,
+		p.table("_schema_types"),
+		SystemCatalogName,
+		p.table("_schema_module_type_catalogs"), p.table("_schema_catalogs"),
+		p.table("_schema_catalogs"),
 	))
 	if err != nil {
 		return nil, err
@@ -262,8 +291,8 @@ func (p *Provider) findInterfaceImplementors(ctx context.Context, ifaceName stri
 	rows, err := conn.Query(ctx, fmt.Sprintf(
 		`SELECT t.name, t.interfaces FROM %s t
 		 WHERE t.kind = 'OBJECT' AND t.interfaces != ''
-		   AND (t.catalog IS NULL OR t.catalog NOT IN
-		     (SELECT name FROM %s WHERE disabled = true OR suspended = true))`,
+		   AND (t.catalog IS NULL OR t.catalog = ''
+		     OR NOT EXISTS (SELECT 1 FROM %s c WHERE c.name = t.catalog AND (c.disabled = true OR c.suspended = true)))`,
 		p.table("_schema_types"), p.table("_schema_catalogs"),
 	))
 	if err != nil {
@@ -311,204 +340,286 @@ func (p *Provider) ensureRoots(ctx context.Context) {
 	p.rootsLoaded = true
 }
 
-// loadTypeFromDB reconstructs a *ast.Definition from the database.
-// Returns (nil, "") if the type doesn't exist or is in a disabled/suspended catalog.
-func (p *Provider) loadTypeFromDB(ctx context.Context, name string) (*ast.Definition, string) {
+// JSON record types for single-query type loading.
+type typeDefJSON struct {
+	Name        string         `json:"name"`
+	Kind        string         `json:"kind"`
+	Description string         `json:"description"`
+	Catalog     *string        `json:"catalog"`
+	Directives  string         `json:"directives"`
+	Module      string         `json:"module"`
+	Interfaces  string         `json:"interfaces"`
+	UnionTypes  string         `json:"union_types"`
+	HugrType    string         `json:"hugr_type"`
+	Fields      []fieldDefJSON `json:"fields"`
+	EnumValues  []enumValJSON  `json:"enum_values"`
+}
+
+type fieldDefJSON struct {
+	Name        string       `json:"name"`
+	FieldType   string       `json:"field_type"`
+	Description string       `json:"description"`
+	Directives  string       `json:"directives"`
+	Arguments   []argDefJSON `json:"arguments"`
+}
+
+type argDefJSON struct {
+	Name         string  `json:"name"`
+	ArgType      string  `json:"arg_type"`
+	DefaultValue *string `json:"default_value"`
+	Description  string  `json:"description"`
+	Directives   string  `json:"directives"`
+}
+
+type enumValJSON struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Directives  string `json:"directives"`
+}
+
+/*
+func (p *Provider) loadTypesFromDB(ctx context.Context) iter.Seq[*ast.Definition] {
+	return func(yield func(*ast.Definition) bool) {
+		conn, err := p.pool.Conn(ctx)
+		if err != nil {
+			log.Printf("[LOAD TYPES] open connection: %s", err.Error())
+			return
+		}
+		defer conn.Close()
+
+		var q string
+		if p.isPostgres {
+			q = p.buildTypeQueryPG("")
+		} else {
+			q = p.buildTypeQueryDuckDB("")
+		}
+		rows, err := conn.Query(ctx, q)
+		if err != nil {
+			log.Printf("[LOAD TYPES] query: %s", err.Error())
+			return
+		}
+		defer rows.Close()
+		var defJSON string
+		for rows.Next() {
+			if err := rows.Scan(&defJSON); err != nil {
+				log.Printf("[LOAD TYPES] scan: %s", err.Error())
+				continue
+			}
+			var rec typeDefJSON
+			if err := json.Unmarshal([]byte(defJSON), &rec); err != nil {
+				log.Printf("[LOAD TYPES] unmarshal: %s", err.Error())
+				continue
+			}
+			def, _ := rec.toDefinition()
+			if def != nil {
+				if !yield(def) {
+					return
+				}
+			}
+		}
+	}
+}
+*/
+
+// loadTypeFromDB reconstructs a *ast.Definition from the database using a single
+// CTE query that fetches the type, its fields (with arguments), and enum values.
+// Returns (nil, "", nil) if the type doesn't exist or is in a disabled/suspended catalog.
+//
+// For DuckDB: uses struct literals + try_cast(... AS JSON) with LATERAL JOINs.
+// For PostgreSQL: wraps the PG-native query in postgres_query('core', ...).
+func (p *Provider) loadTypeFromDB(ctx context.Context, name string) (*ast.Definition, string, error) {
+	if name == "" {
+		return nil, "", errors.New("[LOAD TYPE] query: name cannot be empty")
+	}
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
-		return nil, ""
+		return nil, "", fmt.Errorf("conn: %w", err)
 	}
 	defer conn.Close()
 
-	// Load type record
-	var kind, desc, catalog, dirJSON, module, ifaces, unionTypes string
-	var catalogPtr *string
-	err = conn.QueryRow(ctx, fmt.Sprintf(
-		`SELECT kind, description, catalog, CAST(directives AS VARCHAR), module, interfaces, union_types FROM %s WHERE name = $1`,
-		p.table("_schema_types"),
-	), name).Scan(&kind, &desc, &catalogPtr, &dirJSON, &module, &ifaces, &unionTypes)
+	var q string
+	if p.isPostgres {
+		q = p.buildTypeQueryPG(name)
+	} else {
+		q = p.buildTypeQueryDuckDB(name)
+	}
+
+	var defJSON string
+	err = conn.QueryRow(ctx, q).Scan(&defJSON)
+	if err == sql.ErrNoRows {
+		return nil, "", nil
+	}
 	if err != nil {
-		return nil, ""
-	}
-	if catalogPtr != nil {
-		catalog = *catalogPtr
+		return nil, "", fmt.Errorf("query: %w", err)
 	}
 
-	// Check if catalog is disabled or suspended
-	if catalog != "" {
-		var disabled, suspended bool
-		err = conn.QueryRow(ctx, fmt.Sprintf(
-			`SELECT disabled, suspended FROM %s WHERE name = $1`,
-			p.table("_schema_catalogs"),
-		), catalog).Scan(&disabled, &suspended)
-		if err == nil && (disabled || suspended) {
-			return nil, ""
-		}
+	var rec typeDefJSON
+	if err := json.Unmarshal([]byte(defJSON), &rec); err != nil {
+		return nil, "", fmt.Errorf("unmarshal: %w", err)
 	}
 
-	// Parse directives
-	dirs, err := schema.UnmarshalDirectives([]byte(dirJSON))
+	def, catalog := rec.toDefinition()
+	return def, catalog, nil
+}
+
+// toDefinition converts a JSON record to an ast.Definition and its catalog name.
+func (rec *typeDefJSON) toDefinition() (*ast.Definition, string) {
+	dirs, err := schema.UnmarshalDirectives([]byte(rec.Directives))
 	if err != nil {
 		return nil, ""
 	}
 
 	def := &ast.Definition{
-		Kind:        ast.DefinitionKind(kind),
-		Name:        name,
-		Description: desc,
+		Kind:        ast.DefinitionKind(rec.Kind),
+		Name:        rec.Name,
+		Description: rec.Description,
 		Directives:  dirs,
 	}
 
-	// Load interfaces and union types from stored columns
-	if ifaces != "" {
-		def.Interfaces = strings.Split(ifaces, "|")
+	if rec.Interfaces != "" {
+		def.Interfaces = strings.Split(rec.Interfaces, "|")
 	}
-	if unionTypes != "" {
-		def.Types = strings.Split(unionTypes, "|")
+	if rec.UnionTypes != "" {
+		def.Types = strings.Split(rec.UnionTypes, "|")
 	}
 
-	// Load fields (excluding fields from disabled/suspended dependency catalogs)
-	def.Fields = p.loadFieldsFromDB(ctx, conn, name)
+	for _, f := range rec.Fields {
+		fd, err := f.toFieldDefinition()
+		if err != nil {
+			continue
+		}
+		def.Fields = append(def.Fields, fd)
+	}
 
-	// Load enum values
-	def.EnumValues = p.loadEnumValuesFromDB(ctx, conn, name)
+	for _, e := range rec.EnumValues {
+		ev, err := e.toEnumValueDefinition()
+		if err != nil {
+			continue
+		}
+		def.EnumValues = append(def.EnumValues, ev)
+	}
 
+	var catalog string
+	if rec.Catalog != nil {
+		catalog = *rec.Catalog
+	}
 	return def, catalog
 }
 
-// loadFieldsFromDB loads all active fields for a type.
-func (p *Provider) loadFieldsFromDB(ctx context.Context, conn *Connection, typeName string) ast.FieldList {
-	rows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT f.name, f.field_type, f.description, CAST(f.directives AS VARCHAR)
-		 FROM %s f
-		 WHERE f.type_name = $1
-		   AND (f.dependency_catalog IS NULL
-		     OR f.dependency_catalog NOT IN
-		       (SELECT name FROM %s WHERE disabled = true OR suspended = true))
-		 ORDER BY f.ordinal, f.name`,
-		p.table("_schema_fields"), p.table("_schema_catalogs"),
-	), typeName)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
+func (p *Provider) buildTypeQueryDuckDB(name string) string {
+	name = strings.ReplaceAll(name, `'`, `''`) // escape single quotes for SQL string literal
 
-	var fields ast.FieldList
-	for rows.Next() {
-		var name, fieldTypeStr, desc, dirJSON string
-		if err := rows.Scan(&name, &fieldTypeStr, &desc, &dirJSON); err != nil {
-			continue
-		}
-
-		fieldType, err := schema.UnmarshalType(fieldTypeStr)
-		if err != nil {
-			continue
-		}
-		dirs, err := schema.UnmarshalDirectives([]byte(dirJSON))
-		if err != nil {
-			continue
-		}
-
-		field := &ast.FieldDefinition{
-			Name:        name,
-			Type:        fieldType,
-			Description: desc,
-			Directives:  dirs,
-		}
-
-		// Load arguments for this field
-		field.Arguments = p.loadArgumentsFromDB(ctx, conn, typeName, name)
-
-		fields = append(fields, field)
-	}
-	return fields
+	q := fmt.Sprintf(typeQueryDuckDB,
+		p.table("_schema_types"),
+		name,
+		SystemCatalogName,
+		p.table("_schema_module_type_catalogs"), p.table("_schema_catalogs"),
+		p.table("_schema_arguments"),
+		p.table("_schema_fields"),
+		p.table("_schema_enum_values"),
+	)
+	return q
 }
 
-// loadArgumentsFromDB loads all arguments for a field.
-func (p *Provider) loadArgumentsFromDB(ctx context.Context, conn *Connection, typeName, fieldName string) ast.ArgumentDefinitionList {
-	rows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT name, arg_type, default_value, description, CAST(directives AS VARCHAR)
-		 FROM %s
-		 WHERE type_name = $1 AND field_name = $2
-		 ORDER BY ordinal, name`,
-		p.table("_schema_arguments"),
-	), typeName, fieldName)
+// buildTypeQueryPG constructs the single-query SQL for PostgreSQL CoreDB.
+// The inner SQL uses jsonb_agg + jsonb_build_object, wrapped in
+// postgres_query('core', ...) to push the query directly to PostgreSQL.
+// The name parameter is inlined into the SQL because postgres_query()
+// does not support parameterized queries ($1 inside the string literal
+// would be sent literally to PostgreSQL without binding).
+func (p *Provider) buildTypeQueryPG(name string) string {
+	name = strings.ReplaceAll(name, `'`, `''`) // escape single quotes for SQL string literal
+	q := fmt.Sprintf(typeQueryPG,
+		"_schema_types",
+		name,
+		SystemCatalogName,
+		"_schema_module_type_catalogs", "_schema_catalogs",
+		"_schema_arguments",
+		"_schema_fields",
+		"_schema_enum_values",
+	)
+	// Escape remaining single quotes for the outer postgres_query wrapper
+	return q
+}
+
+func (f *fieldDefJSON) toFieldDefinition() (*ast.FieldDefinition, error) {
+	fieldType, err := schema.UnmarshalType(f.FieldType)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	defer rows.Close()
+	dirs, err := schema.UnmarshalDirectives([]byte(f.Directives))
+	if err != nil {
+		return nil, err
+	}
 
-	var args ast.ArgumentDefinitionList
-	for rows.Next() {
-		var name, argTypeStr, desc, dirJSON string
-		var defaultVal sql.NullString
-		if err := rows.Scan(&name, &argTypeStr, &defaultVal, &desc, &dirJSON); err != nil {
-			continue
-		}
+	fd := &ast.FieldDefinition{
+		Name:        f.Name,
+		Type:        fieldType,
+		Description: f.Description,
+		Directives:  dirs,
+	}
 
-		argType, err := schema.UnmarshalType(argTypeStr)
+	for _, a := range f.Arguments {
+		ad, err := a.toArgumentDefinition()
 		if err != nil {
 			continue
 		}
-		dirs, err := schema.UnmarshalDirectives([]byte(dirJSON))
+		fd.Arguments = append(fd.Arguments, ad)
+	}
+
+	return fd, nil
+}
+
+func (a *argDefJSON) toArgumentDefinition() (*ast.ArgumentDefinition, error) {
+	argType, err := schema.UnmarshalType(a.ArgType)
+	if err != nil {
+		return nil, err
+	}
+	dirs, err := schema.UnmarshalDirectives([]byte(a.Directives))
+	if err != nil {
+		return nil, err
+	}
+
+	ad := &ast.ArgumentDefinition{
+		Name:        a.Name,
+		Type:        argType,
+		Description: a.Description,
+		Directives:  dirs,
+	}
+
+	if a.DefaultValue != nil && *a.DefaultValue != "" {
+		val, err := schema.UnmarshalValue(json.RawMessage(*a.DefaultValue))
 		if err != nil {
-			continue
-		}
-
-		arg := &ast.ArgumentDefinition{
-			Name:        name,
-			Type:        argType,
-			Description: desc,
-			Directives:  dirs,
-		}
-
-		if defaultVal.Valid && defaultVal.String != "" {
-			arg.DefaultValue = &ast.Value{
-				Raw:  defaultVal.String,
+			ad.DefaultValue = &ast.Value{
+				Raw:  *a.DefaultValue,
 				Kind: ast.StringValue,
 			}
+		} else {
+			ad.DefaultValue = val
 		}
-
-		args = append(args, arg)
 	}
-	return args
+
+	return ad, nil
 }
 
-// loadEnumValuesFromDB loads all enum values for a type.
-func (p *Provider) loadEnumValuesFromDB(ctx context.Context, conn *Connection, typeName string) ast.EnumValueList {
-	rows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT name, description, CAST(directives AS VARCHAR) FROM %s WHERE type_name = $1 ORDER BY ordinal, name`,
-		p.table("_schema_enum_values"),
-	), typeName)
+func (e *enumValJSON) toEnumValueDefinition() (*ast.EnumValueDefinition, error) {
+	dirs, err := schema.UnmarshalDirectives([]byte(e.Directives))
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	defer rows.Close()
-
-	var evs ast.EnumValueList
-	for rows.Next() {
-		var name, desc, dirJSON string
-		if err := rows.Scan(&name, &desc, &dirJSON); err != nil {
-			continue
-		}
-		dirs, err := schema.UnmarshalDirectives([]byte(dirJSON))
-		if err != nil {
-			continue
-		}
-		evs = append(evs, &ast.EnumValueDefinition{
-			Name:        name,
-			Description: desc,
-			Directives:  dirs,
-		})
-	}
-	return evs
+	return &ast.EnumValueDefinition{
+		Name:        e.Name,
+		Description: e.Description,
+		Directives:  dirs,
+	}, nil
 }
 
 // loadDirectiveFromDB loads a directive definition from the database.
-func (p *Provider) loadDirectiveFromDB(ctx context.Context, name string) *ast.DirectiveDefinition {
+// Returns (nil, nil) if not found.
+func (p *Provider) loadDirectiveFromDB(ctx context.Context, name string) (*ast.DirectiveDefinition, error) {
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("conn: %w", err)
 	}
 	defer conn.Close()
 
@@ -518,8 +629,11 @@ func (p *Provider) loadDirectiveFromDB(ctx context.Context, name string) *ast.Di
 		`SELECT description, locations, is_repeatable, arguments FROM %s WHERE name = $1`,
 		p.table("_schema_directives"),
 	), name).Scan(&desc, &locs, &repeatable, &argsJSON)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("query: %w", err)
 	}
 
 	dir := &ast.DirectiveDefinition{
@@ -534,12 +648,190 @@ func (p *Provider) loadDirectiveFromDB(ctx context.Context, name string) *ast.Di
 	}
 	if argsJSON != "" && argsJSON != "[]" {
 		args, err := schema.UnmarshalArgumentDefinitions([]byte(argsJSON))
-		if err == nil {
-			dir.Arguments = args
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal directive arguments: %w", err)
 		}
+		dir.Arguments = args
 	}
-	return dir
+	return dir, nil
 }
 
 // Connection is an alias for the db package Connection type.
 type Connection = dbpkg.Connection
+
+// typeQueryDuckDB loads a type definition with fields, arguments, and enum values
+// in a single query. Returns one row with a JSON object, or zero rows if type
+// is not found or not visible. Uses DuckDB struct literals + try_cast(... AS JSON).
+//
+// Parameters: 10 table references via fmt.Sprintf:
+//  1. _schema_types
+//  2. type_name filter (string literal, may be empty for no filtering)
+//  3. SystemCatalogName (string literal)
+//  4. _schema_module_type_catalogs
+//  5. _schema_catalogs
+//  6. _schema_arguments
+//  7. _schema_fields
+//  8. _schema_enum_values
+const typeQueryDuckDB = `
+WITH disabled_catalogs AS (
+	SELECT name FROM %[5]s WHERE disabled = true OR suspended = true
+), enabled_mtc AS (
+	SELECT mtc.type_name
+	FROM %[4]s mtc
+		INNER JOIN %[5]s c ON mtc.catalog_name = c.name
+	WHERE c.disabled = false AND c.suspended = false
+), type_info AS (
+    SELECT
+        t.name, t.kind, t.description, t.catalog, CAST(t.directives AS VARCHAR) AS directives,
+        t.module, t.interfaces, t.union_types, t.hugr_type
+    FROM %[1]s t
+    WHERE t.name = '%[2]s' AND (
+        t.catalog = '%[3]s' OR t.catalog = '' OR t.catalog IS NULL OR
+        (t.hugr_type = 'module' AND EXISTS (
+            SELECT 1 FROM enabled_mtc emtc WHERE emtc.type_name = t.name
+        )) OR
+        (t.hugr_type != 'module' AND NOT EXISTS (
+            SELECT 1 FROM disabled_catalogs dc WHERE dc.name = t.catalog
+        ))
+    )
+), field_args AS (
+    SELECT a.type_name, a.field_name, a.name, a.arg_type, a.default_value, a.description,
+           CAST(a.directives AS VARCHAR) AS directives, a.ordinal
+    FROM %[6]s a
+		INNER JOIN type_info ti ON a.type_name = ti.name
+), fields_info AS (
+    SELECT
+        f.name, f.field_type, f.description, CAST(f.directives AS VARCHAR) AS directives,
+        args.args, f.ordinal
+    FROM %[7]s f
+    	INNER JOIN type_info ti ON f.type_name = ti.name AND ti.kind IN ('OBJECT', 'INPUT_OBJECT', 'INTERFACE')
+    LEFT JOIN LATERAL (
+        SELECT array_agg({
+            name: a.name, arg_type: a.arg_type, default_value: a.default_value,
+            description: a.description, directives: a.directives
+        } ORDER BY a.ordinal, a.name) AS args
+        FROM field_args a
+        WHERE a.field_name = f.name
+    ) AS args ON TRUE
+    WHERE (
+        f.hugr_type = 'submodule' AND EXISTS (
+            SELECT 1 FROM enabled_mtc emtc WHERE emtc.type_name = f.field_type
+        )
+    ) OR (
+        f.hugr_type != 'submodule' AND (
+            f.dependency_catalog IS NULL OR NOT EXISTS (
+                SELECT 1 FROM disabled_catalogs dc  WHERE dc.name = f.dependency_catalog
+            )
+        )
+    )
+), enum_vals AS (
+    SELECT e.name, e.description, CAST(e.directives AS VARCHAR) AS directives, e.ordinal
+    FROM %[8]s e
+    	INNER JOIN type_info ti ON e.type_name = ti.name
+    WHERE ti.kind = 'ENUM'
+)
+SELECT CAST(try_cast({
+    name: ti.name, kind: ti.kind, description: ti.description, catalog: ti.catalog,
+    directives: ti.directives, module: ti.module, interfaces: ti.interfaces,
+    union_types: ti.union_types, hugr_type: ti.hugr_type,
+    fields: flds.info, enum_values: evs.vals
+} AS JSON) AS VARCHAR) AS def
+FROM type_info ti
+	LEFT JOIN LATERAL (
+		SELECT array_agg({
+			name: f.name, field_type: f.field_type, description: f.description,
+			directives: f.directives, arguments: f.args
+		} ORDER BY f.ordinal, f.name) AS info
+		FROM fields_info f
+	) AS flds ON ti.kind IN ('OBJECT', 'INPUT_OBJECT', 'INTERFACE')
+	LEFT JOIN LATERAL (
+		SELECT array_agg({
+			name: e.name, description: e.description, directives: e.directives
+		} ORDER BY e.ordinal, e.name) AS vals
+		FROM enum_vals e
+	) AS evs ON ti.kind = 'ENUM'
+`
+
+// typeQueryPG is the PostgreSQL version of the type query, intended for use
+// with postgres_query('core', '<sql>') when core DB is attached PostgreSQL.
+// Parameters match typeQueryDuckDB.
+const typeQueryPG = `
+FROM postgres_query('core', $metaquery$
+WITH disabled_catalogs AS MATERIALIZED(
+	SELECT name FROM %[5]s WHERE disabled = true OR suspended = true
+), enabled_mtc AS MATERIALIZED (
+	SELECT mtc.type_name
+	FROM %[4]s mtc
+		INNER JOIN %[5]s c ON mtc.catalog_name = c.name
+	WHERE c.disabled = false AND c.suspended = false
+),type_info AS (
+    SELECT
+        t.name, t.kind, t.description, t.catalog, CAST(t.directives AS VARCHAR) AS directives,
+        t.module, t.interfaces, t.union_types, t.hugr_type
+    FROM %[1]s t
+    WHERE t.name = '%[2]s' AND (
+        t.catalog = '%[3]s' OR t.catalog = '' OR t.catalog IS NULL OR 
+        (t.hugr_type = 'module' AND EXISTS (
+            SELECT 1 FROM enabled_mtc emtc WHERE emtc.type_name = t.name
+        )) OR
+        (t.hugr_type != 'module' AND NOT EXISTS (
+            SELECT 1 FROM disabled_catalogs dc WHERE dc.name = t.catalog
+        ))
+    )
+), field_args AS (
+    SELECT a.field_name, a.name, a.arg_type, a.default_value, a.description,
+           CAST(a.directives AS VARCHAR) AS directives, a.ordinal
+    FROM %[6]s a, type_info ti
+    WHERE a.type_name = ti.name
+), fields_info AS (
+    SELECT
+        f.name, f.field_type, f.description, CAST(f.directives AS VARCHAR) AS directives,
+        args.args, f.ordinal
+    FROM %[7]s f
+    JOIN type_info ti ON f.type_name = ti.name AND ti.kind IN ('OBJECT', 'INPUT_OBJECT', 'INTERFACE')
+		LEFT JOIN LATERAL (
+			SELECT array_agg(jsonb_build_object(
+				'name', a.name, 'arg_type', a.arg_type, 'default_value', a.default_value,
+				'description', a.description, 'directives', a.directives
+			) ORDER BY a.ordinal, a.name) AS args
+			FROM field_args a
+			WHERE a.field_name = f.name
+		) AS args ON TRUE
+    WHERE (
+        f.hugr_type = 'submodule' AND EXISTS (
+            SELECT 1 FROM enabled_mtc emtc WHERE emtc.type_name = f.field_type
+        )
+    ) OR (
+        f.hugr_type != 'submodule' AND (
+            f.dependency_catalog IS NULL OR NOT EXISTS (
+                SELECT 1 FROM disabled_catalogs dc WHERE dc.name = f.dependency_catalog
+            )
+        )
+    )
+), enum_vals AS (
+    SELECT e.name, e.description, CAST(e.directives AS VARCHAR) AS directives, e.ordinal
+    FROM %[8]s e
+    	INNER JOIN type_info ti ON e.type_name = ti.name AND ti.kind = 'ENUM'
+)
+SELECT jsonb_build_object(
+    'name', ti.name, 'kind', ti.kind, 'description', ti.description, 'catalog', ti.catalog,
+    'directives', ti.directives, 'module', ti.module, 'interfaces', ti.interfaces,
+    'union_types', ti.union_types, 'hugr_type', ti.hugr_type,
+    'fields', flds.info, 'enum_values', evs.vals
+) AS def
+FROM type_info ti
+	LEFT JOIN LATERAL (
+		SELECT array_agg(jsonb_build_object(
+			'name', f.name, 'field_type', f.field_type, 'description', f.description,
+			'directives', f.directives, 'arguments', f.args
+		) ORDER BY f.ordinal, f.name) AS info
+		FROM fields_info f
+	) AS flds ON ti.kind IN ('OBJECT', 'INPUT_OBJECT', 'INTERFACE')
+	LEFT JOIN LATERAL (
+		SELECT array_agg(jsonb_build_object(
+			'name', e.name, 'description', e.description, 'directives', e.directives
+		) ORDER BY e.ordinal, e.name) AS vals
+		FROM enum_vals e
+	) AS evs ON ti.kind = 'ENUM'
+$metaquery$)
+`

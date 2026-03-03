@@ -285,3 +285,15 @@ func UnmarshalArgumentDefinitions(data []byte) (ast.ArgumentDefinitionList, erro
 	}
 	return args, nil
 }
+
+// MarshalValue serializes an *ast.Value to a JSON-compatible Go value.
+// Exported wrapper for the internal marshalValue function.
+func MarshalValue(v *ast.Value) any {
+	return marshalValue(v)
+}
+
+// UnmarshalValue deserializes a JSON value back into an *ast.Value.
+// Exported wrapper for the internal unmarshalValue function.
+func UnmarshalValue(data json.RawMessage) (*ast.Value, error) {
+	return unmarshalValue(data)
+}

@@ -26,4 +26,10 @@ else
     echo "  Built $DB_FILE using Docker"
 fi
 
+# Create a separate copy for PG engine (avoids DuckDB file locks between engines)
+PG_DB_FILE="$DUCKDB_DIR/local_pg.duckdb"
+rm -f "$PG_DB_FILE" "$PG_DB_FILE.wal"
+cp "$DB_FILE" "$PG_DB_FILE"
+echo "  Created $PG_DB_FILE (copy for PG engine)"
+
 echo "DuckDB data preparation complete."
