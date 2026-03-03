@@ -58,6 +58,38 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 		}
 	}
 
+	// Collect extensions early — iterators may be one-shot.
+	var exts []*ast.Definition
+	if extSrc, ok := changes.(base.ExtensionsSource); ok {
+		for extDef := range extSrc.Extensions(ctx) {
+			exts = append(exts, extDef)
+		}
+	}
+
+	// Reject __ names for non-system catalogs (GraphQL spec reserves __ for introspection).
+	if catalogName != SystemCatalogName {
+		for _, def := range defs {
+			if base.IsDropDefinition(def) {
+				continue
+			}
+			if err := validateNoReservedNames(def); err != nil {
+				return fmt.Errorf("catalog %s: %w", catalogName, err)
+			}
+		}
+		for _, extDef := range exts {
+			for _, field := range extDef.Fields {
+				if !base.IsDropField(field) && strings.HasPrefix(field.Name, "__") {
+					return fmt.Errorf("catalog %s: extend type %s, field %s: name must not start with \"__\" (reserved by GraphQL)", catalogName, extDef.Name, field.Name)
+				}
+			}
+			for _, ev := range extDef.EnumValues {
+				if !base.IsDropEnumValue(ev) && strings.HasPrefix(ev.Name, "__") {
+					return fmt.Errorf("catalog %s: extend type %s, enum value %s: name must not start with \"__\" (reserved by GraphQL)", catalogName, extDef.Name, ev.Name)
+				}
+			}
+		}
+	}
+
 	// Validate references before persisting: field types, argument types,
 	// interface references, and union member types must all exist in
 	// _schema_types or in the current batch. Fail fast on first missing reference.
@@ -115,13 +147,10 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 		}
 	}
 
-	// Process extensions if available
-	ext, hasExtensions := changes.(base.ExtensionsSource)
-	if hasExtensions {
-		for extDef := range ext.Extensions(txCtx) {
-			if err := p.processExtension(txCtx, conn, extDef, catalogName); err != nil {
-				return fmt.Errorf("update extension: %w", err)
-			}
+	// Process extensions from collected slice
+	for _, extDef := range exts {
+		if err := p.processExtension(txCtx, conn, extDef, catalogName); err != nil {
+			return fmt.Errorf("update extension: %w", err)
 		}
 	}
 
@@ -761,5 +790,24 @@ func nullStr(s string) any {
 		return nil
 	}
 	return s
+}
+
+// validateNoReservedNames rejects definitions whose type name, field names,
+// or enum value names start with "__" (reserved by the GraphQL spec for introspection).
+func validateNoReservedNames(def *ast.Definition) error {
+	if strings.HasPrefix(def.Name, "__") {
+		return fmt.Errorf("type %q: name must not start with \"__\" (reserved by GraphQL)", def.Name)
+	}
+	for _, f := range def.Fields {
+		if strings.HasPrefix(f.Name, "__") {
+			return fmt.Errorf("field %s.%s: name must not start with \"__\" (reserved by GraphQL)", def.Name, f.Name)
+		}
+	}
+	for _, ev := range def.EnumValues {
+		if strings.HasPrefix(ev.Name, "__") {
+			return fmt.Errorf("enum value %s.%s: name must not start with \"__\" (reserved by GraphQL)", def.Name, ev.Name)
+		}
+	}
+	return nil
 }
 

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	hugr "github.com/hugr-lab/query-engine"
+	"github.com/schollz/progressbar/v3"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/anthropic"
 	"github.com/tmc/langchaingo/llms/openai"
@@ -465,6 +466,26 @@ func runParallel[T any](items []T, maxConns int, fn func(T) error) error {
 		return v.(error)
 	}
 	return nil
+}
+
+// newPhaseBar creates a styled progress bar for a summarization phase.
+func newPhaseBar(total int, description string) *progressbar.ProgressBar {
+	return progressbar.NewOptions(total,
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionSetDescription(description),
+		progressbar.OptionSetWidth(25),
+		progressbar.OptionShowCount(),
+		progressbar.OptionShowIts(),
+		progressbar.OptionSetPredictTime(true),
+		progressbar.OptionSetElapsedTime(true),
+		progressbar.OptionClearOnFinish(),
+		progressbar.OptionSetTheme(progressbar.Theme{
+			Saucer:        "\u2588",
+			SaucerPadding: "\u2591",
+			BarStart:      "[",
+			BarEnd:        "]",
+		}),
+	)
 }
 
 // --- Write-back Helpers ---
@@ -1218,33 +1239,37 @@ func (s *summarizer) summarizeDataObjects(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
+	bar := newPhaseBar(len(objects), "  [1/4] Data objects")
 	var processed atomic.Int32
 	err = runParallel(objects, s.maxConns, func(obj struct {
 		Name string `json:"name"`
 	}) error {
+		defer bar.Add(1)
+
 		td, meta, err := s.prepareDataObjectContext(ctx, obj.Name)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to prepare context for %s: %v\n", obj.Name, err)
+			bar.Describe(fmt.Sprintf("  [1/4] WARN: %s: %v", obj.Name, err))
 			return nil
 		}
 
 		content, err := s.callLLM(ctx, "data_object.tmpl", td, 16384)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to summarize %s: %v\n", obj.Name, err)
+			bar.Describe(fmt.Sprintf("  [1/4] WARN: %s: %v", obj.Name, err))
 			return nil
 		}
 
 		var ds dataObjectSummary
 		if err := json.Unmarshal([]byte(content), &ds); err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to parse response for %s: %v\n", obj.Name, err)
+			bar.Describe(fmt.Sprintf("  [1/4] WARN: %s: parse error", obj.Name))
 			return nil
 		}
 
 		if err := s.writeBackDataObject(ctx, &ds, meta); err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to write desc for %s: %v\n", obj.Name, err)
+			bar.Describe(fmt.Sprintf("  [1/4] WARN: %s: write error", obj.Name))
 			return nil
 		}
 		processed.Add(1)
+		bar.Describe("  [1/4] Data objects")
 		return nil
 	})
 	if err != nil {
@@ -1252,7 +1277,8 @@ func (s *summarizer) summarizeDataObjects(ctx context.Context) (int, error) {
 	}
 
 	n := int(processed.Load())
-	fmt.Fprintf(os.Stderr, "  [1/4] Data objects: %d processed (%d total)\n", n, len(objects))
+	bar.Finish()
+	fmt.Fprintf(os.Stderr, "  [1/4] Data objects: %d/%d done\n", n, len(objects))
 	return n, nil
 }
 
@@ -1486,34 +1512,38 @@ func (s *summarizer) summarizeFunctions(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
+	bar := newPhaseBar(len(functions), "  [2/4] Functions")
 	var processed atomic.Int32
 	err = runParallel(functions, s.maxConns, func(fn struct {
 		TypeName string `json:"type_name"`
 		Name     string `json:"name"`
 	}) error {
+		defer bar.Add(1)
+
 		td, meta, err := s.prepareFunctionContext(ctx, fn.TypeName, fn.Name)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to prepare context for function %s.%s: %v\n", fn.TypeName, fn.Name, err)
+			bar.Describe(fmt.Sprintf("  [2/4] WARN: %s.%s: %v", fn.TypeName, fn.Name, err))
 			return nil
 		}
 
 		content, err := s.callLLM(ctx, "function.tmpl", td, 4096)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to summarize function %s: %v\n", fn.Name, err)
+			bar.Describe(fmt.Sprintf("  [2/4] WARN: %s: %v", fn.Name, err))
 			return nil
 		}
 
 		var fs functionSummary
 		if err := json.Unmarshal([]byte(content), &fs); err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to parse response for function %s: %v\n", fn.Name, err)
+			bar.Describe(fmt.Sprintf("  [2/4] WARN: %s: parse error", fn.Name))
 			return nil
 		}
 
 		if err := s.writeBackFunction(ctx, &fs, meta); err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to write desc for function %s: %v\n", fn.Name, err)
+			bar.Describe(fmt.Sprintf("  [2/4] WARN: %s: write error", fn.Name))
 			return nil
 		}
 		processed.Add(1)
+		bar.Describe("  [2/4] Functions")
 		return nil
 	})
 	if err != nil {
@@ -1521,7 +1551,8 @@ func (s *summarizer) summarizeFunctions(ctx context.Context) (int, error) {
 	}
 
 	n := int(processed.Load())
-	fmt.Fprintf(os.Stderr, "  [2/4] Functions: %d processed (%d total)\n", n, len(functions))
+	bar.Finish()
+	fmt.Fprintf(os.Stderr, "  [2/4] Functions: %d/%d done\n", n, len(functions))
 	return n, nil
 }
 
@@ -1672,33 +1703,37 @@ func (s *summarizer) summarizeDataSources(ctx context.Context) (int, error) {
 		return 0, err
 	}
 
+	bar := newPhaseBar(len(catalogs), "  [3/4] Data sources")
 	var processed atomic.Int32
 	err = runParallel(catalogs, s.maxConns, func(cat struct {
 		Name string `json:"name"`
 	}) error {
+		defer bar.Add(1)
+
 		td, err := s.prepareDataSourceContext(ctx, cat.Name)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to prepare context for catalog %s: %v\n", cat.Name, err)
+			bar.Describe(fmt.Sprintf("  [3/4] WARN: %s: %v", cat.Name, err))
 			return nil
 		}
 
 		content, err := s.callLLM(ctx, "data_source.tmpl", td, 4096)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to summarize catalog %s: %v\n", cat.Name, err)
+			bar.Describe(fmt.Sprintf("  [3/4] WARN: %s: %v", cat.Name, err))
 			return nil
 		}
 
 		var dsSummary dataSourceSummary
 		if err := json.Unmarshal([]byte(content), &dsSummary); err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to parse response for catalog %s: %v\n", cat.Name, err)
+			bar.Describe(fmt.Sprintf("  [3/4] WARN: %s: parse error", cat.Name))
 			return nil
 		}
 
 		if err := s.writeCatalogDesc(ctx, cat.Name, dsSummary.Short, dsSummary.Long); err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to write desc for catalog %s: %v\n", cat.Name, err)
+			bar.Describe(fmt.Sprintf("  [3/4] WARN: %s: write error", cat.Name))
 			return nil
 		}
 		processed.Add(1)
+		bar.Describe("  [3/4] Data sources")
 		return nil
 	})
 	if err != nil {
@@ -1706,7 +1741,8 @@ func (s *summarizer) summarizeDataSources(ctx context.Context) (int, error) {
 	}
 
 	n := int(processed.Load())
-	fmt.Fprintf(os.Stderr, "  [3/4] Data sources: %d processed (%d total)\n", n, len(catalogs))
+	bar.Finish()
+	fmt.Fprintf(os.Stderr, "  [3/4] Data sources: %d/%d done\n", n, len(catalogs))
 	return n, nil
 }
 
@@ -2002,39 +2038,46 @@ func (s *summarizer) summarizeModules(ctx context.Context) (int, error) {
 		return mods[i].Name > mods[j].Name
 	})
 
-	var processed atomic.Int32
+	bar := newPhaseBar(len(mods), "  [4/4] Modules")
+	var processed int
 	for _, mod := range mods {
 		// Sequential for dependency ordering (sub-modules first).
 		name := mod.Name
 
 		td, info, err := s.prepareModuleContext(ctx, name)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to prepare context for module %s: %v\n", name, err)
+			bar.Describe(fmt.Sprintf("  [4/4] WARN: %s: %v", name, err))
+			bar.Add(1)
 			continue
 		}
 
 		content, err := s.callLLM(ctx, "module.tmpl", td, 4096)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to summarize module %s: %v\n", name, err)
+			bar.Describe(fmt.Sprintf("  [4/4] WARN: %s: %v", name, err))
+			bar.Add(1)
 			continue
 		}
 
 		var ms moduleSummary
 		if err := json.Unmarshal([]byte(content), &ms); err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to parse response for module %s: %v\n", name, err)
+			bar.Describe(fmt.Sprintf("  [4/4] WARN: %s: parse error", name))
+			bar.Add(1)
 			continue
 		}
 
 		if err := s.writeBackModule(ctx, &ms, info); err != nil {
-			fmt.Fprintf(os.Stderr, "  WARN: failed to write desc for module %s: %v\n", name, err)
+			bar.Describe(fmt.Sprintf("  [4/4] WARN: %s: write error", name))
+			bar.Add(1)
 			continue
 		}
-		processed.Add(1)
+		processed++
+		bar.Describe("  [4/4] Modules")
+		bar.Add(1)
 	}
 
-	n := int(processed.Load())
-	fmt.Fprintf(os.Stderr, "  [4/4] Modules: %d processed (%d total)\n", n, len(mods))
-	return n, nil
+	bar.Finish()
+	fmt.Fprintf(os.Stderr, "  [4/4] Modules: %d/%d done\n", processed, len(mods))
+	return processed, nil
 }
 
 // --- Single-entity summarization ---
