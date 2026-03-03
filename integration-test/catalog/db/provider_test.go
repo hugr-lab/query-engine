@@ -557,7 +557,7 @@ func TestDuckDB_ProviderWithoutEmbeddings(t *testing.T) {
 	assert.Equal(t, "Type without embeddings", def.Description)
 }
 
-func TestDuckDB_SummarizedDescriptionPreserved(t *testing.T) {
+func TestDuckDB_SummarizedDescriptionReset(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
@@ -584,17 +584,18 @@ func TestDuckDB_SummarizedDescriptionPreserved(t *testing.T) {
 	require.NoError(t, err)
 	conn.Close()
 
-	// Re-update same catalog
+	// Re-update same catalog — should reset is_summarized and overwrite descriptions.
+	// In production, version matching prevents re-compilation entirely, so summarized
+	// descriptions are only lost when the catalog source actually changes.
 	p.InvalidateAll()
 	require.NoError(t, p.Update(ctx, source))
 
-	// AC-6, AC-19: is_summarized preserved on recompilation
 	def := p.ForName(ctx, "Summarized")
 	require.NotNil(t, def)
-	assert.Equal(t, "enriched", def.Description, "summarized type description should be preserved")
+	assert.Equal(t, "original", def.Description, "re-Update should reset description to source value")
 	f := def.Fields.ForName("x")
 	require.NotNil(t, f)
-	assert.Equal(t, "enriched field", f.Description, "summarized field description should be preserved")
+	assert.Equal(t, "field initial", f.Description, "re-Update should reset field description to source value")
 }
 
 func TestDuckDB_DisabledCatalog(t *testing.T) {
@@ -694,14 +695,15 @@ func TestDuckDB_SetDefinitionDescription(t *testing.T) {
 	require.NotNil(t, def)
 	assert.Equal(t, "new enriched description", def.Description)
 
-	// Re-persist should NOT overwrite (is_summarized=true)
+	// Re-persist should overwrite — is_summarized is always reset on Update.
+	// In production, version matching prevents re-compilation when source hasn't changed.
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
 		objectType("Updatable", "cat1", "overwrite attempt", []*ast.FieldDefinition{field("x", "String", false)}),
 	})))
 	p.InvalidateAll()
 	def = p.ForName(ctx, "Updatable")
 	require.NotNil(t, def)
-	assert.Equal(t, "new enriched description", def.Description) // preserved
+	assert.Equal(t, "overwrite attempt", def.Description) // new source description
 }
 
 func TestDuckDB_SetFieldDescription(t *testing.T) {
@@ -732,7 +734,7 @@ func TestDuckDB_SetFieldDescription(t *testing.T) {
 	require.NotNil(t, f)
 	assert.Equal(t, "new field desc", f.Description)
 
-	// Re-persist should NOT overwrite (is_summarized=true)
+	// Re-persist should overwrite — is_summarized is always reset on Update.
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
 		objectType("MyType", "cat1", "a type", []*ast.FieldDefinition{
 			fieldWithDesc("myfield", "String", false, "overwrite attempt", nil),
@@ -743,7 +745,7 @@ func TestDuckDB_SetFieldDescription(t *testing.T) {
 	require.NotNil(t, def)
 	f = def.Fields.ForName("myfield")
 	require.NotNil(t, f)
-	assert.Equal(t, "new field desc", f.Description) // preserved
+	assert.Equal(t, "overwrite attempt", f.Description) // new source description
 }
 
 func TestDuckDB_SetCatalogDescription(t *testing.T) {

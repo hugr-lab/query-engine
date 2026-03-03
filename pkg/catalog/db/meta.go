@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // settingsConfig is the JSON structure stored in _schema_settings under key "config".
@@ -103,8 +104,20 @@ func (p *Provider) ensureVectorSize(ctx context.Context) error {
 	tables := []string{"_schema_catalogs", "_schema_types", "_schema_fields", "_schema_modules"}
 	for _, t := range tables {
 		tbl := p.table(t)
-		// Drop existing vec column (ignore error if it doesn't exist)
-		_, _ = conn.Exec(ctx, fmt.Sprintf(`ALTER TABLE %s DROP COLUMN IF EXISTS vec`, tbl))
+
+		// DuckDB cannot DROP COLUMN on tables with indexes. Save and drop
+		// indexes first, then restore them after the column change.
+		var savedIndexSQL []string
+		if !p.isPostgres {
+			savedIndexSQL, err = p.saveAndDropIndexes(ctx, conn, t)
+			if err != nil {
+				return fmt.Errorf("save indexes for %s: %w", t, err)
+			}
+		}
+
+		// Drop existing vec column
+		_, dropErr := conn.Exec(ctx, fmt.Sprintf(`ALTER TABLE %s DROP COLUMN IF EXISTS vec`, tbl))
+
 		// Add vec column with new size
 		var colType string
 		if p.isPostgres {
@@ -114,10 +127,74 @@ func (p *Provider) ensureVectorSize(ctx context.Context) error {
 		}
 		_, err = conn.Exec(ctx, fmt.Sprintf(`ALTER TABLE %s ADD COLUMN vec %s`, tbl, colType))
 		if err != nil {
+			// Column may already exist if schema.sql created it and DROP failed.
+			// Accept "already exists" only when the stored size was 0 (fresh init).
+			if strings.Contains(err.Error(), "already exists") && stored.VecSize == 0 {
+				// Restore indexes we dropped before continuing
+				for _, sql := range savedIndexSQL {
+					_, _ = conn.Exec(ctx, sql)
+				}
+				continue
+			}
+			if dropErr != nil {
+				return fmt.Errorf("drop vec column from %s: %w (add also failed: %v)", t, dropErr, err)
+			}
 			return fmt.Errorf("add vec column to %s: %w", t, err)
+		}
+
+		// Restore indexes
+		for _, sql := range savedIndexSQL {
+			if _, err := conn.Exec(ctx, sql); err != nil {
+				return fmt.Errorf("restore index on %s: %w", t, err)
+			}
 		}
 	}
 
 	// Persist the new vec_size
 	return p.writeSettings(ctx, settingsConfig{VecSize: p.vecSize})
+}
+
+// saveAndDropIndexes queries DuckDB's catalog for non-primary indexes on the
+// given table, saves their CREATE INDEX SQL, drops them, and returns the SQL
+// for later restoration. This works around DuckDB's inability to ALTER TABLE
+// DROP COLUMN on tables that have indexes.
+func (p *Provider) saveAndDropIndexes(ctx context.Context, conn *Connection, tableName string) ([]string, error) {
+	// Determine DuckDB schema for the query (attached "core" vs default "main")
+	schemaName := "main"
+	if p.prefix != "" {
+		schemaName = strings.TrimSuffix(p.prefix, ".")
+	}
+
+	rows, err := conn.Query(ctx,
+		`SELECT index_name, sql FROM duckdb_indexes()
+		 WHERE table_name = $1 AND schema_name = $2 AND is_primary = false AND sql IS NOT NULL`,
+		tableName, schemaName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var saved []string
+	var toDrop []string
+	for rows.Next() {
+		var name, createSQL string
+		if err := rows.Scan(&name, &createSQL); err != nil {
+			return nil, err
+		}
+		saved = append(saved, createSQL)
+		toDrop = append(toDrop, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Drop indexes so ALTER TABLE can proceed
+	for _, name := range toDrop {
+		if _, err := conn.Exec(ctx, fmt.Sprintf(`DROP INDEX IF EXISTS %s%s`, p.prefix, name)); err != nil {
+			return nil, fmt.Errorf("drop index %s: %w", name, err)
+		}
+	}
+
+	return saved, nil
 }

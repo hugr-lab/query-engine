@@ -154,17 +154,57 @@ func (p *Provider) upsertCatalog(ctx context.Context, conn *Connection, name str
 }
 
 // persistDefinition stores a type definition and all its children (fields, arguments, enum values).
+// Computes embeddings in a single batch call instead of per-item.
 func (p *Provider) persistDefinition(ctx context.Context, conn *Connection, def *ast.Definition, catalogName string) error {
 	// Strip control directives before persisting
 	cleanDef := base.CloneDefinition(def, nil)
 	cleanDef.Directives = base.StripControlDirectives(cleanDef.Directives)
 
-	if err := p.upsertType(ctx, conn, cleanDef, catalogName); err != nil {
+	// Collect embedding texts: type + all fields
+	var texts []string
+	typeVecIdx := -1
+	fieldVecIdx := make(map[int]int) // field index → index in texts[]
+
+	if p.vecSize > 0 && p.embedder != nil {
+		hugrType := string(schema.ClassifyType(cleanDef))
+		module := base.DefinitionDirectiveArgString(cleanDef, base.ModuleDirectiveName, "name")
+		synth := SyntheticDescription(hugrType, cleanDef.Name, "", module, catalogName)
+		typeVecIdx = len(texts)
+		texts = append(texts, EmbeddingText("", cleanDef.Description, synth))
+
+		for i, field := range cleanDef.Fields {
+			ht := string(schema.ClassifyField(field, nil, nil))
+			if ht == "" && field.Directives.ForName(base.ModuleCatalogDirectiveName) != nil {
+				ht = string(base.HugrTypeFieldSubmodule)
+			}
+			synth := SyntheticDescription(ht, field.Name, cleanDef.Name, "", catalogName)
+			fieldVecIdx[i] = len(texts)
+			texts = append(texts, EmbeddingText("", field.Description, synth))
+		}
+	}
+
+	// Batch compute embeddings (1 API call instead of N)
+	vecs, err := p.computeEmbeddings(ctx, texts)
+	if err != nil {
+		return fmt.Errorf("compute embeddings: %w", err)
+	}
+
+	// Distribute vectors to upsert calls
+	var typeVec types.Vector
+	if typeVecIdx >= 0 {
+		typeVec = vecs[typeVecIdx]
+	}
+
+	if err := p.upsertType(ctx, conn, cleanDef, catalogName, typeVec); err != nil {
 		return err
 	}
 
 	for i, field := range cleanDef.Fields {
-		if err := p.upsertField(ctx, conn, cleanDef.Name, field, catalogName, "", i); err != nil {
+		var fieldVec types.Vector
+		if idx, ok := fieldVecIdx[i]; ok {
+			fieldVec = vecs[idx]
+		}
+		if err := p.upsertField(ctx, conn, cleanDef.Name, field, catalogName, "", i, fieldVec); err != nil {
 			return err
 		}
 		for j, arg := range field.Arguments {
@@ -184,7 +224,9 @@ func (p *Provider) persistDefinition(ctx context.Context, conn *Connection, def 
 }
 
 // upsertType inserts or updates a type in _schema_types.
-func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.Definition, catalogName string) error {
+// vec is pre-computed by the caller (batch path); nil when embedder is not configured.
+// Always resets is_summarized=false — the summarization service will re-flag later.
+func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.Definition, catalogName string, vec types.Vector) error {
 	dirJSON, err := schema.MarshalDirectives(def.Directives)
 	if err != nil {
 		return fmt.Errorf("marshal directives for %s: %w", def.Name, err)
@@ -195,31 +237,7 @@ func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.De
 	ifaces := strings.Join(def.Interfaces, "|")
 	unionTypes := strings.Join(def.Types, "|")
 
-	// Check if type already exists with is_summarized=true
-	var isSummarized bool
-	err = conn.QueryRow(ctx, fmt.Sprintf(
-		`SELECT is_summarized FROM %s WHERE name = $1`, p.table("_schema_types"),
-	), def.Name).Scan(&isSummarized)
-
-	if err == nil && isSummarized {
-		// Preserve description, long_description, and vec for summarized types
-		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`UPDATE %s SET kind=$2, hugr_type=$3, module=$4, catalog=$5, directives=$6, interfaces=$7, union_types=$8
-			 WHERE name=$1`,
-			p.table("_schema_types"),
-		), def.Name, string(def.Kind), hugrType, module, catalogName, string(dirJSON), ifaces, unionTypes)
-		return err
-	}
-
 	if p.vecSize > 0 {
-		// Compute embedding if available
-		var vec types.Vector
-		if p.embedder != nil {
-			synth := SyntheticDescription(hugrType, def.Name, "", module, catalogName)
-			text := EmbeddingText("", def.Description, synth)
-			vec, _ = p.embedder.CreateEmbedding(ctx, text)
-		}
-
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 			`INSERT INTO %s (name, kind, description, long_description, hugr_type, module, catalog, directives, interfaces, union_types, is_summarized, vec)
 			 VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, $9, false, $10)
@@ -241,7 +259,9 @@ func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.De
 
 // upsertField inserts or updates a field in _schema_fields.
 // ordinal preserves the original definition order of the field within its type.
-func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName string, field *ast.FieldDefinition, catalogName, depCatalog string, ordinal int) error {
+// vec is pre-computed by the caller (batch path); nil when embedder is not configured.
+// Always resets is_summarized=false — the summarization service will re-flag later.
+func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName string, field *ast.FieldDefinition, catalogName, depCatalog string, ordinal int, vec types.Vector) error {
 	dirJSON, err := schema.MarshalDirectives(field.Directives)
 	if err != nil {
 		return fmt.Errorf("marshal field directives for %s.%s: %w", typeName, field.Name, err)
@@ -269,34 +289,12 @@ func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName s
 		depCatalog = base.FieldDefDependency(field)
 	}
 
-	// Check if field already exists with is_summarized=true
-	var isSummarized bool
-	err = conn.QueryRow(ctx, fmt.Sprintf(
-		`SELECT is_summarized FROM %s WHERE type_name=$1 AND name=$2`, p.table("_schema_fields"),
-	), typeName, field.Name).Scan(&isSummarized)
-
-	if err == nil && isSummarized {
-		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`UPDATE %s SET field_type=$3, hugr_type=$4, catalog=$5, dependency_catalog=$6, directives=$7, ordinal=$8
-			 WHERE type_name=$1 AND name=$2`,
-			p.table("_schema_fields"),
-		), typeName, field.Name, fieldType, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), ordinal)
-		return err
-	}
-
 	if p.vecSize > 0 {
-		var vec types.Vector
-		if p.embedder != nil {
-			synth := SyntheticDescription(hugrType, field.Name, typeName, "", catalogName)
-			text := EmbeddingText("", field.Description, synth)
-			vec, _ = p.embedder.CreateEmbedding(ctx, text)
-		}
-
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 			`INSERT INTO %s (type_name, name, field_type, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, vec, ordinal)
 			 VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, false, $9, $10)
 			 ON CONFLICT (type_name, name) DO UPDATE SET
-			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, vec=$9, ordinal=$10`,
+			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, is_summarized=false, vec=$9, ordinal=$10`,
 			p.table("_schema_fields"),
 		), typeName, field.Name, fieldType, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), vec, ordinal)
 	} else {
@@ -304,7 +302,7 @@ func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName s
 			`INSERT INTO %s (type_name, name, field_type, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, ordinal)
 			 VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, false, $9)
 			 ON CONFLICT (type_name, name) DO UPDATE SET
-			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, ordinal=$9`,
+			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, is_summarized=false, ordinal=$9`,
 			p.table("_schema_fields"),
 		), typeName, field.Name, fieldType, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), ordinal)
 	}
@@ -428,7 +426,33 @@ func (p *Provider) processExtension(ctx context.Context, conn *Connection, extDe
 		return catalogName
 	}
 
-	// Process field-level changes
+	// Batch compute embeddings for add/replace fields.
+	var texts []string
+	fieldVecIdx := make(map[int]int) // field index in extDef.Fields → index in texts[]
+	if p.vecSize > 0 && p.embedder != nil {
+		for fieldIdx, field := range extDef.Fields {
+			if base.IsDropField(field) {
+				continue
+			}
+			cleanField := base.CloneFieldDefinition(field)
+			cleanField.Directives = base.StripControlDirectives(cleanField.Directives)
+			ht := string(schema.ClassifyField(cleanField, nil, nil))
+			if ht == "" && cleanField.Directives.ForName(base.ModuleCatalogDirectiveName) != nil {
+				ht = string(base.HugrTypeFieldSubmodule)
+			}
+			synth := SyntheticDescription(ht, field.Name, typeName, "", catalogName)
+			fieldVecIdx[fieldIdx] = len(texts)
+			texts = append(texts, EmbeddingText("", field.Description, synth))
+		}
+	}
+
+	// Single batch call instead of N individual CreateEmbedding calls
+	vecs, err := p.computeEmbeddings(ctx, texts)
+	if err != nil {
+		return fmt.Errorf("compute embeddings: %w", err)
+	}
+
+	// Process field-level changes with pre-computed vectors
 	for fieldIdx, field := range extDef.Fields {
 		switch {
 		case base.IsDropField(field):
@@ -447,7 +471,11 @@ func (p *Provider) processExtension(ctx context.Context, conn *Connection, extDe
 			cleanField := base.CloneFieldDefinition(field)
 			cleanField.Directives = base.StripControlDirectives(cleanField.Directives)
 			depCat := resolveDepCat(field)
-			if err := p.upsertField(ctx, conn, typeName, cleanField, catalogName, depCat, fieldIdx); err != nil {
+			var fieldVec types.Vector
+			if idx, ok := fieldVecIdx[fieldIdx]; ok {
+				fieldVec = vecs[idx]
+			}
+			if err := p.upsertField(ctx, conn, typeName, cleanField, catalogName, depCat, fieldIdx, fieldVec); err != nil {
 				return fmt.Errorf("replace field %s.%s: %w", typeName, field.Name, err)
 			}
 			for i, arg := range cleanField.Arguments {
@@ -460,7 +488,11 @@ func (p *Provider) processExtension(ctx context.Context, conn *Connection, extDe
 			cleanField := base.CloneFieldDefinition(field)
 			cleanField.Directives = base.StripControlDirectives(cleanField.Directives)
 			depCat := resolveDepCat(field)
-			if err := p.upsertField(ctx, conn, typeName, cleanField, catalogName, depCat, fieldIdx); err != nil {
+			var fieldVec types.Vector
+			if idx, ok := fieldVecIdx[fieldIdx]; ok {
+				fieldVec = vecs[idx]
+			}
+			if err := p.upsertField(ctx, conn, typeName, cleanField, catalogName, depCat, fieldIdx, fieldVec); err != nil {
 				return fmt.Errorf("add field %s.%s: %w", typeName, field.Name, err)
 			}
 			for i, arg := range cleanField.Arguments {
@@ -721,3 +753,4 @@ func nullStr(s string) any {
 	}
 	return s
 }
+

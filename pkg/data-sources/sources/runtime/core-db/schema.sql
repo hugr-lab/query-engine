@@ -1,6 +1,6 @@
 {{ if isPostgres }}CREATE EXTENSION IF NOT EXISTS vector;{{ end }}
 
-CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.9' AS "version";
+CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.10' AS "version";
 
 CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}catalog_sources (
     name VARCHAR NOT NULL PRIMARY KEY,
@@ -188,6 +188,13 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_settin
     key VARCHAR NOT NULL PRIMARY KEY,
     value {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL
 );
+
+-- Seed vec_size so ensureVectorSize() sees the correct stored dimension on first boot.
+{{ if gt .VectorSize 0 }}
+INSERT INTO {{ if isAttachedDuckdb }}core.{{ end }}_schema_settings (key, value)
+VALUES ('config', '{"vec_size": {{ .VectorSize }}}')
+ON CONFLICT (key) DO UPDATE SET value = '{"vec_size": {{ .VectorSize }}}';
+{{ end }}
 
 -- Non-PK indexes for query performance (both DuckDB and PostgreSQL).
 
