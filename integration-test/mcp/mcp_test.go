@@ -263,7 +263,7 @@ func TestMCP_SchemaTypeInfo(t *testing.T) {
 	resp := jsonRPC(t, handler, "tools/call", map[string]any{
 		"name": "schema-type_info",
 		"arguments": map[string]any{
-			"type_name": "data_sources",
+			"type_name": "core_data_sources",
 		},
 	})
 	require.Contains(t, resp, "result")
@@ -275,7 +275,7 @@ func TestMCP_SchemaTypeInfo(t *testing.T) {
 	t.Logf("type_info response: %.500s", textContent)
 	var typeInfo map[string]any
 	require.NoError(t, json.Unmarshal([]byte(textContent), &typeInfo))
-	assert.Equal(t, "data_sources", typeInfo["name"])
+	assert.Equal(t, "core_data_sources", typeInfo["name"])
 }
 
 func TestMCP_SchemaTypeFields(t *testing.T) {
@@ -286,7 +286,7 @@ func TestMCP_SchemaTypeFields(t *testing.T) {
 	resp := jsonRPC(t, handler, "tools/call", map[string]any{
 		"name": "schema-type_fields",
 		"arguments": map[string]any{
-			"type_name": "data_sources",
+			"type_name": "core_data_sources",
 		},
 	})
 	require.Contains(t, resp, "result")
@@ -298,7 +298,7 @@ func TestMCP_SchemaTypeFields(t *testing.T) {
 	t.Logf("type_fields response text: %.500s", textContent)
 	var fields []any
 	require.NoError(t, json.Unmarshal([]byte(textContent), &fields))
-	assert.Greater(t, len(fields), 0, "data_sources should have fields")
+	assert.Greater(t, len(fields), 0, "core_data_sources should have fields")
 }
 
 func TestMCP_PromptGet(t *testing.T) {

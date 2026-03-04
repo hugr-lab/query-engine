@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	Version           = "0.0.11"
+	Version           = "0.0.12"
 	dbName            = "core"
 	DefaultVectorSize = 768
 )
@@ -102,7 +102,7 @@ func (s *Source) IsReadonly() bool {
 }
 
 func (s *Source) AsModule() bool {
-	return false
+	return true
 }
 
 func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
@@ -171,6 +171,8 @@ func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
 func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
 	opts := compiler.Options{
 		Name:         s.Name(),
+		Prefix:       "core",
+		AsModule:     s.AsModule(),
 		ReadOnly:     s.IsReadonly(),
 		EngineType:   string(s.e.Type()),
 		Capabilities: s.e.Capabilities(),

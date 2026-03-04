@@ -165,6 +165,19 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 				}
 				res = append(res, data)
 			}
+			// GraphQL spec requires OBJECT/INTERFACE types to have at least one field.
+			// Add a placeholder when all fields were filtered out or the type is empty.
+			if len(res) == 0 {
+				placeholder := &ast.FieldDefinition{
+					Name: "_placeholder",
+					Type: ast.NamedType("Boolean", &ast.Position{}),
+				}
+				data, err := fieldResolver(ctx, provider, placeholder, field.SelectionSet, maxDepth-1)
+				if err != nil {
+					return nil, err
+				}
+				res = append(res, data)
+			}
 			return res, nil
 		},
 		"interfaces": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
@@ -236,6 +249,18 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 			res := []map[string]any{}
 			for _, f := range def.Fields {
 				data, err := inputValueResolver(ctx, provider, f, field.SelectionSet, maxDepth-1)
+				if err != nil {
+					return nil, err
+				}
+				res = append(res, data)
+			}
+			// GraphQL spec requires INPUT_OBJECT types to have at least one field.
+			if len(res) == 0 {
+				placeholder := &ast.FieldDefinition{
+					Name: "_placeholder",
+					Type: ast.NamedType("Boolean", &ast.Position{}),
+				}
+				data, err := inputValueResolver(ctx, provider, placeholder, field.SelectionSet, maxDepth-1)
 				if err != nil {
 					return nil, err
 				}

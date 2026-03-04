@@ -56,6 +56,7 @@ func (s *Source) Catalog(ctx context.Context) (sources.Catalog, error) {
 	e := engines.NewDuckDB()
 	opts := compiler.Options{
 		Name:         s.Name(),
+		Prefix:       "core_meta",
 		ReadOnly:     s.IsReadonly(),
 		AsModule:     s.AsModule(),
 		EngineType:   string(e.Type()),

@@ -178,7 +178,7 @@ func (c *Client) Ping(ctx context.Context) (string, error) {
 }
 
 func (c *Client) RegisterDataSource(ctx context.Context, ds types.DataSource) error {
-	res, err := c.Query(ctx, `mutation($data: data_sources_mut_input_data!){
+	res, err := c.Query(ctx, `mutation($data: core_data_sources_mut_input_data!){
 		core{
 			insert_data_sources(data:$data){
 				name

@@ -8,18 +8,10 @@ import (
 	"fmt"
 
 	"github.com/duckdb/duckdb-go/v2"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
-	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
-	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"
-
-	_ "embed"
 )
-
-//go:embed udf.graphql
-var gqlSchema string
 
 func (s *Service) RegisterUDF(ctx context.Context) error {
 	type httpDataSourceRequestArgs struct {
@@ -104,24 +96,5 @@ func (s *Service) RegisterUDF(ctx context.Context) error {
 		return fmt.Errorf("register create_embedding function: %w", err)
 	}
 
-	return s.registerUDFCatalog(ctx)
-}
-
-func (s *Service) registerUDFCatalog(ctx context.Context) error {
-	e := engines.NewDuckDB()
-	opts := compiler.Options{
-		Name:         "data_sources",
-		EngineType:   string(e.Type()),
-		Capabilities: e.Capabilities(),
-	}
-	cat, err := sources.NewStringSource("data_sources", e, opts, gqlSchema)
-	if err != nil {
-		return fmt.Errorf("create data_sources catalog: %w", err)
-	}
-
-	err = s.catalogs.AddCatalog(ctx, "data_sources", cat)
-	if err != nil {
-		return fmt.Errorf("register data_sources catalog: %w", err)
-	}
 	return nil
 }

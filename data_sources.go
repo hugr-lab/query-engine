@@ -200,7 +200,7 @@ func (s *Service) registerReadonlyEngines(ctx context.Context) error {
 }
 
 func (s *Service) RegisterDataSource(ctx context.Context, ds types.DataSource) error {
-	res, err := s.Query(ctx, `mutation($data: data_sources_mut_input_data!){
+	res, err := s.Query(ctx, `mutation($data: core_data_sources_mut_input_data!){
 		core{
 			insert_data_sources(data:$data){
 				name

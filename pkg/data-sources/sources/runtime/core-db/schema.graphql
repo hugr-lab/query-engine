@@ -4,8 +4,7 @@
   - localFS - accepts path to the directory with graphql schema files on the local filesystem
   - uri - load data by uri, including local file storage, s3, http, aws, gcs, r2 (all file source should be set up in the system)
 """
-type catalog_sources @module(name: "core")
-  @table(name: "catalog_sources") {
+type catalog_sources @table(name: "catalog_sources") {
   name: String! @pk
   type: String!
   description: String
@@ -20,8 +19,7 @@ type catalog_sources @module(name: "core")
   - http - accepts uri to the open-api specification of the http web service
   - extension - extents the common schema to add fields (joins and function calls) to the data objects
 """
-type data_sources @module(name: "core") 
-  @table(name: "data_sources") {
+type data_sources @table(name: "data_sources") {
   """
     Data source name
   """
@@ -66,8 +64,7 @@ type data_sources @module(name: "core")
 """
   Data source catalogs are the mapping between data sources and catalog sources
 """
-type catalogs @module(name: "core") 
-  @table(name: "data_source_catalogs" is_m2m: true) {
+type catalogs @table(name: "data_source_catalogs" is_m2m: true) {
   catalog_name: String! @pk @field_references(references_name: "catalog_sources", field: "name", references_query: "data_sources")
   data_source_name: String! @pk @field_references(references_name: "data_sources", field: "name", references_query: "catalogs")
 }
@@ -75,8 +72,7 @@ type catalogs @module(name: "core")
 """
   Roles are the permissions that can be assigned to users
 """
-type roles @module(name: "core") 
-  @table(name: "roles") {
+type roles @table(name: "roles") {
   """
     Role name
   """
@@ -94,8 +90,7 @@ type roles @module(name: "core")
 """
   Role permissions to visible and allowed types and theirs field that can be assigned to roles
 """
-type role_permissions @module(name: "core") 
-  @table(name: "permissions") {
+type role_permissions @table(name: "permissions") {
   "Role name"
   role: String! @pk @field_references(references_name: "roles", field: "name", query: "role_info" references_query: "permissions")
   "Type name, can be * for all types"
@@ -112,8 +107,7 @@ type role_permissions @module(name: "core")
   data: JSON
 }
 
-type api_keys @module(name: "core") 
-  @table(name: "api_keys") @unique(fields: ["key"], query_suffix: "by_key") {
+type api_keys @table(name: "api_keys") @unique(fields: ["key"], query_suffix: "by_key") {
   """
     API key name
   """
@@ -161,11 +155,11 @@ type api_keys @module(name: "core")
 extend type MutationFunction {
   "Hard-delete a catalog and all its schema objects. Rejects if catalog has active engine."
   _schema_hard_remove(name: String!): OperationResult
-    @module(name: "core") @function(name: "_schema_hard_remove")
+    @function(name: "_schema_hard_remove")
 
   "Reset catalog version to force recompilation on next startup."
   _schema_version_clean(name: String!): OperationResult
-    @module(name: "core") @function(name: "_schema_version_clean")
+    @function(name: "_schema_version_clean")
 
   "Update type description and mark as summarized."
   _schema_update_type_desc(
@@ -173,7 +167,7 @@ extend type MutationFunction {
     description: String!
     long_description: String!
   ): OperationResult
-    @module(name: "core") @function(name: "_schema_update_type_desc")
+    @function(name: "_schema_update_type_desc")
 
   "Update field description and mark as summarized."
   _schema_update_field_desc(
@@ -182,7 +176,7 @@ extend type MutationFunction {
     description: String!
     long_description: String!
   ): OperationResult
-    @module(name: "core") @function(name: "_schema_update_field_desc")
+    @function(name: "_schema_update_field_desc")
 
   "Update module description and mark as summarized."
   _schema_update_module_desc(
@@ -190,7 +184,7 @@ extend type MutationFunction {
     description: String!
     long_description: String!
   ): OperationResult
-    @module(name: "core") @function(name: "_schema_update_module_desc")
+    @function(name: "_schema_update_module_desc")
 
   "Update catalog description and mark as summarized."
   _schema_update_catalog_desc(
@@ -198,9 +192,45 @@ extend type MutationFunction {
     description: String!
     long_description: String!
   ): OperationResult
-    @module(name: "core") @function(name: "_schema_update_catalog_desc")
+    @function(name: "_schema_update_catalog_desc")
+
+  "Reset is_summarized flag so summarizer re-processes entities. scope: all|catalog|type"
+  _schema_reset_summarized(name: String = "", scope: String = "all"): OperationResult
+    @function(name: "_schema_reset_summarized")
 
   "Recompute embeddings. Empty name = all entities."
   _schema_reindex(name: String = "", batch_size: Int = 50): OperationResult
-    @module(name: "core") @function(name: "_schema_reindex")
+    @function(name: "_schema_reindex")
+}
+
+# --- Data Sources UDFs ---
+
+extend type Function {
+  http_data_source_request(
+    source: String!
+    path: String!
+    method: String!
+    headers: JSON!
+    parameters: JSON!
+    body: JSON!
+    jq: String!
+  ): [any]
+    @function(name: "http_data_source_request", is_table: true)
+
+  http_data_source_request_scalar(
+    source: String!
+    path: String!
+    method: String!
+    headers: JSON!
+    parameters: JSON!
+    body: JSON!
+    jq: String!
+  ):JSON
+    @function(name: "http_data_source_request_scalar")
+
+  create_embedding(
+    model: String!
+    input: String!
+  ): Vector
+    @function(name: "create_embedding")
 }
