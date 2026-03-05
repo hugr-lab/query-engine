@@ -33,7 +33,7 @@ import (
 // with system types persisted and a real compiler for CatalogManager tests.
 func newTestProviderWithCompiler(t *testing.T) (*Provider, context.Context) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create in-memory DuckDB pool.
 	pool, err := db.NewPool("")
@@ -52,7 +52,7 @@ func newTestProviderWithCompiler(t *testing.T) (*Provider, context.Context) {
 	c := compiler.New(compiler.GlobalRules()...)
 
 	// Create provider with compiler.
-	p, err := NewWithCompiler(pool, Config{
+	p, err := NewWithCompiler(ctx, pool, Config{
 		Cache: DefaultCacheConfig(),
 	}, nil, c)
 	require.NoError(t, err)
@@ -139,8 +139,8 @@ func (c *testCatalogSource) DefinitionExtensions(ctx context.Context, name strin
 	return c.src.DefinitionExtensions(ctx, name)
 }
 
-func (c *testCatalogSource) Name() string                    { return c.name }
-func (c *testCatalogSource) Description() string             { return "" }
+func (c *testCatalogSource) Name() string                     { return c.name }
+func (c *testCatalogSource) Description() string              { return "" }
 func (c *testCatalogSource) CompileOptions() compiler.Options { return c.src.CompileOptions() }
 func (c *testCatalogSource) Engine() engines.Engine {
 	return nil
@@ -508,7 +508,7 @@ func TestDisableEnableCatalog(t *testing.T) {
 // ─── AC-5/AC-6: System types initialization (T024, T029, T030) ──────────────
 
 func TestInitSystemTypes(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pool, err := db.NewPool("")
 	require.NoError(t, err)
@@ -522,7 +522,7 @@ func TestInitSystemTypes(t *testing.T) {
 	_, err = pool.Exec(ctx, sqlStr)
 	require.NoError(t, err)
 
-	p, err := NewWithCompiler(pool, Config{
+	p, err := NewWithCompiler(ctx, pool, Config{
 		Cache: DefaultCacheConfig(),
 	}, nil, compiler.New(compiler.GlobalRules()...))
 	require.NoError(t, err)
@@ -574,7 +574,7 @@ func TestInitSystemTypes(t *testing.T) {
 }
 
 func TestRestartSkipsCompilation(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Use a temp file DB so state persists across provider instances.
 	tmpDir := t.TempDir()
@@ -592,7 +592,7 @@ func TestRestartSkipsCompilation(t *testing.T) {
 	require.NoError(t, err)
 
 	c := compiler.New(compiler.GlobalRules()...)
-	p1, err := NewWithCompiler(pool1, Config{Cache: DefaultCacheConfig()}, nil, c)
+	p1, err := NewWithCompiler(ctx, pool1, Config{Cache: DefaultCacheConfig()}, nil, c)
 	require.NoError(t, err)
 
 	err = p1.InitSystemTypes(ctx)
@@ -618,7 +618,7 @@ func TestRestartSkipsCompilation(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { pool2.Close() })
 
-	p2, err := NewWithCompiler(pool2, Config{Cache: DefaultCacheConfig()}, nil, c)
+	p2, err := NewWithCompiler(ctx, pool2, Config{Cache: DefaultCacheConfig()}, nil, c)
 	require.NoError(t, err)
 
 	// InitSystemTypes should skip (version unchanged).
@@ -1170,7 +1170,7 @@ func newTestExtCatalogSource(t *testing.T, name, version, sdl string) *testCatal
 // ─── T038: System types version change triggers re-persist ──────────────────
 
 func TestSystemTypesVersionChange(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pool, err := db.NewPool(":memory:")
 	require.NoError(t, err)
@@ -1184,7 +1184,7 @@ func TestSystemTypesVersionChange(t *testing.T) {
 	_, err = pool.Exec(ctx, sqlStr)
 	require.NoError(t, err)
 
-	p, err := NewWithCompiler(pool, Config{
+	p, err := NewWithCompiler(ctx, pool, Config{
 		Cache: DefaultCacheConfig(),
 	}, nil, compiler.New(compiler.GlobalRules()...))
 	require.NoError(t, err)
@@ -1378,7 +1378,7 @@ func TestRealEmbedder_CatalogManager(t *testing.T) {
 		t.Skip("EMBEDDER_URL not set, skipping real embedder CatalogManager test")
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create in-memory DuckDB pool + CoreDB schema.
 	pool, err := db.NewPool("")
@@ -1410,7 +1410,7 @@ func TestRealEmbedder_CatalogManager(t *testing.T) {
 
 	// Create compiler + provider (same as engine Init steps 4-5).
 	comp := compiler.New(compiler.GlobalRules()...)
-	p, err := NewWithCompiler(pool, Config{
+	p, err := NewWithCompiler(ctx, pool, Config{
 		Cache:   DefaultCacheConfig(),
 		VecSize: vecSize,
 	}, src, comp)

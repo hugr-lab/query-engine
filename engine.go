@@ -35,15 +35,15 @@ import (
 type Service struct {
 	config Config
 
-	router  *http.ServeMux
-	adminUI http.HandlerFunc
-	catalog catalog.Manager
-	schema  *catalog.Service
-	ds      *datasources.Service
-	planner *planner.Service
-	db      *db.Pool
-	perm    permissions.Store
-	cache   *cache.Service
+	router   *http.ServeMux
+	adminUI  http.HandlerFunc
+	catalog  catalog.Manager
+	schema   *catalog.Service
+	ds       *datasources.Service
+	planner  *planner.Service
+	db       *db.Pool
+	perm     permissions.Store
+	cache    *cache.Service
 	s3       *storage.Source
 	gis      *gis.Service
 	embedder *embedding.Source
@@ -77,7 +77,8 @@ type Config struct {
 }
 
 type EmbedderConfig struct {
-	URL string // Full URL with query params: model, api_key, api_key_header, timeout
+	URL        string // Full URL with query params: model, api_key, api_key_header, timeout
+	VectorSize int    // Optional vector size override (default: 0 - no vectorization)
 }
 
 type Info struct {
@@ -157,11 +158,12 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		cacheConfig = catalogdb.DefaultCacheConfig()
 	}
 	isReadonly := s.config.CoreDB.IsReadonly()
-	dbProvider, err := catalogdb.NewWithCompiler(s.db, catalogdb.Config{
+	dbProvider, err := catalogdb.NewWithCompiler(ctx, s.db, catalogdb.Config{
 		TablePrefix: tablePrefix,
 		Cache:       cacheConfig,
 		IsPostgres:  isPostgres,
 		IsReadonly:  isReadonly,
+		VecSize:     s.config.Embedder.VectorSize,
 	}, embedder, c)
 	if err != nil {
 		return fmt.Errorf("create db provider: %w", err)

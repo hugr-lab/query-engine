@@ -63,13 +63,13 @@ func initEnvs() {
 
 func loadConfig() Config {
 	return Config{
-		Bind:               viper.GetString("BIND"),
-		EnableAdminUI:      viper.GetBool("ADMIN_UI"),
-		AdminUIFetchPath:   viper.GetString("ADMIN_UI_FETCH_PATH"),
-		DebugMode:          viper.GetBool("DEBUG"),
-		HttpProfiling:      viper.GetBool("HTTP_PROFILING"),
-		AllowParallel:      viper.GetBool("ALLOW_PARALLEL"),
-		MaxParallelQueries: viper.GetInt("MAX_PARALLEL_QUERIES"),
+		Bind:                  viper.GetString("BIND"),
+		EnableAdminUI:         viper.GetBool("ADMIN_UI"),
+		AdminUIFetchPath:      viper.GetString("ADMIN_UI_FETCH_PATH"),
+		DebugMode:             viper.GetBool("DEBUG"),
+		HttpProfiling:         viper.GetBool("HTTP_PROFILING"),
+		AllowParallel:         viper.GetBool("ALLOW_PARALLEL"),
+		MaxParallelQueries:    viper.GetInt("MAX_PARALLEL_QUERIES"),
 		MaxDepthInTypes:       viper.GetInt("MAX_DEPTH"),
 		SchemaCacheMaxEntries: viper.GetInt("SCHEMA_CACHE_MAX_ENTRIES"),
 		SchemaCacheTTL:        viper.GetDuration("SCHEMA_CACHE_TTL"),
@@ -113,7 +113,8 @@ func loadConfig() Config {
 			ConfigFile:       viper.GetString("AUTH_CONFIG_FILE"),
 		},
 		Embedder: hugr.EmbedderConfig{
-			URL: viper.GetString("EMBEDDER_URL"),
+			URL:        viper.GetString("EMBEDDER_URL"),
+			VectorSize: viper.GetInt("EMBEDDER_VECTOR_SIZE"),
 		},
 		Cache: cache.Config{
 			TTL: types.Interval(viper.GetDuration("CACHE_TTL")),

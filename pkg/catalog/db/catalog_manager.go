@@ -48,14 +48,16 @@ func (p *Provider) compileAndApply(ctx context.Context, name string, catalog sou
 		return nil, ErrNoCompiler
 	}
 
-	compiled, err := p.compiler.Compile(ctx, p, catalog, catalog.CompileOptions())
+	opts := catalog.CompileOptions()
+	compiled, err := p.compiler.Compile(ctx, p, catalog, opts)
 	if err != nil {
 		return nil, fmt.Errorf("compile catalog %q: %w", name, err)
 	}
 
-	// Use UpdateWithCatalog to ensure catalog record is created even for
-	// extension-only catalogs that don't produce definitions with @catalog.
-	if err := p.UpdateWithCatalog(ctx, compiled, name); err != nil {
+	// Use UpdateWithCatalogAndOptions to ensure catalog record is created even for
+	// extension-only catalogs that don't produce definitions with @catalog,
+	// and to persist source metadata (source_type, prefix, as_module, read_only).
+	if err := p.UpdateWithCatalogAndOptions(ctx, compiled, name, &opts); err != nil {
 		return nil, fmt.Errorf("persist catalog %q: %w", name, err)
 	}
 

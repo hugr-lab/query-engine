@@ -7,17 +7,17 @@
 "Schema catalogs (data sources)"
 type catalogs @view(name: "_schema_catalogs", sql: """
   FROM {{ if .IsPostgres }}[_schema_catalogs]{{ else }}core._schema_catalogs{{ end }} c
-  LEFT JOIN {{ if .IsPostgres }}[data_sources]{{ else }}core.data_sources{{ end }} ds ON c.name = ds.name
+    LEFT JOIN {{ if .IsPostgres }}[data_sources]{{ else }}core.data_sources{{ end }} ds ON c.name = ds.name
 """)
-  {{ if .EmbeddingsEnabled }}@embeddings(model: "system", vector: "vec", distance: Cosine){{ end }} {
+  {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   name: String! @pk @sql(expression: "c.name")
   version: String! @sql(expression: "c.version")
   description: String! @sql(expression: "c.description")
   long_description: String! @sql(expression: "c.long_description")
-  type: String @sql(expression: "ds.type")
-  prefix: String @sql(expression: "COALESCE(ds.prefix, '')")
-  as_module: Boolean @sql(expression: "COALESCE(ds.as_module, false)")
-  read_only: Boolean @sql(expression: "COALESCE(ds.read_only, false)")
+  type: String @sql(expression: "COALESCE(NULLIF(c.source_type, ''), ds.type)")
+  prefix: String @sql(expression: "COALESCE(NULLIF(c.prefix, ''), COALESCE(ds.prefix, ''))")
+  as_module: Boolean @sql(expression: "COALESCE(c.as_module, COALESCE(ds.as_module, false))")
+  read_only: Boolean @sql(expression: "COALESCE(c.read_only, COALESCE(ds.read_only, false))")
   disabled: Boolean! @sql(expression: "c.disabled")
   suspended: Boolean! @sql(expression: "c.suspended")
   is_summarized: Boolean! @sql(expression: "c.is_summarized")
@@ -56,7 +56,7 @@ type catalog_dependencies @view(name: "_schema_catalog_dependencies", sql: "FROM
 
 "Schema type definitions"
 type types @view(name: "_schema_types", sql: "FROM core._schema_types")
-  {{ if .EmbeddingsEnabled }}@embeddings(model: "system", vector: "vec", distance: Cosine){{ end }} {
+  {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   name: String! @pk
   kind: String!
   description: String!
@@ -88,7 +88,7 @@ type types @view(name: "_schema_types", sql: "FROM core._schema_types")
 
 "Schema field definitions"
 type fields @view(name: "_schema_fields", sql: "FROM core._schema_fields")
-  {{ if .EmbeddingsEnabled }}@embeddings(model: "system", vector: "vec", distance: Cosine){{ end }} {
+  {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   type_name: String! @pk @field_references(
     name: "fields_type_name_ref"
     field: "name"
@@ -130,6 +130,7 @@ type fields @view(name: "_schema_fields", sql: "FROM core._schema_fields")
     references_query: "extension_fields"
     references_description: "Extension fields from this catalog"
   )
+  is_pk: Boolean!
   is_summarized: Boolean!
   ordinal: Int!
   {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}){{ end }}
@@ -172,7 +173,7 @@ type arguments @view(name: "_schema_arguments", sql: "FROM core._schema_argument
 
 "Schema modules"
 type modules @view(name: "_schema_modules", sql: "FROM core._schema_modules")
-  {{ if .EmbeddingsEnabled }}@embeddings(model: "system", vector: "vec", distance: Cosine){{ end }} {
+  {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   name: String! @pk
   description: String!
   long_description: String!

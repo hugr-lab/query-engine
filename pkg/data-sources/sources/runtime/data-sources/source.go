@@ -30,7 +30,7 @@ func New(qe types.Querier) *Source {
 }
 
 func (s *Source) Name() string {
-	return "storage"
+	return "core.ds"
 }
 
 func (s *Source) Engine() engines.Engine {

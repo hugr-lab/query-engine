@@ -22,6 +22,19 @@ import (
 	"github.com/tmc/langchaingo/llms/openai"
 )
 
+// hugr_type constants for types and fields (mirror base.HugrType* values).
+const (
+	hugrTypeTable    = "table"
+	hugrTypeView     = "view"
+	hugrTypeFunction = "function"
+
+	hugrFieldSelect     = "select"
+	hugrFieldFunction   = "function"
+	hugrFieldExtraField = "extra_field"
+
+	hugrFunctionTypes = "function,mutation_function,table_function,table_function_join"
+)
+
 //go:embed templates
 var templatesFS embed.FS
 
@@ -40,6 +53,7 @@ func runSummarize(args []string) error {
 	apiKey := fs.String("api-key", envOrDefault("SUMMARIZE_API_KEY", ""), "LLM API key")
 	maxConns := fs.Int("max-connections", 5, "Concurrent LLM requests")
 	llmTimeout := fs.Duration("llm-timeout", 60*time.Second, "Per-request LLM timeout")
+	retries := fs.Int("retries", 3, "Max attempts per LLM call when response parsing fails")
 
 	fs.Usage = func() {
 		fmt.Fprintln(os.Stderr, `AI-powered schema summarization using LLM.
@@ -78,6 +92,7 @@ Flags:`)
 		catalog:    *catalog,
 		maxConns:   *maxConns,
 		llmTimeout: *llmTimeout,
+		retries:    *retries,
 	}
 
 	// Single-entity modes.
@@ -174,6 +189,7 @@ type summarizer struct {
 	catalog    string
 	maxConns   int
 	llmTimeout time.Duration
+	retries    int
 }
 
 // --- LLM Output Models ---
@@ -443,6 +459,28 @@ func (s *summarizer) callLLM(ctx context.Context, tmplName string, data any, max
 	return content, nil
 }
 
+// callLLMAndParse calls callLLM and unmarshals the response into dest.
+// On parse failure it retries up to s.retries attempts.
+func (s *summarizer) callLLMAndParse(ctx context.Context, tmplName string, data any, maxTokens int, dest any) error {
+	attempts := s.retries
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for i := range attempts {
+		content, err := s.callLLM(ctx, tmplName, data, maxTokens)
+		if err != nil {
+			return err // LLM call error — not retryable
+		}
+		if err := json.Unmarshal([]byte(content), dest); err != nil {
+			lastErr = fmt.Errorf("attempt %d/%d: parse error: %w", i+1, attempts, err)
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
 // runParallel runs fn for each item with bounded concurrency.
 func runParallel[T any](items []T, maxConns int, fn func(T) error) error {
 	sem := make(chan struct{}, maxConns)
@@ -595,6 +633,7 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 						field_type
 						field_type_name
 						hugr_type
+						is_pk
 					}
 					data_object {
 						filter_type_name
@@ -641,8 +680,9 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 			FieldType     string `json:"field_type"`
 			FieldTypeName string `json:"field_type_name"`
 			HugrType      string `json:"hugr_type"`
+			IsPK          bool   `json:"is_pk"`
 		} `json:"fields"`
-		DataObject *struct {
+		DataObject []struct {
 			FilterTypeName string `json:"filter_type_name"`
 			ArgsTypeName   string `json:"args_type_name"`
 			Queries        []struct {
@@ -677,21 +717,9 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 	var columns []columnInfo
 	var relations []relationInfo
 	var functionCalls []functionCallInfo
-	extraFieldNames := map[string]bool{}
-
-	// First pass: identify extra fields.
-	for _, f := range typeInfo.Fields {
-		if f.HugrType == "" && (strings.HasSuffix(f.Name, "_part") || strings.HasSuffix(f.Name, "_measurement")) {
-			extraFieldNames[f.Name] = true
-		}
-	}
-
 	for _, f := range typeInfo.Fields {
 		switch f.HugrType {
-		case "": // regular column or extra field
-			if extraFieldNames[f.Name] {
-				continue // handled below
-			}
+		case "": // regular column
 			col := columnInfo{
 				Name:        f.Name,
 				Description: f.Description,
@@ -699,22 +727,17 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 				IsArray:     strings.HasPrefix(f.FieldType, "["),
 			}
 			// Check for PK and geometry.
-			if f.FieldType == "ID" || f.FieldType == "ID!" {
+			if f.IsPK {
 				col.IsPrimaryKey = true
 				obj.HasPrimaryKey = true
 			}
 			if strings.Contains(f.FieldType, "Geometry") {
 				obj.HasGeometry = true
 			}
-			// Attach extra fields.
-			for _, ef := range typeInfo.Fields {
-				if ef.HugrType == "" && (strings.HasPrefix(ef.Name, "_"+f.Name+"_part") || strings.HasPrefix(ef.Name, "_"+f.Name+"_measurement")) {
-					col.ExtraFields = append(col.ExtraFields, fmt.Sprintf("%s: %s", ef.Name, ef.FieldType))
-				}
-			}
+			// Extra fields are collected separately via hugr_type.
 			columns = append(columns, col)
 
-		case "select": // relation (reference or join)
+		case hugrFieldSelect: // relation (reference or join)
 			rel := relationInfo{
 				Name:           f.Name,
 				DataObject:     f.FieldTypeName,
@@ -734,7 +757,7 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 			}
 			relations = append(relations, rel)
 
-		case "function": // function call
+		case hugrFieldFunction: // function call
 			functionCalls = append(functionCalls, functionCallInfo{
 				Name:        f.FieldTypeName,
 				Description: f.Description,
@@ -745,16 +768,13 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 
 	// Build extra fields list for template.
 	var extraColumns []columnInfo
-	for name := range extraFieldNames {
-		for _, f := range typeInfo.Fields {
-			if f.Name == name {
-				extraColumns = append(extraColumns, columnInfo{
-					Name:        f.Name,
-					Description: f.Description,
-					Type:        f.FieldType,
-				})
-				break
-			}
+	for _, f := range typeInfo.Fields {
+		if f.HugrType == hugrFieldExtraField {
+			extraColumns = append(extraColumns, columnInfo{
+				Name:        f.Name,
+				Description: f.Description,
+				Type:        f.FieldType,
+			})
 		}
 	}
 
@@ -784,8 +804,8 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 
 	// 3. Collect queries.
 	var queries []queryInfo
-	if typeInfo.DataObject != nil {
-		for _, q := range typeInfo.DataObject.Queries {
+	if len(typeInfo.DataObject) > 0 {
+		for _, q := range typeInfo.DataObject[0].Queries {
 			queries = append(queries, queryInfo{
 				Name:      q.Name,
 				QueryType: q.QueryType,
@@ -829,10 +849,10 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 
 	// 5. Collect arguments.
 	var arguments *argumentInfo
-	if typeInfo.DataObject != nil && typeInfo.DataObject.ArgsTypeName != "" {
+	if len(typeInfo.DataObject) > 0 && typeInfo.DataObject[0].ArgsTypeName != "" {
 		argsRes, err := s.client.Query(ctx, `query($typeName: String!) {
 			core { catalog { fields(filter: {type_name: {eq: $typeName}}) { name field_type description } } }
-		}`, map[string]any{"typeName": typeInfo.DataObject.ArgsTypeName})
+		}`, map[string]any{"typeName": typeInfo.DataObject[0].ArgsTypeName})
 		if err == nil {
 			var argFields []struct {
 				Name        string `json:"name"`
@@ -842,7 +862,7 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 			_ = argsRes.ScanData("core.catalog.fields", &argFields)
 			argsRes.Close()
 			if len(argFields) > 0 {
-				arguments = &argumentInfo{TypeName: typeInfo.DataObject.ArgsTypeName}
+				arguments = &argumentInfo{TypeName: typeInfo.DataObject[0].ArgsTypeName}
 				for _, af := range argFields {
 					arguments.Fields = append(arguments.Fields, argumentItem{
 						Name:        af.Name,
@@ -931,19 +951,15 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 	// 7. Build data source and module context.
 	// Fetch full catalog info separately (type/prefix/as_module not available through reference subquery).
 	dsCtx := dataSourceContext{}
-	var catalogType, catalogPrefix string
-	var catalogAsModule bool
 	if typeInfo.Catalog != "" {
 		catRes, err := s.client.Query(ctx, `query($name: String!) {
-			core { catalog { catalogs_by_pk(name: $name) { name type description prefix as_module } } }
+			core { catalog { catalogs_by_pk(name: $name) { name type description } } }
 		}`, map[string]any{"name": typeInfo.Catalog})
 		if err == nil {
 			var cat struct {
 				Name        string `json:"name"`
 				Type        string `json:"type"`
 				Description string `json:"description"`
-				Prefix      string `json:"prefix"`
-				AsModule    bool   `json:"as_module"`
 			}
 			if err := catRes.ScanData("core.catalog.catalogs_by_pk", &cat); err == nil {
 				dsCtx.Name = cat.Name
@@ -951,9 +967,6 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 				if dsCtx.SummaryText != "" {
 					dsCtx.SummaryText += " (" + cat.Type + ")"
 				}
-				catalogType = cat.Type
-				catalogPrefix = cat.Prefix
-				catalogAsModule = cat.AsModule
 			}
 			catRes.Close()
 		}
@@ -961,7 +974,6 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 		dsCtx.Name = typeInfo.CatalogInfo.Name
 		dsCtx.SummaryText = typeInfo.CatalogInfo.Description
 	}
-	_ = catalogType // used for context only
 	modCtx := moduleContext{}
 	if typeInfo.ModuleInfo != nil {
 		modCtx.Name = typeInfo.ModuleInfo.Name
@@ -1000,8 +1012,6 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 	meta := &dataObjectMeta{
 		TypeName:          typeName,
 		Module:            typeInfo.Module,
-		FilterTypeName:    "",
-		ArgsTypeName:      "",
 		AggTypeName:       aggTypeName,
 		SubAggTypeName:    subAggTypeName,
 		BucketAggTypeName: bucketAggTypeName,
@@ -1014,18 +1024,14 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 		Mutations:         mutations,
 		ExtraFields:       extraColumns,
 	}
-	if typeInfo.DataObject != nil {
-		meta.FilterTypeName = typeInfo.DataObject.FilterTypeName
-		meta.ArgsTypeName = typeInfo.DataObject.ArgsTypeName
+	if len(typeInfo.DataObject) > 0 {
+		meta.FilterTypeName = typeInfo.DataObject[0].FilterTypeName
+		meta.ArgsTypeName = typeInfo.DataObject[0].ArgsTypeName
 	}
 	if typeInfo.ModuleInfo != nil {
 		meta.QueryRoot = typeInfo.ModuleInfo.QueryRoot
 		meta.MutationRoot = typeInfo.ModuleInfo.MutationRoot
 	}
-	if catalogAsModule && catalogPrefix != "" {
-		meta.CatalogPrefix = catalogPrefix + "_"
-	}
-
 	return td, meta, nil
 }
 
@@ -1033,7 +1039,6 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 type dataObjectMeta struct {
 	TypeName          string
 	Module            string
-	CatalogPrefix     string // non-empty when data source is as_module with prefix
 	FilterTypeName    string
 	ArgsTypeName      string
 	AggTypeName       string
@@ -1160,16 +1165,17 @@ func (s *summarizer) writeBackDataObject(ctx context.Context, ds *dataObjectSumm
 				continue
 			}
 			_ = s.writeFieldDesc(ctx, meta.QueryRoot, q.Name, desc, "")
+		}
 
-			// Skip single-row/h3/jq queries for shared types.
-			if q.QueryType == "select_one" || q.QueryType == "h3" || q.QueryType == "jq" {
-				continue
+		// Write to shared _join, _spatial, _h3_data_query types using TypeName.
+		// The compiled type name is the field name in shared types (already prefixed).
+		sharedTypes := []string{"_join", "_spatial", "_h3_data_query"}
+		for _, st := range sharedTypes {
+			_ = s.writeFieldDesc(ctx, st, meta.TypeName, ds.Short, "")
+			if meta.HasAgg {
+				_ = s.writeFieldDesc(ctx, st, meta.TypeName+"_aggregation", ds.AggregationTypeShort, "")
+				_ = s.writeFieldDesc(ctx, st, meta.TypeName+"_bucket_aggregation", ds.BucketAggregationTypeShort, "")
 			}
-			// Write to shared _join, _spatial, _h3_data_query types.
-			sharedName := meta.CatalogPrefix + q.Name
-			_ = s.writeFieldDesc(ctx, "_join", sharedName, desc, "")
-			_ = s.writeFieldDesc(ctx, "_spatial", sharedName, desc, "")
-			_ = s.writeFieldDesc(ctx, "_h3_data_query", sharedName, desc, "")
 		}
 	}
 
@@ -1203,13 +1209,82 @@ func (s *summarizer) writeBackDataObject(ctx context.Context, ds *dataObjectSumm
 		_ = s.writeTypeDesc(ctx, meta.BucketAggTypeName, ds.BucketAggregationTypeShort, ds.BucketAggregationTypeLong)
 	}
 
+	// 11. Derived input type descriptions (copy from parent fields, no LLM needed).
+	s.writeBackDerivedInputTypes(ctx, ds, meta)
+
 	return nil
+}
+
+// writeBackDerivedInputTypes copies field descriptions from the parent data object
+// to its derived input types (_filter, _mut_input_data, _mut_data, _list_filter).
+// These types mirror the parent's fields but are generated without descriptions.
+func (s *summarizer) writeBackDerivedInputTypes(ctx context.Context, ds *dataObjectSummary, meta *dataObjectMeta) {
+	type derivedType struct {
+		suffix  string
+		typeDesc string
+	}
+	derived := []derivedType{
+		{"_filter", "Filter input for " + meta.TypeName},
+		{"_list_filter", "List filter input for " + meta.TypeName},
+		{"_mut_input_data", "Insert input for " + meta.TypeName},
+		{"_mut_data", "Update input for " + meta.TypeName},
+	}
+
+	for _, dt := range derived {
+		// Skip _filter if already handled by LLM (step 4).
+		if dt.suffix == "_filter" && ds.Filter != nil {
+			continue
+		}
+
+		typeName := meta.TypeName + dt.suffix
+		fields, err := s.getTypeFields(ctx, typeName)
+		if err != nil || len(fields) == 0 {
+			continue // type doesn't exist or has no fields
+		}
+
+		_ = s.writeTypeDesc(ctx, typeName, dt.typeDesc, "")
+
+		for _, fieldName := range fields {
+			if desc, ok := ds.Fields[fieldName]; ok && desc != "" {
+				_ = s.writeFieldDesc(ctx, typeName, fieldName, desc, "")
+			} else if desc, ok := ds.ExtraFields[fieldName]; ok && desc != "" {
+				_ = s.writeFieldDesc(ctx, typeName, fieldName, desc, "")
+			}
+		}
+	}
+}
+
+// getTypeFields queries the catalog for all field names of a given type.
+func (s *summarizer) getTypeFields(ctx context.Context, typeName string) ([]string, error) {
+	res, err := s.client.Query(ctx, `query($typeName: String!) {
+		core { catalog { fields(filter: {type_name: {eq: $typeName}}) { name } } }
+	}`, map[string]any{"typeName": typeName})
+	if err != nil {
+		return nil, err
+	}
+	defer res.Close()
+	if res.Err() != nil {
+		return nil, res.Err()
+	}
+
+	var fields []struct {
+		Name string `json:"name"`
+	}
+	if err := res.ScanData("core.catalog.fields", &fields); err != nil {
+		return nil, err
+	}
+
+	names := make([]string, len(fields))
+	for i, f := range fields {
+		names[i] = f.Name
+	}
+	return names, nil
 }
 
 func (s *summarizer) summarizeDataObjects(ctx context.Context) (int, error) {
 	filter := map[string]any{
 		"is_summarized": map[string]any{"eq": false},
-		"hugr_type":     map[string]any{"in": []string{"table", "view"}},
+		"hugr_type":     map[string]any{"in": []string{hugrTypeTable, hugrTypeView}},
 	}
 	if s.catalog != "" {
 		filter["catalog"] = map[string]any{"eq": s.catalog}
@@ -1252,15 +1327,9 @@ func (s *summarizer) summarizeDataObjects(ctx context.Context) (int, error) {
 			return nil
 		}
 
-		content, err := s.callLLM(ctx, "data_object.tmpl", td, 16384)
-		if err != nil {
-			bar.Describe(fmt.Sprintf("  [1/4] WARN: %s: %v", obj.Name, err))
-			return nil
-		}
-
 		var ds dataObjectSummary
-		if err := json.Unmarshal([]byte(content), &ds); err != nil {
-			bar.Describe(fmt.Sprintf("  [1/4] WARN: %s: parse error", obj.Name))
+		if err := s.callLLMAndParse(ctx, "data_object.tmpl", td, 16384, &ds); err != nil {
+			bar.Describe(fmt.Sprintf("  [1/4] WARN: %s: %v", obj.Name, err))
 			return nil
 		}
 
@@ -1480,7 +1549,7 @@ func (s *summarizer) writeBackFunction(ctx context.Context, fs *functionSummary,
 func (s *summarizer) summarizeFunctions(ctx context.Context) (int, error) {
 	filter := map[string]any{
 		"is_summarized": map[string]any{"eq": false},
-		"hugr_type":     map[string]any{"in": []string{"function", "mutation_function", "table_function", "table_function_join"}},
+		"hugr_type":     map[string]any{"in": strings.Split(hugrFunctionTypes, ",")},
 	}
 	if s.catalog != "" {
 		filter["catalog"] = map[string]any{"eq": s.catalog}
@@ -1526,15 +1595,9 @@ func (s *summarizer) summarizeFunctions(ctx context.Context) (int, error) {
 			return nil
 		}
 
-		content, err := s.callLLM(ctx, "function.tmpl", td, 4096)
-		if err != nil {
-			bar.Describe(fmt.Sprintf("  [2/4] WARN: %s: %v", fn.Name, err))
-			return nil
-		}
-
 		var fs functionSummary
-		if err := json.Unmarshal([]byte(content), &fs); err != nil {
-			bar.Describe(fmt.Sprintf("  [2/4] WARN: %s: parse error", fn.Name))
+		if err := s.callLLMAndParse(ctx, "function.tmpl", td, 4096, &fs); err != nil {
+			bar.Describe(fmt.Sprintf("  [2/4] WARN: %s: %v", fn.Name, err))
 			return nil
 		}
 
@@ -1596,9 +1659,9 @@ func (s *summarizer) prepareDataSourceContext(ctx context.Context, name string) 
 	for _, t := range cat.Types {
 		item := namedItem{Name: t.Name, Description: t.Description}
 		switch t.HugrType {
-		case "table":
+		case hugrTypeTable:
 			tables = append(tables, item)
-		case "view":
+		case hugrTypeView:
 			views = append(views, item)
 		}
 	}
@@ -1716,15 +1779,9 @@ func (s *summarizer) summarizeDataSources(ctx context.Context) (int, error) {
 			return nil
 		}
 
-		content, err := s.callLLM(ctx, "data_source.tmpl", td, 4096)
-		if err != nil {
-			bar.Describe(fmt.Sprintf("  [3/4] WARN: %s: %v", cat.Name, err))
-			return nil
-		}
-
 		var dsSummary dataSourceSummary
-		if err := json.Unmarshal([]byte(content), &dsSummary); err != nil {
-			bar.Describe(fmt.Sprintf("  [3/4] WARN: %s: parse error", cat.Name))
+		if err := s.callLLMAndParse(ctx, "data_source.tmpl", td, 4096, &dsSummary); err != nil {
+			bar.Describe(fmt.Sprintf("  [3/4] WARN: %s: %v", cat.Name, err))
 			return nil
 		}
 
@@ -1788,7 +1845,7 @@ func (s *summarizer) prepareModuleContext(ctx context.Context, name string) (*mo
 	}`, map[string]any{
 		"filter": map[string]any{
 			"module":    map[string]any{"eq": name},
-			"hugr_type": map[string]any{"in": []string{"table", "view"}},
+			"hugr_type": map[string]any{"in": []string{hugrTypeTable, hugrTypeView}},
 		},
 	})
 	if err != nil {
@@ -1809,9 +1866,9 @@ func (s *summarizer) prepareModuleContext(ctx context.Context, name string) (*mo
 	dsNames := map[string]bool{}
 	for _, t := range types {
 		switch t.HugrType {
-		case "table":
+		case hugrTypeTable:
 			tables[t.Name] = t.Description
-		case "view":
+		case hugrTypeView:
 			views[t.Name] = t.Description
 		}
 		if t.Catalog != "" {
@@ -2051,16 +2108,9 @@ func (s *summarizer) summarizeModules(ctx context.Context) (int, error) {
 			continue
 		}
 
-		content, err := s.callLLM(ctx, "module.tmpl", td, 4096)
-		if err != nil {
-			bar.Describe(fmt.Sprintf("  [4/4] WARN: %s: %v", name, err))
-			bar.Add(1)
-			continue
-		}
-
 		var ms moduleSummary
-		if err := json.Unmarshal([]byte(content), &ms); err != nil {
-			bar.Describe(fmt.Sprintf("  [4/4] WARN: %s: parse error", name))
+		if err := s.callLLMAndParse(ctx, "module.tmpl", td, 4096, &ms); err != nil {
+			bar.Describe(fmt.Sprintf("  [4/4] WARN: %s: %v", name, err))
 			bar.Add(1)
 			continue
 		}
@@ -2090,14 +2140,9 @@ func (s *summarizer) summarizeSingleType(ctx context.Context, name string) error
 		return fmt.Errorf("prepare context: %w", err)
 	}
 
-	content, err := s.callLLM(ctx, "data_object.tmpl", td, 16384)
-	if err != nil {
-		return fmt.Errorf("LLM: %w", err)
-	}
-
 	var ds dataObjectSummary
-	if err := json.Unmarshal([]byte(content), &ds); err != nil {
-		return fmt.Errorf("parse response: %w (raw: %s)", err, content[:min(len(content), 200)])
+	if err := s.callLLMAndParse(ctx, "data_object.tmpl", td, 16384, &ds); err != nil {
+		return fmt.Errorf("LLM: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "  description: %s\n", ds.Short)
@@ -2112,14 +2157,9 @@ func (s *summarizer) summarizeSingleFunction(ctx context.Context, typeName, fiel
 		return fmt.Errorf("prepare context: %w", err)
 	}
 
-	content, err := s.callLLM(ctx, "function.tmpl", td, 4096)
-	if err != nil {
-		return fmt.Errorf("LLM: %w", err)
-	}
-
 	var fs functionSummary
-	if err := json.Unmarshal([]byte(content), &fs); err != nil {
-		return fmt.Errorf("parse response: %w (raw: %s)", err, content[:min(len(content), 200)])
+	if err := s.callLLMAndParse(ctx, "function.tmpl", td, 4096, &fs); err != nil {
+		return fmt.Errorf("LLM: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "  description: %s\n", fs.Short)
@@ -2134,14 +2174,9 @@ func (s *summarizer) summarizeSingleModule(ctx context.Context, name string) err
 		return fmt.Errorf("prepare context: %w", err)
 	}
 
-	content, err := s.callLLM(ctx, "module.tmpl", td, 4096)
-	if err != nil {
-		return fmt.Errorf("LLM: %w", err)
-	}
-
 	var ms moduleSummary
-	if err := json.Unmarshal([]byte(content), &ms); err != nil {
-		return fmt.Errorf("parse response: %w (raw: %s)", err, content[:min(len(content), 200)])
+	if err := s.callLLMAndParse(ctx, "module.tmpl", td, 4096, &ms); err != nil {
+		return fmt.Errorf("LLM: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "  description: %s\n", ms.Short)
@@ -2156,14 +2191,9 @@ func (s *summarizer) summarizeSingleSource(ctx context.Context, name string) err
 		return fmt.Errorf("prepare context: %w", err)
 	}
 
-	content, err := s.callLLM(ctx, "data_source.tmpl", td, 4096)
-	if err != nil {
-		return fmt.Errorf("LLM: %w", err)
-	}
-
 	var dsSummary dataSourceSummary
-	if err := json.Unmarshal([]byte(content), &dsSummary); err != nil {
-		return fmt.Errorf("parse response: %w (raw: %s)", err, content[:min(len(content), 200)])
+	if err := s.callLLMAndParse(ctx, "data_source.tmpl", td, 4096, &dsSummary); err != nil {
+		return fmt.Errorf("LLM: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "  description: %s\n", dsSummary.Short)

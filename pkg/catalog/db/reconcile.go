@@ -479,7 +479,7 @@ func (p *Provider) collectDataObjects(ctx context.Context, conn *Connection, cat
 		 LEFT JOIN %s f ON f.name = t.name || '_filter'
 		 LEFT JOIN %s a ON a.name = t.name || '_args'
 		 WHERE t.catalog = $1
-		   AND t.hugr_type IN ('Table', 'View', 'ParameterizedView')`,
+		   AND t.hugr_type IN ('table', 'view', 'parameterized_view')`,
 		p.table("_schema_types"),
 		p.table("_schema_types"),
 		p.table("_schema_types"),
@@ -538,13 +538,18 @@ func (p *Provider) batchInsertModuleTypeCatalogs(ctx context.Context, conn *Conn
 // from module root types and system types (Query, Mutation), and populates _schema_data_object_queries.
 func (p *Provider) reconcileDataObjectQueries(ctx context.Context, conn *Connection, catalogName string) error {
 	rows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT f.name, f.field_type, f.type_name, f.hugr_type
+		`SELECT f.name, f.field_type, f.type_name, f.hugr_type, CAST(f.directives AS VARCHAR)
 		 FROM %s f
-		 JOIN %s t ON t.name = f.type_name
 		 WHERE f.catalog = $1
 		   AND f.hugr_type IN ('select', 'select_one', 'aggregate', 'bucket_agg')
-		   AND (t.hugr_type = 'module' OR t.name IN ('Query', 'Mutation'))`,
-		p.table("_schema_fields"), p.table("_schema_types"),
+		   AND (
+		     f.type_name IN ('Query', 'Mutation')
+		     OR f.type_name IN (SELECT query_root FROM %s WHERE query_root IS NOT NULL)
+		     OR f.type_name IN (SELECT mutation_root FROM %s WHERE mutation_root IS NOT NULL)
+		   )`,
+		p.table("_schema_fields"),
+		p.table("_schema_modules"),
+		p.table("_schema_modules"),
 	), catalogName)
 	if err != nil {
 		return err
@@ -557,15 +562,35 @@ func (p *Provider) reconcileDataObjectQueries(ctx context.Context, conn *Connect
 		queryRoot string // type name of the root type containing this field
 		queryType string // hugr_type (select, select_one, etc.)
 	}
-	var entries []doqEntry
+
+	// First pass: collect all fields. For select/select_one, resolve object from field_type.
+	// For aggregate/bucket_agg, defer — resolve via @aggregation_query(name) reference.
+	type rawField struct {
+		name, fieldType, queryRoot, hugrType, dirJSON string
+	}
+	var selectFields []rawField // select, select_one
+	var aggFields    []rawField // aggregate, bucket_agg
 
 	for rows.Next() {
-		var fieldName, fieldTypeStr, queryRoot, hugrType string
-		if err := rows.Scan(&fieldName, &fieldTypeStr, &queryRoot, &hugrType); err != nil {
+		var rf rawField
+		if err := rows.Scan(&rf.name, &rf.fieldType, &rf.queryRoot, &rf.hugrType, &rf.dirJSON); err != nil {
 			continue
 		}
-		// Parse field type to get the base type name (unwrapping [Type!]!)
-		ft, err := schema.UnmarshalType(fieldTypeStr)
+		switch rf.hugrType {
+		case "aggregate", "bucket_agg":
+			aggFields = append(aggFields, rf)
+		default:
+			selectFields = append(selectFields, rf)
+		}
+	}
+
+	// Build entries from select/select_one fields — object is the field's return type.
+	// Also build a lookup: (queryRoot, fieldName) → objectName for agg resolution.
+	fieldObjectMap := make(map[[2]string]string) // [queryRoot, fieldName] → objectName
+	var entries []doqEntry
+
+	for _, rf := range selectFields {
+		ft, err := schema.UnmarshalType(rf.fieldType)
 		if err != nil || ft == nil {
 			continue
 		}
@@ -574,10 +599,28 @@ func (p *Provider) reconcileDataObjectQueries(ctx context.Context, conn *Connect
 			continue
 		}
 		entries = append(entries, doqEntry{
-			name:      fieldName,
-			object:    objectName,
-			queryRoot: queryRoot,
-			queryType: hugrType,
+			name: rf.name, object: objectName, queryRoot: rf.queryRoot, queryType: rf.hugrType,
+		})
+		fieldObjectMap[[2]string{rf.queryRoot, rf.name}] = objectName
+	}
+
+	// Resolve aggregate/bucket_agg fields via @aggregation_query(name) directive.
+	// The "name" argument references a sibling select field on the same query root.
+	for _, rf := range aggFields {
+		dirs, err := schema.UnmarshalDirectives([]byte(rf.dirJSON))
+		if err != nil {
+			continue
+		}
+		refName := base.DirectiveArgString(dirs.ForName(base.FieldAggregationQueryDirectiveName), "name")
+		if refName == "" {
+			continue
+		}
+		objectName := fieldObjectMap[[2]string{rf.queryRoot, refName}]
+		if objectName == "" {
+			continue
+		}
+		entries = append(entries, doqEntry{
+			name: rf.name, object: objectName, queryRoot: rf.queryRoot, queryType: rf.hugrType,
 		})
 	}
 

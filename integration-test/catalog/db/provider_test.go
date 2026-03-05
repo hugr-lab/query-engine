@@ -30,12 +30,11 @@ func TestDuckDB_ProviderLifecycle(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache: dbprovider.DefaultCacheConfig(),
 	}, nil)
 	require.NoError(t, err)
-
-	ctx := context.Background()
 
 	// Update with a catalog
 	source := newTestSource([]*ast.Definition{
@@ -96,9 +95,9 @@ func TestDuckDB_TypesStreamAndEnums(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		objectType("TypeA", "cat1", "", nil),
@@ -138,9 +137,9 @@ func TestDuckDB_PossibleTypesInterface(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		{
@@ -176,9 +175,9 @@ func TestDuckDB_PossibleTypesUnion(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		objectType("CatAnimal", "cat1", "", []*ast.FieldDefinition{field("meow", "String", false)}),
@@ -201,9 +200,9 @@ func TestDuckDB_PossibleTypesCache(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		{Kind: ast.Interface, Name: "CachedIface", Directives: ast.DirectiveList{catalogDir("cat1")},
@@ -232,9 +231,9 @@ func TestDuckDB_CacheSelectiveInvalidation(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	// Two catalogs
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
@@ -267,9 +266,9 @@ func TestDuckDB_DirectiveHandling(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	// Persist a type
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
@@ -326,9 +325,9 @@ func TestDuckDB_ExtensionFields(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	// Persist base type
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
@@ -386,9 +385,9 @@ func TestDuckDB_DirectiveDefinitions(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	source := newTestSourceWithDirs(nil, map[string]*ast.DirectiveDefinition{
 		"cache": {
@@ -439,9 +438,9 @@ func TestDuckDB_QueryAndMutationType(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		{Kind: ast.Object, Name: base.QueryBaseName,
@@ -468,9 +467,9 @@ func TestDuckDB_TypeWithoutCatalog(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		{Kind: ast.Scalar, Name: "JSON"},
@@ -486,7 +485,7 @@ func TestDuckDB_ForNameNonExistent(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	p, err := dbprovider.New(t.Context(), pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
 	assert.Nil(t, p.ForName(context.Background(), "DoesNotExist"))
 }
@@ -497,15 +496,13 @@ func TestDuckDB_ProviderWithEmbeddings(t *testing.T) {
 	vecSize := 128
 	initDuckDBSchema(t, pool, vecSize)
 
+	ctx := t.Context()
 	emb := &mockEmbedder{vec: makeVector(vecSize)}
-
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache:   dbprovider.DefaultCacheConfig(),
 		VecSize: vecSize,
 	}, emb)
 	require.NoError(t, err)
-
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		objectType("EmbType", "emb_cat", "Embeddable type", []*ast.FieldDefinition{
@@ -537,12 +534,11 @@ func TestDuckDB_ProviderWithoutEmbeddings(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache: dbprovider.DefaultCacheConfig(),
 	}, nil)
 	require.NoError(t, err)
-
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		objectType("NoEmbType", "no_emb_cat", "Type without embeddings", []*ast.FieldDefinition{
@@ -561,12 +557,11 @@ func TestDuckDB_SummarizedDescriptionReset(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache: dbprovider.DefaultCacheConfig(),
 	}, nil)
 	require.NoError(t, err)
-
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		objectType("Summarized", "sum_cat", "original", []*ast.FieldDefinition{
@@ -602,12 +597,11 @@ func TestDuckDB_DisabledCatalog(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache: dbprovider.DefaultCacheConfig(),
 	}, nil)
 	require.NoError(t, err)
-
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		objectType("DisType", "dis_cat", "Disabled type", []*ast.FieldDefinition{
@@ -626,9 +620,9 @@ func TestDuckDB_DisabledCatalogFieldFiltering(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	// Persist base type
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
@@ -675,12 +669,12 @@ func TestDuckDB_SetDefinitionDescription(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 128)
 
+	ctx := t.Context()
 	emb := &mockEmbedder{vec: makeVector(128)}
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache: dbprovider.DefaultCacheConfig(), VecSize: 128,
 	}, emb)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
 		objectType("Updatable", "cat1", "original", []*ast.FieldDefinition{field("x", "String", false)}),
@@ -710,12 +704,12 @@ func TestDuckDB_SetFieldDescription(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 128)
 
+	ctx := t.Context()
 	emb := &mockEmbedder{vec: makeVector(128)}
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache: dbprovider.DefaultCacheConfig(), VecSize: 128,
 	}, emb)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
 		objectType("MyType", "cat1", "a type", []*ast.FieldDefinition{
@@ -752,12 +746,12 @@ func TestDuckDB_SetCatalogDescription(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 128)
 
+	ctx := t.Context()
 	emb := &mockEmbedder{vec: makeVector(128)}
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache: dbprovider.DefaultCacheConfig(), VecSize: 128,
 	}, emb)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
 		objectType("X", "desc_cat", "", []*ast.FieldDefinition{field("x", "String", false)}),
@@ -782,9 +776,9 @@ func TestDuckDB_SetModuleDescription(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	// Insert a module record
 	conn, err := pool.Conn(ctx)
@@ -809,9 +803,9 @@ func TestDuckDB_DropCatalogDetailedCleanup(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	source := newTestSource([]*ast.Definition{
 		{Kind: ast.Object, Name: "DroppedType", Description: "to be dropped",
@@ -863,9 +857,9 @@ func TestDuckDB_DropCatalogCascade(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	// Create base and dependent catalogs
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
@@ -896,9 +890,9 @@ func TestDuckDB_DropCatalogCleansExtensionFields(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	// Persist base type
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
@@ -938,9 +932,9 @@ func TestDuckDB_ReconcileModules(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	// AC-11: Module-catalog link table populated
 	source := newTestSource([]*ast.Definition{
@@ -975,9 +969,9 @@ func TestDuckDB_CatalogGetters(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
 		objectType("GetterType", "getter_cat", "test", []*ast.FieldDefinition{field("id", "Int", true)}),
@@ -1034,19 +1028,19 @@ func TestDuckDB_VectorSizeMigration(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 128)
 
-	p1, err := dbprovider.New(pool, dbprovider.Config{
+	ctx := t.Context()
+	p1, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache:   dbprovider.DefaultCacheConfig(),
 		VecSize: 128,
 	}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	require.NoError(t, p1.Update(ctx, newTestSource([]*ast.Definition{
 		objectType("VecType", "vec_cat", "vec test", []*ast.FieldDefinition{field("id", "Int", true)}),
 	})))
 
 	// AC-20: Create new provider with different vec_size — should migrate
-	p2, err := dbprovider.New(pool, dbprovider.Config{
+	p2, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache:   dbprovider.DefaultCacheConfig(),
 		VecSize: 256,
 	}, nil)
@@ -1061,12 +1055,12 @@ func TestDuckDB_VectorSizeZero(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache:   dbprovider.DefaultCacheConfig(),
 		VecSize: 0,
 	}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
 		objectType("ZeroVecType", "zv_cat", "no vec", []*ast.FieldDefinition{field("x", "Int", true)}),
@@ -1078,7 +1072,7 @@ func TestDuckDB_VectorSizeZero(t *testing.T) {
 
 func TestDuckDB_AttachedMode(t *testing.T) {
 	pool := newDuckDBPool(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Attach an in-memory DB as "core"
 	_, err := pool.Exec(ctx, "ATTACH ':memory:' AS core;")
@@ -1096,7 +1090,7 @@ func TestDuckDB_AttachedMode(t *testing.T) {
 	seedSystemTypesWithPrefix(t, pool, "core.", 128)
 
 	// AC-18: SQL prefix works
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache:       dbprovider.DefaultCacheConfig(),
 		TablePrefix: "core.",
 		VecSize:     128,
@@ -1133,9 +1127,9 @@ func TestDuckDB_ExecWriteOperations(t *testing.T) {
 	pool := newDuckDBPool(t)
 	initDuckDBSchema(t, pool, 0)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
+	ctx := t.Context()
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{Cache: dbprovider.DefaultCacheConfig()}, nil)
 	require.NoError(t, err)
-	ctx := context.Background()
 
 	// Test INSERT/UPDATE/DELETE through the provider's public API
 	require.NoError(t, p.Update(ctx, newTestSource([]*ast.Definition{
@@ -1181,10 +1175,10 @@ func newPGEnv(t *testing.T, vecSize int, emb dbprovider.Embedder) *pgEnv {
 	initPGSchema(t, pgConn)
 
 	pool := newDuckDBPool(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	attachPG(t, pool, ctx)
 
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache:       dbprovider.DefaultCacheConfig(),
 		TablePrefix: "core.",
 		IsPostgres:  true,
@@ -2325,7 +2319,7 @@ func TestDuckDB_RealEmbedder(t *testing.T) {
 	vecSize := 768
 	initDuckDBSchema(t, pool, vecSize)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create embedding source from URL (same path as engine.go Init step 3b).
 	src, err := embedding.New(types.DataSource{
@@ -2344,7 +2338,7 @@ func TestDuckDB_RealEmbedder(t *testing.T) {
 	assert.Equal(t, vecSize, len(vec), "expected %d-dim vector", vecSize)
 
 	// Create DB provider with real embedder.
-	p, err := dbprovider.New(pool, dbprovider.Config{
+	p, err := dbprovider.New(ctx, pool, dbprovider.Config{
 		Cache:   dbprovider.DefaultCacheConfig(),
 		VecSize: vecSize,
 	}, src)

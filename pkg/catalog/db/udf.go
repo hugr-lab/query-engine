@@ -160,6 +160,35 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 		return err
 	}
 
+	// _schema_reset_summarized(name, scope)
+	if err := db.RegisterScalarFunction(ctx, pool, &db.ScalarFunctionWithArgs[resetSummarizedArgs, *types.OperationResult]{
+		Name: "_schema_reset_summarized",
+		Execute: func(ctx context.Context, args resetSummarizedArgs) (*types.OperationResult, error) {
+			count, err := p.ResetSummarized(ctx, args.name, args.scope)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result(fmt.Sprintf("reset %d entities", count), count, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) (resetSummarizedArgs, error) {
+			if len(args) != 2 {
+				return resetSummarizedArgs{}, fmt.Errorf("expected 2 arguments, got %d", len(args))
+			}
+			return resetSummarizedArgs{
+				name:  args[0].(string),
+				scope: args[1].(string),
+			}, nil
+		},
+		ConvertOutput: convertOperationResult,
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType: types.DuckDBOperationResult(),
+	}); err != nil {
+		return err
+	}
+
 	// _schema_reindex(name, batch_size)
 	if err := db.RegisterScalarFunction(ctx, pool, &db.ScalarFunctionWithArgs[reindexArgs, *types.OperationResult]{
 		Name: "_schema_reindex",
@@ -220,6 +249,11 @@ type fieldDescArgs struct {
 type reindexArgs struct {
 	name      string
 	batchSize int32
+}
+
+type resetSummarizedArgs struct {
+	name  string
+	scope string
 }
 
 func convertDescArgs(args []driver.Value) (descArgs, error) {

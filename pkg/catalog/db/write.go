@@ -25,7 +25,7 @@ func (p *Provider) Update(ctx context.Context, changes base.DefinitionsSource) e
 	if p.isReadonly {
 		return ErrReadOnly
 	}
-	return p.updateImpl(ctx, changes, "")
+	return p.updateImpl(ctx, changes, "", nil)
 }
 
 // UpdateWithCatalog persists compiled schema changes with an explicit catalog name override.
@@ -35,11 +35,22 @@ func (p *Provider) UpdateWithCatalog(ctx context.Context, changes base.Definitio
 	if p.isReadonly {
 		return ErrReadOnly
 	}
-	return p.updateImpl(ctx, changes, catalogOverride)
+	return p.updateImpl(ctx, changes, catalogOverride, nil)
 }
 
-// updateImpl is the shared implementation for Update and UpdateWithCatalog.
-func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSource, catalogOverride string) error {
+// UpdateWithCatalogAndOptions persists compiled schema changes with an explicit catalog name
+// and compile options. Options are stored on the _schema_catalogs record so that catalog
+// metadata (source_type, prefix, as_module, read_only) is available even for runtime catalogs
+// that have no data_sources row.
+func (p *Provider) UpdateWithCatalogAndOptions(ctx context.Context, changes base.DefinitionsSource, catalogOverride string, opts *base.Options) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
+	return p.updateImpl(ctx, changes, catalogOverride, opts)
+}
+
+// updateImpl is the shared implementation for Update, UpdateWithCatalog, and UpdateWithCatalogAndOptions.
+func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSource, catalogOverride string, opts *base.Options) error {
 	// Collect all definitions first — iterators may be one-shot (iter.Seq),
 	// so we must not iterate twice.
 	var defs []*ast.Definition
@@ -113,7 +124,7 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 
 	// Upsert catalog record
 	if catalogName != "" {
-		if err := p.upsertCatalog(txCtx, conn, catalogName); err != nil {
+		if err := p.upsertCatalog(txCtx, conn, catalogName, opts); err != nil {
 			return fmt.Errorf("update: %w", err)
 		}
 	}
@@ -180,11 +191,27 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 }
 
 // upsertCatalog inserts or updates a catalog record.
-func (p *Provider) upsertCatalog(ctx context.Context, conn *Connection, name string) error {
+// When opts is non-nil, source_type/prefix/as_module/read_only are persisted.
+func (p *Provider) upsertCatalog(ctx context.Context, conn *Connection, name string, opts *base.Options) error {
+	var sourceType, prefix string
+	var asModule, readOnly bool
+	if opts != nil {
+		sourceType = opts.EngineType
+		prefix = opts.Prefix
+		asModule = opts.AsModule
+		readOnly = opts.ReadOnly
+	}
+	tbl := p.table("_schema_catalogs")
 	_, err := p.execWrite(ctx, conn, fmt.Sprintf(
-		`INSERT INTO %s (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
-		p.table("_schema_catalogs"),
-	), name)
+		`INSERT INTO %s (name, source_type, prefix, as_module, read_only)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (name) DO UPDATE SET
+		   source_type = CASE WHEN $2 != '' THEN $2 ELSE %s.source_type END,
+		   prefix = CASE WHEN $2 != '' THEN $3 ELSE %s.prefix END,
+		   as_module = CASE WHEN $2 != '' THEN $4 ELSE %s.as_module END,
+		   read_only = CASE WHEN $2 != '' THEN $5 ELSE %s.read_only END`,
+		tbl, tbl, tbl, tbl, tbl,
+	), name, sourceType, prefix, asModule, readOnly)
 	return err
 }
 
@@ -260,7 +287,9 @@ func (p *Provider) persistDefinition(ctx context.Context, conn *Connection, def 
 
 // upsertType inserts or updates a type in _schema_types.
 // vec is pre-computed by the caller (batch path); nil when embedder is not configured.
-// Always resets is_summarized=false — the summarization service will re-flag later.
+// When the incoming description ($3) is non-empty, all description fields and
+// is_summarized are reset. When empty, existing description/long_description/
+// is_summarized are preserved (generated types on reload shouldn't wipe summaries).
 func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.Definition, catalogName string, vec types.Vector) error {
 	dirJSON, err := schema.MarshalDirectives(def.Directives)
 	if err != nil {
@@ -272,30 +301,28 @@ func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.De
 	ifaces := strings.Join(def.Interfaces, "|")
 	unionTypes := strings.Join(def.Types, "|")
 
-	if p.vecSize > 0 {
-		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (name, kind, description, long_description, hugr_type, module, catalog, directives, interfaces, union_types, is_summarized, vec)
-			 VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, $9, false, $10)
-			 ON CONFLICT (name) DO UPDATE SET
-			   kind=$2, description=$3, long_description='', hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9, is_summarized=false, vec=$10`,
-			p.table("_schema_types"),
-		), def.Name, string(def.Kind), def.Description, hugrType, module, catalogName, string(dirJSON), ifaces, unionTypes, vec)
-	} else {
-		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (name, kind, description, long_description, hugr_type, module, catalog, directives, interfaces, union_types, is_summarized)
-			 VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, $9, false)
-			 ON CONFLICT (name) DO UPDATE SET
-			   kind=$2, description=$3, long_description='', hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9, is_summarized=false`,
-			p.table("_schema_types"),
-		), def.Name, string(def.Kind), def.Description, hugrType, module, catalogName, string(dirJSON), ifaces, unionTypes)
-	}
+	tbl := p.table("_schema_types")
+	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
+		`INSERT INTO %s (name, kind, description, long_description, hugr_type, module, catalog, directives, interfaces, union_types, is_summarized, vec)
+		 VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, $9, false, $10)
+		 ON CONFLICT (name) DO UPDATE SET
+		   kind=$2,
+		   description = CASE WHEN $3 != '' THEN $3 ELSE %s.description END,
+		   long_description = CASE WHEN $3 != '' THEN '' ELSE %s.long_description END,
+		   hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9,
+		   is_summarized = CASE WHEN $3 != '' THEN false ELSE %s.is_summarized END,
+		   vec=$10`,
+		tbl, tbl, tbl, tbl,
+	), def.Name, string(def.Kind), def.Description, hugrType, module, catalogName, string(dirJSON), ifaces, unionTypes, vec)
 	return err
 }
 
 // upsertField inserts or updates a field in _schema_fields.
 // ordinal preserves the original definition order of the field within its type.
 // vec is pre-computed by the caller (batch path); nil when embedder is not configured.
-// Always resets is_summarized=false — the summarization service will re-flag later.
+// When the incoming description ($5) is non-empty, description fields and
+// is_summarized are reset. When empty, existing values are preserved so that
+// generated extension fields don't wipe summaries on catalog reload.
 func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName string, field *ast.FieldDefinition, catalogName, depCatalog string, ordinal int, vec types.Vector) error {
 	dirJSON, err := schema.MarshalDirectives(field.Directives)
 	if err != nil {
@@ -325,24 +352,21 @@ func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName s
 	}
 
 	fieldTypeName := baseTypeName(field.Type)
+	isPK := field.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil
 
-	if p.vecSize > 0 {
-		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (type_name, name, field_type, field_type_name, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, vec, ordinal)
-			 VALUES ($1, $2, $3, $4, $5, '', $6, $7, $8, $9, false, $10, $11)
-			 ON CONFLICT (type_name, name) DO UPDATE SET
-			   field_type=$3, field_type_name=$4, description=$5, hugr_type=$6, catalog=$7, dependency_catalog=$8, directives=$9, is_summarized=false, vec=$10, ordinal=$11`,
-			p.table("_schema_fields"),
-		), typeName, field.Name, fieldType, fieldTypeName, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), vec, ordinal)
-	} else {
-		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (type_name, name, field_type, field_type_name, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, ordinal)
-			 VALUES ($1, $2, $3, $4, $5, '', $6, $7, $8, $9, false, $10)
-			 ON CONFLICT (type_name, name) DO UPDATE SET
-			   field_type=$3, field_type_name=$4, description=$5, hugr_type=$6, catalog=$7, dependency_catalog=$8, directives=$9, is_summarized=false, ordinal=$10`,
-			p.table("_schema_fields"),
-		), typeName, field.Name, fieldType, fieldTypeName, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), ordinal)
-	}
+	tbl := p.table("_schema_fields")
+	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
+		`INSERT INTO %s (type_name, name, field_type, field_type_name, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_pk, is_summarized, vec, ordinal)
+		 VALUES ($1, $2, $3, $4, $5, '', $6, $7, $8, $9, $10, false, $11, $12)
+		 ON CONFLICT (type_name, name) DO UPDATE SET
+		   field_type=$3, field_type_name=$4,
+		   description = CASE WHEN $5 != '' THEN $5 ELSE %s.description END,
+		   long_description = CASE WHEN $5 != '' THEN '' ELSE %s.long_description END,
+		   hugr_type=$6, catalog=$7, dependency_catalog=$8, directives=$9, is_pk=$10,
+		   is_summarized = CASE WHEN $5 != '' THEN false ELSE %s.is_summarized END,
+		   vec=$11, ordinal=$12`,
+		tbl, tbl, tbl, tbl,
+	), typeName, field.Name, fieldType, fieldTypeName, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), isPK, vec, ordinal)
 	return err
 }
 
