@@ -154,8 +154,8 @@ func TestMCP_ToolsList(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	tools := result["tools"].([]any)
 
-	// Should have 9 tools (4 discovery + 3 schema + 2 data).
-	assert.Len(t, tools, 9, "expected 9 MCP tools")
+	// Should have 10 tools (5 discovery + 3 schema + 2 data).
+	assert.Len(t, tools, 10, "expected 10 MCP tools")
 
 	// Verify tool names.
 	toolNames := make(map[string]bool)
@@ -168,6 +168,7 @@ func TestMCP_ToolsList(t *testing.T) {
 		"discovery-search_data_sources",
 		"discovery-search_module_data_objects",
 		"discovery-search_module_functions",
+		"discovery-field_values",
 		"schema-type_info",
 		"schema-type_fields",
 		"schema-enum_values",
@@ -189,8 +190,8 @@ func TestMCP_ResourcesList(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	resources := result["resources"].([]any)
 
-	// Should have 7 resources.
-	assert.Len(t, resources, 7, "expected 7 MCP resources")
+	// Should have 4 resources (overview, query-patterns, filter-guide, aggregations).
+	assert.Len(t, resources, 4, "expected 4 MCP resources")
 }
 
 func TestMCP_PromptsList(t *testing.T) {
@@ -203,7 +204,7 @@ func TestMCP_PromptsList(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	prompts := result["prompts"].([]any)
 
-	// Should have 4 prompts.
+	// Should have 4 prompts (start, analyze, query, dashboard).
 	assert.Len(t, prompts, 4, "expected 4 MCP prompts")
 }
 
@@ -276,6 +277,9 @@ func TestMCP_SchemaTypeInfo(t *testing.T) {
 	var typeInfo map[string]any
 	require.NoError(t, json.Unmarshal([]byte(textContent), &typeInfo))
 	assert.Equal(t, "core_data_sources", typeInfo["name"])
+	assert.Contains(t, typeInfo, "fields_total")
+	assert.Contains(t, typeInfo, "has_geometry_field")
+	assert.Contains(t, typeInfo, "has_field_with_arguments")
 }
 
 func TestMCP_SchemaTypeFields(t *testing.T) {
@@ -296,9 +300,20 @@ func TestMCP_SchemaTypeFields(t *testing.T) {
 
 	textContent := content[0].(map[string]any)["text"].(string)
 	t.Logf("type_fields response text: %.500s", textContent)
-	var fields []any
-	require.NoError(t, json.Unmarshal([]byte(textContent), &fields))
-	assert.Greater(t, len(fields), 0, "core_data_sources should have fields")
+	var fieldsResult map[string]any
+	require.NoError(t, json.Unmarshal([]byte(textContent), &fieldsResult))
+	assert.Contains(t, fieldsResult, "total")
+	assert.Contains(t, fieldsResult, "returned")
+	assert.Contains(t, fieldsResult, "items")
+	items := fieldsResult["items"].([]any)
+	assert.Greater(t, len(items), 0, "core_data_sources should have fields")
+	// Check that each field has required fields.
+	first := items[0].(map[string]any)
+	assert.Contains(t, first, "name")
+	assert.Contains(t, first, "field_type")
+	assert.Contains(t, first, "hugr_type")
+	assert.Contains(t, first, "is_list")
+	assert.Contains(t, first, "arguments_count")
 }
 
 func TestMCP_PromptGet(t *testing.T) {

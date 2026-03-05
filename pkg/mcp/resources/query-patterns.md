@@ -5,9 +5,21 @@
 ```graphql
 query {
   module_name {
-    table_name(filter: {field: {eq: "value"}}, limit: 10) {
+    table_name(filter: {field: {eq: "value"}}, order_by: [{field: "name", direction: ASC}], limit: 10) {
       field1
       field2
+    }
+  }
+}
+```
+
+## Select One (by PK)
+
+```graphql
+query {
+  module {
+    table_by_pk(id: 1) {
+      id name
     }
   }
 }
@@ -21,6 +33,64 @@ query {
     orders {
       id total
       customer { name category }
+      items(nested_limit: 5) {
+        product { name price }
+      }
+    }
+  }
+}
+```
+
+## Relations with Aggregation
+
+```graphql
+query {
+  module {
+    customers {
+      id name
+      orders_aggregation {
+        _rows_count
+        total: amount { sum avg }
+      }
+      orders_bucket_aggregation {
+        key { status }
+        aggregations { _rows_count total: amount { sum avg } }
+      }
+    }
+  }
+}
+```
+
+## Filter by Relations
+
+```graphql
+query {
+  module {
+    orders(filter: {
+      customer: {category: {eq: "premium"}}
+      items: {any_of: {product: {category: {eq: "electronics"}}}}
+    }) {
+      id total
+      customer { name }
+    }
+  }
+}
+```
+
+## Nested Sorting & Pagination
+
+```graphql
+query {
+  module {
+    customers {
+      id name
+      orders(
+        filter: {status: {eq: "active"}}
+        nested_order_by: [{field: "total", direction: DESC}]
+        nested_limit: 3
+      ) {
+        id total status
+      }
     }
   }
 }
@@ -49,7 +119,7 @@ mutation {
   mutation_function {
     module {
       my_mutation(input: "data") {
-        status
+        success
         affected_rows
       }
     }
@@ -57,13 +127,27 @@ mutation {
 }
 ```
 
-## Select One (by PK)
+## Bucket Aggregation with Sorting
 
 ```graphql
 query {
   module {
-    table_by_pk(id: 1) {
-      id name
+    orders_bucket_aggregation(
+      order_by: [
+        {field: "aggregations.total.sum", direction: DESC}
+        {field: "key.status", direction: ASC}
+      ]
+      limit: 10
+    ) {
+      key { status }
+      aggregations {
+        _rows_count
+        total: amount { sum avg }
+      }
+      filtered: aggregations(filter: {category: {eq: "premium"}}) {
+        _rows_count
+        total: amount { sum avg }
+      }
     }
   }
 }
@@ -79,59 +163,21 @@ query {
 }
 ```
 
-## H3 Spatial Aggregation
-
-H3 is a root-level query that aggregates data into hexagonal cells. The `resolution` argument is required at the root level. Inside the `data` field, use `<table>_aggregation(field: "<geometry_field>")` to aggregate by geometry.
-
-```graphql
-query {
-  h3(resolution: 4) {
-    cell
-    resolution
-    geom
-    data {
-      pg_store_locations_aggregation(field: "point") {
-        _rows_count
-      }
-    }
-  }
-}
-```
-
-Note: Inside `data`, table names use the **catalog prefix** (not the module name). For example, if the catalog prefix is `pg_store`, the field is `pg_store_locations_aggregation`. Both `_aggregation` and `_bucket_aggregation` variants are available.
-
-## Cube Tables (@cube)
-
-Tables with `@cube` are OLAP cube types. Fields marked `@measurement` receive a `measurement_func` argument that selects the aggregation function (SUM, AVG, MIN, MAX, ANY) to apply before returning data. This enables pre-aggregated queries on fact tables.
-
-```graphql
-query {
-  SalesCube(filter: {region: {eq: "US"}}) {
-    region
-    product
-    revenue(measurement_func: SUM)
-    quantity(measurement_func: AVG)
-  }
-}
-```
-
-Cube tables also generate standard aggregation and bucket aggregation queries.
-
 ## Query-Time Join (`_join`)
 
 Join data from different tables at query time by matching field values. The `_join` field is available on every table/view. Inside `_join`, table names use the **catalog prefix** (not the module name).
 
 ```graphql
 query {
-  pg_store {
+  module {
     products(filter: { id: { eq: 1 } }) {
-      id
-      name
-      category_id
+      id name category_id
       _join(fields: ["category_id"]) {
-        pg_store_categories(fields: ["id"]) {
-          id
-          name
+        prefix_categories(fields: ["id"]) {
+          id name
+        }
+        prefix_categories_aggregation(fields: ["id"]) {
+          _rows_count
         }
       }
     }
@@ -142,23 +188,8 @@ query {
 Arguments on `_join` subfields:
 - `fields: [String!]!` — target table fields to match against source `_join(fields: ...)`
 - `filter`, `order_by`, `limit`, `offset`, `distinct_on` — applied **before** the join
-- `nested_order_by`, `nested_limit`, `nested_offset` — applied **after** the join (controls result ordering/pagination of joined data)
-- `inner: true` — use INNER JOIN instead of LEFT JOIN (excludes source rows without matches)
-
-Aggregation variants are also available inside `_join`:
-
-```graphql
-_join(fields: ["category_id"]) {
-  pg_store_products_aggregation(fields: ["category_id"]) {
-    _rows_count
-    price { sum avg }
-  }
-  pg_store_products_bucket_aggregation(fields: ["category_id"]) {
-    key { name }
-    aggregations { _rows_count }
-  }
-}
-```
+- `nested_order_by`, `nested_limit`, `nested_offset` — applied **after** the join
+- `inner: true` — use INNER JOIN instead of LEFT JOIN
 
 ## Spatial Join (`_spatial`)
 
@@ -166,15 +197,12 @@ Join data using geometry intersection. The `_spatial` field is available on tabl
 
 ```graphql
 query {
-  pg_store {
-    locations(filter: { id: { eq: 1 } }) {
-      id
-      name
+  module {
+    locations {
+      id name point
       _spatial(field: "point", type: INTERSECTS) {
-        pg_store_locations(field: "area") {
-          id
-          name
-        }
+        prefix_areas(field: "geom") { id name }
+        prefix_areas_aggregation(field: "geom") { _rows_count }
       }
     }
   }
@@ -183,13 +211,49 @@ query {
 
 Arguments on `_spatial`:
 - `field: String!` — source geometry field name
-- `type: GeometrySpatialQueryType!` — spatial relation: `INTERSECTS`, `WITHIN`, `CONTAINS`, `DISJOIN`, `DWITHIN`
+- `type: GeometrySpatialQueryType!` — `INTERSECTS`, `WITHIN`, `CONTAINS`, `DISJOINT`, `DWITHIN`
 - `buffer: Int` — buffer distance in meters (required for `DWITHIN`)
 
-Subfield arguments (same as `_join`):
-- `field: String!` — target geometry field name
-- `filter`, `order_by`, `limit`, `offset`, `distinct_on` — pre-join filtering
-- `nested_order_by`, `nested_limit`, `nested_offset` — post-join ordering
-- `inner: true` — INNER JOIN mode
+## H3 Spatial Aggregation
 
-Table names inside `_spatial` also use the **catalog prefix**.
+```graphql
+query {
+  h3(resolution: 4) {
+    cell resolution geom
+    data {
+      prefix_locations_aggregation(field: "point") { _rows_count }
+    }
+  }
+}
+```
+
+## Cube Tables (@cube)
+
+Tables with `@cube` have `@measurement` fields with `measurement_func` argument (SUM, AVG, MIN, MAX, ANY):
+
+```graphql
+query {
+  SalesCube(filter: {region: {eq: "US"}}) {
+    region product
+    revenue(measurement_func: SUM)
+    quantity(measurement_func: AVG)
+  }
+}
+```
+
+## Distinct On
+
+```graphql
+query {
+  module {
+    orders(
+      distinct_on: ["customer_id"]
+      order_by: [{field: "customer_id", direction: ASC}, {field: "created_at", direction: DESC}]
+    ) {
+      customer_id created_at total
+    }
+  }
+}
+```
+
+Note: first `order_by` field must be one of the `distinct_on` fields.

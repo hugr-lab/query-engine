@@ -65,17 +65,17 @@ func (s *Server) inlineGraphQLResult(ctx context.Context, req mcp.CallToolReques
 		return toolResultError(fmt.Sprintf("marshal result: %v", err)), nil
 	}
 
-	isTruncated := false
 	originalSize := len(b)
-	if originalSize > maxResultSize {
-		b = b[:maxResultSize]
-		isTruncated = true
-	}
+	isTruncated := originalSize > maxResultSize
 
 	result := map[string]any{
 		"is_truncated":  isTruncated,
 		"original_size": originalSize,
-		"data":          json.RawMessage(b),
+	}
+	if isTruncated {
+		result["data"] = string(b[:maxResultSize]) + "..."
+	} else {
+		result["data"] = json.RawMessage(b)
 	}
 
 	return toolResultJSON(result), nil
