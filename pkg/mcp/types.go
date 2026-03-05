@@ -136,7 +136,7 @@ type FieldArgumentInfo struct {
 
 // distanceToScore converts embedding distance (0=identical) to a 0-1 score (1=best).
 func distanceToScore(d float64) float64 {
-	if d <= 0 {
+	if d < 0 {
 		return 0
 	}
 	return 1 - d

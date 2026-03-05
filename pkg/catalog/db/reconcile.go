@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
@@ -34,13 +35,12 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 		return fmt.Errorf("reconcile clean module_catalogs: %w", err)
 	}
 	// Delete orphan modules (no remaining catalog links, excluding root module '').
-	// This correctly handles the case where a module was solely provided by this catalog:
-	// the module record is removed and will be re-created fresh below with only the
-	// root types that actually exist (avoiding stale COALESCE issues).
+	// This is intentionally global (no catalog filter): any module with zero
+	// remaining links in _schema_module_type_catalogs is stale and should be removed.
 	if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
 		`DELETE FROM %s WHERE name != '' AND name NOT IN (SELECT DISTINCT module_name FROM %s)`,
 		p.table("_schema_modules"), p.table("_schema_module_type_catalogs"),
-	), catalogName); err != nil {
+	)); err != nil {
 		return fmt.Errorf("reconcile clean orphan modules: %w", err)
 	}
 	if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
@@ -262,10 +262,12 @@ func (p *Provider) collectModuleInfo(ctx context.Context, conn *Connection, cata
 	for rows.Next() {
 		var typeName, moduleCol, dirJSON string
 		if err := rows.Scan(&typeName, &moduleCol, &dirJSON); err != nil {
+			slog.Warn("reconcile: collectModuleInfo scan error", "error", err)
 			continue
 		}
 		dirs, err := schema.UnmarshalDirectives([]byte(dirJSON))
 		if err != nil {
+			slog.Warn("reconcile: collectModuleInfo unmarshal directives", "type", typeName, "error", err)
 			continue
 		}
 
@@ -350,10 +352,12 @@ func (p *Provider) preloadModuleNames(ctx context.Context, conn *Connection) (ma
 	for rows.Next() {
 		var typeName, dirJSON string
 		if err := rows.Scan(&typeName, &dirJSON); err != nil {
+			slog.Warn("reconcile: preloadModuleNames scan error", "error", err)
 			continue
 		}
 		dirs, err := schema.UnmarshalDirectives([]byte(dirJSON))
 		if err != nil {
+			slog.Warn("reconcile: preloadModuleNames unmarshal directives", "type", typeName, "error", err)
 			continue
 		}
 		mrDir := dirs.ForName(base.ModuleRootDirectiveName)
@@ -395,10 +399,12 @@ func (p *Provider) collectFieldModuleCatalogs(ctx context.Context, conn *Connect
 	for rows.Next() {
 		var parentType, fieldType, dirJSON string
 		if err := rows.Scan(&parentType, &fieldType, &dirJSON); err != nil {
+			slog.Warn("reconcile: collectFieldModuleCatalogs scan error", "error", err)
 			continue
 		}
 		dirs, err := schema.UnmarshalDirectives([]byte(dirJSON))
 		if err != nil {
+			slog.Warn("reconcile: collectFieldModuleCatalogs unmarshal directives", "type", parentType, "error", err)
 			continue
 		}
 		var cats []string
@@ -461,6 +467,7 @@ func (p *Provider) collectDependencies(ctx context.Context, conn *Connection, ca
 	for rows.Next() {
 		var dep string
 		if err := rows.Scan(&dep); err != nil {
+			slog.Warn("reconcile: collectDependencies scan error", "error", err)
 			continue
 		}
 		deps = append(deps, dep)
@@ -494,6 +501,7 @@ func (p *Provider) collectDataObjects(ctx context.Context, conn *Connection, cat
 		var name string
 		var filterType, argsType *string
 		if err := rows.Scan(&name, &filterType, &argsType); err != nil {
+			slog.Warn("reconcile: collectDataObjects scan error", "error", err)
 			continue
 		}
 		do := dataObjectInfo{name: name}
@@ -574,6 +582,7 @@ func (p *Provider) reconcileDataObjectQueries(ctx context.Context, conn *Connect
 	for rows.Next() {
 		var rf rawField
 		if err := rows.Scan(&rf.name, &rf.fieldType, &rf.queryRoot, &rf.hugrType, &rf.dirJSON); err != nil {
+			slog.Warn("reconcile: reconcileDataObjectQueries scan error", "error", err)
 			continue
 		}
 		switch rf.hugrType {
@@ -665,6 +674,7 @@ func (p *Provider) collectReverseDependencies(ctx context.Context, conn *Connect
 	for rows.Next() {
 		var dep string
 		if err := rows.Scan(&dep); err != nil {
+			slog.Warn("reconcile: collectReverseDependencies scan error", "error", err)
 			continue
 		}
 		deps = append(deps, dep)

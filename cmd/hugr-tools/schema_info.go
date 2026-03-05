@@ -91,6 +91,7 @@ func fetchSchemaInfo(ctx context.Context, client *hugr.Client, module string) (*
 					name
 					hugr_type
 					catalog
+					fields_aggregation { _rows_count }
 				}
 			}
 		}
@@ -107,9 +108,9 @@ func fetchSchemaInfo(ctx context.Context, client *hugr.Client, module string) (*
 		Name     string `json:"name"`
 		HugrType string `json:"hugr_type"`
 		Catalog  string `json:"catalog"`
-		Fields   *struct {
-			Count int `json:"count"`
-		} `json:"fields"`
+		FieldsAgg *struct {
+			Count int `json:"_rows_count"`
+		} `json:"fields_aggregation"`
 	}
 	_ = typesRes.ScanData("core.catalog.types", &types)
 
@@ -172,8 +173,8 @@ modules {
 
 	for _, t := range types {
 		fc := 0
-		if t.Fields != nil {
-			fc = t.Fields.Count
+		if t.FieldsAgg != nil {
+			fc = t.FieldsAgg.Count
 		}
 		entry := typeEntry{Name: t.Name, FieldCount: fc, Catalog: t.Catalog}
 		switch t.HugrType {

@@ -337,6 +337,14 @@ func (p *Provider) EnableCatalog(ctx context.Context, name string) error {
 // Dependency records in _schema_catalog_dependencies are preserved so
 // reactivateSuspended can check whether all deps are satisfied.
 func (p *Provider) suspendDependents(ctx context.Context, name string) error {
+	return p.suspendDependentsVisited(ctx, name, make(map[string]bool))
+}
+
+func (p *Provider) suspendDependentsVisited(ctx context.Context, name string, visited map[string]bool) error {
+	if visited[name] {
+		return nil
+	}
+	visited[name] = true
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("suspend dependents: %w", err)
@@ -369,7 +377,7 @@ func (p *Provider) suspendDependents(ctx context.Context, name string) error {
 			"catalog", depName, "dependency", name)
 
 		// Recursively suspend catalogs that depend on this dependent.
-		if err := p.suspendDependents(ctx, depName); err != nil {
+		if err := p.suspendDependentsVisited(ctx, depName, visited); err != nil {
 			slog.Error("failed to recursively suspend dependents",
 				"catalog", depName, "error", err)
 		}
@@ -437,8 +445,14 @@ func (p *Provider) reactivateSuspended(ctx context.Context) {
 
 		srcVersion, _ := source.Version(ctx)
 		compositeVersion := catalogVersionWithOptions(srcVersion, source.CompileOptions())
-		_ = p.SetCatalogVersion(ctx, rec.Name, compositeVersion)
-		_ = p.SetCatalogSuspended(ctx, rec.Name, false)
+		if err := p.SetCatalogVersion(ctx, rec.Name, compositeVersion); err != nil {
+			slog.Error("failed to set catalog version during reactivation",
+				"catalog", rec.Name, "error", err)
+		}
+		if err := p.SetCatalogSuspended(ctx, rec.Name, false); err != nil {
+			slog.Error("failed to unsuspend catalog during reactivation",
+				"catalog", rec.Name, "error", err)
+		}
 
 		p.mu.Lock()
 		p.catalogs[rec.Name] = source // keep source handle after reactivation

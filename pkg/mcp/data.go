@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -17,6 +18,12 @@ func (s *Server) inlineGraphQLResult(ctx context.Context, req mcp.CallToolReques
 
 	if query == "" {
 		return toolResultError("query is required"), nil
+	}
+
+	// Reject mutation operations — this tool is read-only.
+	trimmed := strings.TrimSpace(query)
+	if strings.HasPrefix(trimmed, "mutation") {
+		return toolResultError("mutations are not allowed via this tool; use the appropriate mutation endpoint"), nil
 	}
 	if maxResultSize < 100 {
 		maxResultSize = 100
@@ -73,7 +80,7 @@ func (s *Server) inlineGraphQLResult(ctx context.Context, req mcp.CallToolReques
 		"original_size": originalSize,
 	}
 	if isTruncated {
-		result["data"] = string(b[:maxResultSize]) + "..."
+		result["data"] = fmt.Sprintf("[truncated: result is %d bytes, max is %d. Increase max_result_size or use jq_transform to reduce output]", originalSize, maxResultSize)
 	} else {
 		result["data"] = json.RawMessage(b)
 	}

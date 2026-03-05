@@ -169,7 +169,9 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		}
 		var agg aggResult
 
-		gql := fmt.Sprintf(`query($filter: core_catalog_fields_filter, $limit: Int, $offset: Int) {
+		vars["relevance_query"] = relevanceQuery
+
+		gql := fmt.Sprintf(`query($filter: core_catalog_fields_filter, $limit: Int, $offset: Int, $relevance_query: String!) {
 			core {
 				catalog {
 					fields(
@@ -183,14 +185,14 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 						field_type_name
 						description
 						hugr_type
-						_distance_to_query(query: %q)
+						_distance_to_query(query: $relevance_query)
 						arguments_aggregation { _rows_count }
 						%s
 					}
 					fields_aggregation(filter: $filter) { _rows_count }
 				}
 			}
-		}`, relevanceQuery, argSelection)
+		}`, argSelection)
 
 		res, err := s.querier.Query(ctx, gql, vars)
 		if err != nil {

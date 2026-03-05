@@ -41,13 +41,16 @@ DELETE FROM %s WHERE name != '' AND name NOT IN (SELECT DISTINCT module_name FRO
 		p.table("_schema_fields"),
 		// 6. types
 		p.table("_schema_types"),
-		// 7. orphan data_object_queries
+		// 7. orphan data_object_queries — intentionally global: removes queries
+		// referencing types that no longer exist in any catalog.
 		p.table("_schema_data_object_queries"), p.table("_schema_types"),
-		// 8. orphan data_objects
+		// 8. orphan data_objects — intentionally global: removes data objects
+		// referencing types that no longer exist in any catalog.
 		p.table("_schema_data_objects"), p.table("_schema_types"),
 		// 9. module_catalogs for this catalog
 		p.table("_schema_module_type_catalogs"),
-		// 10. orphan modules (no remaining catalog links, excluding root module '')
+		// 10. orphan modules — intentionally global: removes modules with no
+		// remaining catalog links (excluding root module '').
 		p.table("_schema_modules"), p.table("_schema_module_type_catalogs"),
 	)
 

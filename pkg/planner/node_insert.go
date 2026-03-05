@@ -458,9 +458,6 @@ func insertDataObjectNode(ctx context.Context, provider catalog.Provider, e engi
 					return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "To m2m link %s and %s field %[1]s.%s is required", m.ObjectName, path, sf)
 				}
 				m2mData[rf] = v
-				if err != nil {
-					return nil, nil, err
-				}
 			}
 			nodes = append(nodes,
 				insertNode(ctx, m2mInfo, m2mData),

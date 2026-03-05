@@ -150,6 +150,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 }
 
 func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
+	escSQL := func(val string) string { return strings.ReplaceAll(val, "'", "''") }
 	_, err := db.Exec(ctx, fmt.Sprintf(`
 		CREATE OR REPLACE PERSISTENT SECRET coredb_s3 (
 			TYPE s3,
@@ -161,10 +162,7 @@ func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
 			URL_STYLE 'path',
 			SCOPE '%s'
 		);
-	`, s.c.S3Key, s.c.S3Secret, s.c.S3Region, s.c.S3Endpoint, s.c.S3UseSSL, s.c.Path))
-	if err != nil {
-		return err
-	}
+	`, escSQL(s.c.S3Key), escSQL(s.c.S3Secret), escSQL(s.c.S3Region), escSQL(s.c.S3Endpoint), s.c.S3UseSSL, escSQL(s.c.Path)))
 	return err
 }
 

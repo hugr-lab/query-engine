@@ -1667,11 +1667,11 @@ func (s *summarizer) prepareDataSourceContext(ctx context.Context, name string) 
 	}
 
 	// Fetch functions from module_intro.
-	fnRes, err := s.client.Query(ctx, `query($name: String!) {
-		core { catalog { module_intro(filter: {catalog: {eq: $name}, hugr_type: {eq: "function"}}) {
+	fnRes, err := s.client.Query(ctx, `query($name: String!, $types: [String!]) {
+		core { catalog { module_intro(filter: {catalog: {eq: $name}, hugr_type: {in: $types}}) {
 			field_name field_description
 		}}}
-	}`, map[string]any{"name": name})
+	}`, map[string]any{"name": name, "types": strings.Split(hugrFunctionTypes, ",")})
 	var functions []namedItem
 	if err == nil {
 		var fns []struct {

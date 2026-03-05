@@ -58,11 +58,27 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 			if len(args) != 4 {
 				return fieldDescArgs{}, fmt.Errorf("expected 4 arguments, got %d", len(args))
 			}
+			typeName, ok := args[0].(string)
+			if !ok {
+				return fieldDescArgs{}, fmt.Errorf("expected string for type_name, got %T", args[0])
+			}
+			name, ok := args[1].(string)
+			if !ok {
+				return fieldDescArgs{}, fmt.Errorf("expected string for name, got %T", args[1])
+			}
+			description, ok := args[2].(string)
+			if !ok {
+				return fieldDescArgs{}, fmt.Errorf("expected string for description, got %T", args[2])
+			}
+			longDescription, ok := args[3].(string)
+			if !ok {
+				return fieldDescArgs{}, fmt.Errorf("expected string for long_description, got %T", args[3])
+			}
 			return fieldDescArgs{
-				typeName:        args[0].(string),
-				name:            args[1].(string),
-				description:     args[2].(string),
-				longDescription: args[3].(string),
+				typeName:        typeName,
+				name:            name,
+				description:     description,
+				longDescription: longDescription,
 			}, nil
 		},
 		ConvertOutput: convertOperationResult,
@@ -174,9 +190,17 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 			if len(args) != 2 {
 				return resetSummarizedArgs{}, fmt.Errorf("expected 2 arguments, got %d", len(args))
 			}
+			name, ok := args[0].(string)
+			if !ok {
+				return resetSummarizedArgs{}, fmt.Errorf("expected string for name, got %T", args[0])
+			}
+			scope, ok := args[1].(string)
+			if !ok {
+				return resetSummarizedArgs{}, fmt.Errorf("expected string for scope, got %T", args[1])
+			}
 			return resetSummarizedArgs{
-				name:  args[0].(string),
-				scope: args[1].(string),
+				name:  name,
+				scope: scope,
 			}, nil
 		},
 		ConvertOutput: convertOperationResult,
@@ -213,9 +237,17 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 			if len(args) != 2 {
 				return reindexArgs{}, fmt.Errorf("expected 2 arguments, got %d", len(args))
 			}
+			name, ok := args[0].(string)
+			if !ok {
+				return reindexArgs{}, fmt.Errorf("expected string for name, got %T", args[0])
+			}
+			batchSize, ok := args[1].(int32)
+			if !ok {
+				return reindexArgs{}, fmt.Errorf("expected int32 for batch_size, got %T", args[1])
+			}
 			return reindexArgs{
-				name:      args[0].(string),
-				batchSize: args[1].(int32),
+				name:      name,
+				batchSize: batchSize,
 			}, nil
 		},
 		ConvertOutput: convertOperationResult,
@@ -260,10 +292,22 @@ func convertDescArgs(args []driver.Value) (descArgs, error) {
 	if len(args) != 3 {
 		return descArgs{}, fmt.Errorf("expected 3 arguments, got %d", len(args))
 	}
+	name, ok := args[0].(string)
+	if !ok {
+		return descArgs{}, fmt.Errorf("expected string for name, got %T", args[0])
+	}
+	description, ok := args[1].(string)
+	if !ok {
+		return descArgs{}, fmt.Errorf("expected string for description, got %T", args[1])
+	}
+	longDescription, ok := args[2].(string)
+	if !ok {
+		return descArgs{}, fmt.Errorf("expected string for long_description, got %T", args[2])
+	}
 	return descArgs{
-		name:            args[0].(string),
-		description:     args[1].(string),
-		longDescription: args[2].(string),
+		name:            name,
+		description:     description,
+		longDescription: longDescription,
 	}, nil
 }
 
@@ -271,7 +315,11 @@ func convertStringArg(args []driver.Value) (string, error) {
 	if len(args) != 1 {
 		return "", fmt.Errorf("expected 1 argument, got %d", len(args))
 	}
-	return args[0].(string), nil
+	s, ok := args[0].(string)
+	if !ok {
+		return "", fmt.Errorf("expected string, got %T", args[0])
+	}
+	return s, nil
 }
 
 func convertOperationResult(out *types.OperationResult) (any, error) {

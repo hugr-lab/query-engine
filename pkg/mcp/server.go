@@ -71,6 +71,7 @@ NOTE: aggregation and bucket_aggregation are data object queries, NOT functions 
 		mcp.WithString("module", mcp.Required(), mcp.Description("Module name to search within")),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural language query describing what tables/views you need")),
 		mcp.WithNumber("top_k", mcp.Description("Number of results (1-50)"), mcp.DefaultNumber(5)),
+		mcp.WithNumber("min_score", mcp.Description("Minimum relevance score (0-1)"), mcp.DefaultNumber(0.3)),
 		mcp.WithBoolean("include_sub_modules", mcp.Description("Include sub-module data objects"), mcp.DefaultBool(true)),
 		mcp.WithOutputSchema[SearchResult[DataObjectSearchItem]](),
 	), s.searchModuleDataObjects)
@@ -143,7 +144,6 @@ Query rules:
 - Aggregation functions by type: numeric (sum/avg/min/max/count), string (count/any/first/last/list — NO min/max/avg), timestamp (min/max/count)`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("GraphQL query")),
 		mcp.WithObject("variables", mcp.Description("Query variables")),
-		mcp.WithString("operation_name", mcp.Description("Operation name")),
 		mcp.WithString("jq_transform", mcp.Description("JQ expression to apply to result")),
 		mcp.WithNumber("max_result_size", mcp.Description("Max result bytes (100-5000). Increase if result is truncated."), mcp.DefaultNumber(1000)),
 	), s.inlineGraphQLResult)
@@ -153,7 +153,6 @@ Query rules:
 Validates field names, argument types, filter structure, and order_by paths.`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("GraphQL query")),
 		mcp.WithObject("variables", mcp.Description("Query variables")),
-		mcp.WithString("operation_name", mcp.Description("Operation name")),
 	), s.validateGraphQLQuery)
 
 	// Resources.
@@ -228,6 +227,7 @@ func toolLoggingMiddleware() server.ToolHandlerMiddleware {
 					}
 				}
 			}
+			responseLen := len(preview)
 			if len(preview) > 500 {
 				preview = preview[:500] + "..."
 			}
@@ -235,7 +235,7 @@ func toolLoggingMiddleware() server.ToolHandlerMiddleware {
 			slog.Info("MCP tool result",
 				"tool", tool,
 				"duration", dur,
-				"response_len", len(preview),
+				"response_len", responseLen,
 				"preview", preview,
 			)
 

@@ -396,8 +396,6 @@ func fieldResolver(ctx context.Context, provider catalog.Provider, def *ast.Fiel
 				return base.HugrTypeFieldSelectOne, nil
 			case sdl.IsSelectQueryDefinition(def):
 				return base.HugrTypeFieldSelect, nil
-			case sdl.IsAggregateQueryDefinition(def):
-				return base.HugrTypeFieldAgg, nil
 			case sdl.IsBucketAggregateQueryDefinition(def):
 				return base.HugrTypeFieldBucketAgg, nil
 			case sdl.IsFunctionCall(def):
@@ -495,7 +493,7 @@ func argumentResolver(ctx context.Context, provider catalog.Provider, def *ast.A
 			return def.DefaultValue.Raw, nil
 		},
 		"hugr_type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			return "test", nil
+			return "", nil
 		},
 	}, "__InputValue")
 }
@@ -522,7 +520,7 @@ func inputValueResolver(ctx context.Context, provider catalog.Provider, def *ast
 			return def.DefaultValue.Raw, nil
 		},
 		"hugr_type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			return "test", nil
+			return "", nil
 		},
 	}, "__InputValue")
 }

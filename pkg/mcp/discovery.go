@@ -21,20 +21,20 @@ func (s *Server) searchModules(ctx context.Context, req mcp.CallToolRequest) (*m
 		Desc     string  `json:"description"`
 		Distance float64 `json:"_distance_to_query"`
 	}
-	err := s.queryScan(ctx, fmt.Sprintf(`query {
+	err := s.queryScan(ctx, `query($query: String!, $limit: Int) {
 		core {
 			catalog {
 				modules(
 					order_by: [{field: "_distance_to_query", direction: ASC}]
-					limit: %d
+					limit: $limit
 				) {
 					name
 					description
-					_distance_to_query(query: %q)
+					_distance_to_query(query: $query)
 				}
 			}
 		}
-	}`, topK, query), nil, "core.catalog.modules", &items)
+	}`, map[string]any{"query": query, "limit": topK}, "core.catalog.modules", &items)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
@@ -75,23 +75,23 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 		AsModule bool    `json:"as_module"`
 		Distance float64 `json:"_distance_to_query"`
 	}
-	err := s.queryScan(ctx, fmt.Sprintf(`query {
+	err := s.queryScan(ctx, `query($query: String!, $limit: Int) {
 		core {
 			catalog {
 				catalogs(
 					order_by: [{field: "_distance_to_query", direction: ASC}]
-					limit: %d
+					limit: $limit
 				) {
 					name
 					description
 					type
 					read_only
 					as_module
-					_distance_to_query(query: %q)
+					_distance_to_query(query: $query)
 				}
 			}
 		}
-	}`, topK, query), nil, "core.catalog.catalogs", &items)
+	}`, map[string]any{"query": query, "limit": topK}, "core.catalog.catalogs", &items)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
@@ -123,13 +123,14 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 	module := req.GetString("module", "")
 	query := req.GetString("query", "")
 	topK := req.GetInt("top_k", 5)
+	minScore := req.GetFloat("min_score", 0.3)
 	if module == "" || query == "" {
 		return toolResultError("module and query are required"), nil
 	}
 
-	moduleFilter := fmt.Sprintf(`{eq: %q}`, module)
+	moduleFilter := map[string]any{"eq": module}
 	if req.GetBool("include_sub_modules", true) {
-		moduleFilter = fmt.Sprintf(`{like: %q}`, module+"%%")
+		moduleFilter = map[string]any{"like": module + "%"}
 	}
 
 	var items []struct {
@@ -145,22 +146,19 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 			} `json:"queries"`
 		} `json:"data_object"`
 	}
-	err := s.queryScan(ctx, fmt.Sprintf(`query {
+	err := s.queryScan(ctx, `query($filter: core_catalog_types_filter, $limit: Int, $query: String!) {
 		core {
 			catalog {
 				types(
-					filter: {
-						hugr_type: {in: ["table", "view"]}
-						module: %s
-					}
+					filter: $filter
 					order_by: [{field: "_distance_to_query", direction: ASC}]
-					limit: %d
+					limit: $limit
 				) {
 					name
 					hugr_type
 					description
 					module
-					_distance_to_query(query: %q)
+					_distance_to_query(query: $query)
 					data_object {
 						queries {
 							name
@@ -170,7 +168,14 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 				}
 			}
 		}
-	}`, moduleFilter, topK, query), nil, "core.catalog.types", &items)
+	}`, map[string]any{
+		"filter": map[string]any{
+			"hugr_type": map[string]any{"in": []string{"table", "view"}},
+			"module":    moduleFilter,
+		},
+		"limit": topK,
+		"query": query,
+	}, "core.catalog.types", &items)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
@@ -178,6 +183,9 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 	var result []DataObjectSearchItem
 	for _, item := range items {
 		score := distanceToScore(item.Distance)
+		if minScore > 0 && score < minScore {
+			continue
+		}
 
 		var queries []DataObjectQuery
 		if len(item.DataObject) > 0 {
@@ -214,9 +222,9 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 	}
 
 	// Step 1: Get function root type names for the module(s).
-	moduleFilter := fmt.Sprintf(`{eq: %q}`, module)
+	moduleFilter := map[string]any{"eq": module}
 	if includeSubModules {
-		moduleFilter = fmt.Sprintf(`{like: %q}`, module+"%%")
+		moduleFilter = map[string]any{"like": module + "%"}
 	}
 
 	var modules []struct {
@@ -224,17 +232,19 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 		FunctionRoot    string `json:"function_root"`
 		MutFunctionRoot string `json:"mut_function_root"`
 	}
-	err := s.queryScan(ctx, fmt.Sprintf(`query {
+	err := s.queryScan(ctx, `query($filter: core_catalog_modules_filter) {
 		core {
 			catalog {
-				modules(filter: {name: %s}) {
+				modules(filter: $filter) {
 					name
 					function_root
 					mut_function_root
 				}
 			}
 		}
-	}`, moduleFilter), nil, "core.catalog.modules", &modules)
+	}`, map[string]any{
+		"filter": map[string]any{"name": moduleFilter},
+	}, "core.catalog.modules", &modules)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("module lookup: %v", err)), nil
 	}
@@ -261,9 +271,8 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 	// Build type_name filter.
 	typeNames := make([]string, len(roots))
 	for i, r := range roots {
-		typeNames[i] = fmt.Sprintf("%q", r.typeName)
+		typeNames[i] = r.typeName
 	}
-	typeNameFilter := "{in: [" + strings.Join(typeNames, ", ") + "]}"
 
 	// Build module→isMutation lookup.
 	rootMap := make(map[string]rootInfo)
@@ -285,20 +294,20 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 			Desc    string `json:"description"`
 		} `json:"arguments"`
 	}
-	err = s.queryScan(ctx, fmt.Sprintf(`query {
+	err = s.queryScan(ctx, `query($filter: core_catalog_fields_filter, $limit: Int, $query: String!) {
 		core {
 			catalog {
 				fields(
-					filter: {type_name: %s}
+					filter: $filter
 					order_by: [{field: "_distance_to_query", direction: ASC}]
-					limit: %d
+					limit: $limit
 				) {
 					name
 					description
 					field_type
 					field_type_name
 					type_name
-					_distance_to_query(query: %q)
+					_distance_to_query(query: $query)
 					arguments {
 						name
 						arg_type
@@ -307,7 +316,13 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 				}
 			}
 		}
-	}`, typeNameFilter, topK, query), nil, "core.catalog.fields", &fields)
+	}`, map[string]any{
+		"filter": map[string]any{
+			"type_name": map[string]any{"in": typeNames},
+		},
+		"limit": topK,
+		"query": query,
+	}, "core.catalog.fields", &fields)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -520,6 +521,8 @@ func (p *Provider) processExtension(ctx context.Context, conn *Connection, extDe
 		case base.IsDropField(field):
 			if err := p.deleteField(ctx, conn, typeName, field.Name); err != nil {
 				if base.DropFieldIfExists(field) {
+					slog.Debug("drop field if exists: field not found",
+						"type", typeName, "field", field.Name, "error", err)
 					continue
 				}
 				return fmt.Errorf("drop field %s.%s: %w", typeName, field.Name, err)
@@ -528,7 +531,8 @@ func (p *Provider) processExtension(ctx context.Context, conn *Connection, extDe
 			// Delete old field if it exists; ignore "not found" errors since
 			// replace should work even if the field doesn't exist yet.
 			if err := p.deleteField(ctx, conn, typeName, field.Name); err != nil {
-				// Only log, don't fail — the field might not exist yet
+				slog.Debug("replace field: delete old field failed (may not exist yet)",
+					"type", typeName, "field", field.Name, "error", err)
 			}
 			cleanField := base.CloneFieldDefinition(field)
 			cleanField.Directives = base.StripControlDirectives(cleanField.Directives)
@@ -717,18 +721,20 @@ func (p *Provider) validateReferences(ctx context.Context, defs []*ast.Definitio
 		}
 	}
 
+	// Acquire a single connection for all type existence checks.
+	conn, err := p.pool.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("validate references: %w", err)
+	}
+	defer conn.Close()
+
 	// typeExists checks if a type name exists in DB or batch.
 	typeExists := func(name string) (bool, error) {
 		if _, ok := batchTypes[name]; ok {
 			return true, nil
 		}
-		conn, err := p.pool.Conn(ctx)
-		if err != nil {
-			return false, err
-		}
-		defer conn.Close()
 		var count int
-		err = conn.QueryRow(ctx, fmt.Sprintf(
+		err := conn.QueryRow(ctx, fmt.Sprintf(
 			`SELECT count(*) FROM %s WHERE name = $1`, p.table("_schema_types"),
 		), name).Scan(&count)
 		if err != nil {
