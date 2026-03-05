@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -22,18 +23,35 @@ import (
 //
 // The catalog name is extracted from the first definition with a @catalog directive.
 func (p *Provider) Update(ctx context.Context, changes base.DefinitionsSource) error {
-	return p.updateImpl(ctx, changes, "")
+	if p.isReadonly {
+		return ErrReadOnly
+	}
+	return p.updateImpl(ctx, changes, "", nil)
 }
 
 // UpdateWithCatalog persists compiled schema changes with an explicit catalog name override.
 // When catalogOverride is non-empty, it is used instead of extracting from @catalog directives.
 // Used for system types which don't carry @catalog directives.
 func (p *Provider) UpdateWithCatalog(ctx context.Context, changes base.DefinitionsSource, catalogOverride string) error {
-	return p.updateImpl(ctx, changes, catalogOverride)
+	if p.isReadonly {
+		return ErrReadOnly
+	}
+	return p.updateImpl(ctx, changes, catalogOverride, nil)
 }
 
-// updateImpl is the shared implementation for Update and UpdateWithCatalog.
-func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSource, catalogOverride string) error {
+// UpdateWithCatalogAndOptions persists compiled schema changes with an explicit catalog name
+// and compile options. Options are stored on the _schema_catalogs record so that catalog
+// metadata (source_type, prefix, as_module, read_only) is available even for runtime catalogs
+// that have no data_sources row.
+func (p *Provider) UpdateWithCatalogAndOptions(ctx context.Context, changes base.DefinitionsSource, catalogOverride string, opts *base.Options) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
+	return p.updateImpl(ctx, changes, catalogOverride, opts)
+}
+
+// updateImpl is the shared implementation for Update, UpdateWithCatalog, and UpdateWithCatalogAndOptions.
+func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSource, catalogOverride string, opts *base.Options) error {
 	// Collect all definitions first — iterators may be one-shot (iter.Seq),
 	// so we must not iterate twice.
 	var defs []*ast.Definition
@@ -48,6 +66,38 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 			catalogName = base.DefinitionCatalog(def)
 			if catalogName != "" {
 				break
+			}
+		}
+	}
+
+	// Collect extensions early — iterators may be one-shot.
+	var exts []*ast.Definition
+	if extSrc, ok := changes.(base.ExtensionsSource); ok {
+		for extDef := range extSrc.Extensions(ctx) {
+			exts = append(exts, extDef)
+		}
+	}
+
+	// Reject __ names for non-system catalogs (GraphQL spec reserves __ for introspection).
+	if catalogName != SystemCatalogName {
+		for _, def := range defs {
+			if base.IsDropDefinition(def) {
+				continue
+			}
+			if err := validateNoReservedNames(def); err != nil {
+				return fmt.Errorf("catalog %s: %w", catalogName, err)
+			}
+		}
+		for _, extDef := range exts {
+			for _, field := range extDef.Fields {
+				if !base.IsDropField(field) && strings.HasPrefix(field.Name, "__") {
+					return fmt.Errorf("catalog %s: extend type %s, field %s: name must not start with \"__\" (reserved by GraphQL)", catalogName, extDef.Name, field.Name)
+				}
+			}
+			for _, ev := range extDef.EnumValues {
+				if !base.IsDropEnumValue(ev) && strings.HasPrefix(ev.Name, "__") {
+					return fmt.Errorf("catalog %s: extend type %s, enum value %s: name must not start with \"__\" (reserved by GraphQL)", catalogName, extDef.Name, ev.Name)
+				}
 			}
 		}
 	}
@@ -75,7 +125,7 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 
 	// Upsert catalog record
 	if catalogName != "" {
-		if err := p.upsertCatalog(txCtx, conn, catalogName); err != nil {
+		if err := p.upsertCatalog(txCtx, conn, catalogName, opts); err != nil {
 			return fmt.Errorf("update: %w", err)
 		}
 	}
@@ -109,13 +159,10 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 		}
 	}
 
-	// Process extensions if available
-	ext, hasExtensions := changes.(base.ExtensionsSource)
-	if hasExtensions {
-		for extDef := range ext.Extensions(txCtx) {
-			if err := p.processExtension(txCtx, conn, extDef, catalogName); err != nil {
-				return fmt.Errorf("update extension: %w", err)
-			}
+	// Process extensions from collected slice
+	for _, extDef := range exts {
+		if err := p.processExtension(txCtx, conn, extDef, catalogName); err != nil {
+			return fmt.Errorf("update extension: %w", err)
 		}
 	}
 
@@ -145,11 +192,27 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 }
 
 // upsertCatalog inserts or updates a catalog record.
-func (p *Provider) upsertCatalog(ctx context.Context, conn *Connection, name string) error {
+// When opts is non-nil, source_type/prefix/as_module/read_only are persisted.
+func (p *Provider) upsertCatalog(ctx context.Context, conn *Connection, name string, opts *base.Options) error {
+	var sourceType, prefix string
+	var asModule, readOnly bool
+	if opts != nil {
+		sourceType = opts.EngineType
+		prefix = opts.Prefix
+		asModule = opts.AsModule
+		readOnly = opts.ReadOnly
+	}
+	tbl := p.table("_schema_catalogs")
 	_, err := p.execWrite(ctx, conn, fmt.Sprintf(
-		`INSERT INTO %s (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`,
-		p.table("_schema_catalogs"),
-	), name)
+		`INSERT INTO %s (name, source_type, prefix, as_module, read_only)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (name) DO UPDATE SET
+		   source_type = CASE WHEN $2 != '' THEN $2 ELSE %s.source_type END,
+		   prefix = CASE WHEN $2 != '' THEN $3 ELSE %s.prefix END,
+		   as_module = CASE WHEN $2 != '' THEN $4 ELSE %s.as_module END,
+		   read_only = CASE WHEN $2 != '' THEN $5 ELSE %s.read_only END`,
+		tbl, tbl, tbl, tbl, tbl,
+	), name, sourceType, prefix, asModule, readOnly)
 	return err
 }
 
@@ -225,7 +288,9 @@ func (p *Provider) persistDefinition(ctx context.Context, conn *Connection, def 
 
 // upsertType inserts or updates a type in _schema_types.
 // vec is pre-computed by the caller (batch path); nil when embedder is not configured.
-// Always resets is_summarized=false — the summarization service will re-flag later.
+// When the incoming description ($3) is non-empty, all description fields and
+// is_summarized are reset. When empty, existing description/long_description/
+// is_summarized are preserved (generated types on reload shouldn't wipe summaries).
 func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.Definition, catalogName string, vec types.Vector) error {
 	dirJSON, err := schema.MarshalDirectives(def.Directives)
 	if err != nil {
@@ -237,30 +302,28 @@ func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.De
 	ifaces := strings.Join(def.Interfaces, "|")
 	unionTypes := strings.Join(def.Types, "|")
 
-	if p.vecSize > 0 {
-		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (name, kind, description, long_description, hugr_type, module, catalog, directives, interfaces, union_types, is_summarized, vec)
-			 VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, $9, false, $10)
-			 ON CONFLICT (name) DO UPDATE SET
-			   kind=$2, description=$3, long_description='', hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9, is_summarized=false, vec=$10`,
-			p.table("_schema_types"),
-		), def.Name, string(def.Kind), def.Description, hugrType, module, catalogName, string(dirJSON), ifaces, unionTypes, vec)
-	} else {
-		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (name, kind, description, long_description, hugr_type, module, catalog, directives, interfaces, union_types, is_summarized)
-			 VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, $9, false)
-			 ON CONFLICT (name) DO UPDATE SET
-			   kind=$2, description=$3, long_description='', hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9, is_summarized=false`,
-			p.table("_schema_types"),
-		), def.Name, string(def.Kind), def.Description, hugrType, module, catalogName, string(dirJSON), ifaces, unionTypes)
-	}
+	tbl := p.table("_schema_types")
+	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
+		`INSERT INTO %s (name, kind, description, long_description, hugr_type, module, catalog, directives, interfaces, union_types, is_summarized, vec)
+		 VALUES ($1, $2, $3, '', $4, $5, $6, $7, $8, $9, false, $10)
+		 ON CONFLICT (name) DO UPDATE SET
+		   kind=$2,
+		   description = CASE WHEN $3 != '' THEN $3 ELSE %s.description END,
+		   long_description = CASE WHEN $3 != '' THEN '' ELSE %s.long_description END,
+		   hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9,
+		   is_summarized = CASE WHEN $3 != '' THEN false ELSE %s.is_summarized END,
+		   vec=$10`,
+		tbl, tbl, tbl, tbl,
+	), def.Name, string(def.Kind), def.Description, hugrType, module, catalogName, string(dirJSON), ifaces, unionTypes, vec)
 	return err
 }
 
 // upsertField inserts or updates a field in _schema_fields.
 // ordinal preserves the original definition order of the field within its type.
 // vec is pre-computed by the caller (batch path); nil when embedder is not configured.
-// Always resets is_summarized=false — the summarization service will re-flag later.
+// When the incoming description ($5) is non-empty, description fields and
+// is_summarized are reset. When empty, existing values are preserved so that
+// generated extension fields don't wipe summaries on catalog reload.
 func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName string, field *ast.FieldDefinition, catalogName, depCatalog string, ordinal int, vec types.Vector) error {
 	dirJSON, err := schema.MarshalDirectives(field.Directives)
 	if err != nil {
@@ -289,23 +352,22 @@ func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName s
 		depCatalog = base.FieldDefDependency(field)
 	}
 
-	if p.vecSize > 0 {
-		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (type_name, name, field_type, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, vec, ordinal)
-			 VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, false, $9, $10)
-			 ON CONFLICT (type_name, name) DO UPDATE SET
-			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, is_summarized=false, vec=$9, ordinal=$10`,
-			p.table("_schema_fields"),
-		), typeName, field.Name, fieldType, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), vec, ordinal)
-	} else {
-		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (type_name, name, field_type, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_summarized, ordinal)
-			 VALUES ($1, $2, $3, $4, '', $5, $6, $7, $8, false, $9)
-			 ON CONFLICT (type_name, name) DO UPDATE SET
-			   field_type=$3, description=$4, hugr_type=$5, catalog=$6, dependency_catalog=$7, directives=$8, is_summarized=false, ordinal=$9`,
-			p.table("_schema_fields"),
-		), typeName, field.Name, fieldType, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), ordinal)
-	}
+	fieldTypeName := baseTypeName(field.Type)
+	isPK := field.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil
+
+	tbl := p.table("_schema_fields")
+	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
+		`INSERT INTO %s (type_name, name, field_type, field_type_name, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_pk, is_summarized, vec, ordinal)
+		 VALUES ($1, $2, $3, $4, $5, '', $6, $7, $8, $9, $10, false, $11, $12)
+		 ON CONFLICT (type_name, name) DO UPDATE SET
+		   field_type=$3, field_type_name=$4,
+		   description = CASE WHEN $5 != '' THEN $5 ELSE %s.description END,
+		   long_description = CASE WHEN $5 != '' THEN '' ELSE %s.long_description END,
+		   hugr_type=$6, catalog=$7, dependency_catalog=$8, directives=$9, is_pk=$10,
+		   is_summarized = CASE WHEN $5 != '' THEN false ELSE %s.is_summarized END,
+		   vec=$11, ordinal=$12`,
+		tbl, tbl, tbl, tbl,
+	), typeName, field.Name, fieldType, fieldTypeName, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), isPK, vec, ordinal)
 	return err
 }
 
@@ -318,6 +380,7 @@ func (p *Provider) upsertArgument(ctx context.Context, conn *Connection, typeNam
 	}
 
 	argType := schema.MarshalType(arg.Type)
+	argTypeName := baseTypeName(arg.Type)
 	var defaultValue *string
 	if arg.DefaultValue != nil {
 		// Store as JSON to preserve the value Kind (IntValue, BooleanValue, etc.)
@@ -330,12 +393,12 @@ func (p *Provider) upsertArgument(ctx context.Context, conn *Connection, typeNam
 	}
 
 	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
-		`INSERT INTO %s (type_name, field_name, name, arg_type, default_value, description, directives, ordinal)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`INSERT INTO %s (type_name, field_name, name, arg_type, arg_type_name, default_value, description, directives, ordinal)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 ON CONFLICT (type_name, field_name, name) DO UPDATE SET
-		   arg_type=$4, default_value=$5, description=$6, directives=$7, ordinal=$8`,
+		   arg_type=$4, arg_type_name=$5, default_value=$6, description=$7, directives=$8, ordinal=$9`,
 		p.table("_schema_arguments"),
-	), typeName, fieldName, arg.Name, argType, defaultValue, arg.Description, string(dirJSON), ordinal)
+	), typeName, fieldName, arg.Name, argType, argTypeName, defaultValue, arg.Description, string(dirJSON), ordinal)
 	return err
 }
 
@@ -458,6 +521,8 @@ func (p *Provider) processExtension(ctx context.Context, conn *Connection, extDe
 		case base.IsDropField(field):
 			if err := p.deleteField(ctx, conn, typeName, field.Name); err != nil {
 				if base.DropFieldIfExists(field) {
+					slog.Debug("drop field if exists: field not found",
+						"type", typeName, "field", field.Name, "error", err)
 					continue
 				}
 				return fmt.Errorf("drop field %s.%s: %w", typeName, field.Name, err)
@@ -466,7 +531,8 @@ func (p *Provider) processExtension(ctx context.Context, conn *Connection, extDe
 			// Delete old field if it exists; ignore "not found" errors since
 			// replace should work even if the field doesn't exist yet.
 			if err := p.deleteField(ctx, conn, typeName, field.Name); err != nil {
-				// Only log, don't fail — the field might not exist yet
+				slog.Debug("replace field: delete old field failed (may not exist yet)",
+					"type", typeName, "field", field.Name, "error", err)
 			}
 			cleanField := base.CloneFieldDefinition(field)
 			cleanField.Directives = base.StripControlDirectives(cleanField.Directives)
@@ -655,18 +721,20 @@ func (p *Provider) validateReferences(ctx context.Context, defs []*ast.Definitio
 		}
 	}
 
+	// Acquire a single connection for all type existence checks.
+	conn, err := p.pool.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("validate references: %w", err)
+	}
+	defer conn.Close()
+
 	// typeExists checks if a type name exists in DB or batch.
 	typeExists := func(name string) (bool, error) {
 		if _, ok := batchTypes[name]; ok {
 			return true, nil
 		}
-		conn, err := p.pool.Conn(ctx)
-		if err != nil {
-			return false, err
-		}
-		defer conn.Close()
 		var count int
-		err = conn.QueryRow(ctx, fmt.Sprintf(
+		err := conn.QueryRow(ctx, fmt.Sprintf(
 			`SELECT count(*) FROM %s WHERE name = $1`, p.table("_schema_types"),
 		), name).Scan(&count)
 		if err != nil {
@@ -752,5 +820,24 @@ func nullStr(s string) any {
 		return nil
 	}
 	return s
+}
+
+// validateNoReservedNames rejects definitions whose type name, field names,
+// or enum value names start with "__" (reserved by the GraphQL spec for introspection).
+func validateNoReservedNames(def *ast.Definition) error {
+	if strings.HasPrefix(def.Name, "__") {
+		return fmt.Errorf("type %q: name must not start with \"__\" (reserved by GraphQL)", def.Name)
+	}
+	for _, f := range def.Fields {
+		if strings.HasPrefix(f.Name, "__") {
+			return fmt.Errorf("field %s.%s: name must not start with \"__\" (reserved by GraphQL)", def.Name, f.Name)
+		}
+	}
+	for _, ev := range def.EnumValues {
+		if strings.HasPrefix(ev.Name, "__") {
+			return fmt.Errorf("enum value %s.%s: name must not start with \"__\" (reserved by GraphQL)", def.Name, ev.Name)
+		}
+	}
+	return nil
 }
 

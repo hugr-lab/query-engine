@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -105,6 +106,11 @@ func (p *Provider) validateChanges(
 }
 
 func (p *Provider) validateDefinition(def *ast.Definition, cs *updateChangeset) error {
+	if !base.IsDropDefinition(def) {
+		if err := validateNoReservedNames(def); err != nil {
+			return err
+		}
+	}
 	switch {
 	case base.IsDropDefinition(def):
 		return p.validateDropDefinition(def, cs)
@@ -189,6 +195,9 @@ func (p *Provider) validateExtension(ext *ast.Definition, cs *updateChangeset) e
 
 	// fields
 	for _, field := range ext.Fields {
+		if !base.IsDropField(field) && strings.HasPrefix(field.Name, "__") {
+			return fmt.Errorf("extend type %s, field %s: name must not start with \"__\" (reserved by GraphQL)", ext.Name, field.Name)
+		}
 		if err := p.validateExtensionField(target, field, &ec); err != nil {
 			return fmt.Errorf("extend type %s, field %s: %w", ext.Name, field.Name, err)
 		}
@@ -196,6 +205,9 @@ func (p *Provider) validateExtension(ext *ast.Definition, cs *updateChangeset) e
 
 	// enum values
 	for _, ev := range ext.EnumValues {
+		if !base.IsDropEnumValue(ev) && strings.HasPrefix(ev.Name, "__") {
+			return fmt.Errorf("extend type %s, enum value %s: name must not start with \"__\" (reserved by GraphQL)", ext.Name, ev.Name)
+		}
 		if err := p.validateExtensionEnumValue(target, ev, &ec); err != nil {
 			return fmt.Errorf("extend type %s, enum value %s: %w", ext.Name, ev.Name, err)
 		}
@@ -516,6 +528,27 @@ func (p *Provider) cleanupDanglingReferences() {
 			return false
 		})
 	}
+}
+
+// --- reserved name validation ---
+
+// validateNoReservedNames rejects definitions whose type name, field names,
+// or enum value names start with "__" (reserved by the GraphQL spec for introspection).
+func validateNoReservedNames(def *ast.Definition) error {
+	if strings.HasPrefix(def.Name, "__") {
+		return fmt.Errorf("type %q: name must not start with \"__\" (reserved by GraphQL)", def.Name)
+	}
+	for _, f := range def.Fields {
+		if strings.HasPrefix(f.Name, "__") {
+			return fmt.Errorf("field %s.%s: name must not start with \"__\" (reserved by GraphQL)", def.Name, f.Name)
+		}
+	}
+	for _, ev := range def.EnumValues {
+		if strings.HasPrefix(ev.Name, "__") {
+			return fmt.Errorf("enum value %s.%s: name must not start with \"__\" (reserved by GraphQL)", def.Name, ev.Name)
+		}
+	}
+	return nil
 }
 
 // --- helpers ---

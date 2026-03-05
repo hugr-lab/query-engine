@@ -1,6 +1,6 @@
 {{ if isPostgres }}CREATE EXTENSION IF NOT EXISTS vector;{{ end }}
 
-CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.10' AS "version";
+CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.12' AS "version";
 
 CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}catalog_sources (
     name VARCHAR NOT NULL PRIMARY KEY,
@@ -78,6 +78,10 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_catalo
     version VARCHAR NOT NULL DEFAULT '',
     description VARCHAR NOT NULL DEFAULT '',
     long_description VARCHAR NOT NULL DEFAULT '',
+    source_type VARCHAR NOT NULL DEFAULT '',
+    prefix VARCHAR NOT NULL DEFAULT '',
+    as_module BOOLEAN NOT NULL DEFAULT FALSE,
+    read_only BOOLEAN NOT NULL DEFAULT FALSE,
     is_summarized BOOLEAN NOT NULL DEFAULT FALSE,
     disabled BOOLEAN NOT NULL DEFAULT FALSE,
     suspended BOOLEAN NOT NULL DEFAULT FALSE,
@@ -109,12 +113,14 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_fields
     type_name VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
     field_type VARCHAR NOT NULL,
+    field_type_name VARCHAR NOT NULL DEFAULT '',
     description VARCHAR NOT NULL DEFAULT '',
     long_description VARCHAR NOT NULL DEFAULT '',
     hugr_type VARCHAR NOT NULL DEFAULT '',
     catalog VARCHAR,
     dependency_catalog VARCHAR,
     directives {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL DEFAULT '[]',
+    is_pk BOOLEAN NOT NULL DEFAULT FALSE,
     is_summarized BOOLEAN NOT NULL DEFAULT FALSE,
     vec {{if isPostgres }} vector({{ .VectorSize }}) {{ else }} FLOAT[{{ .VectorSize }}] {{ end }},
     ordinal INTEGER NOT NULL DEFAULT 0,
@@ -126,6 +132,7 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_argume
     field_name VARCHAR NOT NULL,
     name VARCHAR NOT NULL,
     arg_type VARCHAR NOT NULL,
+    arg_type_name VARCHAR NOT NULL DEFAULT '',
     default_value VARCHAR,
     description VARCHAR NOT NULL DEFAULT '',
     directives {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL DEFAULT '[]',

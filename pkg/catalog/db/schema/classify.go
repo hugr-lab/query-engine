@@ -96,6 +96,11 @@ func ClassifyField(field *ast.FieldDefinition, parentDef *ast.Definition, typeLo
 		}
 	}
 
+	// @extra_field → extra_field
+	if field.Directives.ForName(base.FieldExtraFieldDirectiveName) != nil {
+		return base.HugrTypeFieldExtraField
+	}
+
 	// @function_call or @table_function_call_join → function
 	if field.Directives.ForName(base.FunctionCallDirectiveName) != nil ||
 		field.Directives.ForName(base.FunctionCallTableJoinDirectiveName) != nil {

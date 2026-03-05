@@ -3,6 +3,7 @@ package compiler
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
@@ -52,6 +53,10 @@ func (c *Compiler) Compile(
 	source base.DefinitionsSource,
 	opts base.Options,
 ) (base.CompiledCatalog, error) {
+	if strings.HasPrefix(opts.Prefix, "_") {
+		return nil, fmt.Errorf("catalog %q: prefix %q must not start with underscore — generated type names would begin with '__' which is reserved by GraphQL introspection", opts.Name, opts.Prefix)
+	}
+
 	// Count source definitions for pre-sizing
 	defCount := 0
 	for range source.Definitions(ctx) {

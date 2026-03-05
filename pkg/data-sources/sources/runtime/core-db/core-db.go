@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	Version           = "0.0.10"
+	Version           = "0.0.12"
 	dbName            = "core"
 	DefaultVectorSize = 768
 )
@@ -102,7 +102,7 @@ func (s *Source) IsReadonly() bool {
 }
 
 func (s *Source) AsModule() bool {
-	return false
+	return true
 }
 
 func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
@@ -150,6 +150,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 }
 
 func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
+	escSQL := func(val string) string { return strings.ReplaceAll(val, "'", "''") }
 	_, err := db.Exec(ctx, fmt.Sprintf(`
 		CREATE OR REPLACE PERSISTENT SECRET coredb_s3 (
 			TYPE s3,
@@ -161,16 +162,15 @@ func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
 			URL_STYLE 'path',
 			SCOPE '%s'
 		);
-	`, s.c.S3Key, s.c.S3Secret, s.c.S3Region, s.c.S3Endpoint, s.c.S3UseSSL, s.c.Path))
-	if err != nil {
-		return err
-	}
+	`, escSQL(s.c.S3Key), escSQL(s.c.S3Secret), escSQL(s.c.S3Region), escSQL(s.c.S3Endpoint), s.c.S3UseSSL, escSQL(s.c.Path)))
 	return err
 }
 
 func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
 	opts := compiler.Options{
 		Name:         s.Name(),
+		Prefix:       "core",
+		AsModule:     s.AsModule(),
 		ReadOnly:     s.IsReadonly(),
 		EngineType:   string(s.e.Type()),
 		Capabilities: s.e.Capabilities(),

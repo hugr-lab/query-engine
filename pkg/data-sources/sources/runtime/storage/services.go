@@ -204,6 +204,7 @@ func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
 	e := engines.NewDuckDB()
 	opts := compiler.Options{
 		Name:         s.Name(),
+		Prefix:       "core_storage",
 		ReadOnly:     s.IsReadonly(),
 		AsModule:     s.AsModule(),
 		EngineType:   string(e.Type()),

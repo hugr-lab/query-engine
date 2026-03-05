@@ -48,14 +48,16 @@ func (p *Provider) compileAndApply(ctx context.Context, name string, catalog sou
 		return nil, ErrNoCompiler
 	}
 
-	compiled, err := p.compiler.Compile(ctx, p, catalog, catalog.CompileOptions())
+	opts := catalog.CompileOptions()
+	compiled, err := p.compiler.Compile(ctx, p, catalog, opts)
 	if err != nil {
 		return nil, fmt.Errorf("compile catalog %q: %w", name, err)
 	}
 
-	// Use UpdateWithCatalog to ensure catalog record is created even for
-	// extension-only catalogs that don't produce definitions with @catalog.
-	if err := p.UpdateWithCatalog(ctx, compiled, name); err != nil {
+	// Use UpdateWithCatalogAndOptions to ensure catalog record is created even for
+	// extension-only catalogs that don't produce definitions with @catalog,
+	// and to persist source metadata (source_type, prefix, as_module, read_only).
+	if err := p.UpdateWithCatalogAndOptions(ctx, compiled, name, &opts); err != nil {
 		return nil, fmt.Errorf("persist catalog %q: %w", name, err)
 	}
 
@@ -75,6 +77,9 @@ func (p *Provider) compileAndApply(ctx context.Context, name string, catalog sou
 //   - New catalog → compile and persist
 //   - After any change → reactivate suspended catalogs
 func (p *Provider) AddCatalog(ctx context.Context, name string, catalog sources.Catalog) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	if p.compiler == nil {
 		return ErrNoCompiler
 	}
@@ -155,6 +160,9 @@ func (p *Provider) AddCatalog(ctx context.Context, name string, catalog sources.
 // RemoveCatalog removes a catalog: suspends dependents, deletes all schema
 // objects and the catalog record, and removes the source handle.
 func (p *Provider) RemoveCatalog(ctx context.Context, name string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	if p.compiler == nil {
 		return ErrNoCompiler
 	}
@@ -199,6 +207,9 @@ func (p *Provider) ExistsCatalog(name string) bool {
 // changes (IncrementalCatalog), only the delta is compiled and applied.
 // Otherwise falls back to full recompilation (drop + recompile).
 func (p *Provider) ReloadCatalog(ctx context.Context, name string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	if p.compiler == nil {
 		return ErrNoCompiler
 	}
@@ -326,6 +337,14 @@ func (p *Provider) EnableCatalog(ctx context.Context, name string) error {
 // Dependency records in _schema_catalog_dependencies are preserved so
 // reactivateSuspended can check whether all deps are satisfied.
 func (p *Provider) suspendDependents(ctx context.Context, name string) error {
+	return p.suspendDependentsVisited(ctx, name, make(map[string]bool))
+}
+
+func (p *Provider) suspendDependentsVisited(ctx context.Context, name string, visited map[string]bool) error {
+	if visited[name] {
+		return nil
+	}
+	visited[name] = true
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("suspend dependents: %w", err)
@@ -358,7 +377,7 @@ func (p *Provider) suspendDependents(ctx context.Context, name string) error {
 			"catalog", depName, "dependency", name)
 
 		// Recursively suspend catalogs that depend on this dependent.
-		if err := p.suspendDependents(ctx, depName); err != nil {
+		if err := p.suspendDependentsVisited(ctx, depName, visited); err != nil {
 			slog.Error("failed to recursively suspend dependents",
 				"catalog", depName, "error", err)
 		}
@@ -426,8 +445,14 @@ func (p *Provider) reactivateSuspended(ctx context.Context) {
 
 		srcVersion, _ := source.Version(ctx)
 		compositeVersion := catalogVersionWithOptions(srcVersion, source.CompileOptions())
-		_ = p.SetCatalogVersion(ctx, rec.Name, compositeVersion)
-		_ = p.SetCatalogSuspended(ctx, rec.Name, false)
+		if err := p.SetCatalogVersion(ctx, rec.Name, compositeVersion); err != nil {
+			slog.Error("failed to set catalog version during reactivation",
+				"catalog", rec.Name, "error", err)
+		}
+		if err := p.SetCatalogSuspended(ctx, rec.Name, false); err != nil {
+			slog.Error("failed to unsuspend catalog during reactivation",
+				"catalog", rec.Name, "error", err)
+		}
 
 		p.mu.Lock()
 		p.catalogs[rec.Name] = source // keep source handle after reactivation
@@ -473,6 +498,9 @@ func (p *Provider) allDependenciesSatisfied(ctx context.Context, name string) (b
 // Call after all runtime sources are registered via AddCatalog so that
 // p.catalogs contains the full set of runtime catalog names to skip.
 func (p *Provider) CleanOrphanedCatalogs(ctx context.Context) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("clean orphaned catalogs: %w", err)

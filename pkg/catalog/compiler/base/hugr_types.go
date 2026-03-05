@@ -33,4 +33,5 @@ const (
 	HugrTypeFieldMutationInsert HugrTypeField = "mutation_insert"
 	HugrTypeFieldMutationUpdate HugrTypeField = "mutation_update"
 	HugrTypeFieldMutationDelete HugrTypeField = "mutation_delete"
+	HugrTypeFieldExtraField     HugrTypeField = "extra_field"
 )

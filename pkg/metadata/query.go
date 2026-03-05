@@ -61,7 +61,8 @@ func processTypeQuery(ctx context.Context, provider catalog.Provider, field *ast
 	}
 
 	if provider.ForName(ctx, tn) == nil {
-		return nil, ErrTypeNotFound
+		slog.Debug("metadata __type: type not found", "name", tn)
+		return nil, nil
 	}
 
 	return typeResolver(ctx, provider, ast.NamedType(tn, &ast.Position{}), field.SelectionSet, maxDepth)

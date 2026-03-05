@@ -160,6 +160,15 @@ func (s *Service) Engine(name string) (engines.Engine, error) {
 	return nil, ErrCatalogNotFound
 }
 
+// RegisterEngine adds an engine reference for planner routing without
+// going through catalog compilation. Used in read-only mode where
+// schemas are already persisted by the writer node.
+func (s *Service) RegisterEngine(name string, engine engines.Engine) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.engines[name] = engine
+}
+
 func (s *Service) AddCatalog(ctx context.Context, name string, catalog Catalog) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

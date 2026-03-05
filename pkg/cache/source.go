@@ -37,7 +37,7 @@ func (s *Service) IsReadonly() bool {
 }
 
 func (s *Service) AsModule() bool {
-	return false
+	return true
 }
 
 func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
@@ -100,6 +100,8 @@ func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
 func (s *Service) Catalog(ctx context.Context) (cs.Catalog, error) {
 	opts := compiler.Options{
 		Name:         s.Name(),
+		Prefix:       "cache",
+		AsModule:     s.AsModule(),
 		ReadOnly:     s.IsReadonly(),
 		EngineType:   string(s.Engine().Type()),
 		Capabilities: s.Engine().Capabilities(),

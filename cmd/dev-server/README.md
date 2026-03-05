@@ -40,6 +40,10 @@ It used the following packages:
 - ALLOW_PARALLEL - flag to allow run queries in parallel, default: true
 - MAX_PARALLEL_QUERIES - limit to numbers of parallels queries executed, default: 0 (unlimited)
 - MAX_DEPTH - maximal depth of GraphQL types hierarchy, default: 7
+- CLUSTER_WORKER - flag to mark this node as a cluster worker (skips orphan catalog cleanup on startup), default: false
+- SCHEMA_CACHE_MAX_ENTRIES - max entries in the schema LRU cache, default: 10000 (when 0)
+- SCHEMA_CACHE_TTL - TTL for schema LRU cache entries (Go duration format), default: 10m (when "0s")
+- EMBEDDER_URL - URL for the system embedder service (with query params: model, api_key, api_key_header, timeout), default: "" (disabled)
 
 ### DuckDB engine settings
 

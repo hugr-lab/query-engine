@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
@@ -34,13 +35,12 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 		return fmt.Errorf("reconcile clean module_catalogs: %w", err)
 	}
 	// Delete orphan modules (no remaining catalog links, excluding root module '').
-	// This correctly handles the case where a module was solely provided by this catalog:
-	// the module record is removed and will be re-created fresh below with only the
-	// root types that actually exist (avoiding stale COALESCE issues).
+	// This is intentionally global (no catalog filter): any module with zero
+	// remaining links in _schema_module_type_catalogs is stale and should be removed.
 	if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
 		`DELETE FROM %s WHERE name != '' AND name NOT IN (SELECT DISTINCT module_name FROM %s)`,
 		p.table("_schema_modules"), p.table("_schema_module_type_catalogs"),
-	), catalogName); err != nil {
+	)); err != nil {
 		return fmt.Errorf("reconcile clean orphan modules: %w", err)
 	}
 	if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
@@ -262,10 +262,12 @@ func (p *Provider) collectModuleInfo(ctx context.Context, conn *Connection, cata
 	for rows.Next() {
 		var typeName, moduleCol, dirJSON string
 		if err := rows.Scan(&typeName, &moduleCol, &dirJSON); err != nil {
+			slog.Warn("reconcile: collectModuleInfo scan error", "error", err)
 			continue
 		}
 		dirs, err := schema.UnmarshalDirectives([]byte(dirJSON))
 		if err != nil {
+			slog.Warn("reconcile: collectModuleInfo unmarshal directives", "type", typeName, "error", err)
 			continue
 		}
 
@@ -350,10 +352,12 @@ func (p *Provider) preloadModuleNames(ctx context.Context, conn *Connection) (ma
 	for rows.Next() {
 		var typeName, dirJSON string
 		if err := rows.Scan(&typeName, &dirJSON); err != nil {
+			slog.Warn("reconcile: preloadModuleNames scan error", "error", err)
 			continue
 		}
 		dirs, err := schema.UnmarshalDirectives([]byte(dirJSON))
 		if err != nil {
+			slog.Warn("reconcile: preloadModuleNames unmarshal directives", "type", typeName, "error", err)
 			continue
 		}
 		mrDir := dirs.ForName(base.ModuleRootDirectiveName)
@@ -395,10 +399,12 @@ func (p *Provider) collectFieldModuleCatalogs(ctx context.Context, conn *Connect
 	for rows.Next() {
 		var parentType, fieldType, dirJSON string
 		if err := rows.Scan(&parentType, &fieldType, &dirJSON); err != nil {
+			slog.Warn("reconcile: collectFieldModuleCatalogs scan error", "error", err)
 			continue
 		}
 		dirs, err := schema.UnmarshalDirectives([]byte(dirJSON))
 		if err != nil {
+			slog.Warn("reconcile: collectFieldModuleCatalogs unmarshal directives", "type", parentType, "error", err)
 			continue
 		}
 		var cats []string
@@ -461,6 +467,7 @@ func (p *Provider) collectDependencies(ctx context.Context, conn *Connection, ca
 	for rows.Next() {
 		var dep string
 		if err := rows.Scan(&dep); err != nil {
+			slog.Warn("reconcile: collectDependencies scan error", "error", err)
 			continue
 		}
 		deps = append(deps, dep)
@@ -479,7 +486,7 @@ func (p *Provider) collectDataObjects(ctx context.Context, conn *Connection, cat
 		 LEFT JOIN %s f ON f.name = t.name || '_filter'
 		 LEFT JOIN %s a ON a.name = t.name || '_args'
 		 WHERE t.catalog = $1
-		   AND t.hugr_type IN ('Table', 'View', 'ParameterizedView')`,
+		   AND t.hugr_type IN ('table', 'view', 'parameterized_view')`,
 		p.table("_schema_types"),
 		p.table("_schema_types"),
 		p.table("_schema_types"),
@@ -494,6 +501,7 @@ func (p *Provider) collectDataObjects(ctx context.Context, conn *Connection, cat
 		var name string
 		var filterType, argsType *string
 		if err := rows.Scan(&name, &filterType, &argsType); err != nil {
+			slog.Warn("reconcile: collectDataObjects scan error", "error", err)
 			continue
 		}
 		do := dataObjectInfo{name: name}
@@ -538,13 +546,18 @@ func (p *Provider) batchInsertModuleTypeCatalogs(ctx context.Context, conn *Conn
 // from module root types and system types (Query, Mutation), and populates _schema_data_object_queries.
 func (p *Provider) reconcileDataObjectQueries(ctx context.Context, conn *Connection, catalogName string) error {
 	rows, err := conn.Query(ctx, fmt.Sprintf(
-		`SELECT f.name, f.field_type, f.type_name, f.hugr_type
+		`SELECT f.name, f.field_type, f.type_name, f.hugr_type, CAST(f.directives AS VARCHAR)
 		 FROM %s f
-		 JOIN %s t ON t.name = f.type_name
 		 WHERE f.catalog = $1
 		   AND f.hugr_type IN ('select', 'select_one', 'aggregate', 'bucket_agg')
-		   AND (t.hugr_type = 'module' OR t.name IN ('Query', 'Mutation'))`,
-		p.table("_schema_fields"), p.table("_schema_types"),
+		   AND (
+		     f.type_name IN ('Query', 'Mutation')
+		     OR f.type_name IN (SELECT query_root FROM %s WHERE query_root IS NOT NULL)
+		     OR f.type_name IN (SELECT mutation_root FROM %s WHERE mutation_root IS NOT NULL)
+		   )`,
+		p.table("_schema_fields"),
+		p.table("_schema_modules"),
+		p.table("_schema_modules"),
 	), catalogName)
 	if err != nil {
 		return err
@@ -557,15 +570,36 @@ func (p *Provider) reconcileDataObjectQueries(ctx context.Context, conn *Connect
 		queryRoot string // type name of the root type containing this field
 		queryType string // hugr_type (select, select_one, etc.)
 	}
-	var entries []doqEntry
+
+	// First pass: collect all fields. For select/select_one, resolve object from field_type.
+	// For aggregate/bucket_agg, defer — resolve via @aggregation_query(name) reference.
+	type rawField struct {
+		name, fieldType, queryRoot, hugrType, dirJSON string
+	}
+	var selectFields []rawField // select, select_one
+	var aggFields    []rawField // aggregate, bucket_agg
 
 	for rows.Next() {
-		var fieldName, fieldTypeStr, queryRoot, hugrType string
-		if err := rows.Scan(&fieldName, &fieldTypeStr, &queryRoot, &hugrType); err != nil {
+		var rf rawField
+		if err := rows.Scan(&rf.name, &rf.fieldType, &rf.queryRoot, &rf.hugrType, &rf.dirJSON); err != nil {
+			slog.Warn("reconcile: reconcileDataObjectQueries scan error", "error", err)
 			continue
 		}
-		// Parse field type to get the base type name (unwrapping [Type!]!)
-		ft, err := schema.UnmarshalType(fieldTypeStr)
+		switch rf.hugrType {
+		case "aggregate", "bucket_agg":
+			aggFields = append(aggFields, rf)
+		default:
+			selectFields = append(selectFields, rf)
+		}
+	}
+
+	// Build entries from select/select_one fields — object is the field's return type.
+	// Also build a lookup: (queryRoot, fieldName) → objectName for agg resolution.
+	fieldObjectMap := make(map[[2]string]string) // [queryRoot, fieldName] → objectName
+	var entries []doqEntry
+
+	for _, rf := range selectFields {
+		ft, err := schema.UnmarshalType(rf.fieldType)
 		if err != nil || ft == nil {
 			continue
 		}
@@ -574,10 +608,28 @@ func (p *Provider) reconcileDataObjectQueries(ctx context.Context, conn *Connect
 			continue
 		}
 		entries = append(entries, doqEntry{
-			name:      fieldName,
-			object:    objectName,
-			queryRoot: queryRoot,
-			queryType: hugrType,
+			name: rf.name, object: objectName, queryRoot: rf.queryRoot, queryType: rf.hugrType,
+		})
+		fieldObjectMap[[2]string{rf.queryRoot, rf.name}] = objectName
+	}
+
+	// Resolve aggregate/bucket_agg fields via @aggregation_query(name) directive.
+	// The "name" argument references a sibling select field on the same query root.
+	for _, rf := range aggFields {
+		dirs, err := schema.UnmarshalDirectives([]byte(rf.dirJSON))
+		if err != nil {
+			continue
+		}
+		refName := base.DirectiveArgString(dirs.ForName(base.FieldAggregationQueryDirectiveName), "name")
+		if refName == "" {
+			continue
+		}
+		objectName := fieldObjectMap[[2]string{rf.queryRoot, refName}]
+		if objectName == "" {
+			continue
+		}
+		entries = append(entries, doqEntry{
+			name: rf.name, object: objectName, queryRoot: rf.queryRoot, queryType: rf.hugrType,
 		})
 	}
 
@@ -622,6 +674,7 @@ func (p *Provider) collectReverseDependencies(ctx context.Context, conn *Connect
 	for rows.Next() {
 		var dep string
 		if err := rows.Scan(&dep); err != nil {
+			slog.Warn("reconcile: collectReverseDependencies scan error", "error", err)
 			continue
 		}
 		deps = append(deps, dep)

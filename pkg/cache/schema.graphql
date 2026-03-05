@@ -1,5 +1,5 @@
 extend type Function {
     invalidate(
         tags: [String!]
-    ): OperationResult @function(name: "invalidate_cache", skip_null_arg: true) @module(name: "core.cache")
+    ): OperationResult @function(name: "invalidate_cache", skip_null_arg: true)
 }

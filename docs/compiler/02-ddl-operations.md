@@ -29,7 +29,8 @@ When `Provider.Update(ctx, compiled)` is called, the compiled catalog is applied
 
 ### 1. Validate
 
-Checks that definitions don't conflict with existing schema (unless `@replace` or `@if_not_exists`).
+- Checks that definitions don't conflict with existing schema (unless `@replace` or `@if_not_exists`).
+- Rejects names starting with `__` (reserved by the GraphQL spec for introspection). This applies to type names, field names, and enum value names. Drop operations are exempt. The system catalog (`_system`) is exempt in the DB provider since it legitimately defines introspection types.
 
 ### 2. Apply
 

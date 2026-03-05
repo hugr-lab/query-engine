@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -17,6 +18,9 @@ import (
 
 // Compile-time check that Provider implements base.MutableProvider.
 var _ base.MutableProvider = (*Provider)(nil)
+
+// ErrReadOnly is returned when a write operation is attempted on a read-only provider.
+var ErrReadOnly = errors.New("schema store is in read-only mode")
 
 // CacheConfig controls the LRU cache behavior.
 type CacheConfig struct {
@@ -38,6 +42,7 @@ type Config struct {
 	TablePrefix string // "core." for attached DuckDB, "" for native
 	VecSize     int    // Embedding vector dimension; 0 = skip vec operations
 	IsPostgres  bool   // true when CoreDB is PostgreSQL (affects vec column DDL)
+	IsReadonly  bool   // true when CoreDB is read-only (rejects all writes)
 }
 
 // Provider is the DB-backed schema provider.
@@ -54,6 +59,7 @@ type Provider struct {
 	vecSize  int
 
 	isPostgres bool
+	isReadonly bool
 
 	cache *schemaCache
 
@@ -79,17 +85,16 @@ type Provider struct {
 // pool: *db.Pool for raw SQL access to CoreDB
 // cfg: provider configuration (prefix, cache, vec size)
 // embedder: optional (nil when embeddings not configured)
-func New(pool *db.Pool, cfg Config, embedder Embedder) (*Provider, error) {
+func New(ctx context.Context, pool *db.Pool, cfg Config, embedder Embedder) (*Provider, error) {
 	p := &Provider{
 		pool:       pool,
 		prefix:     cfg.TablePrefix,
 		embedder:   embedder,
 		vecSize:    cfg.VecSize,
 		isPostgres: cfg.IsPostgres,
+		isReadonly: cfg.IsReadonly,
 		cache:      newSchemaCache(cfg.Cache),
 	}
-
-	ctx := context.Background()
 
 	// Ensure _schema_settings table exists
 	if err := p.ensureSettings(ctx); err != nil {
@@ -106,14 +111,29 @@ func New(pool *db.Pool, cfg Config, embedder Embedder) (*Provider, error) {
 
 // NewWithCompiler creates a DB-backed provider with CatalogManager support.
 // The compiler is used for self-contained catalog compilation via AddCatalog/ReloadCatalog.
-func NewWithCompiler(pool *db.Pool, cfg Config, embedder Embedder, c *compiler.Compiler) (*Provider, error) {
-	p, err := New(pool, cfg, embedder)
+func NewWithCompiler(ctx context.Context, pool *db.Pool, cfg Config, embedder Embedder, c *compiler.Compiler) (*Provider, error) {
+	p, err := New(ctx, pool, cfg, embedder)
 	if err != nil {
 		return nil, err
 	}
 	p.compiler = c
 	p.catalogs = make(map[string]sources.Catalog)
 	return p, nil
+}
+
+// IsReadonly returns whether this provider is in read-only mode.
+func (p *Provider) IsReadonly() bool {
+	return p.isReadonly
+}
+
+// HasEmbeddings returns true when the provider has an embedder and vec columns.
+func (p *Provider) HasEmbeddings() bool {
+	return p.vecSize > 0 && p.embedder != nil
+}
+
+// VecSize returns the embedding vector dimension.
+func (p *Provider) VecSize() int {
+	return p.vecSize
 }
 
 // Description returns a static provider description.
@@ -124,6 +144,9 @@ func (p *Provider) Description(_ context.Context) string {
 // SetDefinitionDescription updates a type's description and long description,
 // and recomputes its embedding vector (if embedder is available).
 func (p *Provider) SetDefinitionDescription(ctx context.Context, name, desc, longDesc string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("set description: %w", err)
@@ -158,6 +181,9 @@ func (p *Provider) SetDefinitionDescription(ctx context.Context, name, desc, lon
 // SetFieldDescription updates a field's description and long description,
 // and recomputes its embedding vector (if embedder is available).
 func (p *Provider) SetFieldDescription(ctx context.Context, typeName, fieldName, desc, longDesc string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("set field description: %w", err)
@@ -192,6 +218,9 @@ func (p *Provider) SetFieldDescription(ctx context.Context, typeName, fieldName,
 // SetModuleDescription updates a module's description and long description,
 // and recomputes its embedding vector (if embedder is available).
 func (p *Provider) SetModuleDescription(ctx context.Context, name, desc, longDesc string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("set module description: %w", err)
@@ -224,6 +253,9 @@ func (p *Provider) SetModuleDescription(ctx context.Context, name, desc, longDes
 // SetCatalogDescription updates a catalog's description and long description,
 // and recomputes its embedding vector (if embedder is available).
 func (p *Provider) SetCatalogDescription(ctx context.Context, name, desc, longDesc string) error {
+	if p.isReadonly {
+		return ErrReadOnly
+	}
 	conn, err := p.pool.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("set catalog description: %w", err)
@@ -251,6 +283,71 @@ func (p *Provider) SetCatalogDescription(ctx context.Context, name, desc, longDe
 		return fmt.Errorf("set catalog description: %w", err)
 	}
 	return nil
+}
+
+// ResetSummarized clears the is_summarized flag so the summarizer re-processes entities.
+//
+// scope controls granularity:
+//   - "all"     — reset everything (name is ignored)
+//   - "catalog" — reset all types/fields/modules in the named catalog, plus the catalog record
+//   - "type"    — reset the named type and its fields
+func (p *Provider) ResetSummarized(ctx context.Context, name, scope string) (int, error) {
+	if p.isReadonly {
+		return 0, ErrReadOnly
+	}
+	conn, err := p.pool.Conn(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("reset summarized: %w", err)
+	}
+	defer conn.Close()
+
+	var total int64
+	exec := func(query string, args ...any) {
+		if err != nil {
+			return
+		}
+		var res interface{ RowsAffected() (int64, error) }
+		res, err = p.execWrite(ctx, conn, query, args...)
+		if err == nil {
+			n, _ := res.RowsAffected()
+			total += n
+		}
+	}
+
+	switch scope {
+	case "type":
+		if name == "" {
+			return 0, fmt.Errorf("reset summarized: name is required for scope=type")
+		}
+		exec(fmt.Sprintf(`UPDATE %s SET is_summarized=false WHERE name=$1`, p.table("_schema_types")), name)
+		exec(fmt.Sprintf(`UPDATE %s SET is_summarized=false WHERE type_name=$1`, p.table("_schema_fields")), name)
+
+	case "catalog":
+		if name == "" {
+			return 0, fmt.Errorf("reset summarized: name is required for scope=catalog")
+		}
+		exec(fmt.Sprintf(`UPDATE %s SET is_summarized=false WHERE name=$1`, p.table("_schema_catalogs")), name)
+		exec(fmt.Sprintf(`UPDATE %s SET is_summarized=false WHERE catalog=$1`, p.table("_schema_types")), name)
+		exec(fmt.Sprintf(`UPDATE %s SET is_summarized=false WHERE catalog=$1`, p.table("_schema_fields")), name)
+		exec(fmt.Sprintf(
+			`UPDATE %s SET is_summarized=false WHERE name IN (
+				SELECT DISTINCT m.name FROM %s m
+				INNER JOIN %s mtc ON m.name = mtc.module_name
+				WHERE mtc.catalog_name = $1
+			)`, p.table("_schema_modules"), p.table("_schema_modules"), p.table("_schema_module_type_catalogs"),
+		), name)
+
+	default: // "all"
+		exec(fmt.Sprintf(`UPDATE %s SET is_summarized=false WHERE is_summarized=true`, p.table("_schema_catalogs")))
+		exec(fmt.Sprintf(`UPDATE %s SET is_summarized=false WHERE is_summarized=true`, p.table("_schema_types")))
+		exec(fmt.Sprintf(`UPDATE %s SET is_summarized=false WHERE is_summarized=true`, p.table("_schema_fields")))
+		exec(fmt.Sprintf(`UPDATE %s SET is_summarized=false WHERE is_summarized=true`, p.table("_schema_modules")))
+	}
+
+	if err != nil {
+		return 0, fmt.Errorf("reset summarized: %w", err)
+	}
+	return int(total), nil
 }
 
 // InvalidateCatalog evicts all cached entries for the given catalog name.
