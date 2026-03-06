@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/cluster"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
@@ -73,6 +74,12 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 		return err
 	}
 
+	// Cluster broadcast context: attach only, schema already compiled in CoreDB.
+	if cluster.IsClusterBroadcast(ctx) {
+		return ds.Attach(ctx, s.db)
+	}
+
+	// Management/standalone: full path with compile (AddCatalog).
 	return s.Attach(ctx, item.Name)
 }
 

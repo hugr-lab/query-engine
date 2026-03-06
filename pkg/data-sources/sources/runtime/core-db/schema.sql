@@ -196,6 +196,22 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_settin
     value {{if isPostgres }} JSONB {{ else }} JSON {{ end }} NOT NULL
 );
 
+-- Cluster node registry. Each node UPSERTs on startup, updates last_heartbeat periodically.
+CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_cluster_nodes (
+    name VARCHAR NOT NULL PRIMARY KEY,
+    url VARCHAR NOT NULL,
+    role VARCHAR NOT NULL,
+    version VARCHAR,
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_heartbeat TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    error VARCHAR
+);
+
+-- Schema version counter for cluster change detection.
+INSERT INTO {{ if isAttachedDuckdb }}core.{{ end }}_schema_settings (key, value)
+VALUES ('schema_version', '"0"')
+ON CONFLICT (key) DO NOTHING;
+
 -- Seed vec_size so ensureVectorSize() sees the correct stored dimension on first boot.
 {{ if gt .VectorSize 0 }}
 INSERT INTO {{ if isAttachedDuckdb }}core.{{ end }}_schema_settings (key, value)

@@ -24,6 +24,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - CoreDB `_schema_*` tables (DuckDB in-memory/file or attached PostgreSQL) (012-db-provider-core)
 - Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag: `duckdb_arrow`), `hashicorp/golang-lru/v2` (LRU cache), `mark3labs/mcp-go` (MCP server), `tmc/langchaingo` (LLM calls for CLI) (001-catalog-mcp-cli)
 - CoreDB `_schema_*` tables (DuckDB in-memory/file or attached PostgreSQL) (001-catalog-mcp-cli)
+- Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag: `duckdb_arrow`) + `hugr-lab/query-engine` (engine, client, db provider, catalog), `mark3labs/mcp-go` (MCP server) (002-cluster-mode)
+- PostgreSQL (shared CoreDB in cluster mode), DuckDB (local per-node) (002-cluster-mode)
 
 - Go 1.25 + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag), `apache/arrow-go/v18` (001-compiler-generators-decouple)
 
@@ -43,9 +45,9 @@ tests/
 Go 1.25: Follow standard conventions
 
 ## Recent Changes
+- 002-cluster-mode: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag: `duckdb_arrow`) + `hugr-lab/query-engine` (engine, client, db provider, catalog), `mark3labs/mcp-go` (MCP server)
 - 001-catalog-mcp-cli: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `duckdb-go/v2` (build tag: `duckdb_arrow`), `hashicorp/golang-lru/v2` (LRU cache), `mark3labs/mcp-go` (MCP server), `tmc/langchaingo` (LLM calls for CLI)
 - 012-db-provider-core: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST), `hashicorp/golang-lru/v2` (LRU cache with TTL), `duckdb-go/v2` (build tag: `duckdb_arrow`), `pkg/catalog/db/schema` (Spec 01 serialization), `pkg/db` (Pool, transaction support)
-- 011-db-schema-serialization: Added Go 1.25 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `gqlparser/v2` (GraphQL AST) + `gqlparser/v2/ast` (AST types), `pkg/catalog/compiler/base` (HugrType constants, directive name constants)
 
 
 <!-- MANUAL ADDITIONS START -->

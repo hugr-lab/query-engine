@@ -126,6 +126,11 @@ func (p *Provider) IsReadonly() bool {
 	return p.isReadonly
 }
 
+// TablePrefix returns the SQL table prefix (e.g. "core." for attached DuckDB).
+func (p *Provider) TablePrefix() string {
+	return p.prefix
+}
+
 // HasEmbeddings returns true when the provider has an embedder and vec columns.
 func (p *Provider) HasEmbeddings() bool {
 	return p.vecSize > 0 && p.embedder != nil
@@ -377,4 +382,46 @@ func (p *Provider) InvalidateAll() {
 	p.queryType = nil
 	p.mutationType = nil
 	p.mu.Unlock()
+}
+
+// IncrementSchemaVersion atomically increments the schema version counter
+// in _schema_settings and returns the new value. Called by management node
+// after AddCatalog/RemoveCatalog/ReloadCatalog.
+func (p *Provider) IncrementSchemaVersion(ctx context.Context) (int64, error) {
+	conn, err := p.pool.Conn(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("increment schema version: %w", err)
+	}
+	defer conn.Close()
+
+	var newVersion int64
+	err = conn.QueryRow(ctx, fmt.Sprintf(
+		`UPDATE %s SET value = CAST((CAST(TRIM(value, '"') AS BIGINT) + 1) AS VARCHAR)
+		 WHERE key = 'schema_version'
+		 RETURNING CAST(TRIM(value, '"') AS BIGINT)`,
+		p.table("_schema_settings"),
+	)).Scan(&newVersion)
+	if err != nil {
+		return 0, fmt.Errorf("increment schema version: %w", err)
+	}
+	return newVersion, nil
+}
+
+// GetSchemaVersion returns the current schema version counter.
+func (p *Provider) GetSchemaVersion(ctx context.Context) (int64, error) {
+	conn, err := p.pool.Conn(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("get schema version: %w", err)
+	}
+	defer conn.Close()
+
+	var version int64
+	err = conn.QueryRow(ctx, fmt.Sprintf(
+		`SELECT CAST(TRIM(value, '"') AS BIGINT) FROM %s WHERE key = 'schema_version'`,
+		p.table("_schema_settings"),
+	)).Scan(&version)
+	if err != nil {
+		return 0, fmt.Errorf("get schema version: %w", err)
+	}
+	return version, nil
 }
