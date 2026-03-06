@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/cluster"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	dssource "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/gis"
@@ -45,6 +46,15 @@ func (s *Service) attachRuntimeSources(ctx context.Context, readonly bool) error
 	if err != nil {
 		return fmt.Errorf("attach GIS source: %w", err)
 	}
+
+	// Attach cluster source if cluster mode is enabled.
+	if s.config.Cluster.Enabled {
+		s.cluster = cluster.NewSource(s.config.Cluster, s, s.dbProvider)
+		if err := s.ds.AttachRuntimeSource(ctx, s.cluster); err != nil {
+			return fmt.Errorf("attach cluster source: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -58,6 +68,12 @@ func (s *Service) attachRuntimeSourcesReadonly(ctx context.Context) error {
 		metainfo.New(s),
 		s.dbProvider.CatalogSource(),
 		gis.New(),
+	}
+
+	// Attach cluster source if cluster mode is enabled (workers too).
+	if s.config.Cluster.Enabled {
+		s.cluster = cluster.NewSource(s.config.Cluster, s, s.dbProvider)
+		readonlySources = append(readonlySources, s.cluster)
 	}
 
 	for _, src := range readonlySources {
@@ -89,6 +105,9 @@ func (s *Service) attachRuntimeSourceReadonly(ctx context.Context, src sources.R
 	return nil
 }
 
+// loadDataSources queries all enabled data sources and loads them.
+// Catalog ops (AddCatalog/RemoveCatalog) are controlled by the
+// skipCatalogOps flag on the datasources.Service.
 func (s *Service) loadDataSources(ctx context.Context) error {
 	ctx = auth.ContextWithFullAccess(ctx)
 	res, err := s.Query(ctx, `
@@ -114,7 +133,7 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 	}
 	res.Close()
 
-	// load first data sources than extensions
+	// Load base data sources before extensions.
 	sort.Slice(data, func(i, j int) bool {
 		if data[i].Type == data[j].Type {
 			return data[i].Name < data[j].Name
@@ -128,72 +147,11 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 		return data[i].Name < data[j].Name
 	})
 	for _, ds := range data {
-		err := s.LoadDataSource(ctx, ds.Name)
-		if err != nil {
+		if err := s.LoadDataSource(ctx, ds.Name); err != nil {
 			log.Printf("ERR: failed to load datasource %s: %v", ds.Name, err)
-		}
-		if err == nil {
-			log.Printf("INFO: loaded datasource %s", ds.Name)
-		}
-	}
-
-	return nil
-}
-
-// registerReadonlyEngines loads data sources from the DB in read-only mode.
-// It attaches each data source to DuckDB (for DB connections) and registers
-// their engines for planner routing, without compiling schemas.
-func (s *Service) registerReadonlyEngines(ctx context.Context) error {
-	ctx = auth.ContextWithFullAccess(ctx)
-	res, err := s.Query(ctx, `
-		query{
-			core {
-				data_sources(filter:{disabled:{eq: false}}){
-					name
-					type
-				}
-			}
-		}`, nil)
-	if err != nil {
-		return err
-	}
-	defer res.Close()
-	var data []types.DataSource
-	err = res.ScanData("core.data_sources", &data)
-	if errors.Is(err, types.ErrNoData) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	res.Close()
-
-	// Sort: base data sources before extensions.
-	sort.Slice(data, func(i, j int) bool {
-		if data[i].Type == data[j].Type {
-			return data[i].Name < data[j].Name
-		}
-		if data[i].Type == sources.Extension {
-			return false
-		}
-		if data[j].Type == sources.Extension {
-			return true
-		}
-		return data[i].Name < data[j].Name
-	})
-
-	for _, ds := range data {
-		if err := s.ds.LoadDataSourceReadonly(ctx, ds.Name); err != nil {
-			log.Printf("ERR: failed to load datasource %s (readonly): %v", ds.Name, err)
 			continue
 		}
-		engine, err := s.ds.Engine(ds.Name)
-		if err != nil {
-			log.Printf("ERR: failed to get engine for %s: %v", ds.Name, err)
-			continue
-		}
-		s.schema.RegisterEngine(ds.Name, engine)
-		log.Printf("INFO: loaded datasource %s (readonly)", ds.Name)
+		log.Printf("INFO: loaded datasource %s", ds.Name)
 	}
 
 	return nil

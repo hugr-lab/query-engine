@@ -68,36 +68,14 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 		return err
 	}
 
-	err = s.Register(ctx, item.Name, ds)
-	if err != nil {
-		return err
-	}
-
-	return s.Attach(ctx, item.Name)
-}
-
-// LoadDataSourceReadonly connects a data source to DuckDB without compiling
-// its schema. Used in read-only mode where schemas are already persisted.
-func (s *Service) LoadDataSourceReadonly(ctx context.Context, name string) error {
-	item, err := s.dataSource(ctx, name)
-	if errors.Is(err, types.ErrNoData) {
-		return ErrDataSourceNotFound
-	}
-	if err != nil {
-		return err
-	}
-
-	ds, err := NewDataSource(ctx, item, false)
-	if err != nil {
-		return err
-	}
-
 	if err := s.Register(ctx, item.Name, ds); err != nil {
 		return err
 	}
 
-	// Attach to DuckDB for DB connections only; skip schema compilation.
-	return ds.Attach(ctx, s.db)
+	// Attach handles catalog ops based on skipCatalogOps flag:
+	// - management/standalone: full compile (AddCatalog)
+	// - readonly/worker: attach + RegisterEngine only
+	return s.Attach(ctx, item.Name)
 }
 
 var errAlreadyUnloaded = errors.New("data source already unloaded")
@@ -107,15 +85,10 @@ func (s *Service) UnloadDataSource(ctx context.Context, name string) error {
 		s.Unregister(ctx, name)
 		return errAlreadyUnloaded
 	}
-	err := s.Detach(ctx, name, s.db)
-	if err != nil {
+	if err := s.Detach(ctx, name, s.db); err != nil {
 		return err
 	}
-	err = s.Unregister(ctx, name)
-	if err != nil {
-		return err
-	}
-	return nil
+	return s.Unregister(ctx, name)
 }
 
 func (s *Service) DescribeDataSource(ctx context.Context, name string, self bool) (string, error) {

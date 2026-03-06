@@ -158,6 +158,26 @@ When `AUTH_CONFIG_FILE` is set, the server loads authentication rules from a JSO
 | `CACHE_L2_USERNAME` | string | _(empty)_ | Username |
 | `CACHE_L2_PASSWORD` | string | _(empty)_ | Password |
 
+## Cluster Mode
+
+Cluster mode enables multi-node deployment with a management node coordinating
+worker nodes. Management compiles schemas and broadcasts changes; workers are
+stateless and receive compiled schemas from the shared CoreDB.
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `CLUSTER_ENABLED` | bool | `false` | Enable cluster mode |
+| `CLUSTER_ROLE` | string | _(empty)_ | Node role: `management` or `worker` |
+| `CLUSTER_NODE_NAME` | string | _(empty)_ | Unique node name (used in `_cluster_nodes`) |
+| `CLUSTER_NODE_URL` | string | _(empty)_ | This node's IPC endpoint URL (e.g., `http://worker-1:15000`) |
+| `CLUSTER_SECRET` | string | _(empty)_ | Shared secret for inter-node authentication (sent via `x-hugr-secret` header) |
+| `CLUSTER_HEARTBEAT` | duration | `30s` | Heartbeat interval for node health monitoring |
+| `CLUSTER_GHOST_TTL` | duration | `2m` | Time after which unresponsive nodes are removed |
+| `CLUSTER_POLL_INTERVAL` | duration | `30s` | Worker schema version polling interval (fallback for missed broadcasts) |
+
+All nodes must share the same CoreDB (typically PostgreSQL via `CORE_DB_PATH=postgres://...`).
+Workers should run with `CORE_DB_READONLY=true`.
+
 ## Command-Line Flags
 
 | Flag | Description |

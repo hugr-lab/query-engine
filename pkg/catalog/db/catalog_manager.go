@@ -151,6 +151,11 @@ func (p *Provider) AddCatalog(ctx context.Context, name string, catalog sources.
 
 	slog.Info("catalog added", "catalog", name, "version", version, "dependencies", deps)
 
+	// Increment schema version for cluster change detection.
+	if _, err := p.IncrementSchemaVersion(ctx); err != nil {
+		slog.Error("failed to increment schema version", "catalog", name, "error", err)
+	}
+
 	// Reactivate suspended catalogs whose dependencies may now be satisfied.
 	p.reactivateSuspended(ctx)
 
@@ -182,6 +187,12 @@ func (p *Provider) RemoveCatalog(ctx context.Context, name string) error {
 	p.mu.Unlock()
 
 	slog.Info("catalog removed", "catalog", name)
+
+	// Increment schema version for cluster change detection.
+	if _, err := p.IncrementSchemaVersion(ctx); err != nil {
+		slog.Error("failed to increment schema version", "catalog", name, "error", err)
+	}
+
 	return nil
 }
 
@@ -281,6 +292,10 @@ func (p *Provider) reloadIncremental(ctx context.Context, name, fromVersion stri
 	}
 
 	slog.Info("catalog reloaded incrementally", "catalog", name, "version", compositeVersion)
+
+	if _, err := p.IncrementSchemaVersion(ctx); err != nil {
+		slog.Error("failed to increment schema version", "catalog", name, "error", err)
+	}
 	return nil
 }
 
@@ -308,6 +323,10 @@ func (p *Provider) reloadFull(ctx context.Context, name string, source sources.C
 
 	slog.Info("catalog reloaded (full recompilation)",
 		"catalog", name, "version", compositeVersion, "dependencies", deps)
+
+	if _, err := p.IncrementSchemaVersion(ctx); err != nil {
+		slog.Error("failed to increment schema version", "catalog", name, "error", err)
+	}
 
 	p.reactivateSuspended(ctx)
 	return nil

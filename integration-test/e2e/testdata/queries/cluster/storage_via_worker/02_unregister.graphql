@@ -1,0 +1,13 @@
+# @target: worker-1
+mutation {
+  function {
+    core {
+      cluster {
+        unregister_storage(name: "e2e_worker_storage") {
+          success
+          message
+        }
+      }
+    }
+  }
+}

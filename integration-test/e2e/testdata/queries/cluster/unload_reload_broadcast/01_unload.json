@@ -1,0 +1,14 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "cluster": {
+          "unload_source": {
+            "message": "unload_source: all workers ok",
+            "success": true
+          }
+        }
+      }
+    }
+  }
+}

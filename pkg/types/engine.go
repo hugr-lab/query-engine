@@ -28,6 +28,12 @@ type Request struct {
 	ValidateOnly  bool           `json:"validateOnly,omitempty"`
 }
 
+// JQRequest is a GraphQL query with an optional JQ transformation.
+type JQRequest struct {
+	JQ    string  `json:"jq"`
+	Query Request `json:"query"`
+}
+
 type Response struct {
 	Data       map[string]any `json:"data,omitempty"`
 	Extensions map[string]any `json:"extensions,omitempty"`

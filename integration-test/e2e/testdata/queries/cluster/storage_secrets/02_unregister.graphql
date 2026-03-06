@@ -1,0 +1,13 @@
+# @target: mgmt
+mutation {
+  function {
+    core {
+      cluster {
+        unregister_storage(name: "e2e_test_storage") {
+          success
+          message
+        }
+      }
+    }
+  }
+}

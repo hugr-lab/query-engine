@@ -203,6 +203,29 @@ extend type MutationFunction {
     @function(name: "_schema_reindex")
 }
 
+# --- Cluster Node Registry ---
+
+"""
+  Cluster node registry. Each node UPSERTs on startup and updates heartbeat periodically.
+  Used for management→worker broadcast targeting and operational visibility.
+"""
+type nodes @table(name: "_cluster_nodes") @module(name: "cluster") {
+  "Unique node identifier"
+  name: String! @pk
+  "Node IPC endpoint URL"
+  url: String!
+  "Node role: management or worker"
+  role: String!
+  "Binary version"
+  version: String
+  "When this node started"
+  started_at: Timestamp
+  "Last heartbeat timestamp"
+  last_heartbeat: Timestamp
+  "Last error (null = healthy)"
+  error: String
+}
+
 # --- Data Sources UDFs ---
 
 extend type Function {

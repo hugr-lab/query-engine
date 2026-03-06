@@ -1,0 +1,14 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "cluster": {
+          "unregister_storage": {
+            "message": "unregister_storage: all workers ok",
+            "success": true
+          }
+        }
+      }
+    }
+  }
+}
