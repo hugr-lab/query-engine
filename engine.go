@@ -12,6 +12,7 @@ import (
 	adminui "github.com/hugr-lab/query-engine/pkg/admin-ui"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
+	"github.com/hugr-lab/query-engine/pkg/cluster"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
@@ -47,6 +48,7 @@ type Service struct {
 	s3       *storage.Source
 	gis      *gis.Service
 	embedder *embedding.Source
+	cluster  *cluster.Source
 
 	dbProvider *catalogdb.Provider
 
@@ -74,6 +76,7 @@ type Config struct {
 	Auth     *auth.Config
 	Cache    cache.Config
 	Embedder EmbedderConfig
+	Cluster  cluster.ClusterConfig
 }
 
 type EmbedderConfig struct {
@@ -336,6 +339,11 @@ func (s *Service) AttachRuntimeSource(ctx context.Context, source sources.Runtim
 	}
 	s.pendingSources = append(s.pendingSources, source)
 	return nil
+}
+
+// ClusterSource returns the cluster source, or nil if cluster mode is disabled.
+func (s *Service) ClusterSource() *cluster.Source {
+	return s.cluster
 }
 
 func (s *Service) Close() error {

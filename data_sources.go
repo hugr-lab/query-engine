@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/cluster"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	dssource "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/gis"
@@ -45,6 +46,15 @@ func (s *Service) attachRuntimeSources(ctx context.Context, readonly bool) error
 	if err != nil {
 		return fmt.Errorf("attach GIS source: %w", err)
 	}
+
+	// Attach cluster source if cluster mode is enabled.
+	if s.config.Cluster.Enabled {
+		s.cluster = cluster.NewSource(s.config.Cluster, s, s.dbProvider)
+		if err := s.ds.AttachRuntimeSource(ctx, s.cluster); err != nil {
+			return fmt.Errorf("attach cluster source: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -58,6 +68,12 @@ func (s *Service) attachRuntimeSourcesReadonly(ctx context.Context) error {
 		metainfo.New(s),
 		s.dbProvider.CatalogSource(),
 		gis.New(),
+	}
+
+	// Attach cluster source if cluster mode is enabled (workers too).
+	if s.config.Cluster.Enabled {
+		s.cluster = cluster.NewSource(s.config.Cluster, s, s.dbProvider)
+		readonlySources = append(readonlySources, s.cluster)
 	}
 
 	for _, src := range readonlySources {
