@@ -2,7 +2,7 @@
 {
   core {
     cluster {
-      nodes {
+      nodes (order_by: {field: "name", direction: ASC}) {
         name
         role
       }
