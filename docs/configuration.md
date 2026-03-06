@@ -30,17 +30,23 @@ The DB-backed schema provider uses an LRU cache to avoid repeated database reads
 | `SCHEMA_CACHE_MAX_ENTRIES` | int | `0` | LRU cache max entries (0 = default 10000) |
 | `SCHEMA_CACHE_TTL` | duration | `0s` | Cache entry TTL (0 = default 10m) |
 
-## MCP Endpoint
+## MCP & Embeddings
 
-When enabled, the server exposes an MCP (Model Context Protocol) endpoint at `/mcp`
-for AI tool integration. Requires an embedder URL for vector search.
+When MCP is enabled, the server exposes a Model Context Protocol endpoint at `/mcp`
+(protected by the same auth middleware as `/query`).
+The MCP server provides 10 tools for AI-assisted schema discovery, introspection,
+and query execution. Requires an embedder URL for semantic search.
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `MCP_ENABLED` | bool | `false` | Enable MCP endpoint |
+| `MCP_ENABLED` | bool | `false` | Enable MCP endpoint at `/mcp` |
 | `EMBEDDER_URL` | string | _(empty)_ | Embedder service URL (required when MCP is enabled) |
+| `EMBEDDER_VECTOR_SIZE` | int | `768` | Dimension of embedding vectors stored in CoreDB |
 
 The embedder URL format: `http://host:port/path?model=<model>&api_key=<key>&timeout=<duration>`
+
+Use `hugr-tools summarize` to generate LLM-powered descriptions for schema entities,
+and `hugr-tools reindex` to recompute embeddings. See [hugr-tools.md](hugr-tools.md).
 
 ## DuckDB
 
@@ -166,9 +172,13 @@ CORE_DB_PATH=./core.db
 CORE_DB_READONLY=false
 DEBUG=false
 
-# MCP + embedder
+# MCP + embedder (enables /mcp endpoint and vector search)
 MCP_ENABLED=true
 EMBEDDER_URL=http://localhost:8080/embed?model=text-embedding-3-small&api_key=sk-...
+# EMBEDDER_VECTOR_SIZE=768  # default, change if your model uses different dimensions
+
+# hugr-tools summarization (run separately)
+# hugr-tools summarize --api-key sk-... --provider openai --model gpt-4o-mini
 
 # Authentication
 ALLOWED_ANONYMOUS=false

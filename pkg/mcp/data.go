@@ -14,7 +14,7 @@ import (
 func (s *Server) inlineGraphQLResult(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query := req.GetString("query", "")
 	jqTransform := req.GetString("jq_transform", "")
-	maxResultSize := req.GetInt("max_result_size", 1000)
+	maxResultSize := req.GetInt("max_result_size", 2000)
 
 	if query == "" {
 		return toolResultError("query is required"), nil
@@ -28,8 +28,8 @@ func (s *Server) inlineGraphQLResult(ctx context.Context, req mcp.CallToolReques
 	if maxResultSize < 100 {
 		maxResultSize = 100
 	}
-	if maxResultSize > 5000 {
-		maxResultSize = 5000
+	if maxResultSize > 10000 {
+		maxResultSize = 10000
 	}
 
 	vars := make(map[string]any)

@@ -37,26 +37,42 @@ docs/                 Internal documentation
 ### Build
 
 ```bash
-CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow ./cmd/dev-server
+# Dev server
+CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow -o hugr ./cmd/dev-server
+
+# CLI tools (summarize, reindex, schema-info)
+CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow -o hugr-tools ./cmd/hugr-tools
 ```
 
 ### Install DuckDB extensions
 
 ```bash
-./dev-server -install
+./hugr -install
 ```
 
 ### Run
 
 ```bash
 # Minimal (in-memory)
-./dev-server
+./hugr
 
 # With persistent CoreDB
-CORE_DB_PATH=./core.db ./dev-server
+CORE_DB_PATH=./core.db ./hugr
 
-# Read-only mode
-CORE_DB_PATH=./core.db CORE_DB_READONLY=true ./dev-server
+# With MCP endpoint + embeddings
+CORE_DB_PATH=./core.db MCP_ENABLED=true \
+  EMBEDDER_URL='http://localhost:8080/embed?model=text-embedding-3-small&api_key=sk-...' \
+  ./hugr
+```
+
+### Summarize schema with AI
+
+```bash
+# Generate descriptions for all schema entities using an LLM
+hugr-tools summarize --api-key sk-... --provider openai --model gpt-4o-mini
+
+# Recompute vector embeddings after summarization
+hugr-tools reindex --batch-size 100
 ```
 
 The server reads configuration from environment variables (or a `.env` file).
