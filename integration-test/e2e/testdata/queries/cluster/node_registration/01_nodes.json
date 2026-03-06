@@ -8,12 +8,12 @@
             "role": "worker"
           },
           {
-            "name": "mgmt",
-            "role": "management"
-          },
-          {
             "name": "worker-1",
             "role": "worker"
+          },
+          {
+            "name": "mgmt",
+            "role": "management"
           }
         ]
       }

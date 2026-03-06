@@ -119,7 +119,7 @@ func (w *WorkerClient) SyncSecrets(ctx context.Context) error {
 
 	c := w.newClient(mgmtURL)
 	res, err := c.Query(ctx, `query {
-		core { meta { secrets { name type scope secret_string } } }
+		core { meta { secrets { name type_name scope secret_string } } }
 	}`, nil)
 	if err != nil {
 		return fmt.Errorf("sync secrets query: %w", err)
@@ -131,7 +131,7 @@ func (w *WorkerClient) SyncSecrets(ctx context.Context) error {
 
 	var secrets []struct {
 		Name         string   `json:"name"`
-		Type         string   `json:"type"`
+		Type         string   `json:"type_name"`
 		Scope        []string `json:"scope"`
 		SecretString string   `json:"secret_string"`
 	}

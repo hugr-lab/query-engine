@@ -1,0 +1,22 @@
+# @target: mgmt
+mutation {
+  function {
+    core {
+      cluster {
+        register_storage(
+          type: "s3"
+          name: "e2e_test_storage"
+          scope: "s3://e2e-test-bucket"
+          key: "test-key"
+          secret: "test-secret"
+          endpoint: "localhost:9000"
+          use_ssl: false
+          url_style: "path"
+        ) {
+          success
+          message
+        }
+      }
+    }
+  }
+}

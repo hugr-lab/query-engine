@@ -171,12 +171,13 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 			dsruntime.DuckDBTypeInfoByNameMust("VARCHAR"), // scope
 			dsruntime.DuckDBTypeInfoByNameMust("VARCHAR"), // key
 			dsruntime.DuckDBTypeInfoByNameMust("VARCHAR"), // secret
-			dsruntime.DuckDBTypeInfoByNameMust("VARCHAR"), // region
+			dsruntime.DuckDBTypeInfoByNameMust("VARCHAR"), // region (nullable)
 			dsruntime.DuckDBTypeInfoByNameMust("VARCHAR"), // endpoint
 			dsruntime.DuckDBTypeInfoByNameMust("BOOLEAN"), // use_ssl
 			dsruntime.DuckDBTypeInfoByNameMust("VARCHAR"), // url_style
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType:            types.DuckDBOperationResult(),
+		IsSpecialNullHandling: true, // region arg is nullable
 	}); err != nil {
 		return fmt.Errorf("register register_storage UDF: %w", err)
 	}

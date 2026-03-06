@@ -191,7 +191,7 @@ func (c *Coordinator) RegisterStorage(ctx context.Context, params StorageParams)
 		$key: String!, $secret: String!, $region: String,
 		$endpoint: String!, $use_ssl: Boolean!, $url_style: String!
 	) {
-		mutation_function { core { storage {
+		function { core { storage {
 			register_object_storage(
 				type: $type, name: $name, scope: $scope,
 				key: $key, secret: $secret, region: $region,
@@ -227,7 +227,7 @@ func (c *Coordinator) RegisterStorage(ctx context.Context, params StorageParams)
 func (c *Coordinator) UnregisterStorage(ctx context.Context, name string) (*ClusterResult, error) {
 	ctx = auth.ContextWithFullAccess(ctx)
 	res, err := c.qe.Query(ctx, `mutation($name: String!) {
-		mutation_function { core { storage {
+		function { core { storage {
 			unregister_storage(name: $name) { success message }
 		}}}
 	}`, map[string]any{"name": name})

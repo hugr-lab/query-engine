@@ -1,0 +1,14 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "cluster": {
+          "register_storage": {
+            "message": "forwarded to management",
+            "success": true
+          }
+        }
+      }
+    }
+  }
+}
