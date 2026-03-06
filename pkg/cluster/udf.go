@@ -96,10 +96,11 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 		Execute: func(ctx context.Context, catalog string) (*types.OperationResult, error) {
 			return s.invalidateCache(ctx, catalog)
 		},
-		ConvertInput:  convertStringArg,
-		ConvertOutput: convertOperationResult,
-		InputTypes:    []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:    types.DuckDBOperationResult(),
+		ConvertInput:          convertStringArg,
+		ConvertOutput:         convertOperationResult,
+		InputTypes:            []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
+		OutputType:            types.DuckDBOperationResult(),
+		IsSpecialNullHandling: true, // catalog arg is optional (nullable)
 	}); err != nil {
 		return fmt.Errorf("register invalidate_cache UDF: %w", err)
 	}
@@ -137,10 +138,11 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 		Execute: func(ctx context.Context, catalog string) (*types.OperationResult, error) {
 			return s.handleCacheInvalidate(ctx, catalog)
 		},
-		ConvertInput:  convertStringArg,
-		ConvertOutput: convertOperationResult,
-		InputTypes:    []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:    types.DuckDBOperationResult(),
+		ConvertInput:          convertStringArg,
+		ConvertOutput:         convertOperationResult,
+		InputTypes:            []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
+		OutputType:            types.DuckDBOperationResult(),
+		IsSpecialNullHandling: true, // catalog arg is optional (nullable)
 	}); err != nil {
 		return fmt.Errorf("register handle_cache_invalidate UDF: %w", err)
 	}
@@ -355,6 +357,9 @@ func resultToOperation(op string, r *ClusterResult) *types.OperationResult {
 func convertStringArg(args []driver.Value) (string, error) {
 	if len(args) != 1 {
 		return "", fmt.Errorf("expected 1 argument, got %d", len(args))
+	}
+	if args[0] == nil {
+		return "", nil
 	}
 	s, ok := args[0].(string)
 	if !ok {

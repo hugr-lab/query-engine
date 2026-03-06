@@ -3,7 +3,7 @@
 # via cluster mutations (which broadcast to workers).
 # Usage: ./provision-cluster.sh <mgmt_url> [worker1_url]
 
-set -e
+set -eo pipefail
 
 MGMT_URL="${1:-http://localhost:15010}"
 WORKER1_URL="${2:-http://localhost:15011}"

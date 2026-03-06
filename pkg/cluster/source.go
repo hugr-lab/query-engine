@@ -73,17 +73,14 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	// the engine's planner is not yet initialized during Attach().
 
 	// Initialize role-specific components.
+	// Secret sync is deferred to heartbeatLoop (after first successful
+	// registration) because the engine's planner is not yet initialized
+	// during Attach().
 	switch s.config.Role {
 	case RoleManagement:
 		s.coordinator = NewCoordinator(s.config, s.qe)
 	case RoleWorker:
 		s.worker = NewWorkerClient(s.config, s.qe, pool)
-		// Sync DuckDB secrets from management on startup.
-		if err := s.worker.SyncSecrets(ctx); err != nil {
-			// Non-fatal: worker starts in degraded mode without secrets.
-			slog.Warn("cluster worker: failed to sync secrets (degraded mode)",
-				"error", err)
-		}
 	}
 
 	// Start heartbeat goroutine.

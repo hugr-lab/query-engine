@@ -83,6 +83,12 @@ func (s *Source) heartbeatLoop(ctx context.Context) {
 				}
 				registered = true
 				close(s.registered)
+				// Sync DuckDB secrets from management after planner is ready.
+				if s.worker != nil {
+					if err := s.worker.SyncSecrets(ctx); err != nil {
+						slog.Warn("cluster worker: failed to sync secrets", "error", err)
+					}
+				}
 			}
 			if err := s.sendHeartbeat(ctx); err != nil {
 				slog.Warn("cluster: heartbeat failed", "error", err)

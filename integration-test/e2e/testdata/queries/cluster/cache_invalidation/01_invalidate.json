@@ -4,8 +4,8 @@
       "core": {
         "cluster": {
           "invalidate_cache": {
-            "message": null,
-            "success": null
+            "message": "invalidate_cache: all workers ok",
+            "success": true
           }
         }
       }
