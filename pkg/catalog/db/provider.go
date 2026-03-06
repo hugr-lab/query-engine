@@ -394,15 +394,22 @@ func (p *Provider) IncrementSchemaVersion(ctx context.Context) (int64, error) {
 	}
 	defer conn.Close()
 
-	var newVersion int64
-	err = conn.QueryRow(ctx, fmt.Sprintf(
+	// Two-step update+select: RETURNING is not supported for PostgreSQL tables
+	// accessed via DuckDB's postgres scanner.
+	tbl := p.table("_schema_settings")
+	_, err = conn.Exec(ctx, fmt.Sprintf(
 		`UPDATE %s SET value = CAST((CAST(TRIM(value, '"') AS BIGINT) + 1) AS VARCHAR)
-		 WHERE key = 'schema_version'
-		 RETURNING CAST(TRIM(value, '"') AS BIGINT)`,
-		p.table("_schema_settings"),
-	)).Scan(&newVersion)
+		 WHERE key = 'schema_version'`, tbl))
 	if err != nil {
 		return 0, fmt.Errorf("increment schema version: %w", err)
+	}
+
+	var newVersion int64
+	err = conn.QueryRow(ctx, fmt.Sprintf(
+		`SELECT CAST(TRIM(value, '"') AS BIGINT) FROM %s WHERE key = 'schema_version'`, tbl,
+	)).Scan(&newVersion)
+	if err != nil {
+		return 0, fmt.Errorf("increment schema version (read): %w", err)
 	}
 	return newVersion, nil
 }

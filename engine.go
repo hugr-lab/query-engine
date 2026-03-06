@@ -195,6 +195,11 @@ func (s *Service) Init(ctx context.Context) (err error) {
 
 	// 7. Create datasources service and register UDFs.
 	s.ds = datasources.New(s, s.db, s.catalog)
+	// In read-only or cluster worker mode, skip schema DB writes
+	// on Attach/Detach — schemas are managed by the writer/management node.
+	if isReadonly || s.config.Cluster.IsWorker() {
+		s.ds.SetSkipCatalogOps(true)
+	}
 	if !isReadonly {
 		err = s.ds.RegisterUDF(ctx)
 		if err != nil {
@@ -278,29 +283,20 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		s.config.MaxDepth = 7
 	}
 
-	// 13. Clean orphaned catalogs (standalone/manager mode only).
+	// 13. Clean orphaned catalogs (standalone/management mode only).
 	// All runtime catalogs are now registered in dbProvider.catalogs;
 	// only data-source catalogs missing from the data_sources table are removed.
-	// Skip when CoreDB is read-only (worker/cluster node).
-	if !isReadonly {
+	// Skip on read-only CoreDB and cluster workers (management handles cleanup).
+	if !isReadonly && !s.config.Cluster.IsWorker() {
 		if err := s.dbProvider.CleanOrphanedCatalogs(ctx); err != nil {
 			slog.Error("failed to clean orphaned catalogs", "error", err)
 		}
 	}
 
 	// 14. Load stored data sources.
-	//     In read-only mode, data sources were already compiled by the writer.
-	//     We register engines for planner routing from _schema_catalogs.
-	if !isReadonly {
-		err = s.loadDataSources(ctx)
-		if err != nil {
-			return fmt.Errorf("load data sources: %w", err)
-		}
-	} else {
-		err = s.registerReadonlyEngines(ctx)
-		if err != nil {
-			return fmt.Errorf("register readonly engines: %w", err)
-		}
+	err = s.loadDataSources(ctx)
+	if err != nil {
+		return fmt.Errorf("load data sources: %w", err)
 	}
 
 	err = s.gis.Init()

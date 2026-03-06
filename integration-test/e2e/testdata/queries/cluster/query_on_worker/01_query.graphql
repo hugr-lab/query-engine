@@ -1,0 +1,9 @@
+# @target: worker-1
+{
+  pg_store {
+    products(filter: { id: { eq: 1 } }) {
+      id
+      name
+    }
+  }
+}

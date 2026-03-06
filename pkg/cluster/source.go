@@ -164,7 +164,6 @@ func (s *Source) reconcileLoadedSources(ctx context.Context) error {
 	for name := range expected {
 		status, err := s.qe.DataSourceStatus(ctx, name)
 		if err != nil || status != "attached" {
-			ctx := ContextWithClusterBroadcast(ctx)
 			if err := s.qe.LoadDataSource(ctx, name); err != nil {
 				slog.Warn("cluster worker: reconcile load failed",
 					"source", name, "error", err)

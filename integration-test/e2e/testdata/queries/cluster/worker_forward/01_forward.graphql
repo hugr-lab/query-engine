@@ -1,0 +1,13 @@
+# @target: worker-1
+mutation {
+  function {
+    core {
+      cluster {
+        reload_source(name: "pg_store") {
+          success
+          message
+        }
+      }
+    }
+  }
+}

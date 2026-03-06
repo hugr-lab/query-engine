@@ -90,8 +90,9 @@ func (w *WorkerClient) ForwardToManagement(ctx context.Context, query string, va
 }
 
 // HandleSourceLoad attaches a data source without compilation (broadcast target).
+// Schema compilation is skipped because the datasources.Service has skipCatalogOps=true
+// on worker nodes — schemas are managed by the management node.
 func (w *WorkerClient) HandleSourceLoad(ctx context.Context, name string) error {
-	ctx = ContextWithClusterBroadcast(ctx)
 	if err := w.qe.LoadDataSource(ctx, name); err != nil {
 		return fmt.Errorf("handle source load %q: %w", name, err)
 	}

@@ -47,4 +47,7 @@ type Manager interface {
 	ExistsCatalog(name string) bool
 	ReloadCatalog(ctx context.Context, name string) error
 	Engine(name string) (engines.Engine, error)
+	// RegisterEngine adds an engine for planner routing without compilation.
+	// Used by cluster workers where schema is already compiled in CoreDB.
+	RegisterEngine(name string, engine engines.Engine)
 }

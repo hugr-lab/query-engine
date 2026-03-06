@@ -246,6 +246,9 @@ run_tests_against() {
     [ -d "$category_dir" ] || continue
     category=$(basename "$category_dir")
 
+    # Skip cluster tests — they use multi-node routing
+    [ "$category" = "cluster" ] && continue
+
     for test_dir in "$category_dir"*/; do
       [ -d "$test_dir" ] || continue
       test_name="$category/$(basename "$test_dir")"
@@ -258,6 +261,115 @@ run_tests_against() {
         run_multistep_test "$engine_url" "$test_dir" "$test_name"
       fi
     done
+  done
+}
+
+# resolve_cluster_url reads the first "# @target:" comment from a .graphql file
+# and returns the corresponding cluster node URL.
+resolve_cluster_url() {
+  local query_file="$1"
+  local mgmt_url="$2"
+  local w1_url="$3"
+  local w2_url="$4"
+
+  local target
+  target=$(head -1 "$query_file" | grep -o '@target: *[a-z0-9_-]*' | sed 's/@target: *//' || true)
+
+  case "$target" in
+    mgmt|management) echo "$mgmt_url" ;;
+    worker-1)        echo "$w1_url" ;;
+    worker-2)        echo "$w2_url" ;;
+    *)               echo "$mgmt_url" ;;  # default to management
+  esac
+}
+
+# run_cluster_tests runs cluster-specific multistep tests with per-step node targeting.
+run_cluster_tests() {
+  local mgmt_url="$1"
+  local w1_url="$2"
+  local w2_url="$3"
+  local cluster_dir="$QUERIES_DIR/cluster"
+
+  echo ""
+  echo "Running cluster tests (mgmt=$mgmt_url, w1=$w1_url, w2=$w2_url)..."
+
+  for test_dir in "$cluster_dir"/*/; do
+    [ -d "$test_dir" ] || continue
+    local test_name="cluster/$(basename "$test_dir")"
+
+    local steps
+    steps=$(ls "$test_dir"/*.graphql 2>/dev/null | sort)
+    [ -z "$steps" ] && continue
+    local step_count
+    step_count=$(echo "$steps" | wc -l | tr -d ' ')
+
+    local all_pass=true
+    local step_num=0
+
+    for query_file in $steps; do
+      step_num=$((step_num + 1))
+      local base
+      base=$(basename "$query_file" .graphql)
+      local expected_file="$test_dir/${base}.json"
+      if [ ! -f "$expected_file" ]; then
+        local prefix
+        prefix=$(echo "$base" | grep -o '^[0-9]*')
+        expected_file="$test_dir/${prefix}_expected.json"
+      fi
+
+      # Resolve target URL from @target comment
+      local step_url
+      step_url=$(resolve_cluster_url "$query_file" "$mgmt_url" "$w1_url" "$w2_url")
+
+      # Strip @target comment before sending query
+      local query
+      query=$(grep -v '^# *@target:' "$query_file")
+      local actual
+      actual=$(curl -sf -X POST "$step_url/query" \
+        -H "Content-Type: application/json" \
+        -d "{\"query\": $(echo "$query" | jq -Rs .)}" 2>/dev/null) || {
+        echo "  FAIL: $test_name (step $step_num request failed)"
+        FAIL=$((FAIL + 1))
+        all_pass=false
+        break
+      }
+
+      if [ "${UPDATE_EXPECTED:-0}" = "1" ]; then
+        echo "$actual" | jq -S . > "$expected_file"
+        continue
+      fi
+
+      if [ ! -f "$expected_file" ]; then
+        echo "  SKIP: $test_name (step $step_num: no expected file)"
+        SKIP=$((SKIP + 1))
+        all_pass=false
+        break
+      fi
+
+      local actual_norm expected_norm
+      actual_norm=$(echo "$actual" | jq -S "$JQ_DEEP_SORT" 2>/dev/null) || actual_norm="$actual"
+      expected_norm=$(jq -S "$JQ_DEEP_SORT" "$expected_file" 2>/dev/null) || expected_norm=$(cat "$expected_file")
+
+      if [ "$actual_norm" != "$expected_norm" ]; then
+        echo "  FAIL: $test_name (step $step_num)"
+        diff <(echo "$expected_norm") <(echo "$actual_norm") || true
+        all_pass=false
+        break
+      fi
+    done
+
+    if [ "${UPDATE_EXPECTED:-0}" = "1" ]; then
+      echo "  UPDATED: $test_name ($step_count steps)"
+      PASS=$((PASS + 1))
+      continue
+    fi
+
+    if [ "$all_pass" = true ]; then
+      echo "  PASS: $test_name ($step_count steps)"
+      PASS=$((PASS + 1))
+    else
+      FAIL=$((FAIL + 1))
+    fi
   done
 }
 
@@ -300,7 +412,34 @@ if [ "$DUCKDB_ONLY" = false ]; then
   run_tests_against "$ENGINE_URL_PG" "PostgreSQL CoreDB" "pg"
 fi
 
-# 5. Summary
+# 5. Cluster tests
+if [ "$DUCKDB_ONLY" = false ]; then
+  CLUSTER_MGMT_URL="http://localhost:15010"
+  CLUSTER_W1_URL="http://localhost:15011"
+  CLUSTER_W2_URL="http://localhost:15012"
+
+  # Reset shared PostgreSQL data before cluster tests
+  echo ""
+  echo "Resetting shared PostgreSQL data for cluster tests..."
+  docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U test -d testdb -c "
+    DROP SCHEMA public CASCADE;
+    CREATE SCHEMA public;
+  " > /dev/null 2>&1
+  docker compose -f "$COMPOSE_FILE" exec -T postgres psql -U test -d testdb \
+    < "$SCRIPT_DIR/testdata/postgres/init.sql" > /dev/null 2>&1
+
+  echo ""
+  echo "Provisioning cluster data sources..."
+  "$SCRIPT_DIR/provision-cluster.sh" "$CLUSTER_MGMT_URL" "$CLUSTER_W1_URL"
+  if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to provision cluster data sources"
+    exit 2
+  fi
+
+  run_cluster_tests "$CLUSTER_MGMT_URL" "$CLUSTER_W1_URL" "$CLUSTER_W2_URL"
+fi
+
+# 6. Summary
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $SKIP skipped"
 

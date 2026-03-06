@@ -15,10 +15,10 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mssql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/postgres"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
@@ -32,6 +32,11 @@ type Service struct {
 	db       *db.Pool
 	qe       types.Querier
 	catalogs catalog.Manager
+
+	// skipCatalogOps disables schema DB writes (AddCatalog/RemoveCatalog)
+	// on Attach/Detach. Set for read-only CoreDB and cluster worker nodes
+	// where schema state is managed by the writer/management node.
+	skipCatalogOps bool
 }
 
 func New(qe types.Querier, db *db.Pool, cs catalog.Manager) *Service {
@@ -41,6 +46,12 @@ func New(qe types.Querier, db *db.Pool, cs catalog.Manager) *Service {
 		db:          db,
 		qe:          qe,
 	}
+}
+
+// SetSkipCatalogOps disables schema DB writes on Attach/Detach.
+// Used for read-only CoreDB and cluster worker nodes.
+func (s *Service) SetSkipCatalogOps(skip bool) {
+	s.skipCatalogOps = skip
 }
 
 func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource) error {
@@ -118,8 +129,14 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 		return err
 	}
 
+	// Skip schema compilation in readonly/worker mode — schemas
+	// are already persisted by the writer/management node.
+	if s.skipCatalogOps {
+		s.catalogs.RegisterEngine(name, ds.Engine())
+		return nil
+	}
+
 	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {
-		// add extension
 		cat, err := s.catalogSource(ctx, ds, false)
 		if err != nil {
 			return err
@@ -128,7 +145,6 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 		return s.catalogs.AddCatalog(ctx, def.Name, cat)
 	}
 
-	// create data source catalog
 	cat, err := s.catalogSource(ctx, ds, false)
 	if err != nil {
 		return err
@@ -153,10 +169,12 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 		return ErrDataSourceNotAttached
 	}
 
-	// remove catalog
-	err := s.catalogs.RemoveCatalog(ctx, name)
-	if !errors.Is(err, catalog.ErrCatalogNotFound) && err != nil {
-		return err
+	// Skip schema removal in readonly/worker mode.
+	if !s.skipCatalogOps {
+		err := s.catalogs.RemoveCatalog(ctx, name)
+		if !errors.Is(err, catalog.ErrCatalogNotFound) && err != nil {
+			return err
+		}
 	}
 
 	return ds.Detach(ctx, db)

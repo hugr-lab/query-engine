@@ -1,0 +1,11 @@
+# @target: mgmt
+{
+  core {
+    cluster {
+      nodes {
+        name
+        role
+      }
+    }
+  }
+}
