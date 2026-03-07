@@ -1,7 +1,11 @@
 package main
 
 import (
+	"time"
+
+	hugr "github.com/hugr-lab/query-engine"
 	"github.com/hugr-lab/query-engine/pkg/cache"
+	"github.com/hugr-lab/query-engine/pkg/cluster"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -17,8 +21,11 @@ type Config struct {
 	HttpProfiling      bool
 	AllowParallel      bool
 	MaxParallelQueries int
+	MaxDepthInTypes    int
 
-	MaxDepthInTypes int
+	SchemaCacheMaxEntries int
+	SchemaCacheTTL        time.Duration
+	MCPEnabled            bool
 
 	DB db.Config
 
@@ -27,7 +34,9 @@ type Config struct {
 	Cors CorsConfig
 	Auth AuthConfig
 
-	Cache cache.Config
+	Cache    cache.Config
+	Embedder hugr.EmbedderConfig
+	Cluster  cluster.ClusterConfig
 }
 
 func init() {
@@ -46,6 +55,17 @@ func initEnvs() {
 	viper.SetDefault("DB_PATH", "")
 	viper.SetDefault("DB_MAX_OPEN_CONNS", 0)
 	viper.SetDefault("DB_MAX_IDLE_CONNS", 0)
+	viper.SetDefault("SCHEMA_CACHE_MAX_ENTRIES", 0)
+	viper.SetDefault("SCHEMA_CACHE_TTL", "0s")
+	viper.SetDefault("MCP_ENABLED", false)
+	viper.SetDefault("CLUSTER_ENABLED", false)
+	viper.SetDefault("CLUSTER_ROLE", "")
+	viper.SetDefault("CLUSTER_NODE_NAME", "")
+	viper.SetDefault("CLUSTER_NODE_URL", "")
+	viper.SetDefault("CLUSTER_SECRET", "")
+	viper.SetDefault("CLUSTER_HEARTBEAT", "30s")
+	viper.SetDefault("CLUSTER_GHOST_TTL", "2m")
+	viper.SetDefault("CLUSTER_POLL_INTERVAL", "30s")
 	viper.SetDefault("ALLOWED_ANONYMOUS", true)
 	viper.SetDefault("ANONYMOUS_ROLE", "admin")
 	viper.AutomaticEnv()
@@ -53,14 +73,17 @@ func initEnvs() {
 
 func loadConfig() Config {
 	return Config{
-		Bind:               viper.GetString("BIND"),
-		EnableAdminUI:      viper.GetBool("ADMIN_UI"),
-		AdminUIFetchPath:   viper.GetString("ADMIN_UI_FETCH_PATH"),
-		DebugMode:          viper.GetBool("DEBUG"),
-		HttpProfiling:      viper.GetBool("HTTP_PROFILING"),
-		AllowParallel:      viper.GetBool("ALLOW_PARALLEL"),
-		MaxParallelQueries: viper.GetInt("MAX_PARALLEL_QUERIES"),
-		MaxDepthInTypes:    viper.GetInt("MAX_DEPTH"),
+		Bind:                  viper.GetString("BIND"),
+		EnableAdminUI:         viper.GetBool("ADMIN_UI"),
+		AdminUIFetchPath:      viper.GetString("ADMIN_UI_FETCH_PATH"),
+		DebugMode:             viper.GetBool("DEBUG"),
+		HttpProfiling:         viper.GetBool("HTTP_PROFILING"),
+		AllowParallel:         viper.GetBool("ALLOW_PARALLEL"),
+		MaxParallelQueries:    viper.GetInt("MAX_PARALLEL_QUERIES"),
+		MaxDepthInTypes:       viper.GetInt("MAX_DEPTH"),
+		SchemaCacheMaxEntries: viper.GetInt("SCHEMA_CACHE_MAX_ENTRIES"),
+		SchemaCacheTTL:        viper.GetDuration("SCHEMA_CACHE_TTL"),
+		MCPEnabled:            viper.GetBool("MCP_ENABLED"),
 		DB: db.Config{
 			Path:         viper.GetString("DB_PATH"),
 			MaxOpenConns: viper.GetInt("DB_MAX_OPEN_CONNS"),
@@ -98,6 +121,20 @@ func loadConfig() Config {
 			AnonymousRole:    viper.GetString("ANONYMOUS_ROLE"),
 			SecretKey:        viper.GetString("SECRET_KEY"),
 			ConfigFile:       viper.GetString("AUTH_CONFIG_FILE"),
+		},
+		Embedder: hugr.EmbedderConfig{
+			URL:        viper.GetString("EMBEDDER_URL"),
+			VectorSize: viper.GetInt("EMBEDDER_VECTOR_SIZE"),
+		},
+		Cluster: cluster.ClusterConfig{
+			Enabled:      viper.GetBool("CLUSTER_ENABLED"),
+			Role:         viper.GetString("CLUSTER_ROLE"),
+			NodeName:     viper.GetString("CLUSTER_NODE_NAME"),
+			NodeURL:      viper.GetString("CLUSTER_NODE_URL"),
+			Secret:       viper.GetString("CLUSTER_SECRET"),
+			Heartbeat:    viper.GetDuration("CLUSTER_HEARTBEAT"),
+			GhostTTL:     viper.GetDuration("CLUSTER_GHOST_TTL"),
+			PollInterval: viper.GetDuration("CLUSTER_POLL_INTERVAL"),
 		},
 		Cache: cache.Config{
 			TTL: types.Interval(viper.GetDuration("CACHE_TTL")),

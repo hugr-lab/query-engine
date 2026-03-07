@@ -1,0 +1,17 @@
+type Flight @table(name: "flights") @module(name: "transport.air") {
+  id: Int! @pk
+  flight_number: String!
+  departure: Timestamp
+}
+
+type Bus @table(name: "buses") @module(name: "transport.ground") {
+  id: Int! @pk
+  route: String!
+  capacity: Int
+}
+
+type Ship @table(name: "ships") @module(name: "transport.sea") {
+  id: Int! @pk
+  name: String!
+  tonnage: Float
+}

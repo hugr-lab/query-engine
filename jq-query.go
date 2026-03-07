@@ -14,11 +14,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/types"
 )
 
-type JQRequest struct {
-	JQ    string        `json:"jq"`
-	Query types.Request `json:"query"`
-}
-
 // jqHandler execute query and apply jq transformation to the result
 func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 	// handle http request
@@ -29,7 +24,7 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	dataFunc := func() (any, error) {
-		var req JQRequest
+		var req types.JQRequest
 		err := json.Unmarshal(b, &req)
 		if err != nil {
 			return nil, err
@@ -42,7 +37,7 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		res := s.ProcessQuery(r.Context(), "", req.Query)
+		res := s.ProcessQuery(r.Context(), req.Query)
 		defer res.Close()
 
 		if res.Err() != nil {
@@ -76,6 +71,10 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if info.Key == "" {
 		info.Key, err = cache.QueryKey(string(b), nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	data, err := s.cache.Load(r.Context(), info.Key, dataFunc, info.Options()...)

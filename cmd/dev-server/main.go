@@ -39,19 +39,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	engine := hugr.New(hugr.Config{
-		AdminUI:            conf.EnableAdminUI,
-		AdminUIFetchPath:   conf.AdminUIFetchPath,
-		Debug:              conf.DebugMode,
-		Profiling:          conf.HttpProfiling,
-		AllowParallel:      conf.AllowParallel,
-		MaxParallelQueries: conf.MaxParallelQueries,
-		MaxDepth:           conf.MaxDepthInTypes,
-		DB:                 conf.DB,
-		CoreDB:             coredb.New(conf.CoreDB),
-		Auth:               auth,
-		Cache:              conf.Cache,
+	engine, err := hugr.New(hugr.Config{
+		AdminUI:               conf.EnableAdminUI,
+		AdminUIFetchPath:      conf.AdminUIFetchPath,
+		Debug:                 conf.DebugMode,
+		Profiling:             conf.HttpProfiling,
+		AllowParallel:         conf.AllowParallel,
+		MaxParallelQueries:    conf.MaxParallelQueries,
+		MaxDepth:              conf.MaxDepthInTypes,
+		SchemaCacheMaxEntries: conf.SchemaCacheMaxEntries,
+		SchemaCacheTTL:        conf.SchemaCacheTTL,
+		MCPEnabled:            conf.MCPEnabled,
+		DB:                    conf.DB,
+		CoreDB:                coredb.New(conf.CoreDB),
+		Auth:                  auth,
+		Cache:                 conf.Cache,
+		Embedder:              conf.Embedder,
+		Cluster:               conf.Cluster,
 	})
+	if err != nil {
+		log.Println("Engine initialization error:", err)
+		os.Exit(1)
+	}
 
 	if conf.DB.Path != "" {
 		log.Println("DB path: ", conf.DB.Path)

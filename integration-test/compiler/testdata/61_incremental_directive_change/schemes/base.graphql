@@ -1,0 +1,7 @@
+"""Airport"""
+type Airport @table(name: "airports") @unique(fields: ["name", "city"], type: EQUALS) {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+  country: String
+}

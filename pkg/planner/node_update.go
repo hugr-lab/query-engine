@@ -6,39 +6,40 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
-	catalog := base.FieldCatalogName(query.Definition)
+func updateRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+	catalog := base.FieldDefCatalog(query.Definition)
 	e, err := planner.Engine(catalog)
 	if err != nil {
 		return nil, err
 	}
-	m := compiler.MutationInfo(compiler.SchemaDefs(schema), query.Definition)
+	m := sdl.MutationInfo(ctx, provider, query.Definition)
 	if m == nil {
 		return nil, ErrInternalPlanner
 	}
-	if m.Type != compiler.MutationTypeUpdate {
-		return nil, compiler.ErrorPosf(query.Position, "mutation type is not update")
+	if m.Type != sdl.MutationTypeUpdate {
+		return nil, sdl.ErrorPosf(query.Position, "mutation type is not update")
 	}
-	def := schema.Types[m.ObjectName]
+	def := provider.ForName(ctx, m.ObjectName)
 	if def == nil {
 		return nil, ErrInternalPlanner
 	}
-	info := compiler.DataObjectInfo(def)
+	info := sdl.DataObjectInfo(def)
 	if info == nil {
 		return nil, ErrInternalPlanner
 	}
-	if info.Type != compiler.TableDataObject {
-		return nil, compiler.ErrorPosf(query.Position, "unsupported data object type %s", info.Type)
+	if info.Type != sdl.TableDataObject {
+		return nil, sdl.ErrorPosf(query.Position, "unsupported data object type %s", info.Type)
 	}
-	queryArg, err := compiler.ArgumentValues(compiler.SchemaDefs(schema), query, vars, false)
+	queryArg, err := sdl.ArgumentValues(ctx, provider, query, vars, false)
 	if err != nil {
 		return nil, err
 	}
@@ -46,16 +47,16 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 	s := queryArg.ForName(base.SummaryForEmbeddedArgumentName)
 	v := queryArg.ForName("data")
 	if v == nil && s == nil {
-		return nil, compiler.ErrorPosf(query.Position, "missing data argument")
+		return nil, sdl.ErrorPosf(query.Position, "missing data argument")
 	}
 	var data map[string]any
 	var ok bool
 	if v != nil {
 		data, ok = v.Value.(map[string]any)
 		if !ok || len(data) == 0 && s == nil {
-			return nil, compiler.ErrorPosf(query.Position, "invalid data argument type")
+			return nil, sdl.ErrorPosf(query.Position, "invalid data argument type")
 		}
-		data, err = checkMutationData(ctx, compiler.SchemaDefs(schema), query, v.Type, data)
+		data, err = checkMutationData(ctx, provider, query, v.Type, data)
 		if err != nil {
 			return nil, err
 		}
@@ -63,7 +64,7 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 	if s != nil {
 		summary, ok := s.Value.(string)
 		if !ok || summary == "" {
-			return nil, compiler.ErrorPosf(query.Position, "invalid summary argument type")
+			return nil, sdl.ErrorPosf(query.Position, "invalid summary argument type")
 		}
 		if data == nil {
 			data = make(map[string]any)
@@ -85,10 +86,10 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		}
 		fi := info.FieldForName(fn)
 		if fi == nil {
-			return nil, compiler.ErrorPosf(query.Position, "unknown field %s", fn)
+			return nil, sdl.ErrorPosf(query.Position, "unknown field %s", fn)
 		}
 		if fi.IsRequired() && v == nil {
-			return nil, compiler.ErrorPosf(query.Position, "field %s is required", fn)
+			return nil, sdl.ErrorPosf(query.Position, "field %s is required", fn)
 		}
 		sv, err := e.SQLValue(v)
 		if err != nil {
@@ -144,16 +145,16 @@ func updateRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 	if filter != nil {
 		v, ok := filter.Value.(map[string]interface{})
 		if !ok {
-			return nil, compiler.ErrorPosf(query.Position, "invalid filter argument type")
+			return nil, sdl.ErrorPosf(query.Position, "invalid filter argument type")
 		}
-		whereNode, err := whereNode(ctx, compiler.SchemaDefs(schema), info, v, "objects", false, false)
+		whereNode, err := whereNode(ctx, provider, info, v, "objects", false, false)
 		if err != nil {
 			return nil, err
 		}
 		nodes = append(nodes, whereNode)
 	}
 
-	pf, err := permissionFilterNode(ctx, compiler.SchemaDefs(schema), info, query, "objects", false)
+	pf, err := permissionFilterNode(ctx, provider, info, query, "objects", false)
 	if err != nil {
 		return nil, err
 	}

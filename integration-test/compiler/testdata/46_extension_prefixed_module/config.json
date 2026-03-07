@@ -1,0 +1,37 @@
+{
+  "catalogs": [
+    {
+      "file": "01_pg_store.graphql",
+      "name": "pg_store",
+      "engine": "postgres",
+      "prefix": "pg_store",
+      "as_module": true,
+      "capabilities": "postgres"
+    },
+    {
+      "file": "02_local_db.graphql",
+      "name": "local_db",
+      "engine": "duckdb",
+      "prefix": "local_db",
+      "as_module": true,
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "02b_rest_api.graphql",
+      "name": "rest_api",
+      "engine": "duckdb",
+      "prefix": "rest_api",
+      "as_module": true,
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "03_ext_bridge.graphql",
+      "name": "ext_bridge",
+      "engine": "duckdb",
+      "prefix": "ext_bridge",
+      "as_module": false,
+      "is_extension": true,
+      "capabilities": "duckdb"
+    }
+  ]
+}

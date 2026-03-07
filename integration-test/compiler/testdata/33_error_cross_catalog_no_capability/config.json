@@ -1,0 +1,16 @@
+{
+  "catalogs": [
+    {
+      "file": "01_base.graphql",
+      "name": "base",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "02_flights.graphql",
+      "name": "flights",
+      "engine": "duckdb"
+    }
+  ],
+  "expected_error": "cross-catalog"
+}

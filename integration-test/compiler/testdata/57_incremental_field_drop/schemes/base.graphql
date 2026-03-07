@@ -1,0 +1,8 @@
+type Article @table(name: "articles") {
+  id: Int! @pk
+  title: String!
+  body: String
+  rating: Float
+  published: Boolean
+  created_at: Timestamp
+}

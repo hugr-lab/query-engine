@@ -8,7 +8,8 @@ import (
 
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	cs "github.com/hugr-lab/query-engine/pkg/catalogs/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -36,7 +37,7 @@ func (s *Service) IsReadonly() bool {
 }
 
 func (s *Service) AsModule() bool {
-	return false
+	return true
 }
 
 func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
@@ -96,6 +97,14 @@ func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
 	})
 }
 
-func (s *Service) Catalog(ctx context.Context) cs.Source {
-	return cs.NewStringSource("cache/schema.graphql", schema)
+func (s *Service) Catalog(ctx context.Context) (cs.Catalog, error) {
+	opts := compiler.Options{
+		Name:         s.Name(),
+		Prefix:       "cache",
+		AsModule:     s.AsModule(),
+		ReadOnly:     s.IsReadonly(),
+		EngineType:   string(s.Engine().Type()),
+		Capabilities: s.Engine().Capabilities(),
+	}
+	return cs.NewStringSource(s.Name(), s.Engine(), opts, schema)
 }

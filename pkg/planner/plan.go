@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -42,12 +44,12 @@ func (p *QueryPlan) Execute(ctx context.Context, db *db.Pool) (data interface{},
 	}
 
 	switch {
-	case compiler.IsScalarType(p.Query.Definition.Type.Name()) &&
+	case sdl.IsScalarType(p.Query.Definition.Type.Name()) &&
 		p.Query.Definition.Type.NamedType == "":
 		return db.QueryJsonScalarArray(ctx, p.CompiledQuery, p.Params...)
 	case p.Query.Definition.Type.NamedType == "":
 		return db.QueryArrowTable(ctx, p.CompiledQuery, !IsRawResultsQuery(ctx, p.Query), p.Params...)
-	case compiler.IsScalarType(p.Query.Definition.Type.Name()):
+	case sdl.IsScalarType(p.Query.Definition.Type.Name()):
 		return db.QueryScalarValue(ctx, p.CompiledQuery, p.Params...)
 	default:
 		return db.QueryJsonRow(ctx, p.CompiledQuery, p.Params...)
@@ -86,9 +88,9 @@ type QueryPlanNode struct {
 
 	Before NodeBeforeExecFunc
 
-	schema  *ast.Schema
-	engines Catalog
-	querier types.Querier
+	provider catalog.Provider
+	engines  Catalog
+	querier  types.Querier
 
 	plan *QueryPlan
 }
@@ -177,18 +179,18 @@ func (r *Results) FirstResult() *Result {
 	return (*r)[0]
 }
 
-func (n *QueryPlanNode) Schema() *ast.Schema {
-	if n.schema != nil {
-		return n.schema
+func (n *QueryPlanNode) SchemaProvider() catalog.Provider {
+	if n.provider != nil {
+		return n.provider
 	}
 	if n.Parent != nil {
-		return n.Parent.Schema()
+		return n.Parent.SchemaProvider()
 	}
 	return nil
 }
 
-func (n *QueryPlanNode) TypeDefs() compiler.DefinitionsSource {
-	return compiler.SchemaDefs(n.Schema())
+func (n *QueryPlanNode) TypeDefs() base.DefinitionsSource {
+	return n.SchemaProvider()
 }
 
 func (n *QueryPlanNode) Engine(name string) (engines.Engine, error) {

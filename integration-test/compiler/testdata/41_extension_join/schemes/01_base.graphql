@@ -1,0 +1,17 @@
+type Customer @table(name: "customers") {
+  id: Int! @pk
+  name: String!
+  email: String!
+}
+
+type Order @table(name: "orders") {
+  id: Int! @pk
+  customer_id: Int!
+  total: Float
+}
+
+type CustomerCategory @table(name: "customer_categories") {
+  id: Int! @pk
+  customer_id: Int!
+  name: String!
+}

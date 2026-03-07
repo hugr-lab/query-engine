@@ -1,0 +1,9 @@
+type Helper @table(name: "helpers") {
+  id: Int! @pk
+  name: String!
+}
+
+type BadPK @table(name: "bad_pk") {
+  info: Helper @pk
+  name: String!
+}

@@ -1,0 +1,12 @@
+type Airport @table(name: "airports") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+}
+
+extend type Function {
+  search_airports(query: String!, limit: Int): Airport
+    @function(name: "search_airports")
+  find_nearby(iata_code: String!, radius: Float): [Airport]
+    @function(name: "find_nearby_airports")
+}

@@ -1,0 +1,10 @@
+{
+  "catalogs": [
+    {
+      "file": "01_schema.graphql",
+      "name": "enriched",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+type Airport @table(name: "airports") @module(name: "air") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+}
+
+type Flight @table(name: "flights") @module(name: "air") {
+  id: Int! @pk
+  flight_number: String!
+  departure: Timestamp
+  origin_code: String
+}
+
+type Bus @table(name: "buses") @module(name: "ground") {
+  id: Int! @pk
+  route: String!
+  capacity: Int
+}
+
+extend type Flight {
+  origin: Airport @references(fields: "origin_code", references_fields: "iata_code", references_type: "Airport")
+}
+
+extend type Function {
+  search_airports(query: String!, limit: Int): Airport
+    @function(name: "search_airports")
+    @module(name: "air")
+}

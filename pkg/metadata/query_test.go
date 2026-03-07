@@ -4,21 +4,35 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/catalogs"
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/vektah/gqlparser/v2"
 
 	_ "embed"
 )
 
-//go:embed schema.graphql
+//go:embed schema_test.graphql
 var testSchemaData string
 
 func TestProcessQuery(t *testing.T) {
-	cat, err := catalogs.NewCatalog(context.Background(),
-		"test", "", &engines.DuckDB{}, sources.NewStringSource(testSchemaData), false, false)
+	provider, err := static.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ss := catalog.NewService(provider)
+	e := &engines.DuckDB{}
+	cat, err := sources.NewStringSource("test", e, compiler.Options{
+		Name:         "test",
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+	}, testSchemaData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ss.AddCatalog(context.Background(), "test", cat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +40,7 @@ func TestProcessQuery(t *testing.T) {
 	query := `
 	 query IntrospectionQuery {
       __schema {
-        
+
         queryType { name }
         mutationType { name }
         subscriptionType { name }
@@ -36,7 +50,7 @@ func TestProcessQuery(t *testing.T) {
         directives {
           name
           description
-          
+
           locations
           args {
             ...InputValue
@@ -49,8 +63,8 @@ func TestProcessQuery(t *testing.T) {
       kind
       name
       description
-      
-      
+
+
       fields(includeDeprecated: true) {
         name
         description
@@ -85,8 +99,8 @@ func TestProcessQuery(t *testing.T) {
       description
       type { ...TypeRef }
       defaultValue
-      
-      
+
+
     }
 
     fragment TypeRef on __Type {
@@ -131,19 +145,15 @@ func TestProcessQuery(t *testing.T) {
     }
 	`
 
-	qd, errs := gqlparser.LoadQuery(cat.Schema(), query)
-	if len(errs) != 0 {
-		t.Fatal(errs)
+	op, err := ss.ParseQuery(context.Background(), query, nil, "IntrospectionQuery")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	if len(qd.Operations) == 0 {
-		return
-	}
-
-	rqt, _ := compiler.QueryRequestInfo(qd.Operations[0].SelectionSet)
+	rqt, _ := sdl.QueryRequestInfo(op.Definition.SelectionSet)
 
 	for _, r := range rqt {
-		data, err := ProcessQuery(t.Context(), cat.Schema(), r, 10, nil)
+		data, err := ProcessQuery(t.Context(), ss.Provider(), r, 10, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

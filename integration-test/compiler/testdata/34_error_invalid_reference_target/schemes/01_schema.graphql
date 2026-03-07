@@ -1,0 +1,12 @@
+type BadRef @table(name: "bad_refs")
+  @references(
+    name: "bad_ref"
+    references_name: "NonExistent"
+    source_fields: ["ref_id"]
+    references_fields: ["id"]
+    query: "target"
+    references_query: "sources"
+  ) {
+  id: Int! @pk
+  ref_id: Int!
+}

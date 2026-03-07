@@ -1,6 +1,6 @@
 # HUGR
 
-The query data engine for the DataMesh level. 
+The query data engine for the DataMesh level.
 
 The HUGR is built on the top of [DuckDB](https://duckdb.org) and uses DuckDB as a storage engine. The HUGR is designed to be used as a query engine for the data mesh level. The HUGR is a GraphQL server that can provide access to query data in various data sources:
 
@@ -9,27 +9,43 @@ The HUGR is built on the top of [DuckDB](https://duckdb.org) and uses DuckDB as 
 - HTTP REST API (support OpenAPI v3)
 - All file formats and data sources that supported by DuckDB (CSV, Parquet, JSON, ESRI Shape, etc.)
 
-## Executable
-
-The executable is built with Go and can be run on any platform that supports Go. The executable is built with the following command:
+## Build
 
 ```bash
-go build -o hugr cmd/qe-server/main.go
+CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow -o hugr ./cmd/dev-server
 ```
 
-It used the following packages:
+### Install DuckDB extensions
 
-- [github.com/duckdb/duckdb-go/v2](https://github.com/duckdb/duckdb-go)
-- [github.com/apache/arrow-go/v18](https://github.com/apache/arrow-go)
-- [github.com/paulmach/orb](https://github.com/paulmach/orb)
-- [github.com/vektah/gqlparser/v2](https://github.com/vektah/gqlparser)
-- [github.com/eko/gocache/v4](https://github.com/eko/gocache)
-- [github.com/vmihailenco/msgpack/v5](https://github.com/vmihailenco/msgpack)
-- [github.com/itchyny/gojq](https://github.com/itchyny/gojq)
-- [github.com/golang-jwt/jwt/v5](https://github.com/golang-jwt/jwt)
-- [github.com/getkin/kin-openapi](https://github.com/getkin/kin-openapi)
+```bash
+./hugr -install
+```
+
+## hugr-tools CLI
+
+A companion CLI for schema management and AI-powered summarization.
+
+```bash
+CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow -o hugr-tools ./cmd/hugr-tools
+```
+
+See [docs/hugr-tools.md](../../docs/hugr-tools.md) for the full reference.
+
+**Quick example:**
+```bash
+# Summarize all schema entities with an LLM
+hugr-tools summarize --api-key sk-... --provider openai --model gpt-4o-mini
+
+# Recompute vector embeddings
+hugr-tools reindex --batch-size 100
+
+# Show schema overview
+hugr-tools schema-info --module geo
+```
 
 ## Environment variables
+
+See [docs/configuration.md](../../docs/configuration.md) for the full reference.
 
 ### General
 
@@ -40,12 +56,36 @@ It used the following packages:
 - ALLOW_PARALLEL - flag to allow run queries in parallel, default: true
 - MAX_PARALLEL_QUERIES - limit to numbers of parallels queries executed, default: 0 (unlimited)
 - MAX_DEPTH - maximal depth of GraphQL types hierarchy, default: 7
+- SCHEMA_CACHE_MAX_ENTRIES - max entries in the schema LRU cache, default: 10000 (when 0)
+- SCHEMA_CACHE_TTL - TTL for schema LRU cache entries (Go duration format), default: 10m (when "0s")
+
+### MCP & Embeddings
+
+- MCP_ENABLED - flag to enable MCP endpoint at `/mcp` (protected by auth middleware), default: false
+- EMBEDDER_URL - URL for the system embedder service (with query params: model, api_key, api_key_header, timeout), default: "" (disabled)
+- EMBEDDER_VECTOR_SIZE - dimension of embedding vectors stored in CoreDB, default: 768
+
+MCP tool logging is controlled by the `DEBUG` flag. When `DEBUG=true`, MCP tool calls are logged to stdout.
+
+### Cluster Mode
+
+- CLUSTER_ENABLED - flag to enable cluster mode, default: false
+- CLUSTER_ROLE - node role: `management` or `worker`
+- CLUSTER_NODE_NAME - unique node name (registered in `_cluster_nodes` table)
+- CLUSTER_NODE_URL - this node's IPC endpoint URL (e.g., `http://worker-1:15000`)
+- CLUSTER_SECRET - shared secret for inter-node authentication (sent via `x-hugr-secret` header)
+- CLUSTER_HEARTBEAT - heartbeat interval for node health monitoring, default: 30s
+- CLUSTER_GHOST_TTL - time after which unresponsive nodes are removed, default: 2m
+- CLUSTER_POLL_INTERVAL - worker schema version polling interval, default: 30s
+
+All nodes must share the same CoreDB (typically PostgreSQL via `CORE_DB_PATH=postgres://...`). Workers should run with `CORE_DB_READONLY=true`.
 
 ### DuckDB engine settings
 
 - DB_PATH - path to management db file, if empty in memory storage is used, default: ""
 - DB_MAX_OPEN_CONNS - maximal number of open connections to the database, default: 0 (unlimited)
 - DB_MAX_IDLE_CONNS - maximal number of idle connections to the database, default: 0 (unlimited)
+- DB_HOME_DIRECTORY - home directory for DuckDB, default: ""
 - DB_ALLOWED_DIRECTORIES - comma separated list of allowed directories for the database, default: "", example: "/data,/tmp"
 - DB_ALLOWED_PATHS - comma separated list of allowed paths for the database, default: "", example: "/data/.local,/tmp/.local"
 - DB_ENABLE_LOGGING - flag to enable logging, default: false
@@ -67,7 +107,7 @@ It used the following packages:
 ### Authentication and authorization
 
 - ALLOWED_ANONYMOUS - flag to allow anonymous access, default: true
-- ANONYMOUS_ROLE - role for anonymous user, default: "anonymous"
+- ANONYMOUS_ROLE - role for anonymous user, default: "admin"
 - SECRET_KEY - api key that used for authentication, default: ""
 - AUTH_CONFIG_FILE - path to the file with authentication config, default: ""
 
@@ -113,18 +153,3 @@ And than up trough docker compose
 cd docker && docker compose up
 ```
 
-## CoreDB migrations
-
-For some reason it can be needed to run migrations for the core db. It makes manually by the special tool - migrate that provided in this repository (cmd/migrate). The following command run migrations:
-
-```bash
-go build -o migrate cmd/migrate/main.go
-
-./migrate -path cmd/migrate/migrations -core-db core-db.duckdb
-```
-
-This tool is also built in the docker image, so it can be used in the docker container.
-
-```bash
-docker exec -it qe-server ./migrate --path ./migrations --core-db /data/.local/docker.duckdb
-```

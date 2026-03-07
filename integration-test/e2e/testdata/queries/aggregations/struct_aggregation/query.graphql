@@ -1,0 +1,21 @@
+{
+  pg_store {
+    product_details_aggregation {
+      specs {
+        ram_gb {
+          sum
+          avg
+        }
+        storage_gb {
+          sum
+        }
+      }
+      metadata {
+        warranty_years {
+          sum
+          avg
+        }
+      }
+    }
+  }
+}

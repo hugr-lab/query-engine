@@ -1,0 +1,18 @@
+{
+  "data": {
+    "local_db": {
+      "events": [
+        {
+          "id": 1,
+          "item": [
+            {
+              "id": 1,
+              "name": "Laptop"
+            }
+          ],
+          "name": "Conference"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "catalogs": [
+    {
+      "file": "01_schema.graphql",
+      "name": "bad_ext",
+      "engine": "duckdb",
+      "is_extension": true
+    }
+  ],
+  "expected_error": "data objects"
+}

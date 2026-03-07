@@ -1,0 +1,14 @@
+{
+  "data": {
+    "function": {
+      "rest_api": {
+        "test": {
+          "test_post": {
+            "name": "world",
+            "value": 99
+          }
+        }
+      }
+    }
+  }
+}

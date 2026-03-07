@@ -1,0 +1,29 @@
+Produce description for a Hugr data source using input json, consider modules, tables, views and functions.
+
+[INPUT JSON]
+{
+  "name": "{{ .Name }}",
+  "description": "{{ .Description }}",
+  "read_only": {{ .ReadOnly }},
+  "as_module": {{ .AsModule }},
+  "tables": {{ .TablesJSON }},
+  "views": {{ .ViewsJSON }},
+  "functions": {{ .FunctionsJSON }},
+  "modules": {{ .SubmodulesJSON }}
+}
+
+[TASK]
+Return ONE JSON with the exact shape below (English only; no extra keys):
+
+{
+  "short": "1-2 sentences: what this data source contains and key arguments",
+  "long":  "~400 tokens: business meaning and provided data/functions; key arguments and why;"
+}
+
+Constraints:
+- Do NOT invent tables, views, functions, submodules or capabilities not present in the input.
+- Do not use in descriptions the submodules, tables, views and function names, instead use their business meaning.
+- Keep "short" succinct; keep "long" around 400 tokens; keep blurbs within the given limits.
+- If the module name is empty (""), assume it's the root module - GraphQL schema.
+- Imagine that the data source as a information system, describe its purpose and functionality.
+- Do not mention technical details like "this is a Postgres data source or GraphQL API", instead focus on business meaning, which functions, data or analytics capabilities it provides.

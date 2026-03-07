@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/queries"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -20,63 +20,62 @@ const (
 )
 
 // vector similarity search nodes
-func vectorSearchNodes(e engines.Engine, info *compiler.Object, query *ast.Field, prefix string, param any) (QueryPlanNodes, error) {
+func vectorSearchNodes(e engines.Engine, info *sdl.Object, query *ast.Field, prefix string, param any) (QueryPlanNodes, error) {
 	if param == nil && info == nil {
 		return nil, nil
 	}
 	// parse value
 	sm, ok := param.(map[string]any)
 	if sm == nil || !ok {
-		return nil, compiler.ErrorPosf(query.Position, "vector search must be an object")
+		return nil, sdl.ErrorPosf(query.Position, "vector search must be an object")
 	}
 	field, ok := sm["name"].(string)
 	if !ok {
-		return nil, compiler.ErrorPosf(query.Position, "vector field name is required")
+		return nil, sdl.ErrorPosf(query.Position, "vector field name is required")
 	}
 	distance, ok := sm["distance"].(string)
 	if !ok {
-		return nil, compiler.ErrorPosf(query.Position, "vector distance is required")
+		return nil, sdl.ErrorPosf(query.Position, "vector distance is required")
 	}
 	limit, ok := sm["limit"].(int64)
 	if !ok || limit <= 0 {
-		return nil, compiler.ErrorPosf(query.Position, "vector limit is required")
+		return nil, sdl.ErrorPosf(query.Position, "vector limit is required")
 	}
 
 	def := info.Definition()
 	if def == nil {
-		return nil, compiler.ErrorPosf(query.Position, "vector search is not supported on this field")
+		return nil, sdl.ErrorPosf(query.Position, "vector search is not supported on this field")
 	}
 
 	fieldDef := info.Definition().Fields.ForName(field)
 	if fieldDef == nil || fieldDef.Type.NamedType != base.VectorTypeName {
-		return nil, compiler.ErrorPosf(query.Position, "unknown vector field %s", field)
+		return nil, sdl.ErrorPosf(query.Position, "unknown vector field %s", field)
 	}
 
-	fi := compiler.FieldDefinitionInfo(fieldDef, info.Definition())
+	fi := sdl.FieldDefinitionInfo(fieldDef, info.Definition())
 	if fi == nil {
-		return nil, compiler.ErrorPosf(query.Position, "unknown vector field %s", field)
+		return nil, sdl.ErrorPosf(query.Position, "unknown vector field %s", field)
 	}
 
 	ec, ok := e.(engines.EngineVectorDistanceCalculator)
 	if !ok {
-		return nil, compiler.ErrorPosf(query.Position, "vector distance calculation is not supported by query engine %s", e.Type())
+		return nil, sdl.ErrorPosf(query.Position, "vector distance calculation is not supported by query engine %s", e.Type())
 	}
 
 	vec, ok := sm["vector"]
 	if !ok {
-		return nil, compiler.ErrorPosf(query.Position, "vector is required")
+		return nil, sdl.ErrorPosf(query.Position, "vector is required")
 	}
 	vector, err := types.ParseVector(vec)
 	if err != nil {
-		return nil, compiler.ErrorPosf(query.Position, "invalid vector: %v", err)
+		return nil, sdl.ErrorPosf(query.Position, "invalid vector: %v", err)
 	}
 	if fi.Dim > 0 && len(vector) != fi.Dim {
-		return nil, compiler.ErrorPosf(query.Position, "vector dimension mismatch: expected %d, got %d", fi.Dim, len(vector))
+		return nil, sdl.ErrorPosf(query.Position, "vector dimension mismatch: expected %d, got %d", fi.Dim, len(vector))
 	}
 
-	var nodes QueryPlanNodes
 	// create a vector search node
-	nodes = QueryPlanNodes{
+	nodes := QueryPlanNodes{
 		&QueryPlanNode{
 			Name:  vectorDistanceNodeName,
 			Query: query,
@@ -102,7 +101,7 @@ func vectorSearchNodes(e engines.Engine, info *compiler.Object, query *ast.Field
 }
 
 // vector similarity search nodes
-func semanticSearchNodes(e engines.Engine, info *compiler.Object, query *ast.Field, prefix string, param any) (QueryPlanNodes, error) {
+func semanticSearchNodes(e engines.Engine, info *sdl.Object, query *ast.Field, prefix string, param any) (QueryPlanNodes, error) {
 	if param == nil && info == nil {
 		// add empty fields node with distance NULL
 		return nil, nil
@@ -110,54 +109,53 @@ func semanticSearchNodes(e engines.Engine, info *compiler.Object, query *ast.Fie
 	// parse value
 	sm, ok := param.(map[string]any)
 	if sm == nil || !ok {
-		return nil, compiler.ErrorPosf(query.Position, "vector search must be an object")
+		return nil, sdl.ErrorPosf(query.Position, "vector search must be an object")
 	}
 	queryText, ok := sm["query"].(string)
 	if !ok {
-		return nil, compiler.ErrorPosf(query.Position, "vector field name is required")
+		return nil, sdl.ErrorPosf(query.Position, "vector field name is required")
 	}
 	limit, ok := sm["limit"].(int64)
 	if !ok || limit <= 0 {
-		return nil, compiler.ErrorPosf(query.Position, "vector limit is required")
+		return nil, sdl.ErrorPosf(query.Position, "vector limit is required")
 	}
 
 	d := info.Definition().Directives.ForName(base.EmbeddingsDirectiveName)
 	if d == nil {
-		return nil, compiler.ErrorPosf(query.Position, "semantic search is not supported on object %s", info.Name)
+		return nil, sdl.ErrorPosf(query.Position, "semantic search is not supported on object %s", info.Name)
 	}
 
-	field := compiler.DirectiveArgValue(d, "vector", nil)
-	model := compiler.DirectiveArgValue(d, "model", nil)
-	distance := compiler.DirectiveArgValue(d, "distance", nil)
+	field := sdl.DirectiveArgValue(d, "vector", nil)
+	model := sdl.DirectiveArgValue(d, "model", nil)
+	distance := sdl.DirectiveArgValue(d, "distance", nil)
 
 	fieldDef := info.Definition().Fields.ForName(field)
 	if fieldDef == nil || fieldDef.Type.NamedType != base.VectorTypeName {
-		return nil, compiler.ErrorPosf(query.Position, "unknown vector field %s", field)
+		return nil, sdl.ErrorPosf(query.Position, "unknown vector field %s", field)
 	}
 
-	fi := compiler.FieldDefinitionInfo(fieldDef, info.Definition())
+	fi := sdl.FieldDefinitionInfo(fieldDef, info.Definition())
 	if fi == nil {
-		return nil, compiler.ErrorPosf(query.Position, "unknown vector field %s", field)
+		return nil, sdl.ErrorPosf(query.Position, "unknown vector field %s", field)
 	}
 
 	ec, ok := e.(engines.EngineVectorDistanceCalculator)
 	if !ok {
-		return nil, compiler.ErrorPosf(query.Position, "vector distance calculation is not supported by query engine %s", e.Type())
+		return nil, sdl.ErrorPosf(query.Position, "vector distance calculation is not supported by query engine %s", e.Type())
 	}
 
-	var nodes QueryPlanNodes
 	// create a vector search node
-	nodes = QueryPlanNodes{
+	nodes := QueryPlanNodes{
 		&QueryPlanNode{
 			Name:  vectorDistanceNodeName,
 			Query: query,
 			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 				vec, err := queries.CreateEmbedding(context.Background(), node.Querier(), model, queryText)
 				if err != nil {
-					return "", params, compiler.ErrorPosf(query.Position, "failed to create embedding: %v", err)
+					return "", params, sdl.ErrorPosf(query.Position, "failed to create embedding: %v", err)
 				}
 				if fi.Dim > 0 && len(vec) != fi.Dim {
-					return "", params, compiler.ErrorPosf(query.Position, "vector dimension mismatch: expected %d, got %d", fi.Dim, len(vec))
+					return "", params, sdl.ErrorPosf(query.Position, "vector dimension mismatch: expected %d, got %d", fi.Dim, len(vec))
 				}
 				// calculate distance to sort by
 				dist, params, err := ec.VectorDistanceSQL(fi.SQL(prefix), distance, vec, params)
@@ -179,14 +177,14 @@ func semanticSearchNodes(e engines.Engine, info *compiler.Object, query *ast.Fie
 	return nodes, nil
 }
 
-func createEmbeddingForTable(ctx context.Context, qe types.Querier, info *compiler.Object, text string) (string, types.Vector, error) {
+func createEmbeddingForTable(ctx context.Context, qe types.Querier, info *sdl.Object, text string) (string, types.Vector, error) {
 	d := info.Definition().Directives.ForName(base.EmbeddingsDirectiveName)
 	if d == nil {
 		return "", nil, errors.New("semantic search is not supported for this object")
 	}
 
-	field := compiler.DirectiveArgValue(d, "vector", nil)
-	model := compiler.DirectiveArgValue(d, "model", nil)
+	field := sdl.DirectiveArgValue(d, "vector", nil)
+	model := sdl.DirectiveArgValue(d, "model", nil)
 	fi := info.FieldForName(field) // to check field existence
 	if fi == nil || fi.Definition().Type.NamedType != base.VectorTypeName {
 		return "", nil, errors.New("unknown vector field " + field)

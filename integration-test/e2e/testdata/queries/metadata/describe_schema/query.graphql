@@ -1,0 +1,7 @@
+{
+  function {
+    core {
+      describe_data_source_schema(name: "pg_store")
+    }
+  }
+}

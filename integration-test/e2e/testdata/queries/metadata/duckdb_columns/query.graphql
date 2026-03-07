@@ -1,0 +1,10 @@
+{
+  core {
+    meta {
+      columns(filter: { database_name: { eq: "pg_store" }, table_name: { eq: "products" } }, order_by: [{field: "name", direction: ASC}]) {
+        name
+        data_type
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+"""Route between airports, added incrementally with references"""
+type Route @table(name: "routes") {
+  id: Int! @pk
+  src_airport: String! @field_references(
+    references_name: "Airport"
+    field: "iata_code"
+    query: "source_airport"
+    references_query: "departing_routes"
+  )
+  dst_airport: String! @field_references(
+    references_name: "Airport"
+    field: "iata_code"
+    query: "destination_airport"
+    references_query: "arriving_routes"
+  )
+  airline_icao: String!
+  stops: Int!
+}

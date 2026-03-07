@@ -1,0 +1,19 @@
+type Customer @table(name: "customers") @module(name: "crm") {
+  id: Int! @pk
+  name: String!
+  email: String!
+}
+
+type Order @table(name: "orders") @module(name: "crm")
+  @references(
+    name: "order_customer"
+    references_name: "Customer"
+    source_fields: ["customer_id"]
+    references_fields: ["id"]
+    query: "customer"
+    references_query: "orders"
+  ) {
+  id: Int! @pk
+  customer_id: Int!
+  total: Float!
+}

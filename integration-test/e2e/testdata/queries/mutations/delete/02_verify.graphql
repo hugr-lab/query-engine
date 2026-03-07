@@ -1,0 +1,7 @@
+{
+  pg_store {
+    products(filter: { name: { eq: "Test Product" } }) {
+      id
+    }
+  }
+}

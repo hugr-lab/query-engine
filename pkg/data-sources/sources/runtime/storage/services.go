@@ -10,7 +10,8 @@ import (
 	"strings"
 
 	"github.com/duckdb/duckdb-go/v2"
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -199,8 +200,17 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	return nil
 }
 
-func (s *Source) Catalog(ctx context.Context) sources.Source {
-	return sources.NewStringSource("storage", schema)
+func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
+	e := engines.NewDuckDB()
+	opts := compiler.Options{
+		Name:         s.Name(),
+		Prefix:       "core_storage",
+		ReadOnly:     s.IsReadonly(),
+		AsModule:     s.AsModule(),
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+	}
+	return cs.NewStringSource(s.Name(), e, opts, schema)
 }
 
 func (s *Source) RegisterSecret(ctx context.Context, info SecretInfo) error {

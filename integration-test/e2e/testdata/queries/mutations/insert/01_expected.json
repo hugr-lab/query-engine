@@ -1,0 +1,12 @@
+{
+  "data": {
+    "pg_store": {
+      "insert_products": {
+        "id": 6,
+        "name": "Test Product",
+        "price": 99.99,
+        "quantity": 7
+      }
+    }
+  }
+}

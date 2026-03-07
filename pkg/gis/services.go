@@ -5,27 +5,24 @@ import (
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // GIS service provides endpoints for:
 // - WFS1.2 (includes WFS-T) features and collections
 // - WFS3 (OGC API Features) features and collections, based on saved queries
-type schemaRetriever interface {
-	Schema() *ast.Schema
-}
 
 type Service struct {
 	qe     types.Querier
-	schema schemaRetriever
+	schema *catalog.Service
 	router *http.ServeMux
 	lru    *expirable.LRU[string, *Collection]
 }
 
 type Config struct {
 	Querier types.Querier
-	Schema  schemaRetriever
+	Schema  *catalog.Service
 
 	// Other dependencies can be added here
 	CacheTTL  time.Duration // Cache TTL for collections

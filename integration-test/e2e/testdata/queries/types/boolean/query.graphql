@@ -1,0 +1,9 @@
+{
+  pg_store {
+    products(filter: { is_active: { eq: false } }) {
+      id
+      name
+      is_active
+    }
+  }
+}

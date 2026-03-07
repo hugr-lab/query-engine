@@ -1,0 +1,13 @@
+{
+  local_db {
+    items(order_by: [{field: "id", direction: ASC}], limit: 3) {
+      id
+      name
+      event {
+        id
+        name
+        value
+      }
+    }
+  }
+}

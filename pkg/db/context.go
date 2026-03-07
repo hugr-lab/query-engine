@@ -33,7 +33,7 @@ func (p *Pool) WithTx(parent context.Context) (context.Context, error) {
 	}
 	dbTx, err := c.conn.BeginTx(parent, nil)
 	if err != nil {
-		c.Close()
+		_ = c.Close()
 		return nil, err
 	}
 	c.tx = dbTx
@@ -58,7 +58,7 @@ func (p *Pool) Commit(ctx context.Context) error {
 	}
 	err := txc.tx.Commit()
 	txc.Connection.tx = nil
-	txc.Connection.Close()
+	_ = txc.Close()
 	return err
 }
 
@@ -80,7 +80,7 @@ func (p *Pool) Rollback(ctx context.Context) error {
 	}
 	err := txc.tx.Rollback()
 	txc.Connection.tx = nil
-	txc.Connection.Close()
+	_ = txc.Close()
 	return err
 }
 

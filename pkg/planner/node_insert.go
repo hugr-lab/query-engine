@@ -7,11 +7,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -42,31 +43,31 @@ func (sv seqValues) IsExists(seqName string) bool {
 	return false
 }
 
-func insertRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+func insertRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
 	// define request sequences values
 	var sv []seqValue
 
 	// get values from variables
-	queryArg, err := compiler.ArgumentValues(compiler.SchemaDefs(schema), query, vars, false)
+	queryArg, err := sdl.ArgumentValues(ctx, provider, query, vars, false)
 	if err != nil {
 		return nil, err
 	}
 	if len(queryArg) == 0 {
-		return nil, compiler.ErrorPosf(query.Position, "no arguments provided for mutation")
+		return nil, sdl.ErrorPosf(query.Position, "no arguments provided for mutation")
 	}
 	summary := queryArg.ForName(base.SummaryForEmbeddedArgumentName)
 	d := queryArg.ForName("data")
 	if d == nil && summary == nil {
-		return nil, compiler.ErrorPosf(query.Position, "data or summary argument is not provided for mutation")
+		return nil, sdl.ErrorPosf(query.Position, "data or summary argument is not provided for mutation")
 	}
 	var data map[string]any
 	var ok bool
 	if d != nil {
 		data, ok = d.Value.(map[string]any)
 		if !ok || len(data) == 0 {
-			return nil, compiler.ErrorPosf(query.Position, "data argument should be an object")
+			return nil, sdl.ErrorPosf(query.Position, "data argument should be an object")
 		}
-		data, err = checkMutationData(ctx, compiler.SchemaDefs(schema), query, d.Type, data)
+		data, err = checkMutationData(ctx, provider, query, d.Type, data)
 		if err != nil {
 			return nil, err
 		}
@@ -77,29 +78,29 @@ func insertRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 		}
 		s, ok := summary.Value.(string)
 		if !ok || s == "" {
-			return nil, compiler.ErrorPosf(query.Position, "summary argument should be a non-empty string")
+			return nil, sdl.ErrorPosf(query.Position, "summary argument should be a non-empty string")
 		}
 		data["__summary"] = s
 	}
 
-	catalog := base.FieldCatalogName(query.Definition)
+	catalog := base.FieldDefCatalog(query.Definition)
 	if catalog == "" {
-		return nil, compiler.ErrorPosf(query.Position, "catalog directive is not defined for mutation")
+		return nil, sdl.ErrorPosf(query.Position, "catalog directive is not defined for mutation")
 	}
 	e, err := planner.Engine(catalog)
 	if err != nil {
 		return nil, err
 	}
 
-	m := compiler.MutationInfo(compiler.SchemaDefs(schema), query.Definition)
+	m := sdl.MutationInfo(ctx, provider, query.Definition)
 	if m == nil {
-		return nil, compiler.ErrorPosf(query.Position, "mutation %s is not defined", query.Alias)
+		return nil, sdl.ErrorPosf(query.Position, "mutation %s is not defined", query.Alias)
 	}
-	if m.Type != compiler.MutationTypeInsert {
-		return nil, compiler.ErrorPosf(query.Position, "mutation %s type is not insert", query.Alias)
+	if m.Type != sdl.MutationTypeInsert {
+		return nil, sdl.ErrorPosf(query.Position, "mutation %s type is not insert", query.Alias)
 	}
 
-	node, sv, err := insertDataObjectNode(ctx, schema, e, m, data, "", sv, map[string]string{})
+	node, sv, err := insertDataObjectNode(ctx, provider, e, m, data, "", sv, map[string]string{})
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +124,7 @@ func insertRootNode(ctx context.Context, schema *ast.Schema, planner Catalog, qu
 	return node, nil
 }
 
-func insertBeforeExec(e engines.Engine, m *compiler.Mutation, query *ast.Field, data map[string]any, sv seqValues) (NodeBeforeExecFunc, error) {
+func insertBeforeExec(e engines.Engine, m *sdl.Mutation, query *ast.Field, data map[string]any, sv seqValues) (NodeBeforeExecFunc, error) {
 	seqSQL := []string{}
 	for _, s := range sv {
 		seqSQL = append(seqSQL, fmt.Sprintf(
@@ -159,16 +160,16 @@ func insertBeforeExec(e engines.Engine, m *compiler.Mutation, query *ast.Field, 
 			}
 			s, ok := sv.ForPath(a.Name, "")
 			if !ok {
-				return nil, compiler.ErrorPosf(query.Position, "field %s is required", a.Name)
+				return nil, sdl.ErrorPosf(query.Position, "field %s is required", a.Name)
 			}
 			sequenceVars[s.name] = a.Name
 		}
 		if len(sq.Arguments) != len(sq.Definition.Arguments) {
-			return nil, compiler.ErrorPosf(query.Position, "not all arguments provided for select query")
+			return nil, sdl.ErrorPosf(query.Position, "not all arguments provided for select query")
 		}
 	}
-	if sq == nil && query.Definition.Type.NamedType != compiler.OperationResultTypeName {
-		return nil, compiler.ErrorPosf(query.Position, "no query by primary key for object %s", m.ObjectName)
+	if sq == nil && query.Definition.Type.NamedType != base.OperationResultTypeName {
+		return nil, sdl.ErrorPosf(query.Position, "no query by primary key for object %s", m.ObjectName)
 	}
 
 	return func(ctx context.Context, pool *db.Pool, node *QueryPlanNode) error {
@@ -181,7 +182,7 @@ func insertBeforeExec(e engines.Engine, m *compiler.Mutation, query *ast.Field, 
 		if len(seqSQL) != 0 {
 			sql := "SELECT name, id FROM (" + strings.Join(seqSQL, " UNION ALL ") + ") as seq"
 			if s, ok := e.(engines.EngineQueryScanner); ok {
-				sql = "FROM " + s.WarpScann(base.FieldCatalogName(query.Definition), sql)
+				sql = "FROM " + s.WarpScann(base.FieldDefCatalog(query.Definition), sql)
 			}
 			err := pool.QueryTableToSlice(db.ClearTxContext(ctx), &vals, sql)
 			if err != nil {
@@ -204,11 +205,11 @@ func insertBeforeExec(e engines.Engine, m *compiler.Mutation, query *ast.Field, 
 
 		// 4. returning select statement
 		if sq != nil {
-			sn, err := selectDataObjectRootNode(ctx, node.schema, node.engines, sq, sqVars)
+			sn, err := selectDataObjectRootNode(ctx, node.SchemaProvider(), node.engines, sq, sqVars)
 			if err != nil {
 				return err
 			}
-			sn.schema = node.schema
+			sn.provider = node.SchemaProvider()
 			sn.engines = node.engines
 			r, err := sn.Compile(sn, nil)
 			if err != nil {
@@ -243,7 +244,7 @@ func insertBeforeExec(e engines.Engine, m *compiler.Mutation, query *ast.Field, 
 	}, nil
 }
 
-func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Engine, m *compiler.Mutation, data map[string]any, path string, sv seqValues, parentSeqVal map[string]string) (*QueryPlanNode, seqValues, error) {
+func insertDataObjectNode(ctx context.Context, provider catalog.Provider, e engines.Engine, m *sdl.Mutation, data map[string]any, path string, sv seqValues, parentSeqVal map[string]string) (*QueryPlanNode, seqValues, error) {
 	refs := m.ReferencesFields()
 	m2mRefs := m.M2MReferencesFields()
 	// define queries nodes of that current query is depended (references data that should be inserted before)
@@ -255,14 +256,14 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 		}
 		fd := m.FieldDefinition(f)
 		if fd == nil {
-			return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "field %s is not defined in object %s", f, m.ObjectDefinition.Name)
+			return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "field %s is not defined in object %s", f, m.ObjectDefinition.Name)
 		}
 		if fd.Type.NamedType == "" || slices.Contains(m2mRefs, f) {
 			continue
 		}
 		refData, ok := v.(map[string]any)
 		if !ok {
-			return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s should be an object", path, f)
+			return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s should be an object", path, f)
 		}
 		sp := path
 		if sp != "" {
@@ -271,9 +272,9 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 		sp += f
 		subMut := m.ReferencesMutation(f)
 		if subMut == nil {
-			return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "references mutation for field %s.%s is not defined", path, f)
+			return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "references mutation for field %s.%s is not defined", path, f)
 		}
-		node, ssv, err := insertDataObjectNode(ctx, schema, e, subMut, refData, sp, sv, map[string]string{})
+		node, ssv, err := insertDataObjectNode(ctx, provider, e, subMut, refData, sp, sv, map[string]string{})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -286,7 +287,7 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 				// find sequence field
 				s, ok := ssv.ForPath(rf, sp)
 				if !ok {
-					return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s is not defined in object %s", path, refFields[i], m.ObjectDefinition.Name)
+					return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s is not defined in object %s", path, refFields[i], m.ObjectDefinition.Name)
 				}
 				depends[sf] = "[" + s.name + "]"
 				continue
@@ -328,7 +329,7 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 		// check sequence
 		sn := fieldInfo.SequenceName()
 		if sn == "" {
-			return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s is required", path, fieldInfo.Name)
+			return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s is required", path, fieldInfo.Name)
 		}
 		sv = append(sv, seqValue{
 			fieldName:    fieldInfo.Name,
@@ -347,11 +348,11 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 	}
 	// add embeddings text field if needed
 	if len(fv) == 0 {
-		return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "no values provided for insert")
+		return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "no values provided for insert")
 	}
-	info := compiler.DataObjectInfo(m.ObjectDefinition)
+	info := sdl.DataObjectInfo(m.ObjectDefinition)
 	if info == nil {
-		return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "object %s is not defined", m.ObjectDefinition.Name)
+		return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "object %s is not defined", m.ObjectDefinition.Name)
 	}
 	nodes = append(nodes,
 		insertNode(ctx, info, fv),
@@ -363,18 +364,18 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 		}
 		fd := m.FieldDefinition(f)
 		if fd == nil {
-			return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s is not defined in object %s", path, f, m.ObjectDefinition.Name)
+			return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s is not defined in object %s", path, f, m.ObjectDefinition.Name)
 		}
 		if fd.Type.NamedType != "" {
 			continue
 		}
 		refDataList, ok := v.([]any)
 		if !ok {
-			return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s should be an array of objects", path, f)
+			return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s should be an array of objects", path, f)
 		}
 		subMut := m.ReferencesMutation(f)
 		if subMut == nil {
-			return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "references mutation for field %s,%s is not defined", path, f)
+			return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "references mutation for field %s,%s is not defined", path, f)
 		}
 		sp := path
 		if sp != "" {
@@ -383,14 +384,14 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 		sp += f
 		refFields := m.ReferencesFieldsReferences(f)
 		sourceFields := m.ReferencesFieldsSource(f)
-		ref := info.ReferencesQueryInfo(compiler.SchemaDefs(schema), f)
+		ref := info.ReferencesQueryInfo(ctx, provider, f)
 		if ref == nil {
-			return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "references query for field %s.%s is not defined", path, f)
+			return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "references query for field %s.%s is not defined", path, f)
 		}
 		for i, v := range refDataList {
 			refData, ok := v.(map[string]any)
 			if !ok {
-				return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s should be an array of objects", path, f)
+				return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s should be an array of objects", path, f)
 			}
 			psv := map[string]string{}
 			if !ref.IsM2M {
@@ -405,12 +406,12 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 					}
 					refData[rf], ok = data[sf]
 					if !ok {
-						return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s is required", path, sf)
+						return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "field %s.%s is required", path, sf)
 					}
 				}
 			}
 
-			node, ssv, err := insertDataObjectNode(ctx, schema, e, subMut, refData, sp+"["+strconv.Itoa(i)+"]", sv, psv)
+			node, ssv, err := insertDataObjectNode(ctx, provider, e, subMut, refData, sp+"["+strconv.Itoa(i)+"]", sv, psv)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -421,12 +422,16 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 				continue
 			}
 			// add m2m links
-			m2m := schema.Types[ref.M2MName]
-			m2mInfo := compiler.DataObjectInfo(m2m)
+			m2m := provider.ForName(ctx, ref.M2MName)
+			m2mInfo := sdl.DataObjectInfo(m2m)
 			if m2mInfo == nil {
-				return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "object %s is not defined", ref.M2MName)
+				return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "object %s is not defined", ref.M2MName)
 			}
-			m2mRef := m2mInfo.M2MReferencesQueryInfo(compiler.SchemaDefs(schema), ref.Name)
+			m2mRef := m2mInfo.M2MReferencesQueryInfo(ctx, provider, ref.Name)
+			if m2mRef == nil {
+				return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position,
+					"M2M table %s: @references for %q not found (check that @field_references compile to @references)", ref.M2MName, ref.Name)
+			}
 			m2mSourceFields := m2mRef.SourceFields()
 			m2mRefFields := m2mRef.ReferencesFields()
 			m2mData := map[string]string{}
@@ -442,7 +447,7 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 				}
 				s, ok := ssv.ForPath(rf, sp+"["+strconv.Itoa(i)+"]")
 				if !ok {
-					return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "To m2m link %s and %s field %[2]s.%s is required", m.ObjectName, sp+"["+strconv.Itoa(i)+"]", rf)
+					return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "To m2m link %s and %s field %[2]s.%s is required", m.ObjectName, sp+"["+strconv.Itoa(i)+"]", rf)
 				}
 				m2mData[sf] = "[" + s.name + "]"
 			}
@@ -450,12 +455,9 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 				sf := sourceFields[j]
 				v, ok := fv[sf]
 				if !ok {
-					return nil, nil, compiler.ErrorPosf(m.ObjectDefinition.Position, "To m2m link %s and %s field %[1]s.%s is required", m.ObjectName, path, sf)
+					return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "To m2m link %s and %s field %[1]s.%s is required", m.ObjectName, path, sf)
 				}
 				m2mData[rf] = v
-				if err != nil {
-					return nil, nil, err
-				}
 			}
 			nodes = append(nodes,
 				insertNode(ctx, m2mInfo, m2mData),
@@ -475,7 +477,7 @@ func insertDataObjectNode(ctx context.Context, schema *ast.Schema, e engines.Eng
 	}, sv, nil
 }
 
-func insertNode(ctx context.Context, info *compiler.Object, fieldValues map[string]string) *QueryPlanNode {
+func insertNode(ctx context.Context, info *sdl.Object, fieldValues map[string]string) *QueryPlanNode {
 	return &QueryPlanNode{
 		Name: info.Name,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []interface{}) (string, []interface{}, error) {
@@ -508,7 +510,7 @@ func insertNode(ctx context.Context, info *compiler.Object, fieldValues map[stri
 			for fn, fv := range fieldValues {
 				fi := info.FieldForName(fn)
 				if fi == nil {
-					return "", nil, compiler.ErrorPosf(node.Query.Position, "field %s is not defined in object %s", fn, info.Name)
+					return "", nil, sdl.ErrorPosf(node.Query.Position, "field %s is not defined in object %s", fn, info.Name)
 				}
 				fn = fi.FieldSourceName("", true)
 				if fn == "-" {

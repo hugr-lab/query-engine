@@ -13,12 +13,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/pkg/types"
-	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -67,14 +67,13 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 	if err != nil {
 		return err
 	}
-	schema := s.catalog.Schema()
-	query, errs := gqlparser.LoadQueryWithRules(schema, req.Query, types.GraphQLQueryRules)
-	if len(errs) != 0 {
-		// write errors to IPC
-		return writeErrorsToIPC(mw, "", errs)
-	}
-	if len(query.Operations) == 0 {
-		return gqlerror.Errorf("no operations found")
+
+	op, err := s.schema.ParseQuery(ctx, req.Query, req.Variables, req.OperationName)
+	if err != nil {
+		if errs, ok := err.(gqlerror.List); ok {
+			return writeErrorsToIPC(mw, "", errs)
+		}
+		return writeErrorsToIPC(mw, "", gqlerror.List{gqlerror.Errorf("%v", err)})
 	}
 
 	ctx = planner.ContextWithRawResultsFlag(ctx)
@@ -82,48 +81,37 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 		ctx = types.ContextWithValidateOnly(ctx)
 	}
 
-	for _, op := range query.Operations {
-		if req.OperationName != "" && req.OperationName != op.Name {
-			continue
-		}
-		qq, _ := compiler.QueryRequestInfo(op.SelectionSet)
-		qm := compiler.FlatQuery(qq)
-		if len(qm) == 0 {
-			return nil
-		}
-		data, ext, err := s.ProcessOperation(ctx, schema, op, req.Variables)
+	qm := sdl.FlatQuery(op.Queries)
+	if len(qm) == 0 {
+		return nil
+	}
+
+	provider := s.schema.Provider()
+	data, ext, err := s.ProcessOperation(ctx, provider, op)
+	if err != nil {
+		types.DataClose(data)
+		return writeErrorsToIPC(mw, op.Definition.Name, types.WarpGraphQLError(err))
+	}
+	for path, q := range qm {
+		qd := types.ExtractResponseData(path, data)
+		err = writeDataIPC(mw, "data."+path, q, qd)
 		if err != nil {
 			types.DataClose(data)
-			return writeErrorsToIPC(mw, op.Name, types.WarpGraphQLError(err))
+			return err
 		}
-		for path, q := range qm {
-			qd := types.ExtractResponseData(path, data)
-			if len(query.Operations) > 1 && req.OperationName == "" {
-				path = op.Name + "." + path
-			}
-			err = writeDataIPC(mw, "data."+path, q, qd)
-			if err != nil {
-				types.DataClose(data)
-				return err
-			}
-		}
-		types.DataClose(data)
-		// write extensions to IPC
-		if len(ext) != 0 {
-			path := "extensions"
-			if len(query.Operations) > 1 && req.OperationName == "" {
-				path = op.Name + "." + path
-			}
-			if err := writeExtensionsToIPC(mw, path, ext); err != nil {
-				return err
-			}
+	}
+	types.DataClose(data)
+	// write extensions to IPC
+	if len(ext) != 0 {
+		if err := writeExtensionsToIPC(mw, "extensions", ext); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-func writeDataIPC(w *multipart.Writer, path string, query compiler.QueryRequest, data any) error {
+func writeDataIPC(w *multipart.Writer, path string, query base.QueryRequest, data any) error {
 	switch data := data.(type) {
 	case db.ArrowTable:
 		return writeArrowTableToIPC(w, path, query, data)
@@ -132,7 +120,7 @@ func writeDataIPC(w *multipart.Writer, path string, query compiler.QueryRequest,
 	}
 }
 
-func writeArrowTableToIPC(w *multipart.Writer, path string, query compiler.QueryRequest, data db.ArrowTable) error {
+func writeArrowTableToIPC(w *multipart.Writer, path string, query base.QueryRequest, data db.ArrowTable) error {
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Type", "application/vnd.apache.arrow.stream")
 	hdr.Set("X-Hugr-Part-Type", "data")
@@ -190,7 +178,7 @@ func writeArrowTableToIPC(w *multipart.Writer, path string, query compiler.Query
 
 	meta["chunk"] = strconv.Itoa(i)
 	ns := addMeta(chunk.Schema(), meta)
-	err = iw.Write(array.NewRecord(ns, chunk.Columns(), chunk.NumRows()))
+	err = iw.Write(array.NewRecordBatch(ns, chunk.Columns(), chunk.NumRows()))
 	if err != nil {
 		return err
 	}
@@ -207,7 +195,7 @@ func writeArrowTableToIPC(w *multipart.Writer, path string, query compiler.Query
 		}
 		meta["chunk"] = strconv.Itoa(i)
 		ns := addMeta(chunk.Schema(), meta)
-		err := iw.Write(array.NewRecord(ns, chunk.Columns(), chunk.NumRows()))
+		err := iw.Write(array.NewRecordBatch(ns, chunk.Columns(), chunk.NumRows()))
 		if err != nil {
 			return err
 		}
@@ -240,8 +228,8 @@ type geomInfo struct {
 }
 
 func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomInfo {
-	if compiler.IsScalarType(query.Definition.Type.Name()) {
-		if query.Definition.Type.NamedType == compiler.H3CellTypeName {
+	if sdl.IsScalarType(query.Definition.Type.Name()) {
+		if query.Definition.Type.NamedType == base.H3CellTypeName {
 			// H3 cell type is special, it has no geometry, but we can return its info
 			return map[string]geomInfo{
 				"": {
@@ -249,10 +237,10 @@ func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomInfo {
 				},
 			}
 		}
-		if query.Definition.Type.NamedType != compiler.GeometryTypeName {
+		if query.Definition.Type.NamedType != base.GeometryTypeName {
 			return nil
 		}
-		fi := compiler.FieldInfo(query)
+		fi := sdl.FieldInfo(query)
 		if fi == nil {
 			return nil
 		}
@@ -283,7 +271,7 @@ func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomInfo {
 	return meta
 }
 
-func writeJsonValueToIPC(w *multipart.Writer, path string, query compiler.QueryRequest, val any) error {
+func writeJsonValueToIPC(w *multipart.Writer, path string, query base.QueryRequest, val any) error {
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Type", "application/json")
 	hdr.Set("X-Hugr-Part-Type", "data")

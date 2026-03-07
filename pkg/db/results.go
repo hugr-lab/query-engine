@@ -175,7 +175,9 @@ func (t *ArrowTableChunked) MarshalJSON() ([]byte, error) {
 			w.WriteByte(',')
 		}
 		if !t.wrapped {
-			RecordToJSON(rec, t.asArray, w)
+			if err := RecordToJSON(rec, t.asArray, w); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		col := colVal{a: rec.Column(0)}
@@ -193,7 +195,7 @@ func (t *ArrowTableChunked) MarshalJSON() ([]byte, error) {
 			case string:
 				_, err = w.WriteString(val)
 			case []byte:
-				w.Write(val)
+				_, err = w.Write(val)
 			default:
 				err = json.NewEncoder(w).Encode(val)
 			}
@@ -217,7 +219,7 @@ func RecordToJSON(rec arrow.RecordBatch, asArray bool, w io.Writer) error {
 	cols := make(map[string]any)
 	for i := 0; int64(i) < rec.NumRows(); i++ {
 		if i > 0 {
-			w.Write([]byte(","))
+			_, _ = w.Write([]byte(","))
 		}
 		outArr := make([]any, len(fields))
 		for j, c := range rec.Columns() {
@@ -441,7 +443,7 @@ var _ msgpack.CustomEncoder = (*ArrowTableChunked)(nil)
 
 func (t *ArrowTableChunked) EncodeMsgpack(enc *msgpack.Encoder) error {
 	if t == nil {
-		enc.EncodeNil()
+		return enc.EncodeNil()
 	}
 
 	err := enc.EncodeMulti(t.wrapped, t.asArray)
@@ -592,7 +594,9 @@ func (t *ArrowTableStream) MarshalJSON() ([]byte, error) {
 			w.WriteByte(',')
 		}
 		if !t.wrapped {
-			RecordToJSON(rec, t.asArray, w)
+			if err := RecordToJSON(rec, t.asArray, w); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		col := colVal{a: rec.Column(0)}
@@ -610,7 +614,7 @@ func (t *ArrowTableStream) MarshalJSON() ([]byte, error) {
 			case string:
 				_, err = w.WriteString(val)
 			case []byte:
-				w.Write(val)
+				_, err = w.Write(val)
 			default:
 				err = json.NewEncoder(w).Encode(val)
 			}
@@ -695,7 +699,7 @@ var _ msgpack.CustomEncoder = (*ArrowTableStream)(nil)
 
 func (t *ArrowTableStream) EncodeMsgpack(enc *msgpack.Encoder) error {
 	if t == nil {
-		enc.EncodeNil()
+		return enc.EncodeNil()
 	}
 	err := enc.EncodeMulti(t.wrapped, t.asArray)
 	if err != nil {

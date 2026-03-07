@@ -1,0 +1,83 @@
+type Airport @table(name: "airports") @module(name: "transport.air") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+  geom: Geometry
+  latitude: Float
+  longitude: Float
+}
+
+type Route @table(name: "routes") @module(name: "transport.air")
+  @unique(fields: ["src_airport", "dst_airport"], query_suffix: "route")
+  @references(
+    name: "route_src"
+    references_name: "Airport"
+    source_fields: ["src_airport"]
+    references_fields: ["iata_code"]
+    query: "source_airport"
+    references_query: "departing_routes"
+  )
+  @references(
+    name: "route_dst"
+    references_name: "Airport"
+    source_fields: ["dst_airport"]
+    references_fields: ["iata_code"]
+    query: "destination_airport"
+    references_query: "arriving_routes"
+  ) {
+  id: Int! @pk
+  src_airport: String!
+  dst_airport: String!
+  stops: Int!
+  is_active: Boolean @default(value: true)
+}
+
+type Airline @table(name: "airlines") {
+  icao: String! @pk
+  name: String!
+  country: String
+  active: Boolean @default(value: true)
+}
+
+type Passenger @table(name: "passengers")
+  @unique(fields: ["email"], query_suffix: "email") {
+  id: Int! @pk
+  first_name: String!
+  last_name: String!
+  email: String!
+}
+
+type BookingPassenger @table(name: "booking_passengers", is_m2m: true)
+  @references(
+    name: "booking_airline"
+    references_name: "Airline"
+    source_fields: ["airline_icao"]
+    references_fields: ["icao"]
+    query: "airline"
+    references_query: "booking_passengers"
+  )
+  @references(
+    name: "booking_passenger"
+    references_name: "Passenger"
+    source_fields: ["passenger_id"]
+    references_fields: ["id"]
+    query: "passenger"
+    references_query: "bookings"
+  ) {
+  airline_icao: String! @pk
+  passenger_id: Int! @pk
+}
+
+input FlightLogArgs {
+  from_date: Timestamp! @field_source(field: "from_date")
+  to_date: Timestamp @field_source(field: "to_date")
+}
+
+type FlightLog @view(name: "flight_log_view", sql: "SELECT * FROM flights WHERE departure >= [from_date] AND departure <= [to_date]")
+  @args(name: "FlightLogArgs")
+  @module(name: "transport.air") {
+  id: Int! @pk
+  flight_number: String!
+  departure: Timestamp
+  route_id: Int
+}

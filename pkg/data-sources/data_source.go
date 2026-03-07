@@ -5,7 +5,9 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
@@ -53,7 +55,7 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 		return err
 	}
 
-	ds, err := s.DataSource(name)
+	_, err = s.DataSource(name)
 	if err == nil {
 		err = s.UnloadDataSource(ctx, name)
 		if err != nil && !errors.Is(err, errAlreadyUnloaded) {
@@ -61,16 +63,18 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 		}
 	}
 
-	ds, err = NewDataSource(ctx, item, false)
+	ds, err := NewDataSource(ctx, item, false)
 	if err != nil {
 		return err
 	}
 
-	err = s.Register(ctx, item.Name, ds)
-	if err != nil {
-		return nil
+	if err := s.Register(ctx, item.Name, ds); err != nil {
+		return err
 	}
 
+	// Attach handles catalog ops based on skipCatalogOps flag:
+	// - management/standalone: full compile (AddCatalog)
+	// - readonly/worker: attach + RegisterEngine only
 	return s.Attach(ctx, item.Name)
 }
 
@@ -78,18 +82,13 @@ var errAlreadyUnloaded = errors.New("data source already unloaded")
 
 func (s *Service) UnloadDataSource(ctx context.Context, name string) error {
 	if !s.IsAttached(name) {
-		s.Unregister(ctx, name)
+		_ = s.Unregister(ctx, name)
 		return errAlreadyUnloaded
 	}
-	err := s.Detach(ctx, name, s.db)
-	if err != nil {
+	if err := s.Detach(ctx, name, s.db); err != nil {
 		return err
 	}
-	err = s.Unregister(ctx, name)
-	if err != nil {
-		return err
-	}
-	return nil
+	return s.Unregister(ctx, name)
 }
 
 func (s *Service) DescribeDataSource(ctx context.Context, name string, self bool) (string, error) {
@@ -106,9 +105,15 @@ func (s *Service) DescribeDataSource(ctx context.Context, name string, self bool
 		return "", nil
 	}
 
-	sd, err := source.SchemaDocument(ctx)
-	if err != nil {
-		return "", err
+	// Reconstruct a SchemaDocument from the catalog's definitions and extensions.
+	sd := &ast.SchemaDocument{}
+	for def := range source.Definitions(ctx) {
+		sd.Definitions = append(sd.Definitions, def)
+	}
+	if es, ok := source.(base.ExtensionsSource); ok {
+		for ext := range es.Extensions(ctx) {
+			sd.Extensions = append(sd.Extensions, ext)
+		}
 	}
 	var sb strings.Builder
 	formatter.NewFormatter(&sb).FormatSchemaDocument(sd)

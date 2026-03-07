@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/hugr-lab/query-engine/pkg/catalogs"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/airport"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
@@ -16,11 +15,11 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mssql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/postgres"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/types"
-	"github.com/vektah/gqlparser/v2/ast"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
 	. "github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -32,10 +31,15 @@ type Service struct {
 
 	db       *db.Pool
 	qe       types.Querier
-	catalogs *catalogs.Service
+	catalogs catalog.Manager
+
+	// skipCatalogOps disables schema DB writes (AddCatalog/RemoveCatalog)
+	// on Attach/Detach. Set for read-only CoreDB and cluster worker nodes
+	// where schema state is managed by the writer/management node.
+	skipCatalogOps bool
 }
 
-func New(qe types.Querier, db *db.Pool, cs *catalogs.Service) *Service {
+func New(qe types.Querier, db *db.Pool, cs catalog.Manager) *Service {
 	return &Service{
 		dataSources: make(map[string]Source),
 		catalogs:    cs,
@@ -44,27 +48,27 @@ func New(qe types.Querier, db *db.Pool, cs *catalogs.Service) *Service {
 	}
 }
 
+// SetSkipCatalogOps disables schema DB writes on Attach/Detach.
+// Used for read-only CoreDB and cluster worker nodes.
+func (s *Service) SetSkipCatalogOps(skip bool) {
+	s.skipCatalogOps = skip
+}
+
 func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource) error {
 	if sq, ok := source.(RuntimeSourceQuerier); ok {
 		sq.QueryEngineSetup(s.qe)
 	}
 
 	err := source.Attach(ctx, s.db)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrDataSourceAttached) {
 		return err
 	}
 
-	c, err := catalogs.NewCatalog(ctx, source.Name(), "", source.Engine(), source.Catalog(ctx), source.AsModule(), source.IsReadonly())
+	cat, err := source.Catalog(ctx)
 	if err != nil {
 		return err
 	}
-
-	err = s.catalogs.AddCatalog(ctx, source.Name(), c)
-	if err != nil {
-		return err
-	}
-
-	return s.catalogs.RebuildSchema(ctx)
+	return s.catalogs.AddCatalog(ctx, source.Name(), cat)
 }
 
 func (s *Service) Engine(name string) (engines.Engine, error) {
@@ -76,10 +80,6 @@ func (s *Service) Engine(name string) (engines.Engine, error) {
 		return nil, ErrDataSourceNotFound
 	}
 	return ds.Engine(), nil
-}
-
-func (s *Service) Schema() *ast.Schema {
-	return s.catalogs.Schema()
 }
 
 func (s *Service) Register(ctx context.Context, name string, ds Source) error {
@@ -128,30 +128,32 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if s.catalogs.ExistsCatalog(name) {
-		return ErrDataSourceExists
-	}
 
-	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {
-		// add extension
-		source, err := s.extensionCatalog(ctx, name)
-		if err != nil {
-			return err
-		}
-		return s.catalogs.AddExtension(ctx, source)
-	}
-
-	// create data source catalog
-	c, err := s.dataSourceCatalog(ctx, name)
-	if err != nil {
-		return err
-	}
-	if c == nil {
+	// Skip schema compilation in readonly/worker mode — schemas
+	// are already persisted by the writer/management node.
+	if s.skipCatalogOps {
+		s.catalogs.RegisterEngine(name, ds.Engine())
 		return nil
 	}
 
-	// add catalog
-	return s.catalogs.AddCatalog(ctx, name, c)
+	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {
+		cat, err := s.catalogSource(ctx, ds, false)
+		if err != nil {
+			return err
+		}
+		def := ds.Definition()
+		return s.catalogs.AddCatalog(ctx, def.Name, cat)
+	}
+
+	cat, err := s.catalogSource(ctx, ds, false)
+	if err != nil {
+		return err
+	}
+	if cat == nil {
+		return nil
+	}
+	def := ds.Definition()
+	return s.catalogs.AddCatalog(ctx, def.Name, cat)
 }
 
 func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
@@ -164,20 +166,15 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 	}
 
 	if !ds.IsAttached() {
-		return ErrDataSourceAttached
+		return ErrDataSourceNotAttached
 	}
 
-	// remove catalog
-	if e, ok := ds.(ExtensionSource); ok && e.IsExtension() {
-		err := s.catalogs.RemoveExtension(ctx, name)
-		if err != nil && !errors.Is(err, catalogs.ErrCatalogNotFound) {
+	// Skip schema removal in readonly/worker mode.
+	if !s.skipCatalogOps {
+		err := s.catalogs.RemoveCatalog(ctx, name)
+		if !errors.Is(err, catalog.ErrCatalogNotFound) && err != nil {
 			return err
 		}
-		return ds.Detach(ctx, db)
-	}
-	err := s.catalogs.RemoveCatalog(ctx, name)
-	if !errors.Is(err, catalogs.ErrCatalogNotFound) && err != nil {
-		return err
 	}
 
 	return ds.Detach(ctx, db)

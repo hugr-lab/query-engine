@@ -1,0 +1,77 @@
+# Cluster Runtime Source — functions only.
+# Table _cluster_nodes is defined in core-db/schema.graphql.
+# Source: Name="core.cluster", Prefix="core_cluster", AsModule=true
+#
+# UDF names must be globally unique in DuckDB, so we use full
+# "core_cluster_" prefix in @function(name: ...) and UDF registration.
+
+# --- Query functions ---
+
+extend type Function {
+  "Current schema version counter (for cluster change detection)"
+  schema_version: Int! @function(name: "core_cluster_schema_version")
+
+  "This node's cluster role (management/worker)"
+  my_role: String! @function(name: "core_cluster_my_role")
+
+  "Management node IPC URL (from _cluster_nodes)"
+  management_url: String @function(name: "core_cluster_management_url")
+}
+
+# --- User-facing mutations (forwarded to management if on worker) ---
+
+extend type MutationFunction {
+  "Load data source across the cluster (compile + broadcast)"
+  load_source(name: String!): OperationResult
+    @function(name: "core_cluster_load_source")
+
+  "Unload data source across the cluster"
+  unload_source(name: String!): OperationResult
+    @function(name: "core_cluster_unload_source")
+
+  "Reload data source across the cluster"
+  reload_source(name: String!): OperationResult
+    @function(name: "core_cluster_reload_source")
+
+  "Register object storage secret across the cluster"
+  register_storage(
+    type: String!
+    name: String!
+    scope: String!
+    key: String!
+    secret: String!
+    region: String
+    endpoint: String!
+    use_ssl: Boolean! = true
+    url_style: String!
+  ): OperationResult
+    @function(name: "core_cluster_register_storage")
+
+  "Unregister object storage secret across the cluster"
+  unregister_storage(name: String!): OperationResult
+    @function(name: "core_cluster_unregister_storage")
+
+  "Invalidate schema cache across the cluster"
+  invalidate_cache(catalog: String): OperationResult
+    @function(name: "core_cluster_invalidate_cache")
+}
+
+# --- Internal mutations (broadcast targets, require CLUSTER_SECRET) ---
+
+extend type MutationFunction {
+  "Handle source load broadcast (worker: attach without compile)"
+  handle_source_load(name: String!): OperationResult
+    @function(name: "core_cluster_handle_source_load")
+
+  "Handle source unload broadcast (worker: detach)"
+  handle_source_unload(name: String!): OperationResult
+    @function(name: "core_cluster_handle_source_unload")
+
+  "Handle cache invalidation broadcast"
+  handle_cache_invalidate(catalog: String): OperationResult
+    @function(name: "core_cluster_handle_cache_invalidate")
+
+  "Handle secret sync broadcast (worker: re-sync from management)"
+  handle_secret_sync: OperationResult
+    @function(name: "core_cluster_handle_secret_sync")
+}

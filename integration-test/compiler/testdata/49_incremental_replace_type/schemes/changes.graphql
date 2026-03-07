@@ -1,0 +1,5 @@
+# Field-level additions to existing Widget type
+extend type Widget {
+  email: String
+  updated_at: Timestamp
+}

@@ -1,0 +1,46 @@
+"""Product in catalog"""
+type Product @table(name: "products") @module(name: "commerce") {
+  id: Int! @pk
+  name: String!
+  price: Float!
+  category_id: Int!
+}
+
+"""Product category"""
+type Category @table(name: "categories") @module(name: "commerce") {
+  id: Int! @pk
+  name: String!
+}
+
+"""Customer order"""
+type Order @table(name: "orders") @module(name: "commerce") {
+  id: Int! @pk
+  product_id: Int! @field_references(
+    references_name: "Product"
+    field: "id"
+    query: "product"
+    references_query: "orders"
+  )
+  quantity: Int!
+  total: Float!
+}
+
+input SalesReportArgs {
+  from_date: Timestamp! @field_source(field: "from_date")
+  to_date: Timestamp! @field_source(field: "to_date")
+}
+
+"""Parameterized sales report"""
+type SalesReport @view(name: "sales_view", sql: "SELECT * FROM sales WHERE date >= [from_date] AND date <= [to_date]")
+  @args(name: "SalesReportArgs")
+  @module(name: "analytics") {
+  product_id: Int! @pk
+  total_sales: Float
+}
+
+extend type Function {
+  get_discount(product_id: Int!): Float
+    @function(name: "get_discount")
+  find_similar(product_id: Int!, limit: Int): [Product]
+    @function(name: "find_similar")
+}

@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 )
@@ -41,9 +41,9 @@ func QueryInfo(field *ast.Field, vars map[string]any) Info {
 	info.Invalidate = field.Directives.ForName(base.InvalidateCacheDirectiveName) != nil
 
 	// If mutation check if need invalidate cache
-	if compiler.IsInsertQuery(field) ||
-		compiler.IsUpdateQuery(field) ||
-		compiler.IsDeleteQuery(field) {
+	if sdl.IsInsertQuery(field) ||
+		sdl.IsUpdateQuery(field) ||
+		sdl.IsDeleteQuery(field) {
 		info.Invalidate = true
 		info.Use = false
 	}
@@ -71,11 +71,11 @@ func cacheDirectiveInfo(d *ast.Directive, vars map[string]any) Info {
 		return Info{}
 	}
 
-	ttl, _ := strconv.Atoi(compiler.DirectiveArgValue(d, "ttl", vars))
+	ttl, _ := strconv.Atoi(sdl.DirectiveArgValue(d, "ttl", vars))
 
 	return Info{
-		Key:  compiler.DirectiveArgValue(d, "key", vars),
-		Tags: compiler.DirectiveArgChildValues(d, "tags", vars),
+		Key:  sdl.DirectiveArgValue(d, "key", vars),
+		Tags: sdl.DirectiveArgChildValues(d, "tags", vars),
 		TTL:  time.Duration(ttl) * time.Second,
 	}
 }

@@ -1,0 +1,15 @@
+{
+  "data": {
+    "pg_store": {
+      "product_details": [
+        {
+          "product_id": 1,
+          "specs": {
+            "cpu": "M2",
+            "ram_gb": 16
+          }
+        }
+      ]
+    }
+  }
+}

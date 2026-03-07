@@ -3,8 +3,10 @@ package metadata
 import (
 	"context"
 	"errors"
+	"log/slog"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -13,25 +15,35 @@ var (
 	ErrInvalidTypeQuery     = errors.New("invalid type query")
 )
 
-func ProcessQuery(ctx context.Context, schema *ast.Schema, query compiler.QueryRequest, maxDepth int, vars map[string]any) (any, error) {
-	if query.QueryType != compiler.QueryTypeMeta {
+func ProcessQuery(ctx context.Context, provider catalog.Provider, query sdl.QueryRequest, maxDepth int, vars map[string]any) (any, error) {
+	if query.QueryType != sdl.QueryTypeMeta {
 		return nil, ErrInvalidMetaDataQuery
 	}
 	if query.Field == nil {
 		return nil, ErrInvalidMetaDataQuery
 	}
 
+	slog.Debug("metadata query", "field", query.Field.Name, "maxDepth", maxDepth)
+
 	switch query.Field.Name {
 	case "__schema":
-		return processSchemaQuery(ctx, schema, query.Field, maxDepth)
+		res, err := processSchemaQuery(ctx, provider, query.Field, maxDepth)
+		if err != nil {
+			slog.Error("metadata __schema query failed", "error", err)
+		}
+		return res, err
 	case "__type":
-		return processTypeQuery(ctx, schema, query.Field, maxDepth, vars)
+		res, err := processTypeQuery(ctx, provider, query.Field, maxDepth, vars)
+		if err != nil {
+			slog.Error("metadata __type query failed", "error", err)
+		}
+		return res, err
 	}
 
 	return nil, nil
 }
 
-func processTypeQuery(ctx context.Context, schema *ast.Schema, field *ast.Field, maxDepth int, vars map[string]any) (any, error) {
+func processTypeQuery(ctx context.Context, provider catalog.Provider, field *ast.Field, maxDepth int, vars map[string]any) (any, error) {
 	if field.Arguments == nil || field.Arguments.ForName("name") == nil {
 		return nil, ErrInvalidTypeQuery
 	}
@@ -48,9 +60,10 @@ func processTypeQuery(ctx context.Context, schema *ast.Schema, field *ast.Field,
 		return nil, ErrInvalidTypeQuery
 	}
 
-	if _, ok := schema.Types[tn]; !ok {
-		return nil, ErrTypeNotFound
+	if provider.ForName(ctx, tn) == nil {
+		slog.Debug("metadata __type: type not found", "name", tn)
+		return nil, nil
 	}
 
-	return typeResolver(ctx, schema, ast.NamedType(tn, &ast.Position{}), field.SelectionSet, maxDepth)
+	return typeResolver(ctx, provider, ast.NamedType(tn, &ast.Position{}), field.SelectionSet, maxDepth)
 }

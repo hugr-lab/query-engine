@@ -1,0 +1,12 @@
+{
+  pg_store {
+    categories(filter: { id: { eq: 2 } }) {
+      id
+      name
+      products(order_by: [{field: "id", direction: ASC}]) {
+        id
+        name
+      }
+    }
+  }
+}

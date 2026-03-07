@@ -1,0 +1,14 @@
+# Drop @join field from Product
+extend type Product {
+  category: Boolean @drop
+}
+
+# Drop @function_call field from Product
+extend type Product {
+  discount: Boolean @drop
+}
+
+# Drop @table_function_call_join field from Product
+extend type Product {
+  similar: Boolean @drop
+}

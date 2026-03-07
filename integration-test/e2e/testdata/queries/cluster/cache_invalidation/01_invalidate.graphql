@@ -1,0 +1,13 @@
+# @target: mgmt
+mutation {
+  function {
+    core {
+      cluster {
+        invalidate_cache {
+          success
+          message
+        }
+      }
+    }
+  }
+}

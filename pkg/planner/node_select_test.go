@@ -1,10 +1,11 @@
 package planner
 
 import (
+	"context"
 	"strings"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -132,19 +133,18 @@ func TestWhereFieldNode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testSchema := testCats.Schema()
-			def := testSchema.Types[tt.objectName]
+			def := testSchemaService.ForName(context.Background(), tt.objectName)
 			if def == nil {
 				t.Fatalf("object %s not found", tt.objectName)
 			}
-			info := compiler.DataObjectInfo(def)
-			node, err := whereFieldNode(info, tt.prefix, tt.field, tt.value, false)
+			info := sdl.DataObjectInfo(def)
+			node, err := whereFieldNode(context.Background(), info, tt.prefix, tt.field, tt.value, false)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("whereFieldNode() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if node != nil {
-				node.schema = testSchema
-				node.engines = testCats
+				node.provider = testSchemaService.Provider()
+				node.engines = testSchemaService
 				sql, params, err := node.CollectFunc(node, nil, nil)
 				if (err != nil) != tt.wantErr {
 					t.Fatalf("CollectFunc() error = %v", err)

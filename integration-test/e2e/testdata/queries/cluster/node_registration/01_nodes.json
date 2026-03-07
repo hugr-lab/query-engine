@@ -1,0 +1,22 @@
+{
+  "data": {
+    "core": {
+      "cluster": {
+        "nodes": [
+          {
+            "name": "mgmt",
+            "role": "management"
+          },
+          {
+            "name": "worker-1",
+            "role": "worker"
+          },
+          {
+            "name": "worker-2",
+            "role": "worker"
+          }
+        ]
+      }
+    }
+  }
+}

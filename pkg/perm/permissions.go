@@ -8,8 +8,9 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 )
 
 type RolePermissions struct {
@@ -52,18 +53,15 @@ func (r *RolePermissions) CheckQuery(query *ast.Field) error {
 	return nil
 }
 
-type Definitions interface {
-	ForName(name string) *ast.Definition
-}
 
-func (r *RolePermissions) CheckMutationInput(defs Definitions, inputName string, data map[string]any) error {
+func (r *RolePermissions) CheckMutationInput(ctx context.Context, defs base.DefinitionsSource, inputName string, data map[string]any) error {
 	if r.Disabled {
 		return auth.ErrForbidden
 	}
-	if compiler.IsScalarType(inputName) {
+	if sdl.IsScalarType(inputName) {
 		return nil
 	}
-	input := defs.ForName(inputName)
+	input := defs.ForName(ctx, inputName)
 	if input == nil {
 		return fmt.Errorf("input type %s not found", inputName)
 	}
@@ -76,7 +74,7 @@ func (r *RolePermissions) CheckMutationInput(defs Definitions, inputName string,
 			if fd == nil {
 				return fmt.Errorf("field %s not found in input type %s", fn, inputName)
 			}
-			if err := r.CheckMutationInput(defs, fd.Type.Name(), data); err != nil {
+			if err := r.CheckMutationInput(ctx, defs, fd.Type.Name(), data); err != nil {
 				return err
 			}
 		}

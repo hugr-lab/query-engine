@@ -1,0 +1,13 @@
+{
+  __type(name: "pg_store_products") {
+    name
+    kind
+    fields {
+      name
+      type {
+        name
+        kind
+      }
+    }
+  }
+}

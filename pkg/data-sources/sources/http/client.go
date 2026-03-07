@@ -342,13 +342,6 @@ const (
 	oauth2RefreshUrlCustomParam = "x-hugr-refresh-transform"
 )
 
-func hasRefreshUrl(flow *openapi3.OAuthFlow) bool {
-	if flow == nil || flow.Extensions == nil {
-		return false
-	}
-	return flow.RefreshURL != flow.TokenURL
-}
-
 func hasCustomAuthEndpoint(flow *openapi3.OAuthFlow) bool {
 	if flow == nil || flow.Extensions == nil {
 		return false

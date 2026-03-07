@@ -1,0 +1,10 @@
+mutation {
+  pg_store {
+    insert_products(data: { name: "Test Product", price: 99.99, quantity: 7, is_active: true, description: "Created by E2E test", category_id: 1 }) {
+      id
+      name
+      price
+      quantity
+    }
+  }
+}

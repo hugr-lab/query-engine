@@ -1,0 +1,12 @@
+{
+  local_db {
+    items(filter: { id: { eq: 1 } }) {
+      id
+      name
+      active_products {
+        id
+        name
+      }
+    }
+  }
+}

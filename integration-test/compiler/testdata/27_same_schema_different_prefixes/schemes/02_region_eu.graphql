@@ -1,0 +1,17 @@
+type Store @table(name: "stores") {
+  id: Int! @pk
+  name: String!
+  city: String!
+  revenue: Float
+}
+
+type Employee @table(name: "employees") {
+  id: Int! @pk
+  name: String!
+  store_id: Int! @field_references(
+    references_name: "Store"
+    field: "id"
+    query: "store"
+    references_query: "employees"
+  )
+}

@@ -8,7 +8,8 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -165,7 +166,7 @@ func TestPrintSpec(t *testing.T) {
 
 	var defs ast.DefinitionList
 	var gt *ast.Type
-	pos := compiler.CompiledPosName("http-openapi-test")
+	pos := base.CompiledPos("http-openapi-test")
 
 	var functions []openApiFunction
 	if source.spec != nil && source.spec.Paths != nil {
@@ -456,7 +457,7 @@ func TestFunctionFields(t *testing.T) {
 				},
 			},
 			want: []*ast.FieldDefinition{
-				compiler.NewFunction("http.test", "getUser", "http_data_source_request_scalar([$catalog], '/user', 'GET', '{}'::JSON, {id: [id]}::JSON, '{}'::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
+				sdl.NewFunction("http.test", "getUser", "http_data_source_request_scalar([$catalog], '/user', 'GET', '{}'::JSON, {id: [id]}::JSON, '{}'::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
 					{
 						Name: "id",
 						Type: ast.NamedType("String", nil),
@@ -500,7 +501,7 @@ func TestFunctionFields(t *testing.T) {
 				},
 			},
 			want: []*ast.FieldDefinition{
-				compiler.NewFunction("http.test", "getUser", "http_data_source_request_scalar([$catalog], '/user', 'GET', {auth: [auth]}::JSON, {id: [id]}::JSON, '{}'::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
+				sdl.NewFunction("http.test", "getUser", "http_data_source_request_scalar([$catalog], '/user', 'GET', {auth: [auth]}::JSON, {id: [id]}::JSON, '{}'::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
 					{
 						Name: "id",
 						Type: ast.NamedType("String", nil),
@@ -548,7 +549,7 @@ func TestFunctionFields(t *testing.T) {
 				},
 			},
 			want: []*ast.FieldDefinition{
-				compiler.NewFunction("http.test", "createUser", "http_data_source_request_scalar([$catalog], '/user', 'POST', '{}'::JSON, '{}'::JSON, {name: [name]}::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
+				sdl.NewFunction("http.test", "createUser", "http_data_source_request_scalar([$catalog], '/user', 'POST', '{}'::JSON, '{}'::JSON, {name: [name]}::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
 					{
 						Name: "request_body",
 						Type: ast.NamedType("CreateUserInput", nil),
@@ -590,7 +591,7 @@ func TestFunctionFields(t *testing.T) {
 				},
 			},
 			want: []*ast.FieldDefinition{
-				compiler.NewFunction("http.test", "getUserWithHeader", "http_data_source_request_scalar([$catalog], '/user', 'GET', {Authorization: [Authorization]}::JSON, '{}'::JSON, '{}'::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
+				sdl.NewFunction("http.test", "getUserWithHeader", "http_data_source_request_scalar([$catalog], '/user', 'GET', {Authorization: [Authorization]}::JSON, '{}'::JSON, '{}'::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
 					{
 						Name: "Authorization",
 						Type: ast.NamedType("String", nil),
@@ -663,7 +664,7 @@ func TestFunctionFields(t *testing.T) {
 				},
 			},
 			want: []*ast.FieldDefinition{
-				compiler.NewFunction("http.test", "createUser", "http_data_source_request_scalar([$catalog], '/user', 'POST', {auth: [auth]}::JSON, '{}'::JSON, COALESCE([request_body]::JSON, '{}'::JSON), '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
+				sdl.NewFunction("http.test", "createUser", "http_data_source_request_scalar([$catalog], '/user', 'POST', {auth: [auth]}::JSON, '{}'::JSON, COALESCE([request_body]::JSON, '{}'::JSON), '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
 					{Name: "auth", Type: ast.NamedType("String", nil)},
 					{Name: "request_body", Type: ast.NamedType("CreateUserInput", nil)},
 				}, nil),
@@ -740,7 +741,7 @@ func TestFunctionFields(t *testing.T) {
 				},
 			},
 			want: []*ast.FieldDefinition{
-				compiler.NewFunction("http.test", "getUserWithPathParam", "http_data_source_request_scalar([$catalog], '/user/'||[id]||'/details', 'GET', {Authorization: [Authorization]}::JSON, '{}'::JSON, '{}'::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
+				sdl.NewFunction("http.test", "getUserWithPathParam", "http_data_source_request_scalar([$catalog], '/user/'||[id]||'/details', 'GET', {Authorization: [Authorization]}::JSON, '{}'::JSON, '{}'::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
 					{
 						Name: "Authorization",
 						Type: ast.NamedType("String", nil),
@@ -787,7 +788,7 @@ func TestFunctionFields(t *testing.T) {
 				},
 			},
 			want: []*ast.FieldDefinition{
-				compiler.NewFunction("http.test", "getUserWithPathParam", "http_data_source_request_scalar([$catalog], '/user/'||[id], 'GET', {Authorization: [Authorization]}::JSON, '{}'::JSON, '{}'::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
+				sdl.NewFunction("http.test", "getUserWithPathParam", "http_data_source_request_scalar([$catalog], '/user/'||[id], 'GET', {Authorization: [Authorization]}::JSON, '{}'::JSON, '{}'::JSON, '')", ast.NamedType("User", nil), false, true, ast.ArgumentDefinitionList{
 					{
 						Name: "Authorization",
 						Type: ast.NamedType("String", nil),

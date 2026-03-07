@@ -1,0 +1,40 @@
+Produce descriptions for a Hugr function using the data-source context and the module context.
+
+[INPUT JSON]
+{
+  "name": {{ .Name }},
+  "description": {{ .Description }},
+  "parameters": {{ .ParametersJSON }},
+  "return_type": {{ .ReturnType }},
+  "returns_array": {{ .ReturnsArray }},
+  "returned_fields": {{ .ReturnedFieldsJSON }},
+
+  "data_source_context": {{ .DataSourceContextJSON }},
+
+  "module_context": {{ .ModuleContextJSON }}
+}
+
+[TASK]
+Return ONE JSON with the exact shape below (English only; no extra keys):
+
+{
+  "short": "1-2 sentences: what this function do and key arguments; mention module/source to avoid vacuum context",
+  "long":  "~400 tokens: business meaning & typical use; key arguments and why;
+            returned types and their significance; consider data-source and module context",
+  "parameters": {
+    "<parameter_name>": "<=1 line: business meaning; note PK/array/calculated"
+  },
+  "returns": {
+    "short": "1-2 sentences: what this function returns; mention module/source to avoid vacuum context",
+    "fields": {
+      "<returned_field_name>": "<=1 line: business meaning; note PK/array/calculated"
+    }
+  }
+}
+
+Constraints:
+- Do NOT invent fields, relations or capabilities not present in the input.
+- Do not use in descriptions type names, instead use their business meaning.
+- Do not use the function name in the short and long description, instead use their business meaning.
+- Do not use field names in descriptions, instead use their business meaning.
+- Keep "short" succinct; keep "long" around 400 tokens; keep blurbs within the given limits.

@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func finalResultNode(ctx context.Context, schema *ast.Schema, planner Catalog, field *ast.Field, node *QueryPlanNode, transformTypes bool) *QueryPlanNode {
+func finalResultNode(ctx context.Context, provider catalog.Provider, planner Catalog, field *ast.Field, node *QueryPlanNode, transformTypes bool) *QueryPlanNode {
 	node = applyAllParametersNode(node)
 	node.engines = planner
-	node.schema = schema
+	node.provider = provider
 
 	return &QueryPlanNode{
 		Name:    field.Name,
@@ -37,28 +38,24 @@ func finalResultNode(ctx context.Context, schema *ast.Schema, planner Catalog, f
 			if !transformTypes && !isRaw {
 				return sql, params, nil
 			}
-			if compiler.IsScalarType(node.Query.Definition.Type.Name()) {
-				st, ok := compiler.ScalarTypes[node.Query.Definition.Type.Name()]
-				if !ok {
-					return "", nil, fmt.Errorf("unknown scalar type %s", node.Query.Definition.Type.Name())
-				}
-				if st.ToOutputTypeSQL == nil {
+			if sdl.IsScalarType(node.Query.Definition.Type.Name()) {
+				typeName := node.Query.Definition.Type.Name()
+				transformed := sdl.ToOutputSQL(typeName, engines.Ident(node.Query.Alias), isRaw)
+				if transformed == engines.Ident(node.Query.Alias) {
 					return sql, params, nil
 				}
 				return fmt.Sprintf("SELECT %s AS %s FROM (%s) AS _raw",
-					st.ToOutputTypeSQL(engines.Ident(node.Query.Alias), isRaw),
+					transformed,
 					engines.Ident(node.Query.Alias), sql,
 				), params, nil
 			}
 			// transform fields to output format
 			var fields []string
 			for _, f := range engines.SelectedFields(node.Query.SelectionSet) {
-				if st, ok := compiler.ScalarTypes[f.Field.Definition.Type.Name()]; ok && st.ToOutputTypeSQL != nil {
-					fields = append(fields,
-						st.ToOutputTypeSQL(
-							engines.Ident(f.Field.Alias),
-							isRaw,
-						)+" AS "+engines.Ident(f.Field.Alias))
+				typeName := f.Field.Definition.Type.Name()
+				transformed := sdl.ToOutputSQL(typeName, engines.Ident(f.Field.Alias), isRaw)
+				if transformed != engines.Ident(f.Field.Alias) {
+					fields = append(fields, transformed+" AS "+engines.Ident(f.Field.Alias))
 					continue
 				}
 				fields = append(fields, engines.Ident(f.Field.Alias))

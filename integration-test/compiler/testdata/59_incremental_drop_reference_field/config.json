@@ -1,0 +1,24 @@
+{
+  "catalogs": [
+    {
+      "file": "base.graphql",
+      "name": "test",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    }
+  ],
+  "incrementals": [
+    {
+      "file": "step1_add_route.graphql",
+      "catalog": "test",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    },
+    {
+      "file": "step2_drop_ref.graphql",
+      "catalog": "test",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    }
+  ]
+}

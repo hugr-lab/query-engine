@@ -1,0 +1,8 @@
+.git/
+.claude/
+.specify/
+specs/
+design/
+*.duckdb
+*.duckdb.wal
+.DS_Store

@@ -1,0 +1,13 @@
+# @target: mgmt
+mutation {
+  function {
+    core {
+      cluster {
+        unload_source(name: "pg_store") {
+          success
+          message
+        }
+      }
+    }
+  }
+}

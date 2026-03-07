@@ -1,2 +1,12 @@
 .DS*
 .local
+.claude/
+.specify/
+specs/
+design/
+internal/airport_test_service/
+internal/duckdb-air/
+*.duckdb
+*.duckdb.wal
+/dev-server
+integration-test/compiler/testdata/*/actual.graphql

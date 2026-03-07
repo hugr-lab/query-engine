@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -14,8 +15,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 )
@@ -72,7 +73,7 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
 	go stream.ping(ctx)
@@ -103,7 +104,7 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			if err != nil {
-				stream.sendStreamError(fmt.Errorf("failed to read IPC request: %w", err))
+				_ = stream.sendStreamError(fmt.Errorf("failed to read IPC request: %w", err))
 				continue
 			}
 			if s.config.Debug {
@@ -114,16 +115,16 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 			// in the future we can support mutations across IPC to allow for streaming updates, and inserts
 			case "query_object":
 				// Handle data_object streaming
-				req.Query, err = s.dataObjectStreamQuery(req.DataObject, req.SelectedFields, req.Variables)
+				req.Query, err = s.dataObjectStreamQuery(ctx, req.DataObject, req.SelectedFields, req.Variables)
 				if err != nil {
-					stream.sendStreamError(fmt.Errorf("failed to process data object query: %w", err))
+					_ = stream.sendStreamError(fmt.Errorf("failed to process data object query: %w", err))
 					continue
 				}
 				fallthrough
 			case "query":
 				ctx, err := stream.setActiveQuery(ctx, &req)
 				if err != nil {
-					stream.sendStreamError(fmt.Errorf("failed to set active query: %w", err))
+					_ = stream.sendStreamError(fmt.Errorf("failed to set active query: %w", err))
 					continue
 				}
 				go s.handleIPCStream(ctx, stream)
@@ -135,7 +136,7 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				stream.mu.Unlock()
 			default:
-				stream.sendStreamError(fmt.Errorf("unknown IPC stream message type: %s", req.Type))
+				_ = stream.sendStreamError(fmt.Errorf("unknown IPC stream message type: %s", req.Type))
 			}
 		}
 	}
@@ -143,8 +144,14 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic recovered in IPC stream: %v\n%s", r, debug.Stack())
+			_ = stream.sendStreamError(fmt.Errorf("internal error: %v", r))
+		}
+	}()
+	defer func() {
 		if err := stream.sendStreamComplete(); err != nil {
-			stream.sendStreamError(fmt.Errorf("failed to send stream complete: %w", err))
+			_ = stream.sendStreamError(fmt.Errorf("failed to send stream complete: %w", err))
 		}
 	}()
 	bp := sync.Pool{
@@ -154,39 +161,39 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 	}
 	table, finalize, err := s.ProcessStreamQuery(ctx, stream.activeQuery.Query, stream.activeQuery.Variables)
 	if err != nil {
-		stream.sendStreamError(fmt.Errorf("failed to process IPC stream query: %w", err))
+		_ = stream.sendStreamError(fmt.Errorf("failed to process IPC stream query: %w", err))
 		return
 	}
 	defer finalize()
 	defer table.Release()
 	reader, err := table.Reader(false)
 	if err != nil {
-		stream.sendStreamError(fmt.Errorf("failed to create IPC stream reader: %w", err))
+		_ = stream.sendStreamError(fmt.Errorf("failed to create IPC stream reader: %w", err))
 		return
 	}
 	defer reader.Release()
 	for reader.Next() {
 		select {
 		case <-ctx.Done():
-			stream.sendStreamError(fmt.Errorf("stream cancelled: %w", ctx.Err()))
+			_ = stream.sendStreamError(fmt.Errorf("stream cancelled: %w", ctx.Err()))
 			return
 		default:
 			chunk := reader.RecordBatch()
 			if reader.Err() != nil {
-				stream.sendStreamError(fmt.Errorf("error reading IPC stream: %w", reader.Err()))
+				_ = stream.sendStreamError(fmt.Errorf("error reading IPC stream: %w", reader.Err()))
 				return
 			}
 			if chunk == nil {
-				stream.sendStreamError(fmt.Errorf("received nil chunk from IPC stream"))
+				_ = stream.sendStreamError(fmt.Errorf("received nil chunk from IPC stream"))
 				return
 			}
 			defer chunk.Release()
 			buf := bp.Get().(*bytes.Buffer)
 			writer := ipc.NewWriter(buf, ipc.WithLZ4())
 			err = writer.Write(chunk)
-			writer.Close()
+			_ = writer.Close()
 			if err != nil {
-				stream.sendStreamError(fmt.Errorf("failed to write IPC stream chunk: %w", err))
+				_ = stream.sendStreamError(fmt.Errorf("failed to write IPC stream chunk: %w", err))
 				buf.Reset()
 				bp.Put(buf)
 				return
@@ -195,31 +202,31 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 			buf.Reset()
 			bp.Put(buf)
 			if err != nil {
-				stream.sendStreamError(fmt.Errorf("failed to send IPC stream chunk: %w", err))
+				_ = stream.sendStreamError(fmt.Errorf("failed to send IPC stream chunk: %w", err))
 				return
 			}
 		}
 	}
 }
 
-func (s *Service) dataObjectStreamQuery(dataObject string, fields []string, variables map[string]interface{}) (string, error) {
-	schema := s.Schema()
+func (s *Service) dataObjectStreamQuery(ctx context.Context, dataObject string, fields []string, variables map[string]interface{}) (string, error) {
+	provider := s.schema.Provider()
 	if !strings.Contains(dataObject, ".") {
 		// If no dot notation, assume it's a data object name without module
-		def := schema.Types[dataObject]
+		def := provider.ForName(ctx, dataObject)
 		if def == nil {
 			return "", fmt.Errorf("data object %s not found in schema", dataObject)
 		}
-		if !compiler.IsDataObject(def) {
+		if !sdl.IsDataObject(def) {
 			return "", fmt.Errorf("data object %s is not a valid data object", dataObject)
 		}
-		path, field := compiler.ObjectQueryDefinition(compiler.SchemaDefs(schema), def, compiler.QueryTypeSelect)
+		path, field := sdl.ObjectQueryDefinition(ctx, provider, def, sdl.QueryTypeSelect)
 		if path != "" {
 			dataObject = path + "." + field.Name
 		}
 	}
 	var query *ast.FieldDefinition
-	queryDef := schema.Types[base.QueryBaseName]
+	queryDef := provider.ForName(ctx, base.QueryBaseName)
 	if queryDef == nil {
 		return "", fmt.Errorf("query base type not found in schema")
 	}
@@ -230,10 +237,10 @@ func (s *Service) dataObjectStreamQuery(dataObject string, fields []string, vari
 		if field == nil {
 			return "", fmt.Errorf("data object %s not found in schema", part)
 		}
-		def = schema.Types[field.Type.Name()]
+		def = provider.ForName(ctx, field.Type.Name())
 		query = field
 	}
-	if !compiler.IsDataObject(def) || query == nil {
+	if !sdl.IsDataObject(def) || query == nil {
 		return "", fmt.Errorf("data object %s is not a valid data object", dataObject)
 	}
 	path = path[:len(path)-1] // Remove the last part which is the field name

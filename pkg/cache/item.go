@@ -106,7 +106,7 @@ func (item *CacheItem) EncodeMsgpack(enc *msgpack.Encoder) error {
 		return err
 	}
 	if item.Data == nil {
-		enc.EncodeNil()
+		return enc.EncodeNil()
 	}
 	return enc.Encode(item.Data)
 }

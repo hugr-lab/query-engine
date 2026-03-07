@@ -1,0 +1,17 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "category_id": 1,
+          "description": "Created by E2E test",
+          "id": 6,
+          "is_active": true,
+          "name": "Test Product",
+          "price": 99.99,
+          "quantity": 7
+        }
+      ]
+    }
+  }
+}

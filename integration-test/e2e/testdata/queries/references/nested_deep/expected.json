@@ -1,0 +1,20 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "category": {
+            "id": 2,
+            "name": "Computers",
+            "parent": {
+              "id": 1,
+              "name": "Electronics"
+            }
+          },
+          "id": 1,
+          "name": "Laptop Pro"
+        }
+      ]
+    }
+  }
+}

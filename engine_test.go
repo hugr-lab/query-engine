@@ -6,18 +6,34 @@ import (
 
 	_ "embed"
 
-	"github.com/hugr-lab/query-engine/pkg/catalogs"
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/vektah/gqlparser/v2"
 )
 
 //go:embed pkg/data-sources/sources/runtime/core-db/schema.graphql
 var testSchemaData string
 
 func Test_processQuery(t *testing.T) {
-	cat, err := catalogs.NewCatalog(context.Background(), "test", "", engines.NewDuckDB(), sources.NewStringSource(testSchemaData), false, false)
+	provider, err := static.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ss := catalog.NewService(provider)
+	e := engines.NewDuckDB()
+	cat, err := sources.NewStringSource("test", e, compiler.Options{
+		Name:         "core",
+		EngineType:   string(e.Type()),
+		AsModule:     true,
+		Capabilities: e.Capabilities(),
+	}, testSchemaData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = ss.AddCatalog(context.Background(), "test", cat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,12 +58,12 @@ func Test_processQuery(t *testing.T) {
 		}
 	`
 
-	qd, errs := gqlparser.LoadQuery(cat.Schema(), query)
-	if len(errs) != 0 {
-		t.Fatal(errs)
+	op, err := ss.ParseQuery(context.Background(), query, nil, "test")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	resolvers, _ := compiler.QueryRequestInfo(qd.Operations[0].SelectionSet)
+	resolvers, _ := sdl.QueryRequestInfo(op.Definition.SelectionSet)
 
 	t.Logf("%+v", resolvers)
 }

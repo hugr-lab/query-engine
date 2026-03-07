@@ -17,8 +17,12 @@ var (
 	ErrInvalidFunctionParam  = errors.New("invalid function parameter")
 )
 
+type Querier interface {
+	Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error)
+}
+
 type options struct {
-	qe          types.Querier
+	qe          Querier
 	varNames    []string
 	vars        map[string]any
 	collectStat bool
@@ -102,7 +106,7 @@ func authInfo(ctx context.Context) gojq.CompilerOption {
 
 type Option func(*options)
 
-func WithQuerier(qe types.Querier) Option {
+func WithQuerier(qe Querier) Option {
 	return func(opts *options) {
 		opts.qe = qe
 	}

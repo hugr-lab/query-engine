@@ -1,0 +1,17 @@
+{
+  "data": {
+    "local_db": {
+      "items": [
+        {
+          "id": 1,
+          "name": "Laptop",
+          "specs": {
+            "cpu": "M2",
+            "ram_gb": 16,
+            "storage_gb": 512
+          }
+        }
+      ]
+    }
+  }
+}

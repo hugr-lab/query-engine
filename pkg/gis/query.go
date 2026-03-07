@@ -1,6 +1,7 @@
 package gis
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,14 +10,14 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/planner"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/paulmach/orb/geojson"
-	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 )
@@ -55,7 +56,7 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 	if feature != "" {
 		features = strings.Split(feature, ",")
 	}
-	fm, err := parseRequest(s.schema.Schema(), &req, features)
+	fm, err := parseRequest(r.Context(), s.schema, &req, features)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -78,11 +79,11 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 
 	ctx := planner.ContextWithRawResultsFlag(r.Context())
 	res, err := s.qe.Query(ctx, req.Query, req.Variables)
-	defer res.Close()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	defer res.Close()
 	if res.Err() != nil {
 		http.Error(w, res.Err().Error(), http.StatusInternalServerError)
 		return
@@ -187,10 +188,10 @@ func parseContentType(contentType string) (string, string, error) {
 }
 
 // parseRequest parses the GraphQL request, filter it if feature list provided and returns the feature definitions and any errors.
-func parseRequest(schema *ast.Schema, req *types.Request, features []string) (featureMap map[string]featureDefinition, err error) {
-	qd, errs := gqlparser.LoadQueryWithRules(schema, req.Query, types.GraphQLQueryRules)
-	if len(errs) != 0 {
-		return nil, errs
+func parseRequest(ctx context.Context, schemaSvc *catalog.Service, req *types.Request, features []string) (featureMap map[string]featureDefinition, err error) {
+	qd, err := schemaSvc.ValidateQuery(ctx, req.Query)
+	if err != nil {
+		return nil, err
 	}
 	if len(qd.Operations) == 0 {
 		return nil, ErrEmptyRequest
@@ -224,13 +225,13 @@ func parseRequest(schema *ast.Schema, req *types.Request, features []string) (fe
 			return nil, fmt.Errorf("summary field %s not found in feature %s", f.Summary, f.Name)
 		}
 		if s.Field.SelectionSet == nil {
-			return nil, compiler.ErrorPosf(s.Field.Position, "summary field %s is not a selection set in feature %s", f.Summary, f.Name)
+			return nil, sdl.ErrorPosf(s.Field.Position, "summary field %s is not a selection set in feature %s", f.Summary, f.Name)
 		}
 		if f.ExtentPath != "" && engines.SelectedFields(s.Field.SelectionSet).ForPath(f.ExtentPath) == nil {
-			return nil, compiler.ErrorPosf(s.Field.Position, "extent field %s not found in summary %s of feature %s", f.ExtentPath, f.Summary, f.Name)
+			return nil, sdl.ErrorPosf(s.Field.Position, "extent field %s not found in summary %s of feature %s", f.ExtentPath, f.Summary, f.Name)
 		}
 		if f.CountPath != "" && engines.SelectedFields(s.Field.SelectionSet).ForPath(f.CountPath) == nil {
-			return nil, compiler.ErrorPosf(s.Field.Position, "count field %s not found in summary %s of feature %s", f.CountPath, f.Summary, f.Name)
+			return nil, sdl.ErrorPosf(s.Field.Position, "count field %s not found in summary %s of feature %s", f.CountPath, f.Summary, f.Name)
 		}
 		filtered = addSelectionByPath(filtered, op.SelectionSet, f.Summary)
 	}
@@ -278,21 +279,21 @@ func filterRecursive(selSet ast.SelectionSet, features []string, vars map[string
 			})
 			continue
 		}
-		name := compiler.DirectiveArgValue(df, "name", vars)
+		name := sdl.DirectiveArgValue(df, "name", vars)
 		if name == "" || features != nil && !slices.Contains(features, name) {
 			continue
 		}
 		fd, err := newFeatureDefinition(df, vars)
 		if err != nil {
-			return nil, nil, compiler.ErrorPosf(s.Field.Position, "error parsing feature %s: %v", name, err)
+			return nil, nil, sdl.ErrorPosf(s.Field.Position, "error parsing feature %s: %v", name, err)
 		}
 		if !summaryOnly {
 			filtered = append(filtered, s)
 			if engines.SelectedFields(s.Field.SelectionSet).ForPath(fd.GeometryField) == nil {
-				return nil, nil, compiler.ErrorPosf(s.Field.Position, "geometry field %s not found in feature %s", fd.GeometryField, name)
+				return nil, nil, sdl.ErrorPosf(s.Field.Position, "geometry field %s not found in feature %s", fd.GeometryField, name)
 			}
 			if fd.IdField != "" && engines.SelectedFields(s.Field.SelectionSet).ForPath(fd.IdField) == nil {
-				return nil, nil, compiler.ErrorPosf(s.Field.Position, "id field %s not found in feature %s", fd.IdField, name)
+				return nil, nil, sdl.ErrorPosf(s.Field.Position, "id field %s not found in feature %s", fd.IdField, name)
 			}
 		}
 		featuresMap[s.Field.Alias] = fd

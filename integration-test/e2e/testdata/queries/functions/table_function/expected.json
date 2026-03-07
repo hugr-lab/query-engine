@@ -1,0 +1,15 @@
+{
+  "data": {
+    "function": {
+      "local_db": {
+        "generate_series": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      }
+    }
+  }
+}

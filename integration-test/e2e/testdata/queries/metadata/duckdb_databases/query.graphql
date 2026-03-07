@@ -1,0 +1,10 @@
+{
+  core {
+    meta {
+      databases(order_by: [{field: "name", direction: ASC}]) {
+        name
+        type
+      }
+    }
+  }
+}

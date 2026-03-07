@@ -1,0 +1,10 @@
+{
+  "data": {
+    "pg_store": {
+      "delete_products": {
+        "message": "success",
+        "success": true
+      }
+    }
+  }
+}

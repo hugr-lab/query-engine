@@ -1,0 +1,23 @@
+{
+  "data": {
+    "pg_store": {
+      "product_details_aggregation": {
+        "metadata": {
+          "warranty_years": {
+            "avg": 2,
+            "sum": 6
+          }
+        },
+        "specs": {
+          "ram_gb": {
+            "avg": 40,
+            "sum": 80
+          },
+          "storage_gb": {
+            "sum": 2512
+          }
+        }
+      }
+    }
+  }
+}

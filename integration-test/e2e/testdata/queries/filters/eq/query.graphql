@@ -1,0 +1,9 @@
+{
+  pg_store {
+    products(filter: { name: { eq: "Laptop Pro" } }) {
+      id
+      name
+      price
+    }
+  }
+}

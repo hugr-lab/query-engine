@@ -1,0 +1,9 @@
+{
+  pg_store {
+    products(filter: { price: { gte: 30.0, lte: 1300.0 } }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+      price
+    }
+  }
+}

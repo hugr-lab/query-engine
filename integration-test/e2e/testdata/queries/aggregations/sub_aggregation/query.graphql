@@ -1,0 +1,17 @@
+{
+  pg_store {
+    categories_aggregation {
+      _rows_count
+      products_aggregation {
+        _rows_count{
+          sum
+        }
+        price {
+          avg {
+            avg
+          }
+        }
+      }
+    }
+  }
+}

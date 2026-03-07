@@ -1,0 +1,5 @@
+type Ticket @table(name: "tickets") @module(name: "crm") {
+  id: Int! @pk
+  subject: String!
+  priority: Int
+}

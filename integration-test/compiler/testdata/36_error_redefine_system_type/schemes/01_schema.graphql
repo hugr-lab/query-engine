@@ -1,0 +1,3 @@
+type Query @table(name: "queries") {
+  id: Int! @pk
+}

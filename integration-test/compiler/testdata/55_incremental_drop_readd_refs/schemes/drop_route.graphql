@@ -1,0 +1,7 @@
+"""Step 1: Drop Route — Airport should lose its back-reference fields"""
+type Route @drop {
+  id: Int! @pk
+  src_airport: String!
+  dst_airport: String!
+  stops: Int!
+}

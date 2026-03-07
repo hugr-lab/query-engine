@@ -1,0 +1,30 @@
+type Airport @table(name: "airports") @module(name: "transport.air") {
+  iata_code: String! @pk
+  name: String!
+  city: String!
+  geom: Geometry
+}
+
+type Station @table(name: "stations") @module(name: "transport.ground") {
+  id: Int! @pk
+  name: String!
+  city: String!
+}
+
+extend type Function {
+  search_airports(query: String!, limit: Int): Airport
+    @function(name: "search_airports")
+  find_nearby(iata_code: String!, radius: Float): [Airport]
+    @function(name: "find_nearby_airports")
+  search_stations(city: String!): [Station]
+    @function(name: "search_stations")
+}
+
+extend type Airport {
+  nearby: [Airport] @table_function_call_join(references_name: "find_nearby", args: {iata_code: "iata_code"})
+}
+
+extend type Station {
+  "Uppercase name for testing extra fields"
+  name_upper: String @sql(exp: "UPPER([name])")
+}

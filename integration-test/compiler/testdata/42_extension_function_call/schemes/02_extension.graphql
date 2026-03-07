@@ -1,0 +1,7 @@
+extend type Product
+  @dependency(name: "base") {
+  discounted: Float @function_call(
+    references_name: "calculate_discount"
+    args: { product_id: "id" }
+  )
+}

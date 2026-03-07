@@ -1,0 +1,22 @@
+{
+  "data": {
+    "pg_store": {
+      "categories": [
+        {
+          "id": 2,
+          "name": "Computers",
+          "products": [
+            {
+              "id": 1,
+              "name": "Laptop Pro"
+            },
+            {
+              "id": 5,
+              "name": "Gaming Desktop"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

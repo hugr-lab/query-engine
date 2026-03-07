@@ -73,7 +73,7 @@ func ParseVector(data any) (Vector, error) {
 		out := make(Vector, 0, len(v)/2+1)
 		var curr string
 		var lc rune
-		for _, lc = range []rune(v) {
+		for _, lc = range v {
 			switch lc {
 			case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '-', 'e', 'E':
 				curr += string(lc)

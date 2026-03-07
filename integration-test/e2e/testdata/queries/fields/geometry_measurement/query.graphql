@@ -1,0 +1,9 @@
+{
+  pg_store {
+    locations(order_by: [{ field: "id", direction: ASC }]) {
+      id
+      name
+      _area_measurement(type: Area)
+    }
+  }
+}

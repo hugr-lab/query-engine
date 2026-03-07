@@ -1,0 +1,13 @@
+{
+  "errors": [
+    {
+      "locations": [
+        {
+          "column": 3,
+          "line": 2
+        }
+      ],
+      "message": "Cannot query field \"pg_store\" on type \"Query\"."
+    }
+  ]
+}

@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -32,33 +33,33 @@ func New(c Catalog, q types.Querier) *Service {
 	}
 }
 
-func (s *Service) Plan(ctx context.Context, schema *ast.Schema, query *ast.Field, vars map[string]interface{}) (*QueryPlan, error) {
+func (s *Service) Plan(ctx context.Context, provider catalog.Provider, query *ast.Field, vars map[string]interface{}) (*QueryPlan, error) {
 	var node *QueryPlanNode
 	var err error
 	switch {
-	case compiler.IsFunctionCallQuery(query):
-		node, err = functionCallRootNode(ctx, schema, s.engines, query, vars)
-	case compiler.IsSelectQuery(query):
-		node, err = selectDataObjectRootNode(ctx, schema, s.engines, query, vars)
-	case compiler.IsSelectOneQuery(query):
-		node, err = selectDataObjectRootNode(ctx, schema, s.engines, query, vars)
-	case compiler.IsAggregateQuery(query), compiler.IsBucketAggregateQuery(query):
-		node, err = aggregateRootNode(ctx, schema, s.engines, query, vars)
-	case compiler.IsInsertQuery(query):
-		node, err = insertRootNode(ctx, schema, s.engines, query, vars)
-	case compiler.IsUpdateQuery(query):
-		node, err = updateRootNode(ctx, schema, s.engines, query, vars)
-	case compiler.IsDeleteQuery(query):
-		node, err = deleteRootNode(ctx, schema, s.engines, query, vars)
-	case compiler.IsH3Query(query):
-		node, err = h3RootNode(ctx, schema, s.engines, query, vars)
+	case sdl.IsFunctionCallQuery(query):
+		node, err = functionCallRootNode(ctx, provider, s.engines, query, vars)
+	case sdl.IsSelectQuery(query):
+		node, err = selectDataObjectRootNode(ctx, provider, s.engines, query, vars)
+	case sdl.IsSelectOneQuery(query):
+		node, err = selectDataObjectRootNode(ctx, provider, s.engines, query, vars)
+	case sdl.IsAggregateQuery(query), sdl.IsBucketAggregateQuery(query):
+		node, err = aggregateRootNode(ctx, provider, s.engines, query, vars)
+	case sdl.IsInsertQuery(query):
+		node, err = insertRootNode(ctx, provider, s.engines, query, vars)
+	case sdl.IsUpdateQuery(query):
+		node, err = updateRootNode(ctx, provider, s.engines, query, vars)
+	case sdl.IsDeleteQuery(query):
+		node, err = deleteRootNode(ctx, provider, s.engines, query, vars)
+	case sdl.IsH3Query(query):
+		node, err = h3RootNode(ctx, provider, s.engines, query, vars)
 	default:
 		return nil, errors.New("unsupported query type")
 	}
 	if err != nil {
 		return nil, err
 	}
-	node.schema = schema
+	node.provider = provider
 	node.engines = s.engines
 	node.querier = s.querier
 

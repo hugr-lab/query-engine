@@ -1,0 +1,50 @@
+{
+  "data": {
+    "core": {
+      "meta": {
+        "columns": [
+          {
+            "data_type": "INTEGER",
+            "name": "category_id"
+          },
+          {
+            "data_type": "TIMESTAMP WITH TIME ZONE",
+            "name": "created_at"
+          },
+          {
+            "data_type": "VARCHAR",
+            "name": "description"
+          },
+          {
+            "data_type": "INTEGER",
+            "name": "id"
+          },
+          {
+            "data_type": "BOOLEAN",
+            "name": "is_active"
+          },
+          {
+            "data_type": "VARCHAR",
+            "name": "name"
+          },
+          {
+            "data_type": "DOUBLE",
+            "name": "price"
+          },
+          {
+            "data_type": "INTEGER",
+            "name": "quantity"
+          },
+          {
+            "data_type": "VARCHAR",
+            "name": "tags"
+          },
+          {
+            "data_type": "TIMESTAMP WITH TIME ZONE",
+            "name": "updated_at"
+          }
+        ]
+      }
+    }
+  }
+}

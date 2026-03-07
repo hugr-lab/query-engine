@@ -1,0 +1,22 @@
+# @target: worker-1
+mutation {
+  function {
+    core {
+      cluster {
+        register_storage(
+          type: "s3"
+          name: "e2e_worker_storage"
+          scope: "s3://e2e-worker-bucket"
+          key: "worker-key"
+          secret: "worker-secret"
+          endpoint: "localhost:9000"
+          use_ssl: false
+          url_style: "path"
+        ) {
+          success
+          message
+        }
+      }
+    }
+  }
+}

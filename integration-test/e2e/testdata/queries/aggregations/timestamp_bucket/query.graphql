@@ -1,0 +1,16 @@
+{
+  local_db {
+    events_bucket_aggregation(order_by: [{ field: "key.created_at", direction: ASC }]) {
+      key {
+        created_at(bucket: month)
+      }
+      aggregations {
+        _rows_count
+        value {
+          sum
+          avg
+        }
+      }
+    }
+  }
+}

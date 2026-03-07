@@ -1,0 +1,16 @@
+type Category @table(name: "categories") {
+  id: Int! @pk
+  name: String!
+}
+
+type Product @table(name: "products") {
+  id: Int! @pk
+  name: String!
+  price: Float
+  category_id: Int! @field_references(
+    references_name: "Category"
+    field: "id"
+    query: "category"
+    references_query: "products"
+  )
+}

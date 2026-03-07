@@ -1,0 +1,24 @@
+{
+  "data": {
+    "core": {
+      "data_sources": [
+        {
+          "name": "ext_bridge",
+          "type": "extension"
+        },
+        {
+          "name": "local_db",
+          "type": "duckdb"
+        },
+        {
+          "name": "pg_store",
+          "type": "postgres"
+        },
+        {
+          "name": "rest_api",
+          "type": "http"
+        }
+      ]
+    }
+  }
+}

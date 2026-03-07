@@ -4,24 +4,24 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hugr-lab/query-engine/pkg/compiler"
-	"github.com/hugr-lab/query-engine/pkg/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/queries"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func commonVectorTransform(ctx context.Context, e EngineVectorDistanceCalculator, qe types.Querier, sql string, field *ast.Field, args compiler.FieldQueryArguments, params []any) (string, []any, error) {
+func commonVectorTransform(ctx context.Context, e EngineVectorDistanceCalculator, qe types.Querier, sql string, field *ast.Field, args sdl.FieldQueryArguments, params []any) (string, []any, error) {
 	if len(args) == 0 {
 		return "NULL", params, nil
 	}
 	// only for extra field
-	if !compiler.IsExtraField(field.Definition) {
+	if !sdl.IsExtraField(field.Definition) {
 		return sql, params, nil
 	}
 	var vec types.Vector
 	var dist string
-	switch compiler.ExtraFieldName(field.Definition) {
+	switch sdl.ExtraFieldName(field.Definition) {
 	case base.VectorDistanceExtraFieldName:
 		if v := args.ForName("vector"); v != nil {
 			v, ok := v.Value.(types.Vector)
@@ -40,9 +40,9 @@ func commonVectorTransform(ctx context.Context, e EngineVectorDistanceCalculator
 	case base.QueryEmbeddingDistanceExtraFieldName:
 		d := field.ObjectDefinition.Directives.ForName(base.EmbeddingsDirectiveName)
 		if d == nil {
-			return "", nil, compiler.ErrorPosf(field.Position, "The embeddings field and model is not defined for the data object %s", field.ObjectDefinition.Name)
+			return "", nil, sdl.ErrorPosf(field.Position, "The embeddings field and model is not defined for the data object %s", field.ObjectDefinition.Name)
 		}
-		model := compiler.DirectiveArgValue(d, "model", nil)
+		model := sdl.DirectiveArgValue(d, "model", nil)
 		var query string
 		if d := args.ForName("query"); d != nil {
 			d, ok := d.Value.(string)
@@ -56,9 +56,9 @@ func commonVectorTransform(ctx context.Context, e EngineVectorDistanceCalculator
 		if err != nil {
 			return "", nil, err
 		}
-		dist = compiler.DirectiveArgValue(d, "distance", nil)
+		dist = sdl.DirectiveArgValue(d, "distance", nil)
 	default:
-		return "", nil, fmt.Errorf("unsupported vector extra field: %s", compiler.ExtraFieldName(field.Definition))
+		return "", nil, fmt.Errorf("unsupported vector extra field: %s", sdl.ExtraFieldName(field.Definition))
 	}
 	if vec == nil || dist == "" {
 		return "NULL", params, nil

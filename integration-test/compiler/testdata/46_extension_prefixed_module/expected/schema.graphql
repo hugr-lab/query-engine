@@ -1,0 +1,2659 @@
+"""
+BigInt - represents big integer type (64 bit), supports filtering, aggregation.
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, sum, avg, min, max, list, any, last
+"""
+scalar BigInt
+type BigIntAggregation @system {
+  any: BigInt
+  avg: Float
+  count: BigInt
+  last: BigInt
+  list(distinct: Boolean = false): [BigInt!]
+  max: BigInt
+  min: BigInt
+  sum: BigInt
+}
+input BigIntFilter @system {
+  eq: BigInt
+  gt: BigInt
+  gte: BigInt
+  in: [BigInt!]
+  is_null: Boolean
+  lt: BigInt
+  lte: BigInt
+}
+input BigIntListFilter @system {
+  contains: [BigInt!]
+  eq: [BigInt!]
+  intersects: [BigInt!]
+  is_null: Boolean
+}
+enum BigIntMeasurementAggregation @system {
+  ANY
+  AVG
+  MAX
+  MIN
+  SUM
+}
+"""
+The `BigIntRange` scalar type represents a range of big integer values with inclusive/exclusive bounds.
+Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
+"""
+scalar BigIntRange
+input BigIntRangeFilter @system {
+  contains: BigInt
+  eq: BigIntRange
+  excludes: BigIntRange
+  includes: BigIntRange
+  intersects: BigIntRange
+  is_null: Boolean
+  lower: BigInt
+  lower_inclusive: Boolean
+  lower_inf: Boolean
+  upper: BigInt
+  upper_inclusive: Boolean
+  upper_inf: Boolean
+}
+type BigIntSubAggregation @system {
+  avg: BigIntAggregation
+  count: BigIntAggregation
+  max: BigIntAggregation
+  min: BigIntAggregation
+  sum: BigIntAggregation
+}
+type BooleanAggregation @system {
+  any: Boolean
+  bool_and: Boolean
+  bool_or: Boolean
+  count: BigInt
+  last: Boolean
+  list(distinct: Boolean = false): [Boolean!]
+}
+input BooleanFilter @system {
+  eq: Boolean
+  is_null: Boolean
+}
+enum BooleanMeasurementAggregation @system {
+  AND
+  ANY
+  OR
+}
+type BooleanSubAggregation @system {
+  bool_and: BooleanAggregation
+  bool_or: BooleanAggregation
+  count: BigIntAggregation
+}
+"""
+The `Date` scalar type represents a calendar date encoded as an ISO 8601 string (e.g. "2006-01-02").
+On input, values are parsed from ISO 8601 date strings. On output, values are formatted as ISO 8601 date strings.
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, min, max, list, any, last
+Extra field: Extract (extracts date parts such as year, month, day)
+"""
+scalar Date
+type DateAggregation @system {
+  any: Date
+  count: BigInt
+  last: Date
+  list(distinct: Boolean = false): [Date!]
+  max: Date
+  min: Date
+}
+input DateFilter @system {
+  eq: Date
+  gt: Date
+  gte: Date
+  in: [Date!]
+  is_null: Boolean
+  lt: Date
+  lte: Date
+}
+input DateListFilter @system {
+  contains: [Date!]
+  eq: [Date!]
+  intersects: [Date!]
+  is_null: Boolean
+}
+enum DateMeasurementAggregation @system {
+  ANY
+  MAX
+  MIN
+}
+type DateSubAggregation @system {
+  count: BigIntAggregation
+  max: DateAggregation
+  min: DateAggregation
+}
+enum ExtraFieldBaseType @system {
+  Geometry
+  Timestamp
+}
+enum FilterOperator @system {
+  between
+  contains
+  eq
+  excludes
+  gt
+  gte
+  has
+  has_all
+  ilike
+  in
+  includes
+  intersects
+  is_null
+  like
+  lower
+  lower_inclusive
+  lower_inf
+  lt
+  lte
+  ne
+  regex
+  upper
+  upper_inclusive
+  upper_inf
+  within
+}
+type FloatAggregation @system {
+  any: Float
+  avg: Float
+  count: BigInt
+  last: Float
+  list(distinct: Boolean = false): [Float!]
+  max: Float
+  min: Float
+  sum: Float
+}
+input FloatFilter @system {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float!]
+  is_null: Boolean
+  lt: Float
+  lte: Float
+  ne: Float
+}
+input FloatListFilter @system {
+  contains: [Float!]
+  eq: [Float!]
+  intersects: [Float!]
+  is_null: Boolean
+}
+enum FloatMeasurementAggregation @system {
+  ANY
+  AVG
+  MAX
+  MIN
+  SUM
+}
+type FloatSubAggregation @system {
+  avg: FloatAggregation
+  count: BigIntAggregation
+  max: FloatAggregation
+  min: FloatAggregation
+  sum: FloatAggregation
+}
+type Function @system {
+  """
+  The root function object of the module rest_api
+  """
+  rest_api: _module_rest_api_function @module_catalog(name: "rest_api")
+}
+"""
+The `Geometry` scalar type represents a spatial geometry value (WKB/WKT encoded).
+Filter operators: eq, intersects, contains, is_null
+Aggregation functions: count, list, any, last, intersection, union, extent
+Extra field: Measurement (calculates area, length, perimeter, etc.)
+"""
+scalar Geometry
+type GeometryAggregation @system {
+  any: Geometry
+  count: BigInt
+  extent: Geometry
+  intersection: Geometry
+  last: Geometry
+  list(distinct: Boolean = false): [Geometry!]
+  union: Geometry
+}
+input GeometryFilter @system {
+  contains: Geometry
+  eq: Geometry
+  intersects: Geometry
+  is_null: Boolean
+}
+enum GeometryMeasurementTypes @system {
+  Area
+  AreaSpheroid
+  Length
+  LengthSpheroid
+  Perimeter
+  PerimeterSpheroid
+}
+enum GeometrySpatialQueryType @system {
+  """
+  checks if the references geometry are completely inside query geometry
+  """
+  CONTAINS
+  """
+  checks if the geometries don't intersect
+  """
+  DISJOIN
+  """
+  checks if the geometries are within a distance
+  """
+  DWITHIN
+  """
+  checks if the geometries intersect
+  """
+  INTERSECTS
+  """
+  checks if the geometries are completely inside reference geometry
+  """
+  WITHIN
+}
+type GeometrySubAggregation @system {
+  count: BigIntAggregation
+  extent: GeometryAggregation
+  intersection: GeometryAggregation
+  union: GeometryAggregation
+}
+enum GeometryTransform @system {
+  Buffer
+  Centroid
+  ConvexHull
+  EndPoint
+  Envelope
+  FlipCoordinates
+  Reverse
+  Simplify
+  SimplifyTopology
+  StartPoint
+  Transform
+}
+enum GeometryType @system {
+  GEOMETRYCOLLECTION
+  LINESTRING
+  MULTILINESTRING
+  MULTIPOINT
+  MULTIPOLYGON
+  POINT
+  POLYGON
+}
+"""
+The `H3Cell` scalar type represents an H3 hexagonal hierarchical geospatial index cell identifier.
+"""
+scalar H3Cell
+type IntAggregation @system {
+  any: Int
+  avg: Float
+  count: BigInt
+  last: Int
+  list(distinct: Boolean = false): [Int!]
+  max: Int
+  min: Int
+  sum: Int
+}
+input IntFilter @system {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int!]
+  is_null: Boolean
+  lt: Int
+  lte: Int
+}
+input IntListFilter @system {
+  contains: [Int!]
+  eq: [Int!]
+  intersects: [Int!]
+  is_null: Boolean
+}
+enum IntMeasurementAggregation @system {
+  ANY
+  AVG
+  MAX
+  MIN
+  SUM
+}
+"""
+The `IntRange` scalar type represents a range of integer values with inclusive/exclusive bounds.
+Filter operators: eq, contains, intersects, includes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
+"""
+scalar IntRange
+input IntRangeFilter @system {
+  contains: Int
+  eq: IntRange
+  includes: IntRange
+  intersects: IntRange
+  is_null: Boolean
+  lower: Int
+  lower_inclusive: Boolean
+  lower_inf: Boolean
+  upper: Int
+  upper_inclusive: Boolean
+  upper_inf: Boolean
+}
+type IntSubAggregation @system {
+  avg: IntAggregation
+  count: BigIntAggregation
+  max: IntAggregation
+  min: IntAggregation
+  sum: IntAggregation
+}
+"""
+The `Interval` scalar type represents a time duration (e.g. "1 year 2 months 3 days 04:05:06").
+Filter operators: eq, gt, gte, lt, lte, is_null
+"""
+scalar Interval
+input IntervalFilter @system {
+  eq: Interval
+  gt: Interval
+  gte: Interval
+  is_null: Boolean
+  lt: Interval
+  lte: Interval
+}
+input IntervalListFilter @system {
+  contains: [Interval!]
+  eq: [Interval!]
+  intersects: [Interval!]
+  is_null: Boolean
+}
+"""
+The `JSON` scalar type represents arbitrary JSON data, encoded as a JSON string.
+Filter operators: eq, has, has_all, contains, is_null
+Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter)
+"""
+scalar JSON
+type JSONAggregation @system {
+  any(path: String): JSON
+  avg(path: String!): Float
+  bool_and(path: String!): Boolean
+  bool_or(path: String!): Boolean
+  count(path: String): BigInt
+  last(path: String): JSON
+  list(path: String, distinct: Boolean = false): [JSON!]
+  max(path: String!): Float
+  min(path: String!): Float
+  string_agg(path: String!, sep: String!, distinct: Boolean = false): String
+  sum(path: String!): Float
+}
+input JSONFilter @system {
+  contains: JSON
+  eq: JSON
+  has: String
+  has_all: [String!]
+  is_null: Boolean
+}
+type JSONSubAggregation @system {
+  avg(path: String!): FloatAggregation
+  bool_and(path: String!): BooleanAggregation
+  bool_or(path: String!): BooleanAggregation
+  count(path: String): BigIntAggregation
+  max(path: String!): FloatAggregation
+  min(path: String!): FloatAggregation
+  string_agg(path: String!, sep: String!, distinct: Boolean = false): StringAggregation
+  sum(path: String!): FloatAggregation
+}
+enum ModuleObjectType @system {
+  FUNCTION
+  MUTATION
+  MUT_FUNCTION
+  QUERY
+}
+type Mutation @system {
+  function: MutationFunction @system
+  local_db: _module_local_db_mutation @module_catalog(name: "local_db")
+  pg_store: _module_pg_store_mutation @module_catalog(name: "pg_store")
+}
+type MutationFunction @system
+enum MutationType @system {
+  DELETE
+  INSERT
+  UPDATE
+}
+type OperationResult @system {
+  affected_rows: BigInt
+  last_id: BigInt
+  message: String
+  success: Boolean
+}
+input OrderByField @system {
+  direction: OrderDirection = ASC
+  field: String!
+}
+enum OrderDirection @system {
+  ASC
+  DESC
+}
+type Query @system {
+  """
+  Functions
+  """
+  function: Function @system @module_catalog(name: "rest_api")
+  """
+  H3 aggregation query
+  """
+  h3(
+    """
+    H3 resolution to use for the query
+    """
+    resolution: Int!
+  ): [_h3_query] @system
+  """
+  Performs jq query on result set
+  Results will be placed in 'extension' field by field or alias name
+  """
+  jq(query: String!, include_origin: Boolean = false): Query @system
+  local_db: _module_local_db_query @module_catalog(name: "local_db")
+  pg_store: _module_pg_store_query @module_catalog(name: "pg_store")
+}
+enum QueryType @system {
+  SELECT
+  SELECT_ONE
+}
+input SemanticSearchInput @system {
+  """
+  Limit to results
+  """
+  limit: Int!
+  """
+  The text to search
+  """
+  query: String!
+}
+type StringAggregation @system {
+  any: String
+  count: BigInt
+  last: String
+  list(distinct: Boolean = false): [String!]
+  string_agg(sep: String!, distinct: Boolean = false): String
+}
+input StringFilter @system {
+  eq: String
+  ilike: String
+  in: [String!]
+  is_null: Boolean
+  like: String
+  regex: String
+}
+input StringListFilter @system {
+  contains: [String!]
+  eq: [String!]
+  intersects: [String!]
+  is_null: Boolean
+}
+enum StringMeasurementAggregation @system {
+  ANY
+}
+type StringSubAggregation @system {
+  count: BigIntAggregation
+  string_agg: StringAggregation
+}
+"""
+The `Time` scalar type represents a time-of-day value encoded as an ISO 8601 time string (e.g. "15:04:05").
+On input, values are parsed from ISO 8601 time strings. On output, values are formatted as ISO 8601 time strings.
+Filter operators: eq, gt, gte, lt, lte, in, is_null
+Aggregation functions: count, min, max, list, any, last
+"""
+scalar Time
+type TimeAggregation @system {
+  any: Time
+  count: BigInt
+  last: Time
+  list(distinct: Boolean = false): [Time!]
+  max: Time
+  min: Time
+}
+"""
+The time bucket for the time series data.
+Defines the time interval for the time series data.
+"""
+enum TimeBucket @system {
+  day
+  hour
+  minute
+  month
+  quarter
+  week
+  year
+}
+enum TimeExtract @system {
+  day
+  dow
+  doy
+  epoch
+  hour
+  iso_dow
+  iso_year
+  minute
+  month
+  quarter
+  week
+  year
+}
+input TimeFilter @system {
+  eq: Time
+  gt: Time
+  gte: Time
+  in: [Time!]
+  is_null: Boolean
+  lt: Time
+  lte: Time
+}
+input TimeListFilter @system {
+  contains: [Time!]
+  eq: [Time!]
+  intersects: [Time!]
+  is_null: Boolean
+}
+enum TimeMeasurementAggregation @system {
+  ANY
+  MAX
+  MIN
+}
+type TimeSubAggregation @system {
+  count: BigIntAggregation
+  max: TimeAggregation
+  min: TimeAggregation
+}
+"""
+The `Timestamp` scalar type represents a date-time value with timezone, encoded as an RFC 3339 string (e.g. "2006-01-02T15:04:05Z07:00").
+On input, values are parsed from RFC 3339 strings. On output, values are formatted as RFC 3339 strings.
+Filter operators: eq, gt, gte, lt, lte, is_null
+Aggregation functions: count, min, max, list, any, last
+Extra field: Extract (extracts date/time parts such as year, month, day, hour, minute, second)
+"""
+scalar Timestamp
+type TimestampAggregation @system {
+  any: Timestamp
+  count: BigInt
+  last: Timestamp
+  list(distinct: Boolean = false): [Timestamp!]
+  max: Timestamp
+  min: Timestamp
+}
+input TimestampFilter @system {
+  eq: Timestamp
+  gt: Timestamp
+  gte: Timestamp
+  is_null: Boolean
+  lt: Timestamp
+  lte: Timestamp
+}
+input TimestampListFilter @system {
+  contains: [Timestamp!]
+  eq: [Timestamp!]
+  intersects: [Timestamp!]
+  is_null: Boolean
+}
+enum TimestampMeasurementAggregation @system {
+  ANY
+  MAX
+  MIN
+}
+"""
+The `TimestampRange` scalar type represents a range of timestamp values with inclusive/exclusive bounds.
+Filter operators: eq, contains, intersects, includes, excludes, is_null, upper, lower, upper_inclusive, lower_inclusive, upper_inf, lower_inf
+"""
+scalar TimestampRange
+input TimestampRangeFilter @system {
+  contains: Timestamp
+  eq: TimestampRange
+  excludes: TimestampRange
+  includes: TimestampRange
+  intersects: TimestampRange
+  is_null: Boolean
+  lower: Timestamp
+  lower_inclusive: Boolean
+  lower_inf: Boolean
+  upper: Timestamp
+  upper_inclusive: Boolean
+  upper_inf: Boolean
+}
+type TimestampSubAggregation @system {
+  count: BigIntAggregation
+  max: TimestampAggregation
+  min: TimestampAggregation
+}
+enum UniqueRuleType @system {
+  EQUALS
+  INTERSECTS
+}
+"""
+The `Vector` scalar type represents a fixed-length array of floating-point numbers, used for embeddings and similarity search.
+Filter operators: is_null
+Extra field: VectorDistance (calculates distance between vectors using a specified metric)
+"""
+scalar Vector
+enum VectorDistanceType @system {
+  """
+  Cosine similarity
+  """
+  Cosine
+  """
+  Inner product
+  """
+  Inner
+  """
+  L2 distance
+  """
+  L2
+}
+input VectorFilter @system {
+  is_null: Boolean
+}
+input VectorSearchInput @system {
+  """
+  Distance type
+  """
+  distance: VectorDistanceType!
+  """
+  Limit to results
+  """
+  limit: Int!
+  """
+  The name of vector field
+  """
+  name: String!
+  """
+  The vector to search
+  """
+  vector: Vector!
+}
+"""
+Value distribution data type
+"""
+type _distribution_by @system {
+  denominator: Float
+  denominator_total: Float
+  numerator: Float
+  ratio: Float
+  value: Float
+}
+"""
+Value distribution aggregation data type
+"""
+type _distribution_by_aggregation @system {
+  denominator: FloatAggregation
+  denominator_total: FloatAggregation
+  numerator: FloatAggregation
+  ratio: FloatAggregation
+  value: FloatAggregation
+}
+"""
+Value distribution bucket data type
+This type is used to store distribution data in buckets.
+"""
+type _distribution_by_bucket @system {
+  denominator: Float
+  denominator_key: JSON
+  denominator_total: Float
+  numerator: Float
+  numerator_key: JSON
+  ratio: Float
+  value: Float
+}
+"""
+Value distribution bucket aggregation data type
+"""
+type _distribution_by_bucket_aggregation @system {
+  denominator: FloatAggregation
+  denominator_total: FloatAggregation
+  key: JSONAggregation
+  numerator: FloatAggregation
+  ratio: FloatAggregation
+  value: FloatAggregation
+}
+type _h3_data_query @system
+type _h3_query @system {
+  """
+  The H3 cell
+  """
+  cell: H3Cell!
+  """
+  The data associated with the H3 cell
+  """
+  data: _h3_data_query!
+  """
+  Calculate distributed aggregated value
+  """
+  distribution_by(
+    """
+    Path to numerator aggregated value
+    """
+    numerator: String!
+
+    """
+    Path to denominator aggregated value
+    """
+    denominator: String!
+  ): _distribution_by
+  """
+  Calculate distributed aggregated value across denominator buckets
+  """
+  distribution_by_bucket(
+    """
+    Path to bucket key in numerator bucket aggregation
+    """
+    numerator_key: String
+
+    """
+    Path to numerator aggregated value
+    """
+    numerator: String!
+
+    """
+    Path to bucket key in denominator bucket aggregation
+    """
+    denominator_key: String!
+
+    """
+    Path to denominator aggregated value in bucket aggregations
+    """
+    denominator: String!
+  ): [_distribution_by_bucket]
+  """
+  The geometry representation of the H3 cell
+  """
+  geom: Geometry!
+  """
+  The resolution of the H3 cell
+  """
+  resolution: Int!
+}
+type _join @system {
+  local_db_events(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: local_db_events_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [local_db_events] @query(name: "local_db_events", type: SELECT) @catalog(name: "local_db", engine: "duckdb")
+  local_db_events_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: local_db_events_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_events_aggregation @aggregation_query(is_bucket: false, name: "local_db_events") @catalog(name: "local_db", engine: "duckdb")
+  local_db_events_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: local_db_events_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_local_db_events_aggregation_bucket] @aggregation_query(is_bucket: true, name: "local_db_events") @catalog(name: "local_db", engine: "duckdb")
+  local_db_items(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [local_db_items] @query(name: "local_db_items", type: SELECT) @catalog(name: "local_db", engine: "duckdb")
+  local_db_items_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_items_aggregation @aggregation_query(is_bucket: false, name: "local_db_items") @catalog(name: "local_db", engine: "duckdb")
+  local_db_items_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_local_db_items_aggregation_bucket] @aggregation_query(is_bucket: true, name: "local_db_items") @catalog(name: "local_db", engine: "duckdb")
+  pg_store_categories(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: pg_store_categories_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [pg_store_categories] @query(name: "pg_store_categories", type: SELECT) @catalog(name: "pg_store", engine: "postgres")
+  pg_store_categories_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: pg_store_categories_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _pg_store_categories_aggregation @aggregation_query(is_bucket: false, name: "pg_store_categories") @catalog(name: "pg_store", engine: "postgres")
+  pg_store_categories_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: pg_store_categories_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_pg_store_categories_aggregation_bucket] @aggregation_query(is_bucket: true, name: "pg_store_categories") @catalog(name: "pg_store", engine: "postgres")
+  pg_store_products(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: pg_store_products_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [pg_store_products] @query(name: "pg_store_products", type: SELECT) @catalog(name: "pg_store", engine: "postgres")
+  pg_store_products_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: pg_store_products_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _pg_store_products_aggregation @aggregation_query(is_bucket: false, name: "pg_store_products") @catalog(name: "pg_store", engine: "postgres")
+  pg_store_products_bucket_aggregation(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: pg_store_products_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_pg_store_products_aggregation_bucket] @aggregation_query(is_bucket: true, name: "pg_store_products") @catalog(name: "pg_store", engine: "postgres")
+}
+type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
+  local_db_events(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: local_db_events_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_events_aggregation @aggregation_query(is_bucket: false, name: "local_db_events") @catalog(name: "local_db", engine: "duckdb") @field_aggregation(name: "local_db_events")
+  local_db_items(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_items_aggregation @aggregation_query(is_bucket: false, name: "local_db_items") @catalog(name: "local_db", engine: "duckdb") @field_aggregation(name: "local_db_items")
+  pg_store_categories(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: pg_store_categories_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _pg_store_categories_aggregation @aggregation_query(is_bucket: false, name: "pg_store_categories") @catalog(name: "pg_store", engine: "postgres") @field_aggregation(name: "pg_store_categories")
+  pg_store_products(fields: [String!]!,
+    """
+    Filter
+    """
+    filter: pg_store_products_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _pg_store_products_aggregation @aggregation_query(is_bucket: false, name: "pg_store_products") @catalog(name: "pg_store", engine: "postgres") @field_aggregation(name: "pg_store_products")
+}
+type _local_db_events_aggregation @aggregation(name: "local_db_events", is_bucket: false, level: 1) @catalog(name: "local_db", engine: "duckdb") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  description: StringAggregation @field_aggregation(name: "description")
+  id: IntAggregation @field_aggregation(name: "id")
+  item(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_items_aggregation @field_aggregation(name: "item") @dependency(name: "ext_bridge")
+  item_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_items_aggregation_sub_aggregation @field_aggregation(name: "item") @dependency(name: "ext_bridge")
+}
+"""
+Bucket aggregation for local_db_events
+"""
+type _local_db_events_aggregation_bucket @aggregation(name: "local_db_events", is_bucket: true, level: 1) @catalog(name: "local_db", engine: "duckdb") {
+  """
+  The aggregations of the bucket
+  """
+  aggregations(
+    """
+    Filter
+    """
+    filter: local_db_events_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _local_db_events_aggregation
+  """
+  The key of the bucket
+  """
+  key: local_db_events
+}
+type _local_db_events_aggregation_sub_aggregation @aggregation(name: "_local_db_events_aggregation", is_bucket: false, level: 2) @catalog(name: "local_db", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  description: StringSubAggregation @field_aggregation(name: "description")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  item(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_items_aggregation_sub_aggregation @field_aggregation(name: "item") @dependency(name: "ext_bridge")
+  item_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_items_aggregation_sub_aggregation_sub_aggregation @field_aggregation(name: "item_aggregation") @dependency(name: "ext_bridge")
+}
+type _local_db_items_aggregation @aggregation(name: "local_db_items", is_bucket: false, level: 1) @catalog(name: "local_db", engine: "duckdb") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  event(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): _local_db_events_aggregation @field_aggregation(name: "event") @dependency(name: "ext_bridge")
+  id: IntAggregation @field_aggregation(name: "id")
+  name: StringAggregation @field_aggregation(name: "name")
+}
+"""
+Bucket aggregation for local_db_items
+"""
+type _local_db_items_aggregation_bucket @aggregation(name: "local_db_items", is_bucket: true, level: 1) @catalog(name: "local_db", engine: "duckdb") {
+  """
+  The aggregations of the bucket
+  """
+  aggregations(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _local_db_items_aggregation
+  """
+  The key of the bucket
+  """
+  key: local_db_items
+}
+type _local_db_items_aggregation_sub_aggregation @aggregation(name: "_local_db_items_aggregation", is_bucket: false, level: 2) @catalog(name: "local_db", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  name: StringSubAggregation @field_aggregation(name: "name")
+}
+type _local_db_items_aggregation_sub_aggregation_sub_aggregation @aggregation(name: "_local_db_items_aggregation_sub_aggregation", is_bucket: false, level: 3) @catalog(name: "local_db", engine: "duckdb") {
+  _rows_count: BigIntSubAggregation @field_aggregation(name: "aggregation_field")
+}
+type _module_local_db_mutation @module_root(name: "local_db", type: MUTATION) @module_catalog(name: "local_db") {
+  delete_events(filter: local_db_events_filter): OperationResult @mutation(name: "local_db_events", type: DELETE, data_input: "") @catalog(name: "local_db", engine: "duckdb")
+  delete_items(filter: local_db_items_filter): OperationResult @mutation(name: "local_db_items", type: DELETE, data_input: "") @catalog(name: "local_db", engine: "duckdb")
+  insert_events(data: local_db_events_mut_input_data!): local_db_events @mutation(name: "local_db_events", type: INSERT, data_input: "local_db_events_mut_input_data") @catalog(name: "local_db", engine: "duckdb")
+  insert_items(data: local_db_items_mut_input_data!): local_db_items @mutation(name: "local_db_items", type: INSERT, data_input: "local_db_items_mut_input_data") @catalog(name: "local_db", engine: "duckdb")
+  update_events(filter: local_db_events_filter, data: local_db_events_mut_data!): OperationResult @mutation(name: "local_db_events", type: UPDATE, data_input: "local_db_events_mut_data") @catalog(name: "local_db", engine: "duckdb")
+  update_items(filter: local_db_items_filter, data: local_db_items_mut_data!): OperationResult @mutation(name: "local_db_items", type: UPDATE, data_input: "local_db_items_mut_data") @catalog(name: "local_db", engine: "duckdb")
+}
+type _module_local_db_query @module_root(name: "local_db", type: QUERY) @module_catalog(name: "local_db") {
+  events(
+    """
+    Filter
+    """
+    filter: local_db_events_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [local_db_events] @query(name: "local_db_events", type: SELECT) @catalog(name: "local_db", engine: "duckdb")
+  """
+  The aggregation for events
+  """
+  events_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_events_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _local_db_events_aggregation @aggregation_query(name: "events", is_bucket: false) @catalog(name: "local_db", engine: "duckdb")
+  """
+  The aggregation for events
+  """
+  events_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_events_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_local_db_events_aggregation_bucket] @aggregation_query(name: "events", is_bucket: true) @catalog(name: "local_db", engine: "duckdb")
+  events_by_pk(id: Int!): local_db_events @query(name: "local_db_events", type: SELECT_ONE) @catalog(name: "local_db", engine: "duckdb")
+  items(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [local_db_items] @query(name: "local_db_items", type: SELECT) @catalog(name: "local_db", engine: "duckdb")
+  """
+  The aggregation for items
+  """
+  items_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _local_db_items_aggregation @aggregation_query(name: "items", is_bucket: false) @catalog(name: "local_db", engine: "duckdb")
+  """
+  The aggregation for items
+  """
+  items_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_local_db_items_aggregation_bucket] @aggregation_query(name: "items", is_bucket: true) @catalog(name: "local_db", engine: "duckdb")
+  items_by_pk(id: Int!): local_db_items @query(name: "local_db_items", type: SELECT_ONE) @catalog(name: "local_db", engine: "duckdb")
+}
+type _module_pg_store_mutation @module_root(name: "pg_store", type: MUTATION) @module_catalog(name: "pg_store") {
+  delete_categories(filter: pg_store_categories_filter): OperationResult @mutation(name: "pg_store_categories", type: DELETE, data_input: "") @catalog(name: "pg_store", engine: "postgres")
+  delete_products(filter: pg_store_products_filter): OperationResult @mutation(name: "pg_store_products", type: DELETE, data_input: "") @catalog(name: "pg_store", engine: "postgres")
+  insert_categories(data: pg_store_categories_mut_input_data!): pg_store_categories @mutation(name: "pg_store_categories", type: INSERT, data_input: "pg_store_categories_mut_input_data") @catalog(name: "pg_store", engine: "postgres")
+  insert_products(data: pg_store_products_mut_input_data!): pg_store_products @mutation(name: "pg_store_products", type: INSERT, data_input: "pg_store_products_mut_input_data") @catalog(name: "pg_store", engine: "postgres")
+  update_categories(filter: pg_store_categories_filter, data: pg_store_categories_mut_data!): OperationResult @mutation(name: "pg_store_categories", type: UPDATE, data_input: "pg_store_categories_mut_data") @catalog(name: "pg_store", engine: "postgres")
+  update_products(filter: pg_store_products_filter, data: pg_store_products_mut_data!): OperationResult @mutation(name: "pg_store_products", type: UPDATE, data_input: "pg_store_products_mut_data") @catalog(name: "pg_store", engine: "postgres")
+}
+type _module_pg_store_query @module_root(name: "pg_store", type: QUERY) @module_catalog(name: "pg_store") {
+  categories(
+    """
+    Filter
+    """
+    filter: pg_store_categories_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [pg_store_categories] @query(name: "pg_store_categories", type: SELECT) @catalog(name: "pg_store", engine: "postgres")
+  """
+  The aggregation for categories
+  """
+  categories_aggregation(
+    """
+    Filter
+    """
+    filter: pg_store_categories_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _pg_store_categories_aggregation @aggregation_query(name: "categories", is_bucket: false) @catalog(name: "pg_store", engine: "postgres")
+  """
+  The aggregation for categories
+  """
+  categories_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: pg_store_categories_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_pg_store_categories_aggregation_bucket] @aggregation_query(name: "categories", is_bucket: true) @catalog(name: "pg_store", engine: "postgres")
+  categories_by_pk(id: Int!): pg_store_categories @query(name: "pg_store_categories", type: SELECT_ONE) @catalog(name: "pg_store", engine: "postgres")
+  products(
+    """
+    Filter
+    """
+    filter: pg_store_products_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [pg_store_products] @query(name: "pg_store_products", type: SELECT) @catalog(name: "pg_store", engine: "postgres")
+  """
+  The aggregation for products
+  """
+  products_aggregation(
+    """
+    Filter
+    """
+    filter: pg_store_products_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _pg_store_products_aggregation @aggregation_query(name: "products", is_bucket: false) @catalog(name: "pg_store", engine: "postgres")
+  """
+  The aggregation for products
+  """
+  products_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: pg_store_products_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_pg_store_products_aggregation_bucket] @aggregation_query(name: "products", is_bucket: true) @catalog(name: "pg_store", engine: "postgres")
+  products_by_pk(id: Int!): pg_store_products @query(name: "pg_store_products", type: SELECT_ONE) @catalog(name: "pg_store", engine: "postgres")
+}
+type _module_rest_api_function @module_root(name: "rest_api", type: FUNCTION) @module_catalog(name: "rest_api") {
+  """
+  The root function object of the module rest_api.test
+  """
+  test: _module_rest_api_test_function @module_catalog(name: "rest_api")
+}
+type _module_rest_api_test_function @module_root(name: "rest_api.test", type: FUNCTION) @module_catalog(name: "rest_api") {
+  test_get(name: String!, value: Int): rest_api_test_result @module(name: "rest_api.test") @function(name: "test_get", sql: "test_get_sql([name], [value])", json_cast: true) @catalog(name: "rest_api", engine: "duckdb")
+}
+type _pg_store_categories_aggregation @aggregation(name: "pg_store_categories", is_bucket: false, level: 1) @catalog(name: "pg_store", engine: "postgres") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  id: IntAggregation @field_aggregation(name: "id")
+  name: StringAggregation @field_aggregation(name: "name")
+}
+"""
+Bucket aggregation for pg_store_categories
+"""
+type _pg_store_categories_aggregation_bucket @aggregation(name: "pg_store_categories", is_bucket: true, level: 1) @catalog(name: "pg_store", engine: "postgres") {
+  """
+  The aggregations of the bucket
+  """
+  aggregations(
+    """
+    Filter
+    """
+    filter: pg_store_categories_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _pg_store_categories_aggregation
+  """
+  The key of the bucket
+  """
+  key: pg_store_categories
+}
+type _pg_store_categories_aggregation_sub_aggregation @aggregation(name: "_pg_store_categories_aggregation", is_bucket: false, level: 2) @catalog(name: "pg_store", engine: "postgres") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  name: StringSubAggregation @field_aggregation(name: "name")
+}
+type _pg_store_products_aggregation @aggregation(name: "pg_store_products", is_bucket: false, level: 1) @catalog(name: "pg_store", engine: "postgres") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  id: IntAggregation @field_aggregation(name: "id")
+  matching_items(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_items_aggregation @field_aggregation(name: "matching_items") @dependency(name: "ext_bridge")
+  matching_items_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_items_aggregation_sub_aggregation @field_aggregation(name: "matching_items") @dependency(name: "ext_bridge")
+  name: StringAggregation @field_aggregation(name: "name")
+  price: FloatAggregation @field_aggregation(name: "price")
+}
+"""
+Bucket aggregation for pg_store_products
+"""
+type _pg_store_products_aggregation_bucket @aggregation(name: "pg_store_products", is_bucket: true, level: 1) @catalog(name: "pg_store", engine: "postgres") {
+  """
+  The aggregations of the bucket
+  """
+  aggregations(
+    """
+    Filter
+    """
+    filter: pg_store_products_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _pg_store_products_aggregation
+  """
+  The key of the bucket
+  """
+  key: pg_store_products
+}
+type _pg_store_products_aggregation_sub_aggregation @aggregation(name: "_pg_store_products_aggregation", is_bucket: false, level: 2) @catalog(name: "pg_store", engine: "postgres") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  name: StringSubAggregation @field_aggregation(name: "name")
+  price: FloatSubAggregation @field_aggregation(name: "price")
+}
+type _rest_api_test_result_aggregation @aggregation(name: "rest_api_test_result", is_bucket: false, level: 1) @catalog(name: "rest_api", engine: "duckdb") {
+  _rows_count: BigInt
+  name: StringAggregation @field_aggregation(name: "name")
+  value: IntAggregation @field_aggregation(name: "value")
+}
+type _rest_api_test_result_aggregation_sub_aggregation @aggregation(name: "_rest_api_test_result_aggregation", is_bucket: false, level: 2) @catalog(name: "rest_api", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  name: StringSubAggregation @field_aggregation(name: "name")
+  value: IntSubAggregation @field_aggregation(name: "value")
+}
+type _spatial @system
+type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)
+scalar any
+type local_db_events @table(name: "events") @catalog(name: "local_db", engine: "duckdb") @original_name(name: "events") @filter_input(name: "local_db_events_filter") @data_input(name: "local_db_events_mut_input_data") @data_input(name: "local_db_events_mut_data") @query(name: "events", type: SELECT) @query(name: "events_by_pk", type: SELECT_ONE) @mutation(name: "insert_events", type: INSERT, data_input: "local_db_events_mut_input_data") @mutation(name: "update_events", type: UPDATE, data_input: "local_db_events_mut_data") @mutation(name: "delete_events", type: DELETE, data_input: "") @query(name: "events_aggregation", type: AGGREGATE) @query(name: "events_bucket_aggregation", type: AGGREGATE_BUCKET) @module(name: "local_db") {
+  _join(fields: [String!]!): _join
+  description: String
+  id: Int! @pk
+  item(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [local_db_items] @references_query(references_name: "local_db_items", name: "item_event", is_m2m: false, m2m_name: "") @catalog(name: "local_db", engine: "duckdb") @dependency(name: "ext_bridge")
+  """
+  The aggregation for item
+  """
+  item_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_items_aggregation @aggregation_query(is_bucket: false, name: "item") @catalog(name: "local_db", engine: "duckdb") @dependency(name: "ext_bridge")
+  """
+  The bucket aggregation for item
+  """
+  item_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_local_db_items_aggregation_bucket] @aggregation_query(is_bucket: true, name: "item") @catalog(name: "local_db", engine: "duckdb") @dependency(name: "ext_bridge")
+}
+"""
+Filter for local_db_events objects
+"""
+input local_db_events_filter @filter_input(name: "local_db_events") @catalog(name: "local_db", engine: "duckdb") {
+  _and: [local_db_events_filter]
+  _not: local_db_events_filter
+  _or: [local_db_events_filter]
+  description: StringFilter
+  id: IntFilter @pk
+  item: local_db_items_list_filter @references_query(references_name: "local_db_items", name: "item_event", is_m2m: false, m2m_name: "") @catalog(name: "local_db", engine: "duckdb") @dependency(name: "ext_bridge")
+}
+input local_db_events_mut_data @data_input(name: "local_db_events") @catalog(name: "local_db", engine: "duckdb") {
+  description: String
+  id: Int
+}
+input local_db_events_mut_input_data @data_input(name: "local_db_events") @catalog(name: "local_db", engine: "duckdb") {
+  description: String
+  id: Int
+}
+type local_db_items @table(name: "items") @catalog(name: "local_db", engine: "duckdb") @original_name(name: "items") @filter_input(name: "local_db_items_filter") @data_input(name: "local_db_items_mut_input_data") @data_input(name: "local_db_items_mut_data") @query(name: "items", type: SELECT) @query(name: "items_by_pk", type: SELECT_ONE) @mutation(name: "insert_items", type: INSERT, data_input: "local_db_items_mut_input_data") @mutation(name: "update_items", type: UPDATE, data_input: "local_db_items_mut_data") @mutation(name: "delete_items", type: DELETE, data_input: "") @query(name: "items_aggregation", type: AGGREGATE) @query(name: "items_bucket_aggregation", type: AGGREGATE_BUCKET) @module(name: "local_db") @filter_list_input(name: "local_db_items_list_filter") @references(name: "item_event", references_name: "local_db_events", source_fields: ["id"], references_fields: ["id"], query: "event", references_query: "item", is_m2m: false, m2m_name: "", description: "", references_description: "") {
+  _join(fields: [String!]!): _join
+  event(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): local_db_events @references_query(references_name: "local_db_events", name: "item_event", is_m2m: false, m2m_name: "") @catalog(name: "local_db", engine: "duckdb") @dependency(name: "ext_bridge")
+  id: Int! @pk
+  name: String!
+  test_info: rest_api_test_result @function_call(references_name: "test_get", args: {name:"name",value:"id"}, module: "rest_api.test") @dependency(name: "ext_bridge") @catalog(name: "rest_api", engine: "duckdb")
+}
+"""
+Filter for local_db_items objects
+"""
+input local_db_items_filter @filter_input(name: "local_db_items") @catalog(name: "local_db", engine: "duckdb") {
+  _and: [local_db_items_filter]
+  _not: local_db_items_filter
+  _or: [local_db_items_filter]
+  event: local_db_events_filter @references_query(references_name: "local_db_events", name: "item_event", is_m2m: false, m2m_name: "") @catalog(name: "local_db", engine: "duckdb") @dependency(name: "ext_bridge")
+  id: IntFilter @pk
+  name: StringFilter
+}
+input local_db_items_list_filter @filter_list_input(name: "local_db_items") @catalog(name: "local_db", engine: "duckdb") {
+  all_of: local_db_items_filter
+  any_of: local_db_items_filter
+  none_of: local_db_items_filter
+}
+input local_db_items_mut_data @data_input(name: "local_db_items") @catalog(name: "local_db", engine: "duckdb") {
+  id: Int
+  name: String
+}
+input local_db_items_mut_input_data @data_input(name: "local_db_items") @catalog(name: "local_db", engine: "duckdb") {
+  id: Int
+  name: String
+}
+type pg_store_categories @table(name: "categories") @catalog(name: "pg_store", engine: "postgres") @original_name(name: "categories") @filter_input(name: "pg_store_categories_filter") @data_input(name: "pg_store_categories_mut_input_data") @data_input(name: "pg_store_categories_mut_data") @query(name: "categories", type: SELECT) @query(name: "categories_by_pk", type: SELECT_ONE) @mutation(name: "insert_categories", type: INSERT, data_input: "pg_store_categories_mut_input_data") @mutation(name: "update_categories", type: UPDATE, data_input: "pg_store_categories_mut_data") @mutation(name: "delete_categories", type: DELETE, data_input: "") @query(name: "categories_aggregation", type: AGGREGATE) @query(name: "categories_bucket_aggregation", type: AGGREGATE_BUCKET) @module(name: "pg_store") {
+  _join(fields: [String!]!): _join
+  id: Int! @pk
+  name: String!
+}
+"""
+Filter for pg_store_categories objects
+"""
+input pg_store_categories_filter @filter_input(name: "pg_store_categories") @catalog(name: "pg_store", engine: "postgres") {
+  _and: [pg_store_categories_filter]
+  _not: pg_store_categories_filter
+  _or: [pg_store_categories_filter]
+  id: IntFilter @pk
+  name: StringFilter
+}
+input pg_store_categories_mut_data @data_input(name: "pg_store_categories") @catalog(name: "pg_store", engine: "postgres") {
+  id: Int
+  name: String
+}
+input pg_store_categories_mut_input_data @data_input(name: "pg_store_categories") @catalog(name: "pg_store", engine: "postgres") {
+  id: Int
+  name: String
+}
+type pg_store_products @table(name: "products") @catalog(name: "pg_store", engine: "postgres") @original_name(name: "products") @filter_input(name: "pg_store_products_filter") @data_input(name: "pg_store_products_mut_input_data") @data_input(name: "pg_store_products_mut_data") @query(name: "products", type: SELECT) @query(name: "products_by_pk", type: SELECT_ONE) @mutation(name: "insert_products", type: INSERT, data_input: "pg_store_products_mut_input_data") @mutation(name: "update_products", type: UPDATE, data_input: "pg_store_products_mut_data") @mutation(name: "delete_products", type: DELETE, data_input: "") @query(name: "products_aggregation", type: AGGREGATE) @query(name: "products_bucket_aggregation", type: AGGREGATE_BUCKET) @module(name: "pg_store") {
+  _join(fields: [String!]!): _join
+  id: Int! @pk
+  matching_items(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [local_db_items] @join(references_name: "local_db_items", source_fields: ["id"], references_fields: ["id"]) @dependency(name: "ext_bridge") @catalog(name: "local_db", engine: "duckdb")
+  """
+  The aggregation for matching_items
+  """
+  matching_items_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _local_db_items_aggregation @aggregation_query(is_bucket: false, name: "matching_items") @catalog(name: "local_db", engine: "duckdb") @dependency(name: "ext_bridge")
+  """
+  The bucket aggregation for matching_items
+  """
+  matching_items_bucket_aggregation(
+    """
+    Filter
+    """
+    filter: local_db_items_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_local_db_items_aggregation_bucket] @aggregation_query(is_bucket: true, name: "matching_items") @catalog(name: "local_db", engine: "duckdb") @dependency(name: "ext_bridge")
+  name: String!
+  price: Float
+}
+"""
+Filter for pg_store_products objects
+"""
+input pg_store_products_filter @filter_input(name: "pg_store_products") @catalog(name: "pg_store", engine: "postgres") {
+  _and: [pg_store_products_filter]
+  _not: pg_store_products_filter
+  _or: [pg_store_products_filter]
+  id: IntFilter @pk
+  name: StringFilter
+  price: FloatFilter
+}
+input pg_store_products_mut_data @data_input(name: "pg_store_products") @catalog(name: "pg_store", engine: "postgres") {
+  id: Int
+  name: String
+  price: Float
+}
+input pg_store_products_mut_input_data @data_input(name: "pg_store_products") @catalog(name: "pg_store", engine: "postgres") {
+  id: Int
+  name: String
+  price: Float
+}
+type rest_api_test_result @catalog(name: "rest_api", engine: "duckdb") @original_name(name: "test_result") {
+  name: String
+  value: Int
+}
+input rest_api_test_result_filter @filter_input(name: "rest_api_test_result") @catalog(name: "rest_api", engine: "duckdb") {
+  _and: [rest_api_test_result_filter]
+  _not: rest_api_test_result_filter
+  _or: [rest_api_test_result_filter]
+  name: StringFilter
+  value: IntFilter
+}
+input rest_api_test_result_mut_data @data_input(name: "rest_api_test_result") @catalog(name: "rest_api", engine: "duckdb") {
+  name: String
+  value: Int
+}
+input rest_api_test_result_mut_input_data @data_input(name: "rest_api_test_result") @catalog(name: "rest_api", engine: "duckdb") {
+  name: String
+  value: Int
+}

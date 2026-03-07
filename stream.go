@@ -5,68 +5,63 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"runtime/debug"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
-	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/planner"
-	"github.com/hugr-lab/query-engine/pkg/types"
-	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 )
+
+// recoverStreamPanic converts a panic into an error for stream handlers.
+func recoverStreamPanic(errp *error) {
+	if r := recover(); r != nil {
+		if e, ok := r.(error); ok {
+			*errp = fmt.Errorf("internal error: %w", e)
+		} else {
+			*errp = fmt.Errorf("internal error: %v", r)
+		}
+		log.Printf("panic recovered in stream: %v\n%s", r, debug.Stack())
+	}
+}
 
 var ErrEmptyRequest = errors.New("empty request")
 
 type ChunkProcessFunc func(ctx context.Context, path string, field *ast.Field, rec arrow.RecordBatch) error
 
-func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map[string]any) (db.ArrowTable, func(), error) {
-	ctx, err := s.perm.ContextWithPermissions(ctx)
+func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map[string]any) (table db.ArrowTable, finalize func(), err error) {
+	defer recoverStreamPanic(&err)
+	ctx, err = s.perm.ContextWithPermissions(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	schema := s.catalog.Schema()
-	qd, errs := gqlparser.LoadQueryWithRules(schema, query, types.GraphQLQueryRules)
-	if len(errs) > 0 {
-		return nil, nil, errs
+
+	op, err := s.schema.ParseQuery(ctx, query, vars, "")
+	if err != nil {
+		return nil, nil, err
 	}
 
-	if len(qd.Operations) == 0 {
-		return nil, nil, errors.New("no operations found")
-	}
-	if len(qd.Operations) > 1 {
-		return nil, nil, errors.New("multiple operations found, please specify operation name")
-	}
-	op := qd.Operations[0]
-	if op == nil {
-		return nil, nil, ErrEmptyRequest
-	}
-	queries, qtt := compiler.QueryRequestInfo(op.SelectionSet)
-	if qtt&(compiler.QueryTypeMeta|compiler.QueryTypeMutation|compiler.QueryTypeJQTransform|compiler.QueryTypeFunction|compiler.QueryTypeFunctionMutation) != 0 {
+	if op.QueryType&(base.QueryTypeMeta|base.QueryTypeMutation|base.QueryTypeJQTransform|base.QueryTypeFunction|base.QueryTypeFunctionMutation) != 0 {
 		return nil, nil, errors.New("streaming is not supported for mutations, JQ transforms, or functions")
 	}
-	// authorize queries
-	if len(queries) != 1 {
-		return nil, nil, fmt.Errorf("streaming is only supported for single queries, found %d queries", len(queries))
-	}
-	p := perm.PermissionsFromCtx(ctx)
-	if p != nil {
-		if err := p.CheckQuery(queries[0].Field); err != nil {
-			return nil, nil, err
-		}
+	if len(op.Queries) != 1 {
+		return nil, nil, fmt.Errorf("streaming is only supported for single queries, found %d queries", len(op.Queries))
 	}
 
-	flatQuery := compiler.FlatQuery(queries)
-	var q compiler.QueryRequest
+	flatQuery := sdl.FlatQuery(op.Queries)
+	var q base.QueryRequest
 	for _, qq := range flatQuery {
 		q = qq
 		break
 	}
 
+	provider := s.schema.Provider()
 	ctx = planner.ContextWithRawResultsFlag(ctx)
 
-	plan, err := s.planner.Plan(ctx, schema, q.Field, vars)
+	plan, err := s.planner.Plan(ctx, provider, q.Field, op.Variables)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to plan query: %w", err)
 	}

@@ -1,0 +1,28 @@
+{
+  "data": {
+    "pg_store": {
+      "products_in_price_range": [
+        {
+          "id": 2,
+          "name": "Wireless Mouse",
+          "price": 29.99
+        },
+        {
+          "id": 3,
+          "name": "USB-C Hub",
+          "price": 49.99
+        },
+        {
+          "id": 4,
+          "name": "Old Keyboard",
+          "price": 24.99
+        },
+        {
+          "id": 7,
+          "name": "Default Test",
+          "price": 10.0
+        }
+      ]
+    }
+  }
+}

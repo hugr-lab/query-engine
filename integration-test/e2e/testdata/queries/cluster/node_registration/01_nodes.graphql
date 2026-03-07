@@ -1,0 +1,11 @@
+# @target: mgmt
+{
+  core {
+    cluster {
+      nodes (order_by: [{field: "name", direction: ASC}]) {
+        name
+        role
+      }
+    }
+  }
+}

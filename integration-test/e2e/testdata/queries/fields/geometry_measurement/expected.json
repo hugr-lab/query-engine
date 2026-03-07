@@ -1,0 +1,18 @@
+{
+  "data": {
+    "pg_store": {
+      "locations": [
+        {
+          "_area_measurement": 0.00009999999999996021,
+          "id": 1,
+          "name": "Store A"
+        },
+        {
+          "_area_measurement": 0.00010000000000010231,
+          "id": 2,
+          "name": "Store B"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,6 @@
+"""Drop the Gadget type"""
+type Gadget @drop {
+  id: Int! @pk
+  label: String!
+  weight: Float
+}

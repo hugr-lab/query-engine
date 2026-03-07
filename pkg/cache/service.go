@@ -18,7 +18,7 @@ import (
 // Provides a cache for the query engine
 // The cache is used to store the results of queries and to speed up the execution of queries
 
-var ErrMissCache = errors.New("Key not found in cache")
+var ErrMissCache = errors.New("key not found in cache")
 
 func QueryKey(query string, vars map[string]any) (string, error) {
 	// Generate a unique key for the query based on the query string and variables

@@ -2,6 +2,7 @@ package hugr
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/perm"
+	"github.com/hugr-lab/query-engine/pkg/types"
 )
 
 func (s *Service) middlewares() func(next http.Handler) http.Handler {
@@ -30,6 +32,16 @@ func (s *Service) middlewares() func(next http.Handler) http.Handler {
 				}),
 			},
 		}
+	}
+	// Add cluster auth provider if cluster mode is enabled with a secret.
+	if s.config.Cluster.Enabled && s.config.Cluster.Secret != "" {
+		pp = append([]auth.AuthProvider{
+			auth.NewApiKey("cluster-internal", auth.ApiKeyConfig{
+				Key:         s.config.Cluster.Secret,
+				Header:      "x-hugr-secret",
+				DefaultRole: "admin",
+			}),
+		}, pp...)
 	}
 	pp = append(pp, s.config.Auth.Providers...)
 	s.config.Auth.Providers = pp
@@ -58,11 +70,15 @@ func (s *Service) checkEndpointPermissionsMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, err := s.perm.ContextWithPermissions(r.Context())
 		if errors.Is(err, auth.ErrForbidden) {
-			http.Error(w, "forbidden", http.StatusForbidden)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(types.ErrResponse(err))
 			return
 		}
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(types.ErrResponse(err))
 			return
 		}
 		perm := perm.PermissionsFromCtx(ctx)
@@ -81,7 +97,9 @@ func (s *Service) checkEndpointPermissionsMW(next http.Handler) http.Handler {
 				path = "/" + path
 			}
 			if _, ok := perm.Enabled("_endpoints", path); !ok {
-				http.Error(w, "forbidden", http.StatusForbidden)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				json.NewEncoder(w).Encode(types.ErrResponse(auth.ErrForbidden))
 				return
 			}
 		}

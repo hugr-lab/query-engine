@@ -1,0 +1,11 @@
+{
+  pg_store {
+    product_details(filter: { specs: { cpu: { eq: "M2" } } }) {
+      product_id
+      specs {
+        cpu
+        ram_gb
+      }
+    }
+  }
+}

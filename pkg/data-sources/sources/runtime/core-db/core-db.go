@@ -7,17 +7,18 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"
-
-	cs "github.com/hugr-lab/query-engine/pkg/catalogs/sources"
 )
 
 const (
-	Version = "0.0.8"
-	dbName  = "core"
+	Version           = "0.0.12"
+	dbName            = "core"
+	DefaultVectorSize = 768
 )
 
 var (
@@ -35,12 +36,21 @@ type Config struct {
 	Path     string `json:"path"`
 	ReadOnly bool   `json:"read_only"`
 
+	// VectorSize is the dimension of embedding vectors stored in _schema_* tables.
+	// Used for vector(N) in PostgreSQL and FLOAT[N] in DuckDB.
+	VectorSize int `json:"vector_size"`
+
 	// S3 for now only supports s3://
 	S3Region   string `json:"s3_region"`
 	S3Key      string `json:"s3_key"`
 	S3Secret   string `json:"s3_secret"`
 	S3UseSSL   bool   `json:"s3_use_ssl"`
 	S3Endpoint string `json:"s3_endpoint"`
+}
+
+// SchemaTemplateParams contains parameters passed to the schema.sql Go template.
+type SchemaTemplateParams struct {
+	VectorSize int
 }
 
 type Source struct {
@@ -92,7 +102,7 @@ func (s *Source) IsReadonly() bool {
 }
 
 func (s *Source) AsModule() bool {
-	return false
+	return true
 }
 
 func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
@@ -140,6 +150,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 }
 
 func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
+	escSQL := func(val string) string { return strings.ReplaceAll(val, "'", "''") }
 	_, err := db.Exec(ctx, fmt.Sprintf(`
 		CREATE OR REPLACE PERSISTENT SECRET coredb_s3 (
 			TYPE s3,
@@ -151,15 +162,20 @@ func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
 			URL_STYLE 'path',
 			SCOPE '%s'
 		);
-	`, s.c.S3Key, s.c.S3Secret, s.c.S3Region, s.c.S3Endpoint, s.c.S3UseSSL, s.c.Path))
-	if err != nil {
-		return err
-	}
+	`, escSQL(s.c.S3Key), escSQL(s.c.S3Secret), escSQL(s.c.S3Region), escSQL(s.c.S3Endpoint), s.c.S3UseSSL, escSQL(s.c.Path)))
 	return err
 }
 
-func (s *Source) Catalog(ctx context.Context) cs.Source {
-	return cs.NewStringSource(schema)
+func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
+	opts := compiler.Options{
+		Name:         s.Name(),
+		Prefix:       "core",
+		AsModule:     s.AsModule(),
+		ReadOnly:     s.IsReadonly(),
+		EngineType:   string(s.e.Type()),
+		Capabilities: s.e.Capabilities(),
+	}
+	return cs.NewStringSource(s.Name(), s.e, opts, schema)
 }
 
 func checkDBVersion(ctx context.Context, db *db.Pool) error {
@@ -199,7 +215,13 @@ func (s *Source) applySchema(ctx context.Context, pool *db.Pool) error {
 	if s.dbType == sources.Postgres {
 		dbType = db.SDBAttachedPostgres
 	}
-	sql, err := db.ParseSQLScriptTemplate(dbType, InitSchema)
+	vecSize := s.c.VectorSize
+	if vecSize == 0 {
+		vecSize = DefaultVectorSize
+	}
+	sql, err := db.ParseSQLScriptTemplate(dbType, InitSchema, SchemaTemplateParams{
+		VectorSize: vecSize,
+	})
 	if err != nil {
 		return fmt.Errorf("core db initialization: %w", err)
 	}

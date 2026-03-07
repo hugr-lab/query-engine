@@ -4,7 +4,8 @@ import (
 	"context"
 	_ "embed"
 
-	"github.com/hugr-lab/query-engine/pkg/catalogs/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -29,7 +30,7 @@ func New(qe types.Querier) *Source {
 }
 
 func (s *Source) Name() string {
-	return "storage"
+	return "core.ds"
 }
 
 func (s *Source) Engine() engines.Engine {
@@ -55,6 +56,13 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 	return s.registerUDF(ctx)
 }
 
-func (s *Source) Catalog(ctx context.Context) sources.Source {
-	return sources.NewStringSource("storage", schema)
+func (s *Source) Catalog(ctx context.Context) (sources.Catalog, error) {
+	e := engines.NewDuckDB()
+	opts := compiler.Options{
+		Name:         s.Name(),
+		ReadOnly:     s.IsReadonly(),
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+	}
+	return sources.NewStringSource(s.Name(), e, opts, schema)
 }

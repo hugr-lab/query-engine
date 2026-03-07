@@ -1,0 +1,10 @@
+{
+  "catalogs": [
+    {
+      "file": "01_schema.graphql",
+      "name": "hr",
+      "engine": "duckdb",
+      "capabilities": "duckdb"
+    }
+  ]
+}

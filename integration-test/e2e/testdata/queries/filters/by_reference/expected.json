@@ -1,0 +1,26 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "category": {
+            "id": 2,
+            "name": "Computers"
+          },
+          "id": 1,
+          "name": "Laptop Pro",
+          "price": 1299.99
+        },
+        {
+          "category": {
+            "id": 2,
+            "name": "Computers"
+          },
+          "id": 5,
+          "name": "Gaming Desktop",
+          "price": 2499.99
+        }
+      ]
+    }
+  }
+}
