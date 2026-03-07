@@ -63,10 +63,9 @@ type Source struct {
 func New(c Config) *Source {
 	if strings.HasPrefix(c.Path, "postgres://") {
 		return &Source{
-			c:        c,
-			dbType:   sources.Postgres,
-			s3Source: strings.HasPrefix(c.Path, "s3://"),
-			e:        engines.NewPostgres(),
+			c:      c,
+			dbType: sources.Postgres,
+			e:      engines.NewPostgres(),
 		}
 	}
 	return &Source{
