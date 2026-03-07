@@ -398,14 +398,19 @@ func (p *Provider) IncrementSchemaVersion(ctx context.Context) (int64, error) {
 	// Two-step update+select: RETURNING is not supported for PostgreSQL tables
 	// accessed via DuckDB's postgres scanner.
 	tbl := p.table("_schema_settings")
-	// Cast to JSON for PostgreSQL (value column is jsonb), VARCHAR for DuckDB.
-	castType := "VARCHAR"
+
+	// DuckDB stores JSON values as VARCHAR; PostgreSQL uses jsonb.
+	// TRIM(value, '"') works in DuckDB but not in PG (btrim(jsonb, text) doesn't exist).
+	// For PG via postgres_execute: extract as text, cast to bigint, increment, wrap to_jsonb.
 	if p.isPostgres {
-		castType = "JSON"
+		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
+			`UPDATE %s SET value = to_jsonb((trim(both '"' from value::text)::bigint) + 1)
+			 WHERE key = 'schema_version'`, tbl))
+	} else {
+		_, err = conn.Exec(ctx, fmt.Sprintf(
+			`UPDATE %s SET value = CAST((CAST(TRIM(value, '"') AS BIGINT) + 1) AS VARCHAR)
+			 WHERE key = 'schema_version'`, tbl))
 	}
-	_, err = conn.Exec(ctx, fmt.Sprintf(
-		`UPDATE %s SET value = CAST((CAST(TRIM(value, '"') AS BIGINT) + 1) AS %s)
-		 WHERE key = 'schema_version'`, tbl, castType))
 	if err != nil {
 		return 0, fmt.Errorf("increment schema version: %w", err)
 	}
