@@ -45,6 +45,9 @@ and query execution. Requires an embedder URL for semantic search.
 
 The embedder URL format: `http://host:port/path?model=<model>&api_key=<key>&timeout=<duration>`
 
+MCP tool logging is controlled by the `DEBUG` flag. When `DEBUG=true`, MCP tool
+invocations are logged to stdout; otherwise tool logging is suppressed.
+
 Use `hugr-tools summarize` to generate LLM-powered descriptions for schema entities,
 and `hugr-tools reindex` to recompute embeddings. See [hugr-tools.md](hugr-tools.md).
 

@@ -65,6 +65,21 @@ See [docs/configuration.md](../../docs/configuration.md) for the full reference.
 - EMBEDDER_URL - URL for the system embedder service (with query params: model, api_key, api_key_header, timeout), default: "" (disabled)
 - EMBEDDER_VECTOR_SIZE - dimension of embedding vectors stored in CoreDB, default: 768
 
+MCP tool logging is controlled by the `DEBUG` flag. When `DEBUG=true`, MCP tool calls are logged to stdout.
+
+### Cluster Mode
+
+- CLUSTER_ENABLED - flag to enable cluster mode, default: false
+- CLUSTER_ROLE - node role: `management` or `worker`
+- CLUSTER_NODE_NAME - unique node name (registered in `_cluster_nodes` table)
+- CLUSTER_NODE_URL - this node's IPC endpoint URL (e.g., `http://worker-1:15000`)
+- CLUSTER_SECRET - shared secret for inter-node authentication (sent via `x-hugr-secret` header)
+- CLUSTER_HEARTBEAT - heartbeat interval for node health monitoring, default: 30s
+- CLUSTER_GHOST_TTL - time after which unresponsive nodes are removed, default: 2m
+- CLUSTER_POLL_INTERVAL - worker schema version polling interval, default: 30s
+
+All nodes must share the same CoreDB (typically PostgreSQL via `CORE_DB_PATH=postgres://...`). Workers should run with `CORE_DB_READONLY=true`.
+
 ### DuckDB engine settings
 
 - DB_PATH - path to management db file, if empty in memory storage is used, default: ""
@@ -138,18 +153,3 @@ And than up trough docker compose
 cd docker && docker compose up
 ```
 
-## CoreDB migrations
-
-For some reason it can be needed to run migrations for the core db. It makes manually by the special tool - migrate that provided in this repository (cmd/migrate). The following command run migrations:
-
-```bash
-go build -o migrate cmd/migrate/main.go
-
-./migrate -path cmd/migrate/migrations -core-db core-db.duckdb
-```
-
-This tool is also built in the docker image, so it can be used in the docker container.
-
-```bash
-docker exec -it qe-server ./migrate --path ./migrations --core-db /data/.local/docker.duckdb
-```

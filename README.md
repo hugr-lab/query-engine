@@ -14,6 +14,7 @@ See the [Hugr documentation](https://hugr-lab.github.io) for more details.
 - Schema catalog module with DB-backed metadata, vector embeddings, and LLM summarization
 - MCP (Model Context Protocol) endpoint for AI tool integration
 - Authentication and authorization (API keys, JWT/JWKS, DB-managed keys)
+- Cluster mode with management + worker nodes (heartbeat, schema sync, secret sync)
 - Caching: L1 (in-memory BigCache) and L2 (Redis or Memcached)
 - Query parsing, validation, and parallel execution
 - Result transformation (jq expressions)
@@ -24,11 +25,13 @@ See the [Hugr documentation](https://hugr-lab.github.io) for more details.
 cmd/dev-server/       Dev server with env-based configuration
 cmd/hugr-tools/       CLI utilities (summarize, reindex, schema-info)
 pkg/catalog/          Schema catalog: compiler, static/db providers
+pkg/cluster/          Cluster mode (management/worker nodes, heartbeat, secret sync)
 pkg/data-sources/     Runtime data source management
 pkg/planner/          Query planner and SQL generation
 pkg/cache/            Two-level caching (L1 + L2)
 pkg/auth/             Authentication middleware
 pkg/mcp/              MCP server integration
+integration-test/     Integration & E2E tests (compiler, DB provider, cluster, MCP, E2E)
 docs/                 Internal documentation
 ```
 
@@ -82,6 +85,7 @@ See [docs/configuration.md](docs/configuration.md) for the full reference.
 
 | Document | Description |
 |----------|-------------|
+| [docs/known-issues.md](docs/known-issues.md) | Known issues and workarounds |
 | [docs/configuration.md](docs/configuration.md) | Dev server configuration reference |
 | [docs/hugr-tools.md](docs/hugr-tools.md) | CLI utilities (summarize, reindex, schema-info) |
 | [docs/compiler/01-overview.md](docs/compiler/01-overview.md) | Compiler architecture |

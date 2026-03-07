@@ -5,10 +5,12 @@ Integration tests for the query engine, covering schema compilation, DB provider
 ```
 integration-test/
 ├── catalog/db/     # DB-backed schema provider tests (DuckDB + PostgreSQL)
+├── cluster/        # Cluster mode integration tests (management + worker nodes)
 ├── compiler/       # Schema compiler golden tests & integration tests
 ├── compare/        # Schema comparison utilities (used by compiler tests)
 ├── coredb/         # CoreDB schema init & migration tests (DuckDB + PostgreSQL)
-└── e2e/            # Docker-based end-to-end query tests
+├── e2e/            # Docker-based end-to-end query tests
+└── mcp/            # MCP endpoint integration tests
 ```
 
 ---
@@ -228,7 +230,7 @@ testdata/NN_test_name/
 }
 ```
 
-### Test Cases (37 total)
+### Test Cases (68 total)
 
 **Single-Catalog (01–17)**:
 
@@ -279,6 +281,41 @@ testdata/NN_test_name/
 | 35 | error_reference_field_mismatch | `fields` |
 | 36 | error_redefine_system_type | `system type` |
 | 37 | error_cube_without_table | `@cube` |
+
+**Extensions (38–46)**:
+
+| # | Name | Covers |
+|---|------|--------|
+| 38 | extension_basic | Basic extension fields |
+| 39 | extension_with_prefix | Extension with prefix |
+| 40 | table_struct_aggregation | Struct fields in aggregation types |
+| 41 | extension_join | `@join` in extensions |
+| 42 | extension_function_call | `@function_call` in extensions |
+| 43 | extension_table_function_call_join | `@table_function_call_join` in extensions |
+| 44 | extension_references | `@references` in extensions |
+| 45 | extension_prefix | Extension prefix handling |
+| 46 | extension_cross_source | Cross-source extension fields |
+
+**Incremental Compilation (47–68)**:
+
+| # | Name | Covers |
+|---|------|--------|
+| 47–51 | incremental_basic_* | Basic incremental add/drop/replace |
+| 52 | incremental_prefix_references | Prefix + references |
+| 53–55 | incremental_misc | Various incremental scenarios |
+| 56 | incremental_field_add | Field add |
+| 57 | incremental_field_drop | Field drop |
+| 58 | incremental_ref_field_add | Reference field add |
+| 59 | incremental_ref_field_drop | Reference field drop |
+| 60 | incremental_field_prefix | Field with prefix |
+| 61 | incremental_directive_change | Directive change |
+| 62 | incremental_ref_field_prefix | Reference field with prefix |
+| 63 | incremental_misc | Miscellaneous |
+| 64 | incremental_function_add | Function add |
+| 65 | incremental_function_drop | Function drop |
+| 66 | incremental_function_module | Function with module |
+| 67 | incremental_function_as_module | Function as_module |
+| 68 | incremental_as_module_comprehensive | Comprehensive as_module (multi-step) |
 
 ---
 
@@ -379,26 +416,45 @@ testdata/queries/jq/transform/
 └── expected.json       # Expected response
 ```
 
-### Test Cases (50 total)
+### Test Cases (79 total, 151 steps across 18 categories)
 
 | Category | Tests | Covers |
 |----------|-------|--------|
-| **aggregations** (4) | basic, bucket, bucket_ordered, sub_aggregation | Aggregation queries, bucketing, nested aggregation |
-| **core** (1) | load_unload | Data source lifecycle |
-| **filters** (9) | and_or, by_reference, by_reference_reverse, eq, gt_lt, in, is_null, json_filter, like_ilike | Filter operators, reference filtering, `any_of` |
+| **aggregations** (8) | basic, bucket, bucket_ordered, sub_aggregation, struct_aggregation, + others | Aggregation queries, bucketing, nested/struct aggregation |
+| **cluster** (7) | node_registration, schema_sync, heartbeat, ghost_cleanup, secret_sync, + others | Cluster mode lifecycle and coordination |
+| **core** (4) | load_unload, + others | Data source lifecycle |
+| **extensions** (8) | references_forward, references_reverse, references_aggregation, function_call_http, cross_source_join, + others | Extension fields, cross-source extensions |
+| **fields** (2) | field tests | Field-level operations |
+| **filters** (11) | and_or, by_reference, by_reference_reverse, eq, gt_lt, in, is_null, json_filter, like_ilike, + others | Filter operators, reference filtering, `any_of` |
 | **functions** (1) | table_function | Table-generating functions |
 | **h3** (1) | basic | H3 geospatial aggregation |
 | **http** (2) | get, post | HTTP data source integration |
 | **joins** (1) | cross_source | `_join` across data sources |
 | **jq** (1) | transform | JQ transformation inside GraphQL |
-| **metadata** (10) | catalog_sources, data_sources, describe_schema, duckdb_columns, duckdb_databases, duckdb_tables, introspection, introspection_type, roles, schema_summary | Schema introspection and metadata queries |
+| **metadata** (9) | catalog_sources, data_sources, describe_schema, duckdb_columns, duckdb_databases, duckdb_tables, introspection, introspection_type, roles | Schema introspection and metadata queries |
 | **mutations** (4) | delete, insert, insert_with_defaults, update | CRUD operations (multi-step) |
 | **references** (5) | forward_join, m2m, nested_deep, reverse_join, self_referential | All reference types |
 | **spatial** (1) | intersects | `_spatial` intersection queries |
 | **tables** (3) | duckdb_select, select_list, select_one | Basic table queries |
-| **types** (5) | bigint, boolean, date_time, geometry, json | Data type coverage |
+| **types** (9) | bigint, boolean, date_time, geometry, json, + others | Data type coverage |
 | **views** (2) | parameterized, simple | Simple and parameterized views |
 
 ### Comparison Logic
 
 JSON comparison uses a recursive deep-sort jq filter to normalize non-deterministic array ordering (e.g., from Go map iteration). Arrays of objects are sorted by `name` field when present.
+
+---
+
+## Cluster Integration Tests
+
+**Location**: `cluster/`
+
+Docker-based tests for cluster mode. Validates management + worker node coordination, including node registration in `_cluster_nodes`, schema version tracking, heartbeat monitoring, ghost node cleanup, and secret synchronization via `x-hugr-secret` header.
+
+---
+
+## MCP Integration Tests
+
+**Location**: `mcp/`
+
+Tests for the MCP (Model Context Protocol) endpoint. Validates the 10 MCP tools (discovery-*, schema-*, data-*), structured output schemas (`WithOutputSchema`), and correct behavior of `schema-enum_values` using catalog tables instead of introspection.
