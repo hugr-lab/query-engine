@@ -15,10 +15,11 @@ require (
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hugr-lab/airport-go v0.1.5
 	github.com/itchyny/gojq v0.12.18
-	github.com/jackc/pgx/v5 v5.7.2
+	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
 	github.com/mark3labs/mcp-go v0.44.1
 	github.com/paulmach/orb v0.12.0
+	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/spf13/viper v1.21.0
 	github.com/tmc/langchaingo v0.1.14
 	github.com/vektah/gqlparser/v2 v2.5.32
@@ -50,7 +51,6 @@ require (
 	github.com/pkoukk/tiktoken-go v0.1.6 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/schollz/progressbar/v3 v3.19.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/woodsbury/decimal128 v1.4.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
