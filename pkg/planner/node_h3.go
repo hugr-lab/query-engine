@@ -545,8 +545,6 @@ func h3distributionByNode(ctx context.Context, defs base.DefinitionsSource, plan
 }
 
 type h3DistributionByParams struct {
-	numerator            string     // path to numerator aggregation value
-	denominator          string     // path to denominator aggregation value
 	numeratorQuery       *ast.Field // query for numerator aggregation
 	numeratorQueryPath   string     // path to numerator aggregation query in the H3 query
 	numeratorField       string

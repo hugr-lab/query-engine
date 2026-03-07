@@ -27,6 +27,9 @@ func (s *Source) registerNode(ctx context.Context) error {
 		return fmt.Errorf("register node delete: %w", err)
 	}
 	res.Close()
+	if res.Err() != nil {
+		return fmt.Errorf("register node delete: %w", res.Err())
+	}
 
 	// Insert new node entry.
 	res, err = s.qe.Query(ctx, `mutation($data: core_nodes_mut_input_data!) {
@@ -118,6 +121,9 @@ func (s *Source) sendHeartbeat(ctx context.Context) error {
 		return fmt.Errorf("heartbeat: %w", err)
 	}
 	res.Close()
+	if res.Err() != nil {
+		return fmt.Errorf("heartbeat: %w", res.Err())
+	}
 	return nil
 }
 
@@ -144,6 +150,9 @@ func (s *Source) cleanupGhosts(ctx context.Context) error {
 		return fmt.Errorf("ghost cleanup: %w", err)
 	}
 	defer res.Close()
+	if res.Err() != nil {
+		return fmt.Errorf("ghost cleanup: %w", res.Err())
+	}
 
 	return nil
 }

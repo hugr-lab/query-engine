@@ -7,6 +7,7 @@ import (
 
 	"github.com/duckdb/duckdb-go/v2"
 
+	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	dsruntime "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/types"
@@ -294,9 +295,27 @@ func (s *Source) invalidateCache(ctx context.Context, catalog string) (*types.Op
 	return types.ErrResult(fmt.Errorf("cluster not initialized")), nil
 }
 
+// verifyClusterAuth checks that the request is authorized for internal cluster operations.
+func (s *Source) verifyClusterAuth(ctx context.Context) error {
+	if auth.IsFullAccess(ctx) {
+		return nil
+	}
+	if s.config.Secret == "" {
+		return nil
+	}
+	info := auth.AuthInfoFromContext(ctx)
+	if info != nil && info.AuthProvider == "cluster-internal" {
+		return nil
+	}
+	return fmt.Errorf("cluster secret required")
+}
+
 // --- Internal broadcast target handlers (called by management on workers) ---
 
 func (s *Source) handleSourceLoad(ctx context.Context, name string) (*types.OperationResult, error) {
+	if err := s.verifyClusterAuth(ctx); err != nil {
+		return types.ErrResult(err), nil
+	}
 	if s.worker != nil {
 		if err := s.worker.HandleSourceLoad(ctx, name); err != nil {
 			return types.ErrResult(err), nil
@@ -309,6 +328,9 @@ func (s *Source) handleSourceLoad(ctx context.Context, name string) (*types.Oper
 }
 
 func (s *Source) handleSourceUnload(ctx context.Context, name string) (*types.OperationResult, error) {
+	if err := s.verifyClusterAuth(ctx); err != nil {
+		return types.ErrResult(err), nil
+	}
 	if s.worker != nil {
 		if err := s.worker.HandleSourceUnload(ctx, name); err != nil {
 			return types.ErrResult(err), nil
@@ -320,6 +342,9 @@ func (s *Source) handleSourceUnload(ctx context.Context, name string) (*types.Op
 }
 
 func (s *Source) handleCacheInvalidate(ctx context.Context, catalog string) (*types.OperationResult, error) {
+	if err := s.verifyClusterAuth(ctx); err != nil {
+		return types.ErrResult(err), nil
+	}
 	if catalog != "" {
 		s.provider.InvalidateCatalog(catalog)
 	} else {
@@ -329,6 +354,9 @@ func (s *Source) handleCacheInvalidate(ctx context.Context, catalog string) (*ty
 }
 
 func (s *Source) handleSecretSync(ctx context.Context) (*types.OperationResult, error) {
+	if err := s.verifyClusterAuth(ctx); err != nil {
+		return types.ErrResult(err), nil
+	}
 	if s.worker != nil {
 		if err := s.worker.SyncSecrets(ctx); err != nil {
 			return types.ErrResult(err), nil
@@ -377,20 +405,48 @@ func convertStorageParams(args []driver.Value) (StorageParams, error) {
 	if len(args) != 9 {
 		return StorageParams{}, fmt.Errorf("expected 9 arguments, got %d", len(args))
 	}
-	p := StorageParams{
-		Type:     args[0].(string),
-		Name:     args[1].(string),
-		Scope:    args[2].(string),
-		Key:      args[3].(string),
-		Secret:   args[4].(string),
-		Endpoint: args[6].(string),
-		URLStyle: args[8].(string),
+	getString := func(i int) (string, error) {
+		if args[i] == nil {
+			return "", nil
+		}
+		s, ok := args[i].(string)
+		if !ok {
+			return "", fmt.Errorf("arg %d: expected string, got %T", i, args[i])
+		}
+		return s, nil
 	}
-	if args[5] != nil {
-		p.Region = args[5].(string)
+	var err error
+	var p StorageParams
+	if p.Type, err = getString(0); err != nil {
+		return StorageParams{}, err
+	}
+	if p.Name, err = getString(1); err != nil {
+		return StorageParams{}, err
+	}
+	if p.Scope, err = getString(2); err != nil {
+		return StorageParams{}, err
+	}
+	if p.Key, err = getString(3); err != nil {
+		return StorageParams{}, err
+	}
+	if p.Secret, err = getString(4); err != nil {
+		return StorageParams{}, err
+	}
+	if p.Region, err = getString(5); err != nil {
+		return StorageParams{}, err
+	}
+	if p.Endpoint, err = getString(6); err != nil {
+		return StorageParams{}, err
 	}
 	if args[7] != nil {
-		p.UseSSL = args[7].(bool)
+		b, ok := args[7].(bool)
+		if !ok {
+			return StorageParams{}, fmt.Errorf("arg 7: expected bool, got %T", args[7])
+		}
+		p.UseSSL = b
+	}
+	if p.URLStyle, err = getString(8); err != nil {
+		return StorageParams{}, err
 	}
 	return p, nil
 }

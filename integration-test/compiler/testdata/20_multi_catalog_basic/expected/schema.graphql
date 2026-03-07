@@ -115,6 +115,7 @@ type CacheEntry @table(name: "cache_entries") @catalog(name: "cache", engine: "d
   value(
     """
     Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    Types can be: string, int, float, bool,timestamp, json, h3string
     """
     struct: JSON
   ): JSON
@@ -940,6 +941,7 @@ type _CacheEntry_aggregation @aggregation(name: "CacheEntry", is_bucket: false, 
   value(
     """
     Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    Types can be: string, int, float, bool,timestamp, json, h3string
     """
     struct: JSON
   ): JSONAggregation @field_aggregation(name: "value")
@@ -995,6 +997,7 @@ type _CacheEntry_aggregation_sub_aggregation @aggregation(name: "_CacheEntry_agg
   value(
     """
     Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    Types can be: string, int, float, bool,timestamp, json, h3string
     """
     struct: JSON
   ): JSONSubAggregation @field_aggregation(name: "value")

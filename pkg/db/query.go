@@ -182,11 +182,11 @@ func (db *Pool) QueryTableStream(ctx context.Context, q string, params ...any) (
 	}
 	reader, err := ar.QueryContext(ctx, q, params...)
 	if err != nil {
-		ar.Close()
+		_ = ar.Close()
 		return nil, nil, err
 	}
 	finalize := func() {
-		ar.Close()
+		_ = ar.Close()
 	}
 	return NewArrowTableStream(reader), finalize, nil
 }

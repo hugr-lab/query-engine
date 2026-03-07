@@ -74,9 +74,8 @@ func vectorSearchNodes(e engines.Engine, info *sdl.Object, query *ast.Field, pre
 		return nil, sdl.ErrorPosf(query.Position, "vector dimension mismatch: expected %d, got %d", fi.Dim, len(vector))
 	}
 
-	var nodes QueryPlanNodes
 	// create a vector search node
-	nodes = QueryPlanNodes{
+	nodes := QueryPlanNodes{
 		&QueryPlanNode{
 			Name:  vectorDistanceNodeName,
 			Query: query,
@@ -145,9 +144,8 @@ func semanticSearchNodes(e engines.Engine, info *sdl.Object, query *ast.Field, p
 		return nil, sdl.ErrorPosf(query.Position, "vector distance calculation is not supported by query engine %s", e.Type())
 	}
 
-	var nodes QueryPlanNodes
 	// create a vector search node
-	nodes = QueryPlanNodes{
+	nodes := QueryPlanNodes{
 		&QueryPlanNode{
 			Name:  vectorDistanceNodeName,
 			Query: query,

@@ -167,7 +167,7 @@ func (p *Provider) updateImpl(ctx context.Context, changes base.DefinitionsSourc
 	}
 
 	// Release connection before reconcile (which acquires its own).
-	conn.Close()
+	_ = conn.Close()
 
 	// Reconcile metadata
 	if catalogName != "" {
@@ -653,16 +653,6 @@ func directiveKey(d *ast.Directive) string {
 	return d.Name
 }
 
-// typeOwnerCatalog returns the catalog that owns the given type, or "" if not found.
-// Acquires its own connection — used by external callers.
-func (p *Provider) typeOwnerCatalog(ctx context.Context, typeName string) string {
-	conn, err := p.pool.Conn(ctx)
-	if err != nil {
-		return ""
-	}
-	defer conn.Close()
-	return p.typeOwnerCatalogConn(ctx, conn, typeName)
-}
 
 // typeOwnerCatalogConn returns the catalog that owns the given type, using the provided connection.
 func (p *Provider) typeOwnerCatalogConn(ctx context.Context, conn *Connection, typeName string) string {

@@ -15,7 +15,6 @@ import (
 // Service holds dependencies for query parsing: Provider, Validator, VariableTransformer.
 // Thread-safe (Provider and Validator are immutable after creation).
 type Service struct {
-	querier        Querier
 	validator      *validator.Validator
 	varTransformer VariableTransformer
 

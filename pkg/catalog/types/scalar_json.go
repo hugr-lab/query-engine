@@ -69,7 +69,7 @@ func (s *jsonScalar) SubAggregationTypeName() string { return "JSONSubAggregatio
 
 func (s *jsonScalar) FieldArguments() ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
-		{Name: "struct", Description: "Provides json structure to extract partial data from json field. Structure: {field: \"type\", field2: [\"type2\"], field3: [{field4: \"type4\"}]}.", Type: ast.NamedType("JSON", nil)},
+		{Name: "struct", Description: "Provides json structure to extract partial data from json field. Structure: {field: \"type\", field2: [\"type2\"], field3: [{field4: \"type4\"}]}.\nTypes can be: string, int, float, bool,timestamp, json, h3string", Type: ast.NamedType("JSON", nil)},
 	}
 }
 

@@ -8,7 +8,7 @@
 #   ./run.sh --duckdb-only  # Skip PostgreSQL CoreDB tests
 #   UPDATE_EXPECTED=1 ./run.sh  # Update expected output files
 
-set -e
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
@@ -55,10 +55,6 @@ if [ "$DUCKDB_ONLY" = true ]; then
   docker compose -f "$COMPOSE_FILE" up -d --build --wait query-engine
 else
   docker compose -f "$COMPOSE_FILE" up -d --build --wait
-fi
-if [ $? -ne 0 ]; then
-  echo "ERROR: Failed to start environment"
-  exit 2
 fi
 
 run_single_test() {
@@ -379,10 +375,6 @@ ENGINE_URL_DUCKDB="http://localhost:15000"
 echo ""
 echo "Provisioning data sources (DuckDB CoreDB)..."
 "$SCRIPT_DIR/provision-sources.sh" "$ENGINE_URL_DUCKDB"
-if [ $? -ne 0 ]; then
-  echo "ERROR: Failed to provision data sources (DuckDB CoreDB)"
-  exit 2
-fi
 
 run_tests_against "$ENGINE_URL_DUCKDB" "DuckDB CoreDB" ""
 
@@ -404,10 +396,6 @@ if [ "$DUCKDB_ONLY" = false ]; then
   echo ""
   echo "Provisioning data sources (PostgreSQL CoreDB)..."
   "$SCRIPT_DIR/provision-sources.sh" "$ENGINE_URL_PG" "/workspace/duckdb/local_pg.duckdb"
-  if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to provision data sources (PostgreSQL CoreDB)"
-    exit 2
-  fi
 
   run_tests_against "$ENGINE_URL_PG" "PostgreSQL CoreDB" "pg"
 fi
@@ -431,10 +419,6 @@ if [ "$DUCKDB_ONLY" = false ]; then
   echo ""
   echo "Provisioning cluster data sources..."
   "$SCRIPT_DIR/provision-cluster.sh" "$CLUSTER_MGMT_URL" "$CLUSTER_W1_URL"
-  if [ $? -ne 0 ]; then
-    echo "ERROR: Failed to provision cluster data sources"
-    exit 2
-  fi
 
   run_cluster_tests "$CLUSTER_MGMT_URL" "$CLUSTER_W1_URL" "$CLUSTER_W2_URL"
 fi

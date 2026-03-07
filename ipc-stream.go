@@ -73,7 +73,7 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
 	go stream.ping(ctx)
@@ -104,7 +104,7 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			if err != nil {
-				stream.sendStreamError(fmt.Errorf("failed to read IPC request: %w", err))
+				_ = stream.sendStreamError(fmt.Errorf("failed to read IPC request: %w", err))
 				continue
 			}
 			if s.config.Debug {
@@ -117,14 +117,14 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 				// Handle data_object streaming
 				req.Query, err = s.dataObjectStreamQuery(ctx, req.DataObject, req.SelectedFields, req.Variables)
 				if err != nil {
-					stream.sendStreamError(fmt.Errorf("failed to process data object query: %w", err))
+					_ = stream.sendStreamError(fmt.Errorf("failed to process data object query: %w", err))
 					continue
 				}
 				fallthrough
 			case "query":
 				ctx, err := stream.setActiveQuery(ctx, &req)
 				if err != nil {
-					stream.sendStreamError(fmt.Errorf("failed to set active query: %w", err))
+					_ = stream.sendStreamError(fmt.Errorf("failed to set active query: %w", err))
 					continue
 				}
 				go s.handleIPCStream(ctx, stream)
@@ -136,7 +136,7 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				stream.mu.Unlock()
 			default:
-				stream.sendStreamError(fmt.Errorf("unknown IPC stream message type: %s", req.Type))
+				_ = stream.sendStreamError(fmt.Errorf("unknown IPC stream message type: %s", req.Type))
 			}
 		}
 	}
@@ -146,12 +146,12 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("panic recovered in IPC stream: %v\n%s", r, debug.Stack())
-			stream.sendStreamError(fmt.Errorf("internal error: %v", r))
+			_ = stream.sendStreamError(fmt.Errorf("internal error: %v", r))
 		}
 	}()
 	defer func() {
 		if err := stream.sendStreamComplete(); err != nil {
-			stream.sendStreamError(fmt.Errorf("failed to send stream complete: %w", err))
+			_ = stream.sendStreamError(fmt.Errorf("failed to send stream complete: %w", err))
 		}
 	}()
 	bp := sync.Pool{
@@ -161,39 +161,39 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 	}
 	table, finalize, err := s.ProcessStreamQuery(ctx, stream.activeQuery.Query, stream.activeQuery.Variables)
 	if err != nil {
-		stream.sendStreamError(fmt.Errorf("failed to process IPC stream query: %w", err))
+		_ = stream.sendStreamError(fmt.Errorf("failed to process IPC stream query: %w", err))
 		return
 	}
 	defer finalize()
 	defer table.Release()
 	reader, err := table.Reader(false)
 	if err != nil {
-		stream.sendStreamError(fmt.Errorf("failed to create IPC stream reader: %w", err))
+		_ = stream.sendStreamError(fmt.Errorf("failed to create IPC stream reader: %w", err))
 		return
 	}
 	defer reader.Release()
 	for reader.Next() {
 		select {
 		case <-ctx.Done():
-			stream.sendStreamError(fmt.Errorf("stream cancelled: %w", ctx.Err()))
+			_ = stream.sendStreamError(fmt.Errorf("stream cancelled: %w", ctx.Err()))
 			return
 		default:
 			chunk := reader.RecordBatch()
 			if reader.Err() != nil {
-				stream.sendStreamError(fmt.Errorf("error reading IPC stream: %w", reader.Err()))
+				_ = stream.sendStreamError(fmt.Errorf("error reading IPC stream: %w", reader.Err()))
 				return
 			}
 			if chunk == nil {
-				stream.sendStreamError(fmt.Errorf("received nil chunk from IPC stream"))
+				_ = stream.sendStreamError(fmt.Errorf("received nil chunk from IPC stream"))
 				return
 			}
 			defer chunk.Release()
 			buf := bp.Get().(*bytes.Buffer)
 			writer := ipc.NewWriter(buf, ipc.WithLZ4())
 			err = writer.Write(chunk)
-			writer.Close()
+			_ = writer.Close()
 			if err != nil {
-				stream.sendStreamError(fmt.Errorf("failed to write IPC stream chunk: %w", err))
+				_ = stream.sendStreamError(fmt.Errorf("failed to write IPC stream chunk: %w", err))
 				buf.Reset()
 				bp.Put(buf)
 				return
@@ -202,7 +202,7 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 			buf.Reset()
 			bp.Put(buf)
 			if err != nil {
-				stream.sendStreamError(fmt.Errorf("failed to send IPC stream chunk: %w", err))
+				_ = stream.sendStreamError(fmt.Errorf("failed to send IPC stream chunk: %w", err))
 				return
 			}
 		}

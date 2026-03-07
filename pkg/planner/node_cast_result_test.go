@@ -136,7 +136,7 @@ func Test_castScalarResultsNode(t *testing.T) {
 			},
 			params:      []interface{}{"test", 1, 2, 23.44, map[string]any{"key": "value"}},
 			wrappedSQL:  "[wrapped sql]",
-			expectedSQL: `SELECT "call" AS "call" FROM postgres_query(db,' (SELECT "call" AS "call" FROM (SELECT [wrapped sql] AS "call")) ')`,
+			expectedSQL: `SELECT "call" AS "call" FROM postgres_query(db,' (SELECT "call" AS "call" FROM (SELECT ([wrapped sql]) AS "call")) ')`,
 		},
 		{
 			name: "scalar value with params",
@@ -152,7 +152,7 @@ func Test_castScalarResultsNode(t *testing.T) {
 			},
 			params:      []interface{}{"test", 1, 2, 23.44, map[string]any{"key": "value"}},
 			wrappedSQL:  "[wrapped sql $1, $2 $3 $4 $5]",
-			expectedSQL: `SELECT "call" AS "call" FROM postgres_query(db,' (SELECT "call" AS "call" FROM (SELECT [wrapped sql ''test'', 1 2 23.44 ''{"key":"value"}''::JSONB] AS "call")) ')`,
+			expectedSQL: `SELECT "call" AS "call" FROM postgres_query(db,' (SELECT "call" AS "call" FROM (SELECT ([wrapped sql ''test'', 1 2 23.44 ''{"key":"value"}''::JSONB]) AS "call")) ')`,
 		},
 		{
 			name: "scalar object (JSON) with params",
@@ -181,7 +181,7 @@ func Test_castScalarResultsNode(t *testing.T) {
 			},
 			params:      []interface{}{"test", 1, 2, 23.44, map[string]any{"key": "value"}},
 			wrappedSQL:  "[wrapped sql $1, $2 $3 $4 $5]",
-			expectedSQL: `SELECT json_transform("call", '{"int":"INTEGER","string":"VARCHAR","float":"FLOAT","bool":"BOOLEAN","object":[{"int":["INTEGER"]}]}') AS "call" FROM postgres_query(db,' (SELECT "call" AS "call" FROM (SELECT [wrapped sql ''test'', 1 2 23.44 ''{"key":"value"}''::JSONB] AS "call")) ')`,
+			expectedSQL: `SELECT json_transform("call", '{"int":"INTEGER","string":"VARCHAR","float":"FLOAT","bool":"BOOLEAN","object":[{"int":["INTEGER"]}]}') AS "call" FROM postgres_query(db,' (SELECT "call" AS "call" FROM (SELECT ([wrapped sql ''test'', 1 2 23.44 ''{"key":"value"}''::JSONB]) AS "call")) ')`,
 		},
 	}
 

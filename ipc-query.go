@@ -178,7 +178,7 @@ func writeArrowTableToIPC(w *multipart.Writer, path string, query base.QueryRequ
 
 	meta["chunk"] = strconv.Itoa(i)
 	ns := addMeta(chunk.Schema(), meta)
-	err = iw.Write(array.NewRecord(ns, chunk.Columns(), chunk.NumRows()))
+	err = iw.Write(array.NewRecordBatch(ns, chunk.Columns(), chunk.NumRows()))
 	if err != nil {
 		return err
 	}
@@ -195,7 +195,7 @@ func writeArrowTableToIPC(w *multipart.Writer, path string, query base.QueryRequ
 		}
 		meta["chunk"] = strconv.Itoa(i)
 		ns := addMeta(chunk.Schema(), meta)
-		err := iw.Write(array.NewRecord(ns, chunk.Columns(), chunk.NumRows()))
+		err := iw.Write(array.NewRecordBatch(ns, chunk.Columns(), chunk.NumRows()))
 		if err != nil {
 			return err
 		}

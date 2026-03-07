@@ -33,6 +33,16 @@ func (s *Service) middlewares() func(next http.Handler) http.Handler {
 			},
 		}
 	}
+	// Add cluster auth provider if cluster mode is enabled with a secret.
+	if s.config.Cluster.Enabled && s.config.Cluster.Secret != "" {
+		pp = append([]auth.AuthProvider{
+			auth.NewApiKey("cluster-internal", auth.ApiKeyConfig{
+				Key:         s.config.Cluster.Secret,
+				Header:      "x-hugr-secret",
+				DefaultRole: "admin",
+			}),
+		}, pp...)
+	}
 	pp = append(pp, s.config.Auth.Providers...)
 	s.config.Auth.Providers = pp
 	authMiddleware := auth.AuthMiddleware(*s.config.Auth)

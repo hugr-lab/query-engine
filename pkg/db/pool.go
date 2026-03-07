@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"strings"
 	"sync"
 
 	"github.com/duckdb/duckdb-go/v2"
@@ -70,6 +71,11 @@ type Pool struct {
 }
 
 func NewPool(path string) (*Pool, error) {
+	if strings.Contains(path, "?") {
+		path += "&allow_unredacted_secrets=true"
+	} else {
+		path += "?allow_unredacted_secrets=true"
+	}
 	connector, err := duckdb.NewConnector(path, nil)
 	if err != nil {
 		return nil, err

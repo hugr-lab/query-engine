@@ -120,7 +120,7 @@ func prefixDefinition(ctx base.CompilationContext, def *ast.Definition, sourceNa
 		ctx.RegisterObject(prefixedName, info)
 
 		// Apply prefix to definition name (NOT for functions, NOT for extension views)
-		if opts.Prefix != "" && !(opts.IsExtension && isView) {
+		if opts.Prefix != "" && (!opts.IsExtension || !isView) {
 			def.Name = prefixedName
 			// Add @original_name directive
 			pos := &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}}

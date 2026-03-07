@@ -31,9 +31,9 @@ echo "Provisioning data sources..."
 # data_source_catalogs (M2M) → catalog_sources → data_sources.
 echo "  Cleaning existing data sources..."
 for src in ext_bridge rest_api local_db pg_store; do
-  gql "mutation { core { delete_data_source_catalogs(filter: { data_source_name: { _eq: \\\"$src\\\" } }) { data_source_name } } }" > /dev/null 2>&1 || true
-  gql "mutation { core { delete_catalog_sources(filter: { name: { _eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
-  gql "mutation { core { delete_data_sources(filter: { name: { _eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
+  gql "mutation { core { delete_data_source_catalogs(filter: { data_source_name: { eq: \\\"$src\\\" } }) { data_source_name } } }" > /dev/null 2>&1 || true
+  gql "mutation { core { delete_catalog_sources(filter: { name: { eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
+  gql "mutation { core { delete_data_sources(filter: { name: { eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
 done
 
 # 1. Add PostgreSQL data source

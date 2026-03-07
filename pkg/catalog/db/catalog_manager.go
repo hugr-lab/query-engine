@@ -389,7 +389,7 @@ func (p *Provider) suspendDependentsVisited(ctx context.Context, name string, vi
 		}
 		dependents = append(dependents, dep)
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	for _, depName := range dependents {
 		slog.Info("suspending dependent catalog",
@@ -550,7 +550,7 @@ func (p *Provider) CleanOrphanedCatalogs(ctx context.Context) error {
 		orphans = append(orphans, name)
 	}
 	p.mu.RUnlock()
-	rows.Close()
+	_ = rows.Close()
 
 	for _, name := range orphans {
 		slog.Info("removing orphaned catalog", "catalog", name)

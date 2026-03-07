@@ -91,7 +91,9 @@ func (fc *featureCollection) EncodeJSON(ctx context.Context, w io.Writer) error 
 		return err
 	}
 	if fc.writeResultsCount {
-		_, err = fmt.Fprintf(w, `,"numberReturned":%d`, n)
+		if _, err = fmt.Fprintf(w, `,"numberReturned":%d`, n); err != nil {
+			return err
+		}
 	}
 	_, err = w.Write([]byte(`}`))
 	return err
@@ -232,10 +234,6 @@ func (fc *featureCollection) wfsCollectionAttributes() ([]xml.Attr, error) {
 			if fc.namespaceSchemaDir == "" {
 				name = fc.namespaceSchemaDir + "/" + name
 			}
-			sl = append(sl,
-				"\""+fc.namespaceBaseURL+"/gis/wfs/collections/"+name+"\"",
-				"\""+fc.namespaceBaseURL+"/gis/wfs/schemas/"+name+".xsd\"",
-			)
 			attr = append(attr, xml.Attr{
 				Name:  xml.Name{Local: "xmlns"},
 				Value: fc.namespaceBaseURL + "/gis/wfs/collections/" + name,
@@ -324,7 +322,6 @@ func (cs *collectionSummary) EncodeJSON(w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		wrote = true
 	}
 
 	return nil

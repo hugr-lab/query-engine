@@ -13,7 +13,7 @@ type ValuesOfCorrectType struct{}
 
 func (r *ValuesOfCorrectType) Validate(_ *validator.WalkContext, doc *ast.QueryDocument) gqlerror.List {
 	var errs gqlerror.List
-	var checkValue func(value *ast.Value)
+	var checkValue func(value *ast.Value) //nolint:staticcheck // recursive reference requires separate declaration
 	checkValue = func(value *ast.Value) {
 		if value == nil || value.Definition == nil || value.ExpectedType == nil {
 			return

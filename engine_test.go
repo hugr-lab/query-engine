@@ -6,12 +6,12 @@ import (
 
 	_ "embed"
 
-	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	"github.com/hugr-lab/query-engine/pkg/engines"
 )
 
 //go:embed pkg/data-sources/sources/runtime/core-db/schema.graphql
@@ -25,8 +25,9 @@ func Test_processQuery(t *testing.T) {
 	ss := catalog.NewService(provider)
 	e := engines.NewDuckDB()
 	cat, err := sources.NewStringSource("test", e, compiler.Options{
-		Name:         "test",
+		Name:         "core",
 		EngineType:   string(e.Type()),
+		AsModule:     true,
 		Capabilities: e.Capabilities(),
 	}, testSchemaData)
 	if err != nil {

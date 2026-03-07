@@ -115,8 +115,7 @@ func (w *walker) walkSelection(parentDef *ast.Definition, sel ast.Selection) {
 
 		// Walk arguments
 		for _, arg := range sel.Arguments {
-			var argDef *ast.ArgumentDefinition
-			argDef = fieldDef.Arguments.ForName(arg.Name)
+			argDef := fieldDef.Arguments.ForName(arg.Name)
 			w.walkArgument(argDef, arg)
 		}
 

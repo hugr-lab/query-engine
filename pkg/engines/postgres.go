@@ -286,7 +286,6 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 				return strings.Join(values, " OR "), params, nil
 			}
 		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
-			sqlName += extractPGJsonFieldByPath(path, true)
 			switch op {
 			case "upper", "lower":
 				return "", nil, fmt.Errorf("unsupported filter operator for json type: %s", op)

@@ -55,7 +55,7 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 		return err
 	}
 
-	ds, err := s.DataSource(name)
+	_, err = s.DataSource(name)
 	if err == nil {
 		err = s.UnloadDataSource(ctx, name)
 		if err != nil && !errors.Is(err, errAlreadyUnloaded) {
@@ -63,7 +63,7 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 		}
 	}
 
-	ds, err = NewDataSource(ctx, item, false)
+	ds, err := NewDataSource(ctx, item, false)
 	if err != nil {
 		return err
 	}
@@ -82,7 +82,7 @@ var errAlreadyUnloaded = errors.New("data source already unloaded")
 
 func (s *Service) UnloadDataSource(ctx context.Context, name string) error {
 	if !s.IsAttached(name) {
-		s.Unregister(ctx, name)
+		_ = s.Unregister(ctx, name)
 		return errAlreadyUnloaded
 	}
 	if err := s.Detach(ctx, name, s.db); err != nil {

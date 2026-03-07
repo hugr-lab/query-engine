@@ -71,6 +71,10 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if info.Key == "" {
 		info.Key, err = cache.QueryKey(string(b), nil)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	data, err := s.cache.Load(r.Context(), info.Key, dataFunc, info.Options()...)

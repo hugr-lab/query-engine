@@ -124,14 +124,14 @@ func (p *Provider) reindexTable(ctx context.Context, table, pkCol, filterCatalog
 		if len(batch) >= batchSize {
 			n, err := p.flushEmbeddings(ctx, table, pkCol, batch)
 			if err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return total, err
 			}
 			total += n
 			batch = batch[:0]
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	if len(batch) > 0 {
 		n, err := p.flushEmbeddings(ctx, table, pkCol, batch)
@@ -178,14 +178,14 @@ func (p *Provider) reindexFields(ctx context.Context, filterCatalog string, batc
 		if len(batch) >= batchSize {
 			n, err := p.flushFieldEmbeddings(ctx, batch)
 			if err != nil {
-				rows.Close()
+				_ = rows.Close()
 				return total, err
 			}
 			total += n
 			batch = batch[:0]
 		}
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	if len(batch) > 0 {
 		n, err := p.flushFieldEmbeddings(ctx, batch)

@@ -26,13 +26,14 @@ var instructions string
 // Server wraps the MCP server and its dependencies.
 type Server struct {
 	querier types.Querier
+	debug   bool
 	mcp     *server.MCPServer
 	http    *server.StreamableHTTPServer
 }
 
 // New creates a new MCP server backed by the given query engine.
-func New(querier types.Querier) *Server {
-	s := &Server{querier: querier}
+func New(querier types.Querier, debug bool) *Server {
+	s := &Server{querier: querier, debug: debug}
 
 	mcpServer := server.NewMCPServer(
 		"Hugr Schema Explorer",
@@ -41,7 +42,7 @@ func New(querier types.Querier) *Server {
 		server.WithResourceCapabilities(false, true),
 		server.WithPromptCapabilities(true),
 		server.WithInstructions(instructions),
-		server.WithToolHandlerMiddleware(toolLoggingMiddleware()),
+		server.WithToolHandlerMiddleware(toolLoggingMiddleware(debug)),
 	)
 
 	// Discovery tools.
@@ -129,6 +130,7 @@ Rely on field descriptions to understand semantics — names are often auto-gene
 		mcp.WithDescription(`Return enum values for a GraphQL enum type. Use to discover valid enum values before building queries.
 Common enums: OrderDirection (ASC, DESC), TimeExtract (year, month, day, hour, ...), TimeBucket (minute, hour, day, week, month, quarter, year).`),
 		mcp.WithString("type_name", mcp.Required(), mcp.Description("Enum type name")),
+		mcp.WithOutputSchema[EnumValuesResult](),
 	), s.enumValues)
 
 	// Data tools.
@@ -175,9 +177,13 @@ func (s *Server) Handler() http.Handler {
 
 // --- Middleware ---
 
-func toolLoggingMiddleware() server.ToolHandlerMiddleware {
+func toolLoggingMiddleware(debug bool) server.ToolHandlerMiddleware {
 	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if !debug {
+				return next(ctx, req)
+			}
+
 			tool := req.Params.Name
 			args := req.GetArguments()
 

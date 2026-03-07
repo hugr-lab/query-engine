@@ -683,6 +683,7 @@ type Product @table(name: "products") @references(name: "prod_cat", references_n
   data(
     """
     Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    Types can be: string, int, float, bool,timestamp, json, h3string
     """
     struct: JSON
   ): JSON
@@ -1612,6 +1613,7 @@ type _Product_aggregation @aggregation(name: "Product", is_bucket: false, level:
   data(
     """
     Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    Types can be: string, int, float, bool,timestamp, json, h3string
     """
     struct: JSON
   ): JSONAggregation @field_aggregation(name: "data")
@@ -1803,6 +1805,7 @@ type _Product_aggregation_sub_aggregation @aggregation(name: "_Product_aggregati
   data(
     """
     Provides json structure to extract partial data from json field. Structure: {field: "type", field2: ["type2"], field3: [{field4: "type4"}]}.
+    Types can be: string, int, float, bool,timestamp, json, h3string
     """
     struct: JSON
   ): JSONSubAggregation @field_aggregation(name: "data")

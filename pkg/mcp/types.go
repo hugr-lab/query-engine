@@ -114,6 +114,19 @@ type TypeInfo struct {
 	LongDescription  string `json:"long_description,omitempty"`
 }
 
+// --- Schema: Enum Values ---
+
+type EnumValuesResult struct {
+	Name        string          `json:"name"        jsonschema_description:"Enum type name"`
+	Description string          `json:"description" jsonschema_description:"Enum type description"`
+	Values      []EnumValueInfo `json:"values"      jsonschema_description:"List of enum values"`
+}
+
+type EnumValueInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
 // --- Schema: Type Fields ---
 
 type TypeFieldInfo struct {

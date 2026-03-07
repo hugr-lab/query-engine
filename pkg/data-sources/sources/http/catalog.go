@@ -660,8 +660,8 @@ type openApiTypeExt struct {
 
 func (t *openApiTypeExt) FieldDirectives(name string) []*ast.Directive {
 	var dd ast.DirectiveList
-	switch {
-	case t.TypeName == base.TimestampTypeName:
+	switch t.TypeName {
+	case base.TimestampTypeName:
 		sql := "[" + name + "]"
 		switch t.TransformName {
 		case "FromUnixTime":
@@ -669,7 +669,7 @@ func (t *openApiTypeExt) FieldDirectives(name string) []*ast.Directive {
 		default:
 			dd = append(dd, base.FieldSqlDirective(fmt.Sprintf("try_cast(%s AS VARCHAR)::TIMESTAMP_TZ", sql)))
 		}
-	case t.TypeName == base.GeometryTypeName:
+	case base.GeometryTypeName:
 		if t.GeometryInfo.GeometryType != "" && t.GeometryInfo.SRID != 0 {
 			dd = append(dd, base.FieldGeometryInfoDirective(t.GeometryInfo.GeometryType, t.GeometryInfo.SRID))
 		}

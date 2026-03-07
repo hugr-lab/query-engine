@@ -301,37 +301,43 @@ func (s *Server) enumValues(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		return toolResultError("type_name is required"), nil
 	}
 
-	// Use GraphQL introspection to get enum values — they are not stored in catalog fields.
-	var result struct {
-		Name       string `json:"name"`
-		Kind       string `json:"kind"`
-		EnumValues []struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-		} `json:"enumValues"`
+	var raw struct {
+		Name        string          `json:"name"`
+		Kind        string          `json:"kind"`
+		Description string          `json:"description"`
+		EnumValues  []EnumValueInfo `json:"enum_values"`
 	}
 
 	err := s.queryScan(ctx, `query($name: String!) {
-		__type(name: $name) {
-			name
-			kind
-			enumValues {
-				name
-				description
+		core {
+			catalog {
+				types_by_pk(name: $name) {
+					name
+					kind
+					description
+					enum_values {
+						name
+						description
+					}
+				}
 			}
 		}
-	}`, map[string]any{"name": typeName}, "__type", &result)
+	}`, map[string]any{"name": typeName}, "core.catalog.types_by_pk", &raw)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
-	if result.Name == "" {
+	if raw.Name == "" {
 		return toolResultError(fmt.Sprintf("type %q not found", typeName)), nil
 	}
-	if result.Kind != "ENUM" {
-		return toolResultError(fmt.Sprintf("type %q is %s, not ENUM", typeName, result.Kind)), nil
+	if raw.Kind != "ENUM" {
+		return toolResultError(fmt.Sprintf("type %q is %s, not ENUM", typeName, raw.Kind)), nil
 	}
 
-	return toolResultJSON(result.EnumValues), nil
+	return toolResultJSON(EnumValuesResult{
+		Name:        raw.Name,
+		Description: raw.Description,
+		Values:      raw.EnumValues,
+	}), nil
 }
 
 // isGeometryType checks if a GraphQL type string is a geometry type.

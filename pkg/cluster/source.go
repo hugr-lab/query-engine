@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/hugr-lab/query-engine/pkg/auth"
 	catalogdb "github.com/hugr-lab/query-engine/pkg/catalog/db"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
@@ -38,6 +39,9 @@ type Source struct {
 
 	// registered is closed after the first successful node registration.
 	registered chan struct{}
+
+	// cancel stops background goroutines (heartbeat, schema polling).
+	cancel context.CancelFunc
 }
 
 // NewSource creates a new cluster runtime source.
@@ -69,6 +73,8 @@ func (*Source) AsModule() bool         { return true }
 func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	s.pool = pool
 
+	ctx, s.cancel = context.WithCancel(ctx)
+
 	// Node registration is deferred to the heartbeat goroutine because
 	// the engine's planner is not yet initialized during Attach().
 
@@ -92,6 +98,14 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	}
 
 	return s.registerUDFs(ctx, pool)
+}
+
+// Close stops background goroutines.
+func (s *Source) Close() error {
+	if s.cancel != nil {
+		s.cancel()
+	}
+	return nil
 }
 
 func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
@@ -167,6 +181,38 @@ func (s *Source) reconcileLoadedSources(ctx context.Context) error {
 			} else {
 				slog.Info("cluster worker: reconcile loaded source", "source", name)
 			}
+		}
+	}
+
+	// Unload sources that are attached but no longer expected.
+	// Query all non-runtime data sources and unload any not in expected set.
+	res, err := s.qe.Query(auth.ContextWithFullAccess(ctx), `query {
+		core { data_sources { name } }
+	}`, nil)
+	if err != nil {
+		return fmt.Errorf("reconcile: list data sources: %w", err)
+	}
+	defer res.Close()
+	var loaded []struct {
+		Name string `json:"name"`
+	}
+	if err := res.ScanData("core.data_sources", &loaded); err != nil {
+		return nil
+	}
+	for _, ds := range loaded {
+		if expected[ds.Name] {
+			continue
+		}
+		// Only unload if currently attached.
+		status, err := s.qe.DataSourceStatus(ctx, ds.Name)
+		if err != nil || status != "attached" {
+			continue
+		}
+		if err := s.qe.UnloadDataSource(ctx, ds.Name); err != nil {
+			slog.Warn("cluster worker: reconcile unload failed",
+				"source", ds.Name, "error", err)
+		} else {
+			slog.Info("cluster worker: reconcile unloaded source", "source", ds.Name)
 		}
 	}
 

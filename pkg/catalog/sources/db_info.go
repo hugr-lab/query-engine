@@ -277,9 +277,7 @@ func (s *DBInfo) schemaDocument(_ context.Context) (*ast.SchemaDocument, error) 
 		if err != nil {
 			return nil, err
 		}
-		for _, def := range defs {
-			doc.Definitions = append(doc.Definitions, def)
-		}
+		doc.Definitions = append(doc.Definitions, defs...)
 	}
 
 	return doc, nil

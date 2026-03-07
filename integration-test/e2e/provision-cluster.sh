@@ -28,9 +28,9 @@ echo "Provisioning cluster data sources on $MGMT_URL..."
 # Clean existing sources (idempotent for reruns)
 echo "  Cleaning existing data sources..."
 for src in pg_store; do
-  gql "$MGMT_URL" "mutation { core { delete_data_source_catalogs(filter: { data_source_name: { _eq: \\\"$src\\\" } }) { data_source_name } } }" > /dev/null 2>&1 || true
-  gql "$MGMT_URL" "mutation { core { delete_catalog_sources(filter: { name: { _eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
-  gql "$MGMT_URL" "mutation { core { delete_data_sources(filter: { name: { _eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
+  gql "$MGMT_URL" "mutation { core { delete_data_source_catalogs(filter: { data_source_name: { eq: \\\"$src\\\" } }) { data_source_name } } }" > /dev/null 2>&1 || true
+  gql "$MGMT_URL" "mutation { core { delete_catalog_sources(filter: { name: { eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
+  gql "$MGMT_URL" "mutation { core { delete_data_sources(filter: { name: { eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
 done
 
 # 1. Register PostgreSQL data source (shared across all cluster nodes)
@@ -47,19 +47,18 @@ gql "$MGMT_URL" "mutation { function { core { cluster { load_source(name: \\\"pg
 
 # 3. Wait for workers to process broadcasts and poll schema
 echo "  Waiting for workers to sync schema..."
-sleep 5
-
-# 4. Verify worker can query loaded source
-echo "  Verifying worker-1 can query pg_store..."
-result=$(curl -sf -X POST "$WORKER1_URL/query" \
-  -H "Content-Type: application/json" \
-  -d '{"query": "{ pg_store { products(limit: 1) { id } } }"}' 2>/dev/null) || {
-  echo "  WARNING: Worker verification query failed (may need more time)"
-}
-if echo "$result" | jq -e '.data.pg_store.products' > /dev/null 2>&1; then
-  echo "  Worker-1 verified: pg_store queryable"
-else
-  echo "  WARNING: Worker verification returned unexpected result: $result"
-fi
+for i in $(seq 1 30); do
+  result=$(curl -sf -X POST "$WORKER1_URL/query" \
+    -H "Content-Type: application/json" \
+    -d '{"query": "{ pg_store { products(limit: 1) { id } } }"}' 2>/dev/null) && \
+  echo "$result" | jq -e '.data.pg_store.products' > /dev/null 2>&1 && {
+    echo "  Worker-1 verified: pg_store queryable"
+    break
+  }
+  if [ "$i" -eq 30 ]; then
+    echo "  WARNING: Worker verification timed out after 30 attempts"
+  fi
+  sleep 1
+done
 
 echo "Cluster provisioning complete."

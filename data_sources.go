@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"log"
+	"log/slog"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cluster"
@@ -148,10 +148,10 @@ func (s *Service) loadDataSources(ctx context.Context) error {
 	})
 	for _, ds := range data {
 		if err := s.LoadDataSource(ctx, ds.Name); err != nil {
-			log.Printf("ERR: failed to load datasource %s: %v", ds.Name, err)
+			slog.Error("failed to load datasource", "name", ds.Name, "error", err)
 			continue
 		}
-		log.Printf("INFO: loaded datasource %s", ds.Name)
+		slog.Info("loaded datasource", "name", ds.Name)
 	}
 
 	return nil

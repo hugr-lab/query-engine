@@ -1,0 +1,33 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      check-blank: false
+      exclude-functions:
+        - (*encoding/json.Encoder).Encode
+        - fmt.Fprintf
+        - fmt.Fprint
+  exclusions:
+    rules:
+      # defer Close/Rollback is idiomatic Go
+      - source: "defer "
+        linters: [errcheck]
+      # progress bars — fire-and-forget
+      - source: "bar\\."
+        linters: [errcheck]
+      # test files — less strict error checking
+      - path: '_test\.go'
+        linters: [errcheck, staticcheck]
+      # test files — unused helpers are ok
+      - path: '_test\.go'
+        linters: [unused]
+      # dot imports used extensively in data-sources package
+      - text: "ST1001"
+        linters: [staticcheck]

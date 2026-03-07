@@ -35,10 +35,6 @@ func processSelectionSet(ctx context.Context, ss ast.SelectionSet, resolvers map
 		case *ast.Field:
 			resolver, ok := resolvers[selection.Name]
 			if !ok {
-				pos := selection.Position
-				if pos == nil {
-					pos = &ast.Position{}
-				}
 				return nil, sdl.ErrorPosf(selection.Position, "%s: couldn't find field resolver", selection.Name)
 			}
 			data, err := resolver(ctx, selection, "")

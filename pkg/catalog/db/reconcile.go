@@ -524,16 +524,16 @@ func (p *Provider) batchInsertModuleTypeCatalogs(ctx context.Context, conn *Conn
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(
+	fmt.Fprintf(&sb,
 		`INSERT INTO %s (module_name, type_name, catalog_name) VALUES `,
 		p.table("_schema_module_type_catalogs"),
-	))
+	)
 	args := make([]any, 0, len(triples)*3)
 	for i, t := range triples {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(fmt.Sprintf("($%d, $%d, $%d)", i*3+1, i*3+2, i*3+3))
+		fmt.Fprintf(&sb, "($%d, $%d, $%d)", i*3+1, i*3+2, i*3+3)
 		args = append(args, t[0], t[1], t[2])
 	}
 	sb.WriteString(" ON CONFLICT (type_name, catalog_name) DO NOTHING")
@@ -639,16 +639,16 @@ func (p *Provider) reconcileDataObjectQueries(ctx context.Context, conn *Connect
 
 	// Batch INSERT all entries
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(
+	fmt.Fprintf(&sb,
 		`INSERT INTO %s (name, object_name, query_root, query_type) VALUES `,
 		p.table("_schema_data_object_queries"),
-	))
+	)
 	args := make([]any, 0, len(entries)*4)
 	for i, e := range entries {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
-		sb.WriteString(fmt.Sprintf("($%d, $%d, $%d, $%d)", i*4+1, i*4+2, i*4+3, i*4+4))
+		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d)", i*4+1, i*4+2, i*4+3, i*4+4)
 		args = append(args, e.name, e.object, e.queryRoot, e.queryType)
 	}
 	sb.WriteString(" ON CONFLICT (name, object_name) DO UPDATE SET query_root=EXCLUDED.query_root, query_type=EXCLUDED.query_type")

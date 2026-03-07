@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"sync"
@@ -384,7 +385,7 @@ func (p *Provider) InvalidateAll() {
 	p.mu.Unlock()
 }
 
-// IncrementSchemaVersion atomically increments the schema version counter
+// IncrementSchemaVersion increments the schema version counter
 // in _schema_settings and returns the new value. Called by management node
 // after AddCatalog/RemoveCatalog/ReloadCatalog.
 func (p *Provider) IncrementSchemaVersion(ctx context.Context) (int64, error) {
@@ -432,6 +433,9 @@ func (p *Provider) GetSchemaVersion(ctx context.Context) (int64, error) {
 		`SELECT CAST(TRIM(value, '"') AS BIGINT) FROM %s WHERE key = 'schema_version'`,
 		p.table("_schema_settings"),
 	)).Scan(&version)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
 	if err != nil {
 		return 0, fmt.Errorf("get schema version: %w", err)
 	}

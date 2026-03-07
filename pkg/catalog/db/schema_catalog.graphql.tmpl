@@ -368,5 +368,23 @@ type module_intro @view(
   )
 }
 
+# --- Enum Values ---
+
+"Schema enum values"
+type enum_values @view(name: "_schema_enum_values", sql: "FROM core._schema_enum_values") {
+  type_name: String! @pk @field_references(
+    name: "ev_type_ref"
+    field: "name"
+    references_name: "types"
+    query: "type"
+    description: "The enum type"
+    references_query: "enum_values"
+    references_description: "Values of this enum"
+  )
+  name: String! @pk
+  description: String!
+  ordinal: Int!
+}
+
 # UDFs are declared in core-db schema.graphql (not here) because they use
 # @module(name: "core") and must not be affected by the _schema prefix.
