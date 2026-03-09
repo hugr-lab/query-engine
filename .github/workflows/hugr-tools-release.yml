@@ -13,7 +13,7 @@ permissions:
 
 env:
   CGO_CFLAGS: "-O1 -g"
-  BUILD_TAGS: "duckdb_arrow,duckdb_use_static_lib"
+  BUILD_TAGS: "duckdb_arrow"
 
 jobs:
   build-darwin:
