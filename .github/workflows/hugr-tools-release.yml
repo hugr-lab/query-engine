@@ -4,8 +4,6 @@ on:
   push:
     tags:
       - 'hugr-tools-v*'
-    branches:
-      - ci/hugr-tools-release
   workflow_dispatch:
 
 permissions:
