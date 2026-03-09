@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+env:
+  CGO_CFLAGS: "-O1 -g"
+  BUILD_TAGS: "duckdb_arrow,duckdb_use_static_lib"
+
 jobs:
   build-darwin:
     runs-on: macos-latest
@@ -21,7 +25,7 @@ jobs:
           go-version: '1.26'
       - name: Build
         run: |
-          CGO_ENABLED=0 go build -o hugr-tools-darwin-arm64 ./cmd/hugr-tools
+          go build -tags "$BUILD_TAGS" -o hugr-tools-darwin-arm64 ./cmd/hugr-tools
       - uses: actions/upload-artifact@v4
         with:
           name: hugr-tools-darwin-arm64
@@ -36,7 +40,7 @@ jobs:
           go-version: '1.26'
       - name: Build
         run: |
-          CGO_ENABLED=0 go build -o hugr-tools-linux-amd64 ./cmd/hugr-tools
+          go build -tags "$BUILD_TAGS" -o hugr-tools-linux-amd64 ./cmd/hugr-tools
       - uses: actions/upload-artifact@v4
         with:
           name: hugr-tools-linux-amd64
@@ -66,8 +70,7 @@ jobs:
           go-version: '1.26'
       - name: Build
         run: |
-          $env:CGO_ENABLED="0"
-          go build -o hugr-tools-windows-amd64.exe ./cmd/hugr-tools
+          go build -tags "$env:BUILD_TAGS" -o hugr-tools-windows-amd64.exe ./cmd/hugr-tools
       - uses: actions/upload-artifact@v4
         with:
           name: hugr-tools-windows-amd64
