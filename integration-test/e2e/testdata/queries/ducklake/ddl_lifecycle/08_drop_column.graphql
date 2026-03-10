@@ -1,0 +1,14 @@
+mutation {
+  function {
+    core {
+      ducklake_drop_column(
+        name: "dl_test"
+        table_name: "ddl_test_table"
+        column_name: "description"
+      ) {
+        success
+        message
+      }
+    }
+  }
+}

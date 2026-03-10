@@ -3,13 +3,13 @@
     "function": {
       "core": {
         "ducklake_info": {
-          "current_snapshot": 6,
+          "current_snapshot": 12,
           "ducklake_version": "0.3",
           "metadata_backend": "__ducklake_metadata_dl_test",
           "name": "dl_test",
           "schema_count": 1,
-          "schema_version": 1,
-          "snapshot_count": 7,
+          "schema_version": 6,
+          "snapshot_count": 13,
           "table_count": 1,
           "view_count": 0
         }

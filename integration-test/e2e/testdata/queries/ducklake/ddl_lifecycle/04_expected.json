@@ -1,0 +1,10 @@
+{
+  "data": {
+    "dl_test": {
+      "insert_ddl_test_table": {
+        "message": "success",
+        "success": true
+      }
+    }
+  }
+}

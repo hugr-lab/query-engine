@@ -2,9 +2,9 @@
   "data": {
     "core": {
       "DuckLakeDataFile_aggregation": {
-        "_rows_count": 2,
+        "_rows_count": 3,
         "data_file_size_bytes": {
-          "count": 2
+          "count": 3
         },
         "delete_file_size_bytes": {
           "count": 1

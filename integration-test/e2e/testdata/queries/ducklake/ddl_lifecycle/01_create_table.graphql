@@ -1,0 +1,14 @@
+mutation {
+  function {
+    core {
+      ducklake_create_table(
+        name: "dl_test"
+        table_name: "ddl_test_table"
+        columns_sql: "id INTEGER, name VARCHAR, value FLOAT"
+      ) {
+        success
+        message
+      }
+    }
+  }
+}

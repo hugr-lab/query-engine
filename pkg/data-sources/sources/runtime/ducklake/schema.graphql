@@ -214,6 +214,96 @@ extend type MutationFunction {
     table_name: String
   ): OperationResult @module(name: "core")
     @function(name: "hugr_ducklake_set_option")
+
+  # --- DDL operations ---
+
+  """
+    Create a new schema in a DuckLake catalog.
+  """
+  ducklake_create_schema(
+    name: String!
+    schema_name: String!
+  ): OperationResult @module(name: "core")
+    @function(name: "hugr_ducklake_create_schema")
+
+  """
+    Drop a schema from a DuckLake catalog. Schema must be empty.
+  """
+  ducklake_drop_schema(
+    name: String!
+    schema_name: String!
+  ): OperationResult @module(name: "core")
+    @function(name: "hugr_ducklake_drop_schema")
+
+  """
+    Create a new table in a DuckLake catalog.
+    columns_sql is the column definition fragment, e.g. "id INTEGER, name VARCHAR, score FLOAT".
+  """
+  ducklake_create_table(
+    name: String!
+    table_name: String!
+    columns_sql: String!
+    schema_name: String
+  ): OperationResult @module(name: "core")
+    @function(name: "hugr_ducklake_create_table")
+
+  """
+    Drop a table from a DuckLake catalog.
+  """
+  ducklake_drop_table(
+    name: String!
+    table_name: String!
+    schema_name: String
+  ): OperationResult @module(name: "core")
+    @function(name: "hugr_ducklake_drop_table")
+
+  """
+    Add a column to an existing DuckLake table.
+  """
+  ducklake_add_column(
+    name: String!
+    table_name: String!
+    column_name: String!
+    column_type: String!
+    schema_name: String
+    default_value: String
+  ): OperationResult @module(name: "core")
+    @function(name: "hugr_ducklake_add_column")
+
+  """
+    Drop a column from an existing DuckLake table.
+  """
+  ducklake_drop_column(
+    name: String!
+    table_name: String!
+    column_name: String!
+    schema_name: String
+  ): OperationResult @module(name: "core")
+    @function(name: "hugr_ducklake_drop_column")
+
+  """
+    Rename a column in a DuckLake table.
+  """
+  ducklake_rename_column(
+    name: String!
+    table_name: String!
+    old_column_name: String!
+    new_column_name: String!
+    schema_name: String
+  ): OperationResult @module(name: "core")
+    @function(name: "hugr_ducklake_rename_column")
+
+  """
+    Rename a DuckLake table.
+  """
+  ducklake_rename_table(
+    name: String!
+    old_table_name: String!
+    new_table_name: String!
+    schema_name: String
+  ): OperationResult @module(name: "core")
+    @function(name: "hugr_ducklake_rename_table")
+
 }
 
 extend type Function {

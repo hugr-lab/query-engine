@@ -1,0 +1,14 @@
+mutation {
+  function {
+    core {
+      ducklake_rename_table(
+        name: "dl_test"
+        old_table_name: "ddl_test_table"
+        new_table_name: "ddl_renamed_table"
+      ) {
+        success
+        message
+      }
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  dl_test {
+    ddl_test_table(order_by: [{ field: "id", direction: ASC }]) {
+      id
+      name
+      value
+      description
+    }
+  }
+}

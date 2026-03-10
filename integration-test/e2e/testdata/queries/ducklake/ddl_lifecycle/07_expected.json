@@ -1,0 +1,14 @@
+{
+  "data": {
+    "dl_test": {
+      "ddl_test_table": [
+        {
+          "description": "no description",
+          "id": 1,
+          "name": "alpha",
+          "value": 1.5
+        }
+      ]
+    }
+  }
+}

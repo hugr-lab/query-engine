@@ -38,6 +38,45 @@ func (s *Source) registerUDF(ctx context.Context) error {
 		return err
 	}
 
+	// --- DDL functions ---
+
+	if err := s.registerDDL2(ctx, "hugr_ducklake_create_schema",
+		func(name, arg string) string {
+			return fmt.Sprintf("CREATE SCHEMA %s.%s", engines.Ident(name), engines.Ident(arg))
+		}, "Schema created"); err != nil {
+		return err
+	}
+	if err := s.registerDDL2(ctx, "hugr_ducklake_drop_schema",
+		func(name, arg string) string {
+			return fmt.Sprintf("DROP SCHEMA %s.%s", engines.Ident(name), engines.Ident(arg))
+		}, "Schema dropped"); err != nil {
+		return err
+	}
+	if err := s.registerCreateTable(ctx); err != nil {
+		return err
+	}
+	if err := s.registerDDL3(ctx, "hugr_ducklake_drop_table",
+		func(name, tableName, schemaName string) string {
+			return fmt.Sprintf("DROP TABLE %s", qualifiedTable(name, schemaName, tableName))
+		}, "Table dropped"); err != nil {
+		return err
+	}
+	if err := s.registerAddColumn(ctx); err != nil {
+		return err
+	}
+	if err := s.registerDDL4(ctx, "hugr_ducklake_drop_column",
+		func(name, tableName, colName, schemaName string) string {
+			return fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s",
+				qualifiedTable(name, schemaName, tableName), engines.Ident(colName))
+		}, "Column dropped"); err != nil {
+		return err
+	}
+	if err := s.registerRenameColumn(ctx); err != nil {
+		return err
+	}
+	if err := s.registerRenameTable(ctx); err != nil {
+		return err
+	}
 	// --- Query functions ---
 
 	if err := s.registerInfo(ctx); err != nil {
@@ -48,6 +87,15 @@ func (s *Source) registerUDF(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// qualifiedTable builds a fully qualified table identifier: "catalog"."schema"."table"
+// If schema is empty, defaults to "main".
+func qualifiedTable(catalog, schema, table string) string {
+	if schema == "" {
+		schema = "main"
+	}
+	return fmt.Sprintf("%s.%s.%s", engines.Ident(catalog), engines.Ident(schema), engines.Ident(table))
 }
 
 // registerSimpleCall registers a mutation UDF that takes a single name argument
@@ -520,6 +568,306 @@ func (s *Source) registerCurrentSnapshot(ctx context.Context) error {
 		},
 		InputTypes: []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
 		OutputType: runtime.DuckDBTypeInfoByNameMust("INTEGER"),
+	})
+}
+
+// --- DDL UDF helpers ---
+
+// registerDDL2 registers a DDL UDF with 2 VARCHAR args: (name, arg).
+func (s *Source) registerDDL2(ctx context.Context, name string, sqlFn func(name, arg string) string, successMsg string) error {
+	return s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[[2]string, *types.OperationResult]{
+		Name: name,
+		Execute: func(ctx context.Context, args [2]string) (*types.OperationResult, error) {
+			sql := sqlFn(args[0], args[1])
+			_, err := s.db.Exec(ctx, sql)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result(successMsg, 0, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) ([2]string, error) {
+			if len(args) != 2 {
+				return [2]string{}, fmt.Errorf("expected 2 arguments, got %d", len(args))
+			}
+			return [2]string{args[0].(string), args[1].(string)}, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) { return out.ToDuckdb(), nil },
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType: types.DuckDBOperationResult(),
+	})
+}
+
+// registerDDL3 registers a DDL UDF with 3 VARCHAR args: (name, objectName, schemaName?).
+func (s *Source) registerDDL3(ctx context.Context, name string, sqlFn func(name, objectName, schemaName string) string, successMsg string) error {
+	return s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[[3]string, *types.OperationResult]{
+		Name:                  name,
+		IsSpecialNullHandling: true,
+		Execute: func(ctx context.Context, args [3]string) (*types.OperationResult, error) {
+			sql := sqlFn(args[0], args[1], args[2])
+			_, err := s.db.Exec(ctx, sql)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result(successMsg, 0, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) ([3]string, error) {
+			if len(args) != 3 {
+				return [3]string{}, fmt.Errorf("expected 3 arguments, got %d", len(args))
+			}
+			r := [3]string{args[0].(string), args[1].(string)}
+			if args[2] != nil {
+				r[2] = args[2].(string)
+			}
+			return r, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) { return out.ToDuckdb(), nil },
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType: types.DuckDBOperationResult(),
+	})
+}
+
+// registerDDL4 registers a DDL UDF with 4 VARCHAR args: (name, objectName, colName, schemaName?).
+func (s *Source) registerDDL4(ctx context.Context, name string, sqlFn func(name, objectName, colName, schemaName string) string, successMsg string) error {
+	return s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[[4]string, *types.OperationResult]{
+		Name:                  name,
+		IsSpecialNullHandling: true,
+		Execute: func(ctx context.Context, args [4]string) (*types.OperationResult, error) {
+			sql := sqlFn(args[0], args[1], args[2], args[3])
+			_, err := s.db.Exec(ctx, sql)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result(successMsg, 0, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) ([4]string, error) {
+			if len(args) != 4 {
+				return [4]string{}, fmt.Errorf("expected 4 arguments, got %d", len(args))
+			}
+			r := [4]string{args[0].(string), args[1].(string), args[2].(string)}
+			if args[3] != nil {
+				r[3] = args[3].(string)
+			}
+			return r, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) { return out.ToDuckdb(), nil },
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType: types.DuckDBOperationResult(),
+	})
+}
+
+type createTableArgs struct {
+	name       string
+	tableName  string
+	columnsSql string
+	schemaName string
+}
+
+func (s *Source) registerCreateTable(ctx context.Context) error {
+	return s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[createTableArgs, *types.OperationResult]{
+		Name:                  "hugr_ducklake_create_table",
+		IsSpecialNullHandling: true,
+		Execute: func(ctx context.Context, args createTableArgs) (*types.OperationResult, error) {
+			sql := fmt.Sprintf("CREATE TABLE %s (%s)",
+				qualifiedTable(args.name, args.schemaName, args.tableName),
+				args.columnsSql,
+			)
+			_, err := s.db.Exec(ctx, sql)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result("Table created", 0, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) (createTableArgs, error) {
+			if len(args) != 4 {
+				return createTableArgs{}, fmt.Errorf("expected 4 arguments, got %d", len(args))
+			}
+			a := createTableArgs{
+				name:       args[0].(string),
+				tableName:  args[1].(string),
+				columnsSql: args[2].(string),
+			}
+			if args[3] != nil {
+				a.schemaName = args[3].(string)
+			}
+			return a, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) { return out.ToDuckdb(), nil },
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType: types.DuckDBOperationResult(),
+	})
+}
+
+type addColumnArgs struct {
+	name         string
+	tableName    string
+	columnName   string
+	columnType   string
+	schemaName   string
+	defaultValue string
+}
+
+func (s *Source) registerAddColumn(ctx context.Context) error {
+	return s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[addColumnArgs, *types.OperationResult]{
+		Name:                  "hugr_ducklake_add_column",
+		IsSpecialNullHandling: true,
+		Execute: func(ctx context.Context, args addColumnArgs) (*types.OperationResult, error) {
+			sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s",
+				qualifiedTable(args.name, args.schemaName, args.tableName),
+				engines.Ident(args.columnName),
+				args.columnType,
+			)
+			if args.defaultValue != "" {
+				sql += fmt.Sprintf(" DEFAULT '%s'", escapeSQLString(args.defaultValue))
+			}
+			_, err := s.db.Exec(ctx, sql)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result("Column added", 0, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) (addColumnArgs, error) {
+			if len(args) != 6 {
+				return addColumnArgs{}, fmt.Errorf("expected 6 arguments, got %d", len(args))
+			}
+			a := addColumnArgs{
+				name:       args[0].(string),
+				tableName:  args[1].(string),
+				columnName: args[2].(string),
+				columnType: args[3].(string),
+			}
+			if args[4] != nil {
+				a.schemaName = args[4].(string)
+			}
+			if args[5] != nil {
+				a.defaultValue = args[5].(string)
+			}
+			return a, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) { return out.ToDuckdb(), nil },
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType: types.DuckDBOperationResult(),
+	})
+}
+
+type renameColumnArgs struct {
+	name       string
+	tableName  string
+	oldName    string
+	newName    string
+	schemaName string
+}
+
+func (s *Source) registerRenameColumn(ctx context.Context) error {
+	return s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[renameColumnArgs, *types.OperationResult]{
+		Name:                  "hugr_ducklake_rename_column",
+		IsSpecialNullHandling: true,
+		Execute: func(ctx context.Context, args renameColumnArgs) (*types.OperationResult, error) {
+			sql := fmt.Sprintf("ALTER TABLE %s RENAME %s TO %s",
+				qualifiedTable(args.name, args.schemaName, args.tableName),
+				engines.Ident(args.oldName),
+				engines.Ident(args.newName),
+			)
+			_, err := s.db.Exec(ctx, sql)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result("Column renamed", 0, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) (renameColumnArgs, error) {
+			if len(args) != 5 {
+				return renameColumnArgs{}, fmt.Errorf("expected 5 arguments, got %d", len(args))
+			}
+			a := renameColumnArgs{
+				name:      args[0].(string),
+				tableName: args[1].(string),
+				oldName:   args[2].(string),
+				newName:   args[3].(string),
+			}
+			if args[4] != nil {
+				a.schemaName = args[4].(string)
+			}
+			return a, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) { return out.ToDuckdb(), nil },
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType: types.DuckDBOperationResult(),
+	})
+}
+
+type renameTableArgs struct {
+	name       string
+	oldName    string
+	newName    string
+	schemaName string
+}
+
+func (s *Source) registerRenameTable(ctx context.Context) error {
+	return s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[renameTableArgs, *types.OperationResult]{
+		Name:                  "hugr_ducklake_rename_table",
+		IsSpecialNullHandling: true,
+		Execute: func(ctx context.Context, args renameTableArgs) (*types.OperationResult, error) {
+			sql := fmt.Sprintf("ALTER TABLE %s RENAME TO %s",
+				qualifiedTable(args.name, args.schemaName, args.oldName),
+				engines.Ident(args.newName),
+			)
+			_, err := s.db.Exec(ctx, sql)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result("Table renamed", 0, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) (renameTableArgs, error) {
+			if len(args) != 4 {
+				return renameTableArgs{}, fmt.Errorf("expected 4 arguments, got %d", len(args))
+			}
+			a := renameTableArgs{
+				name:    args[0].(string),
+				oldName: args[1].(string),
+				newName: args[2].(string),
+			}
+			if args[3] != nil {
+				a.schemaName = args[3].(string)
+			}
+			return a, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) { return out.ToDuckdb(), nil },
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType: types.DuckDBOperationResult(),
 	})
 }
 
