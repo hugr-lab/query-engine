@@ -2,7 +2,7 @@
   "data": {
     "core": {
       "ducklake": {
-        "DuckLakeDataFile_aggregation": {
+        "data_files_aggregation": {
           "_rows_count": 3,
           "data_file_size_bytes": {
             "count": 3

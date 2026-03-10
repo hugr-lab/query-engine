@@ -1,7 +1,7 @@
 {
   core {
     ducklake {
-      DuckLakeTableStat(
+      table_stats(
         args: { name: "dl_test" }
       ) {
         table_name

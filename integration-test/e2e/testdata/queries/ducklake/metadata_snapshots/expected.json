@@ -2,7 +2,7 @@
   "data": {
     "core": {
       "ducklake": {
-        "DuckLakeSnapshot": [
+        "snapshots": [
           {
             "schema_version": 0,
             "snapshot_id": 0

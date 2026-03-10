@@ -1,7 +1,7 @@
 {
   core {
     ducklake {
-      DuckLakeDataFile_aggregation(
+      data_files_aggregation(
         args: { name: "dl_test", table_name: "sensors" }
       ) {
         _rows_count

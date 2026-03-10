@@ -1,7 +1,7 @@
 {
   core {
     ducklake {
-      DuckLakeSnapshot(
+      snapshots(
         args: { name: "dl_test" }
         order_by: [{ field: "snapshot_id", direction: ASC }]
         limit: 3

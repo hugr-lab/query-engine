@@ -2,7 +2,7 @@
   "data": {
     "core": {
       "ducklake": {
-        "DuckLakeTableStat": [
+        "table_stats": [
           {
             "file_count": 3,
             "table_id": 1,

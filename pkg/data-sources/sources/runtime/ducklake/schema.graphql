@@ -2,7 +2,7 @@
 DuckLake configuration option names.
 All options support catalog (global), schema, and table scoping.
 """
-enum DuckLakeOption {
+enum Option {
   "Maximum rows to inline in a single insert (default: 10)"
   data_inlining_row_limit
   "Compression algorithm for Parquet files: uncompressed, snappy, gzip, zstd, brotli, lz4, lz4_raw (default: snappy)"
@@ -40,7 +40,7 @@ enum DuckLakeOption {
 """
 DuckLake catalog information.
 """
-type DuckLakeInfo {
+type Info {
   "Catalog name in hugr"
   name: String
   "Total number of snapshots"
@@ -70,7 +70,7 @@ type DuckLakeInfo {
 """
 Input arguments for DuckLake metadata views — pass the catalog name.
 """
-input DuckLakeCatalogArgs {
+input CatalogArgs {
   "DuckLake catalog name (hugr data source name or prefix)"
   name: String!
 }
@@ -78,7 +78,7 @@ input DuckLakeCatalogArgs {
 """
 Input arguments for DuckLake table-scoped metadata views.
 """
-input DuckLakeTableArgs {
+input TableArgs {
   "DuckLake catalog name (hugr data source name or prefix)"
   name: String!
   "Table name to inspect"
@@ -100,9 +100,9 @@ input DDLField {
 """
 DuckLake snapshot history entry.
 """
-type DuckLakeSnapshot @view(
+type snapshots @view(
   sql: "SELECT snapshot_id, snapshot_time, schema_version, to_json(changes)::VARCHAR AS changes FROM ducklake_snapshots([name])"
-) @args(name: "DuckLakeCatalogArgs") {
+) @args(name: "CatalogArgs") {
   "Snapshot ID"
   snapshot_id: BigInt! @pk
   "Timestamp when snapshot was created"
@@ -116,9 +116,9 @@ type DuckLakeSnapshot @view(
 """
 DuckLake table statistics entry.
 """
-type DuckLakeTableStat @view(
+type table_stats @view(
   sql: "SELECT table_name, table_id, table_uuid, file_count, file_size_bytes, delete_file_count, delete_file_size_bytes FROM ducklake_table_info([name])"
-) @args(name: "DuckLakeCatalogArgs") {
+) @args(name: "CatalogArgs") {
   "Table name"
   table_name: String!
   "Internal table ID"
@@ -139,9 +139,9 @@ type DuckLakeTableStat @view(
 DuckLake data file entry for a specific table.
 Uses ducklake_list_files() built-in function.
 """
-type DuckLakeDataFile @view(
+type data_files @view(
   sql: "SELECT * FROM ducklake_list_files([name], [table_name])"
-) @args(name: "DuckLakeTableArgs") {
+) @args(name: "TableArgs") {
   "Data file path"
   data_file: String!
   "Data file size in bytes"
@@ -218,7 +218,7 @@ extend type MutationFunction {
   """
   set_option(
     name: String!
-    option: DuckLakeOption!
+    option: Option!
     value: String!
     schema_name: String
     table_name: String
@@ -320,7 +320,7 @@ extend type Function {
   """
     Get DuckLake catalog info (snapshot count, table count, metadata backend)
   """
-  info(name: String!): DuckLakeInfo
+  info(name: String!): Info
     @function(name: "hugr_ducklake_info")
 
   """
