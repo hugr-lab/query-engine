@@ -1,0 +1,378 @@
+"""
+DuckLake configuration option names.
+All options support catalog (global), schema, and table scoping.
+"""
+enum Option {
+  "Maximum rows to inline in a single insert (default: 10)"
+  data_inlining_row_limit
+  "Compression algorithm for Parquet files: uncompressed, snappy, gzip, zstd, brotli, lz4, lz4_raw (default: snappy)"
+  parquet_compression
+  "Parquet format version: 1 or 2 (default: 1)"
+  parquet_version
+  "Compression level for Parquet files (default: 3)"
+  parquet_compression_level
+  "Number of rows per row group in Parquet files (default: 122880)"
+  parquet_row_group_size
+  "Number of bytes per row group in Parquet files"
+  parquet_row_group_size_bytes
+  "Write partitioned data in Hive-style folder structure (default: true)"
+  hive_file_pattern
+  "Target data file size for insertion and compaction (default: 512MB)"
+  target_file_size
+  "Require explicit commit message for snapshot commit (default: false)"
+  require_commit_message
+  "Minimum fraction of deleted data before rewrite is warranted, 0-1 (default: 0.95)"
+  rewrite_delete_threshold
+  "Age threshold for unused file removal"
+  delete_older_than
+  "Age threshold for snapshot expiration"
+  expire_older_than
+  "Include table in compaction when called without specific table (default: true)"
+  auto_compact
+  "Encrypt Parquet files written to data path (default: false)"
+  encrypted
+  "Create separate output files per thread during parallel insert (default: false)"
+  per_thread_output
+  "Path to data files"
+  data_path
+}
+
+"""
+DuckLake catalog information.
+"""
+type Info {
+  "Catalog name in hugr"
+  name: String
+  "Total number of snapshots"
+  snapshot_count: BigInt
+  "Current (latest) snapshot ID"
+  current_snapshot: BigInt
+  "Number of active tables"
+  table_count: BigInt
+  "Number of active schemas"
+  schema_count: BigInt
+  "Number of active views"
+  view_count: BigInt
+  "Current schema version"
+  schema_version: BigInt
+  "Metadata backend database name"
+  metadata_backend: String
+  "DuckLake format version"
+  ducklake_version: String
+  "Data files storage path"
+  data_path: String
+  "Timestamp of first snapshot"
+  created_at: String
+  "Timestamp of latest snapshot"
+  last_modified_at: String
+}
+
+"""
+Input arguments for DuckLake metadata views — pass the catalog name.
+"""
+input CatalogArgs {
+  "DuckLake catalog name (hugr data source name or prefix)"
+  name: String!
+}
+
+"""
+Input arguments for DuckLake table-scoped metadata views.
+"""
+input TableArgs {
+  "DuckLake catalog name (hugr data source name or prefix)"
+  name: String!
+  "Table name to inspect"
+  table_name: String!
+  "Schema name (default: main)"
+  schema_name: String
+}
+
+"""
+Allowed column types for DuckLake DDL operations.
+Maps to DuckDB physical types.
+"""
+enum ColumnType {
+  "Boolean"
+  BOOLEAN
+  "8-bit integer"
+  TINYINT
+  "16-bit integer"
+  SMALLINT
+  "32-bit integer"
+  INTEGER
+  "64-bit integer"
+  BIGINT
+  "128-bit integer"
+  HUGEINT
+  "32-bit float"
+  FLOAT
+  "64-bit float"
+  DOUBLE
+  "Arbitrary precision decimal"
+  DECIMAL
+  "Variable-length string"
+  VARCHAR
+  "Fixed-length string"
+  CHAR
+  "Binary large object"
+  BLOB
+  "Date (year-month-day)"
+  DATE
+  "Time of day"
+  TIME
+  "Date and time"
+  TIMESTAMP
+  "Timestamp with time zone"
+  TIMESTAMPTZ
+  "Time interval"
+  INTERVAL
+  "UUID"
+  UUID
+  "JSON data"
+  JSON
+  "Geometry (spatial)"
+  GEOMETRY
+}
+
+"""
+Column definition for DDL operations.
+"""
+input DDLField {
+  "Column name"
+  name: String!
+  "Column type"
+  type: ColumnType!
+}
+
+"""
+DuckLake snapshot history entry.
+"""
+type snapshots @view(
+  sql: "SELECT snapshot_id, snapshot_time, schema_version, to_json(changes)::VARCHAR AS changes FROM ducklake_snapshots([name])"
+) @args(name: "CatalogArgs") {
+  "Snapshot ID"
+  snapshot_id: BigInt! @pk
+  "Timestamp when snapshot was created"
+  snapshot_time: Timestamp
+  "Schema version at this snapshot"
+  schema_version: BigInt
+  "Changes made in this snapshot (JSON)"
+  changes: String
+}
+
+"""
+DuckLake table statistics entry.
+"""
+type table_stats @view(
+  sql: "SELECT table_name, table_id, table_uuid, file_count, file_size_bytes, delete_file_count, delete_file_size_bytes FROM ducklake_table_info([name])"
+) @args(name: "CatalogArgs") {
+  "Table name"
+  table_name: String!
+  "Internal table ID"
+  table_id: BigInt
+  "Table UUID"
+  table_uuid: String
+  "Number of active data files"
+  file_count: BigInt
+  "Total size of data files in bytes"
+  file_size_bytes: BigInt
+  "Number of active delete files"
+  delete_file_count: BigInt
+  "Total size of delete files in bytes"
+  delete_file_size_bytes: BigInt
+}
+
+"""
+DuckLake data file entry for a specific table.
+Uses ducklake_list_files() built-in function.
+"""
+type data_files @view(
+  sql: "SELECT * FROM ducklake_list_files([name], [table_name])"
+) @args(name: "TableArgs") {
+  "Data file path"
+  data_file: String!
+  "Data file size in bytes"
+  data_file_size_bytes: BigInt
+  "Data file footer size"
+  data_file_footer_size: BigInt
+  "Associated delete file path"
+  delete_file: String
+  "Delete file size in bytes"
+  delete_file_size_bytes: BigInt
+}
+
+extend type MutationFunction {
+  """
+    Expire DuckLake snapshots by version list or age
+  """
+  expire_snapshots(
+    name: String!
+    versions: String
+    older_than: String
+    dry_run: Boolean = false
+  ): OperationResult
+    @function(name: "hugr_ducklake_expire_snapshots")
+
+  """
+    Merge adjacent small data files in a DuckLake catalog.
+    Optionally specify table_name and schema_name to merge files for a specific table.
+  """
+  merge_adjacent_files(
+    name: String!
+    table_name: String
+    schema_name: String
+  ): OperationResult
+    @function(name: "hugr_ducklake_merge_adjacent_files")
+
+  """
+    Rewrite data files with deletes in a DuckLake catalog.
+    Optionally specify table_name, schema_name, and delete_threshold (0-1).
+  """
+  rewrite_data_files(
+    name: String!
+    table_name: String
+    schema_name: String
+    delete_threshold: Float
+  ): OperationResult
+    @function(name: "hugr_ducklake_rewrite_data_files")
+
+  """
+    Clean up old data files scheduled for deletion in a DuckLake catalog
+  """
+  cleanup_old_files(
+    name: String!
+    older_than: String
+    cleanup_all: Boolean = false
+    dry_run: Boolean = false
+  ): OperationResult
+    @function(name: "hugr_ducklake_cleanup_old_files")
+
+  """
+    Flush inlined data to Parquet files in a DuckLake catalog
+  """
+  flush_inlined_data(name: String!): OperationResult
+    @function(name: "hugr_ducklake_flush_inlined_data")
+
+  """
+    Run all maintenance operations (checkpoint) on a DuckLake catalog
+  """
+  checkpoint(name: String!): OperationResult
+    @function(name: "hugr_ducklake_checkpoint")
+
+  """
+    Set a DuckLake catalog option (global, schema-level, or table-level).
+    Scoped via optional schema_name/table_name.
+  """
+  set_option(
+    name: String!
+    option: Option!
+    value: String!
+    schema_name: String
+    table_name: String
+  ): OperationResult
+    @function(name: "hugr_ducklake_set_option")
+
+  # --- DDL operations ---
+
+  """
+    Create a new schema in a DuckLake catalog.
+  """
+  create_schema(
+    name: String!
+    schema_name: String!
+  ): OperationResult
+    @function(name: "hugr_ducklake_create_schema")
+
+  """
+    Drop a schema from a DuckLake catalog. Schema must be empty.
+  """
+  drop_schema(
+    name: String!
+    schema_name: String!
+  ): OperationResult
+    @function(name: "hugr_ducklake_drop_schema")
+
+  """
+    Create a new table in a DuckLake catalog.
+  """
+  create_table(
+    name: String!
+    table_name: String!
+    columns: [DDLField!]!
+    schema_name: String
+  ): OperationResult
+    @function(name: "hugr_ducklake_create_table"
+      sql: "hugr_ducklake_create_table([name], [table_name], CAST(to_json([columns]) AS VARCHAR), [schema_name])")
+
+  """
+    Drop a table from a DuckLake catalog.
+  """
+  drop_table(
+    name: String!
+    table_name: String!
+    schema_name: String
+  ): OperationResult
+    @function(name: "hugr_ducklake_drop_table")
+
+  """
+    Add a column to an existing DuckLake table.
+  """
+  add_column(
+    name: String!
+    table_name: String!
+    column_name: String!
+    column_type: ColumnType!
+    schema_name: String
+    default_value: String
+  ): OperationResult
+    @function(name: "hugr_ducklake_add_column")
+
+  """
+    Drop a column from an existing DuckLake table.
+  """
+  drop_column(
+    name: String!
+    table_name: String!
+    column_name: String!
+    schema_name: String
+  ): OperationResult
+    @function(name: "hugr_ducklake_drop_column")
+
+  """
+    Rename a column in a DuckLake table.
+  """
+  rename_column(
+    name: String!
+    table_name: String!
+    old_column_name: String!
+    new_column_name: String!
+    schema_name: String
+  ): OperationResult
+    @function(name: "hugr_ducklake_rename_column")
+
+  """
+    Rename a DuckLake table.
+  """
+  rename_table(
+    name: String!
+    old_table_name: String!
+    new_table_name: String!
+    schema_name: String
+  ): OperationResult
+    @function(name: "hugr_ducklake_rename_table")
+
+}
+
+extend type Function {
+  """
+    Get DuckLake catalog info (snapshot count, table count, metadata backend)
+  """
+  info(name: String!): Info
+    @function(name: "hugr_ducklake_info")
+
+  """
+    Get current snapshot ID for a DuckLake catalog
+  """
+  current_snapshot(name: String!): Int
+    @function(name: "hugr_ducklake_current_snapshot")
+}

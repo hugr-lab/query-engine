@@ -1,0 +1,12 @@
+mutation {
+  function {
+    core {
+      ducklake {
+        flush_inlined_data(name: "dl_test") {
+          success
+          message
+        }
+      }
+    }
+  }
+}

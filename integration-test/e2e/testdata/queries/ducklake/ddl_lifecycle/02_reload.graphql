@@ -1,0 +1,10 @@
+mutation {
+  function {
+    core {
+      load_data_source(name: "dl_test") {
+        success
+        message
+      }
+    }
+  }
+}

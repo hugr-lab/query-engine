@@ -1,0 +1,15 @@
+mutation {
+  function {
+    core {
+      ducklake {
+        drop_table(
+          name: "dl_test"
+          table_name: "ddl_renamed_table"
+        ) {
+          success
+          message
+        }
+      }
+    }
+  }
+}

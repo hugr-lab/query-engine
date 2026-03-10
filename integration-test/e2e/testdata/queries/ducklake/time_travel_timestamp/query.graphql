@@ -1,0 +1,10 @@
+{
+  dl_test {
+    sensors(order_by: [{ field: "id", direction: ASC }]) @at(timestamp: "2099-01-01T00:00:00Z") {
+      id
+      name
+      temperature
+      humidity
+    }
+  }
+}

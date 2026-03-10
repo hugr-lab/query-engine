@@ -1,0 +1,14 @@
+{
+  core {
+    ducklake {
+      snapshots(
+        args: { name: "dl_test" }
+        order_by: [{ field: "snapshot_id", direction: ASC }]
+        limit: 3
+      ) {
+        snapshot_id
+        schema_version
+      }
+    }
+  }
+}

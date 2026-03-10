@@ -1,0 +1,11 @@
+{
+  dl_test {
+    sensors(
+      filter: { id: { eq: 100 } }
+      order_by: [{ field: "id", direction: ASC }]
+    ) @at(version: 2) {
+      id
+      name
+    }
+  }
+}

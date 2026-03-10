@@ -1,0 +1,18 @@
+mutation {
+  function {
+    core {
+      ducklake {
+        add_column(
+          name: "dl_test"
+          table_name: "ddl_test_table"
+          column_name: "description"
+          column_type: VARCHAR
+          default_value: "no description"
+        ) {
+          success
+          message
+        }
+      }
+    }
+  }
+}

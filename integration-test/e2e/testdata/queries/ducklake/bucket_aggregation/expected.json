@@ -1,0 +1,78 @@
+{
+  "data": {
+    "dl_test": {
+      "sensors_bucket_aggregation": [
+        {
+          "aggregations": {
+            "_rows_count": 1,
+            "humidity": {
+              "avg": 68.0
+            },
+            "temperature": {
+              "avg": 24.0
+            }
+          },
+          "key": {
+            "name": "sensor_a"
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 1,
+            "humidity": {
+              "avg": 70.2
+            },
+            "temperature": {
+              "avg": 23.1
+            }
+          },
+          "key": {
+            "name": "sensor_b"
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 1,
+            "humidity": {
+              "avg": 55.5
+            },
+            "temperature": {
+              "avg": 21.8
+            }
+          },
+          "key": {
+            "name": "sensor_c"
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 1,
+            "humidity": {
+              "avg": 60.0
+            },
+            "temperature": {
+              "avg": 25.0
+            }
+          },
+          "key": {
+            "name": "sensor_d"
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 1,
+            "humidity": {
+              "avg": 80.1
+            },
+            "temperature": {
+              "avg": 19.5
+            }
+          },
+          "key": {
+            "name": "sensor_e"
+          }
+        }
+      ]
+    }
+  }
+}

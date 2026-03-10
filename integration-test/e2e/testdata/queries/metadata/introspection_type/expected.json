@@ -45,6 +45,13 @@
           }
         },
         {
+          "name": "_updated_at_part",
+          "type": {
+            "kind": "SCALAR",
+            "name": "BigInt"
+          }
+        },
+        {
           "name": "matching_items_bucket_aggregation",
           "type": {
             "kind": "LIST",
@@ -56,13 +63,6 @@
           "type": {
             "kind": "NON_NULL",
             "name": null
-          }
-        },
-        {
-          "name": "_updated_at_part",
-          "type": {
-            "kind": "SCALAR",
-            "name": "BigInt"
           }
         },
         {

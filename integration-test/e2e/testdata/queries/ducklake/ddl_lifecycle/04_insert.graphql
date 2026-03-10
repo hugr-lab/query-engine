@@ -1,0 +1,8 @@
+mutation {
+  dl_test {
+    insert_ddl_test_table(data: { id: 1, name: "alpha", value: 1.5 }) {
+      success
+      message
+    }
+  }
+}

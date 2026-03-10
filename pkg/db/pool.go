@@ -32,6 +32,7 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		INSTALL httpfs; LOAD httpfs;
 		INSTALL h3 FROM community; LOAD h3;
 		INSTALL mssql FROM community; LOAD mssql;
+		INSTALL ducklake; LOAD ducklake;
 	`)
 	if err != nil {
 		return nil, err

@@ -42,6 +42,7 @@ func RegisterAll() []base.Rule {
 		&JoinValidator{},
 		&FunctionCallValidator{},
 		&ArgumentTypeValidator{},
+		&AtValidator{},
 		&PostValidator{},
 	}
 }

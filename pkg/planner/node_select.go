@@ -302,6 +302,11 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 		}
 	}
 
+	atInfo, err := resolveAtInfo(query, vars)
+	if err != nil {
+		return nil, false, err
+	}
+
 	fieldNodes := fieldsNodes(ctx, e, info, "_objects",
 		append(qp.fields, qp.extraSourceFields...), // add selected fields and extra fields that are required for joins
 		vars,
@@ -312,7 +317,7 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 			query,
 			fieldNodes,
 		),
-		fromDataObjectNode(ctx, info),
+		fromDataObjectNode(ctx, info, atInfo),
 	}
 	if info.IsCube { // add group by if needed
 		node, err := cubeGroupByNode(info, query, append(qp.fields, qp.extraSourceFields...))
@@ -1255,7 +1260,7 @@ func joinFunctionCallNodes(ctx context.Context, defs base.DefinitionsSource, inG
 	}}, nil
 }
 
-func fromDataObjectNode(ctx context.Context, info *sdl.Object) *QueryPlanNode {
+func fromDataObjectNode(ctx context.Context, info *sdl.Object, atInfo *AtInfo) *QueryPlanNode {
 	return &QueryPlanNode{
 		Name:    "from",
 		Comment: "from data object",
@@ -1268,7 +1273,17 @@ func fromDataObjectNode(ctx context.Context, info *sdl.Object) *QueryPlanNode {
 			if _, ok := e.(engines.EngineQueryScanner); ok {
 				prefix = ""
 			}
-			return info.SQL(ctx, engines.Ident(prefix)), params, nil
+			sql := info.SQL(ctx, engines.Ident(prefix))
+			at, err := atClause(atInfo)
+			if err != nil {
+				return "", nil, err
+			}
+			if at != "" {
+				// Wrap in subquery: DuckDB requires AT clause before any alias,
+				// but the caller appends "AS _objects". Use a subquery to isolate.
+				sql = "(SELECT * FROM " + sql + at + ")"
+			}
+			return sql, params, nil
 		},
 	}
 }

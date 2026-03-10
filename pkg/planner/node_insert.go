@@ -44,6 +44,9 @@ func (sv seqValues) IsExists(seqName string) bool {
 }
 
 func insertRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+	if query.Directives.ForName(base.AtDirectiveName) != nil {
+		return nil, sdl.ErrorPosf(query.Position, "@at directive is not allowed on mutations")
+	}
 	// define request sequences values
 	var sv []seqValue
 

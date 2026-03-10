@@ -1,0 +1,14 @@
+{
+  "data": {
+    "dl_test": {
+      "sensors": [
+        {
+          "humidity": 45.0,
+          "id": 100,
+          "name": "sensor_new",
+          "temperature": 30.0
+        }
+      ]
+    }
+  }
+}

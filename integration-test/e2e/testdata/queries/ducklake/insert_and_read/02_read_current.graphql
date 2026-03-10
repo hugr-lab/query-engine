@@ -1,0 +1,12 @@
+{
+  dl_test {
+    sensors(
+      filter: { id: { eq: 100 } }
+    ) {
+      id
+      name
+      temperature
+      humidity
+    }
+  }
+}

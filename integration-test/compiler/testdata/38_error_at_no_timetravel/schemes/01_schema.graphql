@@ -1,0 +1,7 @@
+"""Table with @at but source does not support time travel"""
+type Snapshot
+  @table(name: "snapshots")
+  @at(version: 5) {
+  id: Int! @pk
+  data: String
+}

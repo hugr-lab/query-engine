@@ -4,8 +4,16 @@
       "meta": {
         "databases": [
           {
+            "name": "__ducklake_metadata_dl_test",
+            "type": "postgres"
+          },
+          {
             "name": "core",
             "type": "postgres"
+          },
+          {
+            "name": "dl_test",
+            "type": "ducklake"
           },
           {
             "name": "ext_bridge",

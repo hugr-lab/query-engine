@@ -1,0 +1,9 @@
+{
+  function {
+    core {
+      ducklake {
+        current_snapshot(name: "dl_test")
+      }
+    }
+  }
+}

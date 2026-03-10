@@ -1,0 +1,10 @@
+{
+  "data": {
+    "dl_test": {
+      "insert_sensors": {
+        "message": "success",
+        "success": true
+      }
+    }
+  }
+}

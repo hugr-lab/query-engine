@@ -1,0 +1,9 @@
+{
+  dl_test {
+    ddl_test_table {
+      id
+      name
+      value
+    }
+  }
+}

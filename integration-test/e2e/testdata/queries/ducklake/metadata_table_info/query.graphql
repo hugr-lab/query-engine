@@ -1,0 +1,13 @@
+{
+  core {
+    ducklake {
+      table_stats(
+        args: { name: "dl_test" }
+      ) {
+        table_name
+        table_id
+        file_count
+      }
+    }
+  }
+}

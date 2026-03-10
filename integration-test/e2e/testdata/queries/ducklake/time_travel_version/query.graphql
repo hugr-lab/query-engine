@@ -1,0 +1,10 @@
+{
+  dl_test {
+    sensors(order_by: [{ field: "id", direction: ASC }]) @at(version: 2) {
+      id
+      name
+      temperature
+      humidity
+    }
+  }
+}

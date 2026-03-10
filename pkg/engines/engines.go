@@ -20,6 +20,7 @@ const (
 	TypeHttp     Type = "http"
 	TypeMssql    Type = "mssql"
 	TypeMySql    Type = "mysql"
+	TypeDuckLake Type = "ducklake"
 )
 
 type Engine interface {

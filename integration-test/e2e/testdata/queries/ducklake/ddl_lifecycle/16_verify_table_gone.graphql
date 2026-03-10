@@ -1,0 +1,7 @@
+{
+  dl_test {
+    ddl_renamed_table {
+      id
+    }
+  }
+}

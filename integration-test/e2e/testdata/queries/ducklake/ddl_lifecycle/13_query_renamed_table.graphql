@@ -1,0 +1,9 @@
+{
+  dl_test {
+    ddl_renamed_table(order_by: [{ field: "id", direction: ASC }]) {
+      id
+      name
+      value
+    }
+  }
+}

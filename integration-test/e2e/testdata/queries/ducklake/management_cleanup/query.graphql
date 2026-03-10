@@ -1,0 +1,12 @@
+mutation {
+  function {
+    core {
+      ducklake {
+        cleanup_old_files(name: "dl_test", cleanup_all: true) {
+          success
+          message
+        }
+      }
+    }
+  }
+}

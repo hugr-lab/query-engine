@@ -1,0 +1,14 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "ducklake": {
+          "drop_column": {
+            "message": "Column dropped",
+            "success": true
+          }
+        }
+      }
+    }
+  }
+}

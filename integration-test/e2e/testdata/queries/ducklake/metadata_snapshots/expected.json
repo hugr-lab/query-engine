@@ -1,0 +1,22 @@
+{
+  "data": {
+    "core": {
+      "ducklake": {
+        "snapshots": [
+          {
+            "schema_version": 0,
+            "snapshot_id": 0
+          },
+          {
+            "schema_version": 1,
+            "snapshot_id": 1
+          },
+          {
+            "schema_version": 1,
+            "snapshot_id": 2
+          }
+        ]
+      }
+    }
+  }
+}

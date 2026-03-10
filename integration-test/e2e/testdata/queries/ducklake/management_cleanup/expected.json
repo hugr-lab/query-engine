@@ -1,0 +1,14 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "ducklake": {
+          "cleanup_old_files": {
+            "message": "Files cleaned up",
+            "success": true
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "data": {
+    "core": {
+      "ducklake": {
+        "table_stats": [
+          {
+            "file_count": 3,
+            "table_id": 1,
+            "table_name": "sensors"
+          }
+        ]
+      }
+    }
+  }
+}
