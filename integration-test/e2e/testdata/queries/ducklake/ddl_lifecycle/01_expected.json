@@ -2,9 +2,11 @@
   "data": {
     "function": {
       "core": {
-        "ducklake_create_table": {
-          "message": "Table created",
-          "success": true
+        "ducklake": {
+          "create_table": {
+            "message": "Table created",
+            "success": true
+          }
         }
       }
     }

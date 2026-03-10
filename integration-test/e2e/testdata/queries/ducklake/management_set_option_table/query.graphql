@@ -1,9 +1,11 @@
 mutation {
   function {
     core {
-      ducklake_set_option(name: "dl_test", option: auto_compact, value: "false", table_name: "sensors") {
-        success
-        message
+      ducklake {
+        set_option(name: "dl_test", option: auto_compact, value: "false", table_name: "sensors") {
+          success
+          message
+        }
       }
     }
   }

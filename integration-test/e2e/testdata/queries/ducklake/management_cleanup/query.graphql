@@ -1,9 +1,11 @@
 mutation {
   function {
     core {
-      ducklake_cleanup_old_files(name: "dl_test", cleanup_all: true) {
-        success
-        message
+      ducklake {
+        cleanup_old_files(name: "dl_test", cleanup_all: true) {
+          success
+          message
+        }
       }
     }
   }

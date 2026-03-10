@@ -2,7 +2,9 @@
   "data": {
     "function": {
       "core": {
-        "ducklake_current_snapshot": 12
+        "ducklake": {
+          "current_snapshot": 12
+        }
       }
     }
   }

@@ -1,13 +1,15 @@
 {
   "data": {
     "core": {
-      "DuckLakeDataFile_aggregation": {
-        "_rows_count": 3,
-        "data_file_size_bytes": {
-          "count": 3
-        },
-        "delete_file_size_bytes": {
-          "count": 1
+      "ducklake": {
+        "DuckLakeDataFile_aggregation": {
+          "_rows_count": 3,
+          "data_file_size_bytes": {
+            "count": 3
+          },
+          "delete_file_size_bytes": {
+            "count": 1
+          }
         }
       }
     }

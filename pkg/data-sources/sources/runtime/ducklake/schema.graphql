@@ -88,11 +88,21 @@ input DuckLakeTableArgs {
 }
 
 """
+Column definition for DDL operations.
+"""
+input DDLField {
+  "Column name"
+  name: String!
+  "Column type (e.g. INTEGER, VARCHAR, DOUBLE, TIMESTAMP)"
+  type: String!
+}
+
+"""
 DuckLake snapshot history entry.
 """
 type DuckLakeSnapshot @view(
   sql: "SELECT snapshot_id, snapshot_time, schema_version, to_json(changes)::VARCHAR AS changes FROM ducklake_snapshots([name])"
-) @args(name: "DuckLakeCatalogArgs") @module(name: "core") {
+) @args(name: "DuckLakeCatalogArgs") {
   "Snapshot ID"
   snapshot_id: BigInt! @pk
   "Timestamp when snapshot was created"
@@ -108,7 +118,7 @@ DuckLake table statistics entry.
 """
 type DuckLakeTableStat @view(
   sql: "SELECT table_name, table_id, table_uuid, file_count, file_size_bytes, delete_file_count, delete_file_size_bytes FROM ducklake_table_info([name])"
-) @args(name: "DuckLakeCatalogArgs") @module(name: "core") {
+) @args(name: "DuckLakeCatalogArgs") {
   "Table name"
   table_name: String!
   "Internal table ID"
@@ -131,7 +141,7 @@ Uses ducklake_list_files() built-in function.
 """
 type DuckLakeDataFile @view(
   sql: "SELECT * FROM ducklake_list_files([name], [table_name])"
-) @args(name: "DuckLakeTableArgs") @module(name: "core") {
+) @args(name: "DuckLakeTableArgs") {
   "Data file path"
   data_file: String!
   "Data file size in bytes"
@@ -148,71 +158,71 @@ extend type MutationFunction {
   """
     Expire DuckLake snapshots by version list or age
   """
-  ducklake_expire_snapshots(
+  expire_snapshots(
     name: String!
     versions: String
     older_than: String
     dry_run: Boolean = false
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_expire_snapshots")
 
   """
     Merge adjacent small data files in a DuckLake catalog.
     Optionally specify table_name and schema_name to merge files for a specific table.
   """
-  ducklake_merge_adjacent_files(
+  merge_adjacent_files(
     name: String!
     table_name: String
     schema_name: String
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_merge_adjacent_files")
 
   """
     Rewrite data files with deletes in a DuckLake catalog.
     Optionally specify table_name, schema_name, and delete_threshold (0-1).
   """
-  ducklake_rewrite_data_files(
+  rewrite_data_files(
     name: String!
     table_name: String
     schema_name: String
     delete_threshold: Float
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_rewrite_data_files")
 
   """
     Clean up old data files scheduled for deletion in a DuckLake catalog
   """
-  ducklake_cleanup_old_files(
+  cleanup_old_files(
     name: String!
     older_than: String
     cleanup_all: Boolean = false
     dry_run: Boolean = false
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_cleanup_old_files")
 
   """
     Flush inlined data to Parquet files in a DuckLake catalog
   """
-  ducklake_flush_inlined_data(name: String!): OperationResult @module(name: "core")
+  flush_inlined_data(name: String!): OperationResult
     @function(name: "hugr_ducklake_flush_inlined_data")
 
   """
     Run all maintenance operations (checkpoint) on a DuckLake catalog
   """
-  ducklake_checkpoint(name: String!): OperationResult @module(name: "core")
+  checkpoint(name: String!): OperationResult
     @function(name: "hugr_ducklake_checkpoint")
 
   """
     Set a DuckLake catalog option (global, schema-level, or table-level).
     Scoped via optional schema_name/table_name.
   """
-  ducklake_set_option(
+  set_option(
     name: String!
     option: DuckLakeOption!
     value: String!
     schema_name: String
     table_name: String
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_set_option")
 
   # --- DDL operations ---
@@ -220,88 +230,88 @@ extend type MutationFunction {
   """
     Create a new schema in a DuckLake catalog.
   """
-  ducklake_create_schema(
+  create_schema(
     name: String!
     schema_name: String!
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_create_schema")
 
   """
     Drop a schema from a DuckLake catalog. Schema must be empty.
   """
-  ducklake_drop_schema(
+  drop_schema(
     name: String!
     schema_name: String!
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_drop_schema")
 
   """
     Create a new table in a DuckLake catalog.
-    columns_sql is the column definition fragment, e.g. "id INTEGER, name VARCHAR, score FLOAT".
   """
-  ducklake_create_table(
+  create_table(
     name: String!
     table_name: String!
-    columns_sql: String!
+    columns: [DDLField!]!
     schema_name: String
-  ): OperationResult @module(name: "core")
-    @function(name: "hugr_ducklake_create_table")
+  ): OperationResult
+    @function(name: "hugr_ducklake_create_table"
+      sql: "hugr_ducklake_create_table([name], [table_name], CAST(to_json([columns]) AS VARCHAR), [schema_name])")
 
   """
     Drop a table from a DuckLake catalog.
   """
-  ducklake_drop_table(
+  drop_table(
     name: String!
     table_name: String!
     schema_name: String
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_drop_table")
 
   """
     Add a column to an existing DuckLake table.
   """
-  ducklake_add_column(
+  add_column(
     name: String!
     table_name: String!
     column_name: String!
     column_type: String!
     schema_name: String
     default_value: String
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_add_column")
 
   """
     Drop a column from an existing DuckLake table.
   """
-  ducklake_drop_column(
+  drop_column(
     name: String!
     table_name: String!
     column_name: String!
     schema_name: String
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_drop_column")
 
   """
     Rename a column in a DuckLake table.
   """
-  ducklake_rename_column(
+  rename_column(
     name: String!
     table_name: String!
     old_column_name: String!
     new_column_name: String!
     schema_name: String
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_rename_column")
 
   """
     Rename a DuckLake table.
   """
-  ducklake_rename_table(
+  rename_table(
     name: String!
     old_table_name: String!
     new_table_name: String!
     schema_name: String
-  ): OperationResult @module(name: "core")
+  ): OperationResult
     @function(name: "hugr_ducklake_rename_table")
 
 }
@@ -310,12 +320,12 @@ extend type Function {
   """
     Get DuckLake catalog info (snapshot count, table count, metadata backend)
   """
-  ducklake_info(name: String!): DuckLakeInfo @module(name: "core")
+  info(name: String!): DuckLakeInfo
     @function(name: "hugr_ducklake_info")
 
   """
     Get current snapshot ID for a DuckLake catalog
   """
-  ducklake_current_snapshot(name: String!): Int @module(name: "core")
+  current_snapshot(name: String!): Int
     @function(name: "hugr_ducklake_current_snapshot")
 }

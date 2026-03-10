@@ -1,13 +1,15 @@
 {
   "data": {
     "core": {
-      "DuckLakeTableStat": [
-        {
-          "file_count": 3,
-          "table_id": 1,
-          "table_name": "sensors"
-        }
-      ]
+      "ducklake": {
+        "DuckLakeTableStat": [
+          {
+            "file_count": 3,
+            "table_id": 1,
+            "table_name": "sensors"
+          }
+        ]
+      }
     }
   }
 }

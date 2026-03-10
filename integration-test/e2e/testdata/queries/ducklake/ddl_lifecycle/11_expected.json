@@ -2,9 +2,11 @@
   "data": {
     "function": {
       "core": {
-        "ducklake_rename_table": {
-          "message": "Table renamed",
-          "success": true
+        "ducklake": {
+          "rename_table": {
+            "message": "Table renamed",
+            "success": true
+          }
         }
       }
     }

@@ -2,9 +2,11 @@
   "data": {
     "function": {
       "core": {
-        "ducklake_drop_table": {
-          "message": "Table dropped",
-          "success": true
+        "ducklake": {
+          "drop_table": {
+            "message": "Table dropped",
+            "success": true
+          }
         }
       }
     }

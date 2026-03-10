@@ -2,9 +2,11 @@
   "data": {
     "function": {
       "core": {
-        "ducklake_rewrite_data_files": {
-          "message": "Files rewritten",
-          "success": true
+        "ducklake": {
+          "rewrite_data_files": {
+            "message": "Files rewritten",
+            "success": true
+          }
         }
       }
     }

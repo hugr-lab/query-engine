@@ -2,9 +2,11 @@
   "data": {
     "function": {
       "core": {
-        "ducklake_set_option": {
-          "message": "Option set",
-          "success": true
+        "ducklake": {
+          "set_option": {
+            "message": "Option set",
+            "success": true
+          }
         }
       }
     }

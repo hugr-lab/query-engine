@@ -2,9 +2,11 @@
   "data": {
     "function": {
       "core": {
-        "ducklake_cleanup_old_files": {
-          "message": "Files cleaned up",
-          "success": true
+        "ducklake": {
+          "cleanup_old_files": {
+            "message": "Files cleaned up",
+            "success": true
+          }
         }
       }
     }

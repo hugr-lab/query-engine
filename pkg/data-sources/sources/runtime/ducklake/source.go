@@ -27,7 +27,7 @@ func New() *Source {
 func (s *Source) Name() string        { return "core.ducklake" }
 func (s *Source) Engine() engines.Engine { return engines.NewDuckDB() }
 func (s *Source) IsReadonly() bool     { return false }
-func (s *Source) AsModule() bool       { return false }
+func (s *Source) AsModule() bool       { return true }
 
 func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	s.db = pool
@@ -38,7 +38,9 @@ func (s *Source) Catalog(_ context.Context) (sources.Catalog, error) {
 	e := engines.NewDuckDB()
 	opts := compiler.Options{
 		Name:         s.Name(),
+		Prefix:       "core_ducklake",
 		ReadOnly:     s.IsReadonly(),
+		AsModule:     s.AsModule(),
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
 	}

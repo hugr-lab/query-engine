@@ -2,9 +2,11 @@
   "data": {
     "function": {
       "core": {
-        "ducklake_add_column": {
-          "message": "Column added",
-          "success": true
+        "ducklake": {
+          "add_column": {
+            "message": "Column added",
+            "success": true
+          }
         }
       }
     }

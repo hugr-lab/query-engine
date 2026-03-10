@@ -1,14 +1,16 @@
 {
   core {
-    DuckLakeDataFile_aggregation(
-      args: { name: "dl_test", table_name: "sensors" }
-    ) {
-      _rows_count
-      data_file_size_bytes {
-        count
-      }
-      delete_file_size_bytes {
-        count
+    ducklake {
+      DuckLakeDataFile_aggregation(
+        args: { name: "dl_test", table_name: "sensors" }
+      ) {
+        _rows_count
+        data_file_size_bytes {
+          count
+        }
+        delete_file_size_bytes {
+          count
+        }
       }
     }
   }

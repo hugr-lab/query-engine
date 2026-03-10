@@ -211,6 +211,10 @@ func prefixDefinition(ctx base.CompilationContext, def *ast.Definition, sourceNa
 func renameFieldRefs(fields ast.FieldList, prefix string, sourceNames map[string]bool, asModule bool) {
 	for _, f := range fields {
 		RenameTypeRefs(f.Type, prefix, sourceNames)
+		// Rename type references in field arguments (e.g. input types used in function args)
+		for _, arg := range f.Arguments {
+			RenameTypeRefs(arg.Type, prefix, sourceNames)
+		}
 		for _, d := range f.Directives.ForNames("field_references") {
 			RenameDirectiveArgIfSource(d, "references_name", prefix, sourceNames)
 		}

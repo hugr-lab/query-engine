@@ -1,9 +1,11 @@
 mutation {
   function {
     core {
-      ducklake_flush_inlined_data(name: "dl_test") {
-        success
-        message
+      ducklake {
+        flush_inlined_data(name: "dl_test") {
+          success
+          message
+        }
       }
     }
   }

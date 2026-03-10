@@ -2,9 +2,11 @@
   "data": {
     "function": {
       "core": {
-        "ducklake_merge_adjacent_files": {
-          "message": "Files merged",
-          "success": true
+        "ducklake": {
+          "merge_adjacent_files": {
+            "message": "Files merged",
+            "success": true
+          }
         }
       }
     }

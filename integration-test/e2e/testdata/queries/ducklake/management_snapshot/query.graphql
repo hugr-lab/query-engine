@@ -1,7 +1,9 @@
 {
   function {
     core {
-      ducklake_current_snapshot(name: "dl_test")
+      ducklake {
+        current_snapshot(name: "dl_test")
+      }
     }
   }
 }

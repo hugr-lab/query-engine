@@ -1,9 +1,11 @@
 mutation {
   function {
     core {
-      ducklake_merge_adjacent_files(name: "dl_test") {
-        success
-        message
+      ducklake {
+        merge_adjacent_files(name: "dl_test") {
+          success
+          message
+        }
       }
     }
   }

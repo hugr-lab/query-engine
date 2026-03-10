@@ -3,8 +3,10 @@ package ducklake
 import (
 	"context"
 	"database/sql/driver"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
@@ -667,10 +669,15 @@ func (s *Source) registerDDL4(ctx context.Context, name string, sqlFn func(name,
 	})
 }
 
+type ddlField struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
 type createTableArgs struct {
 	name       string
 	tableName  string
-	columnsSql string
+	columns    []ddlField
 	schemaName string
 }
 
@@ -679,9 +686,16 @@ func (s *Source) registerCreateTable(ctx context.Context) error {
 		Name:                  "hugr_ducklake_create_table",
 		IsSpecialNullHandling: true,
 		Execute: func(ctx context.Context, args createTableArgs) (*types.OperationResult, error) {
+			if len(args.columns) == 0 {
+				return types.ErrResult(fmt.Errorf("columns list is empty")), nil
+			}
+			var colDefs []string
+			for _, col := range args.columns {
+				colDefs = append(colDefs, fmt.Sprintf("%s %s", engines.Ident(col.Name), col.Type))
+			}
 			sql := fmt.Sprintf("CREATE TABLE %s (%s)",
 				qualifiedTable(args.name, args.schemaName, args.tableName),
-				args.columnsSql,
+				strings.Join(colDefs, ", "),
 			)
 			_, err := s.db.Exec(ctx, sql)
 			if err != nil {
@@ -694,9 +708,13 @@ func (s *Source) registerCreateTable(ctx context.Context) error {
 				return createTableArgs{}, fmt.Errorf("expected 4 arguments, got %d", len(args))
 			}
 			a := createTableArgs{
-				name:       args[0].(string),
-				tableName:  args[1].(string),
-				columnsSql: args[2].(string),
+				name:      args[0].(string),
+				tableName: args[1].(string),
+			}
+			// columns come as JSON-encoded VARCHAR
+			columnsJSON := args[2].(string)
+			if err := json.Unmarshal([]byte(columnsJSON), &a.columns); err != nil {
+				return createTableArgs{}, fmt.Errorf("invalid columns JSON: %w", err)
 			}
 			if args[3] != nil {
 				a.schemaName = args[3].(string)
