@@ -14,6 +14,9 @@ import (
 )
 
 func deleteRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
+	if query.Directives.ForName(base.AtDirectiveName) != nil {
+		return nil, sdl.ErrorPosf(query.Position, "@at directive is not allowed on mutations")
+	}
 	catalog := base.FieldDefCatalog(query.Definition)
 	e, err := planner.Engine(catalog)
 	if err != nil {

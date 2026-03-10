@@ -1,0 +1,10 @@
+mutation {
+  function {
+    core {
+      ducklake_checkpoint(name: "dl_test") {
+        success
+        message
+      }
+    }
+  }
+}

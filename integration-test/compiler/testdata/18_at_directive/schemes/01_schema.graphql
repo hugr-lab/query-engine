@@ -1,0 +1,8 @@
+"""Versioned table with @at directive for time travel"""
+type Snapshot
+  @table(name: "snapshots")
+  @at(version: 5) {
+  id: Int! @pk
+  data: String
+  created_at: Timestamp
+}

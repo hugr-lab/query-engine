@@ -1,0 +1,20 @@
+{
+  dl_test {
+    sensors_bucket_aggregation(
+      order_by: [{ field: "key.name", direction: ASC }]
+    ) {
+      key {
+        name
+      }
+      aggregations {
+        _rows_count
+        temperature {
+          avg
+        }
+        humidity {
+          avg
+        }
+      }
+    }
+  }
+}

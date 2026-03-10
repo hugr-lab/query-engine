@@ -1,0 +1,44 @@
+{
+  "data": {
+    "dl_test": {
+      "sensors": [
+        {
+          "humidity": 68.0,
+          "id": 1,
+          "name": "sensor_a",
+          "temperature": 24.0
+        },
+        {
+          "humidity": 70.2,
+          "id": 2,
+          "name": "sensor_b",
+          "temperature": 23.1
+        },
+        {
+          "humidity": 55.5,
+          "id": 3,
+          "name": "sensor_c",
+          "temperature": 21.8
+        },
+        {
+          "humidity": 60.0,
+          "id": 4,
+          "name": "sensor_d",
+          "temperature": 25.0
+        },
+        {
+          "humidity": 80.1,
+          "id": 5,
+          "name": "sensor_e",
+          "temperature": 19.5
+        },
+        {
+          "humidity": 45.0,
+          "id": 100,
+          "name": "sensor_new",
+          "temperature": 30.0
+        }
+      ]
+    }
+  }
+}

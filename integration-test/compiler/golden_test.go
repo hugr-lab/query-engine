@@ -272,6 +272,28 @@ func capabilitiesPreset(name string) *base.EngineCapabilities {
 				DeleteWithoutPKs: true,
 			},
 		}
+	case "duckdb_timetravel":
+		return &base.EngineCapabilities{
+			General: base.EngineGeneralCapabilities{
+				SupportDefaultSequences: true,
+				SupportTimeTravel:       true,
+				UnsupportedTypes:        []string{"IntRange", "BigIntRange", "TimestampRange"},
+			},
+			Insert: base.EngineInsertCapabilities{
+				Insert:           true,
+				Returning:        true,
+				InsertReferences: true,
+			},
+			Update: base.EngineUpdateCapabilities{
+				Update:           true,
+				UpdatePKColumns:  true,
+				UpdateWithoutPKs: true,
+			},
+			Delete: base.EngineDeleteCapabilities{
+				Delete:           true,
+				DeleteWithoutPKs: true,
+			},
+		}
 	case "":
 		return nil
 	default:

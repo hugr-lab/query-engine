@@ -1,12 +1,14 @@
 #!/bin/bash
 # Registers and loads data sources via GraphQL mutations.
-# Usage: ./provision-sources.sh <engine_url> [duckdb_path]
+# Usage: ./provision-sources.sh <engine_url> [duckdb_path] [ducklake_meta]
 #   duckdb_path defaults to /workspace/duckdb/local.duckdb
+#   ducklake_meta: "pgmeta" to use PostgreSQL metadata for DuckLake
 
 set -e
 
 ENGINE_URL="${1:-http://localhost:15000}"
 DUCKDB_PATH="${2:-/workspace/duckdb/local.duckdb}"
+DUCKLAKE_META="${3:-}"
 
 gql() {
   local result
@@ -30,7 +32,7 @@ echo "Provisioning data sources..."
 # No cascade deletes in DB, so delete from all 3 tables manually:
 # data_source_catalogs (M2M) → catalog_sources → data_sources.
 echo "  Cleaning existing data sources..."
-for src in ext_bridge rest_api local_db pg_store; do
+for src in ext_bridge rest_api local_db pg_store dl_test; do
   gql "mutation { core { delete_data_source_catalogs(filter: { data_source_name: { eq: \\\"$src\\\" } }) { data_source_name } } }" > /dev/null 2>&1 || true
   gql "mutation { core { delete_catalog_sources(filter: { name: { eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
   gql "mutation { core { delete_data_sources(filter: { name: { eq: \\\"$src\\\" } }) { name } } }" > /dev/null 2>&1 || true
@@ -52,8 +54,23 @@ gql 'mutation { core { insert_data_sources(data: { name: \"rest_api\", prefix: \
 echo "  Registering ext_bridge..."
 gql 'mutation { core { insert_data_sources(data: { name: \"ext_bridge\", prefix: \"ext_bridge\", type: \"extension\", path: \"\", as_module: false, catalogs: [{ name: \"ext_bridge\", type: \"localFS\", path: \"/workspace/schemas/ext_bridge\" }] }) { name } } }'
 
-# 5. Load all sources (ext_bridge must load after its dependencies)
-for src in pg_store local_db rest_api ext_bridge; do
+# 5. Add DuckLake data source (self-described — no external catalog)
+if [ "$DUCKLAKE_META" = "pgmeta" ]; then
+  # PostgreSQL metadata variant: connect via postgres:// URI
+  echo "  Registering dl_test (PostgreSQL metadata)..."
+  gql 'mutation { core { insert_data_sources(data: { name: \"dl_test\", prefix: \"dl_test\", type: \"ducklake\", path: \"postgres://test:test@postgres:5432/ducklake_meta?data_path=/workspace/duckdb/ducklake_pgmeta/data/\", as_module: true, self_defined: true }) { name } } }'
+else
+  # DuckDB file metadata (default)
+  DUCKLAKE_DIR="ducklake"
+  if echo "$DUCKDB_PATH" | grep -q "_pg\.duckdb$"; then
+    DUCKLAKE_DIR="ducklake_pg"
+  fi
+  echo "  Registering dl_test (dir=$DUCKLAKE_DIR)..."
+  gql "mutation { core { insert_data_sources(data: { name: \\\"dl_test\\\", prefix: \\\"dl_test\\\", type: \\\"ducklake\\\", path: \\\"/workspace/duckdb/${DUCKLAKE_DIR}/meta.duckdb?data_path=/workspace/duckdb/${DUCKLAKE_DIR}/data/\\\", as_module: true, self_defined: true }) { name } } }"
+fi
+
+# 6. Load all sources (ext_bridge must load after its dependencies)
+for src in pg_store local_db rest_api dl_test ext_bridge; do
   echo "  Loading $src..."
   gql "mutation { function { core { load_data_source(name: \\\"$src\\\") { success message } } } }"
 done

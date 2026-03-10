@@ -1,0 +1,15 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "ducklake_info": {
+          "current_snapshot": 6,
+          "metadata_backend": "__ducklake_metadata_dl_test",
+          "name": "dl_test",
+          "snapshot_count": 7,
+          "table_count": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "ducklake_set_option": {
+          "message": "Not implemented Error: Unsupported option auto_compact\n\nLINE 1: CALL dl_test.set_option('auto_compact', 'false', table_name ...\n             ^",
+          "success": false
+        }
+      }
+    }
+  }
+}

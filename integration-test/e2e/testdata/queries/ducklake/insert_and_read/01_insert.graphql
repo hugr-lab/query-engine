@@ -1,0 +1,8 @@
+mutation {
+  dl_test {
+    insert_sensors(data: { id: 100, name: "sensor_new", temperature: 30.0, humidity: 45.0, reading_time: "2025-06-01 12:00:00" }) {
+      success
+      message
+    }
+  }
+}

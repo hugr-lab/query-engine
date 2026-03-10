@@ -19,7 +19,8 @@ const (
 	Extension types.DataSourceType = "extension"
 	Embedding types.DataSourceType = "embedding"
 
-	Airport types.DataSourceType = "airport"
+	Airport  types.DataSourceType = "airport"
+	DuckLake types.DataSourceType = "ducklake"
 )
 
 type Source interface {

@@ -579,7 +579,7 @@ func whereReferencesObjectNode(ctx context.Context, defs base.DefinitionsSource,
 	if refObjectInfo == nil {
 		return nil, ErrInternalPlanner
 	}
-	nodes = append(nodes, fromDataObjectNode(ctx, refObjectInfo))
+	nodes = append(nodes, fromDataObjectNode(ctx, refObjectInfo, nil))
 	refInfo := info.ReferencesQueryInfo(ctx, defs, name)
 	if refInfo == nil {
 		return nil, fmt.Errorf("references query info for %s not found", name)
@@ -596,7 +596,7 @@ func whereReferencesObjectNode(ctx context.Context, defs base.DefinitionsSource,
 		joinObjectAlias = "_join_" + prefix + "_" + field.Name
 		nodes.Add(&QueryPlanNode{
 			Name:  "m2m",
-			Nodes: QueryPlanNodes{fromDataObjectNode(ctx, m2mInfo)},
+			Nodes: QueryPlanNodes{fromDataObjectNode(ctx, m2mInfo, nil)},
 			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 				sql := children.ForName("from").Result
 				sql += " AS " + joinObjectAlias

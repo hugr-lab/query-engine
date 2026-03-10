@@ -1,0 +1,10 @@
+mutation {
+  function {
+    core {
+      ducklake_rewrite_data_files(name: "dl_test") {
+        success
+        message
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "ducklake_expire_snapshots": {
+          "message": "Snapshots expired",
+          "success": true
+        }
+      }
+    }
+  }
+}

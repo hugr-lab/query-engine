@@ -1,0 +1,15 @@
+{
+  dl_test {
+    sensors_aggregation {
+      _rows_count
+      temperature {
+        avg
+        min
+        max
+      }
+      humidity {
+        avg
+      }
+    }
+  }
+}

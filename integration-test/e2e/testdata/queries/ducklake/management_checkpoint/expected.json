@@ -1,0 +1,12 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "ducklake_checkpoint": {
+          "message": "Checkpoint completed",
+          "success": true
+        }
+      }
+    }
+  }
+}

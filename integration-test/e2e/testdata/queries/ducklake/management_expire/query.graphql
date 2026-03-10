@@ -1,0 +1,10 @@
+mutation {
+  function {
+    core {
+      ducklake_expire_snapshots(name: "dl_test", dry_run: true) {
+        success
+        message
+      }
+    }
+  }
+}

@@ -212,3 +212,12 @@ directive @cache(
 	"""
 	tags: [String!]
 ) on FIELD | OBJECT | FIELD_DEFINITION
+
+"""
+Time travel directive for DuckLake data sources.
+Exactly one of version or timestamp must be provided.
+"""
+directive @at(
+	version: Int
+	timestamp: String
+) on OBJECT | FIELD

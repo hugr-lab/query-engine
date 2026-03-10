@@ -7,7 +7,8 @@ services:
       POSTGRES_PASSWORD: test
     ports: ["5433:5432"]
     volumes:
-      - ./testdata/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./testdata/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./testdata/postgres/init-ducklake-meta.sh:/docker-entrypoint-initdb.d/02-ducklake-meta.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U test -d testdb"]
       interval: 2s

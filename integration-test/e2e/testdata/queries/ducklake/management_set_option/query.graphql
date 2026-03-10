@@ -1,0 +1,10 @@
+mutation {
+  function {
+    core {
+      ducklake_set_option(name: "dl_test", option: rewrite_delete_threshold, value: "0.5") {
+        success
+        message
+      }
+    }
+  }
+}

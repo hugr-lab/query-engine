@@ -9,6 +9,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/airport"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/ducklake"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/extension"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/http"
@@ -222,6 +223,8 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 		return extension.New(ds, attached)
 	case Embedding:
 		return embedding.New(ds, attached)
+	case DuckLake:
+		return ducklake.New(ds, attached)
 	default:
 		return nil, ErrUnknownDataSourceType
 	}

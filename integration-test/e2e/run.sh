@@ -20,8 +20,8 @@ SKIP=0
 KEEP=false
 DUCKDB_ONLY=false
 
-# jq filter to recursively sort arrays of objects by "name" field for deterministic comparison
-JQ_DEEP_SORT='def sort_arrays: if type == "array" then map(sort_arrays) | sort_by(if type == "object" and has("name") then .name else tostring end) elif type == "object" then to_entries | sort_by(.key) | map(.value = (.value | sort_arrays)) | from_entries else . end; . | sort_arrays'
+# jq filter to recursively sort arrays and round floats for deterministic comparison
+JQ_DEEP_SORT='def normalize: if type == "array" then map(normalize) | sort_by(if type == "object" and has("name") then .name else tostring end) elif type == "object" then to_entries | sort_by(.key) | map(.value = (.value | normalize)) | from_entries elif type == "number" then (. * 100000 | round / 100000) else . end; . | normalize'
 
 for arg in "$@"; do
   case $arg in
@@ -85,7 +85,23 @@ run_single_test() {
   }
 
   if [ "${UPDATE_EXPECTED:-0}" = "1" ]; then
-    echo "$actual" | jq -S . > "$expected_file"
+    # When variant is specified and base expected.json exists, compare first.
+    # Write to variant file only if result differs from base.
+    local write_file="$expected_file"
+    if [ -n "$variant" ] && [ -f "$test_dir/expected.json" ]; then
+      local base_norm actual_upd_norm
+      base_norm=$(jq -S "$JQ_DEEP_SORT" "$test_dir/expected.json" 2>/dev/null)
+      actual_upd_norm=$(echo "$actual" | jq -S "$JQ_DEEP_SORT" 2>/dev/null)
+      if [ "$base_norm" != "$actual_upd_norm" ]; then
+        write_file="$test_dir/expected_${variant}.json"
+      else
+        rm -f "$test_dir/expected_${variant}.json"
+        echo "  UPDATED: $test_name (same as base)"
+        PASS=$((PASS + 1))
+        return 0
+      fi
+    fi
+    echo "$actual" | jq -S . > "$write_file"
     echo "  UPDATED: $test_name"
     PASS=$((PASS + 1))
     return 0
@@ -369,6 +385,72 @@ run_cluster_tests() {
   done
 }
 
+# 2b. Build DuckLake data with PostgreSQL metadata (requires postgres container running)
+if [ "$DUCKDB_ONLY" = false ]; then
+  echo ""
+  echo "Building DuckLake test data with PostgreSQL metadata..."
+  DUCKDB_DIR="$SCRIPT_DIR/testdata/duckdb"
+  DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.4.4"
+  DUCKLAKE_PGMETA_DIR="$DUCKDB_DIR/ducklake_pgmeta"
+  rm -rf "$DUCKLAKE_PGMETA_DIR"
+  mkdir -p "$DUCKLAKE_PGMETA_DIR/data"
+
+  # Get the docker network name (compose project + _default)
+  E2E_NETWORK=$(docker compose -f "$COMPOSE_FILE" config --format json | jq -r '.networks | to_entries[0].value.name // empty' 2>/dev/null)
+  if [ -z "$E2E_NETWORK" ]; then
+    E2E_NETWORK="e2e_default"
+  fi
+
+  docker run --rm -i \
+    --network "$E2E_NETWORK" \
+    -v "$DUCKDB_DIR:/workspace/duckdb" \
+    "$DUCKDB_DOCKER_IMAGE" \
+    "" <<'EOSQL'
+INSTALL ducklake; LOAD ducklake;
+INSTALL postgres; LOAD postgres;
+CREATE SECRET _dl_pgmeta_pg_secret (
+    TYPE postgres,
+    HOST 'postgres',
+    PORT '5432',
+    DATABASE 'ducklake_meta',
+    USER 'test',
+    PASSWORD 'test'
+);
+CREATE SECRET _dl_pgmeta_secret (
+    TYPE ducklake,
+    METADATA_PATH '',
+    DATA_PATH '/workspace/duckdb/ducklake_pgmeta/data/',
+    METADATA_PARAMETERS MAP {'TYPE': 'postgres', 'SECRET': '_dl_pgmeta_pg_secret'}
+);
+ATTACH 'ducklake:_dl_pgmeta_secret' AS dl_test;
+
+CREATE TABLE dl_test.main.sensors (
+    id BIGINT,
+    name VARCHAR,
+    temperature DOUBLE,
+    humidity DOUBLE,
+    reading_time TIMESTAMP
+);
+
+-- Snapshot 2: first batch
+INSERT INTO dl_test.main.sensors VALUES
+    (1, 'sensor_a', 22.5, 65.0, '2025-01-01 10:00:00'),
+    (2, 'sensor_b', 23.1, 70.2, '2025-01-01 10:05:00'),
+    (3, 'sensor_c', 21.8, 55.5, '2025-01-01 10:10:00');
+
+-- Snapshot 3: second batch
+INSERT INTO dl_test.main.sensors VALUES
+    (4, 'sensor_d', 25.0, 60.0, '2025-01-02 10:00:00'),
+    (5, 'sensor_e', 19.5, 80.1, '2025-01-02 10:05:00');
+
+-- Snapshot 4: update sensor_a
+UPDATE dl_test.main.sensors SET temperature = 24.0, humidity = 68.0 WHERE id = 1;
+
+DETACH dl_test;
+EOSQL
+  echo "  Built DuckLake at $DUCKLAKE_PGMETA_DIR (PostgreSQL metadata)"
+fi
+
 # 3. Provision and test DuckDB-backed engine
 ENGINE_URL_DUCKDB="http://localhost:15000"
 
@@ -394,8 +476,8 @@ if [ "$DUCKDB_ONLY" = false ]; then
     < "$SCRIPT_DIR/testdata/postgres/init.sql" > /dev/null 2>&1
 
   echo ""
-  echo "Provisioning data sources (PostgreSQL CoreDB)..."
-  "$SCRIPT_DIR/provision-sources.sh" "$ENGINE_URL_PG" "/workspace/duckdb/local_pg.duckdb"
+  echo "Provisioning data sources (PostgreSQL CoreDB + DuckLake PG metadata)..."
+  "$SCRIPT_DIR/provision-sources.sh" "$ENGINE_URL_PG" "/workspace/duckdb/local_pg.duckdb" "pgmeta"
 
   run_tests_against "$ENGINE_URL_PG" "PostgreSQL CoreDB" "pg"
 fi
