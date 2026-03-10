@@ -16,7 +16,9 @@ type Source struct {
 	ds         types.DataSource
 	isAttached bool
 
-	engine engines.Engine
+	engine       engines.Engine
+	schemaFilter string // regexp filter for schema names in self-describe
+	tableFilter  string // regexp filter for table names in self-describe
 }
 
 func New(ds types.DataSource, attached bool) (*Source, error) {
@@ -72,6 +74,8 @@ func (s *Source) prefix() string {
 // Query parameters (on formats 2 and 3):
 //   - data_path:        Storage location for data files
 //   - metadata_secret:  Name of existing DuckDB secret for remote metadata credentials
+//   - schema_filter:    Regexp to filter schemas for self-describe (e.g. "^(public|analytics)$")
+//   - table_filter:     Regexp to filter tables for self-describe (e.g. "^(users|orders)$")
 type ducklakeParams struct {
 	MetadataPath   string           // DuckDB file path or empty (for PG via secret)
 	DataPath       string           // DATA_PATH for file storage
@@ -80,6 +84,8 @@ type ducklakeParams struct {
 	IsSecretRef    bool             // true if path references an existing DuckLake secret
 	PgConnStr      string           // PostgreSQL connection string for logging (parsed from postgres:// URI)
 	pgParams       *pgSecretParams  // PostgreSQL connection fields (parsed from postgres:// URI)
+	SchemaFilter   string           // Regexp to filter schemas for self-describe
+	TableFilter    string           // Regexp to filter tables for self-describe
 }
 
 func parsePath(raw string) (*ducklakeParams, error) {
@@ -102,6 +108,8 @@ func parsePath(raw string) (*ducklakeParams, error) {
 		p.DataPath = query.Get("data_path")
 		p.MetadataType = query.Get("metadata_type")
 		p.MetadataSecret = query.Get("metadata_secret")
+		p.SchemaFilter = query.Get("schema_filter")
+		p.TableFilter = query.Get("table_filter")
 	} else {
 		p.MetadataPath = raw
 	}
@@ -144,6 +152,8 @@ func parsePgPath(raw string) (*ducklakeParams, error) {
 	if u.Query().Has("metadata_secret") {
 		p.MetadataSecret = u.Query().Get("metadata_secret")
 	}
+	p.SchemaFilter = u.Query().Get("schema_filter")
+	p.TableFilter = u.Query().Get("table_filter")
 
 	// Parse PostgreSQL connection fields from URI
 	pg := pgSecretParams{
@@ -193,6 +203,10 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	if err != nil {
 		return err
 	}
+
+	// Store filter settings for self-describe
+	s.schemaFilter = params.SchemaFilter
+	s.tableFilter = params.TableFilter
 
 	prefix := s.prefix()
 	if prefix == "" {

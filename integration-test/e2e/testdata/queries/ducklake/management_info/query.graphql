@@ -6,7 +6,11 @@
         snapshot_count
         current_snapshot
         table_count
+        schema_count
+        view_count
+        schema_version
         metadata_backend
+        ducklake_version
       }
     }
   }

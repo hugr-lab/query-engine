@@ -49,8 +49,99 @@ type DuckLakeInfo {
   current_snapshot: BigInt
   "Number of active tables"
   table_count: BigInt
+  "Number of active schemas"
+  schema_count: BigInt
+  "Number of active views"
+  view_count: BigInt
+  "Current schema version"
+  schema_version: BigInt
   "Metadata backend database name"
   metadata_backend: String
+  "DuckLake format version"
+  ducklake_version: String
+  "Data files storage path"
+  data_path: String
+  "Timestamp of first snapshot"
+  created_at: String
+  "Timestamp of latest snapshot"
+  last_modified_at: String
+}
+
+"""
+Input arguments for DuckLake metadata views — pass the catalog name.
+"""
+input DuckLakeCatalogArgs {
+  "DuckLake catalog name (hugr data source name or prefix)"
+  name: String!
+}
+
+"""
+Input arguments for DuckLake table-scoped metadata views.
+"""
+input DuckLakeTableArgs {
+  "DuckLake catalog name (hugr data source name or prefix)"
+  name: String!
+  "Table name to inspect"
+  table_name: String!
+  "Schema name (default: main)"
+  schema_name: String
+}
+
+"""
+DuckLake snapshot history entry.
+"""
+type DuckLakeSnapshot @view(
+  sql: "SELECT snapshot_id, snapshot_time, schema_version, to_json(changes)::VARCHAR AS changes FROM ducklake_snapshots([name])"
+) @args(name: "DuckLakeCatalogArgs") @module(name: "core") {
+  "Snapshot ID"
+  snapshot_id: BigInt! @pk
+  "Timestamp when snapshot was created"
+  snapshot_time: Timestamp
+  "Schema version at this snapshot"
+  schema_version: BigInt
+  "Changes made in this snapshot (JSON)"
+  changes: String
+}
+
+"""
+DuckLake table statistics entry.
+"""
+type DuckLakeTableStat @view(
+  sql: "SELECT table_name, table_id, table_uuid, file_count, file_size_bytes, delete_file_count, delete_file_size_bytes FROM ducklake_table_info([name])"
+) @args(name: "DuckLakeCatalogArgs") @module(name: "core") {
+  "Table name"
+  table_name: String!
+  "Internal table ID"
+  table_id: BigInt
+  "Table UUID"
+  table_uuid: String
+  "Number of active data files"
+  file_count: BigInt
+  "Total size of data files in bytes"
+  file_size_bytes: BigInt
+  "Number of active delete files"
+  delete_file_count: BigInt
+  "Total size of delete files in bytes"
+  delete_file_size_bytes: BigInt
+}
+
+"""
+DuckLake data file entry for a specific table.
+Uses ducklake_list_files() built-in function.
+"""
+type DuckLakeDataFile @view(
+  sql: "SELECT * FROM ducklake_list_files([name], [table_name])"
+) @args(name: "DuckLakeTableArgs") @module(name: "core") {
+  "Data file path"
+  data_file: String!
+  "Data file size in bytes"
+  data_file_size_bytes: BigInt
+  "Data file footer size"
+  data_file_footer_size: BigInt
+  "Associated delete file path"
+  delete_file: String
+  "Delete file size in bytes"
+  delete_file_size_bytes: BigInt
 }
 
 extend type MutationFunction {

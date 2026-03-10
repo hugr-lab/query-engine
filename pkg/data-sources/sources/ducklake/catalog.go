@@ -28,13 +28,18 @@ var _ cs.IncrementalCatalog = (*duckLakeCatalog)(nil)
 func (s *Source) CatalogSource(ctx context.Context, pool *db.Pool) (cs.Catalog, error) {
 	prefix := s.prefix()
 
-	tables, err := IntrospectSchema(ctx, pool, prefix)
+	filter, err := NewIntrospectFilter(s.schemaFilter, s.tableFilter)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := IntrospectAll(ctx, pool, prefix, filter)
 	if err != nil {
 		return nil, fmt.Errorf("ducklake: introspect failed for %s: %w", prefix, err)
 	}
 
-	doc := GenerateSchemaDocument(tables)
-	version := ContentHash(tables)
+	doc := GenerateSchemaDocumentFull(result.Tables, result.Views)
+	version := ContentHashFull(result.Tables, result.Views)
 
 	opts := compiler.Options{
 		Name:         s.ds.Name,

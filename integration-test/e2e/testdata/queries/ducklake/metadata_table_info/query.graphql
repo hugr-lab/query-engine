@@ -1,0 +1,11 @@
+{
+  core {
+    DuckLakeTableStat(
+      args: { name: "dl_test" }
+    ) {
+      table_name
+      table_id
+      file_count
+    }
+  }
+}

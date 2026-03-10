@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -12,6 +13,46 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/vektah/gqlparser/v2/ast"
 )
+
+// IntrospectFilter holds optional regexp filters for schema/table names.
+type IntrospectFilter struct {
+	SchemaFilter *regexp.Regexp // If set, only schemas matching this regexp are included
+	TableFilter  *regexp.Regexp // If set, only tables matching this regexp are included
+}
+
+// NewIntrospectFilter compiles schema/table filter regexps. Empty strings mean no filter.
+func NewIntrospectFilter(schemaFilter, tableFilter string) (*IntrospectFilter, error) {
+	f := &IntrospectFilter{}
+	if schemaFilter != "" {
+		re, err := regexp.Compile(schemaFilter)
+		if err != nil {
+			return nil, fmt.Errorf("ducklake: invalid schema_filter regexp %q: %w", schemaFilter, err)
+		}
+		f.SchemaFilter = re
+	}
+	if tableFilter != "" {
+		re, err := regexp.Compile(tableFilter)
+		if err != nil {
+			return nil, fmt.Errorf("ducklake: invalid table_filter regexp %q: %w", tableFilter, err)
+		}
+		f.TableFilter = re
+	}
+	return f, nil
+}
+
+// Match returns true if the schema/table name passes the filters.
+func (f *IntrospectFilter) Match(schemaName, tableName string) bool {
+	if f == nil {
+		return true
+	}
+	if f.SchemaFilter != nil && !f.SchemaFilter.MatchString(schemaName) {
+		return false
+	}
+	if f.TableFilter != nil && !f.TableFilter.MatchString(tableName) {
+		return false
+	}
+	return true
+}
 
 // metaCatalogIdent returns the properly quoted metadata catalog identifier.
 // DuckLake creates an internal catalog named __ducklake_metadata_<catalog_name>.
@@ -35,9 +76,51 @@ type DuckLakeColumn struct {
 	IsPK       bool
 }
 
+// IntrospectResult holds the results of schema introspection.
+type IntrospectResult struct {
+	Tables []DuckLakeTable
+	Views  []DuckLakeView
+}
+
+// DuckLakeView represents a view discovered from DuckLake metadata.
+type DuckLakeView struct {
+	SchemaName string
+	ViewName   string
+	Columns    []DuckLakeColumn
+}
+
 // IntrospectSchema queries DuckLake metadata tables and returns table/column definitions.
 // The prefix is the DuckDB catalog name (from ATTACH AS prefix).
 func IntrospectSchema(ctx context.Context, pool *db.Pool, prefix string) ([]DuckLakeTable, error) {
+	return IntrospectSchemaFiltered(ctx, pool, prefix, nil)
+}
+
+// IntrospectSchemaFiltered queries DuckLake metadata tables and returns table/column definitions,
+// optionally filtering by schema/table name regexps.
+func IntrospectSchemaFiltered(ctx context.Context, pool *db.Pool, prefix string, filter *IntrospectFilter) ([]DuckLakeTable, error) {
+	result, err := IntrospectAll(ctx, pool, prefix, filter)
+	if err != nil {
+		return nil, err
+	}
+	return result.Tables, nil
+}
+
+// IntrospectAll queries DuckLake metadata tables and returns both tables and views.
+func IntrospectAll(ctx context.Context, pool *db.Pool, prefix string, filter *IntrospectFilter) (*IntrospectResult, error) {
+	tables, err := introspectTables(ctx, pool, prefix, filter)
+	if err != nil {
+		return nil, err
+	}
+	views, err := introspectViews(ctx, pool, prefix, filter)
+	if err != nil {
+		// Views are optional — some DuckLake versions may not support them
+		views = nil
+	}
+	return &IntrospectResult{Tables: tables, Views: views}, nil
+}
+
+// introspectTables queries DuckLake metadata tables and returns table/column definitions.
+func introspectTables(ctx context.Context, pool *db.Pool, prefix string, filter *IntrospectFilter) ([]DuckLakeTable, error) {
 	conn, err := pool.Conn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("ducklake: get connection failed: %w", err)
@@ -82,6 +165,11 @@ func IntrospectSchema(ctx context.Context, pool *db.Pool, prefix string) ([]Duck
 		var isNullable bool
 		if err := rows.Scan(&schemaName, &tableName, &colName, &colType, &isNullable); err != nil {
 			return nil, fmt.Errorf("ducklake: introspect scan failed: %w", err)
+		}
+
+		// Apply schema/table filter
+		if !filter.Match(schemaName, tableName) {
+			continue
 		}
 
 		key := tableKey{schemaName, tableName}
@@ -180,10 +268,22 @@ func SchemaVersion(ctx context.Context, pool *db.Pool, prefix string) (int, erro
 
 // GenerateSchemaDocument generates a GraphQL AST schema document from introspected tables.
 func GenerateSchemaDocument(tables []DuckLakeTable) *ast.SchemaDocument {
+	return GenerateSchemaDocumentFull(tables, nil)
+}
+
+// GenerateSchemaDocumentFull generates a GraphQL AST schema document from tables and views.
+func GenerateSchemaDocumentFull(tables []DuckLakeTable, views []DuckLakeView) *ast.SchemaDocument {
 	doc := &ast.SchemaDocument{}
 
 	for _, tbl := range tables {
 		def := tableToDefinition(tbl)
+		if def != nil {
+			doc.Definitions = append(doc.Definitions, def)
+		}
+	}
+
+	for _, vw := range views {
+		def := viewToDefinition(vw)
 		if def != nil {
 			doc.Definitions = append(doc.Definitions, def)
 		}
@@ -235,6 +335,62 @@ func tableToDefinition(tbl DuckLakeTable) *ast.Definition {
 	}
 
 	for _, col := range tbl.Columns {
+		fd := columnToFieldDef(col)
+		if fd != nil {
+			def.Fields = append(def.Fields, fd)
+		}
+	}
+
+	if len(def.Fields) == 0 {
+		return nil
+	}
+
+	return def
+}
+
+func viewToDefinition(vw DuckLakeView) *ast.Definition {
+	if len(vw.Columns) == 0 {
+		return nil
+	}
+
+	viewSQLName := dataObjectName(vw.SchemaName, vw.ViewName)
+	typeName := identGraphQL(viewSQLName)
+
+	def := &ast.Definition{
+		Name:     typeName,
+		Kind:     ast.Object,
+		Position: base.CompiledPos("ducklake-self-described"),
+	}
+
+	// @view directive (read-only, references the existing DuckLake view)
+	def.Directives = append(def.Directives, &ast.Directive{
+		Name: "view",
+		Arguments: ast.ArgumentList{
+			&ast.Argument{
+				Name:     "name",
+				Value:    &ast.Value{Raw: viewSQLName, Kind: ast.StringValue, Position: base.CompiledPos("ducklake-view")},
+				Position: base.CompiledPos("ducklake-view"),
+			},
+		},
+		Position: base.CompiledPos("ducklake-view"),
+	})
+
+	// @module directive for non-default schemas
+	if viewSQLName != vw.ViewName {
+		def.Directives = append(def.Directives, &ast.Directive{
+			Name: "module",
+			Arguments: ast.ArgumentList{
+				&ast.Argument{
+					Name:     "name",
+					Value:    &ast.Value{Raw: identGraphQL(vw.SchemaName), Kind: ast.StringValue, Position: base.CompiledPos("ducklake-module")},
+					Position: base.CompiledPos("ducklake-module"),
+				},
+			},
+			Position: base.CompiledPos("ducklake-module"),
+		})
+	}
+
+	for _, col := range vw.Columns {
 		fd := columnToFieldDef(col)
 		if fd != nil {
 			def.Fields = append(def.Fields, fd)
@@ -560,6 +716,108 @@ func IntrospectChanges(ctx context.Context, pool *db.Pool, prefix string, fromSn
 	return changes, nil
 }
 
+// introspectViews queries DuckLake metadata for view definitions and resolves their columns
+// via DuckDB's DESCRIBE mechanism.
+func introspectViews(ctx context.Context, pool *db.Pool, prefix string, filter *IntrospectFilter) ([]DuckLakeView, error) {
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("ducklake: get connection failed: %w", err)
+	}
+	defer conn.Close()
+
+	metaCatalog := metaCatalogIdent(prefix)
+
+	// Get active views from DuckLake metadata
+	viewQuery := fmt.Sprintf(`
+		SELECT s.schema_name, v.view_name
+		FROM %[1]s.ducklake_view v
+		JOIN %[1]s.ducklake_schema s ON v.schema_id = s.schema_id
+			AND s.end_snapshot IS NULL
+		WHERE v.end_snapshot IS NULL
+		ORDER BY s.schema_name, v.view_name
+	`, metaCatalog)
+
+	viewRows, err := conn.Query(ctx, viewQuery)
+	if err != nil {
+		return nil, fmt.Errorf("ducklake: query views: %w", err)
+	}
+	defer viewRows.Close()
+
+	type viewInfo struct {
+		schema, name string
+	}
+	var viewInfos []viewInfo
+
+	for viewRows.Next() {
+		var schema, name string
+		if err := viewRows.Scan(&schema, &name); err != nil {
+			return nil, fmt.Errorf("ducklake: scan view: %w", err)
+		}
+		if !filter.Match(schema, name) {
+			continue
+		}
+		viewInfos = append(viewInfos, viewInfo{schema, name})
+	}
+	if err := viewRows.Err(); err != nil {
+		return nil, fmt.Errorf("ducklake: view rows error: %w", err)
+	}
+
+	// Resolve columns for each view using DESCRIBE
+	var views []DuckLakeView
+	for _, vi := range viewInfos {
+		cols, err := describeViewColumns(ctx, conn, prefix, vi.schema, vi.name)
+		if err != nil {
+			// Skip views whose columns cannot be resolved
+			continue
+		}
+		if len(cols) == 0 {
+			continue
+		}
+		views = append(views, DuckLakeView{
+			SchemaName: vi.schema,
+			ViewName:   vi.name,
+			Columns:    cols,
+		})
+	}
+
+	return views, nil
+}
+
+// describeViewColumns resolves column names and types for a DuckLake view.
+func describeViewColumns(ctx context.Context, conn *db.Connection, prefix, schema, viewName string) ([]DuckLakeColumn, error) {
+	qualifiedName := fmt.Sprintf("%s.%s.%s",
+		fmt.Sprintf(`"%s"`, prefix),
+		fmt.Sprintf(`"%s"`, schema),
+		fmt.Sprintf(`"%s"`, viewName),
+	)
+	descQuery := fmt.Sprintf("DESCRIBE SELECT * FROM %s", qualifiedName)
+
+	rows, err := conn.Query(ctx, descQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cols []DuckLakeColumn
+	for rows.Next() {
+		var colName, colType, isNull string
+		var key, defaultVal, extra sql.NullString
+		if err := rows.Scan(&colName, &colType, &isNull, &key, &defaultVal, &extra); err != nil {
+			return nil, err
+		}
+		gqlType := duckDBTypeToGraphQL(colType)
+		if gqlType == nil {
+			continue
+		}
+		cols = append(cols, DuckLakeColumn{
+			Name:       colName,
+			Type:       colType,
+			IsNullable: isNull == "YES",
+		})
+	}
+	return cols, rows.Err()
+}
+
 func intListSQL(ids []int) string {
 	var sb strings.Builder
 	for i, id := range ids {
@@ -573,6 +831,11 @@ func intListSQL(ids []int) string {
 
 // ContentHash computes a stable hash of the introspected schema for version tracking.
 func ContentHash(tables []DuckLakeTable) string {
+	return ContentHashFull(tables, nil)
+}
+
+// ContentHashFull computes a stable hash including both tables and views.
+func ContentHashFull(tables []DuckLakeTable, views []DuckLakeView) string {
 	h := sha256.New()
 
 	sorted := make([]DuckLakeTable, len(tables))
@@ -587,6 +850,22 @@ func ContentHash(tables []DuckLakeTable) string {
 	for _, tbl := range sorted {
 		fmt.Fprintf(h, "table:%s.%s\n", tbl.SchemaName, tbl.TableName)
 		for _, col := range tbl.Columns {
+			fmt.Fprintf(h, "col:%s:%s:%v:%v\n", col.Name, col.Type, col.IsNullable, col.IsPK)
+		}
+	}
+
+	sortedViews := make([]DuckLakeView, len(views))
+	copy(sortedViews, views)
+	sort.Slice(sortedViews, func(i, j int) bool {
+		if sortedViews[i].SchemaName != sortedViews[j].SchemaName {
+			return sortedViews[i].SchemaName < sortedViews[j].SchemaName
+		}
+		return sortedViews[i].ViewName < sortedViews[j].ViewName
+	})
+
+	for _, vw := range sortedViews {
+		fmt.Fprintf(h, "view:%s.%s\n", vw.SchemaName, vw.ViewName)
+		for _, col := range vw.Columns {
 			fmt.Fprintf(h, "col:%s:%s:%v:%v\n", col.Name, col.Type, col.IsNullable, col.IsPK)
 		}
 	}

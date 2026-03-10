@@ -1,0 +1,15 @@
+{
+  "data": {
+    "core": {
+      "DuckLakeDataFile_aggregation": {
+        "_rows_count": 2,
+        "data_file_size_bytes": {
+          "count": 2
+        },
+        "delete_file_size_bytes": {
+          "count": 1
+        }
+      }
+    }
+  }
+}

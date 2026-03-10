@@ -382,15 +382,29 @@ type duckLakeInfo struct {
 	SnapshotCount   int64  `json:"snapshot_count"`
 	CurrentSnapshot int64  `json:"current_snapshot"`
 	TableCount      int64  `json:"table_count"`
+	SchemaCount     int64  `json:"schema_count"`
+	ViewCount       int64  `json:"view_count"`
+	SchemaVersion   int64  `json:"schema_version"`
 	MetadataBackend string `json:"metadata_backend"`
+	DuckLakeVersion string `json:"ducklake_version"`
+	DataPath        string `json:"data_path"`
+	CreatedAt       string `json:"created_at"`
+	LastModifiedAt  string `json:"last_modified_at"`
 }
 
 var duckDBDuckLakeInfoType = runtime.DuckDBStructTypeFromSchemaMust(map[string]any{
 	"name":             duckdb.TYPE_VARCHAR,
 	"snapshot_count":   duckdb.TYPE_BIGINT,
 	"current_snapshot": duckdb.TYPE_BIGINT,
-	"table_count":     duckdb.TYPE_BIGINT,
+	"table_count":      duckdb.TYPE_BIGINT,
+	"schema_count":     duckdb.TYPE_BIGINT,
+	"view_count":       duckdb.TYPE_BIGINT,
+	"schema_version":   duckdb.TYPE_BIGINT,
 	"metadata_backend": duckdb.TYPE_VARCHAR,
+	"ducklake_version": duckdb.TYPE_VARCHAR,
+	"data_path":        duckdb.TYPE_VARCHAR,
+	"created_at":       duckdb.TYPE_VARCHAR,
+	"last_modified_at": duckdb.TYPE_VARCHAR,
 })
 
 func (s *Source) registerInfo(ctx context.Context) error {
@@ -413,17 +427,37 @@ func (s *Source) registerInfo(ctx context.Context) error {
 					(SELECT COUNT(*) FROM %[1]s.ducklake_snapshot),
 					(SELECT COALESCE(MAX(snapshot_id), 0) FROM %[1]s.ducklake_snapshot),
 					(SELECT COUNT(*) FROM %[1]s.ducklake_table WHERE end_snapshot IS NULL),
-					(SELECT database_name FROM duckdb_databases() WHERE database_name = '%[2]s')
+					(SELECT COUNT(*) FROM %[1]s.ducklake_schema WHERE end_snapshot IS NULL),
+					(SELECT COALESCE(MAX(schema_version), 0) FROM %[1]s.ducklake_schema_versions),
+					(SELECT database_name FROM duckdb_databases() WHERE database_name = '%[2]s'),
+					(SELECT COALESCE(value, '') FROM %[1]s.ducklake_metadata WHERE key = 'version'),
+					(SELECT COALESCE(value, '') FROM %[1]s.ducklake_metadata WHERE key = 'data_path'),
+					(SELECT COALESCE(MIN(snapshot_time)::VARCHAR, '') FROM %[1]s.ducklake_snapshot),
+					(SELECT COALESCE(MAX(snapshot_time)::VARCHAR, '') FROM %[1]s.ducklake_snapshot)
 			`, metaCatalog, escapeSQLString(metaCatalogStr))
 
 			if err := conn.QueryRow(ctx, query).Scan(
 				&info.SnapshotCount,
 				&info.CurrentSnapshot,
 				&info.TableCount,
+				&info.SchemaCount,
+				&info.SchemaVersion,
 				&info.MetadataBackend,
+				&info.DuckLakeVersion,
+				&info.DataPath,
+				&info.CreatedAt,
+				&info.LastModifiedAt,
 			); err != nil {
 				return nil, fmt.Errorf("ducklake_info: query failed: %w", err)
 			}
+
+			// View count is optional — ducklake_view may not exist in older versions
+			var viewCount int64
+			viewQuery := fmt.Sprintf(`SELECT COUNT(*) FROM %s.ducklake_view WHERE end_snapshot IS NULL`, metaCatalog)
+			if err := conn.QueryRow(ctx, viewQuery).Scan(&viewCount); err == nil {
+				info.ViewCount = viewCount
+			}
+
 			return info, nil
 		},
 		ConvertInput: func(args []driver.Value) (string, error) {
@@ -440,8 +474,15 @@ func (s *Source) registerInfo(ctx context.Context) error {
 				"name":             out.Name,
 				"snapshot_count":   out.SnapshotCount,
 				"current_snapshot": out.CurrentSnapshot,
-				"table_count":     out.TableCount,
+				"table_count":      out.TableCount,
+				"schema_count":     out.SchemaCount,
+				"view_count":       out.ViewCount,
+				"schema_version":   out.SchemaVersion,
 				"metadata_backend": out.MetadataBackend,
+				"ducklake_version": out.DuckLakeVersion,
+				"data_path":        out.DataPath,
+				"created_at":       out.CreatedAt,
+				"last_modified_at": out.LastModifiedAt,
 			}, nil
 		},
 		InputTypes: []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
