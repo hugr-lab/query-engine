@@ -674,6 +674,22 @@ type ddlField struct {
 	Type string `json:"type"`
 }
 
+// allowedColumnTypes is the set of valid column type enum values for DDL operations.
+var allowedColumnTypes = map[string]bool{
+	"BOOLEAN": true, "TINYINT": true, "SMALLINT": true, "INTEGER": true,
+	"BIGINT": true, "HUGEINT": true, "FLOAT": true, "DOUBLE": true,
+	"DECIMAL": true, "VARCHAR": true, "CHAR": true, "BLOB": true,
+	"DATE": true, "TIME": true, "TIMESTAMP": true, "TIMESTAMPTZ": true,
+	"INTERVAL": true, "UUID": true, "JSON": true, "GEOMETRY": true,
+}
+
+func validateColumnType(t string) error {
+	if !allowedColumnTypes[strings.ToUpper(t)] {
+		return fmt.Errorf("unsupported column type %q", t)
+	}
+	return nil
+}
+
 type createTableArgs struct {
 	name       string
 	tableName  string
@@ -691,7 +707,10 @@ func (s *Source) registerCreateTable(ctx context.Context) error {
 			}
 			var colDefs []string
 			for _, col := range args.columns {
-				colDefs = append(colDefs, fmt.Sprintf("%s %s", engines.Ident(col.Name), col.Type))
+				if err := validateColumnType(col.Type); err != nil {
+					return types.ErrResult(err), nil
+				}
+				colDefs = append(colDefs, fmt.Sprintf("%s %s", engines.Ident(col.Name), strings.ToUpper(col.Type)))
 			}
 			sql := fmt.Sprintf("CREATE TABLE %s (%s)",
 				qualifiedTable(args.name, args.schemaName, args.tableName),
@@ -746,10 +765,13 @@ func (s *Source) registerAddColumn(ctx context.Context) error {
 		Name:                  "hugr_ducklake_add_column",
 		IsSpecialNullHandling: true,
 		Execute: func(ctx context.Context, args addColumnArgs) (*types.OperationResult, error) {
+			if err := validateColumnType(args.columnType); err != nil {
+				return types.ErrResult(err), nil
+			}
 			sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s",
 				qualifiedTable(args.name, args.schemaName, args.tableName),
 				engines.Ident(args.columnName),
-				args.columnType,
+				strings.ToUpper(args.columnType),
 			)
 			if args.defaultValue != "" {
 				sql += fmt.Sprintf(" DEFAULT '%s'", escapeSQLString(args.defaultValue))
@@ -890,8 +912,10 @@ func (s *Source) registerRenameTable(ctx context.Context) error {
 }
 
 // metaCatalogIdent returns the properly quoted metadata catalog identifier.
+// DuckLake creates an internal catalog named __ducklake_metadata_<catalog_name>.
 func metaCatalogIdent(catalogName string) string {
-	return fmt.Sprintf(`"%s"`, "__ducklake_metadata_"+catalogName)
+	escaped := strings.ReplaceAll(catalogName, `"`, `""`)
+	return fmt.Sprintf(`"%s"`, "__ducklake_metadata_"+escaped)
 }
 
 func escapeSQLString(s string) string {

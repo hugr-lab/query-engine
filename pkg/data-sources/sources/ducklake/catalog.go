@@ -91,12 +91,12 @@ func (c *duckLakeCatalog) Version(ctx context.Context) (string, error) {
 	return strconv.Itoa(sv), nil
 }
 
-func (c *duckLakeCatalog) ForName(_ context.Context, name string) *ast.Definition {
-	return c.provider.ForName(context.Background(), name)
+func (c *duckLakeCatalog) ForName(ctx context.Context, name string) *ast.Definition {
+	return c.provider.ForName(ctx, name)
 }
 
-func (c *duckLakeCatalog) DirectiveForName(_ context.Context, name string) *ast.DirectiveDefinition {
-	return c.provider.DirectiveForName(context.Background(), name)
+func (c *duckLakeCatalog) DirectiveForName(ctx context.Context, name string) *ast.DirectiveDefinition {
+	return c.provider.DirectiveForName(ctx, name)
 }
 
 func (c *duckLakeCatalog) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {

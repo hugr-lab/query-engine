@@ -58,7 +58,8 @@ func (f *IntrospectFilter) Match(schemaName, tableName string) bool {
 // DuckLake creates an internal catalog named __ducklake_metadata_<catalog_name>.
 // If the catalog name contains dots or other special characters, the identifier must be quoted.
 func metaCatalogIdent(prefix string) string {
-	return fmt.Sprintf(`"%s"`, "__ducklake_metadata_"+prefix)
+	escaped := strings.ReplaceAll(prefix, `"`, `""`)
+	return fmt.Sprintf(`"%s"`, "__ducklake_metadata_"+escaped)
 }
 
 // DuckLakeTable represents a table discovered from DuckLake metadata.

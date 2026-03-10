@@ -28,9 +28,10 @@ func NewDuckLake() *DuckLake {
 func (e *DuckLake) Type() Type { return TypeDuckLake }
 
 func (e *DuckLake) Capabilities() *compiler.EngineCapabilities {
-	caps := e.duckdb.Capabilities()
+	dbCaps := e.duckdb.Capabilities()
+	caps := *dbCaps // defensive copy
 	caps.General.SupportTimeTravel = true
-	return caps
+	return &caps
 }
 
 func (e *DuckLake) SQLValue(v any) (string, error) {

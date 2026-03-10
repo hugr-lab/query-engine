@@ -19,7 +19,7 @@ type AtInfo struct {
 // resolveAtInfo extracts @at directive info from a query field.
 // It first checks the query-level directive on the field, then falls back
 // to the SDL-level directive on the field definition's parent type.
-func resolveAtInfo(field *ast.Field, vars map[string]any) *AtInfo {
+func resolveAtInfo(field *ast.Field, vars map[string]any) (*AtInfo, error) {
 	// Check query-level @at directive first
 	dir := field.Directives.ForName(base.AtDirectiveName)
 	if dir == nil && field.Definition != nil {
@@ -31,7 +31,7 @@ func resolveAtInfo(field *ast.Field, vars map[string]any) *AtInfo {
 		}
 	}
 	if dir == nil {
-		return nil
+		return nil, nil
 	}
 
 	info := &AtInfo{}
@@ -39,22 +39,25 @@ func resolveAtInfo(field *ast.Field, vars map[string]any) *AtInfo {
 	versionStr := sdl.DirectiveArgValue(dir, "version", vars)
 	if versionStr != "" {
 		v, err := strconv.Atoi(versionStr)
-		if err == nil {
-			info.Version = v
-			return info
+		if err != nil {
+			return nil, fmt.Errorf("@at version must be an integer, got %q", versionStr)
 		}
+		info.Version = v
+		return info, nil
 	}
 
 	timestampStr := sdl.DirectiveArgValue(dir, "timestamp", vars)
 	if timestampStr != "" {
 		info.Timestamp = timestampStr
-		return info
+		return info, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
-// atClause generates the SQL AT clause for time-travel queries.
+// atClause generates the SQL AT clause for DuckLake time-travel queries.
+// Syntax: AT (VERSION => N) or AT (TIMESTAMP => 'ts')
+// See: https://ducklake.select/docs/stable/duckdb/usage/time_travel
 func atClause(info *AtInfo) (string, error) {
 	if info == nil {
 		return "", nil

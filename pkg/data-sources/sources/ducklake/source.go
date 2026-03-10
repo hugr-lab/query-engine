@@ -343,6 +343,13 @@ func (s *Source) Detach(ctx context.Context, pool *db.Pool) error {
 		return err
 	}
 	s.isAttached = false
+
+	// Clean up secrets created during Attach to avoid orphaned secrets.
+	name := strings.ReplaceAll(strings.ReplaceAll(prefix, ".", "_"), "-", "_")
+	// Best-effort: ignore errors since secrets may not exist (e.g. secret-ref mode).
+	pool.Exec(ctx, fmt.Sprintf("DROP SECRET IF EXISTS _%s_ducklake_secret;", name)) //nolint:errcheck
+	pool.Exec(ctx, fmt.Sprintf("DROP SECRET IF EXISTS _%s_pg_secret;", name))       //nolint:errcheck
+
 	return nil
 }
 

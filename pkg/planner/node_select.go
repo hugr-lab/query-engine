@@ -302,6 +302,11 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 		}
 	}
 
+	atInfo, err := resolveAtInfo(query, vars)
+	if err != nil {
+		return nil, false, err
+	}
+
 	fieldNodes := fieldsNodes(ctx, e, info, "_objects",
 		append(qp.fields, qp.extraSourceFields...), // add selected fields and extra fields that are required for joins
 		vars,
@@ -312,7 +317,7 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 			query,
 			fieldNodes,
 		),
-		fromDataObjectNode(ctx, info, resolveAtInfo(query, vars)),
+		fromDataObjectNode(ctx, info, atInfo),
 	}
 	if info.IsCube { // add group by if needed
 		node, err := cubeGroupByNode(info, query, append(qp.fields, qp.extraSourceFields...))

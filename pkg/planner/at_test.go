@@ -46,7 +46,10 @@ func TestResolveAtInfo(t *testing.T) {
 			},
 			ObjectDefinition: &ast.Definition{},
 		}
-		info := resolveAtInfo(field, nil)
+		info, err := resolveAtInfo(field, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if info == nil {
 			t.Fatal("expected non-nil AtInfo")
 		}
@@ -68,7 +71,10 @@ func TestResolveAtInfo(t *testing.T) {
 			},
 			ObjectDefinition: &ast.Definition{},
 		}
-		info := resolveAtInfo(field, nil)
+		info, err := resolveAtInfo(field, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if info == nil {
 			t.Fatal("expected non-nil AtInfo")
 		}
@@ -92,7 +98,10 @@ func TestResolveAtInfo(t *testing.T) {
 				},
 			},
 		}
-		info := resolveAtInfo(field, nil)
+		info, err := resolveAtInfo(field, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if info == nil {
 			t.Fatal("expected non-nil AtInfo")
 		}
@@ -115,7 +124,10 @@ func TestResolveAtInfo(t *testing.T) {
 				},
 			},
 		}
-		info := resolveAtInfo(field, nil)
+		info, err := resolveAtInfo(field, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if info == nil {
 			t.Fatal("expected non-nil AtInfo")
 		}
@@ -132,7 +144,10 @@ func TestResolveAtInfo(t *testing.T) {
 			},
 			ObjectDefinition: &ast.Definition{},
 		}
-		info := resolveAtInfo(field, nil)
+		info, err := resolveAtInfo(field, nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if info != nil {
 			t.Fatalf("expected nil AtInfo, got %+v", info)
 		}
@@ -160,7 +175,10 @@ func TestResolveAtInfo(t *testing.T) {
 			ObjectDefinition: &ast.Definition{},
 		}
 		vars := map[string]any{"ver": 7}
-		info := resolveAtInfo(field, vars)
+		info, err := resolveAtInfo(field, vars)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if info == nil {
 			t.Fatal("expected non-nil AtInfo")
 		}
@@ -169,7 +187,7 @@ func TestResolveAtInfo(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid version string returns nil", func(t *testing.T) {
+	t.Run("invalid version string returns error", func(t *testing.T) {
 		field := &ast.Field{
 			Directives: ast.DirectiveList{
 				makeAtDirective(makeArg("version", "not-a-number")),
@@ -179,10 +197,9 @@ func TestResolveAtInfo(t *testing.T) {
 			},
 			ObjectDefinition: &ast.Definition{},
 		}
-		info := resolveAtInfo(field, nil)
-		// version parse fails, timestamp is empty → returns nil
-		if info != nil {
-			t.Fatalf("expected nil AtInfo for invalid version, got %+v", info)
+		_, err := resolveAtInfo(field, nil)
+		if err == nil {
+			t.Fatal("expected error for invalid version string")
 		}
 	})
 }

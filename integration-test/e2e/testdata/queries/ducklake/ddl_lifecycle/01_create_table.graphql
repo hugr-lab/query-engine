@@ -5,7 +5,7 @@ mutation {
         create_table(
           name: "dl_test"
           table_name: "ddl_test_table"
-          columns: [{name: "id", type: "INTEGER"}, {name: "name", type: "VARCHAR"}, {name: "value", type: "FLOAT"}]
+          columns: [{name: "id", type: INTEGER}, {name: "name", type: VARCHAR}, {name: "value", type: FLOAT}]
         ) {
           success
           message

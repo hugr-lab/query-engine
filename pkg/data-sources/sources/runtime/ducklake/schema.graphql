@@ -88,13 +88,60 @@ input TableArgs {
 }
 
 """
+Allowed column types for DuckLake DDL operations.
+Maps to DuckDB physical types.
+"""
+enum ColumnType {
+  "Boolean"
+  BOOLEAN
+  "8-bit integer"
+  TINYINT
+  "16-bit integer"
+  SMALLINT
+  "32-bit integer"
+  INTEGER
+  "64-bit integer"
+  BIGINT
+  "128-bit integer"
+  HUGEINT
+  "32-bit float"
+  FLOAT
+  "64-bit float"
+  DOUBLE
+  "Arbitrary precision decimal"
+  DECIMAL
+  "Variable-length string"
+  VARCHAR
+  "Fixed-length string"
+  CHAR
+  "Binary large object"
+  BLOB
+  "Date (year-month-day)"
+  DATE
+  "Time of day"
+  TIME
+  "Date and time"
+  TIMESTAMP
+  "Timestamp with time zone"
+  TIMESTAMPTZ
+  "Time interval"
+  INTERVAL
+  "UUID"
+  UUID
+  "JSON data"
+  JSON
+  "Geometry (spatial)"
+  GEOMETRY
+}
+
+"""
 Column definition for DDL operations.
 """
 input DDLField {
   "Column name"
   name: String!
-  "Column type (e.g. INTEGER, VARCHAR, DOUBLE, TIMESTAMP)"
-  type: String!
+  "Column type"
+  type: ColumnType!
 }
 
 """
@@ -274,7 +321,7 @@ extend type MutationFunction {
     name: String!
     table_name: String!
     column_name: String!
-    column_type: String!
+    column_type: ColumnType!
     schema_name: String
     default_value: String
   ): OperationResult
