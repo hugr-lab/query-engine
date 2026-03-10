@@ -993,7 +993,7 @@ func TestIntegration_RuntimeSourceBootstrap(t *testing.T) {
 		readOnly bool
 	}{
 		{"core", coreDBSchema, false, false},
-		{"cache", cacheSchema, false, false},
+		{"core.cache", cacheSchema, true, false},
 		{"core.storage", storageSchema, true, false},
 		{"storage", dataSourcesSchema, false, false},
 		{"core.meta", metaInfoSchema, true, false},

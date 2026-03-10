@@ -25,7 +25,7 @@ var _ sources.RuntimeSource = (*Service)(nil)
 var schema string
 
 func (s *Service) Name() string {
-	return "cache"
+	return "core.cache"
 }
 
 func (s *Service) Engine() engines.Engine {
@@ -100,7 +100,7 @@ func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
 func (s *Service) Catalog(ctx context.Context) (cs.Catalog, error) {
 	opts := compiler.Options{
 		Name:         s.Name(),
-		Prefix:       "cache",
+		Prefix:       "core_cache",
 		AsModule:     s.AsModule(),
 		ReadOnly:     s.IsReadonly(),
 		EngineType:   string(s.Engine().Type()),
