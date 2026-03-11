@@ -281,7 +281,7 @@ func Test_repackStructRecursive(t *testing.T) {
 					{Name: "field1", Type: &ast.Type{NamedType: "Object"}},
 				}},
 			},
-			expected: "{subfield1A: list_transform(field1['subfield1'],_value->{subsubfield1: _value['subsubfield1']})}",
+			expected: "{subfield1A: list_transform(field1['subfield1'],lambda _value: {subsubfield1: _value['subsubfield1']})}",
 		},
 	}
 
@@ -586,7 +586,7 @@ func TestDuckDBUnpackObject(t *testing.T) {
 					},
 				},
 			},
-			expected: "list_transform(field1['subfield1'],_value->{subsubfield1: _value['subsubfield1']}) AS subfield1A",
+			expected: "list_transform(field1['subfield1'],lambda _value: {subsubfield1: _value['subsubfield1']}) AS subfield1A",
 		},
 	}
 

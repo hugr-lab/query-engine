@@ -72,20 +72,22 @@ func (s *Source) prefix() string {
 //     The PostgreSQL credentials are handled via a DuckDB postgres secret.
 //
 // Query parameters (on formats 2 and 3):
-//   - data_path:        Storage location for data files
-//   - metadata_secret:  Name of existing DuckDB secret for remote metadata credentials
-//   - schema_filter:    Regexp to filter schemas for self-describe (e.g. "^(public|analytics)$")
-//   - table_filter:     Regexp to filter tables for self-describe (e.g. "^(users|orders)$")
+//   - data_path:            Storage location for data files
+//   - metadata_secret:      Name of existing DuckDB secret for remote metadata credentials
+//   - schema_filter:        Regexp to filter schemas for self-describe (e.g. "^(public|analytics)$")
+//   - table_filter:         Regexp to filter tables for self-describe (e.g. "^(users|orders)$")
+//   - automatic_migration:  Set to "true" to enable automatic DuckLake catalog version migration
 type ducklakeParams struct {
-	MetadataPath   string           // DuckDB file path or empty (for PG via secret)
-	DataPath       string           // DATA_PATH for file storage
-	MetadataType   string           // Remote metadata backend type: "postgres", "mysql", "sqlite"
-	MetadataSecret string           // DuckDB secret name for remote metadata credentials
-	IsSecretRef    bool             // true if path references an existing DuckLake secret
-	PgConnStr      string           // PostgreSQL connection string for logging (parsed from postgres:// URI)
-	pgParams       *pgSecretParams  // PostgreSQL connection fields (parsed from postgres:// URI)
-	SchemaFilter   string           // Regexp to filter schemas for self-describe
-	TableFilter    string           // Regexp to filter tables for self-describe
+	MetadataPath       string          // DuckDB file path or empty (for PG via secret)
+	DataPath           string          // DATA_PATH for file storage
+	MetadataType       string          // Remote metadata backend type: "postgres", "mysql", "sqlite"
+	MetadataSecret     string          // DuckDB secret name for remote metadata credentials
+	AutomaticMigration bool            // Enable automatic DuckLake catalog version migration
+	IsSecretRef        bool            // true if path references an existing DuckLake secret
+	PgConnStr          string          // PostgreSQL connection string for logging (parsed from postgres:// URI)
+	pgParams           *pgSecretParams // PostgreSQL connection fields (parsed from postgres:// URI)
+	SchemaFilter       string          // Regexp to filter schemas for self-describe
+	TableFilter        string          // Regexp to filter tables for self-describe
 }
 
 func parsePath(raw string) (*ducklakeParams, error) {
@@ -110,6 +112,7 @@ func parsePath(raw string) (*ducklakeParams, error) {
 		p.MetadataSecret = query.Get("metadata_secret")
 		p.SchemaFilter = query.Get("schema_filter")
 		p.TableFilter = query.Get("table_filter")
+		p.AutomaticMigration = strings.EqualFold(query.Get("automatic_migration"), "true")
 	} else {
 		p.MetadataPath = raw
 	}
@@ -154,6 +157,7 @@ func parsePgPath(raw string) (*ducklakeParams, error) {
 	}
 	p.SchemaFilter = u.Query().Get("schema_filter")
 	p.TableFilter = u.Query().Get("table_filter")
+	p.AutomaticMigration = strings.EqualFold(u.Query().Get("automatic_migration"), "true")
 
 	// Parse PostgreSQL connection fields from URI
 	pg := pgSecretParams{
@@ -214,17 +218,14 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	}
 	name := strings.ReplaceAll(strings.ReplaceAll(prefix, ".", "_"), "-", "_")
 
-	readOnlyOpt := ""
-	if s.ds.ReadOnly {
-		readOnlyOpt = " (READ_ONLY)"
-	}
+	attachOpts := s.attachOptions(params)
 
 	// If referencing an existing secret, attach directly
 	if params.IsSecretRef {
 		sql := fmt.Sprintf("ATTACH 'ducklake:%s' AS %s%s;",
 			escapeSQLString(params.MetadataPath),
 			engines.Ident(prefix),
-			readOnlyOpt,
+			attachOpts,
 		)
 		_, err = pool.Exec(ctx, sql)
 		if err != nil {
@@ -236,15 +237,15 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 
 	// PostgreSQL metadata path: create a postgres secret + ducklake secret
 	if params.PgConnStr != "" {
-		return s.attachWithPgMetadata(ctx, pool, params, prefix, name, readOnlyOpt)
+		return s.attachWithPgMetadata(ctx, pool, params, prefix, name, attachOpts)
 	}
 
 	// DuckDB file metadata: create ducklake secret
-	return s.attachWithFileMetadata(ctx, pool, params, prefix, name, readOnlyOpt)
+	return s.attachWithFileMetadata(ctx, pool, params, prefix, name, attachOpts)
 }
 
 // attachWithPgMetadata creates a PostgreSQL secret for metadata and a DuckLake secret referencing it.
-func (s *Source) attachWithPgMetadata(ctx context.Context, pool *db.Pool, params *ducklakeParams, prefix, name, readOnlyOpt string) error {
+func (s *Source) attachWithPgMetadata(ctx context.Context, pool *db.Pool, params *ducklakeParams, prefix, name, attachOpts string) error {
 	var stmts []string
 
 	pgSecretName := params.MetadataSecret
@@ -291,7 +292,7 @@ func (s *Source) attachWithPgMetadata(ctx context.Context, pool *db.Pool, params
 			dlSecretName, strings.Join(secretParts, ",\n\t"),
 		),
 		fmt.Sprintf("ATTACH 'ducklake:%s' AS %s%s;",
-			dlSecretName, engines.Ident(prefix), readOnlyOpt,
+			dlSecretName, engines.Ident(prefix), attachOpts,
 		),
 	)
 
@@ -304,7 +305,7 @@ func (s *Source) attachWithPgMetadata(ctx context.Context, pool *db.Pool, params
 }
 
 // attachWithFileMetadata creates a DuckLake secret for file-based metadata.
-func (s *Source) attachWithFileMetadata(ctx context.Context, pool *db.Pool, params *ducklakeParams, prefix, name, readOnlyOpt string) error {
+func (s *Source) attachWithFileMetadata(ctx context.Context, pool *db.Pool, params *ducklakeParams, prefix, name, attachOpts string) error {
 	secretParts := []string{
 		"TYPE ducklake",
 		fmt.Sprintf("METADATA_PATH '%s'", escapeSQLString(params.MetadataPath)),
@@ -319,13 +320,12 @@ func (s *Source) attachWithFileMetadata(ctx context.Context, pool *db.Pool, para
 		}
 		secretParts = append(secretParts, fmt.Sprintf("METADATA_PARAMETERS MAP {%s}", metaParams))
 	}
-
 	secretName := fmt.Sprintf("_%s_ducklake_secret", name)
 	secretSQL := fmt.Sprintf("CREATE OR REPLACE SECRET %s (\n\t%s\n);",
 		secretName, strings.Join(secretParts, ",\n\t"),
 	)
 	attachSQL := fmt.Sprintf("ATTACH 'ducklake:%s' AS %s%s;",
-		secretName, engines.Ident(prefix), readOnlyOpt,
+		secretName, engines.Ident(prefix), attachOpts,
 	)
 
 	_, err := pool.Exec(ctx, secretSQL+"\n"+attachSQL)
@@ -351,6 +351,21 @@ func (s *Source) Detach(ctx context.Context, pool *db.Pool) error {
 	pool.Exec(ctx, fmt.Sprintf("DROP SECRET IF EXISTS _%s_pg_secret;", name))       //nolint:errcheck
 
 	return nil
+}
+
+// attachOptions builds the ATTACH statement options string (e.g. " (READ_ONLY, AUTOMATIC_MIGRATION TRUE)").
+func (s *Source) attachOptions(params *ducklakeParams) string {
+	var opts []string
+	if s.ds.ReadOnly {
+		opts = append(opts, "READ_ONLY")
+	}
+	if params.AutomaticMigration {
+		opts = append(opts, "AUTOMATIC_MIGRATION TRUE")
+	}
+	if len(opts) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (%s)", strings.Join(opts, ", "))
 }
 
 func escapeSQLString(s string) string {
