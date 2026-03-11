@@ -50,15 +50,14 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		return nil, err
 	}
 
-	// post settings extension loads
-	/*_, err = pool.Exec(ctx, `
-		INSTALL airport FROM community; LOAD airport;
-		FROM register_geoarrow_extensions();
-	`)
-	if err != nil {
-		return nil, err
-	}
-	*/
+	// TODO: airport extension is not yet compatible with DuckDB 1.5.0
+	// _, err = pool.Exec(ctx, `
+	// 	INSTALL airport FROM community; LOAD airport;
+	// 	FROM register_geoarrow_extensions();
+	// `)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	return pool, nil
 }
