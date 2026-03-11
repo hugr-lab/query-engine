@@ -24,6 +24,18 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		return nil, err
 	}
 
+	pool.SetMaxOpenConns(config.MaxOpenConns)
+	pool.SetMaxIdleConns(config.MaxIdleConns)
+
+	// set settings
+	sql := config.Settings.applySQL()
+	if sql != "" {
+		_, err = pool.Exec(ctx, sql)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// load extensions
 	_, err = pool.Exec(ctx, `
 		INSTALL azure; LOAD azure;
@@ -38,26 +50,14 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		return nil, err
 	}
 
-	pool.SetMaxOpenConns(config.MaxOpenConns)
-	pool.SetMaxIdleConns(config.MaxIdleConns)
-
-	// set settings
-	sql := config.Settings.applySQL()
-	if sql != "" {
-		_, err = pool.Exec(ctx, sql)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// post settings extension loads
-	_, err = pool.Exec(ctx, `
-		INSTALL airport FROM community; LOAD airport;
-		FROM register_geoarrow_extensions();
-	`)
-	if err != nil {
-		return nil, err
-	}
+	// TODO: airport extension is not yet compatible with DuckDB 1.5.0
+	// _, err = pool.Exec(ctx, `
+	// 	INSTALL airport FROM community; LOAD airport;
+	// 	FROM register_geoarrow_extensions();
+	// `)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	return pool, nil
 }

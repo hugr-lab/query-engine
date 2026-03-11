@@ -24,22 +24,22 @@ type jsonTypeInfo struct {
 }
 
 var scalarJSONInfo = map[string]jsonTypeInfo{
-	"String":          {toStructType: "VARCHAR", nativeType: "VARCHAR"},
-	"Int":             {toStructType: "INTEGER", nativeType: "INTEGER"},
-	"BigInt":          {toStructType: "BIGINT", nativeType: "BIGINT"},
-	"Float":           {toStructType: "FLOAT", nativeType: "FLOAT"},
-	"Boolean":         {toStructType: "BOOLEAN", nativeType: "BOOLEAN"},
-	"Date":            {toStructType: "DATE", nativeType: "VARCHAR"},
-	"Timestamp":       {toStructType: "TIMESTAMP", nativeType: "VARCHAR"},
-	"Time":            {toStructType: "TIME", nativeType: "VARCHAR"},
-	"Interval":        {toStructType: "INTERVAL", nativeType: "VARCHAR"},
-	"JSON":            {toStructType: "JSON", nativeType: "JSON"},
-	"H3Cell":          {toStructType: "VARCHAR", nativeType: "VARCHAR"},
-	"Geometry":        {toStructType: "VARCHAR", nativeType: "VARCHAR"},
-	"Vector":          {toStructType: "VARCHAR", nativeType: "VARCHAR"},
-	"IntRange":        {toStructType: "JSON", nativeType: "VARCHAR"},
-	"BigIntRange":     {toStructType: "VARCHAR", nativeType: "VARCHAR"},
-	"TimestampRange":  {toStructType: "VARCHAR", nativeType: "VARCHAR"},
+	"String":         {toStructType: "VARCHAR", nativeType: "VARCHAR"},
+	"Int":            {toStructType: "INTEGER", nativeType: "INTEGER"},
+	"BigInt":         {toStructType: "BIGINT", nativeType: "BIGINT"},
+	"Float":          {toStructType: "FLOAT", nativeType: "FLOAT"},
+	"Boolean":        {toStructType: "BOOLEAN", nativeType: "BOOLEAN"},
+	"Date":           {toStructType: "DATE", nativeType: "VARCHAR"},
+	"Timestamp":      {toStructType: "TIMESTAMP", nativeType: "VARCHAR"},
+	"Time":           {toStructType: "TIME", nativeType: "VARCHAR"},
+	"Interval":       {toStructType: "INTERVAL", nativeType: "VARCHAR"},
+	"JSON":           {toStructType: "JSON", nativeType: "JSON"},
+	"H3Cell":         {toStructType: "VARCHAR", nativeType: "VARCHAR"},
+	"Geometry":       {toStructType: "VARCHAR", nativeType: "VARCHAR"},
+	"Vector":         {toStructType: "VARCHAR", nativeType: "VARCHAR"},
+	"IntRange":       {toStructType: "JSON", nativeType: "VARCHAR"},
+	"BigIntRange":    {toStructType: "VARCHAR", nativeType: "VARCHAR"},
+	"TimestampRange": {toStructType: "VARCHAR", nativeType: "VARCHAR"},
 }
 
 var (
@@ -185,7 +185,7 @@ func (e *DuckDB) RepackObject(sql string, field *ast.Field) string {
 	if field.Definition.Type.NamedType != "" {
 		return out
 	}
-	return "list_transform(" + sql + "," + field.Name + "->" + out + ")"
+	return "list_transform(" + sql + ", lambda " + field.Name + ": " + out + ")"
 }
 
 // create fields list for the first level of object (struct)
@@ -206,7 +206,7 @@ func (e *DuckDB) UnpackObjectToFieldList(sql string, field *ast.Field) string {
 			}
 			fields = append(fields,
 				"list_transform("+
-					extractValue+",_value->"+children+")"+
+					extractValue+",lambda _value: "+children+")"+
 					" AS "+Ident(f.Field.Alias),
 			)
 		}
@@ -314,7 +314,7 @@ func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, pa
 		case "in":
 			return fmt.Sprintf("%s IN (SELECT unnest(%s))", sqlName, val), params, nil
 		case "has_all":
-			return fmt.Sprintf("list_aggregate(list_transform(%[2]s, x -> json_exists(%[1]s, x)), 'bool_and')", sqlName, val), params, nil
+			return fmt.Sprintf("list_aggregate(list_transform(%[2]s, lambda x: json_exists(%[1]s, x)), 'bool_and')", sqlName, val), params, nil
 		default:
 			return "", nil, fmt.Errorf("unsupported filter operator: %s", op)
 		}
@@ -895,7 +895,7 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 				continue
 			}
 			fields = append(fields, Ident(f.Field.Alias)+
-				": list_transform("+extractValue+",_value->"+children+")")
+				": list_transform("+extractValue+",lambda _value: "+children+")")
 		}
 	}
 	sum := 0
