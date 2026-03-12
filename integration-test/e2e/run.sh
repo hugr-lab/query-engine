@@ -260,6 +260,11 @@ run_tests_against() {
 
     # Skip cluster tests — they use multi-node routing
     [ "$category" = "cluster" ] && continue
+    # Skip iceberg tests for non-DuckDB engines and --duckdb-only mode
+    if [ "$category" = "iceberg" ]; then
+      [ -n "$variant" ] && continue
+      [ "$DUCKDB_ONLY" = true ] && continue
+    fi
 
     for test_dir in "$category_dir"*/; do
       [ -d "$test_dir" ] || continue
@@ -390,7 +395,7 @@ if [ "$DUCKDB_ONLY" = false ]; then
   echo ""
   echo "Building DuckLake test data with PostgreSQL metadata..."
   DUCKDB_DIR="$SCRIPT_DIR/testdata/duckdb"
-  DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.4.4"
+  DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.5.0"
   DUCKLAKE_PGMETA_DIR="$DUCKDB_DIR/ducklake_pgmeta"
   rm -rf "$DUCKLAKE_PGMETA_DIR"
   mkdir -p "$DUCKLAKE_PGMETA_DIR/data"
@@ -451,7 +456,16 @@ EOSQL
   echo "  Built DuckLake at $DUCKLAKE_PGMETA_DIR (PostgreSQL metadata)"
 fi
 
-# 3. Provision and test DuckDB-backed engine
+# 3. Provision Iceberg data source (requires iceberg-rest + MinIO)
+if [ "$DUCKDB_ONLY" = false ]; then
+  ENGINE_URL_DUCKDB="http://localhost:15000"
+
+  echo ""
+  echo "Provisioning Iceberg data source..."
+  "$SCRIPT_DIR/provision-iceberg.sh" "$ENGINE_URL_DUCKDB" "$COMPOSE_FILE"
+fi
+
+# 4. Provision and test DuckDB-backed engine
 ENGINE_URL_DUCKDB="http://localhost:15000"
 
 echo ""
@@ -460,7 +474,7 @@ echo "Provisioning data sources (DuckDB CoreDB)..."
 
 run_tests_against "$ENGINE_URL_DUCKDB" "DuckDB CoreDB" ""
 
-# 4. Provision and test PG-backed engine
+# 5. Provision and test PG-backed engine
 if [ "$DUCKDB_ONLY" = false ]; then
   ENGINE_URL_PG="http://localhost:15001"
 
@@ -482,7 +496,7 @@ if [ "$DUCKDB_ONLY" = false ]; then
   run_tests_against "$ENGINE_URL_PG" "PostgreSQL CoreDB" "pg"
 fi
 
-# 5. Cluster tests
+# 6. Cluster tests
 if [ "$DUCKDB_ONLY" = false ]; then
   CLUSTER_MGMT_URL="http://localhost:15010"
   CLUSTER_W1_URL="http://localhost:15011"
@@ -505,7 +519,7 @@ if [ "$DUCKDB_ONLY" = false ]; then
   run_cluster_tests "$CLUSTER_MGMT_URL" "$CLUSTER_W1_URL" "$CLUSTER_W2_URL"
 fi
 
-# 6. Summary
+# 7. Summary
 echo ""
 echo "Results: $PASS passed, $FAIL failed, $SKIP skipped"
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -299,7 +300,8 @@ func tableToDefinition(tbl DuckLakeTable) *ast.Definition {
 	}
 
 	tableSQLName := dataObjectName(tbl.SchemaName, tbl.TableName)
-	typeName := identGraphQL(tableSQLName)
+	hasModule := hasSchemaModule(tbl.SchemaName)
+	typeName := identGraphQL(rawObjectName(tbl.SchemaName, tbl.TableName))
 
 	def := &ast.Definition{
 		Name:     typeName,
@@ -321,7 +323,7 @@ func tableToDefinition(tbl DuckLakeTable) *ast.Definition {
 	})
 
 	// @module directive for non-default schemas
-	if tableSQLName != tbl.TableName {
+	if hasModule {
 		def.Directives = append(def.Directives, &ast.Directive{
 			Name: "module",
 			Arguments: ast.ArgumentList{
@@ -355,7 +357,8 @@ func viewToDefinition(vw DuckLakeView) *ast.Definition {
 	}
 
 	viewSQLName := dataObjectName(vw.SchemaName, vw.ViewName)
-	typeName := identGraphQL(viewSQLName)
+	hasModule := hasSchemaModule(vw.SchemaName)
+	typeName := identGraphQL(rawObjectName(vw.SchemaName, vw.ViewName))
 
 	def := &ast.Definition{
 		Name:     typeName,
@@ -377,7 +380,7 @@ func viewToDefinition(vw DuckLakeView) *ast.Definition {
 	})
 
 	// @module directive for non-default schemas
-	if viewSQLName != vw.ViewName {
+	if hasModule {
 		def.Directives = append(def.Directives, &ast.Directive{
 			Name: "module",
 			Arguments: ast.ArgumentList{
@@ -895,7 +898,17 @@ var skipSchemaModules = map[string]bool{
 	"main": true,
 }
 
-func dataObjectName(schema, name string) string {
+// hasSchemaModule returns true if the schema creates a GraphQL module.
+func hasSchemaModule(schema string) bool {
+	if schema == "" {
+		return false
+	}
+	_, skip := skipSchemaModules[schema]
+	return !skip
+}
+
+// rawObjectName returns the unquoted schema.name for GraphQL type name generation.
+func rawObjectName(schema, name string) string {
 	if schema == "" {
 		return name
 	}
@@ -904,3 +917,15 @@ func dataObjectName(schema, name string) string {
 	}
 	return schema + "." + name
 }
+
+// dataObjectName returns the SQL-quoted schema.name for @table/@view directives.
+func dataObjectName(schema, name string) string {
+	if schema == "" {
+		return engines.Ident(name)
+	}
+	if _, ok := skipSchemaModules[schema]; ok {
+		return engines.Ident(name)
+	}
+	return engines.Ident(schema) + "." + engines.Ident(name)
+}
+

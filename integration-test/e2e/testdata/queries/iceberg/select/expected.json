@@ -1,0 +1,45 @@
+{
+  "data": {
+    "ice_test": {
+      "default": {
+        "default_sensors": [
+          {
+            "humidity": 65.0,
+            "id": 1,
+            "name": "sensor_a",
+            "reading_time": "2025-01-01 10:00:00",
+            "temperature": 22.5
+          },
+          {
+            "humidity": 70.2,
+            "id": 2,
+            "name": "sensor_b",
+            "reading_time": "2025-01-01 10:05:00",
+            "temperature": 23.1
+          },
+          {
+            "humidity": 55.5,
+            "id": 3,
+            "name": "sensor_c",
+            "reading_time": "2025-01-01 10:10:00",
+            "temperature": 21.8
+          },
+          {
+            "humidity": 60.0,
+            "id": 4,
+            "name": "sensor_d",
+            "reading_time": "2025-01-02 10:00:00",
+            "temperature": 25.0
+          },
+          {
+            "humidity": 80.1,
+            "id": 5,
+            "name": "sensor_e",
+            "reading_time": "2025-01-02 10:05:00",
+            "temperature": 19.5
+          }
+        ]
+      }
+    }
+  }
+}

@@ -3,20 +3,12 @@
     "core": {
       "data_sources": [
         {
-          "name": "dl_ice_bridge",
-          "type": "ducklake"
-        },
-        {
           "name": "dl_test",
           "type": "ducklake"
         },
         {
           "name": "ext_bridge",
           "type": "extension"
-        },
-        {
-          "name": "ice_test",
-          "type": "iceberg"
         },
         {
           "name": "local_db",

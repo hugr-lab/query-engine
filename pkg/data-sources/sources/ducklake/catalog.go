@@ -189,7 +189,7 @@ func (c *duckLakeCatalog) buildDiffFromChanges(ctx context.Context, sc *SchemaCh
 
 	// Dropped tables → old has the definition, new doesn't.
 	for _, tbl := range sc.Dropped {
-		name := identGraphQL(dataObjectName(tbl.SchemaName, tbl.TableName))
+		name := identGraphQL(rawObjectName(tbl.SchemaName, tbl.TableName))
 		if def := c.provider.ForName(ctx, name); def != nil {
 			oldDefs = append(oldDefs, def)
 		}
@@ -205,7 +205,7 @@ func (c *duckLakeCatalog) buildDiffFromChanges(ctx context.Context, sc *SchemaCh
 
 	// Modified tables → both old and new.
 	for _, tbl := range sc.Modified {
-		name := identGraphQL(dataObjectName(tbl.SchemaName, tbl.TableName))
+		name := identGraphQL(rawObjectName(tbl.SchemaName, tbl.TableName))
 		if def := c.provider.ForName(ctx, name); def != nil {
 			oldDefs = append(oldDefs, def)
 		}

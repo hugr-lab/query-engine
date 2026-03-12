@@ -316,9 +316,11 @@ func (t *DBTableInfo) Definition() (*ast.Definition, error) {
 		return nil, nil // No columns, no definition
 	}
 	name := dataObjectName(t.SchemaName, t.Name)
+	hasModule := hasSchemaModule(t.SchemaName)
+	typeName := identGraphQL(rawObjectName(t.SchemaName, t.Name))
 
 	def := &ast.Definition{
-		Name:        identGraphQL(name),
+		Name:        typeName,
 		Kind:        ast.Object,
 		Description: t.Description,
 		Position:    base.CompiledPos("self-described"),
@@ -337,7 +339,7 @@ func (t *DBTableInfo) Definition() (*ast.Definition, error) {
 		Position: base.CompiledPos("self-described-table"),
 	})
 
-	if name != t.Name {
+	if hasModule {
 		// add module directive if the name is qualified
 		def.Directives = append(def.Directives, &ast.Directive{
 			Name: "module",
@@ -478,9 +480,11 @@ func (v *DBViewInfo) Definition() (*ast.Definition, error) {
 		return nil, nil // No columns, no definition
 	}
 	name := dataObjectName(v.SchemaName, v.Name)
+	hasModule := hasSchemaModule(v.SchemaName)
+	typeName := identGraphQL(rawObjectName(v.SchemaName, v.Name))
 
 	def := &ast.Definition{
-		Name:        identGraphQL(name),
+		Name:        typeName,
 		Kind:        ast.Object,
 		Description: v.Description,
 		Position:    base.CompiledPos("self-described"),
@@ -498,7 +502,7 @@ func (v *DBViewInfo) Definition() (*ast.Definition, error) {
 		},
 		Position: base.CompiledPos("self-described-view"),
 	})
-	if name != v.Name {
+	if hasModule {
 		// add module directive if the name is qualified
 		def.Directives = append(def.Directives, &ast.Directive{
 			Name: "module",
@@ -647,16 +651,34 @@ var skipSchemaModules = map[string]bool{
 	"main":   true,
 }
 
-func dataObjectName(schema, name string) string {
-	// if schema is empty, use name as is
+// hasSchemaModule returns true if the schema creates a GraphQL module.
+func hasSchemaModule(schema string) bool {
+	if schema == "" {
+		return false
+	}
+	_, skip := skipSchemaModules[schema]
+	return !skip
+}
+
+// rawObjectName returns the unquoted schema.name for GraphQL type name generation.
+func rawObjectName(schema, name string) string {
 	if schema == "" {
 		return name
 	}
-	// if schema is in skipSchemaModules, return name only
 	if _, ok := skipSchemaModules[schema]; ok {
 		return name
 	}
-	// otherwise return schema.name
 	return schema + "." + name
+}
+
+// dataObjectName returns the SQL-quoted schema.name for @table/@view directives.
+func dataObjectName(schema, name string) string {
+	if schema == "" {
+		return engines.Ident(name)
+	}
+	if _, ok := skipSchemaModules[schema]; ok {
+		return engines.Ident(name)
+	}
+	return engines.Ident(schema) + "." + engines.Ident(name)
 }
 

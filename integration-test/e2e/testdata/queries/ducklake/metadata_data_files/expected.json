@@ -3,9 +3,9 @@
     "core": {
       "ducklake": {
         "data_files_aggregation": {
-          "_rows_count": 3,
+          "_rows_count": 2,
           "data_file_size_bytes": {
-            "count": 3
+            "count": 2
           },
           "delete_file_size_bytes": {
             "count": 1

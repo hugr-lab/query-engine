@@ -34,12 +34,12 @@ echo "  Created $PG_DB_FILE (copy for PG engine)"
 
 # Build DuckLake test data
 # IMPORTANT: Always use Docker with a pinned DuckDB version matching the Go binary's
-# embedded DuckDB (v1.4.x). The local duckdb CLI may be newer and create incompatible
+# embedded DuckDB (v1.5.x). The local duckdb CLI may be newer and create incompatible
 # storage format files that the query-engine cannot read.
 DUCKLAKE_DIR="$DUCKDB_DIR/ducklake"
 DUCKLAKE_META="$DUCKLAKE_DIR/meta.duckdb"
 DUCKLAKE_DATA="$DUCKLAKE_DIR/data"
-DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.4.4"
+DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.5.0"
 
 rm -f "$DUCKLAKE_META" "$DUCKLAKE_META.wal"
 rm -rf "$DUCKLAKE_DATA"

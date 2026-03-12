@@ -79,6 +79,12 @@ func (s *Source) registerUDF(ctx context.Context) error {
 	if err := s.registerRenameTable(ctx); err != nil {
 		return err
 	}
+	// --- Bridge functions ---
+
+	if err := s.registerIcebergToDucklake(ctx); err != nil {
+		return err
+	}
+
 	// --- Query functions ---
 
 	if err := s.registerInfo(ctx); err != nil {
@@ -928,4 +934,109 @@ func escapeSQLString(s string) string {
 		}
 	}
 	return string(result)
+}
+
+type icebergToDucklakeArgs struct {
+	icebergCatalog  string
+	ducklakeCatalog string
+	skipTables      string // JSON array or empty
+	clear           bool
+}
+
+func (s *Source) registerIcebergToDucklake(ctx context.Context) error {
+	return s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[icebergToDucklakeArgs, *types.OperationResult]{
+		Name:                  "hugr_ducklake_iceberg_to_ducklake",
+		IsSpecialNullHandling: true,
+		Execute: func(ctx context.Context, args icebergToDucklakeArgs) (*types.OperationResult, error) {
+			// If clear=true, delete DuckLake metadata tables first
+			if args.clear {
+				meta := metaCatalogIdent(args.ducklakeCatalog)
+				// Delete order respects foreign key constraints (children first).
+				// Table names match DuckLake 0.4 schema.
+				clearSQL := fmt.Sprintf(`
+					DELETE FROM %[1]s.ducklake_snapshot_changes;
+					DELETE FROM %[1]s.ducklake_file_partition_value;
+					DELETE FROM %[1]s.ducklake_partition_column;
+					DELETE FROM %[1]s.ducklake_partition_info;
+					DELETE FROM %[1]s.ducklake_file_column_stats;
+					DELETE FROM %[1]s.ducklake_file_variant_stats;
+					DELETE FROM %[1]s.ducklake_table_column_stats;
+					DELETE FROM %[1]s.ducklake_table_stats;
+					DELETE FROM %[1]s.ducklake_column_mapping;
+					DELETE FROM %[1]s.ducklake_name_mapping;
+					DELETE FROM %[1]s.ducklake_data_file;
+					DELETE FROM %[1]s.ducklake_delete_file;
+					DELETE FROM %[1]s.ducklake_column_tag;
+					DELETE FROM %[1]s.ducklake_column;
+					DELETE FROM %[1]s.ducklake_sort_expression;
+					DELETE FROM %[1]s.ducklake_sort_info;
+					DELETE FROM %[1]s.ducklake_inlined_data_tables;
+					DELETE FROM %[1]s.ducklake_files_scheduled_for_deletion;
+					DELETE FROM %[1]s.ducklake_macro_parameters;
+					DELETE FROM %[1]s.ducklake_macro_impl;
+					DELETE FROM %[1]s.ducklake_macro;
+					DELETE FROM %[1]s.ducklake_table;
+					DELETE FROM %[1]s.ducklake_view;
+					DELETE FROM %[1]s.ducklake_tag;
+					DELETE FROM %[1]s.ducklake_schema;
+					DELETE FROM %[1]s.ducklake_snapshot;
+					DELETE FROM %[1]s.ducklake_schema_versions;
+				`, meta)
+				_, err := s.db.Exec(ctx, clearSQL)
+				if err != nil {
+					return types.ErrResult(fmt.Errorf("clear DuckLake catalog: %w", err)), nil
+				}
+			}
+
+			// Build iceberg_to_ducklake call
+			callSQL := fmt.Sprintf("CALL iceberg_to_ducklake(%s, %s",
+				engines.Ident(args.icebergCatalog),
+				engines.Ident(args.ducklakeCatalog),
+			)
+
+			// Parse skip_tables if provided
+			if args.skipTables != "" {
+				var tables []string
+				if err := json.Unmarshal([]byte(args.skipTables), &tables); err == nil && len(tables) > 0 {
+					var quoted []string
+					for _, t := range tables {
+						quoted = append(quoted, fmt.Sprintf("'%s'", escapeSQLString(t)))
+					}
+					callSQL += fmt.Sprintf(", skip_tables=[%s]", strings.Join(quoted, ", "))
+				}
+			}
+
+			callSQL += ")"
+
+			_, err := s.db.Exec(ctx, callSQL)
+			if err != nil {
+				return types.ErrResult(fmt.Errorf("iceberg_to_ducklake: %w", err)), nil
+			}
+			return types.Result("Iceberg metadata imported to DuckLake", 0, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) (icebergToDucklakeArgs, error) {
+			if len(args) != 4 {
+				return icebergToDucklakeArgs{}, errors.New("expected 4 arguments")
+			}
+			a := icebergToDucklakeArgs{
+				icebergCatalog:  args[0].(string),
+				ducklakeCatalog: args[1].(string),
+			}
+			if args[2] != nil {
+				a.skipTables = args[2].(string)
+			}
+			if args[3] != nil {
+				a.clear = args[3].(bool)
+			}
+			return a, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) { return out.ToDuckdb(), nil },
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("BOOLEAN"),
+		},
+		OutputType: types.DuckDBOperationResult(),
+	})
 }

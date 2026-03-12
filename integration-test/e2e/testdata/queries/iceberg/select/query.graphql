@@ -1,0 +1,13 @@
+{
+  ice_test {
+    default {
+      default_sensors(order_by: [{ field: "id", direction: ASC }]) {
+        id
+        name
+        temperature
+        humidity
+        reading_time
+      }
+    }
+  }
+}
