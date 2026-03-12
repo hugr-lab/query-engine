@@ -21,6 +21,7 @@ const (
 	TypeMssql    Type = "mssql"
 	TypeMySql    Type = "mysql"
 	TypeDuckLake Type = "ducklake"
+	TypeIceberg  Type = "iceberg"
 )
 
 type Engine interface {

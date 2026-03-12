@@ -83,6 +83,7 @@ type ducklakeParams struct {
 	MetadataType       string          // Remote metadata backend type: "postgres", "mysql", "sqlite"
 	MetadataSecret     string          // DuckDB secret name for remote metadata credentials
 	AutomaticMigration bool            // Enable automatic DuckLake catalog version migration
+	EnsureDB           bool            // If true, auto-create PostgreSQL database if it doesn't exist
 	IsSecretRef        bool            // true if path references an existing DuckLake secret
 	PgConnStr          string          // PostgreSQL connection string for logging (parsed from postgres:// URI)
 	pgParams           *pgSecretParams // PostgreSQL connection fields (parsed from postgres:// URI)
@@ -113,6 +114,7 @@ func parsePath(raw string) (*ducklakeParams, error) {
 		p.SchemaFilter = query.Get("schema_filter")
 		p.TableFilter = query.Get("table_filter")
 		p.AutomaticMigration = strings.EqualFold(query.Get("automatic_migration"), "true")
+		p.EnsureDB = strings.EqualFold(query.Get("ensure_db"), "true")
 	} else {
 		p.MetadataPath = raw
 	}
@@ -158,6 +160,7 @@ func parsePgPath(raw string) (*ducklakeParams, error) {
 	p.SchemaFilter = u.Query().Get("schema_filter")
 	p.TableFilter = u.Query().Get("table_filter")
 	p.AutomaticMigration = strings.EqualFold(u.Query().Get("automatic_migration"), "true")
+	p.EnsureDB = strings.EqualFold(u.Query().Get("ensure_db"), "true")
 
 	// Parse PostgreSQL connection fields from URI
 	pg := pgSecretParams{
@@ -206,6 +209,13 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	params, err := parsePath(path)
 	if err != nil {
 		return err
+	}
+
+	// Auto-create PostgreSQL database if ensure_db=true
+	if params.EnsureDB && params.pgParams != nil {
+		if err := sources.EnsurePgDatabase(ctx, params.pgParams.Host, params.pgParams.Port, params.pgParams.User, params.pgParams.Password, params.pgParams.Database); err != nil {
+			return fmt.Errorf("ducklake: %w", err)
+		}
 	}
 
 	// Store filter settings for self-describe
@@ -368,6 +378,5 @@ func (s *Source) attachOptions(params *ducklakeParams) string {
 	return fmt.Sprintf(" (%s)", strings.Join(opts, ", "))
 }
 
-func escapeSQLString(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
-}
+// escapeSQLString is a local alias for sources.EscapeSQLString.
+var escapeSQLString = sources.EscapeSQLString

@@ -361,6 +361,19 @@ extend type MutationFunction {
   ): OperationResult
     @function(name: "hugr_ducklake_rename_table")
 
+  """
+    Import Iceberg catalog metadata into a DuckLake catalog.
+    Both catalogs must be attached as hugr data sources.
+    The DuckLake catalog must be empty unless clear is true.
+  """
+  iceberg_to_ducklake(
+    iceberg_catalog: String!
+    ducklake_catalog: String!
+    skip_tables: [String!]
+    clear: Boolean
+  ): OperationResult
+    @function(name: "hugr_ducklake_iceberg_to_ducklake")
+
 }
 
 extend type Function {

@@ -4,6 +4,10 @@
       "meta": {
         "databases": [
           {
+            "name": "__ducklake_metadata_dl_ice_bridge",
+            "type": "postgres"
+          },
+          {
             "name": "__ducklake_metadata_dl_test",
             "type": "duckdb"
           },
@@ -12,12 +16,20 @@
             "type": "duckdb"
           },
           {
+            "name": "dl_ice_bridge",
+            "type": "ducklake"
+          },
+          {
             "name": "dl_test",
             "type": "ducklake"
           },
           {
             "name": "ext_bridge",
             "type": "duckdb"
+          },
+          {
+            "name": "ice_test",
+            "type": "iceberg"
           },
           {
             "name": "local_db",

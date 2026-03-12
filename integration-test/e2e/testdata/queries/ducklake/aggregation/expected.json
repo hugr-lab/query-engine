@@ -4,7 +4,7 @@
       "sensors_aggregation": {
         "_rows_count": 5,
         "humidity": {
-          "avg": 66.76
+          "avg": 66.75999999999999
         },
         "temperature": {
           "avg": 22.68,

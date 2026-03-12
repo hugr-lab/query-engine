@@ -45,6 +45,7 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		INSTALL h3 FROM community; LOAD h3;
 		INSTALL mssql FROM community; LOAD mssql;
 		INSTALL ducklake; LOAD ducklake;
+		INSTALL iceberg; LOAD iceberg;
 	`)
 	if err != nil {
 		return nil, err
