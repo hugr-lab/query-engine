@@ -129,11 +129,29 @@ func TestParsePath(t *testing.T) {
 			},
 		},
 		{
-			name: "s3_secret param",
-			raw:  "iceberg://localhost:8181/warehouse?s3_secret=my_s3_creds",
+			name: "REST catalog with endpoint path prefix (Polaris)",
+			raw:  "iceberg+http://polaris:8181/api/catalog/iceberg_warehouse?client_id=root&client_secret=s3cr3t&oauth2_server_uri=http://polaris:8181/api/catalog/v1/oauth/tokens&oauth2_scope=PRINCIPAL_ROLE:ALL",
 			check: func(t *testing.T, p *icebergParams) {
-				if p.S3Secret != "my_s3_creds" {
-					t.Errorf("s3_secret = %q, want %q", p.S3Secret, "my_s3_creds")
+				if p.Endpoint != "http://polaris:8181/api/catalog" {
+					t.Errorf("endpoint = %q, want %q", p.Endpoint, "http://polaris:8181/api/catalog")
+				}
+				if p.Warehouse != "iceberg_warehouse" {
+					t.Errorf("warehouse = %q, want %q", p.Warehouse, "iceberg_warehouse")
+				}
+				if p.ClientID != "root" {
+					t.Errorf("client_id = %q, want %q", p.ClientID, "root")
+				}
+				if p.OAuth2Scope != "PRINCIPAL_ROLE:ALL" {
+					t.Errorf("oauth2_scope = %q, want %q", p.OAuth2Scope, "PRINCIPAL_ROLE:ALL")
+				}
+			},
+		},
+		{
+			name: "region param",
+			raw:  "iceberg://localhost:8181/warehouse?region=eu-west-1",
+			check: func(t *testing.T, p *icebergParams) {
+				if p.Region != "eu-west-1" {
+					t.Errorf("region = %q, want %q", p.Region, "eu-west-1")
 				}
 			},
 		},
