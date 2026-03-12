@@ -81,10 +81,10 @@ func (s *Source) prefix() string {
 //   - oauth2_server_uri:  OAuth2 token endpoint
 //   - oauth2_scope:       OAuth2 scope
 //   - token:              Bearer token (alternative to OAuth2)
-//   - s3_secret:          Existing S3 secret name
-//   - region:             AWS region
-//   - schema_filter:      Regexp to filter namespaces
-//   - table_filter:       Regexp to filter tables
+//   - region:                  AWS region
+//   - access_delegation_mode:  "vended_credentials" for Polaris (optional)
+//   - schema_filter:           Regexp to filter namespaces
+//   - table_filter:            Regexp to filter tables
 type icebergParams struct {
 	Warehouse    string // First arg to ATTACH (warehouse name or ARN)
 	Endpoint     string // REST endpoint URL
@@ -97,8 +97,8 @@ type icebergParams struct {
 	OAuth2Scope     string
 	Token           string
 	// Storage
-	S3Secret string
-	Region   string
+	Region               string
+	AccessDelegationMode string // e.g. "vended_credentials" for Polaris
 	// Filters
 	SchemaFilter string
 	TableFilter  string
@@ -143,9 +143,20 @@ func parseRESTPath(raw string, scheme string) (*icebergParams, error) {
 		return nil, fmt.Errorf("iceberg: invalid REST catalog URI: %w", err)
 	}
 
+	// Split path into endpoint prefix and warehouse name.
+	// The last path segment is the warehouse; earlier segments (if any)
+	// become part of the endpoint URL (e.g. /api/catalog for Apache Polaris).
+	pathStr := strings.TrimPrefix(u.Path, "/")
+	endpoint := fmt.Sprintf("%s://%s", scheme, u.Host)
+	warehouse := pathStr
+	if idx := strings.LastIndex(pathStr, "/"); idx >= 0 {
+		endpoint += "/" + pathStr[:idx]
+		warehouse = pathStr[idx+1:]
+	}
+
 	p := &icebergParams{
-		Endpoint:  fmt.Sprintf("%s://%s", scheme, u.Host),
-		Warehouse: strings.TrimPrefix(u.Path, "/"),
+		Endpoint:  endpoint,
+		Warehouse: warehouse,
 	}
 
 	parseQueryParams(p, u.Query())
@@ -198,8 +209,8 @@ func parseQueryParams(p *icebergParams, q url.Values) {
 	p.OAuth2ServerURI = q.Get("oauth2_server_uri")
 	p.OAuth2Scope = q.Get("oauth2_scope")
 	p.Token = q.Get("token")
-	p.S3Secret = q.Get("s3_secret")
 	p.Region = q.Get("region")
+	p.AccessDelegationMode = q.Get("access_delegation_mode")
 	p.SchemaFilter = q.Get("schema_filter")
 	p.TableFilter = q.Get("table_filter")
 }
@@ -318,8 +329,8 @@ func (s *Source) attachCatalog(ctx context.Context, pool *db.Pool, params *icebe
 		// No auth credentials — tell DuckDB to skip OAuth2 handshake
 		attachParts = append(attachParts, "AUTHORIZATION_TYPE 'none'")
 	}
-	if params.S3Secret != "" {
-		attachParts = append(attachParts, fmt.Sprintf("S3_SECRET '%s'", escapeSQLString(params.S3Secret)))
+	if params.AccessDelegationMode != "" {
+		attachParts = append(attachParts, fmt.Sprintf("ACCESS_DELEGATION_MODE '%s'", escapeSQLString(params.AccessDelegationMode)))
 	}
 	if s.ds.ReadOnly {
 		attachParts = append(attachParts, "READ_ONLY")
