@@ -137,6 +137,22 @@ func TestParsePath(t *testing.T) {
 				}
 			},
 		},
+		// Negative test cases
+		{
+			name:    "unsupported scheme",
+			raw:     "mysql://localhost:3306/db",
+			wantErr: true,
+		},
+		{
+			name:    "unknown scheme with slashes",
+			raw:     "ftp://server/path",
+			wantErr: true,
+		},
+		{
+			name:    "path with colon but no scheme",
+			raw:     "host:port/something",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

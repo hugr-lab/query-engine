@@ -378,6 +378,5 @@ func (s *Source) attachOptions(params *ducklakeParams) string {
 	return fmt.Sprintf(" (%s)", strings.Join(opts, ", "))
 }
 
-func escapeSQLString(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
-}
+// escapeSQLString is a local alias for sources.EscapeSQLString.
+var escapeSQLString = sources.EscapeSQLString

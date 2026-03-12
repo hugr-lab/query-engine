@@ -132,11 +132,13 @@ func parsePath(raw string) (*icebergParams, error) {
 // parseRESTPath parses iceberg://endpoint/warehouse?params or iceberg+http://endpoint/warehouse?params
 func parseRESTPath(raw string, scheme string) (*icebergParams, error) {
 	// Replace custom scheme with https:// for URL parsing
-	prefix := "iceberg://"
+	var normalized string
 	if scheme == "http" {
-		prefix = "iceberg+http://"
+		normalized = "https://" + strings.TrimPrefix(raw, "iceberg+http://")
+	} else {
+		normalized = "https://" + strings.TrimPrefix(raw, "iceberg://")
 	}
-	u, err := url.Parse(strings.Replace(raw, prefix, "https://", 1))
+	u, err := url.Parse(normalized)
 	if err != nil {
 		return nil, fmt.Errorf("iceberg: invalid REST catalog URI: %w", err)
 	}
@@ -152,7 +154,7 @@ func parseRESTPath(raw string, scheme string) (*icebergParams, error) {
 
 // parseGluePath parses iceberg+glue://account_id?params
 func parseGluePath(raw string) (*icebergParams, error) {
-	u, err := url.Parse(strings.Replace(raw, "iceberg+glue://", "https://", 1))
+	u, err := url.Parse("https://" + strings.TrimPrefix(raw, "iceberg+glue://"))
 	if err != nil {
 		return nil, fmt.Errorf("iceberg: invalid Glue URI: %w", err)
 	}
@@ -239,12 +241,18 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 }
 
 func (s *Source) attachWithSecret(ctx context.Context, pool *db.Pool, secretName, prefix string) error {
-	opts := s.attachOptions()
-	sql := fmt.Sprintf("ATTACH '%s' AS %s (TYPE iceberg, SECRET %s%s);",
+	var attachParts []string
+	attachParts = append(attachParts, "TYPE iceberg")
+	attachParts = append(attachParts, fmt.Sprintf("SECRET %s", secretName))
+	if s.ds.ReadOnly {
+		attachParts = append(attachParts, "READ_ONLY")
+	}
+
+	// When using a secret reference, the warehouse name is the secret name itself
+	sql := fmt.Sprintf("ATTACH '%s' AS %s (%s);",
 		escapeSQLString(secretName),
 		engines.Ident(prefix),
-		secretName,
-		opts,
+		strings.Join(attachParts, ", "),
 	)
 	_, err := pool.Exec(ctx, sql)
 	if err != nil {
@@ -274,6 +282,9 @@ func (s *Source) createSecret(ctx context.Context, pool *db.Pool, params *iceber
 	}
 	if params.Token != "" {
 		parts = append(parts, fmt.Sprintf("TOKEN '%s'", escapeSQLString(params.Token)))
+	}
+	if params.Region != "" {
+		parts = append(parts, fmt.Sprintf("REGION '%s'", escapeSQLString(params.Region)))
 	}
 
 	// Only create secret if there are auth params
@@ -306,6 +317,9 @@ func (s *Source) attachCatalog(ctx context.Context, pool *db.Pool, params *icebe
 	} else {
 		// No auth credentials — tell DuckDB to skip OAuth2 handshake
 		attachParts = append(attachParts, "AUTHORIZATION_TYPE 'none'")
+	}
+	if params.S3Secret != "" {
+		attachParts = append(attachParts, fmt.Sprintf("S3_SECRET '%s'", escapeSQLString(params.S3Secret)))
 	}
 	if s.ds.ReadOnly {
 		attachParts = append(attachParts, "READ_ONLY")
@@ -340,13 +354,5 @@ func (s *Source) Detach(ctx context.Context, pool *db.Pool) error {
 	return nil
 }
 
-func (s *Source) attachOptions() string {
-	if s.ds.ReadOnly {
-		return ", READ_ONLY"
-	}
-	return ""
-}
-
-func escapeSQLString(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
-}
+// escapeSQLString is a local alias for sources.EscapeSQLString.
+var escapeSQLString = sources.EscapeSQLString

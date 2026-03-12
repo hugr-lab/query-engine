@@ -125,6 +125,11 @@ func ParseDSN(dsn string) (ParsedDSN, error) {
 
 var reSQLField = regexp.MustCompile(`\[\$?[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\]`)
 
+// EscapeSQLString escapes single quotes in SQL string literals by doubling them.
+func EscapeSQLString(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
 func ApplyEnvVars(dsn string) (string, error) {
 	matches := reSQLField.FindAllString(dsn, -1)
 	if len(matches) == 0 {

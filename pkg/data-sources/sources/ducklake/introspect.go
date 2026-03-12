@@ -894,6 +894,9 @@ func identGraphQL(name string) string {
 	return name
 }
 
+// skipSchemaModules lists schemas that should NOT create a GraphQL module.
+// DuckLake uses "main" as the default schema (DuckDB convention).
+// See also: pkg/catalog/sources/db_info.go which adds "public" for PostgreSQL sources.
 var skipSchemaModules = map[string]bool{
 	"main": true,
 }

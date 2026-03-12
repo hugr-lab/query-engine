@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -924,17 +925,8 @@ func metaCatalogIdent(catalogName string) string {
 	return fmt.Sprintf(`"%s"`, "__ducklake_metadata_"+escaped)
 }
 
-func escapeSQLString(s string) string {
-	result := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\'' {
-			result = append(result, '\'', '\'')
-		} else {
-			result = append(result, s[i])
-		}
-	}
-	return string(result)
-}
+// escapeSQLString is a local alias for sources.EscapeSQLString.
+var escapeSQLString = sources.EscapeSQLString
 
 type icebergToDucklakeArgs struct {
 	icebergCatalog  string
