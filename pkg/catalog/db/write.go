@@ -11,7 +11,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/db/schema"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 )
 
 // Update persists compiled schema changes to the database.
@@ -653,7 +653,6 @@ func directiveKey(d *ast.Directive) string {
 	return d.Name
 }
 
-
 // typeOwnerCatalogConn returns the catalog that owns the given type, using the provided connection.
 func (p *Provider) typeOwnerCatalogConn(ctx context.Context, conn *Connection, typeName string) string {
 	var catalog string
@@ -830,4 +829,3 @@ func validateNoReservedNames(def *ast.Definition) error {
 	}
 	return nil
 }
-

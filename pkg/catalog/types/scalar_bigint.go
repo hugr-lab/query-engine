@@ -2,8 +2,6 @@ package types
 
 import (
 	"fmt"
-
-	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
 )
 
 // Compile-time interface assertions.
@@ -119,9 +117,9 @@ func (s *bigIntScalar) ParseArray(v any) (any, error) {
 		return []int64{}, nil
 	}
 	if _, ok := vv[0].(float64); !ok {
-		return pkgtypes.ParseScalarArray[int64](vv)
+		return ParseScalarArray[int64](vv)
 	}
-	dd, err := pkgtypes.ParseScalarArray[float64](v)
+	dd, err := ParseScalarArray[float64](v)
 	if err != nil {
 		return nil, err
 	}

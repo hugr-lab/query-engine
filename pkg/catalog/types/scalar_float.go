@@ -2,8 +2,6 @@ package types
 
 import (
 	"fmt"
-
-	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
 )
 
 // Compile-time interface assertions.
@@ -109,5 +107,5 @@ func (s *floatScalar) ParseValue(v any) (any, error) {
 }
 
 func (s *floatScalar) ParseArray(v any) (any, error) {
-	return pkgtypes.ParseScalarArray[float64](v)
+	return ParseScalarArray[float64](v)
 }

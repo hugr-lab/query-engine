@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )

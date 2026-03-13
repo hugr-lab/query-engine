@@ -12,10 +12,11 @@ import (
 	"sync"
 	"time"
 
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 type Config struct {
@@ -127,7 +128,7 @@ type Response struct {
 	} `json:"data"`
 }
 
-func (s *Source) CreateEmbedding(ctx context.Context, input string) (types.Vector, error) {
+func (s *Source) CreateEmbedding(ctx context.Context, input string) (ctypes.Vector, error) {
 	vectors, err := s.CreateEmbeddings(ctx, []string{input})
 	if err != nil {
 		return nil, err
@@ -138,7 +139,7 @@ func (s *Source) CreateEmbedding(ctx context.Context, input string) (types.Vecto
 	return vectors[0], nil
 }
 
-func (s *Source) CreateEmbeddings(ctx context.Context, input []string) ([]types.Vector, error) {
+func (s *Source) CreateEmbeddings(ctx context.Context, input []string) ([]ctypes.Vector, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if !s.isAttached {
@@ -184,7 +185,7 @@ func (s *Source) CreateEmbeddings(ctx context.Context, input []string) ([]types.
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	vectors := make([]types.Vector, len(result.Data))
+	vectors := make([]ctypes.Vector, len(result.Data))
 	for i := range result.Data {
 		vectors[i] = slices.Clone(result.Data[i].Embedding)
 	}

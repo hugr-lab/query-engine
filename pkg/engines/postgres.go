@@ -12,7 +12,8 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkt"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -93,34 +94,34 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 	case []time.Time:
 		return SQLValueArrayFormatter(e, v)
 	case time.Duration:
-		return types.IntervalToSQLValue(v)
+		return ctypes.IntervalToSQLValue(v)
 	case []time.Duration:
 		return SQLValueArrayFormatter(e, v)
-	case types.Int32Range:
+	case ctypes.Int32Range:
 		str, err := pgRangeValueToSQLValue(v)
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("%s::INT4RANGE", str), nil
-	case []types.Int32Range:
+	case []ctypes.Int32Range:
 		return SQLValueArrayFormatter(e, v)
-	case types.Int64Range:
+	case ctypes.Int64Range:
 		str, err := pgRangeValueToSQLValue(v)
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("%s::INT8RANGE", str), nil
-	case []types.Int64Range:
+	case []ctypes.Int64Range:
 		return SQLValueArrayFormatter(e, v)
-	case types.TimeRange:
+	case ctypes.TimeRange:
 		str, err := pgRangeValueToSQLValue(v)
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("%s::TSTZRANGE", str), nil
-	case types.BaseRange:
+	case ctypes.BaseRange:
 		return pgRangeValueToSQLValue(v)
-	case []types.BaseRange:
+	case []ctypes.BaseRange:
 		return SQLValueArrayFormatter(e, v)
 	case map[string]any, []map[string]any:
 		b, err := json.Marshal(v)
@@ -138,7 +139,7 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 			valueStrings = append(valueStrings, s)
 		}
 		return fmt.Sprintf("ARRAY[%s]", strings.Join(valueStrings, ",")), nil
-	case types.Vector:
+	case ctypes.Vector:
 		if v == nil {
 			return "NULL", nil
 		}
@@ -301,7 +302,7 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 			return fmt.Sprintf("(%s)::interval %s %s", sqlName, op, "$"+strconv.Itoa(len(params))), params, nil
 		case []time.Duration:
 			return "", nil, fmt.Errorf("unsupported filter operator for json type: %s", op)
-		case types.Int32Range, types.Int64Range, types.TimeRange, []types.Int32Range, []types.Int64Range, []types.TimeRange:
+		case ctypes.Int32Range, ctypes.Int64Range, ctypes.TimeRange, []ctypes.Int32Range, []ctypes.Int64Range, []ctypes.TimeRange:
 			return "", nil, fmt.Errorf("unsupported filter operator for json type: %s", op)
 		}
 	}
@@ -401,7 +402,7 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 		default:
 			return "", nil, fmt.Errorf("unsupported filter operator: %s", op)
 		}
-	case types.Int32Range, types.Int64Range, types.TimeRange:
+	case ctypes.Int32Range, ctypes.Int64Range, ctypes.TimeRange:
 		params = append(params, value)
 		val := "$" + strconv.Itoa(len(params))
 		switch op {
@@ -550,9 +551,9 @@ func pgRangeValueToSQLValue(v any) (string, error) {
 		return "NULL", nil
 	}
 	var lower, upper string
-	var detail types.RangeDetail
+	var detail ctypes.RangeDetail
 	switch v := v.(type) {
-	case types.Int32Range:
+	case ctypes.Int32Range:
 		if !v.Detail.IsLowerInfinity() {
 			lower = strconv.Itoa(int(v.Lower))
 		}
@@ -560,7 +561,7 @@ func pgRangeValueToSQLValue(v any) (string, error) {
 			upper = strconv.Itoa(int(v.Upper))
 		}
 		detail = v.Detail
-	case types.Int64Range:
+	case ctypes.Int64Range:
 		if !v.Detail.IsLowerInfinity() {
 			lower = strconv.Itoa(int(v.Lower))
 		}
@@ -568,7 +569,7 @@ func pgRangeValueToSQLValue(v any) (string, error) {
 			upper = strconv.Itoa(int(v.Upper))
 		}
 		detail = v.Detail
-	case types.TimeRange:
+	case ctypes.TimeRange:
 		if !v.Detail.IsLowerInfinity() {
 			lower = v.Lower.Format(time.RFC3339)
 		}
@@ -576,17 +577,17 @@ func pgRangeValueToSQLValue(v any) (string, error) {
 			upper = v.Upper.Format(time.RFC3339)
 		}
 		detail = v.Detail
-	case types.BaseRange:
+	case ctypes.BaseRange:
 		detail = v.Detail
 		switch v.Type {
-		case types.RangeTypeInt32, types.RangeTypeInt64:
+		case ctypes.RangeTypeInt32, ctypes.RangeTypeInt64:
 			if !v.Detail.IsLowerInfinity() {
 				lower = strconv.Itoa(v.Lower.(int))
 			}
 			if !v.Detail.IsUpperInfinity() {
 				upper = strconv.Itoa(v.Upper.(int))
 			}
-		case types.RangeTypeTimestamp:
+		case ctypes.RangeTypeTimestamp:
 			if !v.Detail.IsLowerInfinity() {
 				lower = v.Lower.(time.Time).Format(time.RFC3339)
 			}
@@ -812,7 +813,7 @@ func (e Postgres) TimestampTransform(sql string, field *ast.Field, args sdl.Fiel
 			}
 		}
 		if interval := args.ForName("bucket_interval"); interval != nil {
-			iSQL, err := types.IntervalToSQLValue(interval.Value)
+			iSQL, err := ctypes.IntervalToSQLValue(interval.Value)
 			if err != nil {
 				return "NULL"
 			}
@@ -823,7 +824,7 @@ func (e Postgres) TimestampTransform(sql string, field *ast.Field, args sdl.Fiel
 		return fmt.Sprintf("date_trunc('%s', %s)", bucket.Value, sql)
 	}
 	if interval := args.ForName("bucket_interval"); interval != nil {
-		iSQL, err := types.IntervalToSQLValue(interval.Value)
+		iSQL, err := ctypes.IntervalToSQLValue(interval.Value)
 		if err != nil {
 			return "NULL"
 		}
@@ -1196,7 +1197,7 @@ func extractPGJsonFieldByPath(path string, asText bool) string {
 
 var _ EngineVectorDistanceCalculator = (*Postgres)(nil)
 
-func (e *Postgres) VectorDistanceSQL(sql, distMetric string, vector types.Vector, params []any) (string, []any, error) {
+func (e *Postgres) VectorDistanceSQL(sql, distMetric string, vector ctypes.Vector, params []any) (string, []any, error) {
 	val := "$" + strconv.Itoa(len(params)+1)
 	params = append(params, vector)
 	switch distMetric {

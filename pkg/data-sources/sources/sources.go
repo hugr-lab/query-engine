@@ -4,9 +4,10 @@ import (
 	"context"
 
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 const (
@@ -58,6 +59,6 @@ type RuntimeSourceQuerier interface {
 }
 
 type EmbeddingSource interface {
-	CreateEmbedding(ctx context.Context, input string) (types.Vector, error)
-	CreateEmbeddings(ctx context.Context, input []string) ([]types.Vector, error)
+	CreateEmbedding(ctx context.Context, input string) (ctypes.Vector, error)
+	CreateEmbeddings(ctx context.Context, input []string) ([]ctypes.Vector, error)
 }

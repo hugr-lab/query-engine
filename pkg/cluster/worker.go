@@ -11,7 +11,7 @@ import (
 	"github.com/hugr-lab/query-engine/client"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/db"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 // WorkerClient handles cluster operations on the worker side:

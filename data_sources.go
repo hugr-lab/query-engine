@@ -15,7 +15,7 @@ import (
 	ducklakert "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/ducklake"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/gis"
 	metainfo "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/meta-info"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 func (s *Service) attachRuntimeSources(ctx context.Context, readonly bool) error {

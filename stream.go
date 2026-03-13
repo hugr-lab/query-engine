@@ -11,8 +11,8 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/planner"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -32,7 +32,7 @@ var ErrEmptyRequest = errors.New("empty request")
 
 type ChunkProcessFunc func(ctx context.Context, path string, field *ast.Field, rec arrow.RecordBatch) error
 
-func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map[string]any) (table db.ArrowTable, finalize func(), err error) {
+func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map[string]any) (table types.ArrowTable, finalize func(), err error) {
 	defer recoverStreamPanic(&err)
 	ctx, err = s.perm.ContextWithPermissions(ctx)
 	if err != nil {

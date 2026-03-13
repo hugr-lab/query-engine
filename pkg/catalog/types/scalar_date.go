@@ -3,7 +3,6 @@ package types
 import (
 	"time"
 
-	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -102,9 +101,9 @@ func (s *dateScalar) GenerateExtraField(fieldName string) *ast.FieldDefinition {
 }
 
 func (s *dateScalar) ParseValue(v any) (any, error) {
-	return pkgtypes.ParseTimeValue(v)
+	return ParseTimeValue(v)
 }
 
 func (s *dateScalar) ParseArray(v any) (any, error) {
-	return pkgtypes.ParseScalarArray[time.Time](v)
+	return ParseScalarArray[time.Time](v)
 }

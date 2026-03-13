@@ -1,7 +1,5 @@
 package types
 
-import pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
-
 // Compile-time interface assertions.
 var (
 	_ ScalarType  = (*intRangeScalar)(nil)
@@ -39,21 +37,21 @@ input IntRangeFilter @system {
 func (s *intRangeScalar) FilterTypeName() string { return "IntRangeFilter" }
 
 func (s *intRangeScalar) ParseValue(v any) (any, error) {
-	return pkgtypes.ParseRangeValue(pkgtypes.RangeTypeInt32, v)
+	return ParseRangeValue(RangeTypeInt32, v)
 }
 
 func (s *intRangeScalar) ParseArray(v any) (any, error) {
-	vv, err := pkgtypes.ParseScalarArray[string](v)
+	vv, err := ParseScalarArray[string](v)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]pkgtypes.Int32Range, len(vv))
+	out := make([]Int32Range, len(vv))
 	for i, val := range vv {
-		r, err := pkgtypes.ParseRangeValue(pkgtypes.RangeTypeInt32, val)
+		r, err := ParseRangeValue(RangeTypeInt32, val)
 		if err != nil {
 			return nil, err
 		}
-		out[i] = r.(pkgtypes.Int32Range)
+		out[i] = r.(Int32Range)
 	}
 	return out, nil
 }

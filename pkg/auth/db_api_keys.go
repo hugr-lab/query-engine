@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 type DBApiKey struct {

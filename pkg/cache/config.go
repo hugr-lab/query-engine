@@ -13,7 +13,7 @@ import (
 	mc "github.com/eko/gocache/store/memcache/v4"
 	rs "github.com/eko/gocache/store/redis/v4"
 	rrs "github.com/eko/gocache/store/rediscluster/v4"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/redis/go-redis/v9"
 )
 

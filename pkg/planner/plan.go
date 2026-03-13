@@ -9,7 +9,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -56,7 +56,7 @@ func (p *QueryPlan) Execute(ctx context.Context, db *db.Pool) (data interface{},
 	}
 }
 
-func (p *QueryPlan) ExecuteStream(ctx context.Context, db *db.Pool) (db.ArrowTable, func(), error) {
+func (p *QueryPlan) ExecuteStream(ctx context.Context, db *db.Pool) (types.ArrowTable, func(), error) {
 	if p.CompiledQuery == "" {
 		return nil, nil, errors.New("no compiled query")
 	}

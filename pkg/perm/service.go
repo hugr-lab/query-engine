@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 // Store manager that provides methods to to retrieve Role permissions info from context.

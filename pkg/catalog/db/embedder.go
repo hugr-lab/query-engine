@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 )
 
 // Embedder is an optional dependency for computing embedding vectors.

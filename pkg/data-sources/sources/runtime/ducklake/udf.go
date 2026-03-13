@@ -13,7 +13,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 func (s *Source) registerUDF(ctx context.Context) error {
@@ -130,7 +130,7 @@ func (s *Source) registerSimpleCall(ctx context.Context, name, sqlTmpl, successM
 			return out.ToDuckdb(), nil
 		},
 		InputTypes: []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -190,7 +190,7 @@ func (s *Source) registerExpireSnapshots(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("BOOLEAN"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -243,7 +243,7 @@ func (s *Source) registerMergeAdjacentFiles(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -304,7 +304,7 @@ func (s *Source) registerRewriteDataFiles(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("DOUBLE"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -364,7 +364,7 @@ func (s *Source) registerCleanupOldFiles(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("BOOLEAN"),
 			runtime.DuckDBTypeInfoByNameMust("BOOLEAN"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -428,7 +428,7 @@ func (s *Source) registerSetOption(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -605,7 +605,7 @@ func (s *Source) registerDDL2(ctx context.Context, name string, sqlFn func(name,
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -638,7 +638,7 @@ func (s *Source) registerDDL3(ctx context.Context, name string, sqlFn func(name,
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -672,7 +672,7 @@ func (s *Source) registerDDL4(ctx context.Context, name string, sqlFn func(name,
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -754,7 +754,7 @@ func (s *Source) registerCreateTable(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -816,7 +816,7 @@ func (s *Source) registerAddColumn(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -867,7 +867,7 @@ func (s *Source) registerRenameColumn(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -914,7 +914,7 @@ func (s *Source) registerRenameTable(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }
 
@@ -1029,6 +1029,6 @@ func (s *Source) registerIcebergToDucklake(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("BOOLEAN"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 }

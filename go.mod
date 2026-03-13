@@ -3,6 +3,11 @@ module github.com/hugr-lab/query-engine
 go 1.26
 
 require (
+	github.com/hugr-lab/query-engine/client v0.0.0
+	github.com/hugr-lab/query-engine/types v0.0.0
+)
+
+require (
 	github.com/andybalholm/brotli v1.2.0
 	github.com/apache/arrow-go/v18 v18.5.1
 	github.com/duckdb/duckdb-go/v2 v2.10500.0
@@ -117,4 +122,9 @@ require (
 	golang.org/x/tools v0.42.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
+)
+
+replace (
+	github.com/hugr-lab/query-engine/client => ./client
+	github.com/hugr-lab/query-engine/types => ./types
 )

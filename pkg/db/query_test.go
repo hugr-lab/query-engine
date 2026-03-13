@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/hugr-lab/query-engine/types"
 )
 
 func TestQueryJsonTable(t *testing.T) {
@@ -34,11 +36,11 @@ func TestQueryJsonTable(t *testing.T) {
 	if len(rr) == 0 {
 		t.Fatalf("table.Records() returned empty records")
 	}
-	defer ReleaseRecords(rr)
-	if got := RecordsColNums(rr); got != 2 {
+	defer types.ReleaseRecords(rr)
+	if got := types.RecordsColNums(rr); got != 2 {
 		t.Errorf("NumCols() = %v, want %v", got, 2)
 	}
-	if got := RecordsRowNums(rr); got != 2 {
+	if got := types.RecordsRowNums(rr); got != 2 {
 		t.Errorf("NumRows() = %v, want %v", got, 2)
 	}
 }

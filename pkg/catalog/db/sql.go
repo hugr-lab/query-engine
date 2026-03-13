@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 )
 
 // table returns the fully qualified table name with the provider's prefix.

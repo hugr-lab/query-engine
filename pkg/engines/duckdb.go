@@ -11,7 +11,8 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkt"
 	"github.com/uber/h3-go/v4"
@@ -120,10 +121,10 @@ func (e *DuckDB) SQLValue(v any) (string, error) {
 	case []time.Time:
 		return SQLValueArrayFormatter(e, v)
 	case time.Duration:
-		return types.IntervalToSQLValue(v)
+		return ctypes.IntervalToSQLValue(v)
 	case []time.Duration:
 		return SQLValueArrayFormatter(e, v)
-	case []types.BaseRange:
+	case []ctypes.BaseRange:
 		return SQLValueArrayFormatter(e, v)
 	case map[string]any, []map[string]any:
 		b, err := json.Marshal(v)
@@ -144,7 +145,7 @@ func (e *DuckDB) SQLValue(v any) (string, error) {
 	case h3.Cell:
 		// Convert H3 cell to UBIGINT
 		return fmt.Sprintf("h3_string_to_h3('%s')", v.String()), nil
-	case types.Vector:
+	case ctypes.Vector:
 		if v == nil {
 			return "NULL", nil
 		}
@@ -496,7 +497,7 @@ func (e DuckDB) TimestampTransform(sql string, field *ast.Field, args sdl.FieldQ
 		return fmt.Sprintf("date_trunc('%s', %s)", bucket.Value, sql)
 	}
 	if interval := args.ForName("bucket_interval"); interval != nil {
-		iSQL, err := types.IntervalToSQLValue(interval.Value)
+		iSQL, err := ctypes.IntervalToSQLValue(interval.Value)
 		if err != nil {
 			return "NULL"
 		}
@@ -975,7 +976,7 @@ func jsonStructRecursive(field *ast.Field, useNativeTypes bool, byFieldSource bo
 
 var _ EngineVectorDistanceCalculator = (*DuckDB)(nil)
 
-func (e *DuckDB) VectorDistanceSQL(sql, distMetric string, vector types.Vector, params []any) (string, []any, error) {
+func (e *DuckDB) VectorDistanceSQL(sql, distMetric string, vector ctypes.Vector, params []any) (string, []any, error) {
 	val := "$" + strconv.Itoa(len(params)+1)
 	params = append(params, vector)
 	switch distMetric {

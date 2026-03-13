@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

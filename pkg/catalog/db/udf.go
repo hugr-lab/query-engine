@@ -9,7 +9,7 @@ import (
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 // CatalogChecker checks whether a catalog (data source) has an active engine.
@@ -39,7 +39,7 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	}); err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	}); err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	}); err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	}); err != nil {
 		return err
 	}
@@ -153,7 +153,7 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 		ConvertInput:  convertStringArg,
 		ConvertOutput: convertOperationResult,
 		InputTypes:    []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:    types.DuckDBOperationResult(),
+		OutputType:    db.DuckDBOperationResult(),
 	}); err != nil {
 		return err
 	}
@@ -171,7 +171,7 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 		ConvertInput:  convertStringArg,
 		ConvertOutput: convertOperationResult,
 		InputTypes:    []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:    types.DuckDBOperationResult(),
+		OutputType:    db.DuckDBOperationResult(),
 	}); err != nil {
 		return err
 	}
@@ -208,7 +208,7 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	}); err != nil {
 		return err
 	}
@@ -255,7 +255,7 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("INTEGER"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	}); err != nil {
 		return err
 	}

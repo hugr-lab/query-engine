@@ -1,7 +1,5 @@
 package types
 
-import pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
-
 // Compile-time interface assertions.
 var (
 	_ ScalarType              = (*booleanScalar)(nil)
@@ -67,5 +65,5 @@ func (s *booleanScalar) MeasurementAggregationTypeName() string {
 }
 
 func (s *booleanScalar) ParseArray(v any) (any, error) {
-	return pkgtypes.ParseScalarArray[bool](v)
+	return ParseScalarArray[bool](v)
 }

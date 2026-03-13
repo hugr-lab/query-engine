@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
-func CreateEmbedding(ctx context.Context, qe types.Querier, model, text string) (types.Vector, error) {
+func CreateEmbedding(ctx context.Context, qe types.Querier, model, text string) (ctypes.Vector, error) {
 	res, err := qe.Query(auth.ContextWithFullAccess(ctx), `
 		query ($model: String!, $input: String!) {
 			function {
@@ -24,7 +25,7 @@ func CreateEmbedding(ctx context.Context, qe types.Querier, model, text string) 
 		return nil, fmt.Errorf("failed to get embedding from model %s: %w", model, err)
 	}
 	defer res.Close()
-	var vec types.Vector
+	var vec ctypes.Vector
 	err = res.ScanData("function.core.vector", &vec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding from model %s: %w", model, err)

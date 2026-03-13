@@ -79,6 +79,7 @@ func (s Settings) applySQL() string {
 	if s.MSSQLCatalogCacheTTL != 0 {
 		sql = append(sql, fmt.Sprintf("SET mssql_catalog_cache_ttl = %d;", s.MSSQLCatalogCacheTTL))
 	}
+	sql = append(sql, "SET mssql_order_pushdown = true;")
 
 	if s.HomeDirectory != "" {
 		sql = append(sql, fmt.Sprintf("SET home_directory = '%s';", s.HomeDirectory))

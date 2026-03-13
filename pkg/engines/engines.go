@@ -8,7 +8,8 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -66,7 +67,7 @@ type EngineTypeCaster interface {
 }
 
 type EngineVectorDistanceCalculator interface {
-	VectorDistanceSQL(sql, distMetric string, vector types.Vector, params []any) (string, []any, error)
+	VectorDistanceSQL(sql, distMetric string, vector ctypes.Vector, params []any) (string, []any, error)
 }
 
 type EngineKeyWordExtender interface {
@@ -80,7 +81,7 @@ func Ident(s string) string {
 	return s
 }
 
-func SQLValueArrayFormatter[T types.ScalarTypes](e Engine, values []T) (string, error) {
+func SQLValueArrayFormatter[T ctypes.ScalarTypes](e Engine, values []T) (string, error) {
 	var valueStrings []string
 	for _, v := range values {
 		s, err := e.SQLValue(v)
