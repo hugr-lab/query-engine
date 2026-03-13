@@ -1,6 +1,8 @@
 FROM golang:1.26 AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
+COPY types/go.mod types/go.sum ./types/
+COPY client/go.mod client/go.sum ./client/
 RUN go mod download
 COPY . .
 RUN CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow -o /dev-server ./cmd/dev-server

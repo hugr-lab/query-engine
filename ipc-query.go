@@ -15,10 +15,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/planner"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
@@ -113,14 +112,14 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 
 func writeDataIPC(w *multipart.Writer, path string, query base.QueryRequest, data any) error {
 	switch data := data.(type) {
-	case db.ArrowTable:
+	case types.ArrowTable:
 		return writeArrowTableToIPC(w, path, query, data)
 	default:
 		return writeJsonValueToIPC(w, path, query, data)
 	}
 }
 
-func writeArrowTableToIPC(w *multipart.Writer, path string, query base.QueryRequest, data db.ArrowTable) error {
+func writeArrowTableToIPC(w *multipart.Writer, path string, query base.QueryRequest, data types.ArrowTable) error {
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Type", "application/vnd.apache.arrow.stream")
 	hdr.Set("X-Hugr-Part-Type", "data")

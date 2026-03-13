@@ -6,7 +6,6 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
@@ -73,8 +72,8 @@ func DataClose(data any) {
 		return
 	}
 	switch v := data.(type) {
-	case *db.JsonValue:
-	case db.ArrowTable:
+	case *JsonValue:
+	case ArrowTable:
 		v.Release()
 	case map[string]any:
 		for _, val := range v {

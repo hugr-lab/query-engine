@@ -18,8 +18,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/hugr-lab/query-engine/pkg/db"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
@@ -313,7 +312,7 @@ func (c *Client) DescribeDataSource(ctx context.Context, name string, self bool)
 	return desc, nil
 }
 
-func (c *Client) QueryJSON(ctx context.Context, req types.JQRequest) (*db.JsonValue, error) {
+func (c *Client) QueryJSON(ctx context.Context, req types.JQRequest) (*types.JsonValue, error) {
 	var buf bytes.Buffer
 	url := c.config.HttpUrl
 	if req.JQ != "" {
@@ -347,8 +346,8 @@ func (c *Client) QueryJSON(ctx context.Context, req types.JQRequest) (*db.JsonVa
 	if resp.StatusCode >= http.StatusBadRequest {
 		return nil, errors.New(string(b))
 	}
-	var out db.JsonValue
-	out = db.JsonValue(b)
+	var out types.JsonValue
+	out = types.JsonValue(b)
 	return &out, nil
 }
 
@@ -462,13 +461,13 @@ func (c *Client) parseMultipartResponse(resp *http.Response) (*types.Response, e
 				}
 				continue
 			}
-			val := db.JsonValue(b)
+			val := types.JsonValue(b)
 			err = addResponseData(r, part, path, &val)
 			if err != nil {
 				return nil, fmt.Errorf("adding json value: %w", err)
 			}
 		case strings.HasPrefix(cp, "application/vnd.apache.arrow.stream") && format == "table":
-			t := db.NewArrowTable()
+			t := types.NewArrowTable()
 			t.SetInfo(p.Header.Get("X-Hugr-Table-Info"))
 			if p.Header.Get("X-Hugr-Empty") != "true" {
 				reader, err := ipc.NewReader(p, ipc.WithAllocator(pool))

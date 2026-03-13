@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hugr-lab/query-engine/pkg/queries"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
+	"github.com/hugr-lab/query-engine/pkg/queries"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -19,12 +20,12 @@ func commonVectorTransform(ctx context.Context, e EngineVectorDistanceCalculator
 	if !sdl.IsExtraField(field.Definition) {
 		return sql, params, nil
 	}
-	var vec types.Vector
+	var vec ctypes.Vector
 	var dist string
 	switch sdl.ExtraFieldName(field.Definition) {
 	case base.VectorDistanceExtraFieldName:
 		if v := args.ForName("vector"); v != nil {
-			v, ok := v.Value.(types.Vector)
+			v, ok := v.Value.(ctypes.Vector)
 			if !ok {
 				return "", nil, fmt.Errorf("invalid vector argument")
 			}

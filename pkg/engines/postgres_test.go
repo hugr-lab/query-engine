@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hugr-lab/query-engine/pkg/types"
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/paulmach/orb"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -348,18 +348,18 @@ func Test_postgres_SQLValue(t *testing.T) {
 		{"map value", map[string]any{"key": "value"}, "'{\"key\":\"value\"}'::JSONB", false},
 		{"unsupported value", struct{}{}, "", true},
 		// postgres specific types
-		{"int4range value", types.Int32Range{Lower: 1, Upper: 10}, "'(1,10)'::INT4RANGE", false},
-		{"int4range value", types.Int32Range{Lower: 1, Upper: 10, Detail: types.RangeLowerInclusive}, "'[1,10)'::INT4RANGE", false},
-		{"int4range value", types.Int32Range{Lower: 1, Upper: 10, Detail: types.RangeUpperInclusive}, "'(1,10]'::INT4RANGE", false},
-		{"int4range value", types.Int32Range{Lower: 1, Upper: 10, Detail: types.RangeLowerInclusive | types.RangeUpperInclusive}, "'[1,10]'::INT4RANGE", false},
-		{"int4range value", types.Int32Range{Lower: 1, Upper: 10, Detail: types.RangeEmpty}, "'empty'::INT4RANGE", false},
-		{"int4range value", types.Int32Range{Lower: 1, Upper: 10, Detail: types.RangeLowerInfinity}, "'(,10)'::INT4RANGE", false},
-		{"int4range value", types.Int32Range{Lower: 1, Upper: 10, Detail: types.RangeUpperInfinity}, "'(1,)'::INT4RANGE", false},
-		{"int4range value", types.Int32Range{Lower: 1, Upper: 10, Detail: types.RangeLowerInfinity | types.RangeUpperInfinity}, "'(,)'::INT4RANGE", false},
-		{"int8range value", types.Int64Range{Lower: 1, Upper: 10, Detail: types.RangeLowerInclusive | types.RangeUpperInfinity}, "'[1,)'::INT8RANGE", false},
-		{"tstzrange value", types.TimeRange{
+		{"int4range value", ctypes.Int32Range{Lower: 1, Upper: 10}, "'(1,10)'::INT4RANGE", false},
+		{"int4range value", ctypes.Int32Range{Lower: 1, Upper: 10, Detail: ctypes.RangeLowerInclusive}, "'[1,10)'::INT4RANGE", false},
+		{"int4range value", ctypes.Int32Range{Lower: 1, Upper: 10, Detail: ctypes.RangeUpperInclusive}, "'(1,10]'::INT4RANGE", false},
+		{"int4range value", ctypes.Int32Range{Lower: 1, Upper: 10, Detail: ctypes.RangeLowerInclusive | ctypes.RangeUpperInclusive}, "'[1,10]'::INT4RANGE", false},
+		{"int4range value", ctypes.Int32Range{Lower: 1, Upper: 10, Detail: ctypes.RangeEmpty}, "'empty'::INT4RANGE", false},
+		{"int4range value", ctypes.Int32Range{Lower: 1, Upper: 10, Detail: ctypes.RangeLowerInfinity}, "'(,10)'::INT4RANGE", false},
+		{"int4range value", ctypes.Int32Range{Lower: 1, Upper: 10, Detail: ctypes.RangeUpperInfinity}, "'(1,)'::INT4RANGE", false},
+		{"int4range value", ctypes.Int32Range{Lower: 1, Upper: 10, Detail: ctypes.RangeLowerInfinity | ctypes.RangeUpperInfinity}, "'(,)'::INT4RANGE", false},
+		{"int8range value", ctypes.Int64Range{Lower: 1, Upper: 10, Detail: ctypes.RangeLowerInclusive | ctypes.RangeUpperInfinity}, "'[1,)'::INT8RANGE", false},
+		{"tstzrange value", ctypes.TimeRange{
 			Lower:  tm,
-			Detail: types.RangeLowerInclusive | types.RangeUpperInfinity,
+			Detail: ctypes.RangeLowerInclusive | ctypes.RangeUpperInfinity,
 		}, fmt.Sprintf("'[%s,)'::TSTZRANGE", tstr), false},
 	}
 
@@ -740,8 +740,8 @@ func TestPostgresEngineFilterOperationSQLValue(t *testing.T) {
 			sqlName:  "field",
 			path:     "",
 			op:       "eq",
-			value:    types.Int32Range{Lower: 1, Upper: 10},
-			params:   []any{types.Int32Range{Lower: 1, Upper: 10}},
+			value:    ctypes.Int32Range{Lower: 1, Upper: 10},
+			params:   []any{ctypes.Int32Range{Lower: 1, Upper: 10}},
 			expected: "field = $1",
 			wantErr:  false,
 		},
@@ -750,8 +750,8 @@ func TestPostgresEngineFilterOperationSQLValue(t *testing.T) {
 			sqlName:  "field",
 			path:     "",
 			op:       "intersects",
-			value:    types.Int32Range{Lower: 1, Upper: 10},
-			params:   []any{types.Int32Range{Lower: 1, Upper: 10}},
+			value:    ctypes.Int32Range{Lower: 1, Upper: 10},
+			params:   []any{ctypes.Int32Range{Lower: 1, Upper: 10}},
 			expected: "field && $1",
 			wantErr:  false,
 		},
@@ -760,8 +760,8 @@ func TestPostgresEngineFilterOperationSQLValue(t *testing.T) {
 			sqlName:  "field",
 			path:     "",
 			op:       "includes",
-			value:    types.Int32Range{Lower: 1, Upper: 10},
-			params:   []any{types.Int32Range{Lower: 1, Upper: 10}},
+			value:    ctypes.Int32Range{Lower: 1, Upper: 10},
+			params:   []any{ctypes.Int32Range{Lower: 1, Upper: 10}},
 			expected: "field @> $1",
 			wantErr:  false,
 		},

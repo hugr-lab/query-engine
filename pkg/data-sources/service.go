@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/airport"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/ducklake"
@@ -17,11 +19,10 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mssql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/postgres"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
 	. "github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -275,7 +276,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 	return data, nil
 }
 
-func (s *Service) CreateEmbedding(ctx context.Context, source, input string) (types.Vector, error) {
+func (s *Service) CreateEmbedding(ctx context.Context, source, input string) (ctypes.Vector, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ds, ok := s.dataSources[source]
@@ -292,7 +293,7 @@ func (s *Service) CreateEmbedding(ctx context.Context, source, input string) (ty
 	return embeddingDs.CreateEmbedding(ctx, input)
 }
 
-func (s *Service) CreateEmbeddings(ctx context.Context, source string, input []string) ([]types.Vector, error) {
+func (s *Service) CreateEmbeddings(ctx context.Context, source string, input []string) ([]ctypes.Vector, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ds, ok := s.dataSources[source]

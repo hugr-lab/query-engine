@@ -14,7 +14,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 // implement sources.RuntimeSource interface
@@ -43,7 +43,7 @@ func (s *Service) AsModule() bool {
 func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
 	return pool.RegisterScalarFunctionSet(auth.ContextWithFullAccess(ctx), &db.ScalarFunctionTypedSet[string]{
 		Name:       "invalidate_cache",
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 		ConvertOutput: func(out string) (any, error) {
 			return types.Result(out, 1, 0).ToDuckdb(), nil
 		},

@@ -11,7 +11,7 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/perm"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 func (s *Service) middlewares() func(next http.Handler) http.Handler {

@@ -1,6 +1,8 @@
 FROM golang:1.26 AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
+COPY types/go.mod types/go.sum ./types/
+COPY client/go.mod client/go.sum ./client/
 RUN go mod download
 COPY internal/http_test_service/ ./internal/http_test_service/
 RUN go build -o /http-test-service ./internal/http_test_service

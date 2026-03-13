@@ -1,6 +1,10 @@
 package types
 
-import "github.com/vektah/gqlparser/v2/ast"
+import (
+	"time"
+
+	"github.com/vektah/gqlparser/v2/ast"
+)
 
 // ScalarType represents a scalar's compilation-time metadata.
 // Capabilities are determined via type assertions on optional interfaces
@@ -68,4 +72,12 @@ type JSONTypeHintProvider interface {
 type SQLOutputTransformer interface {
 	ToOutputSQL(sql string, raw bool) string
 	ToStructFieldSQL(sql string) string
+}
+
+type ScalarTypes interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 | ~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~float32 | ~float64 | ~string | ~bool | Int32Range | Int64Range | TimeRange | BaseRange | time.Time
+}
+
+type Dimensional interface {
+	Len() int
 }

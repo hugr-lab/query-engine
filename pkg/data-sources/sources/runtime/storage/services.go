@@ -15,7 +15,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 //go:embed schema.graphql
@@ -118,7 +118,7 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 	if err != nil {
 		return err
@@ -144,7 +144,7 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 			return out.ToDuckdb(), nil
 		},
 		InputTypes: []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType: types.DuckDBOperationResult(),
+		OutputType: db.DuckDBOperationResult(),
 	})
 	if err != nil {
 		return err

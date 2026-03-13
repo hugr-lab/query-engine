@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+
+	"github.com/hugr-lab/query-engine/types"
 )
 
 func (db *Pool) QueryTableToSlice(ctx context.Context, data any, q string, params ...any) error {
@@ -26,7 +28,7 @@ func (db *Pool) QueryArrowTable(ctx context.Context, q string, wrap bool, params
 	return db.QueryJsonTableArrow(ctx, q, wrap, params...)
 }
 
-func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, params ...any) (ArrowTable, error) {
+func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, params ...any) (types.ArrowTable, error) {
 	ar, err := db.Arrow(ctx)
 	if err != nil {
 		return nil, err
@@ -41,11 +43,13 @@ func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, pa
 		return nil, err
 	}
 	defer reader.Release()
-	table, err := NewArrowTableFromReader(reader)
+	table, err := types.NewArrowTableFromReader(reader)
 	if err != nil {
 		return nil, err
 	}
-	table.wrapped = wrap
+	if wrap {
+		table.SetInfo("wrapped")
+	}
 
 	return table, nil
 }
@@ -66,9 +70,9 @@ func (db *Pool) queryJsonTableTx(ctx context.Context, q string, wrap bool, param
 	}
 	defer rows.Close()
 
-	var res []JsonValue
+	var res []types.JsonValue
 	for rows.Next() {
-		var val JsonValue
+		var val types.JsonValue
 		err := rows.Scan(&val)
 		if err != nil {
 			return nil, err
@@ -86,7 +90,7 @@ func (db *Pool) QueryJsonScalarArray(ctx context.Context, q string, params ...an
 	return db.QueryJsonScalarArrayArrow(ctx, q, params...)
 }
 
-func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params ...any) (ArrowTable, error) {
+func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params ...any) (types.ArrowTable, error) {
 	ar, err := db.Arrow(ctx)
 	if err != nil {
 		return nil, err
@@ -98,11 +102,11 @@ func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params 
 		return nil, err
 	}
 
-	table, err := NewArrowTableFromReader(reader)
+	table, err := types.NewArrowTableFromReader(reader)
 	if err != nil {
 		return nil, err
 	}
-	table.asArray = true
+	table.SetInfo("asArray")
 	return table, nil
 }
 
@@ -120,7 +124,7 @@ func (db *Pool) queryJsonScalarArrayTx(ctx context.Context, q string, params ...
 
 	var res []any
 	for rows.Next() {
-		var val JsonValue
+		var val types.JsonValue
 		err := rows.Scan(&val)
 		if err != nil {
 			return nil, err
@@ -130,13 +134,13 @@ func (db *Pool) queryJsonScalarArrayTx(ctx context.Context, q string, params ...
 	return res, nil
 }
 
-func (db *Pool) QueryJsonRow(ctx context.Context, q string, params ...any) (*JsonValue, error) {
+func (db *Pool) QueryJsonRow(ctx context.Context, q string, params ...any) (*types.JsonValue, error) {
 	conn, err := db.Conn(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
-	var val JsonValue
+	var val types.JsonValue
 	err = conn.QueryRow(ctx, wrapJSON(q), params...).Scan(&val)
 	if err != nil {
 		return nil, err
@@ -175,7 +179,7 @@ func (db *Pool) QueryRowToData(ctx context.Context, data any, q string, params .
 
 // Runs a query write results to a stream
 // This method does not support transactions
-func (db *Pool) QueryTableStream(ctx context.Context, q string, params ...any) (ArrowTable, func(), error) {
+func (db *Pool) QueryTableStream(ctx context.Context, q string, params ...any) (types.ArrowTable, func(), error) {
 	ar, err := db.Arrow(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -188,7 +192,7 @@ func (db *Pool) QueryTableStream(ctx context.Context, q string, params ...any) (
 	finalize := func() {
 		_ = ar.Close()
 	}
-	return NewArrowTableStream(reader), finalize, nil
+	return types.NewArrowTableStream(reader), finalize, nil
 }
 
 func wrapJSON(query string) string {

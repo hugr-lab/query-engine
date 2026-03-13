@@ -1,0 +1,31 @@
+name: Tag Sub-modules
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  tag-submodules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create sub-module tags
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          echo "Tagging sub-modules with version: $VERSION"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          for module in types client; do
+            TAG="${module}/${VERSION}"
+            echo "Creating tag: $TAG"
+            git tag "$TAG" "$GITHUB_SHA"
+          done
+
+          git push origin --tags

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/jq"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

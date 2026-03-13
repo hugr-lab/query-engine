@@ -5,7 +5,6 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
-	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -219,7 +218,7 @@ func checkDim(val any, dim *ast.Directive) error {
 		return ErrorPosf(dim.Position, "invalid length argument: %v", d)
 	}
 	switch v := val.(type) {
-	case pkgtypes.Dimensional:
+	case types.Dimensional:
 		if v.Len() != d {
 			return ErrorPosf(dim.Position, "invalid vector length: %d, expected: %d", v.Len(), d)
 		}
@@ -243,4 +242,3 @@ func checkDim(val any, dim *ast.Directive) error {
 	}
 	return nil
 }
-

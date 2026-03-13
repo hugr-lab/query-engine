@@ -1,7 +1,5 @@
 package types
 
-import pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
-
 // Compile-time interface assertions.
 var (
 	_ ScalarType  = (*timestampRangeScalar)(nil)
@@ -40,21 +38,21 @@ input TimestampRangeFilter @system {
 func (s *timestampRangeScalar) FilterTypeName() string { return "TimestampRangeFilter" }
 
 func (s *timestampRangeScalar) ParseValue(v any) (any, error) {
-	return pkgtypes.ParseRangeValue(pkgtypes.RangeTypeTimestamp, v)
+	return ParseRangeValue(RangeTypeTimestamp, v)
 }
 
 func (s *timestampRangeScalar) ParseArray(v any) (any, error) {
-	vv, err := pkgtypes.ParseScalarArray[string](v)
+	vv, err := ParseScalarArray[string](v)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]pkgtypes.TimeRange, len(vv))
+	out := make([]TimeRange, len(vv))
 	for i, val := range vv {
-		r, err := pkgtypes.ParseRangeValue(pkgtypes.RangeTypeTimestamp, val)
+		r, err := ParseRangeValue(RangeTypeTimestamp, val)
 		if err != nil {
 			return nil, err
 		}
-		out[i] = r.(pkgtypes.TimeRange)
+		out[i] = r.(TimeRange)
 	}
 	return out, nil
 }

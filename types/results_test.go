@@ -1,4 +1,4 @@
-package db
+package types
 
 import (
 	"bytes"
@@ -57,7 +57,7 @@ func TestDBJsonTableOne_MarshalJSON(t *testing.T) {
 
 	table := NewArrowTable()
 	defer table.Release()
-	table.wrapped = true
+	table.SetInfo("wrapped")
 	table.Append(rec)
 
 	data, err := json.Marshal(table)

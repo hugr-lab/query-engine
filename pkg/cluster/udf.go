@@ -10,7 +10,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	dsruntime "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 // registerUDFs registers all cluster UDFs on the DuckDB pool.
@@ -61,7 +61,7 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 		ConvertInput:  convertStringArg,
 		ConvertOutput: convertOperationResult,
 		InputTypes:    []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:    types.DuckDBOperationResult(),
+		OutputType:    db.DuckDBOperationResult(),
 	}); err != nil {
 		return fmt.Errorf("register load_source UDF: %w", err)
 	}
@@ -74,7 +74,7 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 		ConvertInput:  convertStringArg,
 		ConvertOutput: convertOperationResult,
 		InputTypes:    []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:    types.DuckDBOperationResult(),
+		OutputType:    db.DuckDBOperationResult(),
 	}); err != nil {
 		return fmt.Errorf("register unload_source UDF: %w", err)
 	}
@@ -87,7 +87,7 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 		ConvertInput:  convertStringArg,
 		ConvertOutput: convertOperationResult,
 		InputTypes:    []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:    types.DuckDBOperationResult(),
+		OutputType:    db.DuckDBOperationResult(),
 	}); err != nil {
 		return fmt.Errorf("register reload_source UDF: %w", err)
 	}
@@ -100,7 +100,7 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 		ConvertInput:          convertStringArg,
 		ConvertOutput:         convertOperationResult,
 		InputTypes:            []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:            types.DuckDBOperationResult(),
+		OutputType:            db.DuckDBOperationResult(),
 		IsSpecialNullHandling: true, // catalog arg is optional (nullable)
 	}); err != nil {
 		return fmt.Errorf("register invalidate_cache UDF: %w", err)
@@ -116,7 +116,7 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 		ConvertInput:  convertStringArg,
 		ConvertOutput: convertOperationResult,
 		InputTypes:    []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:    types.DuckDBOperationResult(),
+		OutputType:    db.DuckDBOperationResult(),
 	}); err != nil {
 		return fmt.Errorf("register handle_source_load UDF: %w", err)
 	}
@@ -129,7 +129,7 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 		ConvertInput:  convertStringArg,
 		ConvertOutput: convertOperationResult,
 		InputTypes:    []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:    types.DuckDBOperationResult(),
+		OutputType:    db.DuckDBOperationResult(),
 	}); err != nil {
 		return fmt.Errorf("register handle_source_unload UDF: %w", err)
 	}
@@ -142,7 +142,7 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 		ConvertInput:          convertStringArg,
 		ConvertOutput:         convertOperationResult,
 		InputTypes:            []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:            types.DuckDBOperationResult(),
+		OutputType:            db.DuckDBOperationResult(),
 		IsSpecialNullHandling: true, // catalog arg is optional (nullable)
 	}); err != nil {
 		return fmt.Errorf("register handle_cache_invalidate UDF: %w", err)
@@ -154,7 +154,7 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 			return s.handleSecretSync(ctx)
 		},
 		ConvertOutput: convertOperationResult,
-		OutputType:    types.DuckDBOperationResult(),
+		OutputType:    db.DuckDBOperationResult(),
 	}); err != nil {
 		return fmt.Errorf("register handle_secret_sync UDF: %w", err)
 	}
@@ -177,7 +177,7 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 			dsruntime.DuckDBTypeInfoByNameMust("BOOLEAN"), // use_ssl
 			dsruntime.DuckDBTypeInfoByNameMust("VARCHAR"), // url_style
 		},
-		OutputType:            types.DuckDBOperationResult(),
+		OutputType:            db.DuckDBOperationResult(),
 		IsSpecialNullHandling: true, // region arg is nullable
 	}); err != nil {
 		return fmt.Errorf("register register_storage UDF: %w", err)
@@ -191,7 +191,7 @@ func (s *Source) registerUDFs(ctx context.Context, pool *db.Pool) error {
 		ConvertInput:  convertStringArg,
 		ConvertOutput: convertOperationResult,
 		InputTypes:    []duckdb.TypeInfo{dsruntime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType:    types.DuckDBOperationResult(),
+		OutputType:    db.DuckDBOperationResult(),
 	}); err != nil {
 		return fmt.Errorf("register unregister_storage UDF: %w", err)
 	}

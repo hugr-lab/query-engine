@@ -3,7 +3,7 @@ package cache
 import (
 	"errors"
 
-	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -35,17 +35,17 @@ func NewCacheItem(data any) (*CacheItem, error) {
 			Type: ItemDataTypeMap,
 			Data: v,
 		}, nil
-	case db.ArrowTable:
+	case types.ArrowTable:
 		return &CacheItem{
 			Type: ItemDataTypeArrowTable,
 			Data: v,
 		}, nil
-	case *db.JsonValue:
+	case *types.JsonValue:
 		return &CacheItem{
 			Type: ItemDataTypeJsonValue,
 			Data: v,
 		}, nil
-	case []db.JsonValue:
+	case []types.JsonValue:
 		return &CacheItem{
 			Type: ItemDataTypeJsonValue,
 			Data: v,
@@ -76,7 +76,7 @@ func (item *CacheItem) DecodeMsgpack(dec *msgpack.Decoder) (err error) {
 	case ItemDataTypeMap:
 		item.Data, err = dec.DecodeMap()
 	case ItemDataTypeArrowTable:
-		data := new(db.ArrowTableStream)
+		data := new(types.ArrowTableStream)
 		err = dec.Decode(data)
 		item.Data = data
 	case ItemDataTypeJsonValue:
@@ -84,7 +84,7 @@ func (item *CacheItem) DecodeMsgpack(dec *msgpack.Decoder) (err error) {
 		if err != nil {
 			return err
 		}
-		val := db.JsonValue(data)
+		val := types.JsonValue(data)
 		item.Data = &val
 	case ItemDataTypeBytes:
 		item.Data, err = dec.DecodeBytes()

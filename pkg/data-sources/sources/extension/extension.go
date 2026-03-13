@@ -2,7 +2,7 @@ package extension
 
 import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 // Provide data source type - extension

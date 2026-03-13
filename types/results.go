@@ -1,4 +1,4 @@
-package db
+package types
 
 import (
 	"bytes"
@@ -10,7 +10,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
-	"github.com/duckdb/duckdb-go/v2"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -299,7 +298,7 @@ func (c *colVal) Value(i int) any {
 			}
 		case *array.Map:
 			c.valFunc = func(a arrow.Array, i int) any {
-				m := make(duckdb.Map)
+				m := make(map[any]any)
 				keys := v.Keys()
 				items := v.Items()
 				start, end := v.ValueOffsets(i)
@@ -373,7 +372,7 @@ func ColumnValue(a arrow.Array, i int) any {
 		}
 		return l
 	case *array.Map:
-		m := make(duckdb.Map)
+		m := make(map[any]any)
 		keys := v.Keys()
 		items := v.Items()
 		start, end := v.ValueOffsets(i)

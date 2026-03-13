@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/hugr-lab/query-engine/pkg/db"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkb"
 	"github.com/paulmach/orb/geojson"
@@ -339,8 +339,8 @@ func (fc *featureCollection) Summary() (collectionSummary, error) {
 		if data == nil {
 			return cs, ErrInvalidFeaturePath
 		}
-		// data should be a db.JsonValue
-		v, ok := data.(*db.JsonValue)
+		// data should be a types.JsonValue
+		v, ok := data.(*types.JsonValue)
 		if v == nil || !ok {
 			return cs, ErrInvalidFeaturePath
 		}
@@ -355,7 +355,7 @@ func (fc *featureCollection) Summary() (collectionSummary, error) {
 				cs.SkipExtent = true
 				continue
 			}
-			g, err := types.ParseGeometryValue(data)
+			g, err := ctypes.ParseGeometryValue(data)
 			if err != nil {
 				return cs, errors.Join(ErrInvalidSummaryExtentValue, err)
 			}
@@ -413,7 +413,7 @@ func (fc *featureCollection) EncodeFeatures(ctx context.Context, w io.Writer, wr
 			return 0, fmt.Errorf("feature path %s not found in response data", path)
 		}
 		switch data := data.(type) {
-		case db.ArrowTable:
+		case types.ArrowTable:
 			n, err = encodeArrowTable(ctx, w, data, f, writeFunc, sep)
 			if err != nil {
 				return 0, fmt.Errorf("error encoding arrow table for path %s: %w", path, err)
@@ -427,7 +427,7 @@ func (fc *featureCollection) EncodeFeatures(ctx context.Context, w io.Writer, wr
 
 type encodeFeatureFunc func(w io.Writer, feature *geojson.Feature, fd featureDefinition) error
 
-func encodeArrowTable(ctx context.Context, w io.Writer, data db.ArrowTable, fd featureDefinition, writeFunc encodeFeatureFunc, sep string) (int64, error) {
+func encodeArrowTable(ctx context.Context, w io.Writer, data types.ArrowTable, fd featureDefinition, writeFunc encodeFeatureFunc, sep string) (int64, error) {
 	if data == nil {
 		return 0, nil
 	}
@@ -534,7 +534,7 @@ func transformGeometry(data map[string]any, fd featureDefinition) (geom orb.Geom
 	}
 	geomVal := types.ExtractResponseData(fd.GeometryField, data)
 	removeByPath(data, fd.GeometryField)
-	return types.ParseGeometryValue(geomVal)
+	return ctypes.ParseGeometryValue(geomVal)
 }
 
 func transformProperties(ctx context.Context, data map[string]any, fd featureDefinition, vars map[string]any) (map[string]any, error) {

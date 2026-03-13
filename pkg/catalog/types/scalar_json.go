@@ -1,7 +1,7 @@
 package types
 
 import (
-	pkgtypes "github.com/hugr-lab/query-engine/pkg/types"
+	pkgtypes "github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
