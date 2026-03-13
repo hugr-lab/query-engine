@@ -1,4 +1,4 @@
-package db
+package types
 
 import (
 	"bytes"
@@ -8,7 +8,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/hugr-lab/query-engine/types"
 	"github.com/vmihailenco/msgpack/v5"
 )
 
@@ -28,7 +27,7 @@ func TestDBJsonTable_MarshalJSON(t *testing.T) {
 	rec := b.NewRecordBatch()
 	defer rec.Release()
 
-	table := types.NewArrowTable()
+	table := NewArrowTable()
 	defer table.Release()
 	table.Append(rec)
 
@@ -56,7 +55,7 @@ func TestDBJsonTableOne_MarshalJSON(t *testing.T) {
 	rec := b.NewRecordBatch()
 	defer rec.Release()
 
-	table := types.NewArrowTable()
+	table := NewArrowTable()
 	defer table.Release()
 	table.SetInfo("wrapped")
 	table.Append(rec)
@@ -86,7 +85,7 @@ func TestDBJsonTable_EncodeMsgpack(t *testing.T) {
 	rec := b.NewRecordBatch()
 	defer rec.Release()
 
-	table := types.NewArrowTable()
+	table := NewArrowTable()
 	defer table.Release()
 	table.Append(rec)
 
@@ -98,7 +97,7 @@ func TestDBJsonTable_EncodeMsgpack(t *testing.T) {
 		t.Fatalf("EncodeMsgpack() error = %v", err)
 	}
 
-	decodedTable := new(types.ArrowTableChunked)
+	decodedTable := new(ArrowTableChunked)
 	dec := msgpack.NewDecoder(&buf)
 
 	err = decodedTable.DecodeMsgpack(dec)
@@ -131,14 +130,14 @@ func TestDBJsonTable_DecodeMsgpack_Empty(t *testing.T) {
 	var buf bytes.Buffer
 	enc := msgpack.NewEncoder(&buf)
 
-	table := types.NewArrowTable()
+	table := NewArrowTable()
 	defer table.Release()
 	err := table.EncodeMsgpack(enc)
 	if err != nil {
 		t.Fatalf("EncodeMsgpack() error = %v", err)
 	}
 
-	decodedTable := types.NewArrowTable()
+	decodedTable := NewArrowTable()
 	dec := msgpack.NewDecoder(&buf)
 
 	err = decodedTable.DecodeMsgpack(dec)

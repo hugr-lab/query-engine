@@ -45,7 +45,7 @@ func (r *OperationResult) CollectSQL(res sql.Result) {
 	r.LastId = int(lastId)
 }
 
-func (r *OperationResult) ToDuckdb() map[string]interface{} {
+func (r *OperationResult) ToDuckdb() map[string]any {
 	if r == nil {
 		return nil
 	}

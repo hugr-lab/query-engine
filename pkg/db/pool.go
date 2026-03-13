@@ -44,6 +44,7 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		INSTALL httpfs; LOAD httpfs;
 		INSTALL h3 FROM community; LOAD h3;
 		INSTALL mssql FROM community; LOAD mssql;
+		SET mssql_order_pushdown = true;
 		INSTALL ducklake; LOAD ducklake;
 		INSTALL iceberg; LOAD iceberg;
 	`)
