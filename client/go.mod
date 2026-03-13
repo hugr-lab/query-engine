@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/apache/arrow-go/v18 v18.5.2
-	github.com/hugr-lab/query-engine/types v0.0.0
+	github.com/hugr-lab/query-engine/types v0.3.5
 	github.com/vektah/gqlparser/v2 v2.5.32
 )
 
