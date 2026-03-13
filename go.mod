@@ -9,7 +9,7 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.2.0
-	github.com/apache/arrow-go/v18 v18.5.1
+	github.com/apache/arrow-go/v18 v18.5.2
 	github.com/duckdb/duckdb-go/v2 v2.10500.0
 	github.com/eko/gocache/lib/v4 v4.2.3
 	github.com/eko/gocache/store/bigcache/v4 v4.2.4
