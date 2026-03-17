@@ -48,7 +48,6 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		}
 	}
 
-	// TODO: airport extension is not yet compatible with DuckDB 1.5.0
 	_, err = pool.Exec(ctx, `
 		INSTALL azure; LOAD azure;
 		INSTALL ducklake; LOAD ducklake;
