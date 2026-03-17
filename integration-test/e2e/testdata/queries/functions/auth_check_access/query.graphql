@@ -1,0 +1,13 @@
+{
+  function {
+    core {
+      auth {
+        check_access(type_name: "orders", fields: "id,total,secret_field") {
+          field
+          enabled
+          visible
+        }
+      }
+    }
+  }
+}
