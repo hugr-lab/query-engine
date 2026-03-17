@@ -11,6 +11,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cluster"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
+	authrt "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/auth"
 	dssource "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/data-sources"
 	ducklakert "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/ducklake"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/gis"
@@ -43,6 +44,10 @@ func (s *Service) attachRuntimeSources(ctx context.Context, readonly bool) error
 	if err != nil {
 		return fmt.Errorf("attach catalog source: %w", err)
 	}
+	err = s.ds.AttachRuntimeSource(ctx, authrt.New())
+	if err != nil {
+		return fmt.Errorf("attach auth source: %w", err)
+	}
 	err = s.ds.AttachRuntimeSource(ctx, gis.New())
 	if err != nil {
 		return fmt.Errorf("attach GIS source: %w", err)
@@ -72,6 +77,7 @@ func (s *Service) attachRuntimeSourcesReadonly(ctx context.Context) error {
 		s.cache,
 		metainfo.New(s),
 		s.dbProvider.CatalogSource(),
+		authrt.New(),
 		gis.New(),
 	}
 

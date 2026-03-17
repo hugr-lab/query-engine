@@ -1,0 +1,15 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "auth": {
+          "my_permissions": {
+            "disabled": false,
+            "permissions": [],
+            "role_name": "admin"
+          }
+        }
+      }
+    }
+  }
+}

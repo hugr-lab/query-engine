@@ -1,0 +1,27 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "auth": {
+          "check_access": [
+            {
+              "enabled": true,
+              "field": "id",
+              "visible": true
+            },
+            {
+              "enabled": true,
+              "field": "total",
+              "visible": true
+            },
+            {
+              "enabled": true,
+              "field": "secret_field",
+              "visible": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}

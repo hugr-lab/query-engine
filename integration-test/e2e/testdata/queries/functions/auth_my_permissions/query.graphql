@@ -1,0 +1,20 @@
+{
+  function {
+    core {
+      auth {
+        my_permissions {
+          role_name
+          disabled
+          permissions {
+            object
+            field
+            hidden
+            disabled
+            filter
+            data
+          }
+        }
+      }
+    }
+  }
+}

@@ -119,11 +119,18 @@ func WithJQQueryUrl(jq string) Option {
 	}
 }
 
+func WithArrowStructFlatten() Option {
+	return func(c *ClientConfig) {
+		c.ArrowStructFlatten = true
+	}
+}
+
 type ClientConfig struct {
-	Timeout    time.Duration
-	HttpUrl    string
-	JQQueryUrl string
-	Transport  http.RoundTripper
+	Timeout            time.Duration
+	HttpUrl            string
+	JQQueryUrl         string
+	Transport          http.RoundTripper
+	ArrowStructFlatten bool
 }
 
 type Client struct {
@@ -449,6 +456,17 @@ func (c *Client) parseMultipartResponse(resp *http.Response) (*types.Response, e
 			}
 			r.Errors = append(r.Errors, errs...)
 			return r, nil
+		case part == "extensions":
+			var ext map[string]any
+			if err := json.NewDecoder(p).Decode(&ext); err != nil {
+				return nil, fmt.Errorf("decoding extensions: %w", err)
+			}
+			if r.Extensions == nil {
+				r.Extensions = make(map[string]any)
+			}
+			for k, v := range ext {
+				r.Extensions[k] = v
+			}
 		case strings.HasPrefix(cp, "application/json") && format == "object":
 			b, err := io.ReadAll(p)
 			if err != nil {
@@ -474,12 +492,19 @@ func (c *Client) parseMultipartResponse(resp *http.Response) (*types.Response, e
 				if err != nil {
 					return nil, fmt.Errorf("creating arrow reader: %w", err)
 				}
+				flatten := c.config.ArrowStructFlatten && types.NeedsFlatten(reader.Schema())
 				for reader.Next() {
 					rec := reader.RecordBatch()
 					if rec == nil {
 						continue
 					}
-					t.Append(rec)
+					if flatten {
+						flat := types.FlattenRecord(rec, pool)
+						t.Append(flat)
+						flat.Release()
+					} else {
+						t.Append(rec)
+					}
 				}
 			}
 			err = addResponseData(r, part, path, t)

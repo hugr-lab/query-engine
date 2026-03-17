@@ -1,0 +1,63 @@
+# Current authenticated user identity
+type auth_me {
+  # Unique user identifier from auth provider
+  user_id: String!
+  # User display name
+  user_name: String!
+  # Assigned role name
+  role: String!
+  # Authentication method (jwt, apiKey, anonymous, dbApiKey)
+  auth_type: String!
+  # Authentication provider name or issuer
+  auth_provider: String!
+}
+
+# Single permission entry for a role
+type auth_my_permission_entry {
+  # Target type/object name, "*" for wildcard
+  object: String!
+  # Target field name, "*" for wildcard
+  field: String!
+  # Whether the field is hidden from introspection
+  hidden: Boolean!
+  # Whether field access is completely disabled
+  disabled: Boolean!
+  # Row-level security filter expression (JSON)
+  filter: JSON
+  # Required mutation data values (JSON)
+  data: JSON
+}
+
+# Current user role and associated permissions
+type auth_my_permissions {
+  # Name of the user's role
+  role_name: String!
+  # Whether the role is disabled
+  disabled: Boolean!
+  # List of permission entries for this role
+  permissions: [auth_my_permission_entry!]
+}
+
+# Per-field access check result
+type auth_access_check_entry {
+  # Field name from the input list
+  field: String!
+  # Whether the field is accessible (not disabled) for the current role
+  enabled: Boolean!
+  # Whether the field is visible in introspection (not hidden) for the current role
+  visible: Boolean!
+}
+
+extend type Function {
+  # Returns the current authenticated user's identity information
+  me: auth_me @function(name: "core_auth_me")
+  # Returns the current user's role name and permission entries
+  my_permissions: auth_my_permissions @function(name: "core_auth_my_permissions")
+  # Checks per-field access for a given type and comma-separated list of field names
+  check_access(
+    # The type/object name to check access for
+    type_name: String!
+    # Comma-separated list of field names to check
+    fields: String!
+  ): [auth_access_check_entry!] @function(name: "core_auth_check_access")
+}

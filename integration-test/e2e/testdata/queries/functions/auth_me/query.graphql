@@ -1,0 +1,15 @@
+{
+  function {
+    core {
+      auth {
+        me {
+          user_id
+          user_name
+          role
+          auth_type
+          auth_provider
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "auth": {
+          "me": {
+            "auth_provider": "anonymous",
+            "auth_type": "anonymous",
+            "role": "admin",
+            "user_id": "anonymous",
+            "user_name": "anonymous"
+          }
+        }
+      }
+    }
+  }
+}
