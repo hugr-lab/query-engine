@@ -54,9 +54,9 @@ func (c *Compiler) CompileChanges(
 	classified := classifyChanges(ctx, changes)
 
 	// Check if changes source also provides extensions (field-level changes)
-	var allExtensions []*ast.Definition    // all extensions (for field add/drop/replace on base + derived types)
-	var refExtensions []*ast.Definition    // subset with @field_references (also need pipeline for reference generation)
-	var funcExtensions []*ast.Definition   // extensions targeting Function/MutationFunction (need special handling)
+	var allExtensions []*ast.Definition  // all extensions (for field add/drop/replace on base + derived types)
+	var refExtensions []*ast.Definition  // subset with @field_references (also need pipeline for reference generation)
+	var funcExtensions []*ast.Definition // extensions targeting Function/MutationFunction (need special handling)
 	if extSource, ok := changes.(base.ExtensionsSource); ok {
 		for ext := range extSource.Extensions(ctx) {
 			if ext.Name == "Function" || ext.Name == "MutationFunction" {
@@ -184,7 +184,7 @@ func (c *Compiler) CompileChanges(
 
 // changeClassification separates incremental changes into add/drop buckets.
 type changeClassification struct {
-	toAdd []*ast.Definition
+	toAdd  []*ast.Definition
 	toDrop []*ast.Definition
 }
 
@@ -490,7 +490,6 @@ func dropDefinition(name string, kind ast.DefinitionKind, pos *ast.Position) *as
 		},
 	}
 }
-
 
 // recoverProviderObjects registers ObjectInfo for all compiled types in the
 // provider that belong to the same catalog. GENERATE rules need this info

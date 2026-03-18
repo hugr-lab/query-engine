@@ -9,7 +9,7 @@ var _ base.BatchRule = (*PrefixPreparer)(nil)
 
 type PrefixPreparer struct{}
 
-func (r *PrefixPreparer) Name() string     { return "PrefixPreparer" }
+func (r *PrefixPreparer) Name() string      { return "PrefixPreparer" }
 func (r *PrefixPreparer) Phase() base.Phase { return base.PhasePrepare }
 
 func (r *PrefixPreparer) ProcessAll(ctx base.CompilationContext) error {
@@ -40,7 +40,7 @@ func PrefixAndRegister(ctx base.CompilationContext, sourceNames map[string]bool)
 	// definitions that were just prefixed.
 	if opts.Prefix != "" {
 		for _, def := range ctx.PromotedDefinitions() {
-			renameFieldRefs(def.Fields, opts.Prefix, sourceNames, opts.AsModule)
+			renameFieldRefs(def.Fields, opts.Prefix, sourceNames)
 		}
 	}
 
@@ -194,7 +194,7 @@ func prefixDefinition(ctx base.CompilationContext, def *ast.Definition, sourceNa
 
 	// Rename type references in fields and directives to use prefixed names
 	if opts.Prefix != "" {
-		renameFieldRefs(def.Fields, opts.Prefix, sourceNames, opts.AsModule)
+		renameFieldRefs(def.Fields, opts.Prefix, sourceNames)
 		// Rename references in definition directives
 		for _, d := range def.Directives.ForNames("references") {
 			RenameDirectiveArgIfSource(d, "references_name", opts.Prefix, sourceNames)
@@ -208,7 +208,7 @@ func prefixDefinition(ctx base.CompilationContext, def *ast.Definition, sourceNa
 }
 
 // renameFieldRefs renames type references and directive arguments in field definitions.
-func renameFieldRefs(fields ast.FieldList, prefix string, sourceNames map[string]bool, asModule bool) {
+func renameFieldRefs(fields ast.FieldList, prefix string, sourceNames map[string]bool) {
 	for _, f := range fields {
 		RenameTypeRefs(f.Type, prefix, sourceNames)
 		// Rename type references in field arguments (e.g. input types used in function args)
@@ -220,14 +220,6 @@ func renameFieldRefs(fields ast.FieldList, prefix string, sourceNames map[string
 		}
 		for _, d := range f.Directives.ForNames("join") {
 			RenameDirectiveArgIfSource(d, "references_name", prefix, sourceNames)
-		}
-		if !asModule {
-			for _, d := range f.Directives.ForNames("function_call") {
-				RenameDirectiveArgIfSource(d, "references_name", prefix, sourceNames)
-			}
-			for _, d := range f.Directives.ForNames("table_function_call_join") {
-				RenameDirectiveArgIfSource(d, "references_name", prefix, sourceNames)
-			}
 		}
 	}
 }
