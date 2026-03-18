@@ -48,7 +48,7 @@ type catalog_dependencies @view(name: "_schema_catalog_dependencies", sql: "FROM
     references_query: "dependents"
     references_description: "Catalogs that depend on this catalog"
   ) {
-  catalog: String! @pk
+  catalog: String! @pk @field_source(field: "catalog_name")
   depends_on: String! @pk
 }
 
