@@ -157,6 +157,7 @@ func writeArrowTableToIPC(w *multipart.Writer, path string, query base.QueryRequ
 	}
 	meta := map[string]string{}
 	hdr.Set("X-Hugr-Table-Info", data.Info())
+	geomFields := geomFieldsInfoFromQuery(query.Field)
 	if gi, ok := geometryInfo(query.Field); ok {
 		hdr.Set("X-Hugr-Geometry-Fields", gi)
 		hdr.Set("X-Hugr-Geometry", "true")
@@ -177,6 +178,7 @@ func writeArrowTableToIPC(w *multipart.Writer, path string, query base.QueryRequ
 
 	meta["chunk"] = strconv.Itoa(i)
 	ns := addMeta(chunk.Schema(), meta)
+	ns = addGeometryFieldMeta(ns, geomFields)
 	err = iw.Write(array.NewRecordBatch(ns, chunk.Columns(), chunk.NumRows()))
 	if err != nil {
 		return err
@@ -194,6 +196,7 @@ func writeArrowTableToIPC(w *multipart.Writer, path string, query base.QueryRequ
 		}
 		meta["chunk"] = strconv.Itoa(i)
 		ns := addMeta(chunk.Schema(), meta)
+		ns = addGeometryFieldMeta(ns, geomFields)
 		err := iw.Write(array.NewRecordBatch(ns, chunk.Columns(), chunk.NumRows()))
 		if err != nil {
 			return err
@@ -326,4 +329,91 @@ func addMeta(schema *arrow.Schema, meta map[string]string) *arrow.Schema {
 	}
 	m := arrow.NewMetadata(keys, vals)
 	return arrow.NewSchema(schema.Fields(), &m)
+}
+
+// addGeometryFieldMeta adds ARROW:extension:name and ARROW:extension:metadata
+// to Arrow fields based on geometry info from the query AST.
+// Supports dot-separated paths for nested struct fields (e.g. "aggregations.geom.union").
+// This allows downstream consumers (kernel, viewer) to detect geometry columns
+// directly from the Arrow schema without needing X-Hugr headers.
+func addGeometryFieldMeta(schema *arrow.Schema, gi map[string]geomInfo) *arrow.Schema {
+	if len(gi) == 0 {
+		return schema
+	}
+
+	fields := make([]arrow.Field, len(schema.Fields()))
+	copy(fields, schema.Fields())
+
+	for name, info := range gi {
+		var extName string
+		switch info.Format {
+		case "H3Cell":
+			extName = "hugr.h3cell"
+		case "GeoJSON", "GeoJSONString":
+			extName = "hugr.geojson"
+		default:
+			continue
+		}
+
+		extMeta := "{}"
+		if info.SRID != "" {
+			extMeta = fmt.Sprintf(`{"srid":%s}`, info.SRID)
+		}
+
+		parts := strings.Split(name, ".")
+		setFieldMeta(fields, parts, extName, extMeta)
+	}
+
+	m := schema.Metadata()
+	return arrow.NewSchema(fields, &m)
+}
+
+// setFieldMeta recursively navigates into struct fields following the path parts
+// and sets ARROW:extension:name/metadata on the leaf field.
+func setFieldMeta(fields []arrow.Field, path []string, extName, extMeta string) {
+	if len(path) == 0 {
+		return
+	}
+	for i, f := range fields {
+		if f.Name != path[0] {
+			continue
+		}
+		if len(path) == 1 {
+			// Leaf field — add metadata
+			if f.Metadata.Len() > 0 && f.Metadata.FindKey("ARROW:extension:name") >= 0 {
+				return // already has extension metadata
+			}
+			keys := []string{"ARROW:extension:name", "ARROW:extension:metadata"}
+			vals := []string{extName, extMeta}
+			if f.Metadata.Len() > 0 {
+				keys = append(f.Metadata.Keys(), keys...)
+				vals = append(f.Metadata.Values(), vals...)
+			}
+			fields[i] = arrow.Field{
+				Name:     f.Name,
+				Type:     f.Type,
+				Nullable: f.Nullable,
+				Metadata: arrow.NewMetadata(keys, vals),
+			}
+			return
+		}
+		// Non-leaf — descend into struct
+		st, ok := f.Type.(*arrow.StructType)
+		if !ok {
+			return
+		}
+		subFields := make([]arrow.Field, st.NumFields())
+		for j := 0; j < st.NumFields(); j++ {
+			subFields[j] = st.Field(j)
+		}
+		setFieldMeta(subFields, path[1:], extName, extMeta)
+		// Rebuild struct type with updated sub-fields
+		fields[i] = arrow.Field{
+			Name:     f.Name,
+			Type:     arrow.StructOf(subFields...),
+			Nullable: f.Nullable,
+			Metadata: f.Metadata,
+		}
+		return
+	}
 }
