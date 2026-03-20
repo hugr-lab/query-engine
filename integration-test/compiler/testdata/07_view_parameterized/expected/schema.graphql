@@ -548,7 +548,7 @@ enum QueryType @system {
   SELECT
   SELECT_ONE
 }
-type SalesReport @view(name: "sales_report_view", sql: "SELECT * FROM sales WHERE date >= [from_date] AND date <= [to_date]") @args(name: "SalesReportArgs", required: true) @catalog(name: "reports", engine: "duckdb") @filter_input(name: "SalesReport_filter") @query(name: "SalesReport", type: SELECT) @query(name: "SalesReport_by_pk", type: SELECT_ONE) @query(name: "SalesReport_aggregation", type: AGGREGATE) @query(name: "SalesReport_bucket_aggregation", type: AGGREGATE_BUCKET) {
+type SalesReport @view(name: "sales_report_view", sql: "SELECT * FROM sales WHERE date >= [$from_date] AND date <= [$to_date]") @args(name: "SalesReportArgs", required: true) @catalog(name: "reports", engine: "duckdb") @filter_input(name: "SalesReport_filter") @query(name: "SalesReport", type: SELECT) @query(name: "SalesReport_by_pk", type: SELECT_ONE) @query(name: "SalesReport_aggregation", type: AGGREGATE) @query(name: "SalesReport_bucket_aggregation", type: AGGREGATE_BUCKET) {
   _join(fields: [String!]!): _join
   order_count: BigInt
   product_id: Int! @pk

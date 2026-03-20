@@ -741,7 +741,7 @@ enum FilterOperator @system {
   upper_inf
   within
 }
-type FlightLog @view(name: "flight_log_view", sql: "SELECT * FROM flights WHERE departure >= [from_date] AND departure <= [to_date]") @args(name: "FlightLogArgs", required: true) @module(name: "transport.air") @catalog(name: "base", engine: "duckdb") @filter_input(name: "FlightLog_filter") @query(name: "FlightLog", type: SELECT) @query(name: "FlightLog_by_pk", type: SELECT_ONE) @query(name: "FlightLog_aggregation", type: AGGREGATE) @query(name: "FlightLog_bucket_aggregation", type: AGGREGATE_BUCKET) {
+type FlightLog @view(name: "flight_log_view", sql: "SELECT * FROM flights WHERE departure >= [$from_date] AND departure <= [$to_date]") @args(name: "FlightLogArgs", required: true) @module(name: "transport.air") @catalog(name: "base", engine: "duckdb") @filter_input(name: "FlightLog_filter") @query(name: "FlightLog", type: SELECT) @query(name: "FlightLog_by_pk", type: SELECT_ONE) @query(name: "FlightLog_aggregation", type: AGGREGATE) @query(name: "FlightLog_bucket_aggregation", type: AGGREGATE_BUCKET) {
   """
   Extract part of Timestamp field departure
   """

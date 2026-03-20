@@ -73,7 +73,7 @@ input FlightLogArgs {
   to_date: Timestamp @field_source(field: "to_date")
 }
 
-type FlightLog @view(name: "flight_log_view", sql: "SELECT * FROM flights WHERE departure >= [from_date] AND departure <= [to_date]")
+type FlightLog @view(name: "flight_log_view", sql: "SELECT * FROM flights WHERE departure >= [$from_date] AND departure <= [$to_date]")
   @args(name: "FlightLogArgs")
   @module(name: "transport.air") {
   id: Int! @pk
