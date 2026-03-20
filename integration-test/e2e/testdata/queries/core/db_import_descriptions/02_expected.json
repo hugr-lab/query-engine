@@ -1,0 +1,14 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "db": {
+          "import_descriptions": {
+            "success": true,
+            "message": "Descriptions imported"
+          }
+        }
+      }
+    }
+  }
+}

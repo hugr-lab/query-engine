@@ -35,3 +35,11 @@ When system or scalar type definitions change between releases, `InitSystemTypes
 **Symptoms**: New or modified scalar/system types not reflected in the running schema after upgrade.
 
 **Status**: To be investigated separately.
+
+## 3. `import_descriptions(recompute_embeddings: true)` not yet implemented
+
+The `core.db.import_descriptions` mutation accepts a `recompute_embeddings` parameter, but the actual reindexing logic is not wired up from the UDF context. The parameter is accepted and a placeholder message is returned.
+
+**Workaround**: Use `include_embeddings: true` (default) to copy existing vectors from the source file, or call `Provider.ReindexEmbeddings` programmatically after import.
+
+**Status**: Requires access to the embedding provider from the UDF execution context.
