@@ -1,0 +1,14 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "db": {
+          "recreate_indexes": {
+            "success": true,
+            "message": "Indexes recreated"
+          }
+        }
+      }
+    }
+  }
+}

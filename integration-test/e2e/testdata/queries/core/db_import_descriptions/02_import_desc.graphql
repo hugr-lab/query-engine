@@ -1,0 +1,12 @@
+mutation {
+  function {
+    core {
+      db {
+        import_descriptions(path: "/tmp/e2e_coredb_descriptions.duckdb", include_embeddings: false) {
+          success
+          message
+        }
+      }
+    }
+  }
+}

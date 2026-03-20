@@ -1,0 +1,14 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "db": {
+          "export_database": {
+            "success": true,
+            "message": "Database exported to /tmp/e2e_coredb_roundtrip.duckdb"
+          }
+        }
+      }
+    }
+  }
+}

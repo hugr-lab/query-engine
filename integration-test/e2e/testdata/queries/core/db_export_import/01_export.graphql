@@ -1,0 +1,12 @@
+mutation {
+  function {
+    core {
+      db {
+        export_database(path: "/tmp/e2e_coredb_roundtrip.duckdb") {
+          success
+          message
+        }
+      }
+    }
+  }
+}

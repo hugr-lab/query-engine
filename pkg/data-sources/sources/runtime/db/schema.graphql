@@ -1,0 +1,52 @@
+extend type MutationFunction {
+  """
+  Export the entire CoreDB to a DuckDB file at the specified path.
+  Works with both DuckDB and PostgreSQL CoreDB backends.
+  """
+  export_database(path: String!): OperationResult
+    @function(name: "hugr_coredb_export")
+
+  """
+  Import the entire CoreDB from a DuckDB file.
+  Clears all existing tables and repopulates from the backup.
+  If backup_path is provided, exports current state before importing.
+  """
+  import_database(path: String!, backup_path: String = ""): OperationResult
+    @function(name: "hugr_coredb_import")
+
+  """
+  Import only schema descriptions from a DuckDB backup file.
+  Updates description, long_description, is_summarized
+  for types, catalogs, fields, arguments, and modules.
+  If include_embeddings is true (default), also copies vec from source.
+  If recompute_embeddings is true, generates fresh embeddings using
+  the configured system embedder instead of copying from source.
+  """
+  import_descriptions(
+    path: String!
+    include_embeddings: Boolean = true
+    recompute_embeddings: Boolean = false
+  ): OperationResult
+    @function(name: "hugr_coredb_import_descriptions")
+
+  """
+  Drop and recreate all indexes on _schema_* tables.
+  Use to repair corrupted indexes without data loss.
+  """
+  recreate_indexes: OperationResult
+    @function(name: "hugr_coredb_recreate_indexes")
+
+  """
+  Delete all content from _schema_* tables and reset schema_version.
+  Forces full recompilation of all catalogs on next startup.
+  """
+  reset_schema: OperationResult
+    @function(name: "hugr_coredb_reset_schema")
+
+  """
+  Delete the system_types_version setting to force
+  system types recompilation on next startup.
+  """
+  reset_system_types: OperationResult
+    @function(name: "hugr_coredb_reset_system_types")
+}
