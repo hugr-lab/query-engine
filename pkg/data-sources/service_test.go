@@ -9,7 +9,7 @@ import (
 
 	httpSource "github.com/hugr-lab/query-engine/pkg/data-sources/sources/http"
 	"github.com/hugr-lab/query-engine/pkg/db"
-	"github.com/hugr-lab/query-engine/pkg/types"
+	"github.com/hugr-lab/query-engine/types"
 
 	. "github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 )
