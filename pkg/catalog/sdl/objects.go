@@ -120,13 +120,13 @@ func (info *Object) HasArguments() bool {
 type ObjectQueryType = base.ObjectQueryType
 
 const (
-	QueryTypeSelect                      = base.QueryTypeSelect
-	QueryTypeSelectOne                   = base.QueryTypeSelectOne
-	QueryTypeAggregate                   = base.QueryTypeAggregate
-	QueryTypeAggregateBucket             = base.QueryTypeAggregateBucket
-	SubQueryTypeReferencesData           = base.SubQueryTypeReferencesData
-	SubQueryTypeJoinData                 = base.SubQueryTypeJoinData
-	SubQueryTypeFunctionCallData         = base.SubQueryTypeFunctionCallData
+	QueryTypeSelect                       = base.QueryTypeSelect
+	QueryTypeSelectOne                    = base.QueryTypeSelectOne
+	QueryTypeAggregate                    = base.QueryTypeAggregate
+	QueryTypeAggregateBucket              = base.QueryTypeAggregateBucket
+	SubQueryTypeReferencesData            = base.SubQueryTypeReferencesData
+	SubQueryTypeJoinData                  = base.SubQueryTypeJoinData
+	SubQueryTypeFunctionCallData          = base.SubQueryTypeFunctionCallData
 	SubQueryTypeFunctionCallTableJoinData = base.SubQueryTypeFunctionCallTableJoinData
 )
 
@@ -179,7 +179,7 @@ func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSou
 			if err != nil {
 				return ErrorPosf(field.Position, "wrong argument %s value: %s", field.Name, err.Error())
 			}
-			info.sql = strings.ReplaceAll(info.sql, "["+field.Name+"]", sv)
+			info.sql = strings.ReplaceAll(info.sql, "[$"+field.Name+"]", sv)
 			continue
 		}
 		if d := field.Directives.ForName(base.InputFieldNamedArgDirectiveName); d != nil {

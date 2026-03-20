@@ -31,7 +31,7 @@ input SalesReportArgs {
 }
 
 """Parameterized sales report"""
-type SalesReport @view(name: "sales_view", sql: "SELECT * FROM sales WHERE date >= [from_date] AND date <= [to_date]")
+type SalesReport @view(name: "sales_view", sql: "SELECT * FROM sales WHERE date >= [$from_date] AND date <= [$to_date]")
   @args(name: "SalesReportArgs")
   @module(name: "analytics") {
   product_id: Int! @pk

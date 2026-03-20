@@ -250,7 +250,7 @@ type moduleRootInfo struct {
 func (p *Provider) collectModuleInfo(ctx context.Context, conn *Connection, catalogName string) ([]moduleRootInfo, error) {
 	rows, err := conn.Query(ctx, fmt.Sprintf(
 		`SELECT name, module, CAST(directives AS VARCHAR) FROM %s
-		 WHERE catalog = $1 AND hugr_type = 'module'`,
+		 WHERE hugr_type = 'module' AND (catalog = $1 OR catalog = '')`,
 		p.table("_schema_types"),
 	), catalogName)
 	if err != nil {

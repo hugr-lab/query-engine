@@ -302,6 +302,10 @@ func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.De
 	ifaces := strings.Join(def.Interfaces, "|")
 	unionTypes := strings.Join(def.Types, "|")
 
+	if hugrType == string(base.HugrTypeModule) {
+		catalogName = "" // Modules are catalog-agnostic; their catalog is determined by _schema_module_type_catalogs links.
+	}
+
 	tbl := p.table("_schema_types")
 	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 		`INSERT INTO %s (name, kind, description, long_description, hugr_type, module, catalog, directives, interfaces, union_types, is_summarized, vec)
@@ -310,10 +314,13 @@ func (p *Provider) upsertType(ctx context.Context, conn *Connection, def *ast.De
 		   kind=$2,
 		   description = CASE WHEN $3 != '' THEN $3 ELSE %s.description END,
 		   long_description = CASE WHEN $3 != '' THEN '' ELSE %s.long_description END,
-		   hugr_type=$4, module=$5, catalog=$6, directives=$7, interfaces=$8, union_types=$9,
+		   hugr_type = CASE WHEN %s.catalog = '_system' THEN %s.hugr_type ELSE $4 END,
+		   module=$5,
+		   catalog = CASE WHEN %s.catalog = '_system' OR $4 = 'module' THEN %s.catalog ELSE $6 END,
+		   directives=$7, interfaces=$8, union_types=$9,
 		   is_summarized = CASE WHEN $3 != '' THEN false ELSE %s.is_summarized END,
 		   vec=$10`,
-		tbl, tbl, tbl, tbl,
+		tbl, tbl, tbl, tbl, tbl, tbl, tbl, tbl,
 	), def.Name, string(def.Kind), def.Description, hugrType, module, catalogName, string(dirJSON), ifaces, unionTypes, vec)
 	return err
 }
@@ -355,6 +362,10 @@ func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName s
 	fieldTypeName := baseTypeName(field.Type)
 	isPK := field.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil
 
+	if hugrType == string(base.HugrTypeFieldSubmodule) {
+		catalogName = "" // Modules are catalog-agnostic; their catalog is determined by _schema_module_type_catalogs links.	}
+	}
+
 	tbl := p.table("_schema_fields")
 	_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 		`INSERT INTO %s (type_name, name, field_type, field_type_name, description, long_description, hugr_type, catalog, dependency_catalog, directives, is_pk, is_summarized, vec, ordinal)
@@ -363,10 +374,12 @@ func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName s
 		   field_type=$3, field_type_name=$4,
 		   description = CASE WHEN $5 != '' THEN $5 ELSE %s.description END,
 		   long_description = CASE WHEN $5 != '' THEN '' ELSE %s.long_description END,
-		   hugr_type=$6, catalog=$7, dependency_catalog=$8, directives=$9, is_pk=$10,
+		   hugr_type = CASE WHEN %s.catalog = '_system' THEN %s.hugr_type ELSE $6 END,
+		   catalog = CASE WHEN %s.catalog = '_system' OR $6 = 'submodule' THEN %s.catalog ELSE $7 END,
+		   dependency_catalog=$8, directives=$9, is_pk=$10,
 		   is_summarized = CASE WHEN $5 != '' THEN false ELSE %s.is_summarized END,
 		   vec=$11, ordinal=$12`,
-		tbl, tbl, tbl, tbl,
+		tbl, tbl, tbl, tbl, tbl, tbl, tbl, tbl,
 	), typeName, field.Name, fieldType, fieldTypeName, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), isPK, vec, ordinal)
 	return err
 }

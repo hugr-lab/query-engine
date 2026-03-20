@@ -22,9 +22,9 @@ func (p *Provider) deleteSchemaObjectsForCatalog(ctx context.Context, conn *Conn
 DELETE FROM %s WHERE type_name IN (SELECT name FROM %s WHERE catalog = $1);
 DELETE FROM %s WHERE (type_name, field_name) IN (SELECT type_name, name FROM %s WHERE catalog = $1);
 DELETE FROM %s WHERE (type_name, field_name) IN (SELECT type_name, name FROM %s WHERE dependency_catalog = $1);
-DELETE FROM %s WHERE catalog = $1;
+DELETE FROM %s WHERE catalog = $1 AND (hugr_type != 'submodule' OR field_type_name NOT IN (SELECT type_name FROM %s WHERE catalog_name != $1));
 DELETE FROM %s WHERE dependency_catalog = $1;
-DELETE FROM %s WHERE catalog = $1;
+DELETE FROM %s WHERE catalog = $1 AND (hugr_type != 'module' OR name NOT IN (SELECT type_name FROM %s WHERE catalog_name != $1));
 DELETE FROM %s WHERE object_name NOT IN (SELECT name FROM %s);
 DELETE FROM %s WHERE name NOT IN (SELECT name FROM %s);
 DELETE FROM %s WHERE catalog_name = $1;
@@ -35,12 +35,12 @@ DELETE FROM %s WHERE name != '' AND name NOT IN (SELECT DISTINCT module_name FRO
 		p.table("_schema_arguments"), p.table("_schema_fields"),
 		// 3. arguments for extension fields from other catalogs depending on this one
 		p.table("_schema_arguments"), p.table("_schema_fields"),
-		// 4. fields owned by this catalog (covers owned types + module extension fields on Query/Mutation/_join etc.)
-		p.table("_schema_fields"),
+		// 4. fields owned by this catalog (preserve submodule fields still used by other catalogs)
+		p.table("_schema_fields"), p.table("_schema_module_type_catalogs"),
 		// 5. extension fields from other catalogs that depend on this catalog
 		p.table("_schema_fields"),
-		// 6. types
-		p.table("_schema_types"),
+		// 6. types (preserve module types still used by other catalogs)
+		p.table("_schema_types"), p.table("_schema_module_type_catalogs"),
 		// 7. orphan data_object_queries — intentionally global: removes queries
 		// referencing types that no longer exist in any catalog.
 		p.table("_schema_data_object_queries"), p.table("_schema_types"),
