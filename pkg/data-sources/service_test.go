@@ -84,9 +84,9 @@ func TestService_HttpRequest(t *testing.T) {
 			wantJSON: `{"id":1}`,
 		},
 		{
-			name:     "204 no content returns empty array",
+			name:     "204 no content returns null",
 			path:     "/no_content",
-			wantJSON: `[]`,
+			wantJSON: `null`,
 		},
 		{
 			name:    "500 returns error",
@@ -158,7 +158,7 @@ func TestService_HttpRequest_NoContent_ConvertOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal failed: %v", err)
 	}
-	if string(b) != "[]" {
-		t.Errorf("ConvertOutput would produce %q, want %q", string(b), "[]")
+	if string(b) != "null" {
+		t.Errorf("ConvertOutput would produce %q, want %q", string(b), "null")
 	}
 }

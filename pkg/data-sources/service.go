@@ -253,7 +253,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 		return nil, err
 	}
 	if res.StatusCode == 204 {
-		return []any{}, nil
+		return nil, nil
 	}
 	if res.StatusCode != 200 {
 		return nil, fmt.Errorf("request failed with status code %d:%s", res.StatusCode, res.Status)
