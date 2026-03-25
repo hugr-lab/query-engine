@@ -52,7 +52,7 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		INSTALL azure; LOAD azure;
 		INSTALL ducklake; LOAD ducklake;
 		INSTALL iceberg; LOAD iceberg;
-		INSTALL airport FROM community; LOAD airport;
+		-- INSTALL airport FROM community; LOAD airport;
 	`)
 	if err != nil {
 		return nil, err

@@ -10,7 +10,7 @@ require (
 require (
 	github.com/andybalholm/brotli v1.2.0
 	github.com/apache/arrow-go/v18 v18.5.2
-	github.com/duckdb/duckdb-go/v2 v2.10500.0
+	github.com/duckdb/duckdb-go/v2 v2.10501.0
 	github.com/eko/gocache/lib/v4 v4.2.3
 	github.com/eko/gocache/store/bigcache/v4 v4.2.4
 	github.com/getkin/kin-openapi v0.133.0
@@ -18,7 +18,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/hugr-lab/airport-go v0.1.5
+	github.com/hugr-lab/airport-go v0.2.0
 	github.com/itchyny/gojq v0.12.18
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/joho/godotenv v1.5.1
@@ -41,12 +41,12 @@ require (
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
-	github.com/duckdb/duckdb-go-bindings v0.10500.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10500.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.10500.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10500.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10500.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10500.0 // indirect
+	github.com/duckdb/duckdb-go-bindings v0.10501.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10501.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.10501.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10501.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10501.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10501.0 // indirect
 	github.com/go-openapi/swag/jsonname v0.25.4 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

@@ -488,7 +488,9 @@ func (p *Provider) processExtension(ctx context.Context, conn *Connection, extDe
 
 	// Determine the dependency catalog: use @dependency if present, otherwise
 	// look up the type's owning catalog from DB. If the type is owned by a
-	// different catalog, that catalog is the dependency.
+	// different non-system catalog, that catalog is the dependency.
+	// System types (_system) are always available, so extending them should
+	// track the extending catalog as the dependency, not _system.
 	resolveDepCat := func(field *ast.FieldDefinition) string {
 		depCat := base.FieldDefDependency(field)
 		if depCat != "" {
@@ -496,7 +498,7 @@ func (p *Provider) processExtension(ctx context.Context, conn *Connection, extDe
 		}
 		// Auto-detect from the type's owning catalog in _schema_types.
 		ownerCat := p.typeOwnerCatalogConn(ctx, conn, typeName)
-		if ownerCat != "" && ownerCat != catalogName {
+		if ownerCat != "" && ownerCat != catalogName && ownerCat != SystemCatalogName {
 			return ownerCat
 		}
 		return catalogName

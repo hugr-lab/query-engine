@@ -116,10 +116,10 @@ func (p *Provider) DropCatalog(ctx context.Context, name string, cascade bool) e
 	if cascade {
 		if _, err := p.execWrite(txCtx, conn, fmt.Sprintf(
 			`UPDATE %s SET suspended = true
-			 WHERE name IN (
+			 WHERE name != '%s' AND name IN (
 			   SELECT catalog_name FROM %s WHERE depends_on = $1
 			 )`,
-			p.table("_schema_catalogs"), p.table("_schema_catalog_dependencies"),
+			p.table("_schema_catalogs"), SystemCatalogName, p.table("_schema_catalog_dependencies"),
 		), name); err != nil {
 			return fmt.Errorf("drop catalog suspend dependents: %w", err)
 		}

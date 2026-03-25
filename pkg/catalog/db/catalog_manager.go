@@ -387,6 +387,10 @@ func (p *Provider) suspendDependentsVisited(ctx context.Context, name string, vi
 		if err := rows.Scan(&dep); err != nil {
 			continue
 		}
+		// Never suspend the system catalog — it is always available.
+		if dep == SystemCatalogName {
+			continue
+		}
 		dependents = append(dependents, dep)
 	}
 	_ = rows.Close()
