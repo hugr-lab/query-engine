@@ -6,10 +6,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -29,6 +29,7 @@ func aggregateRootNode(ctx context.Context, provider catalog.Provider, planner C
 		if err != nil {
 			return nil, err
 		}
+		inGeneral = true
 	}
 
 	// Apply order_by/limit/offset after type casting for bucket aggregation
