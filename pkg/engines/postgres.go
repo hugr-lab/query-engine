@@ -93,6 +93,16 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 		return fmt.Sprintf("'%s'::TIMESTAMP", time.Time(v).Format("2006-01-02T15:04:05")), nil
 	case time.Time:
 		return fmt.Sprintf("'%s'::TIMESTAMPTZ", v.Format(time.RFC3339)), nil
+	case []types.DateTime:
+		var ss []string
+		for _, dt := range v {
+			s, err := e.SQLValue(dt)
+			if err != nil {
+				return "", err
+			}
+			ss = append(ss, s)
+		}
+		return "ARRAY[" + strings.Join(ss, ",") + "]", nil
 	case []time.Time:
 		return SQLValueArrayFormatter(e, v)
 	case time.Duration:

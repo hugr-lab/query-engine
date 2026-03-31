@@ -4,9 +4,11 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/andybalholm/brotli"
 	"github.com/hugr-lab/query-engine/pkg/auth"
@@ -117,6 +119,15 @@ func timezoneMW(next http.Handler) http.Handler {
 			tz = r.Header.Get("Time-Zone")
 		}
 		if tz != "" {
+			// Validate IANA timezone name to prevent injection
+			if _, err := time.LoadLocation(tz); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(types.ErrResponse(
+					fmt.Errorf("invalid timezone %q: %w", tz, err),
+				))
+				return
+			}
 			ctx := db.ContextWithTimezone(r.Context(), tz)
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
