@@ -4,7 +4,6 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -119,18 +118,14 @@ func timezoneMW(next http.Handler) http.Handler {
 			tz = r.Header.Get("Time-Zone")
 		}
 		if tz != "" {
-			// Validate IANA timezone name to prevent injection
-			if _, err := time.LoadLocation(tz); err != nil {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(types.ErrResponse(
-					fmt.Errorf("invalid timezone %q: %w", tz, err),
-				))
+			// Validate IANA timezone name to prevent injection.
+			// If validation fails (e.g., missing tzdata), fall back to no timezone
+			// rather than blocking the request.
+			if _, err := time.LoadLocation(tz); err == nil {
+				ctx := db.ContextWithTimezone(r.Context(), tz)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
-			ctx := db.ContextWithTimezone(r.Context(), tz)
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
 		}
 		next.ServeHTTP(w, r)
 	})
