@@ -380,6 +380,7 @@ input Employee_mut_input_data @data_input(name: "Employee") @catalog(name: "hr",
   salary: Float
 }
 enum ExtraFieldBaseType @system {
+  DateTime
   Geometry
   Timestamp
 }

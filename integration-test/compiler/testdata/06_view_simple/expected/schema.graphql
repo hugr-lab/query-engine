@@ -208,6 +208,7 @@ type DateTimeSubAggregation @system {
   min: DateTimeAggregation
 }
 enum ExtraFieldBaseType @system {
+  DateTime
   Geometry
   Timestamp
 }

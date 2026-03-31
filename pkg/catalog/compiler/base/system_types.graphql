@@ -170,6 +170,7 @@ directive @extra_field(name: String!, base_field: String!, base_type: ExtraField
 
 enum ExtraFieldBaseType @system {
 	Timestamp
+	DateTime
 	Geometry
 }
 

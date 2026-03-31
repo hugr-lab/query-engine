@@ -245,6 +245,7 @@ input Event_mut_input_data @data_input(name: "Event") @catalog(name: "analytics"
   id: BigInt
 }
 enum ExtraFieldBaseType @system {
+  DateTime
   Geometry
   Timestamp
 }

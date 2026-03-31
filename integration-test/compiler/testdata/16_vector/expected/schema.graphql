@@ -212,6 +212,7 @@ input Document_mut_input_data @data_input(name: "Document") @catalog(name: "docs
   title: String
 }
 enum ExtraFieldBaseType @system {
+  DateTime
   Geometry
   Timestamp
 }
