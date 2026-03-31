@@ -849,6 +849,36 @@ func TestTimeFunctions(t *testing.T) {
 			Input: refTime,
 			Want:  time.Date(2024, 6, 15, 15, 30, 45, 0, time.UTC).Unix(),
 		},
+		{
+			Name:  "fromUnixTime integer input gives UTC time",
+			Query: `fromUnixTime`,
+			Input: refUnix,
+			Want:  time.Date(2024, 6, 15, 14, 30, 45, 0, time.UTC),
+		},
+		{
+			Name:  "fromUnixTime with timezone argument",
+			Query: `fromUnixTime("America/New_York")`,
+			Input: refUnix,
+			Want:  time.Date(2024, 6, 15, 10, 30, 45, 0, ny),
+		},
+		{
+			Name:  "fromUnixTime with float preserves sub-second",
+			Query: `fromUnixTime`,
+			Input: float64(time.Date(2024, 6, 15, 14, 30, 45, 0, time.UTC).Unix()) + 0.5,
+			Want:  time.Date(2024, 6, 15, 14, 30, 45, 500000000, time.UTC),
+		},
+		{
+			Name:  "fromUnixTime chained with datePart extracts year",
+			Query: `fromUnixTime | datePart("year")`,
+			Input: refUnix,
+			Want:  2024,
+		},
+		{
+			Name:  "fromUnixTime chained with datePart extracts hour in tz",
+			Query: `fromUnixTime("America/New_York") | datePart("hour"; "America/New_York")`,
+			Input: refUnix,
+			Want:  10,
+		},
 	}
 
 	for _, tc := range tt {
@@ -960,6 +990,26 @@ func TestTimeFunctionErrors(t *testing.T) {
 			Name:  "datePart invalid time input",
 			Query: `datePart("hour"; "UTC")`,
 			Input: true,
+		},
+		{
+			Name:  "fromUnixTime with string input",
+			Query: `fromUnixTime`,
+			Input: "not_a_number",
+		},
+		{
+			Name:  "fromUnixTime with null input",
+			Query: `null | fromUnixTime`,
+			Input: nil,
+		},
+		{
+			Name:  "fromUnixTime with invalid timezone",
+			Query: `fromUnixTime("Invalid/TZ")`,
+			Input: float64(1718459445),
+		},
+		{
+			Name:  "fromUnixTime with non-string timezone",
+			Query: `fromUnixTime(123)`,
+			Input: float64(1718459445),
 		},
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -29,6 +30,7 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 
 	// load extensions
 	_, err = pool.Exec(ctx, `
+		INSTALL icu; LOAD icu;
 		INSTALL postgres; LOAD postgres;
 		INSTALL spatial; LOAD spatial;
 		INSTALL httpfs; LOAD httpfs;
@@ -58,6 +60,8 @@ func Connect(ctx context.Context, config Config) (*Pool, error) {
 		return nil, err
 	}
 
+	pool.defaultTimezone = config.Settings.Timezone
+
 	return pool, nil
 }
 
@@ -65,9 +69,10 @@ type Pool struct {
 	connector *duckdb.Connector
 	db        *sql.DB
 
-	mu            sync.Mutex
-	maxConnection int
-	openConns     int
+	mu              sync.Mutex
+	maxConnection   int
+	openConns       int
+	defaultTimezone string
 }
 
 func NewPool(path string) (*Pool, error) {
@@ -135,6 +140,19 @@ func (p *Pool) release() {
 	p.openConns--
 }
 
+// applyTimezone sets the DuckDB TimeZone on a connection.
+// Priority: request context timezone > server default > RESET to system default.
+func (p *Pool) applyTimezone(ctx context.Context, execFn func(string) error) error {
+	tz := TimezoneFromCtx(ctx)
+	if tz == "" {
+		tz = p.defaultTimezone
+	}
+	if tz != "" {
+		return execFn(fmt.Sprintf("SET TimeZone = '%s'", tz))
+	}
+	return execFn("RESET TimeZone")
+}
+
 func (p *Pool) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	conn, err := p.Conn(ctx)
 	if err != nil {
@@ -156,10 +174,19 @@ func (p *Pool) Conn(ctx context.Context) (*Connection, error) {
 		p.release()
 		return nil, err
 	}
-	return &Connection{
+	c := &Connection{
 		conn:    conn,
 		release: p.release,
-	}, nil
+	}
+	// apply per-request timezone to prevent pool leaking
+	if err := p.applyTimezone(ctx, func(sql string) error {
+		_, err := c.Exec(ctx, sql)
+		return err
+	}); err != nil {
+		_ = c.Close()
+		return nil, fmt.Errorf("set timezone: %w", err)
+	}
+	return c, nil
 }
 
 func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
@@ -170,8 +197,19 @@ func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
 		p.release()
 		return nil, err
 	}
+	// apply per-request timezone on raw driver.Conn BEFORE Arrow wrapping
+	if err := p.applyTimezone(ctx, func(sql string) error {
+		execer := conn.(driver.ExecerContext)
+		_, err := execer.ExecContext(ctx, sql, nil)
+		return err
+	}); err != nil {
+		_ = conn.Close()
+		p.release()
+		return nil, fmt.Errorf("set timezone: %w", err)
+	}
 	arrow, err := duckdb.NewArrowFromConn(conn)
 	if err != nil {
+		_ = conn.Close()
 		p.release()
 		return nil, err
 	}

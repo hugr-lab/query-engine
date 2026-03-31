@@ -6,3 +6,9 @@ design/
 *.duckdb
 *.duckdb.wal
 .DS_Store
+# WIP client code (not yet committed)
+client/app/
+client/applications.go
+internal/airport_test_service/
+internal/duckdb-air/
+internal/test-hugr-app/

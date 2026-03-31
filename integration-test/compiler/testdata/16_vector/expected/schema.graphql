@@ -125,6 +125,47 @@ type DateSubAggregation @system {
   max: DateAggregation
   min: DateAggregation
 }
+"""
+The `DateTime` scalar type represents a naive date-time value WITHOUT timezone, encoded as an RFC 3339 string (e.g. "2006-01-02T15:04:05").
+On input, values are parsed from RFC 3339 strings. On output, values are formatted as RFC 3339 strings.
+SET TimeZone has no effect on DateTime values.
+Filter operators: eq, gt, gte, lt, lte, is_null
+Aggregation functions: count, min, max, list, any, last
+Extra field: Extract (extracts date/time parts such as year, month, day, hour, minute, second)
+"""
+scalar DateTime
+type DateTimeAggregation @system {
+  any: DateTime
+  count: BigInt
+  last: DateTime
+  list(distinct: Boolean = false): [DateTime!]
+  max: DateTime
+  min: DateTime
+}
+input DateTimeFilter @system {
+  eq: DateTime
+  gt: DateTime
+  gte: DateTime
+  is_null: Boolean
+  lt: DateTime
+  lte: DateTime
+}
+input DateTimeListFilter @system {
+  contains: [DateTime!]
+  eq: [DateTime!]
+  intersects: [DateTime!]
+  is_null: Boolean
+}
+enum DateTimeMeasurementAggregation @system {
+  ANY
+  MAX
+  MIN
+}
+type DateTimeSubAggregation @system {
+  count: BigIntAggregation
+  max: DateTimeAggregation
+  min: DateTimeAggregation
+}
 type Document @table(name: "documents") @catalog(name: "docs", engine: "duckdb") @filter_input(name: "Document_filter") @data_input(name: "Document_mut_input_data") @data_input(name: "Document_mut_data") @query(name: "Document", type: SELECT) @query(name: "Document_by_pk", type: SELECT_ONE) @mutation(name: "insert_Document", type: INSERT, data_input: "Document_mut_input_data") @mutation(name: "update_Document", type: UPDATE, data_input: "Document_mut_data") @mutation(name: "delete_Document", type: DELETE, data_input: "") @query(name: "Document_aggregation", type: AGGREGATE) @query(name: "Document_bucket_aggregation", type: AGGREGATE_BUCKET) {
   """
   Calculate distance for vector field embedding

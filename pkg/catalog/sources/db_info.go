@@ -609,8 +609,10 @@ func graphQLType(name string) *ast.Type {
 		return ast.NamedType("Date", pos)
 	case "TIME":
 		return ast.NamedType("Time", pos)
-	case "TIMESTAMP", "DATETIME", "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE":
+	case "TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE":
 		return ast.NamedType("Timestamp", pos)
+	case "TIMESTAMP", "DATETIME":
+		return ast.NamedType("DateTime", pos)
 	case "INTERVAL":
 		return ast.NamedType("Interval", pos)
 	case "JSON":

@@ -119,6 +119,23 @@ func WithJQQueryUrl(jq string) Option {
 	}
 }
 
+func WithTimezone(timezone string) Option {
+	return func(c *ClientConfig) {
+		c.Transport = &timezoneTransport{
+			timezone:  timezone,
+			transport: c.Transport,
+		}
+	}
+}
+
+func WithoutTimezone() Option {
+	return func(c *ClientConfig) {
+		c.Transport = &noTimezoneTransport{
+			transport: c.Transport,
+		}
+	}
+}
+
 func WithArrowStructFlatten() Option {
 	return func(c *ClientConfig) {
 		c.ArrowStructFlatten = true
@@ -149,6 +166,16 @@ func NewClient(url string, opts ...Option) *Client {
 	}
 	if config.Transport == nil {
 		config.Transport = http.DefaultTransport
+	}
+	// Auto-detect timezone if not explicitly set
+	if !hasTimezoneTransport(config.Transport) {
+		localTZ := time.Now().Location().String()
+		if localTZ != "" && localTZ != "Local" {
+			config.Transport = &timezoneTransport{
+				timezone:  localTZ,
+				transport: config.Transport,
+			}
+		}
 	}
 	if config.HttpUrl == "" {
 		config.HttpUrl = strings.TrimSuffix(url, "/ipc") + "/query"
@@ -641,4 +668,53 @@ func (t *tokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return http.DefaultTransport.RoundTrip(req)
 	}
 	return t.transport.RoundTrip(req)
+}
+
+type timezoneTransport struct {
+	timezone  string
+	transport http.RoundTripper
+}
+
+func (t *timezoneTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("X-Hugr-Timezone", t.timezone)
+	if t.transport == nil {
+		return http.DefaultTransport.RoundTrip(req)
+	}
+	return t.transport.RoundTrip(req)
+}
+
+// noTimezoneTransport is a marker to prevent auto-detection of timezone.
+type noTimezoneTransport struct {
+	transport http.RoundTripper
+}
+
+func (t *noTimezoneTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.transport == nil {
+		return http.DefaultTransport.RoundTrip(req)
+	}
+	return t.transport.RoundTrip(req)
+}
+
+// hasTimezoneTransport walks the transport chain and returns true if a
+// timezoneTransport or noTimezoneTransport is already present.
+func hasTimezoneTransport(rt http.RoundTripper) bool {
+	for rt != nil {
+		switch t := rt.(type) {
+		case *timezoneTransport:
+			return true
+		case *noTimezoneTransport:
+			return true
+		case *apiKeyTransport:
+			rt = t.transport
+		case *withUserRoleTransport:
+			rt = t.transport
+		case *withUserInfoTransport:
+			rt = t.transport
+		case *tokenTransport:
+			rt = t.transport
+		default:
+			return false
+		}
+	}
+	return false
 }
