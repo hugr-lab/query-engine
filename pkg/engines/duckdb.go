@@ -31,7 +31,8 @@ var scalarJSONInfo = map[string]jsonTypeInfo{
 	"Float":          {toStructType: "FLOAT", nativeType: "FLOAT"},
 	"Boolean":        {toStructType: "BOOLEAN", nativeType: "BOOLEAN"},
 	"Date":           {toStructType: "DATE", nativeType: "VARCHAR"},
-	"Timestamp":      {toStructType: "TIMESTAMP", nativeType: "VARCHAR"},
+	"Timestamp":      {toStructType: "TIMESTAMPTZ", nativeType: "VARCHAR"},
+	"DateTime":       {toStructType: "TIMESTAMP", nativeType: "VARCHAR"},
 	"Time":           {toStructType: "TIME", nativeType: "VARCHAR"},
 	"Interval":       {toStructType: "INTERVAL", nativeType: "VARCHAR"},
 	"JSON":           {toStructType: "JSON", nativeType: "JSON"},
@@ -116,8 +117,20 @@ func (e *DuckDB) SQLValue(v any) (string, error) {
 	case orb.Geometry:
 		b := wkt.Marshal(v)
 		return fmt.Sprintf("ST_GeomFromText('%s', true)", string(b)), nil
+	case types.DateTime:
+		return fmt.Sprintf("'%s'::TIMESTAMP", time.Time(v).Format("2006-01-02T15:04:05")), nil
 	case time.Time:
-		return fmt.Sprintf("'%s'::TIMESTAMP", v.Format(time.RFC3339)), nil
+		return fmt.Sprintf("'%s'::TIMESTAMPTZ", v.Format(time.RFC3339)), nil
+	case []types.DateTime:
+		var ss []string
+		for _, dt := range v {
+			s, err := e.SQLValue(dt)
+			if err != nil {
+				return "", err
+			}
+			ss = append(ss, s)
+		}
+		return "ARRAY[" + strings.Join(ss, ",") + "]", nil
 	case []time.Time:
 		return SQLValueArrayFormatter(e, v)
 	case time.Duration:
@@ -267,6 +280,23 @@ func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, pa
 	}
 
 	switch value := value.(type) {
+	case types.DateTime:
+		params = append(params, time.Time(value))
+		val := "$" + strconv.Itoa(len(params))
+		switch op {
+		case "eq":
+			return fmt.Sprintf("%s = %s", sqlName, val), params, nil
+		case "gt":
+			return fmt.Sprintf("%s > %s", sqlName, val), params, nil
+		case "gte":
+			return fmt.Sprintf("%s >= %s", sqlName, val), params, nil
+		case "lt":
+			return fmt.Sprintf("%s < %s", sqlName, val), params, nil
+		case "lte":
+			return fmt.Sprintf("%s <= %s", sqlName, val), params, nil
+		default:
+			return "", nil, fmt.Errorf("unsupported filter operator: %s", op)
+		}
 	case bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64,
 		time.Time, time.Duration:
 		params = append(params, value)
@@ -372,7 +402,7 @@ func (e DuckDB) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql 
 			return sql, params, nil
 		}
 		return e.ExtractJSONStruct(sql, s), params, nil
-	case base.TimestampTypeName:
+	case base.TimestampTypeName, base.DateTimeTypeName:
 		return e.TimestampTransform(sql, field, args), params, nil
 	case base.VectorTypeName:
 		return e.VectorTransform(ctx, qe, sql, field, args, params)
@@ -530,6 +560,8 @@ func (e DuckDB) ExtractNestedTypedValue(sql, path, t string) string {
 	case "bool":
 		return "try_cast(" + val + " AS BOOLEAN)"
 	case "timestamp":
+		return "try_cast(" + val + " AS TIMESTAMPTZ)"
+	case "datetime":
 		return "try_cast(" + val + " AS TIMESTAMP)"
 	case "h3string":
 		return fmt.Sprintf("try_cast(h3_string_to_h3(%s))", val)
@@ -551,6 +583,8 @@ func (e DuckDB) ExtractJSONTypedValue(sql, path, t string) string {
 	case "bool":
 		return "try_cast(" + sql + " AS BOOLEAN)"
 	case "timestamp":
+		return "try_cast(" + sql + " AS TIMESTAMPTZ)"
+	case "datetime":
 		return "try_cast(" + sql + " AS TIMESTAMP)"
 	case "h3string":
 		return fmt.Sprintf("try_cast(h3_string_to_h3(%s))", sql)
@@ -830,6 +864,8 @@ func resolveJsonDuckDBType(t string) string {
 	case "bool":
 		return "BOOLEAN"
 	case "timestamp":
+		return "TIMESTAMPTZ"
+	case "datetime":
 		return "TIMESTAMP"
 	case "json":
 		return "JSON"

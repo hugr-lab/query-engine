@@ -23,7 +23,36 @@ func timeFuncs() []gojq.CompilerOption {
 			if err != nil {
 				return err
 			}
-			return t.Unix()
+			return int(t.Unix())
+		}),
+		gojq.WithFunction("fromUnixTime", 0, 1, func(a1 any, a2 []any) any {
+			if a1 == nil {
+				return ErrInvalidFunctionParam
+			}
+			var ts float64
+			switch v := a1.(type) {
+			case int:
+				ts = float64(v)
+			case float64:
+				ts = v
+			default:
+				return fmt.Errorf("fromUnixTime: expected number, got %T", a1)
+			}
+			sec := int64(ts)
+			ns := int64((ts - float64(sec)) * float64(time.Second))
+			t := time.Unix(sec, ns).UTC()
+			if len(a2) == 1 {
+				tzStr, ok := a2[0].(string)
+				if !ok {
+					return ErrInvalidFunctionParam
+				}
+				loc, err := time.LoadLocation(tzStr)
+				if err != nil {
+					return fmt.Errorf("fromUnixTime: invalid timezone: %v", err)
+				}
+				t = t.In(loc)
+			}
+			return t
 		}),
 		gojq.WithFunction("roundTime", 1, 2, func(a1 any, a2 []any) any {
 			if len(a2) < 1 || len(a2) > 2 {
@@ -194,6 +223,43 @@ func timeFuncs() []gojq.CompilerOption {
 				return t.YearDay()
 			default:
 				return fmt.Errorf("invalid part for datePart: %s", part)
+			}
+		}),
+		gojq.WithFunction("timeDiff", 1, 3, func(a1 any, a2 []any) any {
+			if len(a2) < 1 || len(a2) > 2 {
+				return ErrInvalidFunctionParam
+			}
+			t1, err := parseTime(a1, nil)
+			if err != nil {
+				return err
+			}
+			t2, err := parseTime(a2[0], nil)
+			if err != nil {
+				return err
+			}
+			if len(a2) == 1 {
+				return t1.Sub(t2).String()
+			}
+			part, ok := a2[1].(string)
+			if !ok {
+				return ErrInvalidFunctionParam
+			}
+			diff := t1.Sub(t2)
+			switch part {
+			case "seconds":
+				return int(diff.Seconds())
+			case "minutes":
+				return int(diff.Minutes())
+			case "hours":
+				return int(diff.Hours())
+			case "days":
+				return int(diff.Hours() / 24)
+			case "months":
+				return (t1.Year()-t2.Year())*12 + int(t1.Month()) - int(t2.Month())
+			case "years":
+				return t1.Year() - t2.Year()
+			default:
+				return fmt.Errorf("invalid part for timeDiff: %s", part)
 			}
 		}),
 	}

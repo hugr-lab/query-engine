@@ -23,6 +23,7 @@ func corsMiddleware(c CorsConfig) func(next http.Handler) http.Handler {
 			"Content-Type", "Authorization", "x-api-key",
 			"Accept", "Content-Length", "Accept-Encoding",
 			"X-CSRF-Token",
+			"X-Hugr-Timezone", "Time-Zone",
 		}
 	}
 	if len(c.CorsAllowedMethods) == 0 {

@@ -55,6 +55,7 @@ func initEnvs() {
 	viper.SetDefault("DB_PATH", "")
 	viper.SetDefault("DB_MAX_OPEN_CONNS", 0)
 	viper.SetDefault("DB_MAX_IDLE_CONNS", 0)
+	viper.SetDefault("DB_TIMEZONE", "")
 	viper.SetDefault("SCHEMA_CACHE_MAX_ENTRIES", 0)
 	viper.SetDefault("SCHEMA_CACHE_TTL", "0s")
 	viper.SetDefault("MCP_ENABLED", false)
@@ -89,6 +90,7 @@ func loadConfig() Config {
 			MaxOpenConns: viper.GetInt("DB_MAX_OPEN_CONNS"),
 			MaxIdleConns: viper.GetInt("DB_MAX_IDLE_CONNS"),
 			Settings: db.Settings{
+				Timezone:             viper.GetString("DB_TIMEZONE"),
 				HomeDirectory:        viper.GetString("DB_HOME_DIRECTORY"),
 				AllowedDirectories:   viper.GetStringSlice("DB_ALLOWED_DIRECTORIES"),
 				AllowedPaths:         viper.GetStringSlice("DB_ALLOWED_PATHS"),

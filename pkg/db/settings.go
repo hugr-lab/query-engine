@@ -6,6 +6,7 @@ import (
 )
 
 type Settings struct {
+	Timezone             string   `json:"timezone"` // IANA timezone name (e.g., "Europe/Moscow")
 	AllowedDirectories   []string `json:"allowed_directories"`
 	AllowedPaths         []string `json:"allowed_paths"`
 	EnableLogging        bool     `json:"enable_logging"`
@@ -28,6 +29,10 @@ type Settings struct {
 
 func (s Settings) applySQL() string {
 	var sql []string
+
+	if s.Timezone != "" {
+		sql = append(sql, fmt.Sprintf("SET TimeZone = '%s';", s.Timezone))
+	}
 
 	if len(s.AllowedDirectories) != 0 {
 		sql = append(sql, "SET allowed_directories = "+sqlStringArray(s.AllowedDirectories)+";")

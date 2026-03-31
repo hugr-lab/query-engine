@@ -1,7 +1,7 @@
 package types
 
 func init() {
-	// Core scalars (11)
+	// Core scalars (12)
 	Register(&stringScalar{})
 	Register(&intScalar{})
 	Register(&floatScalar{})
@@ -9,6 +9,7 @@ func init() {
 	Register(&bigIntScalar{})
 	Register(&dateScalar{})
 	Register(&timestampScalar{})
+	Register(&datetimeScalar{})
 	Register(&timeScalar{})
 	Register(&intervalScalar{})
 	Register(&jsonScalar{})

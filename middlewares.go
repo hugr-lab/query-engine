@@ -10,6 +10,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/types"
 )
@@ -51,6 +52,8 @@ func (s *Service) middlewares() func(next http.Handler) http.Handler {
 	if s.perm != nil {
 		mm = append(mm, s.checkEndpointPermissionsMW)
 	}
+	// timezone
+	mm = append(mm, timezoneMW)
 	// compress
 	mm = append(mm, compressMW)
 
@@ -104,6 +107,21 @@ func (s *Service) checkEndpointPermissionsMW(next http.Handler) http.Handler {
 			}
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func timezoneMW(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tz := r.Header.Get("X-Hugr-Timezone")
+		if tz == "" {
+			tz = r.Header.Get("Time-Zone")
+		}
+		if tz != "" {
+			ctx := db.ContextWithTimezone(r.Context(), tz)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

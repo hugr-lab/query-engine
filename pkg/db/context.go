@@ -10,6 +10,21 @@ type contextTxKey string
 
 var txKey contextTxKey = "contextTx"
 
+type timezoneKey struct{}
+
+// ContextWithTimezone returns a new context with the given IANA timezone identifier.
+func ContextWithTimezone(ctx context.Context, tz string) context.Context {
+	return context.WithValue(ctx, timezoneKey{}, tz)
+}
+
+// TimezoneFromCtx extracts the timezone identifier from the context, or returns "" if not set.
+func TimezoneFromCtx(ctx context.Context) string {
+	if tz, ok := ctx.Value(timezoneKey{}).(string); ok {
+		return tz
+	}
+	return ""
+}
+
 type txContext struct {
 	*Connection
 	tx    *sql.Tx

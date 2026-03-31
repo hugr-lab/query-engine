@@ -89,8 +89,10 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 	case orb.Geometry:
 		b := wkt.Marshal(v)
 		return fmt.Sprintf("ST_GeomFromText('%s')", b), nil
+	case types.DateTime:
+		return fmt.Sprintf("'%s'::TIMESTAMP", time.Time(v).Format("2006-01-02T15:04:05")), nil
 	case time.Time:
-		return fmt.Sprintf("'%s'::TIMESTAMP", v.Format(time.RFC3339)), nil
+		return fmt.Sprintf("'%s'::TIMESTAMPTZ", v.Format(time.RFC3339)), nil
 	case []time.Time:
 		return SQLValueArrayFormatter(e, v)
 	case time.Duration:
@@ -317,6 +319,23 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 		return fmt.Sprintf("%s IS NOT NULL", sqlName), params, nil
 	}
 	switch value := value.(type) {
+	case types.DateTime:
+		params = append(params, time.Time(value))
+		val := "$" + strconv.Itoa(len(params))
+		switch op {
+		case "eq":
+			return fmt.Sprintf("%s = %s", sqlName, val), params, nil
+		case "gt":
+			return fmt.Sprintf("%s > %s", sqlName, val), params, nil
+		case "gte":
+			return fmt.Sprintf("%s >= %s", sqlName, val), params, nil
+		case "lt":
+			return fmt.Sprintf("%s < %s", sqlName, val), params, nil
+		case "lte":
+			return fmt.Sprintf("%s <= %s", sqlName, val), params, nil
+		default:
+			return "", nil, fmt.Errorf("unsupported filter operator: %s", op)
+		}
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool,
 		time.Time, time.Duration:
 		params = append(params, value)
@@ -679,7 +698,7 @@ func (e Postgres) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sq
 			return sql, params, nil
 		}
 		return e.ExtractJSONStruct(sql, s), params, nil
-	case base.TimestampTypeName:
+	case base.TimestampTypeName, base.DateTimeTypeName:
 		return e.TimestampTransform(sql, field, args), params, nil
 	case base.VectorTypeName:
 		return e.VectorTransform(ctx, qe, sql, field, args, params)
@@ -862,7 +881,9 @@ func (e Postgres) ExtractNestedTypedValue(sql, path, t string) string {
 	case "bool":
 		return fmt.Sprintf("(%s)::BOOL", e.extractJsonTypedValue(sql, "bool"))
 	case "timestamp":
-		return fmt.Sprintf("(%s)::TIMESTAMP", e.extractJsonTypedValue(sql, "timestamp"))
+		return fmt.Sprintf("(%s)::TIMESTAMPTZ", e.extractJsonTypedValue(sql, "timestamp"))
+	case "datetime":
+		return fmt.Sprintf("(%s)::TIMESTAMP", e.extractJsonTypedValue(sql, "datetime"))
 	case "":
 		return sql
 	default:
@@ -882,7 +903,7 @@ func (e *Postgres) extractJsonTypedValue(field, typeName string) string {
 		return fmt.Sprintf(stringExtractJSONTemplate, field)
 	case "bool":
 		return fmt.Sprintf(boolExtractJSONTemplate, field)
-	case "timestamp":
+	case "timestamp", "datetime":
 		return fmt.Sprintf(timeExtractJSONTemplate, field)
 	case "json":
 		return field
