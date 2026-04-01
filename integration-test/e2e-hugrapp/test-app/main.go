@@ -194,10 +194,23 @@ func (a *TestApp) Catalog(ctx context.Context) (catalog.Catalog, error) {
 	}
 
 	mux.HandleTableFunc("admin", "audit", func(w *app.Result, r *app.Request) error {
-		w.Append(int64(1), "login", "admin_user")
-		w.Append(int64(2), "export", "analyst")
+		limit := r.Int64("limit")
+		if limit <= 0 {
+			limit = 100
+		}
+		data := [][]any{
+			{int64(1), "login", "admin_user"},
+			{int64(2), "export", "analyst"},
+		}
+		for i, row := range data {
+			if int64(i) >= limit {
+				break
+			}
+			w.Append(row...)
+		}
 		return nil
-	}, app.ColPK("id", app.Int64), app.Col("action", app.String), app.Col("user_name", app.String))
+	}, app.Arg("limit", app.Int64),
+		app.ColPK("id", app.Int64), app.Col("action", app.String), app.Col("user_name", app.String))
 
 	return mux, nil
 }
