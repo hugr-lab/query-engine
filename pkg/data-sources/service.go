@@ -144,14 +144,18 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 	}
 
 	// Provision external resources (app databases) if source supports it.
+	// Unlock mutex during provisioning — it makes GraphQL queries via Querier
+	// which may need to access the data source service (deadlock otherwise).
 	if p, ok := ds.(Provisioner); ok && s.qe != nil {
-		if err := p.Provision(ctx, s.qe); err != nil {
-			slog.Error("provisioning failed", "source", name, "error", err)
-			// fatal and rollback detach if provisioning fails, to avoid leaving the source in a bad state.
+		s.mu.Unlock()
+		provErr := p.Provision(ctx, s.qe)
+		s.mu.Lock()
+		if provErr != nil {
+			slog.Error("provisioning failed", "source", name, "error", provErr)
 			if err := ds.Detach(ctx, s.db); err != nil {
 				slog.Error("failed to rollback attach after provisioning failure", "source", name, "error", err)
 			}
-			return fmt.Errorf("provisioning failed: %w", err)
+			return fmt.Errorf("provisioning failed: %w", provErr)
 		}
 	}
 
