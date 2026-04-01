@@ -86,6 +86,58 @@ run_test "app DS with HugrSchema (custom SDL)" \
     '"payload"'
 
 echo ""
+echo "--- Lifecycle tests ---"
+echo ""
+
+# === Graceful shutdown ===
+echo "Stopping test-app gracefully (SIGTERM)..."
+docker compose stop test-app 2>/dev/null
+sleep 3
+
+run_test "after graceful stop: app not queryable" \
+    '{ function { test_app { add(a: 1, b: 2) } } }' \
+    'error'
+
+# DS should still be accessible (data persists)
+run_test "after stop: app DS still accessible" \
+    '{ test_app { store { events { id } } } }' \
+    '"id"'
+
+# === Restart with same version ===
+echo "Restarting test-app (same version)..."
+docker compose start test-app 2>/dev/null
+sleep 12  # wait for registration + load
+
+run_test "after restart: app function works" \
+    '{ function { test_app { add(a: 10, b: 20) } } }' \
+    '"add":30'
+
+run_test "after restart: app DS still works" \
+    '{ test_app { store { events { id event_type } } } }' \
+    '"event_type":"app_start"'
+
+# === Version upgrade (v2) — tests cleanup + re-registration ===
+echo "Stopping test-app for version upgrade..."
+docker compose stop test-app 2>/dev/null
+sleep 3
+
+echo "Starting test-app v2..."
+APP_VERSION=2.0.0 docker compose up -d test-app 2>/dev/null
+sleep 12  # wait for registration + cleanup + re-provision
+
+run_test "after v2 upgrade: app function works" \
+    '{ function { test_app { add(a: 100, b: 200) } } }' \
+    '"add":300'
+
+run_test "after v2 upgrade: app DS re-provisioned" \
+    '{ test_app { store { events { id event_type } } } }' \
+    '"event_type"'
+
+run_test "after v2 upgrade: admin module works" \
+    '{ function { test_app { admin { user_count } } } }' \
+    '"user_count":99'
+
+echo ""
 echo "Results: $PASS passed, $FAIL failed"
 echo ""
 
