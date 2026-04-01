@@ -123,36 +123,106 @@ func provisionOne(
 		}
 	}
 
-	// Register and load via GraphQL API
-	prefix := strings.ReplaceAll(fullName, ".", "_")
-	registerQuery := fmt.Sprintf(`mutation {
-		core {
-			insert_data_sources(data: {
-				name: %q
-				type: %q
-				description: %q
-				prefix: %q
-				path: %q
-				as_module: true
-				self_defined: true
-				read_only: %t
-			}) { name }
+	// Check if DS already exists and its status via GraphQL
+	status, exists := queryDataSourceStatus(ctx, querier, fullName)
+
+	switch {
+	case !exists:
+		// Not registered — register and load
+		slog.Info("registering new app DS", "ds", fullName)
+		prefix := strings.ReplaceAll(fullName, ".", "_")
+		registerQuery := fmt.Sprintf(`mutation {
+			core {
+				insert_data_sources(data: {
+					name: %q
+					type: %q
+					description: %q
+					prefix: %q
+					path: %q
+					as_module: true
+					self_defined: true
+					read_only: %t
+				}) { name }
+			}
+		}`, fullName, dsInfo.Type, dsInfo.Description, prefix, dsInfo.Path, dsInfo.ReadOnly)
+
+		if _, err := querier.Query(ctx, registerQuery, nil); err != nil {
+			return fmt.Errorf("register DS %s: %w", fullName, err)
 		}
-	}`, fullName, dsInfo.Type, dsInfo.Description, prefix, dsInfo.Path, dsInfo.ReadOnly)
+		if err := loadDataSource(ctx, querier, fullName); err != nil {
+			return fmt.Errorf("load DS %s after register: %w", fullName, err)
+		}
 
-	if _, err := querier.Query(ctx, registerQuery, nil); err != nil {
-		slog.Debug("register DS via GraphQL (may already exist)", "ds", fullName, "error", err)
-	}
+	case status == "loaded":
+		// Already registered and loaded — nothing to do
+		slog.Info("app DS already loaded", "ds", fullName)
 
-	loadQuery := fmt.Sprintf(`mutation {
-		function { core { load_data_source(name: %q) { success message } } }
-	}`, fullName)
-
-	if _, err := querier.Query(ctx, loadQuery, nil); err != nil {
-		slog.Warn("load DS via GraphQL failed", "ds", fullName, "error", err)
+	default:
+		// Registered but not loaded (unloaded/error) — load it
+		slog.Info("loading existing app DS", "ds", fullName, "status", status)
+		if err := loadDataSource(ctx, querier, fullName); err != nil {
+			return fmt.Errorf("load DS %s: %w", fullName, err)
+		}
 	}
 
 	return nil
+}
+
+// queryDataSourceStatus checks if a data source exists and returns its status.
+func queryDataSourceStatus(ctx context.Context, querier Querier, name string) (status string, exists bool) {
+	q := fmt.Sprintf(`{
+		function { core { data_source_status(name: %q) } }
+	}`, name)
+
+	resp, err := querier.Query(ctx, q, nil)
+	if err != nil || resp == nil {
+		return "", false
+	}
+
+	// Navigate response: data.function.core.data_source_status
+	data, ok := resp.Data["data"]
+	if !ok {
+		return "", false
+	}
+	dataMap, ok := data.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	fn, ok := dataMap["function"]
+	if !ok {
+		return "", false
+	}
+	fnMap, ok := fn.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	core, ok := fnMap["core"]
+	if !ok {
+		return "", false
+	}
+	coreMap, ok := core.(map[string]any)
+	if !ok {
+		return "", false
+	}
+	s, ok := coreMap["data_source_status"]
+	if !ok || s == nil {
+		return "", false
+	}
+	statusStr, ok := s.(string)
+	if !ok {
+		return "", false
+	}
+	return statusStr, true
+}
+
+// loadDataSource loads a data source via GraphQL mutation.
+func loadDataSource(ctx context.Context, querier Querier, name string) error {
+	q := fmt.Sprintf(`mutation {
+		function { core { load_data_source(name: %q) { success message } } }
+	}`, name)
+
+	_, err := querier.Query(ctx, q, nil)
+	return err
 }
 
 func initSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource *Source, dsInfo DataSourceInfo) error {
