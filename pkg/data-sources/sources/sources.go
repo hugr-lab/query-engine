@@ -23,6 +23,7 @@ const (
 	Airport  types.DataSourceType = "airport"
 	DuckLake types.DataSourceType = "ducklake"
 	Iceberg  types.DataSourceType = "iceberg"
+	HugrApp  types.DataSourceType = "hugr-app"
 )
 
 type Source interface {

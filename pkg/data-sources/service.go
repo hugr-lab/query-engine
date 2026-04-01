@@ -15,6 +15,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/extension"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/http"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/hugrapp"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/iceberg"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mssql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
@@ -229,6 +230,8 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 		return ducklake.New(ds, attached)
 	case Iceberg:
 		return iceberg.New(ds, attached)
+	case HugrApp:
+		return hugrapp.New(ds, attached)
 	default:
 		return nil, ErrUnknownDataSourceType
 	}
