@@ -157,14 +157,14 @@ func (c *Client) RunApplication(ctx context.Context, application app.Application
 		res, err := c.Query(ctx,
 			`query($name: String!) { core { data_sources_by_pk(name: $name) { type path } } }`,
 			map[string]any{"name": info.Name})
-		if err == nil && errors.Is(err, types.ErrNoData) {
-			slog.Error("check registered datasources:", err.Error())
+		if err != nil {
+			slog.Error("check registered datasources:", "err", err.Error())
 			cancel()
 			return
 		}
 		defer res.Close()
 		if len(res.Errors) != 0 {
-			slog.Error("check registered datasources:", err.Error())
+			slog.Error("check registered datasources:", "err", res.Errors)
 			cancel()
 			return
 		}

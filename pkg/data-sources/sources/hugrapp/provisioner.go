@@ -133,9 +133,11 @@ func registerAppDataSource(ctx context.Context, querier Querier, fullName string
 	registerQuery := `mutation($data: core_data_sources_mut_input_data!) {
 		core { insert_data_sources(data: $data) { name } }
 	}`
-	if _, err := querier.Query(ctx, registerQuery, map[string]any{"data": data}); err != nil {
+	resp, err := querier.Query(ctx, registerQuery, map[string]any{"data": data})
+	if err != nil {
 		return fmt.Errorf("register DS %s: %w", fullName, err)
 	}
+	resp.Close()
 
 	return nil
 }
@@ -209,7 +211,10 @@ func unloadDataSource(ctx context.Context, querier Querier, name string) error {
 	q := `mutation($name: String!) {
 		function { core { unload_data_source(name: $name) { success message } } }
 	}`
-	_, err := querier.Query(ctx, q, map[string]any{"name": name})
+	resp, err := querier.Query(ctx, q, map[string]any{"name": name})
+	if resp != nil {
+		resp.Close()
+	}
 	return err
 }
 
@@ -218,7 +223,10 @@ func loadDataSource(ctx context.Context, querier Querier, name string) error {
 	q := `mutation($name: String!) {
 		function { core { load_data_source(name: $name) { success message } } }
 	}`
-	_, err := querier.Query(ctx, q, map[string]any{"name": name})
+	resp, err := querier.Query(ctx, q, map[string]any{"name": name})
+	if resp != nil {
+		resp.Close()
+	}
 	return err
 }
 
@@ -306,8 +314,12 @@ func cleanupAppDataSources(ctx context.Context, querier Querier, appName string)
 		return err
 	}
 	if resp == nil || len(resp.Errors) != 0 {
+		if resp != nil {
+			resp.Close()
+		}
 		return nil
 	}
+	defer resp.Close()
 
 	var ds []struct {
 		Name string `json:"name"`
@@ -328,7 +340,11 @@ func cleanupAppDataSources(ctx context.Context, querier Querier, appName string)
 				delete_catalogs(filter: { name: { like: $name } }) { success } }
 			}
 		}`
-	if _, err := querier.Query(ctx, delQ, map[string]any{"name": pattern}); err != nil {
+	delResp, err := querier.Query(ctx, delQ, map[string]any{"name": pattern})
+	if delResp != nil {
+		delResp.Close()
+	}
+	if err != nil {
 		slog.Warn("failed to delete app DS", "hugr-app", pattern, "error", err)
 	}
 
