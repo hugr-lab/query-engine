@@ -154,33 +154,53 @@ func (c *Client) RunApplication(ctx context.Context, application app.Application
 		}
 
 		// Check if already registered
-		status, statusErr := c.DataSourceStatus(ctx, info.Name)
-		if statusErr == nil && status != "" {
-			// Already registered — check type matches
-			resp, qErr := c.Query(ctx,
-				`query($name: String!) { core { data_sources(filter: { name: { eq: $name } }) { type path } } }`,
-				map[string]any{"name": info.Name})
-			if qErr == nil && resp != nil {
-				var existing []struct {
-					Type string `json:"type"`
-					Path string `json:"path"`
-				}
-				if err := resp.ScanData("core.data_sources", &existing); err == nil && len(existing) > 0 {
-					if existing[0].Type != "hugr-app" {
-						slog.Error("data source type mismatch", "name", info.Name, "expected", "hugr-app", "got", existing[0].Type)
-						cancel()
-						return
-					}
-					// Update path if changed (app migrated to different host)
-					if existing[0].Path != path {
-						slog.Info("updating data source path", "name", info.Name, "old", existing[0].Path, "new", path)
-						_, _ = c.Query(ctx,
-							`mutation($name: String!, $path: String!) { core { update_data_sources(filter: { name: { eq: $name } }, data: { path: $path }) { name } } }`,
-							map[string]any{"name": info.Name, "path": path})
-					}
-				}
+		res, err := c.Query(ctx,
+			`query($name: String!) { core { data_sources_by_pk(name: $name) { type path } } }`,
+			map[string]any{"name": info.Name})
+		if err == nil && errors.Is(err, types.ErrNoData) {
+			slog.Error("check registered datasources:", err.Error())
+			cancel()
+			return
+		}
+		defer res.Close()
+		if len(res.Errors) != 0 {
+			slog.Error("check registered datasources:", err.Error())
+			cancel()
+			return
+		}
+
+		var existing struct {
+			Type string `json:"type"`
+			Path string `json:"path"`
+		}
+		err = res.ScanData("core.data_sources_by_pk", &existing)
+		if err != nil && !errors.Is(err, types.ErrNoData) {
+			slog.Error("check registered datasources:", "error", err)
+			cancel()
+			return
+		}
+		if !errors.Is(err, types.ErrNoData) {
+			if existing.Type != "hugr-app" {
+				slog.Error("data source type mismatch", "name", info.Name, "expected", "hugr-app", "got", existing.Type)
+				cancel()
+				return
 			}
-		} else {
+			// Update path if changed (app migrated to different host)
+			if existing.Path != path {
+				slog.Info("updating data source path", "name", info.Name, "old", existing.Path, "new", path)
+				res, err := c.Query(ctx,
+					`mutation($name: String!, $path: String!) { core { update_data_sources(filter: { name: { eq: $name } }, data: { path: $path }) { success } } }`,
+					map[string]any{"name": info.Name, "path": path})
+				if err != nil {
+					slog.Error("failed to update data source path", "error", err)
+					cancel()
+					res.Close()
+					return
+				}
+				res.Close()
+			}
+		}
+		if errors.Is(err, types.ErrNoData) {
 			// Not registered — register new
 			ds := types.DataSource{
 				Name:        info.Name,
@@ -558,8 +578,10 @@ type schemaSdlFunc struct {
 	app app.Application
 }
 
-func (a *schemaSdlFunc) Name() string    { return "schema_sdl" }
-func (a *schemaSdlFunc) Comment() string { return "Returns the full GraphQL SDL for this application's catalog." }
+func (a *schemaSdlFunc) Name() string { return "schema_sdl" }
+func (a *schemaSdlFunc) Comment() string {
+	return "Returns the full GraphQL SDL for this application's catalog."
+}
 
 func (a *schemaSdlFunc) Signature() catalog.FunctionSignature {
 	return catalog.FunctionSignature{
