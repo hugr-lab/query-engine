@@ -293,7 +293,6 @@ func newAppCatalog(ctx context.Context, mem memory.Allocator, app app.Applicatio
 	}
 	return &appCatalog{
 		Catalog:     cat,
-		name:        app.Info().Name,
 		mountSchema: mount,
 	}, nil
 }
@@ -314,16 +313,9 @@ func (a *appAuth) Authenticate(ctx context.Context, token string) (identity stri
 
 type appCatalog struct {
 	catalog.Catalog
-	name        string
 	mountSchema *appMountSchema
 	version     uint64
 }
-
-// Name implements [catalog.NamedCatalog].
-// Returns the app name so Airport ATTACH AS <name> works correctly.
-func (a *appCatalog) Name() string { return a.name }
-
-var _ catalog.NamedCatalog = (*appCatalog)(nil)
 
 // CatalogVersion implements [catalog.VersionedCatalog].
 func (a *appCatalog) CatalogVersion(ctx context.Context) (catalog.CatalogVersion, error) {

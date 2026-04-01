@@ -3,6 +3,7 @@ package hugrapp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -150,7 +151,9 @@ func (s *Source) Provision(ctx context.Context, querier sources.Querier) error {
 	}
 	tmplParams, err := queryTemplateParams(ctx, querier)
 	if err != nil {
-		return err
+		// Non-fatal: use defaults if embedder_settings not available
+		slog.Warn("failed to query template params, using defaults", "app", s.Name(), "error", err)
+		tmplParams = TemplateParams{}
 	}
 	return ProvisionDataSources(ctx, s.pool, s, querier, tmplParams)
 }
