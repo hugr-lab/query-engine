@@ -372,14 +372,15 @@ func (p *Provider) upsertField(ctx context.Context, conn *Connection, typeName s
 		 VALUES ($1, $2, $3, $4, $5, '', $6, $7, $8, $9, $10, false, $11, $12)
 		 ON CONFLICT (type_name, name) DO UPDATE SET
 		   field_type=$3, field_type_name=$4,
-		   description = CASE WHEN $5 != '' THEN $5 ELSE %s.description END,
-		   long_description = CASE WHEN $5 != '' THEN '' ELSE %s.long_description END,
-		   hugr_type = CASE WHEN %s.catalog = '_system' THEN %s.hugr_type ELSE $6 END,
-		   catalog = CASE WHEN %s.catalog = '_system' OR $6 = 'submodule' THEN %s.catalog ELSE $7 END,
-		   dependency_catalog=$8, directives=$9, is_pk=$10,
-		   is_summarized = CASE WHEN $5 != '' THEN false ELSE %s.is_summarized END,
+		   description = CASE WHEN $5 != '' THEN $5 ELSE %[1]s.description END,
+		   long_description = CASE WHEN $5 != '' THEN '' ELSE %[1]s.long_description END,
+		   hugr_type = CASE WHEN %[1]s.catalog = '_system' THEN %[1]s.hugr_type ELSE $6 END,
+		   catalog = CASE WHEN %[1]s.catalog = '_system' OR $6 = 'submodule' THEN %[1]s.catalog ELSE $7 END,
+		   dependency_catalog=CASE WHEN %[1]s.catalog = '_system' OR $6 = 'submodule' THEN NULL ELSE $8 END,
+		   directives=$9, is_pk=$10,
+		   is_summarized = CASE WHEN $5 != '' THEN false ELSE %[1]s.is_summarized END,
 		   vec=$11, ordinal=$12`,
-		tbl, tbl, tbl, tbl, tbl, tbl, tbl, tbl,
+		tbl,
 	), typeName, field.Name, fieldType, fieldTypeName, field.Description, hugrType, catalogName, nullStr(depCatalog), string(dirJSON), isPK, vec, ordinal)
 	return err
 }

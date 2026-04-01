@@ -363,12 +363,7 @@ func (p *Provider) SuspendCatalog(ctx context.Context, name string) error {
 }
 
 // ReactivateCatalog re-compiles and re-applies a previously suspended catalog with a fresh source.
-func (p *Provider) ReactivateCatalog(ctx context.Context, name string, cat catalog.Catalog) error {
-	source, ok := cat.(sources.Catalog)
-	if !ok {
-		return fmt.Errorf("reactivate catalog %s: source does not implement sources.Catalog", name)
-	}
-
+func (p *Provider) ReactivateCatalog(ctx context.Context, name string, source catalog.Catalog) error {
 	deps, err := p.compileAndApply(ctx, name, source)
 	if err != nil {
 		return fmt.Errorf("reactivate catalog %s: %w", name, err)
