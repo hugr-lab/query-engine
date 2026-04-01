@@ -52,14 +52,19 @@ func ProvisionDataSources(
 	querier Querier,
 	tmplParams TemplateParams,
 ) error {
+	ctx = db.ClearTxContext(ctx)
 	dataSources, err := readMountDataSources(ctx, pool, appSource.Name())
 	if err != nil {
 		return fmt.Errorf("provision: read data_sources: %w", err)
 	}
-
 	if len(dataSources) == 0 {
 		return nil
 	}
+	ctx, err = pool.WithTx(ctx)
+	if err != nil {
+		return fmt.Errorf("provision: start transaction: %w", err)
+	}
+	defer pool.Rollback(ctx)
 
 	appName := appSource.Name()
 
@@ -96,7 +101,7 @@ func ProvisionDataSources(
 		}
 	}
 
-	return nil
+	return pool.Commit(ctx)
 }
 
 // registerAppDataSource registers a new data source in hugr via GraphQL.
