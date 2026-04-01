@@ -66,6 +66,11 @@ func ProvisionDataSources(
 
 	appName := appSource.Name()
 
+	// Clean up stale DS registrations — unload, delete from data_sources/catalog_sources/catalogs
+	if err := cleanupAppDataSources(ctx, querier, appName); err != nil {
+		slog.Warn("cleanup app data sources failed (non-fatal)", "app", appName, "error", err)
+	}
+
 	for _, dsInfo := range dataSources {
 		fullName := appName + "." + dsInfo.Name
 
@@ -149,11 +154,13 @@ func registerAppDataSource(ctx context.Context, querier Querier, fullName string
 		if err != nil {
 			return fmt.Errorf("template SDL for %s: %w", fullName, err)
 		}
-		data["catalogs"] = []map[string]any{{
-			"name": fullName,
-			"type": "text",
-			"path": sdl,
-		}}
+		data["catalogs"] = []any{
+			map[string]any{
+				"name": fullName,
+				"type": "text",
+				"path": sdl,
+			},
+		}
 	}
 
 	registerQuery := `mutation($data: core_data_sources_mut_input_data!) {
@@ -364,4 +371,41 @@ func migrateSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource
 	}
 
 	return tx.Commit()
+}
+
+// cleanupAppDataSources finds all DS registered for this app (name LIKE 'appName.%'),
+// unloads loaded ones, and deletes from data_sources (cascade removes catalog_sources link).
+func cleanupAppDataSources(ctx context.Context, querier Querier, appName string) error {
+	pattern := appName + ".%"
+	q := `query($pattern: String!) {
+		core { data_sources(filter: { name: { like: $pattern } }) { name } }
+	}`
+	resp, err := querier.Query(ctx, q, map[string]any{"pattern": pattern})
+	if err != nil {
+		return err
+	}
+	if resp == nil || len(resp.Errors) != 0 {
+		return nil
+	}
+
+	var ds []struct {
+		Name string `json:"name"`
+	}
+	if err := resp.ScanData("core.data_sources", &ds); err != nil || len(ds) == 0 {
+		return nil
+	}
+
+	for _, d := range ds {
+		slog.Info("cleaning up app DS", "app", appName, "ds", d.Name)
+		_ = unloadDataSource(ctx, querier, d.Name)
+
+		delQ := `mutation($name: String!) {
+			core { delete_data_sources(filter: { name: { eq: $name } }) { name } }
+		}`
+		if _, err := querier.Query(ctx, delQ, map[string]any{"name": d.Name}); err != nil {
+			slog.Warn("failed to delete app DS", "ds", d.Name, "error", err)
+		}
+	}
+
+	return nil
 }
