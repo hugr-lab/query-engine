@@ -94,41 +94,11 @@ func provisionOne(
 		return fmt.Errorf("create _hugr_app_meta in %s: %w", fullName, err)
 	}
 
-	// Check current version
-	var currentVersion string
-	err = pgConn.QueryRowContext(ctx,
-		"SELECT version FROM _hugr_app_meta WHERE app_name = $1",
-		appSource.Name(),
-	).Scan(&currentVersion)
-
-	switch {
-	case err == sql.ErrNoRows:
-		// First time — initialize schema
-		slog.Info("initializing schema for app DS", "ds", fullName, "version", dsInfo.Version)
-		if err := initSchema(ctx, pool, pgConn, appSource, dsInfo); err != nil {
-			return err
-		}
-
-	case err != nil:
-		return fmt.Errorf("check version for %s: %w", fullName, err)
-
-	case currentVersion == dsInfo.Version:
-		slog.Info("app DS schema up to date", "ds", fullName, "version", currentVersion)
-
-	default:
-		// Version mismatch — migrate
-		slog.Info("migrating app DS schema", "ds", fullName, "from", currentVersion, "to", dsInfo.Version)
-		if err := migrateSchema(ctx, pool, pgConn, appSource, dsInfo, currentVersion); err != nil {
-			return err
-		}
-	}
-
-	// Check if DS already exists and its status via GraphQL
+	// 1. Check if DS already registered in hugr and its status
 	status, exists := queryDataSourceStatus(ctx, querier, fullName)
 
-	switch {
-	case !exists:
-		// Not registered — register and load
+	// 2. Register in hugr if not exists
+	if !exists {
 		slog.Info("registering new app DS", "ds", fullName)
 		prefix := strings.ReplaceAll(fullName, ".", "_")
 		registerQuery := fmt.Sprintf(`mutation {
@@ -149,17 +119,48 @@ func provisionOne(
 		if _, err := querier.Query(ctx, registerQuery, nil); err != nil {
 			return fmt.Errorf("register DS %s: %w", fullName, err)
 		}
-		if err := loadDataSource(ctx, querier, fullName); err != nil {
-			return fmt.Errorf("load DS %s after register: %w", fullName, err)
-		}
+	}
 
-	case status == "loaded":
-		// Already registered and loaded — nothing to do
-		slog.Info("app DS already loaded", "ds", fullName)
+	// 3. Check DB schema version
+	var currentVersion string
+	err = pgConn.QueryRowContext(ctx,
+		"SELECT version FROM _hugr_app_meta WHERE app_name = $1",
+		appSource.Name(),
+	).Scan(&currentVersion)
+
+	needsReload := false
+
+	switch {
+	case err == sql.ErrNoRows:
+		// First time — initialize schema
+		slog.Info("initializing schema for app DS", "ds", fullName, "version", dsInfo.Version)
+		if err := initSchema(ctx, pool, pgConn, appSource, dsInfo); err != nil {
+			return err
+		}
+		needsReload = true
+
+	case err != nil:
+		return fmt.Errorf("check version for %s: %w", fullName, err)
+
+	case currentVersion == dsInfo.Version:
+		slog.Info("app DS schema up to date", "ds", fullName, "version", currentVersion)
 
 	default:
-		// Registered but not loaded (unloaded/error) — load it
-		slog.Info("loading existing app DS", "ds", fullName, "status", status)
+		// Version mismatch — unload if loaded, then migrate, then reload
+		slog.Info("migrating app DS schema", "ds", fullName, "from", currentVersion, "to", dsInfo.Version)
+		if status == "loaded" {
+			slog.Info("unloading DS before migration", "ds", fullName)
+			_ = unloadDataSource(ctx, querier, fullName)
+		}
+		if err := migrateSchema(ctx, pool, pgConn, appSource, dsInfo, currentVersion); err != nil {
+			return err
+		}
+		needsReload = true
+	}
+
+	// 4. Ensure DS is loaded
+	if status != "loaded" || needsReload {
+		slog.Info("loading app DS", "ds", fullName)
 		if err := loadDataSource(ctx, querier, fullName); err != nil {
 			return fmt.Errorf("load DS %s: %w", fullName, err)
 		}
@@ -213,6 +214,15 @@ func queryDataSourceStatus(ctx context.Context, querier Querier, name string) (s
 		return "", false
 	}
 	return statusStr, true
+}
+
+// unloadDataSource unloads a data source via GraphQL mutation.
+func unloadDataSource(ctx context.Context, querier Querier, name string) error {
+	q := fmt.Sprintf(`mutation {
+		function { core { unload_data_source(name: %q) { success message } } }
+	}`, name)
+	_, err := querier.Query(ctx, q, nil)
+	return err
 }
 
 // loadDataSource loads a data source via GraphQL mutation.
