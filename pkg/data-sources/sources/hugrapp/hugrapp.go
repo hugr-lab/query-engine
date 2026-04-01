@@ -152,26 +152,49 @@ func (s *Source) Provision(ctx context.Context, querier sources.Querier) error {
 }
 
 // queryTemplateParams fetches system-level template parameters via GraphQL.
+// Uses core.settings runtime source when available.
+// TODO: implement core.settings runtime source that exposes all system settings
+// including embedder config, vector size, timezone, etc.
+// For now, queries core.info which has version/type, and falls back to defaults.
 func queryTemplateParams(ctx context.Context, querier sources.Querier) TemplateParams {
 	params := TemplateParams{}
-	resp, err := querier.Query(ctx, `{ function { core { info { embedder_vector_size embedder_name } } } }`, nil)
+	// Query settings via core.settings (when implemented)
+	resp, err := querier.Query(ctx, `{
+		function { core { settings { embedder_vector_size embedder_name } } }
+	}`, nil)
 	if err != nil || resp == nil {
-		return params
+		return params // defaults are fine — templates use {{ if gt .VectorSize 0 }}
 	}
-	// Best-effort extraction — if fields don't exist, defaults are fine
-	if data, ok := resp.Data["data"].(map[string]any); ok {
-		if fn, ok := data["function"].(map[string]any); ok {
-			if core, ok := fn["core"].(map[string]any); ok {
-				if info, ok := core["info"].(map[string]any); ok {
-					if vs, ok := info["embedder_vector_size"].(float64); ok {
-						params.VectorSize = int(vs)
-					}
-					if en, ok := info["embedder_name"].(string); ok {
-						params.EmbedderName = en
-					}
-				}
+	// Navigate: data.function.core.settings
+	params.VectorSize, params.EmbedderName = extractSettingsFromResponse(resp.Data)
+	return params
+}
+
+func extractSettingsFromResponse(data map[string]any) (int, string) {
+	nav := func(m map[string]any, keys ...string) map[string]any {
+		for _, k := range keys {
+			v, ok := m[k]
+			if !ok {
+				return nil
+			}
+			m, ok = v.(map[string]any)
+			if !ok {
+				return nil
 			}
 		}
+		return m
 	}
-	return params
+	settings := nav(data, "data", "function", "core", "settings")
+	if settings == nil {
+		return 0, ""
+	}
+	vs := 0
+	en := ""
+	if v, ok := settings["embedder_vector_size"].(float64); ok {
+		vs = int(v)
+	}
+	if v, ok := settings["embedder_name"].(string); ok {
+		en = v
+	}
+	return vs, en
 }
