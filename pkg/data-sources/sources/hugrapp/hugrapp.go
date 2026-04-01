@@ -3,7 +3,6 @@ package hugrapp
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -151,9 +150,7 @@ func (s *Source) Provision(ctx context.Context, querier sources.Querier) error {
 	}
 	tmplParams, err := queryTemplateParams(ctx, querier)
 	if err != nil {
-		// Non-fatal: use defaults if embedder_settings not available
-		slog.Warn("failed to query template params, using defaults", "app", s.Name(), "error", err)
-		tmplParams = TemplateParams{}
+		return fmt.Errorf("query template params: %w", err)
 	}
 	return ProvisionDataSources(ctx, s.pool, s, querier, tmplParams)
 }
@@ -167,9 +164,7 @@ func queryTemplateParams(ctx context.Context, querier sources.Querier) (Template
 	if err != nil {
 		return params, err
 	}
-	if resp == nil {
-		return params, nil
-	}
+	defer resp.Close()
 	if len(resp.Errors) != 0 {
 		return params, resp.Errors
 	}
@@ -177,7 +172,7 @@ func queryTemplateParams(ctx context.Context, querier sources.Querier) (Template
 		Dimensions int    `json:"dimensions"`
 		Name       string `json:"name"`
 	}
-	if err := resp.ScanData("data.function.core.embedder_settings", &settings); err != nil {
+	if err := resp.ScanData("function.core.embedder_settings", &settings); err != nil {
 		return params, err
 	}
 	params.VectorSize = settings.Dimensions
