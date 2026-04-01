@@ -44,6 +44,16 @@ func sqlSourceName(schema, name string) string {
 	return fmt.Sprintf(`"%s"."%s"`, schema, strings.ToUpper(name))
 }
 
+// graphQLTypeName returns the GraphQL type name for a table/view.
+// For default schema, returns just the name (no prefix).
+// For other schemas, returns "schema_name" as prefix.
+func graphQLTypeName(schema, name string) string {
+	if schema == DefaultSchema {
+		return ToGraphQLName(name)
+	}
+	return ToGraphQLName(schema + "_" + name)
+}
+
 // strVal creates an ast.Value of kind StringValue.
 func strVal(s string) *ast.Value {
 	return &ast.Value{Kind: ast.StringValue, Raw: s}
@@ -150,7 +160,7 @@ func generateScalarFuncSDL(schema, name string, def *funcDef) string {
 //	type <name> @view(name: "...") @args(name: "<name>_args") { columns... }
 func generateTableFuncSDL(schema, name string, def *funcDef) string {
 	source := sqlSourceName(schema, name)
-	typeName := ToGraphQLName(schema + "_" + name)
+	typeName := graphQLTypeName(schema, name)
 	inputTypeName := typeName + "_args"
 
 	var defs []*ast.Definition
@@ -542,7 +552,7 @@ func GenerateTableSDL(schemaName string, table catalog.Table, opts ...SchemaOpti
 		return ""
 	}
 	source := sqlSourceName(schemaName, table.Name())
-	typeName := ToGraphQLName(schemaName + "_" + table.Name())
+	typeName := graphQLTypeName(schemaName, table.Name())
 	def := buildObjectDef(typeName, source, table.Comment(), arrowSchema, isMutableTable(table), opts)
 	return formatDefinitions([]*ast.Definition{def}, nil)
 }
@@ -559,7 +569,7 @@ func GenerateTableRefSDL(schemaName string, ref catalog.TableRef, opts ...Schema
 		return ""
 	}
 	source := sqlSourceName(schemaName, ref.Name())
-	typeName := ToGraphQLName(schemaName + "_" + ref.Name())
+	typeName := graphQLTypeName(schemaName, ref.Name())
 	def := buildObjectDef(typeName, source, ref.Comment(), arrowSchema, false, opts)
 	return formatDefinitions([]*ast.Definition{def}, nil)
 }
