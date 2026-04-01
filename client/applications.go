@@ -170,12 +170,15 @@ func (c *Client) RunApplication(ctx context.Context, application app.Application
 			SelfDefined: true,
 		}
 
-		// Check if already registered — versioned replace logic
+		// Check if already registered — versioned replace: unload + delete + re-register
 		status, statusErr := c.DataSourceStatus(ctx, info.Name)
 		if statusErr == nil && status != "" {
-			// Already registered — try to unload and re-register (versioned replace)
-			slog.Info("data source already registered, attempting versioned replace", "name", info.Name, "status", status)
+			slog.Info("data source already registered, replacing", "name", info.Name, "status", status)
 			_ = c.UnloadDataSource(ctx, info.Name)
+			// Delete old registration so insert doesn't conflict
+			_, _ = c.Query(ctx, `mutation($name: String!) {
+				core { delete_data_sources(filter: { name: { eq: $name } }) { name } }
+			}`, map[string]any{"name": info.Name})
 		}
 
 		err = c.RegisterDataSource(ctx, ds)
