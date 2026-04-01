@@ -93,7 +93,9 @@ func (a *TestApp) Catalog(ctx context.Context) (catalog.Catalog, error) {
 
 	mux.Table("default", &staticTable{})
 
-	// Manual SDL for testing — Airport function names use "schema"."NAME" format
+	// Manual SDL for testing
+	// Functions: catalog prefix added automatically by planner (EngineFunctionCallWithCatalog)
+	// Tables: catalog prefix added automatically by ATTACH AS
 	mux.WithSDL(`
 extend type Function {
   add(a: BigInt!, b: BigInt!): BigInt @function(name: "\"default\".\"ADD\"")
