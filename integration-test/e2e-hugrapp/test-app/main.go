@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -35,7 +36,7 @@ func main() {
 		port = "50051"
 	}
 
-	c := client.NewClient(hugrURL)
+	c := client.NewClient(hugrURL, client.WithTimeout(5*time.Minute))
 
 	myApp := &TestApp{port: port}
 	err := c.RunApplication(ctx, myApp, client.WithSecretKey(secret))
@@ -57,7 +58,7 @@ func (a *TestApp) Info() app.AppInfo {
 		Name:        "test_app",
 		Description: "E2E test application",
 		Version:     version,
-		URI:         fmt.Sprintf("grpc://test-app:%s", a.port),
+		URI:         fmt.Sprintf("grpc://%s:%s", envOrDefault("APP_HOST", "test-app"), a.port),
 	}
 }
 
@@ -98,6 +99,7 @@ type events @table(name: "events") {
   """Event payload data"""
   payload: String
   created_at: Timestamp
+  severity: String
 }
 `,
 		},
@@ -236,4 +238,11 @@ func (t *staticTable) Scan(ctx context.Context, opts *catalog.ScanOptions) (arra
 	bldr.Field(1).(*array.StringBuilder).AppendValues([]string{"alpha", "beta", "gamma"}, nil)
 	rec := bldr.NewRecord()
 	return array.NewRecordReader(schema, []arrow.Record{rec})
+}
+
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

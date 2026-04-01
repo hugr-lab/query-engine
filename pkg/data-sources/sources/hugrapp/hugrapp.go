@@ -3,7 +3,9 @@ package hugrapp
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
+	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -101,6 +103,20 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 			return err
 		}
 	}
+
+	// Pre-check: verify the app is reachable before DuckDB ATTACH.
+	// DuckDB/gRPC caches DNS failures — a failed lookup poisons the cache
+	// for the process lifetime, blocking subsequent ATTACH attempts even
+	// after the app becomes available.
+	dialAddr := path.Host
+	if path.Port != "" {
+		dialAddr += ":" + path.Port
+	}
+	conn, dialErr := net.DialTimeout("tcp", dialAddr, 5*time.Second)
+	if dialErr != nil {
+		return fmt.Errorf("hugr-app %s not reachable at %s: %w", s.ds.Name, dialAddr, dialErr)
+	}
+	conn.Close()
 
 	// Attach the Airport source. DBName is empty for the main app catalog —
 	// NamedCatalog on the server side returns the app name for routing.

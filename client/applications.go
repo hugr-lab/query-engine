@@ -219,10 +219,24 @@ func (c *Client) RunApplication(ctx context.Context, application app.Application
 			}
 		}
 
-		// Load (hugr auto-unloads and reloads if already loaded)
-		err = c.LoadDataSource(ctx, info.Name)
-		if err != nil {
-			slog.Error("failed to load data source", "error", err)
+		// Load (hugr auto-unloads and reloads if already loaded).
+		// Retry with backoff — on restart hugr may not be fully ready yet.
+		var loadErr error
+		for attempt := range 5 {
+			loadErr = c.LoadDataSource(ctx, info.Name)
+			if loadErr == nil {
+				break
+			}
+			slog.Warn("load data source failed, retrying...", "attempt", attempt+1, "error", loadErr)
+			select {
+			case <-ctx.Done():
+				cancel()
+				return
+			case <-time.After(time.Duration(attempt+1) * 2 * time.Second):
+			}
+		}
+		if loadErr != nil {
+			slog.Error("failed to load data source after retries", "error", loadErr)
 			cancel()
 			return
 		}

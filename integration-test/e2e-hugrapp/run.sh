@@ -35,9 +35,9 @@ run_test() {
 }
 
 echo ""
-echo "Running hugr-app E2E tests..."
+echo "=== Happy path tests ==="
+echo ""
 
-# Happy path tests
 run_test "app function add" \
     '{ function { test_app { add(a: 1, b: 2) } } }' \
     '"add":3'
@@ -86,12 +86,7 @@ run_test "app DS with HugrSchema (custom SDL)" \
     '"payload"'
 
 echo ""
-echo "--- Lifecycle tests ---"
-echo ""
-
-# === Lifecycle: stop + restart (clean hugr restart scenario) ===
-echo ""
-echo "--- Lifecycle tests ---"
+echo "=== Lifecycle: clean restart ==="
 echo ""
 
 echo "Stopping ALL services..."
@@ -100,7 +95,7 @@ sleep 2
 
 echo "Starting ALL services (clean restart)..."
 docker compose up -d --wait 2>&1
-sleep 10  # wait for app to register + provision
+sleep 10
 
 run_test "after restart: app function works" \
     '{ function { test_app { add(a: 10, b: 20) } } }' \
@@ -113,6 +108,63 @@ run_test "after restart: app DS works" \
 run_test "after restart: admin module works" \
     '{ function { test_app { admin { user_count } } } }' \
     '"user_count":99'
+
+echo ""
+echo "=== Lifecycle: app crash + recovery ==="
+echo ""
+
+echo "Killing test-app (simulating crash)..."
+docker compose kill test-app 2>/dev/null
+
+echo "Waiting for heartbeat to detect crash (~15s)..."
+sleep 18
+
+run_test "after crash: app functions unavailable" \
+    '{ function { test_app { add(a: 1, b: 2) } } }' \
+    'error'
+
+echo "Restarting test-app..."
+docker compose up -d test-app 2>/dev/null
+sleep 15
+
+run_test "after recovery: app function works" \
+    '{ function { test_app { add(a: 5, b: 5) } } }' \
+    '"add":10'
+
+# Note: sub-DS (test_app.store) recovery after crash requires heartbeat
+# monitor integration (not yet wired). Skipping DS check for now.
+
+echo ""
+echo "=== Lifecycle: version upgrade (migration) ==="
+echo ""
+
+echo "Stopping test-app for version upgrade..."
+docker compose stop test-app 2>/dev/null
+sleep 5
+
+echo "Starting test-app with APP_VERSION=2.0.0..."
+APP_VERSION=2.0.0 docker compose up -d test-app 2>/dev/null
+sleep 15
+
+run_test "after upgrade: app function works" \
+    '{ function { test_app { add(a: 100, b: 200) } } }' \
+    '"add":300'
+
+run_test "after upgrade: migration ran (severity column)" \
+    '{ test_app { store { events { event_type severity } } } }' \
+    '"severity"'
+
+echo ""
+echo "=== Lifecycle: graceful shutdown ==="
+echo ""
+
+echo "Gracefully stopping test-app..."
+docker compose stop test-app 2>/dev/null
+sleep 5
+
+run_test "after graceful stop: app unloaded (functions gone)" \
+    '{ function { test_app { add(a: 1, b: 2) } } }' \
+    'error'
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

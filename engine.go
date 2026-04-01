@@ -299,9 +299,31 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	}
 
 	// 14. Load stored data sources.
-	err = s.loadDataSources(ctx)
+	loaded, err := s.loadDataSources(ctx)
 	if err != nil {
 		return fmt.Errorf("load data sources: %w", err)
+	}
+
+	// 15. Disable catalogs for data sources that failed to load.
+	if !isReadonly && !s.config.Cluster.IsWorker() {
+		for name, ok := range loaded {
+			if ok {
+				continue
+			}
+			slog.Info("disabling catalog for failed data source", "name", name)
+			if err := s.dbProvider.RemoveCatalog(ctx, name); err != nil {
+				slog.Error("failed to disable catalog for data source", "name", name, "error", err)
+			}
+		}
+	}
+
+	// 16. If some data sources failed to load, fail startup cluster node
+	if isReadonly || s.config.Cluster.IsWorker() {
+		for name, ok := range loaded {
+			if !ok {
+				return fmt.Errorf("failed to load data source %s: see previous logs for details", name)
+			}
+		}
 	}
 
 	err = s.gis.Init()

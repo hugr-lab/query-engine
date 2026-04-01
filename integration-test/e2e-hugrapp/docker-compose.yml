@@ -45,6 +45,7 @@ services:
       HUGR_URL: "http://hugr:15100/ipc"
       APP_SECRET: "test-secret"
       APP_PORT: "50051"
+      APP_VERSION: "${APP_VERSION:-1.0.0}"
       PG_DSN: "postgres://test:test@postgres:5432/test_app_db"
     depends_on:
       hugr:
