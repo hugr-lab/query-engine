@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/types"
 
@@ -76,98 +77,30 @@ func provisionOne(
 	fullName string,
 	querier Querier,
 ) error {
-	path := dsInfo.Path // env vars resolved by hugr at attach time
-
-	// Connect to the target PostgreSQL database
-	pgConn, err := sql.Open("pgx", path)
-	if err != nil {
-		return fmt.Errorf("connect to %s: %w", fullName, err)
-	}
-	defer pgConn.Close()
-
-	if err := pgConn.PingContext(ctx); err != nil {
-		return fmt.Errorf("database not reachable at %s, check DataSourceInfo.Path: %w", fullName, err)
-	}
-
-	// Ensure meta table exists
-	if _, err := pgConn.ExecContext(ctx, metaTableSQL); err != nil {
-		return fmt.Errorf("create _hugr_app_meta in %s: %w", fullName, err)
-	}
-
 	// 1. Check if DS already registered in hugr and its status
 	status, exists := queryDataSourceStatus(ctx, querier, fullName)
 
 	// 2. Register in hugr if not exists
 	if !exists {
-		slog.Info("registering new app DS", "ds", fullName)
-		prefix := strings.ReplaceAll(fullName, ".", "_")
-		selfDefined := dsInfo.HugrSchema == ""
-
-		data := map[string]any{
-			"name":         fullName,
-			"type":         dsInfo.Type,
-			"description":  dsInfo.Description,
-			"prefix":       prefix,
-			"path":         dsInfo.Path,
-			"as_module":    true,
-			"self_defined": selfDefined,
-			"read_only":    dsInfo.ReadOnly,
-		}
-		if dsInfo.HugrSchema != "" {
-			data["catalogs"] = []map[string]any{
-				{"name": fullName, "type": "text", "path": dsInfo.HugrSchema},
-			}
-		}
-
-		registerQuery := `mutation($data: core_data_sources_mut_input_data!) {
-			core { insert_data_sources(data: $data) { name } }
-		}`
-		vars := map[string]any{"data": data}
-
-		if _, err := querier.Query(ctx, registerQuery, vars); err != nil {
-			return fmt.Errorf("register DS %s: %w", fullName, err)
+		if err := registerAppDataSource(ctx, querier, fullName, dsInfo); err != nil {
+			return err
 		}
 	}
 
-	// 3. Check DB schema version
-	var currentVersion string
-	err = pgConn.QueryRowContext(ctx,
-		"SELECT version FROM _hugr_app_meta WHERE app_name = $1",
-		appSource.Name(),
-	).Scan(&currentVersion)
-
-	needsReload := false
-
-	switch {
-	case err == sql.ErrNoRows:
-		// First time — initialize schema
-		slog.Info("initializing schema for app DS", "ds", fullName, "version", dsInfo.Version)
-		if err := initSchema(ctx, pool, pgConn, appSource, dsInfo); err != nil {
-			return err
-		}
-		needsReload = true
-
-	case err != nil:
-		return fmt.Errorf("check version for %s: %w", fullName, err)
-
-	case currentVersion == dsInfo.Version:
-		slog.Info("app DS schema up to date", "ds", fullName, "version", currentVersion)
-
-	default:
-		// Version mismatch — unload if loaded, then migrate, then reload
-		slog.Info("migrating app DS schema", "ds", fullName, "from", currentVersion, "to", dsInfo.Version)
-		if status == "loaded" {
-			slog.Info("unloading DS before migration", "ds", fullName)
-			_ = unloadDataSource(ctx, querier, fullName)
-		}
-		if err := migrateSchema(ctx, pool, pgConn, appSource, dsInfo, currentVersion); err != nil {
-			return err
-		}
-		needsReload = true
+	// 3. Handle DB schema (connect, version check, init/migrate)
+	schemaChanged, err := ensureDBSchema(ctx, pool, appSource, dsInfo, fullName)
+	if err != nil {
+		return err
 	}
 
-	// 4. Ensure DS is loaded
-	if status != "loaded" || needsReload {
+	// 4. If schema changed and DS was loaded — unload first for clean reload
+	if schemaChanged && status == "loaded" {
+		slog.Info("unloading DS for schema reload", "ds", fullName)
+		_ = unloadDataSource(ctx, querier, fullName)
+	}
+
+	// 5. Ensure DS is loaded
+	if status != "loaded" || schemaChanged {
 		slog.Info("loading app DS", "ds", fullName)
 		if err := loadDataSource(ctx, querier, fullName); err != nil {
 			return fmt.Errorf("load DS %s: %w", fullName, err)
@@ -175,6 +108,100 @@ func provisionOne(
 	}
 
 	return nil
+}
+
+// registerAppDataSource registers a new data source in hugr via GraphQL.
+func registerAppDataSource(ctx context.Context, querier Querier, fullName string, dsInfo DataSourceInfo) error {
+	slog.Info("registering new app DS", "ds", fullName)
+	prefix := strings.ReplaceAll(fullName, ".", "_")
+	selfDefined := dsInfo.HugrSchema == ""
+
+	data := map[string]any{
+		"name":         fullName,
+		"type":         dsInfo.Type,
+		"description":  dsInfo.Description,
+		"prefix":       prefix,
+		"path":         dsInfo.Path,
+		"as_module":    true,
+		"self_defined": selfDefined,
+		"read_only":    dsInfo.ReadOnly,
+	}
+	if dsInfo.HugrSchema != "" {
+		data["catalogs"] = []map[string]any{
+			{"name": fullName, "type": "text", "path": dsInfo.HugrSchema},
+		}
+	}
+
+	registerQuery := `mutation($data: core_data_sources_mut_input_data!) {
+		core { insert_data_sources(data: $data) { name } }
+	}`
+
+	if _, err := querier.Query(ctx, registerQuery, map[string]any{"data": data}); err != nil {
+		return fmt.Errorf("register DS %s: %w", fullName, err)
+	}
+	return nil
+}
+
+// ensureDBSchema connects directly to the PostgreSQL database, checks
+// the schema version, and runs init or migration as needed.
+// Returns true if the schema was changed (init or migrate happened).
+func ensureDBSchema(
+	ctx context.Context,
+	pool *db.Pool,
+	appSource *Source,
+	dsInfo DataSourceInfo,
+	fullName string,
+) (schemaChanged bool, err error) {
+	// Resolve env vars in path: postgres://[$DB_USER]:[$DB_PASS]@host/db
+	resolvedPath, err := sources.ApplyEnvVars(dsInfo.Path)
+	if err != nil {
+		return false, fmt.Errorf("resolve env vars in DS path %s: %w", fullName, err)
+	}
+
+	pgConn, err := sql.Open("pgx", resolvedPath)
+	if err != nil {
+		return false, fmt.Errorf("connect to %s: %w", fullName, err)
+	}
+	defer pgConn.Close()
+
+	if err := pgConn.PingContext(ctx); err != nil {
+		return false, fmt.Errorf("database not reachable at %s, check DataSourceInfo.Path: %w", fullName, err)
+	}
+
+	// Ensure meta table exists
+	if _, err := pgConn.ExecContext(ctx, metaTableSQL); err != nil {
+		return false, fmt.Errorf("create _hugr_app_meta in %s: %w", fullName, err)
+	}
+
+	// Check current version
+	var currentVersion string
+	err = pgConn.QueryRowContext(ctx,
+		"SELECT version FROM _hugr_app_meta WHERE app_name = $1",
+		appSource.Name(),
+	).Scan(&currentVersion)
+
+	switch {
+	case err == sql.ErrNoRows:
+		slog.Info("initializing schema for app DS", "ds", fullName, "version", dsInfo.Version)
+		if err := initSchema(ctx, pool, pgConn, appSource, dsInfo); err != nil {
+			return false, err
+		}
+		return true, nil
+
+	case err != nil:
+		return false, fmt.Errorf("check version for %s: %w", fullName, err)
+
+	case currentVersion == dsInfo.Version:
+		slog.Info("app DS schema up to date", "ds", fullName, "version", currentVersion)
+		return false, nil
+
+	default:
+		slog.Info("migrating app DS schema", "ds", fullName, "from", currentVersion, "to", dsInfo.Version)
+		if err := migrateSchema(ctx, pool, pgConn, appSource, dsInfo, currentVersion); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
 }
 
 // queryDataSourceStatus checks if a data source exists and returns its status.
