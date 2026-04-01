@@ -27,14 +27,32 @@ type Querier interface {
 	Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error)
 }
 
+// TemplateParams holds system-level parameters available for Go template
+// expansion in app's SQL (init/migrate) and SDL (HugrSchema).
+// Follows the same pattern as CoreDB's SchemaTemplateParams.
+type TemplateParams struct {
+	VectorSize   int    // Embedding vector dimension (0 = no embeddings)
+	EmbedderName string // Name of the system embedder (empty = not configured)
+}
+
+// applyTemplate renders a Go text/template string with TemplateParams.
+func applyTemplate(tmpl string, params TemplateParams) (string, error) {
+	if tmpl == "" {
+		return "", nil
+	}
+	return db.ParseSQLScriptTemplate(db.SDBPostgres, tmpl, params)
+}
+
 // ProvisionDataSources reads data sources from _mount.data_sources and
 // ensures each one is registered, initialized, and migrated as needed.
 // Uses Querier to register/load data sources via GraphQL API.
+// TemplateParams provides system-level parameters for SQL/SDL templating.
 func ProvisionDataSources(
 	ctx context.Context,
 	pool *db.Pool,
 	appSource *Source,
 	querier Querier,
+	tmplParams TemplateParams,
 ) error {
 	if appSource.appInfo == nil || !appSource.appInfo.IsDBInitializer {
 		return nil // app doesn't manage databases
@@ -61,7 +79,7 @@ func ProvisionDataSources(
 
 		slog.Info("provisioning app data source", "app", appName, "ds", fullName, "version", dsInfo.Version)
 
-		if err := provisionOne(ctx, pool, appSource, dsInfo, fullName, querier); err != nil {
+		if err := provisionOne(ctx, pool, appSource, dsInfo, fullName, querier, tmplParams); err != nil {
 			return fmt.Errorf("provision %s: %w", fullName, err)
 		}
 	}
@@ -76,19 +94,20 @@ func provisionOne(
 	dsInfo DataSourceInfo,
 	fullName string,
 	querier Querier,
+	tmplParams TemplateParams,
 ) error {
 	// 1. Check if DS already registered in hugr and its status
 	status, exists := queryDataSourceStatus(ctx, querier, fullName)
 
 	// 2. Register in hugr if not exists
 	if !exists {
-		if err := registerAppDataSource(ctx, querier, fullName, dsInfo); err != nil {
+		if err := registerAppDataSource(ctx, querier, fullName, dsInfo, tmplParams); err != nil {
 			return err
 		}
 	}
 
 	// 3. Handle DB schema (connect, version check, init/migrate)
-	schemaChanged, err := ensureDBSchema(ctx, pool, appSource, dsInfo, fullName)
+	schemaChanged, err := ensureDBSchema(ctx, pool, appSource, dsInfo, fullName, tmplParams)
 	if err != nil {
 		return err
 	}
@@ -111,7 +130,8 @@ func provisionOne(
 }
 
 // registerAppDataSource registers a new data source in hugr via GraphQL.
-func registerAppDataSource(ctx context.Context, querier Querier, fullName string, dsInfo DataSourceInfo) error {
+// If HugrSchema is provided, it's templated with TemplateParams before use.
+func registerAppDataSource(ctx context.Context, querier Querier, fullName string, dsInfo DataSourceInfo, tmplParams TemplateParams) error {
 	slog.Info("registering new app DS", "ds", fullName)
 	prefix := strings.ReplaceAll(fullName, ".", "_")
 	selfDefined := dsInfo.HugrSchema == ""
@@ -127,8 +147,13 @@ func registerAppDataSource(ctx context.Context, querier Querier, fullName string
 		"read_only":    dsInfo.ReadOnly,
 	}
 	if dsInfo.HugrSchema != "" {
+		// Apply template to SDL: {{ .VectorSize }}, {{ .EmbedderName }} etc.
+		sdl, err := applyTemplate(dsInfo.HugrSchema, tmplParams)
+		if err != nil {
+			return fmt.Errorf("template SDL for %s: %w", fullName, err)
+		}
 		data["catalogs"] = []map[string]any{
-			{"name": fullName, "type": "text", "path": dsInfo.HugrSchema},
+			{"name": fullName, "type": "text", "path": sdl},
 		}
 	}
 
@@ -144,6 +169,7 @@ func registerAppDataSource(ctx context.Context, querier Querier, fullName string
 
 // ensureDBSchema connects directly to the PostgreSQL database, checks
 // the schema version, and runs init or migration as needed.
+// SQL templates from the app are expanded with TemplateParams.
 // Returns true if the schema was changed (init or migrate happened).
 func ensureDBSchema(
 	ctx context.Context,
@@ -151,6 +177,7 @@ func ensureDBSchema(
 	appSource *Source,
 	dsInfo DataSourceInfo,
 	fullName string,
+	tmplParams TemplateParams,
 ) (schemaChanged bool, err error) {
 	// Resolve env vars in path: postgres://[$DB_USER]:[$DB_PASS]@host/db
 	resolvedPath, err := sources.ApplyEnvVars(dsInfo.Path)
@@ -183,7 +210,7 @@ func ensureDBSchema(
 	switch {
 	case err == sql.ErrNoRows:
 		slog.Info("initializing schema for app DS", "ds", fullName, "version", dsInfo.Version)
-		if err := initSchema(ctx, pool, pgConn, appSource, dsInfo); err != nil {
+		if err := initSchema(ctx, pool, pgConn, appSource, dsInfo, tmplParams); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -197,7 +224,7 @@ func ensureDBSchema(
 
 	default:
 		slog.Info("migrating app DS schema", "ds", fullName, "from", currentVersion, "to", dsInfo.Version)
-		if err := migrateSchema(ctx, pool, pgConn, appSource, dsInfo, currentVersion); err != nil {
+		if err := migrateSchema(ctx, pool, pgConn, appSource, dsInfo, currentVersion, tmplParams); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -268,10 +295,16 @@ func loadDataSource(ctx context.Context, querier Querier, name string) error {
 	return err
 }
 
-func initSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource *Source, dsInfo DataSourceInfo) error {
-	sqlTemplate, err := readMountInitDSSchema(ctx, pool, appSource.Name(), dsInfo.Name)
+func initSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource *Source, dsInfo DataSourceInfo, tmplParams TemplateParams) error {
+	rawSQL, err := readMountInitDSSchema(ctx, pool, appSource.Name(), dsInfo.Name)
 	if err != nil {
 		return fmt.Errorf("get init_ds_schema: %w", err)
+	}
+
+	// Apply template: {{ .VectorSize }}, {{ .EmbedderName }} etc.
+	sqlStr, err := applyTemplate(rawSQL, tmplParams)
+	if err != nil {
+		return fmt.Errorf("template init_ds_schema: %w", err)
 	}
 
 	// Execute init SQL in transaction
@@ -281,7 +314,7 @@ func initSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource *S
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, sqlTemplate); err != nil {
+	if _, err := tx.ExecContext(ctx, sqlStr); err != nil {
 		return fmt.Errorf("execute init_ds_schema: %w", err)
 	}
 
@@ -296,14 +329,20 @@ func initSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource *S
 	return tx.Commit()
 }
 
-func migrateSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource *Source, dsInfo DataSourceInfo, fromVersion string) error {
+func migrateSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource *Source, dsInfo DataSourceInfo, fromVersion string, tmplParams TemplateParams) error {
 	if !appSource.appInfo.IsDBMigrator {
 		return fmt.Errorf("app %s does not support migrations (version %s → %s)", appSource.Name(), fromVersion, dsInfo.Version)
 	}
 
-	sqlTemplate, err := readMountMigrateDSSchema(ctx, pool, appSource.Name(), dsInfo.Name, fromVersion)
+	rawSQL, err := readMountMigrateDSSchema(ctx, pool, appSource.Name(), dsInfo.Name, fromVersion)
 	if err != nil {
 		return fmt.Errorf("get migrate_ds_schema: %w", err)
+	}
+
+	// Apply template
+	sqlStr, err := applyTemplate(rawSQL, tmplParams)
+	if err != nil {
+		return fmt.Errorf("template migrate_ds_schema: %w", err)
 	}
 
 	// Execute migration in transaction
@@ -313,7 +352,7 @@ func migrateSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, sqlTemplate); err != nil {
+	if _, err := tx.ExecContext(ctx, sqlStr); err != nil {
 		return fmt.Errorf("execute migrate_ds_schema: %w", err)
 	}
 
