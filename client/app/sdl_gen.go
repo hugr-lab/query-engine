@@ -124,17 +124,44 @@ func formatDefinitions(defs []*ast.Definition, extensions []*ast.Definition) str
 	return buf.String()
 }
 
+// schemaModuleName returns the module name for a schema.
+// Default schema returns "" (no module), other schemas return schema name.
+func schemaModuleName(schema string) string {
+	if schema == DefaultSchema {
+		return ""
+	}
+	return schema
+}
+
+// moduleDirective creates @module(name: "...") directive if moduleName is non-empty.
+func moduleDirective(moduleName string) *ast.Directive {
+	if moduleName == "" {
+		return nil
+	}
+	return &ast.Directive{
+		Name: "module",
+		Arguments: ast.ArgumentList{
+			{Name: "name", Value: strVal(moduleName)},
+		},
+	}
+}
+
 // --- Generators for handler.go ---
 
 // generateScalarFuncSDL generates SDL for a scalar function using gqlparser AST.
 func generateScalarFuncSDL(schema, name string, def *funcDef) string {
 	source := sqlSourceName(schema, name)
 
+	directives := ast.DirectiveList{functionDirective(source, false)}
+	if mod := schemaModuleName(schema); mod != "" {
+		directives = append(directives, moduleDirective(mod))
+	}
+
 	field := &ast.FieldDefinition{
 		Name:        name,
 		Description: def.description,
 		Type:        gqlType(def.retType.graphql, false),
-		Directives:  ast.DirectiveList{functionDirective(source, false)},
+		Directives:  directives,
 	}
 	for _, a := range def.args {
 		field.Arguments = append(field.Arguments, &ast.ArgumentDefinition{
@@ -181,12 +208,16 @@ func generateTableFuncSDL(schema, name string, def *funcDef) string {
 		defs = append(defs, inputDef)
 	}
 
-	// result type: type TypeName @view(name: "...") @args(name: "...") { columns... }
+	// result type: type TypeName @view(name: "...") @args(name: "...") [@module(name: ...)] { columns... }
+	directives := ast.DirectiveList{viewDirective(source)}
+	if mod := schemaModuleName(schema); mod != "" {
+		directives = append(directives, moduleDirective(mod))
+	}
 	resultDef := &ast.Definition{
 		Kind:        ast.Object,
 		Name:        typeName,
 		Description: def.description,
-		Directives:  ast.DirectiveList{viewDirective(source)},
+		Directives:  directives,
 	}
 	if len(def.args) > 0 {
 		resultDef.Directives = append(resultDef.Directives, argsDirective(inputTypeName))
@@ -554,6 +585,9 @@ func GenerateTableSDL(schemaName string, table catalog.Table, opts ...SchemaOpti
 	source := sqlSourceName(schemaName, table.Name())
 	typeName := graphQLTypeName(schemaName, table.Name())
 	def := buildObjectDef(typeName, source, table.Comment(), arrowSchema, isMutableTable(table), opts)
+	if mod := schemaModuleName(schemaName); mod != "" {
+		def.Directives = append(def.Directives, moduleDirective(mod))
+	}
 	return formatDefinitions([]*ast.Definition{def}, nil)
 }
 
@@ -571,6 +605,9 @@ func GenerateTableRefSDL(schemaName string, ref catalog.TableRef, opts ...Schema
 	source := sqlSourceName(schemaName, ref.Name())
 	typeName := graphQLTypeName(schemaName, ref.Name())
 	def := buildObjectDef(typeName, source, ref.Comment(), arrowSchema, false, opts)
+	if mod := schemaModuleName(schemaName); mod != "" {
+		def.Directives = append(def.Directives, moduleDirective(mod))
+	}
 	return formatDefinitions([]*ast.Definition{def}, nil)
 }
 
