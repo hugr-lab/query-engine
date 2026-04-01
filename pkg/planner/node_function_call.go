@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -237,7 +237,8 @@ func functionCallSQL(ctx context.Context, defs base.DefinitionsSource, e engines
 	if err != nil {
 		return "", nil, err
 	}
-	sql := info.SQL()
+	_, addCatalog := e.(engines.EngineFunctionCallWithCatalog)
+	sql := info.SQL(addCatalog)
 	_, isScanner := e.(engines.EngineQueryScanner)
 	// json cast work only in duckdb base engines (with out scanner)
 	if info.JsonCast && isScanner {

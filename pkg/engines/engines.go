@@ -23,6 +23,7 @@ const (
 	TypeMySql    Type = "mysql"
 	TypeDuckLake Type = "ducklake"
 	TypeIceberg  Type = "iceberg"
+	TypeAirport  Type = "airport"
 )
 
 type Engine interface {
@@ -52,6 +53,11 @@ type EngineAggregator interface {
 	AggregateFuncSQL(funcName, sql, path, factor string, originField *ast.FieldDefinition, isHyperTable bool, args map[string]any, params []any) (string, []any, error)
 	AggregateFuncAny(sql string) string
 	JSONTypeCast(sql string) string
+}
+
+type EngineFunctionCallWithCatalog interface {
+	Engine
+	IsFunctionCallWithCatalog() bool
 }
 
 type EngineQueryScanner interface {
