@@ -101,6 +101,15 @@ func provisionOne(
 	if !exists {
 		slog.Info("registering new app DS", "ds", fullName)
 		prefix := strings.ReplaceAll(fullName, ".", "_")
+
+		// If app provides SDL (HugrSchema) → use text catalog source, not self_defined
+		selfDefined := dsInfo.HugrSchema == ""
+		catalogsBlock := ""
+		if dsInfo.HugrSchema != "" {
+			catalogsBlock = fmt.Sprintf(`, catalogs: [{name: %q, type: "text", path: %q}]`,
+				fullName, dsInfo.HugrSchema)
+		}
+
 		registerQuery := fmt.Sprintf(`mutation {
 			core {
 				insert_data_sources(data: {
@@ -110,11 +119,13 @@ func provisionOne(
 					prefix: %q
 					path: %q
 					as_module: true
-					self_defined: true
+					self_defined: %t
 					read_only: %t
+					%s
 				}) { name }
 			}
-		}`, fullName, dsInfo.Type, dsInfo.Description, prefix, dsInfo.Path, dsInfo.ReadOnly)
+		}`, fullName, dsInfo.Type, dsInfo.Description, prefix, dsInfo.Path,
+			selfDefined, dsInfo.ReadOnly, catalogsBlock)
 
 		if _, err := querier.Query(ctx, registerQuery, nil); err != nil {
 			return fmt.Errorf("register DS %s: %w", fullName, err)
