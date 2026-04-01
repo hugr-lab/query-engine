@@ -33,10 +33,13 @@ import (
 func TestReproduceFunctionFieldLostAfterReload(t *testing.T) {
 	ctx := context.Background()
 
-	// 1. Start hugr engine
+	// 1. Start hugr engine with persistent CoreDB
+	coreDBPath := t.TempDir() + "/core.duckdb"
+	t.Logf("CoreDB path: %s", coreDBPath)
+
 	service, err := hugr.New(hugr.Config{
 		DB: db.Config{Path: ""},
-		CoreDB: coredb.New(coredb.Config{}),
+		CoreDB: coredb.New(coredb.Config{Path: coreDBPath}),
 		Auth: &auth.Config{
 			Providers: []auth.AuthProvider{
 				auth.NewAnonymous(auth.AnonymousConfig{Allowed: true, Role: "admin"}),
