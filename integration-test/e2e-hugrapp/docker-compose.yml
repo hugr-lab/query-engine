@@ -19,7 +19,7 @@ services:
     ports: ["15100:15100"]
     environment:
       BIND: ":15100"
-      CORE_DB_PATH: ""
+      CORE_DB_PATH: "/data/core.duckdb"
       ALLOWED_ANONYMOUS: "true"
       ANONYMOUS_ROLE: "admin"
       DB_TIMEZONE: "UTC"
