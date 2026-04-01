@@ -152,41 +152,54 @@ func (c *Client) RunApplication(ctx context.Context, application app.Application
 		if cfg.secretKey != "" {
 			path = fmt.Sprintf("%s?secret_key=%s", path, cfg.secretKey)
 		}
-		if info.Version != "" {
-			if strings.Contains(path, "?") {
-				path = fmt.Sprintf("%s&version=%s", path, info.Version)
-			} else {
-				path = fmt.Sprintf("%s?version=%s", path, info.Version)
+
+		// Check if already registered
+		status, statusErr := c.DataSourceStatus(ctx, info.Name)
+		if statusErr == nil && status != "" {
+			// Already registered — check type matches
+			resp, qErr := c.Query(ctx,
+				`query($name: String!) { core { data_sources(filter: { name: { eq: $name } }) { type path } } }`,
+				map[string]any{"name": info.Name})
+			if qErr == nil && resp != nil {
+				var existing []struct {
+					Type string `json:"type"`
+					Path string `json:"path"`
+				}
+				if err := resp.ScanData("core.data_sources", &existing); err == nil && len(existing) > 0 {
+					if existing[0].Type != "hugr-app" {
+						slog.Error("data source type mismatch", "name", info.Name, "expected", "hugr-app", "got", existing[0].Type)
+						cancel()
+						return
+					}
+					// Update path if changed (app migrated to different host)
+					if existing[0].Path != path {
+						slog.Info("updating data source path", "name", info.Name, "old", existing[0].Path, "new", path)
+						_, _ = c.Query(ctx,
+							`mutation($name: String!, $path: String!) { core { update_data_sources(filter: { name: { eq: $name } }, data: { path: $path }) { name } } }`,
+							map[string]any{"name": info.Name, "path": path})
+					}
+				}
+			}
+		} else {
+			// Not registered — register new
+			ds := types.DataSource{
+				Name:        info.Name,
+				Type:        "hugr-app",
+				Description: info.Description,
+				Prefix:      prefixFromName(info.Name),
+				Path:        path,
+				AsModule:    true,
+				SelfDefined: true,
+			}
+			err = c.RegisterDataSource(ctx, ds)
+			if err != nil {
+				slog.Error("failed to register data source", "error", err)
+				cancel()
+				return
 			}
 		}
 
-		ds := types.DataSource{
-			Name:        info.Name,
-			Type:        "hugr-app",
-			Description: info.Description,
-			Prefix:      prefixFromName(info.Name),
-			Path:        path,
-			AsModule:    true,
-			SelfDefined: true,
-		}
-
-		// Check if already registered — versioned replace: unload + delete + re-register
-		status, statusErr := c.DataSourceStatus(ctx, info.Name)
-		if statusErr == nil && status != "" {
-			slog.Info("data source already registered, replacing", "name", info.Name, "status", status)
-			_ = c.UnloadDataSource(ctx, info.Name)
-			// Delete old registration so insert doesn't conflict
-			_, _ = c.Query(ctx, `mutation($name: String!) {
-				core { delete_data_sources(filter: { name: { eq: $name } }) { name } }
-			}`, map[string]any{"name": info.Name})
-		}
-
-		err = c.RegisterDataSource(ctx, ds)
-		if err != nil {
-			slog.Error("failed to register data source", "error", err)
-			cancel()
-			return
-		}
+		// Load (hugr auto-unloads and reloads if already loaded)
 		err = c.LoadDataSource(ctx, info.Name)
 		if err != nil {
 			slog.Error("failed to load data source", "error", err)
