@@ -147,27 +147,36 @@ func (s *Source) Provision(ctx context.Context, querier sources.Querier) error {
 	if s.pool == nil || s.appInfo == nil {
 		return nil
 	}
-	tmplParams := queryTemplateParams(ctx, querier)
+	tmplParams, err := queryTemplateParams(ctx, querier)
+	if err != nil {
+		return err
+	}
 	return ProvisionDataSources(ctx, s.pool, s, querier, tmplParams)
 }
 
 // queryTemplateParams fetches embedder settings via core.embedder_settings function.
-func queryTemplateParams(ctx context.Context, querier sources.Querier) TemplateParams {
+func queryTemplateParams(ctx context.Context, querier sources.Querier) (TemplateParams, error) {
 	params := TemplateParams{}
 	resp, err := querier.Query(ctx, `{
 		function { core { embedder_settings { is_enabled name model dimensions } } }
 	}`, nil)
-	if err != nil || resp == nil {
-		return params
+	if err != nil {
+		return params, err
+	}
+	if resp == nil {
+		return params, nil
+	}
+	if len(resp.Errors) != 0 {
+		return params, resp.Errors
 	}
 	var settings struct {
 		Dimensions int    `json:"dimensions"`
 		Name       string `json:"name"`
 	}
 	if err := resp.ScanData("data.function.core.embedder_settings", &settings); err != nil {
-		return params
+		return params, err
 	}
 	params.VectorSize = settings.Dimensions
 	params.EmbedderName = settings.Name
-	return params
+	return params, nil
 }
