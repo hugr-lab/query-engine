@@ -8,7 +8,6 @@ import (
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	dsources "github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
-	"github.com/hugr-lab/query-engine/pkg/engines"
 )
 
 var _ dsources.SelfDescriber = &Source{}
@@ -32,25 +31,4 @@ func (s *Source) CatalogSource(ctx context.Context, pool *db.Pool) (cs.Catalog, 
 		ReadOnly:   s.ds.ReadOnly,
 	}
 	return cs.NewStringSource(s.ds.Name, s.engine, opts, sdl)
-}
-
-// readMountSchemaSDL queries _mount.schema_sdl() from the attached hugr-app source.
-func readMountSchemaSDL(ctx context.Context, pool *db.Pool, sourceName string) (string, error) {
-	conn, err := pool.Conn(ctx)
-	if err != nil {
-		return "", fmt.Errorf("readMountSchemaSDL: %w", err)
-	}
-	defer conn.Close()
-
-	var sdl string
-	query := fmt.Sprintf(
-		`SELECT %s._mount.schema_sdl()`,
-		engines.Ident(sourceName),
-	)
-	err = conn.QueryRow(ctx, query).Scan(&sdl)
-	if err != nil {
-		return "", fmt.Errorf("readMountSchemaSDL for %s: %w", sourceName, err)
-	}
-
-	return sdl, nil
 }
