@@ -5,149 +5,157 @@ package hugrapp_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
-	hugr "github.com/hugr-lab/query-engine"
-	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	catalogdb "github.com/hugr-lab/query-engine/pkg/catalog/db"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
+	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/pkg/engines"
 )
 
-// TestReproduceFunctionFieldLostAfterReload reproduces the bug where
-// "Function" root type loses module fields after hugr-app source unload+reload.
+// TestFunctionFieldSurvivesAddRemoveAdd reproduces the compiler/provider bug
+// where Function root type loses module fields after a catalog that extends
+// Function is added, removed, and re-added.
 //
-// Steps:
-// 1. Start hugr engine with in-memory CoreDB
-// 2. Verify { function { core { info { version } } } } works
-// 3. Register + load a hugr-app source
-// 4. Verify queries still work
-// 5. Unload the hugr-app source
-// 6. Reload (or load new) the hugr-app source
-// 7. Query { function { core { embedder_settings { ... } } } }
-//    → BUG: "Cannot query field 'function' on type 'Query'"
+// Pure compiler+provider level — no Service, no HTTP, no Airport.
 //
-// To debug: set breakpoint in pkg/catalog/compiler/rules/assemble_modules.go
-// at ModuleAssembler.ProcessAll() or in pkg/catalog/catalogs.go at RemoveCatalog/AddCatalog.
-func TestReproduceFunctionFieldLostAfterReload(t *testing.T) {
+// Debug breakpoints:
+//   - pkg/catalog/db/drop.go → DropCatalog()
+//   - pkg/catalog/db/catalog_manager.go → RemoveCatalog() / AddCatalog()
+//   - pkg/catalog/compiler/rules/assemble_modules.go → ModuleAssembler.ProcessAll()
+func TestFunctionFieldSurvivesAddRemoveAdd(t *testing.T) {
 	ctx := context.Background()
-
-	// 1. Start hugr engine with persistent CoreDB
 	coreDBPath := t.TempDir() + "/core.duckdb"
 	t.Logf("CoreDB path: %s", coreDBPath)
 
-	service, err := hugr.New(hugr.Config{
-		DB: db.Config{Path: ""},
-		CoreDB: coredb.New(coredb.Config{Path: coreDBPath}),
-		Auth: &auth.Config{
-			Providers: []auth.AuthProvider{
-				auth.NewAnonymous(auth.AnonymousConfig{Allowed: true, Role: "admin"}),
-			},
-		},
-	})
+	// === 1. Connect DuckDB ===
+	pool, err := db.Connect(ctx, db.Config{Path: ""})
 	require.NoError(t, err)
-	defer service.Close()
+	defer pool.Close()
 
-	err = service.Init(ctx)
+	// === 2. Attach CoreDB ===
+	core := coredb.New(coredb.Config{Path: coreDBPath})
+	require.NoError(t, core.Attach(ctx, pool))
+
+	// === 3. Create db.Provider with compiler ===
+	c := compiler.New(compiler.GlobalRules()...)
+	dbProvider, err := catalogdb.NewWithCompiler(ctx, pool, catalogdb.Config{
+		TablePrefix: "core.",
+		Cache:       catalogdb.DefaultCacheConfig(),
+	}, nil, c)
 	require.NoError(t, err)
 
-	// 2. Verify Function.core works initially
-	resp, err := service.Query(ctx,
-		`{ function { core { embedder_settings { is_enabled } } } }`, nil)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	require.Empty(t, resp.Errors, "initial query should work: %v", resp.Errors)
-	resp.Close()
-	t.Log("Step 2: initial Function.core query OK")
+	// === 4. Init system types ===
+	require.NoError(t, dbProvider.InitSystemTypes(ctx))
 
-	// 3. Register a hugr-app source (simulate)
-	resp, err = service.Query(ctx, `mutation {
-		core {
-			insert_data_sources(data: {
-				name: "fake_app"
-				type: "hugr-app"
-				description: "test"
-				prefix: "fake_app"
-				path: "grpc://localhost:99999"
-				as_module: true
-				self_defined: true
-			}) { name }
+	// === 5. Create catalog service ===
+	svc := catalog.NewService(dbProvider)
+
+	// === 6. Attach CoreDB runtime source ===
+	coreCat, err := core.Catalog(ctx)
+	require.NoError(t, err)
+	require.NoError(t, svc.AddCatalog(ctx, core.Name(), coreCat))
+	t.Log("CoreDB catalog added")
+
+	// === 7. Verify Function type exists in schema ===
+	funcType := svc.ForName(ctx, "Function")
+	require.NotNil(t, funcType, "Function type must exist after CoreDB init")
+	t.Logf("Function type has %d fields", len(funcType.Fields))
+
+	// === 8. Create a test catalog that extends Function ===
+	appSDL := `
+extend type Function {
+  test_func(a: BigInt!): BigInt @function(name: "\"default\".\"TEST_FUNC\"")
+}
+
+type test_items @view(name: "\"default\".\"TEST_ITEMS\"") {
+  id: BigInt! @pk
+  name: String!
+}
+`
+	e := engines.NewDuckDB()
+	opts := base.Options{
+		Name:       "test_app",
+		Prefix:     "test_app",
+		AsModule:   true,
+		EngineType: string(e.Type()),
+	}
+	appCat, err := sources.NewStringSource("test_app", e, opts, appSDL)
+	require.NoError(t, err)
+
+	// === 9. ADD test catalog ===
+	err = svc.AddCatalog(ctx, "test_app", appCat)
+	require.NoError(t, err)
+	t.Log("test_app catalog ADDED")
+
+	// Verify Function still has core fields + test_app field
+	funcType = svc.ForName(ctx, "Function")
+	require.NotNil(t, funcType, "Function must exist after AddCatalog")
+	t.Logf("After ADD: Function has %d fields", len(funcType.Fields))
+
+	hasCore := false
+	hasTestApp := false
+	for _, f := range funcType.Fields {
+		if f.Name == "core" {
+			hasCore = true
 		}
-	}`, nil)
-	require.NoError(t, err)
-	if resp != nil {
-		t.Logf("Step 3 register: errors=%v", resp.Errors)
-		resp.Close()
-	}
-
-	// 4. Try to load (will fail because no grpc server, but that's OK — we want to test unload)
-	resp, err = service.Query(ctx, `mutation {
-		function { core { load_data_source(name: "fake_app") { success message } } }
-	}`, nil)
-	if resp != nil {
-		var result struct {
-			Success bool   `json:"success"`
-			Message string `json:"message"`
+		if f.Name == "test_app" {
+			hasTestApp = true
 		}
-		_ = resp.ScanData("function.core.load_data_source", &result)
-		t.Logf("Step 4 load: success=%v message=%s errors=%v", result.Success, result.Message, resp.Errors)
-		resp.Close()
 	}
+	require.True(t, hasCore, "Function must have 'core' field after ADD")
+	require.True(t, hasTestApp, "Function must have 'test_app' field after ADD")
 
-	// 5. Verify Function.core STILL works after failed load
-	resp, err = service.Query(ctx,
-		`{ function { core { embedder_settings { is_enabled } } } }`, nil)
+	// === 10. REMOVE test catalog ===
+	err = svc.RemoveCatalog(ctx, "test_app")
 	require.NoError(t, err)
-	require.NotNil(t, resp)
-	t.Logf("Step 5 after load: errors=%v", resp.Errors)
-	require.Empty(t, resp.Errors, "Function.core should still work after load attempt")
-	resp.Close()
-	t.Log("Step 5: Function.core still OK after load attempt")
+	t.Log("test_app catalog REMOVED")
 
-	// 6. Unload
-	resp, err = service.Query(ctx, `mutation {
-		function { core { unload_data_source(name: "fake_app") { success message } } }
-	}`, nil)
-	if resp != nil {
-		t.Logf("Step 6 unload: errors=%v", resp.Errors)
-		resp.Close()
+	// === KEY CHECK: Function.core must survive removal of test_app ===
+	funcType = svc.ForName(ctx, "Function")
+	require.NotNil(t, funcType, "Function must exist after RemoveCatalog")
+	t.Logf("After REMOVE: Function has %d fields", len(funcType.Fields))
+
+	hasCore = false
+	for _, f := range funcType.Fields {
+		if f.Name == "core" {
+			hasCore = true
+		}
+		t.Logf("  field: %s", f.Name)
 	}
+	// SET BREAKPOINT HERE if this fails:
+	require.True(t, hasCore,
+		"BUG: Function lost 'core' field after removing test_app catalog. "+
+			"Breakpoint in DropCatalog or ModuleAssembler.ProcessAll()")
 
-	// Small delay to let catalog compilation settle
-	time.Sleep(500 * time.Millisecond)
-
-	// 7. KEY TEST: verify Function.core STILL works after unload
-	// This is where the bug manifests — "Cannot query field 'function' on type 'Query'"
-	resp, err = service.Query(ctx,
-		`{ function { core { embedder_settings { is_enabled } } } }`, nil)
+	// === 11. RE-ADD test catalog ===
+	appCat2, err := sources.NewStringSource("test_app", e, opts, appSDL)
 	require.NoError(t, err)
-	require.NotNil(t, resp)
-	t.Logf("Step 7 after unload: errors=%v", resp.Errors)
-	// SET BREAKPOINT HERE to inspect catalog state if this fails:
-	require.Empty(t, resp.Errors,
-		"BUG: Function.core lost after hugr-app source unload. "+
-			"Set breakpoint in ModuleAssembler.ProcessAll() or memoryCatalog.removeCatalog()")
-	resp.Close()
-	t.Log("Step 7: Function.core OK after unload — bug NOT reproduced")
+	err = svc.AddCatalog(ctx, "test_app", appCat2)
+	require.NoError(t, err)
+	t.Log("test_app catalog RE-ADDED")
 
-	// 8. Try to load again (will fail, but check if Function.core survives)
-	resp, err = service.Query(ctx, `mutation {
-		function { core { load_data_source(name: "fake_app") { success message } } }
-	}`, nil)
-	if resp != nil {
-		t.Logf("Step 8 reload: errors=%v", resp.Errors)
-		resp.Close()
+	funcType = svc.ForName(ctx, "Function")
+	require.NotNil(t, funcType, "Function must exist after re-add")
+	t.Logf("After RE-ADD: Function has %d fields", len(funcType.Fields))
+
+	hasCore = false
+	hasTestApp = false
+	for _, f := range funcType.Fields {
+		if f.Name == "core" {
+			hasCore = true
+		}
+		if f.Name == "test_app" {
+			hasTestApp = true
+		}
 	}
+	require.True(t, hasCore, "Function must have 'core' after re-add")
+	require.True(t, hasTestApp, "Function must have 'test_app' after re-add")
 
-	// 9. Final check
-	resp, err = service.Query(ctx,
-		`{ function { core { embedder_settings { is_enabled } } } }`, nil)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	t.Logf("Step 9 final: errors=%v", resp.Errors)
-	require.Empty(t, resp.Errors,
-		"BUG: Function.core lost after second load attempt")
-	resp.Close()
-	t.Log("Step 9: Function.core OK — all good")
+	t.Log("ALL CHECKS PASSED")
 }
