@@ -42,7 +42,7 @@ type Source struct {
 func New(ds types.DataSource, attached bool) (*Source, error) {
 	return &Source{
 		ds:       ds,
-		engine:   engines.NewDuckDB(),
+		engine:   engines.NewAirport(),
 		attached: attached,
 	}, nil
 }

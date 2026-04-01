@@ -196,7 +196,7 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	// 7. Create datasources service and register UDFs.
 	s.ds = datasources.New(s, s.db, s.catalog, datasources.EmbedderSettings{
 		IsEnabled:  s.config.Embedder.URL != "",
-		Name:       "system",
+		Name:       "_system_embedder",
 		Model:      s.config.Embedder.URL,
 		Dimensions: s.config.Embedder.VectorSize,
 	})
