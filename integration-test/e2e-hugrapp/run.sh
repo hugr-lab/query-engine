@@ -77,7 +77,7 @@ run_test "admin module function user_count" \
     '"user_count":99'
 
 run_test "admin module table function audit" \
-    '{ test_app { admin { audit { id action user_name } } } }' \
+    '{ test_app { admin { admin_audit { id action user_name } } } }' \
     '"action":"login"'
 
 # HugrSchema test (custom SDL for DS — has payload field with description)
