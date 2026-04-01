@@ -71,6 +71,20 @@ run_test "app DS events count" \
     '{ test_app { store { events { id } } } }' \
     '"id":2'
 
+# Multi-schema tests (named schema "admin" → nested module)
+run_test "admin module function user_count" \
+    '{ function { test_app { admin { user_count } } } }' \
+    '"user_count":99'
+
+run_test "admin module table function audit" \
+    '{ test_app { admin { audit { id action user_name } } } }' \
+    '"action":"login"'
+
+# HugrSchema test (custom SDL for DS — has payload field with description)
+run_test "app DS with HugrSchema (custom SDL)" \
+    '{ test_app { store { events { event_type payload } } } }' \
+    '"payload"'
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 echo ""
