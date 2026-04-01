@@ -143,31 +143,24 @@ func registerAppDataSource(ctx context.Context, querier Querier, fullName string
 		"self_defined": selfDefined,
 		"read_only":    dsInfo.ReadOnly,
 	}
-
-	registerQuery := `mutation($data: core_data_sources_mut_input_data!) {
-		core { insert_data_sources(data: $data) { name } }
-	}`
-	if _, err := querier.Query(ctx, registerQuery, map[string]any{"data": data}); err != nil {
-		return fmt.Errorf("register DS %s: %w", fullName, err)
-	}
-
 	// If app provides custom SDL, register it as a text catalog source
 	if dsInfo.HugrSchema != "" {
 		sdl, err := applyTemplate(dsInfo.HugrSchema, tmplParams)
 		if err != nil {
 			return fmt.Errorf("template SDL for %s: %w", fullName, err)
 		}
-		catData := map[string]any{
+		data["catalogs"] = []map[string]any{{
 			"name": fullName,
 			"type": "text",
 			"path": sdl,
-		}
-		catQuery := `mutation($data: core_catalog_sources_mut_input_data!) {
-			core { insert_catalog_sources(data: $data) { name } }
-		}`
-		if _, err := querier.Query(ctx, catQuery, map[string]any{"data": catData}); err != nil {
-			return fmt.Errorf("register catalog source for %s: %w", fullName, err)
-		}
+		}}
+	}
+
+	registerQuery := `mutation($data: core_data_sources_mut_input_data!) {
+		core { insert_data_sources(data: $data) { name } }
+	}`
+	if _, err := querier.Query(ctx, registerQuery, map[string]any{"data": data}); err != nil {
+		return fmt.Errorf("register DS %s: %w", fullName, err)
 	}
 
 	return nil
