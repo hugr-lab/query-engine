@@ -8,6 +8,15 @@ import (
 	"github.com/hugr-lab/airport-go/catalog"
 )
 
+// DefaultSchemaName is the schema name treated as root level (no @module directive).
+const DefaultSchema = "default"
+
+// ReservedSchemas that cannot be used by app developers.
+var ReservedSchemas = map[string]bool{
+	"_mount": true,
+	"_funcs": true,
+}
+
 type AppInfo struct {
 	Name          string `json:"name"`
 	Description   string `json:"description"`

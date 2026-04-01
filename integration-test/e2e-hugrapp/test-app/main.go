@@ -93,6 +93,19 @@ func (a *TestApp) Catalog(ctx context.Context) (catalog.Catalog, error) {
 
 	mux.Table("default", &staticTable{})
 
+	// Manual SDL for testing — Airport function names use "schema"."NAME" format
+	mux.WithSDL(`
+extend type Function {
+  add(a: BigInt!, b: BigInt!): BigInt @function(name: "\"default\".\"ADD\"")
+  echo(msg: String!): String @function(name: "\"default\".\"ECHO\"")
+}
+
+type items @table(name: "\"default\".\"ITEMS\"") {
+  id: BigInt! @pk
+  name: String!
+}
+`)
+
 	return mux, nil
 }
 
