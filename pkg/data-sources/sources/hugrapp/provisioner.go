@@ -335,12 +335,8 @@ func cleanupAppDataSources(ctx context.Context, querier Querier, appName string)
 	}
 
 	delQ := `mutation($name: String!) {
-			core { 
-				delete_data_sources(filter: { name: { like: $name } }) { success } 
-				delete_data_source_catalogs(filter: { data_source_name: { like: $name } }) { success }
-				delete_catalogs(filter: { name: { like: $name } }) { success } }
-			}
-		}`
+		core { delete_data_sources(filter: { name: { like: $name } }) { success } }
+	}`
 	delResp, err := querier.Query(ctx, delQ, map[string]any{"name": pattern})
 	if delResp != nil {
 		delResp.Close()
