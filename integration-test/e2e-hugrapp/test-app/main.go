@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -93,9 +94,29 @@ func (a *TestApp) Catalog(ctx context.Context) (catalog.Catalog, error) {
 
 	mux.Table("default", &staticTable{})
 
+	// Table function: search(query) returns filtered items
+	err = mux.HandleTableFunc("default", "search", func(w *app.Result, r *app.Request) error {
+		q := r.String("query")
+		data := map[string][]any{
+			"alpha": {int64(1), "alpha"},
+			"beta":  {int64(2), "beta"},
+			"gamma": {int64(3), "gamma"},
+		}
+		for name, row := range data {
+			if q == "" || strings.Contains(name, q) {
+				w.Append(row...)
+			}
+		}
+		return nil
+	}, app.Arg("query", app.String),
+		app.ColPK("id", app.Int64),
+		app.Col("name", app.String),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	// Manual SDL for testing
-	// Functions: catalog prefix added automatically by planner (EngineFunctionCallWithCatalog)
-	// Tables: catalog prefix added automatically by ATTACH AS
 	mux.WithSDL(`
 extend type Function {
   add(a: BigInt!, b: BigInt!): BigInt @function(name: "\"default\".\"ADD\"")
@@ -103,6 +124,15 @@ extend type Function {
 }
 
 type items @table(name: "\"default\".\"ITEMS\"") {
+  id: BigInt! @pk
+  name: String!
+}
+
+input default_SEARCH_args {
+  query: String!
+}
+
+type default_search @view(name: "\"default\".\"SEARCH\"") @args(name: "default_SEARCH_args") {
   id: BigInt! @pk
   name: String!
 }

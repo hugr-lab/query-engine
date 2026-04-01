@@ -50,6 +50,14 @@ run_test "app table items" \
     '{ test_app { items { id name } } }' \
     '"name":"alpha"'
 
+run_test "app table function search (parameterized view)" \
+    '{ test_app { default_search(query: \"alpha\") { id name } } }' \
+    '"name":"alpha"'
+
+run_test "app table function search empty query" \
+    '{ test_app { default_search(query: \"\") { id name } } }' \
+    '"name":"beta"'
+
 run_test "schema introspection has test_app" \
     '{ __schema { types { name } } }' \
     'test_app'
