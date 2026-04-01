@@ -60,11 +60,6 @@ func ProvisionDataSources(
 	if len(dataSources) == 0 {
 		return nil
 	}
-	ctx, err = pool.WithTx(ctx)
-	if err != nil {
-		return fmt.Errorf("provision: start transaction: %w", err)
-	}
-	defer pool.Rollback(ctx)
 
 	appName := appSource.Name()
 
@@ -96,12 +91,12 @@ func ProvisionDataSources(
 			return fmt.Errorf("register DS %s: %w", fullName, err)
 		}
 		slog.Info("loading app DS", "app", appName, "ds", fullName)
-		if err := loadDataSource(ctx, querier, fullName); err != nil {
+		if err := querier.LoadDataSource(ctx, fullName); err != nil {
 			return fmt.Errorf("load DS %s: %w", fullName, err)
 		}
 	}
 
-	return pool.Commit(ctx)
+	return nil
 }
 
 // registerAppDataSource registers a new data source in hugr via GraphQL.
@@ -212,30 +207,6 @@ func ensureDBSchema(
 	}
 }
 
-// unloadDataSource unloads a data source via GraphQL mutation.
-func unloadDataSource(ctx context.Context, querier Querier, name string) error {
-	q := `mutation($name: String!) {
-		function { core { unload_data_source(name: $name) { success message } } }
-	}`
-	resp, err := querier.Query(ctx, q, map[string]any{"name": name})
-	if resp != nil {
-		resp.Close()
-	}
-	return err
-}
-
-// loadDataSource loads a data source via GraphQL mutation.
-func loadDataSource(ctx context.Context, querier Querier, name string) error {
-	q := `mutation($name: String!) {
-		function { core { load_data_source(name: $name) { success message } } }
-	}`
-	resp, err := querier.Query(ctx, q, map[string]any{"name": name})
-	if resp != nil {
-		resp.Close()
-	}
-	return err
-}
-
 func initSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource *Source, dsInfo DataSourceInfo, tmplParams TemplateParams) error {
 	rawSQL, err := readMountInitDSSchema(ctx, pool, appSource.Name(), dsInfo.Name)
 	if err != nil {
@@ -341,7 +312,7 @@ func cleanupAppDataSources(ctx context.Context, querier Querier, appName string)
 
 	for _, d := range ds {
 		slog.Info("cleanup: unloading app DS", "app", appName, "ds", d.Name)
-		if err := unloadDataSource(ctx, querier, d.Name); err != nil {
+		if err := querier.UnloadDataSource(ctx, d.Name); err != nil {
 			slog.Warn("cleanup: unload failed", "ds", d.Name, "error", err)
 		}
 	}
