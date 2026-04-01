@@ -26,6 +26,8 @@ services:
       HUGR_APP_HEARTBEAT_INTERVAL: "5s"
       HUGR_APP_HEARTBEAT_TIMEOUT: "3s"
       HUGR_APP_HEARTBEAT_RETRIES: "2"
+    volumes:
+      - hugr-data:/data
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:15100/query?query={__typename} || exit 1"]
       interval: 3s
@@ -49,3 +51,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+
+volumes:
+  hugr-data:
