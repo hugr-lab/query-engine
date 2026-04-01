@@ -62,6 +62,15 @@ run_test "schema introspection has test_app" \
     '{ __schema { types { name } } }' \
     'test_app'
 
+# Data source tests (PostgreSQL provisioned by app)
+run_test "app DS events table (provisioned)" \
+    '{ test_app { store { events { id event_type } } } }' \
+    '"event_type":"app_start"'
+
+run_test "app DS events count" \
+    '{ test_app { store { events { id } } } }' \
+    '"id":2'
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 echo ""

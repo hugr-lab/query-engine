@@ -75,6 +75,65 @@ func (a *TestApp) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// DataSources implements [app.DataSourceUser].
+// Declares a PostgreSQL data source that hugr will provision.
+func (a *TestApp) DataSources(ctx context.Context) ([]app.DataSourceInfo, error) {
+	pgDSN := os.Getenv("PG_DSN")
+	if pgDSN == "" {
+		return nil, nil // no DB needed if PG_DSN not set
+	}
+	return []app.DataSourceInfo{
+		{
+			Name:        "store",
+			Type:        "postgres",
+			Description: "Test app PostgreSQL store",
+			Path:        pgDSN,
+			Version:     a.Info().Version,
+			ReadOnly:    false,
+		},
+	}, nil
+}
+
+// InitDBSchemaTemplate implements [app.ApplicationDBInitializer].
+// Returns SQL to create the initial schema for a data source.
+func (a *TestApp) InitDBSchemaTemplate(ctx context.Context, name string) (string, error) {
+	switch name {
+	case "store":
+		return `
+CREATE TABLE IF NOT EXISTS events (
+    id SERIAL PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    payload TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+INSERT INTO events (event_type, payload) VALUES
+    ('app_start', 'test-app initialized'),
+    ('test_event', 'hello from test-app');
+`, nil
+	default:
+		return "", fmt.Errorf("unknown data source: %s", name)
+	}
+}
+
+// MigrateDBSchemaTemplate implements [app.ApplicationDBMigrator].
+func (a *TestApp) MigrateDBSchemaTemplate(ctx context.Context, name, fromVersion string) (string, error) {
+	switch name {
+	case "store":
+		return `
+ALTER TABLE events ADD COLUMN IF NOT EXISTS severity TEXT DEFAULT 'info';
+`, nil
+	default:
+		return "", fmt.Errorf("unknown data source: %s", name)
+	}
+}
+
+// Compile-time interface checks.
+var (
+	_ app.DataSourceUser       = (*TestApp)(nil)
+	_ app.ApplicationDBInitializer = (*TestApp)(nil)
+	_ app.ApplicationDBMigrator    = (*TestApp)(nil)
+)
+
 func (a *TestApp) Catalog(ctx context.Context) (catalog.Catalog, error) {
 	mux := app.New()
 
