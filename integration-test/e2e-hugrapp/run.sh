@@ -135,25 +135,45 @@ run_test "after recovery: app DS works" \
     '{ test_app { store { events { id event_type } } } }' \
     '"event_type":"app_start"'
 
+run_test "after recovery: admin module works" \
+    '{ function { test_app { admin { user_count } } } }' \
+    '"user_count":99'
+
+run_test "after recovery: schema introspection has test_app" \
+    '{ __schema { types { name } } }' \
+    'test_app'
+
 echo ""
-echo "=== Lifecycle: version upgrade (migration) ==="
+echo "=== Lifecycle: heartbeat suspend + auto-recover ==="
 echo ""
 
-echo "Stopping test-app for version upgrade..."
-docker compose stop test-app 2>/dev/null
-sleep 5
+echo "Killing test-app (no graceful shutdown)..."
+docker compose kill test-app 2>/dev/null
 
-echo "Starting test-app with APP_VERSION=2.0.0..."
-APP_VERSION=2.0.0 docker compose up -d test-app 2>/dev/null
-sleep 15
+echo "Waiting for heartbeat to suspend (~15s)..."
+sleep 18
 
-run_test "after upgrade: app function works" \
-    '{ function { test_app { add(a: 100, b: 200) } } }' \
-    '"add":300'
+run_test "suspended: app functions return error" \
+    '{ function { test_app { add(a: 1, b: 2) } } }' \
+    'error'
 
-run_test "after upgrade: migration ran (severity column)" \
-    '{ test_app { store { events { event_type severity } } } }' \
-    '"severity"'
+echo "Starting test-app back (heartbeat should auto-recover)..."
+docker compose up -d test-app 2>/dev/null
+
+echo "Waiting for heartbeat to detect recovery (~10s)..."
+sleep 12
+
+run_test "auto-recovered: app function works" \
+    '{ function { test_app { add(a: 7, b: 8) } } }' \
+    '"add":15'
+
+run_test "auto-recovered: app table works" \
+    '{ test_app { items { id name } } }' \
+    '"name":"alpha"'
+
+run_test "auto-recovered: app DS works" \
+    '{ test_app { store { events { id event_type } } } }' \
+    '"event_type":"app_start"'
 
 echo ""
 echo "=== Lifecycle: graceful shutdown ==="
@@ -165,6 +185,10 @@ sleep 5
 
 run_test "after graceful stop: app unloaded (functions gone)" \
     '{ function { test_app { add(a: 1, b: 2) } } }' \
+    'error'
+
+run_test "after graceful stop: app table gone" \
+    '{ test_app { items { id name } } }' \
     'error'
 
 echo ""
