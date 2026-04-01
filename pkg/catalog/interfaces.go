@@ -26,6 +26,14 @@ type CatalogManager interface {
 	// changes (IncrementalCatalog), only the delta is compiled and applied.
 	// Otherwise falls back to full recompilation.
 	ReloadCatalog(ctx context.Context, name string) error
+	// SuspendCatalog removes a catalog from the active schema without deleting
+	// the registration. Used when a hugr-app becomes unreachable.
+	SuspendCatalog(ctx context.Context, name string) error
+	// ReactivateCatalog re-compiles and re-applies a previously suspended catalog.
+	// The catalog source must be updated before calling this.
+	ReactivateCatalog(ctx context.Context, name string, catalog Catalog) error
+	// IsSuspended returns true if the named catalog exists but is suspended.
+	IsSuspended(name string) bool
 }
 
 // VariableTransformer transforms query variables before parsing.

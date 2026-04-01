@@ -350,6 +350,62 @@ func (p *Provider) EnableCatalog(ctx context.Context, name string) error {
 	return nil
 }
 
+// SuspendCatalog removes a catalog from the active schema without deleting the registration.
+func (p *Provider) SuspendCatalog(ctx context.Context, name string) error {
+	if err := p.SetCatalogSuspended(ctx, name, true); err != nil {
+		return fmt.Errorf("suspend catalog %s: %w", name, err)
+	}
+	// Remove compiled schema objects but keep the catalog record.
+	_ = p.DropCatalog(ctx, name, false)
+	p.InvalidateCatalog(name)
+	slog.Info("catalog suspended", "catalog", name)
+	return nil
+}
+
+// ReactivateCatalog re-compiles and re-applies a previously suspended catalog with a fresh source.
+func (p *Provider) ReactivateCatalog(ctx context.Context, name string, cat catalog.Catalog) error {
+	source, ok := cat.(sources.Catalog)
+	if !ok {
+		return fmt.Errorf("reactivate catalog %s: source does not implement sources.Catalog", name)
+	}
+
+	deps, err := p.compileAndApply(ctx, name, source)
+	if err != nil {
+		return fmt.Errorf("reactivate catalog %s: %w", name, err)
+	}
+
+	srcVersion, _ := source.Version(ctx)
+	compositeVersion := catalogVersionWithOptions(srcVersion, source.CompileOptions())
+	if err := p.SetCatalogVersion(ctx, name, compositeVersion); err != nil {
+		slog.Error("failed to set version during reactivation", "catalog", name, "error", err)
+	}
+	if err := p.SetCatalogSuspended(ctx, name, false); err != nil {
+		slog.Error("failed to unsuspend during reactivation", "catalog", name, "error", err)
+	}
+
+	p.mu.Lock()
+	p.catalogs[name] = source
+	p.mu.Unlock()
+
+	slog.Info("catalog reactivated", "catalog", name, "version", compositeVersion, "dependencies", deps)
+	p.reactivateSuspended(ctx) // try dependents
+	return nil
+}
+
+// IsSuspended returns true if the named catalog exists but is suspended.
+func (p *Provider) IsSuspended(name string) bool {
+	catalogs, err := p.ListCatalogs(context.Background())
+	if err != nil {
+		return false
+	}
+	for _, rec := range catalogs {
+		if rec.Name == name {
+			return rec.Suspended
+		}
+	}
+	return false
+}
+
 // suspendDependents finds all catalogs that depend on the given name,
 // removes their schema objects, and marks them as suspended.
 //
