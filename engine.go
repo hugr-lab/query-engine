@@ -12,11 +12,11 @@ import (
 	adminui "github.com/hugr-lab/query-engine/pkg/admin-ui"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
-	"github.com/hugr-lab/query-engine/pkg/cluster"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	catalogdb "github.com/hugr-lab/query-engine/pkg/catalog/db"
+	"github.com/hugr-lab/query-engine/pkg/cluster"
 	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
@@ -194,7 +194,12 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	}
 
 	// 7. Create datasources service and register UDFs.
-	s.ds = datasources.New(s, s.db, s.catalog)
+	s.ds = datasources.New(s, s.db, s.catalog, datasources.EmbedderSettings{
+		IsEnabled:  s.config.Embedder.URL != "",
+		Name:       "system",
+		Model:      s.config.Embedder.URL,
+		Dimensions: s.config.Embedder.VectorSize,
+	})
 	// In read-only or cluster worker mode, skip schema DB writes
 	// on Attach/Detach — schemas are managed by the writer/management node.
 	if isReadonly || s.config.Cluster.IsWorker() {

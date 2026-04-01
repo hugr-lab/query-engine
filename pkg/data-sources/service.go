@@ -41,15 +41,24 @@ type Service struct {
 	// skipCatalogOps disables schema DB writes (AddCatalog/RemoveCatalog)
 	// on Attach/Detach. Set for read-only CoreDB and cluster worker nodes
 	// where schema state is managed by the writer/management node.
-	skipCatalogOps bool
+	skipCatalogOps   bool
+	embedderSettings EmbedderSettings
 }
 
-func New(qe types.Querier, db *db.Pool, cs catalog.Manager) *Service {
+type EmbedderSettings struct {
+	IsEnabled  bool
+	Name       string
+	Model      string
+	Dimensions int
+}
+
+func New(qe types.Querier, db *db.Pool, cs catalog.Manager, embederSettings EmbedderSettings) *Service {
 	return &Service{
-		dataSources: make(map[string]Source),
-		catalogs:    cs,
-		db:          db,
-		qe:          qe,
+		dataSources:      make(map[string]Source),
+		catalogs:         cs,
+		db:               db,
+		qe:               qe,
+		embedderSettings: embederSettings,
 	}
 }
 
@@ -138,7 +147,11 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 	if p, ok := ds.(Provisioner); ok && s.qe != nil {
 		if err := p.Provision(ctx, s.qe); err != nil {
 			slog.Error("provisioning failed", "source", name, "error", err)
-			// Non-fatal: continue with schema compilation
+			// fatal and rollback detach if provisioning fails, to avoid leaving the source in a bad state.
+			if err := ds.Detach(ctx, s.db); err != nil {
+				slog.Error("failed to rollback attach after provisioning failure", "source", name, "error", err)
+			}
+			return fmt.Errorf("provisioning failed: %w", err)
 		}
 	}
 
