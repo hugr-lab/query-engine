@@ -45,6 +45,17 @@ type SelfDescriber interface {
 	CatalogSource(ctx context.Context, db *db.Pool) (cs.Catalog, error)
 }
 
+// Provisioner is implemented by sources that need to provision external
+// resources (databases, schemas) after attachment. Called by the data source
+// service after Attach() succeeds. Querier provides access to hugr's GraphQL
+// API for registering/loading data sources and querying system configuration.
+type Provisioner interface {
+	Provision(ctx context.Context, querier types.Querier) error
+}
+
+// Querier provides GraphQL query access for provisioning operations.
+type Querier = types.Querier
+
 // RuntimeSource is a data source that is attached on start and provides a catalog source.
 type RuntimeSource interface {
 	Name() string

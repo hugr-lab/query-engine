@@ -9,7 +9,6 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
-	"github.com/hugr-lab/query-engine/types"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 )
@@ -22,10 +21,8 @@ CREATE TABLE IF NOT EXISTS _hugr_app_meta (
     updated_at   TIMESTAMPTZ DEFAULT now()
 );`
 
-// Querier executes GraphQL queries for data source management.
-type Querier interface {
-	Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error)
-}
+// Querier is sources.Querier — provides GraphQL query access.
+type Querier = sources.Querier
 
 // TemplateParams holds system-level parameters available for Go template
 // expansion in app's SQL (init/migrate) and SDL (HugrSchema).

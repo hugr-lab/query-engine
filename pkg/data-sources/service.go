@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
@@ -131,6 +132,14 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 	err := ds.Attach(ctx, s.db)
 	if err != nil {
 		return err
+	}
+
+	// Provision external resources (app databases) if source supports it.
+	if p, ok := ds.(Provisioner); ok && s.qe != nil {
+		if err := p.Provision(ctx, s.qe); err != nil {
+			slog.Error("provisioning failed", "source", name, "error", err)
+			// Non-fatal: continue with schema compilation
+		}
 	}
 
 	// Skip schema compilation in readonly/worker mode — schemas

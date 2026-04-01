@@ -11,7 +11,10 @@ import (
 	"github.com/hugr-lab/query-engine/types"
 )
 
-var _ sources.Source = &Source{}
+var (
+	_ sources.Source      = &Source{}
+	_ sources.Provisioner = &Source{}
+)
 
 // AppInfo holds metadata returned by _mount.info() from a hugr-app source.
 type AppInfo struct {
@@ -32,6 +35,7 @@ type Source struct {
 	attached bool
 	version  string
 	appInfo  *AppInfo
+	pool     *db.Pool // stored during Attach for Provision/heartbeat use
 }
 
 // New creates a new hugr-app source.
@@ -107,6 +111,7 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	}
 
 	s.attached = true
+	s.pool = pool
 
 	// Read _mount.info() from the attached source.
 	info, err := readMountInfo(ctx, pool, s.ds.Name)
@@ -130,5 +135,43 @@ func (s *Source) Detach(ctx context.Context, pool *db.Pool) error {
 	}
 	s.attached = false
 	s.appInfo = nil
+	s.pool = nil
 	return nil
+}
+
+// Provision implements [sources.Provisioner].
+// Called by the data source service after Attach() succeeds.
+// Reads _mount.data_sources, registers/initializes/migrates app databases.
+// Template params (VectorSize, EmbedderName) are queried from system config via Querier.
+func (s *Source) Provision(ctx context.Context, querier sources.Querier) error {
+	if s.pool == nil || s.appInfo == nil {
+		return nil
+	}
+	tmplParams := queryTemplateParams(ctx, querier)
+	return ProvisionDataSources(ctx, s.pool, s, querier, tmplParams)
+}
+
+// queryTemplateParams fetches system-level template parameters via GraphQL.
+func queryTemplateParams(ctx context.Context, querier sources.Querier) TemplateParams {
+	params := TemplateParams{}
+	resp, err := querier.Query(ctx, `{ function { core { info { embedder_vector_size embedder_name } } } }`, nil)
+	if err != nil || resp == nil {
+		return params
+	}
+	// Best-effort extraction — if fields don't exist, defaults are fine
+	if data, ok := resp.Data["data"].(map[string]any); ok {
+		if fn, ok := data["function"].(map[string]any); ok {
+			if core, ok := fn["core"].(map[string]any); ok {
+				if info, ok := core["info"].(map[string]any); ok {
+					if vs, ok := info["embedder_vector_size"].(float64); ok {
+						params.VectorSize = int(vs)
+					}
+					if en, ok := info["embedder_name"].(string); ok {
+						params.EmbedderName = en
+					}
+				}
+			}
+		}
+	}
+	return params
 }
