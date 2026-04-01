@@ -47,7 +47,7 @@ run_test "app function echo" \
     '"echo":"hello"'
 
 run_test "app table items" \
-    '{ test_app { items { id name } } }' \
+    '{ test_app { default_items { id name } } }' \
     '"name":"alpha"'
 
 run_test "app table function search (parameterized view)" \
