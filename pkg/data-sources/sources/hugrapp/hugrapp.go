@@ -151,50 +151,40 @@ func (s *Source) Provision(ctx context.Context, querier sources.Querier) error {
 	return ProvisionDataSources(ctx, s.pool, s, querier, tmplParams)
 }
 
-// queryTemplateParams fetches system-level template parameters via GraphQL.
-// Uses core.settings runtime source when available.
-// TODO: implement core.settings runtime source that exposes all system settings
-// including embedder config, vector size, timezone, etc.
-// For now, queries core.info which has version/type, and falls back to defaults.
+// queryTemplateParams fetches embedder settings via core.embedder_settings function.
 func queryTemplateParams(ctx context.Context, querier sources.Querier) TemplateParams {
 	params := TemplateParams{}
-	// Query settings via core.settings (when implemented)
 	resp, err := querier.Query(ctx, `{
-		function { core { settings { embedder_vector_size embedder_name } } }
+		function { core { embedder_settings { is_enabled name model dimensions } } }
 	}`, nil)
 	if err != nil || resp == nil {
-		return params // defaults are fine — templates use {{ if gt .VectorSize 0 }}
+		return params
 	}
-	// Navigate: data.function.core.settings
-	params.VectorSize, params.EmbedderName = extractSettingsFromResponse(resp.Data)
+	// Navigate: data.function.core.embedder_settings
+	settings := navMap(resp.Data, "data", "function", "core", "embedder_settings")
+	if settings == nil {
+		return params
+	}
+	if v, ok := settings["dimensions"].(float64); ok {
+		params.VectorSize = int(v)
+	}
+	if v, ok := settings["name"].(string); ok {
+		params.EmbedderName = v
+	}
 	return params
 }
 
-func extractSettingsFromResponse(data map[string]any) (int, string) {
-	nav := func(m map[string]any, keys ...string) map[string]any {
-		for _, k := range keys {
-			v, ok := m[k]
-			if !ok {
-				return nil
-			}
-			m, ok = v.(map[string]any)
-			if !ok {
-				return nil
-			}
+// navMap walks a nested map by keys, returning nil if any step fails.
+func navMap(m map[string]any, keys ...string) map[string]any {
+	for _, k := range keys {
+		v, ok := m[k]
+		if !ok {
+			return nil
 		}
-		return m
+		m, ok = v.(map[string]any)
+		if !ok {
+			return nil
+		}
 	}
-	settings := nav(data, "data", "function", "core", "settings")
-	if settings == nil {
-		return 0, ""
-	}
-	vs := 0
-	en := ""
-	if v, ok := settings["embedder_vector_size"].(float64); ok {
-		vs = int(v)
-	}
-	if v, ok := settings["embedder_name"].(string); ok {
-		en = v
-	}
-	return vs, en
+	return m
 }
