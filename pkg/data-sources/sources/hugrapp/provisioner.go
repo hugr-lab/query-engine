@@ -319,13 +319,17 @@ func cleanupAppDataSources(ctx context.Context, querier Querier, appName string)
 	for _, d := range ds {
 		slog.Info("cleaning up app DS", "app", appName, "ds", d.Name)
 		_ = unloadDataSource(ctx, querier, d.Name)
+	}
 
-		delQ := `mutation($name: String!) {
-			core { delete_data_sources(filter: { name: { eq: $name } }) { name } }
+	delQ := `mutation($name: String!) {
+			core { 
+				delete_data_sources(filter: { name: { like: $name } }) { success } 
+				delete_data_source_catalogs(filter: { data_source_name: { like: $name } }) { success }
+				delete_catalogs(filter: { name: { like: $name } }) { success } }
+			}
 		}`
-		if _, err := querier.Query(ctx, delQ, map[string]any{"name": d.Name}); err != nil {
-			slog.Warn("failed to delete app DS", "ds", d.Name, "error", err)
-		}
+	if _, err := querier.Query(ctx, delQ, map[string]any{"name": pattern}); err != nil {
+		slog.Warn("failed to delete app DS", "hugr-app", pattern, "error", err)
 	}
 
 	return nil
