@@ -51,11 +51,11 @@ run_test "app table items" \
     '"name":"alpha"'
 
 run_test "app table function search (parameterized view)" \
-    '{ test_app { default_search(query: \"alpha\") { id name } } }' \
+    '{ test_app { default_search(args: { query: \"alpha\" }) { id name } } }' \
     '"name":"alpha"'
 
 run_test "app table function search empty query" \
-    '{ test_app { default_search(query: \"\") { id name } } }' \
+    '{ test_app { default_search(args: { query: \"\" }) { id name } } }' \
     '"name":"beta"'
 
 run_test "schema introspection has test_app" \
