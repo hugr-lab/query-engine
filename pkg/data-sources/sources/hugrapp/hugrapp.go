@@ -67,7 +67,7 @@ func (s *Source) Info() *AppInfo { return s.appInfo }
 
 // Attach implements [sources.Source].
 func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
-	err := sources.CheckDBExists(ctx, pool, engines.Ident(s.ds.Name), sources.Postgres)
+	err := sources.CheckDBExists(ctx, pool, engines.Ident(s.ds.Name), sources.Airport)
 	if err != nil {
 		return err
 	}
