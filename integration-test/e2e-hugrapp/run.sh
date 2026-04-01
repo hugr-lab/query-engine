@@ -104,7 +104,7 @@ run_test "after graceful stop: app not queryable" \
 # === Restart with same version ===
 echo "Restarting test-app (same version v1)..."
 docker compose up -d test-app 2>/dev/null
-sleep 15  # wait for startup + registration + load
+sleep 20  # wait for startup + registration + provisioning + load
 
 run_test "after restart v1: app function works" \
     '{ function { test_app { add(a: 10, b: 20) } } }' \
