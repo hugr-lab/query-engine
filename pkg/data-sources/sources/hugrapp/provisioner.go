@@ -40,10 +40,11 @@ func applyTemplate(tmpl string, params TemplateParams) (string, error) {
 	return db.ParseSQLScriptTemplate(db.SDBPostgres, tmpl, params)
 }
 
-// ProvisionDataSources reads data sources from _mount.data_sources and
-// ensures each one is registered, initialized, and migrated as needed.
-// Uses Querier to register/load data sources via GraphQL API.
-// TemplateParams provides system-level parameters for SQL/SDL templating.
+// ProvisionDataSources reads data sources from _mount.data_sources,
+// cleans up stale registrations, ensures DB schemas, then registers and loads all DS.
+// Two-pass approach:
+//  1. ensureDB for PostgreSQL sources (create tables, migrate)
+//  2. register + load all sources (any type)
 func ProvisionDataSources(
 	ctx context.Context,
 	pool *db.Pool,
@@ -51,10 +52,6 @@ func ProvisionDataSources(
 	querier Querier,
 	tmplParams TemplateParams,
 ) error {
-	if appSource.appInfo == nil || !appSource.appInfo.IsDBInitializer {
-		return nil // app doesn't manage databases
-	}
-
 	dataSources, err := readMountDataSources(ctx, pool, appSource.Name())
 	if err != nil {
 		return fmt.Errorf("provision: read data_sources: %w", err)
@@ -66,63 +63,33 @@ func ProvisionDataSources(
 
 	appName := appSource.Name()
 
-	// Clean up stale DS registrations — unload, delete from data_sources/catalog_sources/catalogs
+	// Clean up stale DS registrations — unload + delete all app DS
 	if err := cleanupAppDataSources(ctx, querier, appName); err != nil {
 		slog.Warn("cleanup app data sources failed (non-fatal)", "app", appName, "error", err)
 	}
 
+	// Pass 1: ensure DB schemas for PostgreSQL sources (only if app manages DB)
+	if appSource.appInfo != nil && appSource.appInfo.IsDBInitializer {
+		for _, dsInfo := range dataSources {
+			if !strings.EqualFold(dsInfo.Type, "postgres") {
+				continue // only PostgreSQL gets DB provisioning
+			}
+			fullName := appName + "." + dsInfo.Name
+			slog.Info("ensuring DB schema", "app", appName, "ds", fullName, "version", dsInfo.Version)
+			if _, err := ensureDBSchema(ctx, pool, appSource, dsInfo, fullName, tmplParams); err != nil {
+				return fmt.Errorf("ensure DB schema %s: %w", fullName, err)
+			}
+		}
+	}
+
+	// Pass 2: register + load all sources (any type)
 	for _, dsInfo := range dataSources {
 		fullName := appName + "." + dsInfo.Name
-
-		// Only PostgreSQL supported for now
-		if !strings.EqualFold(dsInfo.Type, "postgres") {
-			return fmt.Errorf("DB provisioning not supported for type %q; only PostgreSQL is currently supported (data source: %s)", dsInfo.Type, fullName)
-		}
-
-		slog.Info("provisioning app data source", "app", appName, "ds", fullName, "version", dsInfo.Version)
-
-		if err := provisionOne(ctx, pool, appSource, dsInfo, fullName, querier, tmplParams); err != nil {
-			return fmt.Errorf("provision %s: %w", fullName, err)
-		}
-	}
-
-	return nil
-}
-
-func provisionOne(
-	ctx context.Context,
-	pool *db.Pool,
-	appSource *Source,
-	dsInfo DataSourceInfo,
-	fullName string,
-	querier Querier,
-	tmplParams TemplateParams,
-) error {
-	// 1. Check if DS already registered in hugr and its status
-	status, exists := queryDataSourceStatus(ctx, querier, fullName)
-
-	// 2. Register in hugr if not exists
-	if !exists {
+		slog.Info("registering app DS", "app", appName, "ds", fullName)
 		if err := registerAppDataSource(ctx, querier, fullName, dsInfo, tmplParams); err != nil {
-			return err
+			return fmt.Errorf("register DS %s: %w", fullName, err)
 		}
-	}
-
-	// 3. Handle DB schema (connect, version check, init/migrate)
-	schemaChanged, err := ensureDBSchema(ctx, pool, appSource, dsInfo, fullName, tmplParams)
-	if err != nil {
-		return err
-	}
-
-	// 4. If schema changed and DS was loaded — unload first for clean reload
-	if schemaChanged && status == "loaded" {
-		slog.Info("unloading DS for schema reload", "ds", fullName)
-		_ = unloadDataSource(ctx, querier, fullName)
-	}
-
-	// 5. Ensure DS is loaded
-	if status != "loaded" || schemaChanged {
-		slog.Info("loading app DS", "ds", fullName)
+		slog.Info("loading app DS", "app", appName, "ds", fullName)
 		if err := loadDataSource(ctx, querier, fullName); err != nil {
 			return fmt.Errorf("load DS %s: %w", fullName, err)
 		}
@@ -235,52 +202,6 @@ func ensureDBSchema(
 		}
 		return true, nil
 	}
-}
-
-// queryDataSourceStatus checks if a data source exists and returns its status.
-func queryDataSourceStatus(ctx context.Context, querier Querier, name string) (status string, exists bool) {
-	q := `{ function { core { data_source_status(name: $name) } } }`
-	vars := map[string]any{"name": name}
-
-	resp, err := querier.Query(ctx, q, vars)
-	if err != nil || resp == nil {
-		return "", false
-	}
-
-	// Navigate response: data.function.core.data_source_status
-	data, ok := resp.Data["data"]
-	if !ok {
-		return "", false
-	}
-	dataMap, ok := data.(map[string]any)
-	if !ok {
-		return "", false
-	}
-	fn, ok := dataMap["function"]
-	if !ok {
-		return "", false
-	}
-	fnMap, ok := fn.(map[string]any)
-	if !ok {
-		return "", false
-	}
-	core, ok := fnMap["core"]
-	if !ok {
-		return "", false
-	}
-	coreMap, ok := core.(map[string]any)
-	if !ok {
-		return "", false
-	}
-	s, ok := coreMap["data_source_status"]
-	if !ok || s == nil {
-		return "", false
-	}
-	statusStr, ok := s.(string)
-	if !ok {
-		return "", false
-	}
-	return statusStr, true
 }
 
 // unloadDataSource unloads a data source via GraphQL mutation.
