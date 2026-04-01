@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"golang.org/x/oauth2"
 
 	_ "embed"
@@ -108,5 +109,82 @@ func Test_customTokenRequest(t *testing.T) {
 			}
 
 		})
+	}
+}
+
+// Test_newCustomOauth2TokenSource_resolvesTokenURLWithBasePath checks that relative
+// tokenUrl/refreshUrl from OpenAPI (e.g. "/Login") are joined to serverURL when the
+// server base already has a path prefix (e.g. https://host/api). url.URL.JoinPath
+// returns a new URL; the implementation must assign it back to u.
+func Test_newCustomOauth2TokenSource_resolvesTokenURLWithBasePath(t *testing.T) {
+	flow := &openapi3.OAuthFlow{
+		TokenURL:   "/Login",
+		RefreshURL: "/RefreshTokens",
+		Extensions: map[string]any{
+			oauth2TokenUrlCustomParam: map[string]any{
+				"method":        "POST",
+				"request_body":  "{login: $username, password: $password}",
+				"response_body": `{access_token: .accessToken, token_type: "bearer", expires_in: 600}`,
+			},
+			oauth2RefreshUrlCustomParam: map[string]any{
+				"method":        "POST",
+				"request_body":  "{refreshToken: .refresh_token}",
+				"response_body": `{access_token: .accessToken, token_type: "bearer", expires_in: 600}`,
+			},
+		},
+	}
+	params := httpSecurityParams{
+		FlowName: "password",
+		Username: "u",
+		Password: "p",
+		Flows: &openapi3.OAuthFlows{
+			Password: flow,
+		},
+	}
+
+	src, err := newCustomOauth2TokenSource("https://mkud-dev.example/api", params)
+	if err != nil {
+		t.Fatalf("newCustomOauth2TokenSource: %v", err)
+	}
+	if want := "https://mkud-dev.example/api/Login"; src.tokenUrl != want {
+		t.Errorf("tokenUrl = %q, want %q (must not be base alone https://.../api — that caused 404)", src.tokenUrl, want)
+	}
+	if want := "https://mkud-dev.example/api/RefreshTokens"; src.refreshUrl != want {
+		t.Errorf("refreshUrl = %q, want %q", src.refreshUrl, want)
+	}
+}
+
+func Test_newCustomOauth2TokenSource_resolvesTokenURLWithHostOnly(t *testing.T) {
+	flow := &openapi3.OAuthFlow{
+		TokenURL:   "/Login",
+		RefreshURL: "/RefreshTokens",
+		Extensions: map[string]any{
+			oauth2TokenUrlCustomParam: map[string]any{
+				"method":        "POST",
+				"request_body":  "{login: $username, password: $password}",
+				"response_body": `{access_token: .accessToken, token_type: "bearer", expires_in: 600}`,
+			},
+			oauth2RefreshUrlCustomParam: map[string]any{
+				"method":        "POST",
+				"request_body":  "{refreshToken: .refresh_token}",
+				"response_body": `{access_token: .accessToken, token_type: "bearer", expires_in: 600}`,
+			},
+		},
+	}
+	params := httpSecurityParams{
+		FlowName: "password",
+		Username: "u",
+		Password: "p",
+		Flows: &openapi3.OAuthFlows{
+			Password: flow,
+		},
+	}
+
+	src, err := newCustomOauth2TokenSource("https://mkud-dev.example", params)
+	if err != nil {
+		t.Fatalf("newCustomOauth2TokenSource: %v", err)
+	}
+	if want := "https://mkud-dev.example/Login"; src.tokenUrl != want {
+		t.Errorf("tokenUrl = %q, want %q", src.tokenUrl, want)
 	}
 }
