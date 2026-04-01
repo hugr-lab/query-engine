@@ -319,26 +319,23 @@ func cleanupAppDataSources(ctx context.Context, querier Querier, appName string)
 
 	slog.Info("cleanup: deleting app DS", "app", appName, "pattern", pattern)
 	delQ := `mutation($name: String!) {
-		core { delete_data_sources(filter: { name: { like: $name } }) { success message } }
+		core {
+			delete_data_sources(filter: { name: { like: $name } }) { success message }
+			delete_catalogs(filter: { data_source_name: { like: $name } }) { success message }
+			delete_catalog_sources(filter: { name: { like: $name } }) { success message }
+		}
 	}`
-	delResp, err := querier.Query(ctx, delQ, map[string]any{"name": pattern})
+	res, err := querier.Query(ctx, delQ, map[string]any{"name": pattern})
 	if err != nil {
 		slog.Error("cleanup: delete query failed", "pattern", pattern, "error", err)
 		return fmt.Errorf("delete app DS %s: %w", pattern, err)
 	}
-	if delResp != nil {
-		if len(delResp.Errors) > 0 {
-			slog.Error("cleanup: delete returned errors", "pattern", pattern, "errors", delResp.Errors)
-		}
-		var result struct {
-			Success bool   `json:"success"`
-			Message string `json:"message"`
-		}
-		if scanErr := delResp.ScanData("core.delete_data_sources", &result); scanErr == nil {
-			slog.Info("cleanup: delete result", "pattern", pattern, "success", result.Success, "message", result.Message)
-		}
-		delResp.Close()
+	defer res.Close()
+	if len(res.Errors) > 0 {
+		slog.Error("cleanup: delete returned errors", "pattern", pattern, "errors", res.Errors)
 	}
+
+	slog.Info("cleanup: delete result", "pattern", pattern)
 
 	return nil
 }
