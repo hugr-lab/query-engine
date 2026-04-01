@@ -160,31 +160,14 @@ func queryTemplateParams(ctx context.Context, querier sources.Querier) TemplateP
 	if err != nil || resp == nil {
 		return params
 	}
-	// Navigate: data.function.core.embedder_settings
-	settings := navMap(resp.Data, "data", "function", "core", "embedder_settings")
-	if settings == nil {
+	var settings struct {
+		Dimensions int    `json:"dimensions"`
+		Name       string `json:"name"`
+	}
+	if err := resp.ScanData("data.function.core.embedder_settings", &settings); err != nil {
 		return params
 	}
-	if v, ok := settings["dimensions"].(float64); ok {
-		params.VectorSize = int(v)
-	}
-	if v, ok := settings["name"].(string); ok {
-		params.EmbedderName = v
-	}
+	params.VectorSize = settings.Dimensions
+	params.EmbedderName = settings.Name
 	return params
-}
-
-// navMap walks a nested map by keys, returning nil if any step fails.
-func navMap(m map[string]any, keys ...string) map[string]any {
-	for _, k := range keys {
-		v, ok := m[k]
-		if !ok {
-			return nil
-		}
-		m, ok = v.(map[string]any)
-		if !ok {
-			return nil
-		}
-	}
-	return m
 }
