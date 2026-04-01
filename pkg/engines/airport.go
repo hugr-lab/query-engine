@@ -1,14 +1,21 @@
 package engines
 
-import "github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+)
 
 type AirportEngine struct {
 	*DuckDB
+	dbName string
 }
 
-func NewAirport() *AirportEngine {
+func NewAirport(dbName string) *AirportEngine {
 	return &AirportEngine{
 		DuckDB: &DuckDB{},
+		dbName: dbName,
 	}
 }
 
@@ -29,3 +36,23 @@ func (e *AirportEngine) IsFunctionCallWithCatalog() bool {
 }
 
 var _ EngineFunctionCallWithCatalog = (*AirportEngine)(nil)
+
+// FunctionCall implements [pkg/catalog/sql/sqlBuilder] to propagate catalog bame for function calls in airport engine.
+func (e *AirportEngine) FunctionCall(name string, positional []any, named map[string]any) (string, error) {
+	var args []string
+	for _, v := range positional {
+		s, err := e.SQLValue(v)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, s)
+	}
+	for k, v := range named {
+		s, err := e.SQLValue(v)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, fmt.Sprintf("%s:=%s", k, s))
+	}
+	return Ident(e.dbName) + "." + name + "(" + strings.Join(args, ",") + ")", nil
+}
