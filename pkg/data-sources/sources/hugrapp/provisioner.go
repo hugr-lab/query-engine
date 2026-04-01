@@ -101,33 +101,30 @@ func provisionOne(
 	if !exists {
 		slog.Info("registering new app DS", "ds", fullName)
 		prefix := strings.ReplaceAll(fullName, ".", "_")
-
-		// If app provides SDL (HugrSchema) → use text catalog source, not self_defined
 		selfDefined := dsInfo.HugrSchema == ""
-		catalogsBlock := ""
+
+		data := map[string]any{
+			"name":         fullName,
+			"type":         dsInfo.Type,
+			"description":  dsInfo.Description,
+			"prefix":       prefix,
+			"path":         dsInfo.Path,
+			"as_module":    true,
+			"self_defined": selfDefined,
+			"read_only":    dsInfo.ReadOnly,
+		}
 		if dsInfo.HugrSchema != "" {
-			catalogsBlock = fmt.Sprintf(`, catalogs: [{name: %q, type: "text", path: %q}]`,
-				fullName, dsInfo.HugrSchema)
+			data["catalogs"] = []map[string]any{
+				{"name": fullName, "type": "text", "path": dsInfo.HugrSchema},
+			}
 		}
 
-		registerQuery := fmt.Sprintf(`mutation {
-			core {
-				insert_data_sources(data: {
-					name: %q
-					type: %q
-					description: %q
-					prefix: %q
-					path: %q
-					as_module: true
-					self_defined: %t
-					read_only: %t
-					%s
-				}) { name }
-			}
-		}`, fullName, dsInfo.Type, dsInfo.Description, prefix, dsInfo.Path,
-			selfDefined, dsInfo.ReadOnly, catalogsBlock)
+		registerQuery := `mutation($data: core_data_sources_mut_input_data!) {
+			core { insert_data_sources(data: $data) { name } }
+		}`
+		vars := map[string]any{"data": data}
 
-		if _, err := querier.Query(ctx, registerQuery, nil); err != nil {
+		if _, err := querier.Query(ctx, registerQuery, vars); err != nil {
 			return fmt.Errorf("register DS %s: %w", fullName, err)
 		}
 	}
@@ -182,11 +179,10 @@ func provisionOne(
 
 // queryDataSourceStatus checks if a data source exists and returns its status.
 func queryDataSourceStatus(ctx context.Context, querier Querier, name string) (status string, exists bool) {
-	q := fmt.Sprintf(`{
-		function { core { data_source_status(name: %q) } }
-	}`, name)
+	q := `{ function { core { data_source_status(name: $name) } } }`
+	vars := map[string]any{"name": name}
 
-	resp, err := querier.Query(ctx, q, nil)
+	resp, err := querier.Query(ctx, q, vars)
 	if err != nil || resp == nil {
 		return "", false
 	}
@@ -229,20 +225,19 @@ func queryDataSourceStatus(ctx context.Context, querier Querier, name string) (s
 
 // unloadDataSource unloads a data source via GraphQL mutation.
 func unloadDataSource(ctx context.Context, querier Querier, name string) error {
-	q := fmt.Sprintf(`mutation {
-		function { core { unload_data_source(name: %q) { success message } } }
-	}`, name)
-	_, err := querier.Query(ctx, q, nil)
+	q := `mutation($name: String!) {
+		function { core { unload_data_source(name: $name) { success message } } }
+	}`
+	_, err := querier.Query(ctx, q, map[string]any{"name": name})
 	return err
 }
 
 // loadDataSource loads a data source via GraphQL mutation.
 func loadDataSource(ctx context.Context, querier Querier, name string) error {
-	q := fmt.Sprintf(`mutation {
-		function { core { load_data_source(name: %q) { success message } } }
-	}`, name)
-
-	_, err := querier.Query(ctx, q, nil)
+	q := `mutation($name: String!) {
+		function { core { load_data_source(name: $name) { success message } } }
+	}`
+	_, err := querier.Query(ctx, q, map[string]any{"name": name})
 	return err
 }
 
