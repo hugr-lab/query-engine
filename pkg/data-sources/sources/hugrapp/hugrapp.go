@@ -102,14 +102,11 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 		}
 	}
 
-	// Attach the Airport source. DBName may be empty for hugr-app (no path in grpc:// URL).
-	dbName := path.DBName
-	if dbName == "" {
-		dbName = s.ds.Name
-	}
+	// Attach the Airport source. DBName is empty for the main app catalog —
+	// NamedCatalog on the server side returns the app name for routing.
 	_, err = pool.Exec(ctx,
 		fmt.Sprintf(
-			"ATTACH '%s' AS %s (TYPE AIRPORT, LOCATION '%s');", dbName, engines.Ident(s.ds.Name), location))
+			"ATTACH '%s' AS %s (TYPE AIRPORT, LOCATION '%s');", path.DBName, engines.Ident(s.ds.Name), location))
 	if err != nil {
 		return err
 	}
