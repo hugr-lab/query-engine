@@ -107,9 +107,8 @@ func sourceParamsFromPath(path string) (httpSourceParams, error) {
 			return httpSourceParams{}, err
 		}
 		if u.Path != "" {
-			u.JoinPath(sp.specPath)
-		}
-		if u.Path == "" {
+			u = u.JoinPath(strings.TrimPrefix(sp.specPath, "/"))
+		} else {
 			u.Path = sp.specPath
 		}
 		sp.specPath = u.String()
@@ -387,9 +386,8 @@ func newOAuth2PasswordTokenSource(ctx context.Context, serverUrl string, params 
 			return nil, err
 		}
 		if u.Path != "" {
-			u.JoinPath(tp)
-		}
-		if u.Path == "" {
+			u = u.JoinPath(strings.TrimPrefix(tp, "/"))
+		} else {
 			u.Path = tp
 		}
 		tp = u.String()
@@ -420,9 +418,8 @@ func newOAuth2ClientCredentialsTokenSource(ctx context.Context, serverUrl string
 			return nil, err
 		}
 		if u.Path != "" {
-			u.JoinPath(tp)
-		}
-		if u.Path == "" {
+			u = u.JoinPath(strings.TrimPrefix(tp, "/"))
+		} else {
 			u.Path = tp
 		}
 		tp = u.String()
@@ -472,9 +469,9 @@ func newCustomOauth2TokenSource(serverUrl string, params httpSecurityParams) (*c
 			return nil, err
 		}
 		if u.Path != "" {
-			u.JoinPath(tokenUrl)
-		}
-		if u.Path == "" {
+			// JoinPath returns a new URL; assigning the result is required (see Go url.URL.JoinPath).
+			u = u.JoinPath(strings.TrimPrefix(tokenUrl, "/"))
+		} else {
 			u.Path = tokenUrl
 		}
 		tokenUrl = u.String()
@@ -486,9 +483,8 @@ func newCustomOauth2TokenSource(serverUrl string, params httpSecurityParams) (*c
 			return nil, err
 		}
 		if u.Path != "" {
-			u.JoinPath(refreshUrl)
-		}
-		if u.Path == "" {
+			u = u.JoinPath(strings.TrimPrefix(refreshUrl, "/"))
+		} else {
 			u.Path = refreshUrl
 		}
 		refreshUrl = u.String()
