@@ -7,6 +7,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/cluster"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/joho/godotenv"
@@ -34,9 +35,10 @@ type Config struct {
 	Cors CorsConfig
 	Auth AuthConfig
 
-	Cache    cache.Config
-	Embedder hugr.EmbedderConfig
-	Cluster  cluster.ClusterConfig
+	Cache     cache.Config
+	Embedder  hugr.EmbedderConfig
+	Cluster   cluster.ClusterConfig
+	Heartbeat sources.HeartbeatConfig
 }
 
 func init() {
@@ -140,6 +142,11 @@ func loadConfig() Config {
 			Heartbeat:    viper.GetDuration("CLUSTER_HEARTBEAT"),
 			GhostTTL:     viper.GetDuration("CLUSTER_GHOST_TTL"),
 			PollInterval: viper.GetDuration("CLUSTER_POLL_INTERVAL"),
+		},
+		Heartbeat: sources.HeartbeatConfig{
+			Interval:   viper.GetDuration("HUGR_APP_HEARTBEAT_INTERVAL"),
+			Timeout:    viper.GetDuration("HUGR_APP_HEARTBEAT_TIMEOUT"),
+			MaxRetries: viper.GetInt("HUGR_APP_HEARTBEAT_RETRIES"),
 		},
 		Cache: cache.Config{
 			TTL: types.Interval(viper.GetDuration("CACHE_TTL")),

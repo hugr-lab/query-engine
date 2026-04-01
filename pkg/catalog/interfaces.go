@@ -58,4 +58,10 @@ type Manager interface {
 	// RegisterEngine adds an engine for planner routing without compilation.
 	// Used by cluster workers where schema is already compiled in CoreDB.
 	RegisterEngine(name string, engine engines.Engine)
+	// SuspendCatalog marks a catalog as suspended (unavailable).
+	SuspendCatalog(ctx context.Context, name string) error
+	// ReactivateCatalog reactivates a suspended catalog with a new source.
+	ReactivateCatalog(ctx context.Context, name string, catalog Catalog) error
+	// IsSuspended returns true if the catalog is suspended.
+	IsSuspended(name string) bool
 }

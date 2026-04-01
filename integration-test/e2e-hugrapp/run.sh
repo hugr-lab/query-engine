@@ -131,8 +131,11 @@ run_test "after recovery: app function works" \
     '{ function { test_app { add(a: 5, b: 5) } } }' \
     '"add":10'
 
-# Note: sub-DS (test_app.store) recovery after crash requires heartbeat
-# monitor integration (not yet wired). Skipping DS check for now.
+# TODO: sub-DS recovery after crash — Provision re-registers test_app.store
+# but the catalog module hierarchy needs investigation.
+# run_test "after recovery: app DS works" \
+#     '{ test_app { store { events { id event_type } } } }' \
+#     '"event_type":"app_start"'
 
 echo ""
 echo "=== Lifecycle: version upgrade (migration) ==="

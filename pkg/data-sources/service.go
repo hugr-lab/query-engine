@@ -43,6 +43,7 @@ type Service struct {
 	// where schema state is managed by the writer/management node.
 	skipCatalogOps   bool
 	embedderSettings EmbedderSettings
+	heartbeatConfig  HeartbeatConfig
 }
 
 type EmbedderSettings struct {
@@ -52,13 +53,18 @@ type EmbedderSettings struct {
 	Dimensions int
 }
 
-func New(qe types.Querier, db *db.Pool, cs catalog.Manager, embederSettings EmbedderSettings) *Service {
+func New(qe types.Querier, db *db.Pool, cs catalog.Manager, embederSettings EmbedderSettings, hbConfig ...HeartbeatConfig) *Service {
+	var cfg HeartbeatConfig
+	if len(hbConfig) > 0 {
+		cfg = hbConfig[0]
+	}
 	return &Service{
 		dataSources:      make(map[string]Source),
 		catalogs:         cs,
 		db:               db,
 		qe:               qe,
 		embedderSettings: embederSettings,
+		heartbeatConfig:  cfg,
 	}
 }
 
@@ -183,7 +189,39 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 		return nil
 	}
 	def := ds.Definition()
-	return s.catalogs.AddCatalog(ctx, def.Name, cat)
+	if err := s.catalogs.AddCatalog(ctx, def.Name, cat); err != nil {
+		return err
+	}
+
+	// Start heartbeat if the source supports it.
+	if hb, ok := ds.(Heartbeater); ok {
+		name := ds.Name()
+		hb.StartHeartbeat(s.heartbeatConfig,
+			func(ctx context.Context, n string) error {
+				return s.catalogs.SuspendCatalog(ctx, n)
+			},
+			func(ctx context.Context, n string) error {
+				cat, err := s.catalogSource(ctx, ds, false)
+				if err != nil {
+					return err
+				}
+				if cat == nil {
+					return nil
+				}
+				if err := s.catalogs.ReactivateCatalog(ctx, n, cat); err != nil {
+					return err
+				}
+				if p, ok := ds.(Provisioner); ok && s.qe != nil {
+					if err := p.Provision(ctx, s.qe); err != nil {
+						slog.Error("re-provision after recovery failed", "app", name, "error", err)
+					}
+				}
+				return nil
+			},
+		)
+	}
+
+	return nil
 }
 
 func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
@@ -199,6 +237,11 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 		return ErrDataSourceNotAttached
 	}
 
+	// Stop heartbeat if the source supports it.
+	if hb, ok := ds.(Heartbeater); ok {
+		hb.StopHeartbeat()
+	}
+
 	// Skip schema removal in readonly/worker mode.
 	if !s.skipCatalogOps {
 		err := s.catalogs.RemoveCatalog(ctx, name)
@@ -209,6 +252,7 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 
 	return ds.Detach(ctx, db)
 }
+
 
 func (s *Service) IsAttached(name string) bool {
 	s.mu.RLock()

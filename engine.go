@@ -72,11 +72,12 @@ type Config struct {
 
 	MCPEnabled bool // Enable MCP endpoint on /mcp
 
-	CoreDB   *coredb.Source
-	Auth     *auth.Config
-	Cache    cache.Config
-	Embedder EmbedderConfig
-	Cluster  cluster.ClusterConfig
+	CoreDB    *coredb.Source
+	Auth      *auth.Config
+	Cache     cache.Config
+	Embedder  EmbedderConfig
+	Cluster   cluster.ClusterConfig
+	Heartbeat sources.HeartbeatConfig
 }
 
 type EmbedderConfig struct {
@@ -199,7 +200,7 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		Name:       "_system_embedder",
 		Model:      s.config.Embedder.URL,
 		Dimensions: s.config.Embedder.VectorSize,
-	})
+	}, s.config.Heartbeat)
 	// In read-only or cluster worker mode, skip schema DB writes
 	// on Attach/Detach — schemas are managed by the writer/management node.
 	if isReadonly || s.config.Cluster.IsWorker() {

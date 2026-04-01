@@ -56,6 +56,7 @@ func main() {
 		Cache:                 conf.Cache,
 		Embedder:              conf.Embedder,
 		Cluster:               conf.Cluster,
+		Heartbeat:             conf.Heartbeat,
 	})
 	if err != nil {
 		log.Println("Engine initialization error:", err)

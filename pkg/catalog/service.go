@@ -201,6 +201,27 @@ func (s *Service) ReloadCatalog(ctx context.Context, name string) error {
 	return s.manager.ReloadCatalog(ctx, name)
 }
 
+func (s *Service) SuspendCatalog(ctx context.Context, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.manager.SuspendCatalog(ctx, name)
+}
+
+func (s *Service) ReactivateCatalog(ctx context.Context, name string, catalog Catalog) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.manager.ReactivateCatalog(ctx, name, catalog)
+}
+
+func (s *Service) IsSuspended(name string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.manager.IsSuspended(name)
+}
+
 // Schema access
 func (s *Service) SchemaProvider() Provider {
 	return s

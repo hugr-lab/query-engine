@@ -3,6 +3,7 @@ package hugrapp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
 	"time"
@@ -38,6 +39,9 @@ type Source struct {
 	version  string
 	appInfo  *AppInfo
 	pool     *db.Pool // stored during Attach for Provision/heartbeat use
+
+	hbCancel context.CancelFunc
+	hbDone   chan struct{}
 }
 
 // New creates a new hugr-app source.
@@ -66,6 +70,103 @@ func (s *Source) ReadOnly() bool { return s.ds.ReadOnly }
 
 // Info returns the cached app info read from _mount.info() after attach.
 func (s *Source) Info() *AppInfo { return s.appInfo }
+
+// StartHeartbeat starts periodic health monitoring.
+// onSuspend is called when the app becomes unreachable.
+// onRecover is called when a suspended app becomes reachable again.
+func (s *Source) StartHeartbeat(
+	config HeartbeatConfig,
+	onSuspend func(ctx context.Context, name string) error,
+	onRecover func(ctx context.Context, name string) error,
+) {
+	s.StopHeartbeat()
+	ctx, cancel := context.WithCancel(context.Background())
+	s.hbCancel = cancel
+	s.hbDone = make(chan struct{})
+	go s.runHeartbeat(ctx, config, onSuspend, onRecover)
+}
+
+// StopHeartbeat stops the heartbeat monitor and waits for it to finish.
+func (s *Source) StopHeartbeat() {
+	if s.hbCancel != nil {
+		s.hbCancel()
+		s.hbCancel = nil
+	}
+	if s.hbDone != nil {
+		<-s.hbDone
+		s.hbDone = nil
+	}
+}
+
+func (s *Source) runHeartbeat(
+	ctx context.Context,
+	config HeartbeatConfig,
+	onSuspend func(ctx context.Context, name string) error,
+	onRecover func(ctx context.Context, name string) error,
+) {
+	defer close(s.hbDone)
+	ticker := time.NewTicker(config.Interval)
+	defer ticker.Stop()
+
+	name := s.ds.Name
+	slog.Info("heartbeat started", "app", name, "interval", config.Interval)
+
+	var failures int
+	var suspended bool
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("heartbeat stopped", "app", name)
+			return
+		case <-ticker.C:
+		}
+
+		checkCtx, cancel := context.WithTimeout(ctx, config.Timeout)
+		info, err := readMountInfo(checkCtx, s.pool, name)
+		cancel()
+
+		if err != nil {
+			if ctx.Err() != nil {
+				return // stopping, don't process
+			}
+			failures++
+			slog.Warn("heartbeat failed", "app", name, "failures", failures, "max", config.MaxRetries, "error", err)
+			if !suspended && failures >= config.MaxRetries {
+				slog.Warn("suspending hugr-app", "app", name)
+				suspended = true
+				if err := onSuspend(context.Background(), name); err != nil {
+					slog.Error("suspend callback failed", "app", name, "error", err)
+				}
+			}
+			continue
+		}
+
+		failures = 0
+
+		if suspended {
+			slog.Info("hugr-app recovered", "app", name, "version", info.Version)
+			suspended = false
+			s.appInfo = info
+			if err := onRecover(context.Background(), name); err != nil {
+				slog.Error("recover callback failed", "app", name, "error", err)
+			}
+			continue
+		}
+
+		// Version change detection
+		if s.appInfo != nil && info.Version != s.appInfo.Version {
+			slog.Info("hugr-app version changed", "app", name, "old", s.appInfo.Version, "new", info.Version)
+			s.appInfo = info
+			if err := onRecover(context.Background(), name); err != nil {
+				slog.Error("version change callback failed", "app", name, "error", err)
+			}
+			continue
+		}
+
+		s.appInfo = info
+	}
+}
 
 // Attach implements [sources.Source].
 func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {

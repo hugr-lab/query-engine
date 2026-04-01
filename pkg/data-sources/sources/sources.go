@@ -2,6 +2,7 @@ package sources
 
 import (
 	"context"
+	"time"
 
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
@@ -55,6 +56,24 @@ type Provisioner interface {
 
 // Querier provides GraphQL query access for provisioning operations.
 type Querier = types.Querier
+
+// Heartbeater is implemented by sources that need periodic health monitoring.
+// The service calls StartHeartbeat after successful Attach and StopHeartbeat before Detach.
+type Heartbeater interface {
+	StartHeartbeat(
+		config HeartbeatConfig,
+		onSuspend func(ctx context.Context, name string) error,
+		onRecover func(ctx context.Context, name string) error,
+	)
+	StopHeartbeat()
+}
+
+// HeartbeatConfig holds heartbeat monitoring settings.
+type HeartbeatConfig struct {
+	Interval   time.Duration
+	Timeout    time.Duration
+	MaxRetries int
+}
 
 // RuntimeSource is a data source that is attached on start and provides a catalog source.
 type RuntimeSource interface {
