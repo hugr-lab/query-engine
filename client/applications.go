@@ -408,6 +408,8 @@ func (a *appMountSchema) ScalarFunctions(ctx context.Context) ([]catalog.ScalarF
 		&appInfoFunc{app: a.app, mem: a.mem},
 		&initScalarFunc{app: a.app, mem: a.mem},
 		&schemaSdlFunc{app: a.app, mem: a.mem},
+		&dbInitFunc{app: a.app, mem: a.mem},
+		&dbMigrateFunc{app: a.app, mem: a.mem},
 	}, nil
 }
 
