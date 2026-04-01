@@ -325,17 +325,25 @@ func cleanupAppDataSources(ctx context.Context, querier Querier, appName string)
 	var ds []struct {
 		Name string `json:"name"`
 	}
-	if err := resp.ScanData("core.data_sources", &ds); err != nil || len(ds) == 0 {
+	if err := resp.ScanData("core.data_sources", &ds); err != nil {
+		slog.Error("cleanup: ScanData failed", "app", appName, "error", err)
+		return nil
+	}
+	slog.Info("cleanup: found app DS", "app", appName, "count", len(ds))
+	if len(ds) == 0 {
 		return nil
 	}
 
 	for _, d := range ds {
-		slog.Info("cleaning up app DS", "app", appName, "ds", d.Name)
-		_ = unloadDataSource(ctx, querier, d.Name)
+		slog.Info("cleanup: unloading app DS", "app", appName, "ds", d.Name)
+		if err := unloadDataSource(ctx, querier, d.Name); err != nil {
+			slog.Warn("cleanup: unload failed", "ds", d.Name, "error", err)
+		}
 	}
 
+	slog.Info("cleanup: deleting app DS", "app", appName, "pattern", pattern)
 	delQ := `mutation($name: String!) {
-		core { delete_data_sources(filter: { name: { like: $name } }) { success } }
+		core { delete_data_sources(filter: { name: { like: $name } }) { success message } }
 	}`
 	delResp, err := querier.Query(ctx, delQ, map[string]any{"name": pattern})
 	if delResp != nil {
