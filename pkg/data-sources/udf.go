@@ -96,5 +96,31 @@ func (s *Service) RegisterUDF(ctx context.Context) error {
 		return fmt.Errorf("register create_embedding function: %w", err)
 	}
 
+	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionNoArgs[EmbedderSettings]{
+		Name: "hugr_embedder_settings",
+		Execute: func(ctx context.Context) (EmbedderSettings, error) {
+			return s.embedderSettings, nil
+		},
+		ConvertOutput: func(out EmbedderSettings) (any, error) {
+			return map[string]any{
+				"name":       out.Name,
+				"model":      out.Model,
+				"dimensions": out.Dimensions,
+				"is_enabled": out.IsEnabled,
+			}, nil
+		},
+		OutputType: duckDBEmbedderSettingsType,
+	})
+	if err != nil {
+		return fmt.Errorf("register hugr_embedder_settings function: %w", err)
+	}
+
 	return nil
 }
+
+var duckDBEmbedderSettingsType = runtime.DuckDBStructTypeFromSchemaMust(map[string]any{
+	"is_enabled": duckdb.TYPE_BOOLEAN,
+	"name":       duckdb.TYPE_VARCHAR,
+	"model":      duckdb.TYPE_VARCHAR,
+	"dimensions": duckdb.TYPE_BIGINT,
+})

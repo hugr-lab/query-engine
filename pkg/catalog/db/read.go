@@ -25,7 +25,7 @@ func (p *Provider) ForName(ctx context.Context, name string) *ast.Definition {
 		return def
 	}
 
-	d, err, _ := p.sf.Do("DEF:"+name, func() (interface{}, error) {
+	d, err, _ := p.sf.Do("DEF:"+name, func() (any, error) {
 		if def := p.cache.getType(name); def != nil {
 			return def, nil
 		}

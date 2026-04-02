@@ -255,6 +255,56 @@ func (c *memoryCatalog) reactivateSuspended(ctx context.Context) {
 	}
 }
 
+// SuspendCatalog removes a catalog from the active schema without deleting the registration.
+func (c *memoryCatalog) SuspendCatalog(ctx context.Context, name string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	reg, ok := c.catalogs[name]
+	if !ok {
+		return ErrCatalogNotFound
+	}
+	if reg.suspended {
+		return nil // already suspended
+	}
+	slog.Info("suspending catalog", "catalog", name)
+	_ = c.removeCatalog(ctx, name)
+	reg.suspended = true
+	c.catalogs[name] = reg
+	return nil
+}
+
+// ReactivateCatalog re-compiles and re-applies a previously suspended catalog with a fresh source.
+func (c *memoryCatalog) ReactivateCatalog(ctx context.Context, name string, catalog Catalog) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	reg, ok := c.catalogs[name]
+	if !ok {
+		return ErrCatalogNotFound
+	}
+	if !reg.suspended {
+		return nil // not suspended — nothing to do
+	}
+	slog.Info("reactivating catalog", "catalog", name)
+	reg.source = catalog
+	deps, err := c.compileAndApply(ctx, name, catalog)
+	if err != nil {
+		return fmt.Errorf("reactivate catalog %s: %w", name, err)
+	}
+	reg.suspended = false
+	reg.dependencies = deps
+	c.catalogs[name] = reg
+	c.reactivateSuspended(ctx) // try to reactivate dependents
+	return nil
+}
+
+// IsSuspended returns true if the named catalog exists but is suspended.
+func (c *memoryCatalog) IsSuspended(name string) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	reg, ok := c.catalogs[name]
+	return ok && reg.suspended
+}
+
 // allDependenciesSatisfied returns true if all dependency catalogs
 // exist in the map and are not themselves suspended.
 func (c *memoryCatalog) allDependenciesSatisfied(deps []string) bool {

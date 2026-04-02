@@ -12,11 +12,11 @@ import (
 	adminui "github.com/hugr-lab/query-engine/pkg/admin-ui"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
-	"github.com/hugr-lab/query-engine/pkg/cluster"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	catalogdb "github.com/hugr-lab/query-engine/pkg/catalog/db"
+	"github.com/hugr-lab/query-engine/pkg/cluster"
 	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
@@ -72,11 +72,12 @@ type Config struct {
 
 	MCPEnabled bool // Enable MCP endpoint on /mcp
 
-	CoreDB   *coredb.Source
-	Auth     *auth.Config
-	Cache    cache.Config
-	Embedder EmbedderConfig
-	Cluster  cluster.ClusterConfig
+	CoreDB    *coredb.Source
+	Auth      *auth.Config
+	Cache     cache.Config
+	Embedder  EmbedderConfig
+	Cluster   cluster.ClusterConfig
+	Heartbeat sources.HeartbeatConfig
 }
 
 type EmbedderConfig struct {
@@ -194,7 +195,12 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	}
 
 	// 7. Create datasources service and register UDFs.
-	s.ds = datasources.New(s, s.db, s.catalog)
+	s.ds = datasources.New(s, s.db, s.catalog, datasources.EmbedderSettings{
+		IsEnabled:  s.config.Embedder.URL != "",
+		Name:       "_system_embedder",
+		Model:      s.config.Embedder.URL,
+		Dimensions: s.config.Embedder.VectorSize,
+	}, s.config.Heartbeat)
 	// In read-only or cluster worker mode, skip schema DB writes
 	// on Attach/Detach — schemas are managed by the writer/management node.
 	if isReadonly || s.config.Cluster.IsWorker() {
@@ -294,9 +300,31 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	}
 
 	// 14. Load stored data sources.
-	err = s.loadDataSources(ctx)
+	loaded, err := s.loadDataSources(ctx)
 	if err != nil {
 		return fmt.Errorf("load data sources: %w", err)
+	}
+
+	// 15. Disable catalogs for data sources that failed to load.
+	if !isReadonly && !s.config.Cluster.IsWorker() {
+		for name, ok := range loaded {
+			if ok {
+				continue
+			}
+			slog.Info("disabling catalog for failed data source", "name", name)
+			if err := s.dbProvider.RemoveCatalog(ctx, name); err != nil {
+				slog.Error("failed to disable catalog for data source", "name", name, "error", err)
+			}
+		}
+	}
+
+	// 16. If some data sources failed to load, fail startup cluster node
+	if isReadonly || s.config.Cluster.IsWorker() {
+		for name, ok := range loaded {
+			if !ok {
+				return fmt.Errorf("failed to load data source %s: see previous logs for details", name)
+			}
+		}
 	}
 
 	err = s.gis.Init()

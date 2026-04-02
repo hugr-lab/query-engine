@@ -46,7 +46,7 @@ func (f *Function) Definition() *ast.FieldDefinition {
 	return f.field
 }
 
-func (f *Function) SQL() string {
+func (f *Function) SQL(addCatalog bool) string {
 	sql := f.sql
 	if sql != "" {
 		sql = strings.ReplaceAll(sql, "["+base.CatalogSystemVariableName+"]", "'"+f.Catalog+"'")
@@ -54,6 +54,9 @@ func (f *Function) SQL() string {
 	if sql == "" {
 		d := f.field.Directives.ForName(base.FunctionDirectiveName)
 		name := base.DirectiveArgString(d, base.ArgName)
+		if addCatalog && f.Catalog != "" {
+			name = base.Ident(f.Catalog) + "." + name
+		}
 		sql = name + "("
 		for i, arg := range f.field.Arguments {
 			if i > 0 {

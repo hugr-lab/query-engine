@@ -141,7 +141,7 @@ func (p *Pool) release() {
 }
 
 // applyTimezone sets the DuckDB TimeZone on a connection.
-// Priority: request context timezone > server default > RESET to system default.
+// Priority: request context timezone > server default > skip (internal connection).
 func (p *Pool) applyTimezone(ctx context.Context, execFn func(string) error) error {
 	tz := TimezoneFromCtx(ctx)
 	if tz == "" {
@@ -150,7 +150,8 @@ func (p *Pool) applyTimezone(ctx context.Context, execFn func(string) error) err
 	if tz != "" {
 		return execFn(fmt.Sprintf("SET TimeZone = '%s'", tz))
 	}
-	return execFn("RESET TimeZone")
+	// No timezone in context and no server default — internal connection, skip.
+	return nil
 }
 
 func (p *Pool) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {

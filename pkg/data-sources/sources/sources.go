@@ -2,6 +2,7 @@ package sources
 
 import (
 	"context"
+	"time"
 
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
@@ -23,6 +24,7 @@ const (
 	Airport  types.DataSourceType = "airport"
 	DuckLake types.DataSourceType = "ducklake"
 	Iceberg  types.DataSourceType = "iceberg"
+	HugrApp  types.DataSourceType = "hugr-app"
 )
 
 type Source interface {
@@ -42,6 +44,35 @@ type ExtensionSource interface {
 
 type SelfDescriber interface {
 	CatalogSource(ctx context.Context, db *db.Pool) (cs.Catalog, error)
+}
+
+// Provisioner is implemented by sources that need to provision external
+// resources (databases, schemas) after attachment. Called by the data source
+// service after Attach() succeeds. Querier provides access to hugr's GraphQL
+// API for registering/loading data sources and querying system configuration.
+type Provisioner interface {
+	Provision(ctx context.Context, querier types.Querier) error
+}
+
+// Querier provides GraphQL query access for provisioning operations.
+type Querier = types.Querier
+
+// Heartbeater is implemented by sources that need periodic health monitoring.
+// The service calls StartHeartbeat after successful Attach and StopHeartbeat before Detach.
+type Heartbeater interface {
+	StartHeartbeat(
+		config HeartbeatConfig,
+		onSuspend func(ctx context.Context, name string) error,
+		onRecover func(ctx context.Context, name string) error,
+	)
+	StopHeartbeat()
+}
+
+// HeartbeatConfig holds heartbeat monitoring settings.
+type HeartbeatConfig struct {
+	Interval   time.Duration
+	Timeout    time.Duration
+	MaxRetries int
 }
 
 // RuntimeSource is a data source that is attached on start and provides a catalog source.

@@ -162,7 +162,7 @@ func NewClient(url string, opts ...Option) *Client {
 		opt(&config)
 	}
 	if config.Timeout == 0 {
-		config.Timeout = 5 * time.Second
+		config.Timeout = 5 * time.Minute
 	}
 	if config.Transport == nil {
 		config.Transport = http.DefaultTransport

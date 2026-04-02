@@ -256,4 +256,14 @@ extend type Function {
     input: String!
   ): Vector
     @function(name: "create_embedding")
+
+  embedder_settings: embedder_settings
+    @function(name: "hugr_embedder_settings")
+}
+
+type embedder_settings {
+  is_enabled: Boolean
+  name: String
+  model: String
+  dimensions: Int
 }

@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	expirable "github.com/hashicorp/golang-lru/v2/expirable"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -76,6 +77,30 @@ func (sc *schemaCache) putType(name, catalog string, def *ast.Definition) {
 		sc.catalogIndex[catalog] = make(map[string]struct{})
 	}
 	sc.catalogIndex[catalog][name] = struct{}{}
+	for _, field := range def.Fields {
+		// field catalog for types
+		fc := base.FieldDefCatalog(field)
+		if fc != "" && fc != catalog {
+			if sc.catalogIndex[fc] == nil {
+				sc.catalogIndex[fc] = make(map[string]struct{})
+			}
+			sc.catalogIndex[fc][name] = struct{}{}
+		}
+		dc := base.FieldDefDependency(field)
+		if dc != "" {
+			if sc.catalogIndex[dc] == nil {
+				sc.catalogIndex[dc] = make(map[string]struct{})
+			}
+			sc.catalogIndex[dc][name] = struct{}{}
+		}
+		// if module catalogs are specified, index under those as well
+		for _, mc := range base.FieldDefModuleCatalogs(field) {
+			if sc.catalogIndex[mc] == nil {
+				sc.catalogIndex[mc] = make(map[string]struct{})
+			}
+			sc.catalogIndex[mc][name] = struct{}{}
+		}
+	}
 }
 
 // getDirective returns a cached directive definition, or nil if not found.

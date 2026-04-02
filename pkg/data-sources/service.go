@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
@@ -15,6 +16,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/extension"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/http"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/hugrapp"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/iceberg"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mssql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
@@ -39,15 +41,30 @@ type Service struct {
 	// skipCatalogOps disables schema DB writes (AddCatalog/RemoveCatalog)
 	// on Attach/Detach. Set for read-only CoreDB and cluster worker nodes
 	// where schema state is managed by the writer/management node.
-	skipCatalogOps bool
+	skipCatalogOps   bool
+	embedderSettings EmbedderSettings
+	heartbeatConfig  HeartbeatConfig
 }
 
-func New(qe types.Querier, db *db.Pool, cs catalog.Manager) *Service {
+type EmbedderSettings struct {
+	IsEnabled  bool
+	Name       string
+	Model      string
+	Dimensions int
+}
+
+func New(qe types.Querier, db *db.Pool, cs catalog.Manager, embederSettings EmbedderSettings, hbConfig ...HeartbeatConfig) *Service {
+	var cfg HeartbeatConfig
+	if len(hbConfig) > 0 {
+		cfg = hbConfig[0]
+	}
 	return &Service{
-		dataSources: make(map[string]Source),
-		catalogs:    cs,
-		db:          db,
-		qe:          qe,
+		dataSources:      make(map[string]Source),
+		catalogs:         cs,
+		db:               db,
+		qe:               qe,
+		embedderSettings: embederSettings,
+		heartbeatConfig:  cfg,
 	}
 }
 
@@ -132,6 +149,22 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 		return err
 	}
 
+	// Provision external resources (app databases) if source supports it.
+	// Unlock mutex during provisioning — it makes GraphQL queries via Querier
+	// which may need to access the data source service (deadlock otherwise).
+	if p, ok := ds.(Provisioner); ok && s.qe != nil {
+		s.mu.Unlock()
+		provErr := p.Provision(ctx, s.qe)
+		s.mu.Lock()
+		if provErr != nil {
+			slog.Error("provisioning failed", "source", name, "error", provErr)
+			if err := ds.Detach(ctx, s.db); err != nil {
+				slog.Error("failed to rollback attach after provisioning failure", "source", name, "error", err)
+			}
+			return fmt.Errorf("provisioning failed: %w", provErr)
+		}
+	}
+
 	// Skip schema compilation in readonly/worker mode — schemas
 	// are already persisted by the writer/management node.
 	if s.skipCatalogOps {
@@ -156,7 +189,39 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 		return nil
 	}
 	def := ds.Definition()
-	return s.catalogs.AddCatalog(ctx, def.Name, cat)
+	if err := s.catalogs.AddCatalog(ctx, def.Name, cat); err != nil {
+		return err
+	}
+
+	// Start heartbeat if the source supports it.
+	if hb, ok := ds.(Heartbeater); ok {
+		name := ds.Name()
+		hb.StartHeartbeat(s.heartbeatConfig,
+			func(ctx context.Context, n string) error {
+				return s.catalogs.SuspendCatalog(ctx, n)
+			},
+			func(ctx context.Context, n string) error {
+				cat, err := s.catalogSource(ctx, ds, false)
+				if err != nil {
+					return err
+				}
+				if cat == nil {
+					return nil
+				}
+				if err := s.catalogs.ReactivateCatalog(ctx, n, cat); err != nil {
+					return err
+				}
+				if p, ok := ds.(Provisioner); ok && s.qe != nil {
+					if err := p.Provision(ctx, s.qe); err != nil {
+						slog.Error("re-provision after recovery failed", "app", name, "error", err)
+					}
+				}
+				return nil
+			},
+		)
+	}
+
+	return nil
 }
 
 func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
@@ -172,6 +237,11 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 		return ErrDataSourceNotAttached
 	}
 
+	// Stop heartbeat if the source supports it.
+	if hb, ok := ds.(Heartbeater); ok {
+		hb.StopHeartbeat()
+	}
+
 	// Skip schema removal in readonly/worker mode.
 	if !s.skipCatalogOps {
 		err := s.catalogs.RemoveCatalog(ctx, name)
@@ -182,6 +252,7 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 
 	return ds.Detach(ctx, db)
 }
+
 
 func (s *Service) IsAttached(name string) bool {
 	s.mu.RLock()
@@ -229,6 +300,8 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 		return ducklake.New(ds, attached)
 	case Iceberg:
 		return iceberg.New(ds, attached)
+	case HugrApp:
+		return hugrapp.New(ds, attached)
 	default:
 		return nil, ErrUnknownDataSourceType
 	}
@@ -252,6 +325,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 	if err != nil {
 		return nil, err
 	}
+	defer res.Body.Close()
 	if res.StatusCode == 204 {
 		return nil, nil
 	}

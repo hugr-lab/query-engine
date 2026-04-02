@@ -1,0 +1,57 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test_app_db
+    ports: ["5436:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  hugr:
+    build:
+      context: ../..
+      dockerfile: integration-test/e2e/Dockerfile
+    ports: ["15100:15100"]
+    environment:
+      BIND: ":15100"
+      CORE_DB_PATH: "/data/core.duckdb"
+      ALLOWED_ANONYMOUS: "true"
+      ANONYMOUS_ROLE: "admin"
+      DB_TIMEZONE: "UTC"
+      HUGR_APP_HEARTBEAT_INTERVAL: "5s"
+      HUGR_APP_HEARTBEAT_TIMEOUT: "3s"
+      HUGR_APP_HEARTBEAT_RETRIES: "2"
+    volumes:
+      - hugr-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:15100/query?query={__typename} || exit 1"]
+      interval: 3s
+      timeout: 10s
+      retries: 40
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  test-app:
+    build:
+      context: ../..
+      dockerfile: integration-test/e2e-hugrapp/Dockerfile.test-app
+    environment:
+      HUGR_URL: "http://hugr:15100/ipc"
+      APP_SECRET: "test-secret"
+      APP_PORT: "50051"
+      APP_VERSION: "${APP_VERSION:-1.0.0}"
+      PG_DSN: "postgres://test:test@postgres:5432/test_app_db"
+    depends_on:
+      hugr:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+volumes:
+  hugr-data:
