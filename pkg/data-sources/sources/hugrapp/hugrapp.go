@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -36,10 +37,10 @@ type Source struct {
 	ds       types.DataSource
 	engine   engines.Engine
 	attached bool
-	version  string
 	appInfo  *AppInfo
 	pool     *db.Pool // stored during Attach for Provision/heartbeat use
 
+	mu       sync.Mutex // protects hbCancel, hbDone
 	hbCancel context.CancelFunc
 	hbDone   chan struct{}
 }
@@ -80,22 +81,32 @@ func (s *Source) StartHeartbeat(
 	onRecover func(ctx context.Context, name string) error,
 ) {
 	s.StopHeartbeat()
+	s.mu.Lock()
 	ctx, cancel := context.WithCancel(context.Background())
 	s.hbCancel = cancel
 	s.hbDone = make(chan struct{})
+	s.mu.Unlock()
 	go s.runHeartbeat(ctx, config, onSuspend, onRecover)
 }
 
 // StopHeartbeat stops the heartbeat monitor and waits for it to finish.
 func (s *Source) StopHeartbeat() {
-	if s.hbCancel != nil {
-		s.hbCancel()
-		s.hbCancel = nil
+	s.mu.Lock()
+	cancel := s.hbCancel
+	done := s.hbDone
+	s.hbCancel = nil
+	s.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
 	}
-	if s.hbDone != nil {
-		<-s.hbDone
-		s.hbDone = nil
+	if done != nil {
+		<-done
 	}
+
+	s.mu.Lock()
+	s.hbDone = nil
+	s.mu.Unlock()
 }
 
 func (s *Source) runHeartbeat(
@@ -186,11 +197,6 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 	location := path.Proto + "://" + path.Host
 	if path.Port != "" {
 		location += ":" + path.Port
-	}
-
-	// Store informational version from DSN params.
-	if v, ok := path.Params["version"]; ok {
-		s.version = v
 	}
 
 	// secret_key in hugr-app maps to auth_token in Airport SECRET.

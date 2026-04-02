@@ -64,10 +64,9 @@ func ProvisionDataSources(
 
 	appName := appSource.Name()
 
-	// Clean up stale DS registrations — unload + delete all app DS
+	// Clean up stale DS registrations — unload stale, delete all records, re-register below
 	if err := cleanupAppDataSources(ctx, querier, appName, dataSources); err != nil {
-		slog.Warn("cleanup app data sources failed (non-fatal)", "app", appName, "error", err)
-		return fmt.Errorf("cleanup provision data sources for app %s: %w", appName, err)
+		return fmt.Errorf("cleanup app data sources for %s: %w", appName, err)
 	}
 
 	// Pass 1: ensure DB schemas for PostgreSQL sources (only if app manages DB)
