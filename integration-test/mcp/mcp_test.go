@@ -47,7 +47,7 @@ func setupEngine(t *testing.T) *hugr.Service {
 // setupMCP creates an MCP handler backed by the engine.
 func setupMCP(t *testing.T, service *hugr.Service) http.Handler {
 	t.Helper()
-	srv := mcpserver.New(service, true)
+	srv := mcpserver.New(service, nil, true)
 	return srv.Handler()
 }
 

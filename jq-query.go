@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/cache"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/types"
 )
@@ -31,7 +32,7 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		var t *jq.Transformer
 		if req.JQ != "" {
-			t, err = jq.NewTransformer(r.Context(), req.JQ, jq.WithVariables(req.Query.Variables), jq.WithQuerier(s))
+			t, err = jq.NewTransformer(db.ClearTxContext(r.Context()), req.JQ, jq.WithVariables(req.Query.Variables), jq.WithQuerier(s))
 			if err != nil {
 				return nil, fmt.Errorf("JQ compiler: %w", err)
 			}

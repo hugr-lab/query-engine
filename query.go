@@ -15,6 +15,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/metadata"
 	"github.com/hugr-lab/query-engine/types"
@@ -413,7 +414,7 @@ func (s *Service) processJQTransformation(ctx context.Context, provider catalog.
 		if !ok {
 			return nil, sdl.ErrorPosf(query.Field.Position, "jq query argument should be string")
 		}
-		t, err := jq.NewTransformer(ctx, q, jq.WithVariables(vars), jq.WithQuerier(s), jq.WithCollectStat())
+		t, err := jq.NewTransformer(db.ClearTxContext(ctx), q, jq.WithVariables(vars), jq.WithQuerier(s), jq.WithCollectStat())
 		if err != nil {
 			return nil, sdl.ErrorPosf(query.Field.Position, "jq query compile error: %v", err)
 		}

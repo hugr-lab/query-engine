@@ -413,7 +413,7 @@ func (s *Service) endpoints() {
 	}
 
 	if s.config.MCPEnabled {
-		mcpSrv := mcpserver.New(s, s.config.Debug)
+		mcpSrv := mcpserver.New(s, nil, s.config.Debug)
 		s.router.Handle("/mcp", mw(mcpSrv.Handler()))
 	}
 }

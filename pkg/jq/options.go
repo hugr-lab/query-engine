@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/itchyny/gojq"
 )
@@ -50,7 +49,6 @@ func (o *options) funcs(ctx context.Context) []gojq.CompilerOption {
 
 func (o *options) queryHugrFunc(ctx context.Context) gojq.CompilerOption {
 	return gojq.WithFunction("queryHugr", 1, 2, func(arg any, args []any) any {
-		ctx := db.ClearTxContext(ctx)
 		if len(args) < 1 {
 			return ErrInvalidHugrQueryParam
 		}

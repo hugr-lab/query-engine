@@ -253,7 +253,6 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 	return ds.Detach(ctx, db)
 }
 
-
 func (s *Service) IsAttached(name string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -341,7 +340,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 		return nil, err
 	}
 	if jqq != "" {
-		transform, err := jq.NewTransformer(ctx, jqq, jq.WithQuerier(s.qe))
+		transform, err := jq.NewTransformer(db.ClearTxContext(ctx), jqq, jq.WithQuerier(s.qe))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create jq transformer: %v", err)
 		}

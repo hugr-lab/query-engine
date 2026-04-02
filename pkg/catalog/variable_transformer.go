@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 )
 
@@ -34,7 +35,7 @@ func (t *jqVariableTransformer) TransformVariables(ctx context.Context, vars map
 	if t.querier != nil {
 		opts = append(opts, jq.WithQuerier(t.querier))
 	}
-	transformer, err := jq.NewTransformer(ctx, expr, opts...)
+	transformer, err := jq.NewTransformer(db.ClearTxContext(ctx), expr, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("jq compiler for variables: %w", err)
 	}

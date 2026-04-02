@@ -10,12 +10,13 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/planner"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/paulmach/orb/geojson"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -97,7 +98,7 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 			writeSummary = false
 		}
 		if f.PropertiesJQ != "" {
-			t, err := jq.NewTransformer(ctx, f.PropertiesJQ, jq.WithVariables(req.Variables), jq.WithQuerier(s.qe))
+			t, err := jq.NewTransformer(db.ClearTxContext(ctx), f.PropertiesJQ, jq.WithVariables(req.Variables), jq.WithQuerier(s.qe))
 			if err != nil {
 				http.Error(w, "JQ compiler: "+err.Error(), http.StatusInternalServerError)
 				return

@@ -32,18 +32,19 @@ type Server struct {
 }
 
 // New creates a new MCP server backed by the given query engine.
-func New(querier types.Querier, debug bool) *Server {
+func New(querier types.Querier, mcpServer *server.MCPServer, debug bool) *Server {
+	if mcpServer == nil {
+		mcpServer = server.NewMCPServer(
+			"Hugr Schema Explorer",
+			"1.0.0",
+			server.WithToolCapabilities(true),
+			server.WithResourceCapabilities(false, true),
+			server.WithPromptCapabilities(true),
+			server.WithInstructions(instructions),
+			server.WithToolHandlerMiddleware(toolLoggingMiddleware(debug)),
+		)
+	}
 	s := &Server{querier: querier, debug: debug}
-
-	mcpServer := server.NewMCPServer(
-		"Hugr Schema Explorer",
-		"1.0.0",
-		server.WithToolCapabilities(true),
-		server.WithResourceCapabilities(false, true),
-		server.WithPromptCapabilities(true),
-		server.WithInstructions(instructions),
-		server.WithToolHandlerMiddleware(toolLoggingMiddleware(debug)),
-	)
 
 	// Discovery tools.
 	mcpServer.AddTool(mcp.NewTool("discovery-search_modules",
