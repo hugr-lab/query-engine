@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 
@@ -253,7 +254,6 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 	return ds.Detach(ctx, db)
 }
 
-
 func (s *Service) IsAttached(name string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -323,6 +323,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 	}
 	res, err := httpDs.Request(ctx, path, method, headers, params, body)
 	if err != nil {
+		slog.Warn("http data source request failed", "source", source, "path", path, "method", method, "error", err)
 		return nil, err
 	}
 	defer res.Body.Close()
@@ -330,14 +331,25 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 		return nil, nil
 	}
 	if res.StatusCode != 200 {
+		preview, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		slog.Warn("http data source non-success response",
+			"source", source,
+			"path", path,
+			"method", method,
+			"status", res.StatusCode,
+			"status_line", res.Status,
+			"body_preview", string(preview),
+		)
 		return nil, fmt.Errorf("request failed with status code %d:%s", res.StatusCode, res.Status)
 	}
 	if res.Body == nil {
+		slog.Warn("http data source response body is nil", "source", source, "path", path, "method", method)
 		return nil, errors.New("response body is nil")
 	}
 	var data any
 	err = json.NewDecoder(res.Body).Decode(&data)
 	if err != nil {
+		slog.Warn("http data source JSON decode failed", "source", source, "path", path, "method", method, "error", err)
 		return nil, err
 	}
 	if jqq != "" {

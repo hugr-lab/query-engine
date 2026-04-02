@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -642,12 +643,34 @@ func customTokenRequest(ctx context.Context, tokenUrl string, data any, param *t
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusUnauthorized {
+		slog.Warn("oauth token request unauthorized",
+			"method", param.Method, "host", u.Host, "path", u.Path)
 		e := ErrUnauthorizedTokenRequest(res.Status)
 		return nil, &e
 	}
 	if res.StatusCode != http.StatusOK {
-		msg, err := io.ReadAll(res.Body)
-		if err == nil {
+		msg, readErr := io.ReadAll(res.Body)
+		preview := ""
+		if readErr == nil {
+			preview = string(msg)
+			if len(preview) > 512 {
+				preview = preview[:512]
+			}
+		}
+		attrs := []any{
+			"method", param.Method,
+			"host", u.Host,
+			"path", u.Path,
+			"status", res.StatusCode,
+		}
+		if preview != "" {
+			attrs = append(attrs, "body_preview", preview)
+		}
+		if readErr != nil {
+			attrs = append(attrs, "read_body_error", readErr)
+		}
+		slog.Warn("oauth token request unexpected status", attrs...)
+		if readErr == nil {
 			return nil, fmt.Errorf("unexpected status code %d: %s", res.StatusCode, msg)
 		}
 		return nil, fmt.Errorf("unexpected status code %d", res.StatusCode)
