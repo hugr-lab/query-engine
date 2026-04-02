@@ -233,6 +233,7 @@ func (c *Client) RunApplication(ctx context.Context, application app.Application
 			if err := mc.InitMultiCatalog(ctx); err != nil {
 				slog.Error("failed to initialize multi-catalog application", "error", err)
 				cancel()
+				return
 			}
 			slog.Info("multi-catalog application initialized", "name", info.Name)
 		}

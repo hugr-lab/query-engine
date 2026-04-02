@@ -57,7 +57,7 @@ func main() {
     ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
     defer cancel()
 
-    c := client.NewClient("http://localhost:15000/ipc")
+    c := client.NewClient("http://localhost:15100/ipc")
     c.RunApplication(ctx, &MyApp{}, client.WithSecretKey("my-secret"))
 }
 ```
@@ -82,6 +82,10 @@ After connecting, your app is queryable:
 | `TableRef(schema, ref, opts...)` | Register catalog.TableRef |
 | `ScalarFunc(schema, fn)` | Register catalog.ScalarFunction directly |
 | `TableFunc(schema, fn)` | Register catalog.TableFunction directly |
+| `TableFuncInOut(schema, fn)` | Register catalog.TableFunctionInOut directly |
+| `WithSDL(sdl)` | Override all auto-generated SDL with custom SDL |
+
+**Per-item SDL wrapping**: `app.WithSDL(table, sdl)`, `app.WithScalarFuncSDL(fn, sdl)`, `app.WithTableFuncSDL(fn, sdl)`, `app.WithTableRefSDL(ref, sdl)`
 
 ## Options
 
