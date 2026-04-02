@@ -260,6 +260,13 @@ func (s *testServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/openapi":
 		w.Header().Set("Content-Type", "application/yaml")
 		fmt.Fprint(w, testServerSpec)
+	case "/api/traffic":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true}`)
 	default:
 		http.Error(w, "not found", http.StatusNotFound)
 	}
@@ -532,6 +539,22 @@ func TestHttpSource_Request(t *testing.T) {
 			query:    "/get_data_object",
 			params:   map[string]any{"id": 1},
 			wantData: `{"id": 1, "name": "test"}`,
+			wantErr:  false,
+		},
+		{
+			name: "post joins operation path when serverURL has base path prefix",
+			ds: types.DataSource{
+				Name:   "test",
+				Type:   sources.Http,
+				Prefix: "http",
+				Path:   server.URL + "/api",
+			},
+			method:   http.MethodPost,
+			query:    "/traffic",
+			params:   map[string]any{},
+			headers:  map[string]any{},
+			body:     map[string]any{},
+			wantData: `{"ok":true}`,
 			wantErr:  false,
 		},
 	}

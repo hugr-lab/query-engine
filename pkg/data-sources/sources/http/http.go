@@ -118,9 +118,9 @@ func (s *Source) Request(ctx context.Context, path, method, headers, params, bod
 		return nil, err
 	}
 	if su.Path != "" {
-		su.JoinPath(path)
-	}
-	if su.Path == "" {
+		// JoinPath returns a new URL; must assign (same as OAuth token URL resolution).
+		su = su.JoinPath(strings.TrimPrefix(path, "/"))
+	} else {
 		su.Path = path
 	}
 	// 2. params
