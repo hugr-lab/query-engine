@@ -1,6 +1,6 @@
 {{ if isPostgres }}CREATE EXTENSION IF NOT EXISTS vector;{{ end }}
 
-CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.14' AS "version";
+CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.15' AS "version";
 
 CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}catalog_sources (
     name VARCHAR NOT NULL PRIMARY KEY,
