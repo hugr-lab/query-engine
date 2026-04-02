@@ -205,7 +205,8 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 		name := strings.ReplaceAll(s.ds.Name, ".", "_")
 		_, err = pool.Exec(ctx,
 			fmt.Sprintf(
-				"CREATE OR REPLACE SECRET _%s_secret (TYPE airport, auth_token '%s', SCOPE '%s');", name, token, location))
+				"CREATE OR REPLACE SECRET _%s_secret (TYPE airport, auth_token '%s', SCOPE '%s');",
+				name, strings.ReplaceAll(token, "'", "''"), location))
 		if err != nil {
 			return err
 		}

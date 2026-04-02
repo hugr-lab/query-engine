@@ -3,16 +3,10 @@ package hugrapp
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 )
-
-// escapeSQLString escapes single quotes for safe interpolation in DuckDB SQL.
-func escapeSQLString(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
-}
 
 // readMountInfo queries _mount.info() from the attached hugr-app source
 // and returns the parsed AppInfo struct.
@@ -123,7 +117,7 @@ func readMountInitDSSchema(ctx context.Context, pool *db.Pool, sourceName, dsNam
 	var sql string
 	query := fmt.Sprintf(
 		`SELECT %s._mount.init_ds_schema('%s')`,
-		engines.Ident(sourceName), escapeSQLString(dsName),
+		engines.Ident(sourceName), dsName,
 	)
 	err = conn.QueryRow(ctx, query).Scan(&sql)
 	if err != nil {
@@ -160,7 +154,7 @@ func readMountMigrateDSSchema(ctx context.Context, pool *db.Pool, sourceName, ds
 	var sql string
 	query := fmt.Sprintf(
 		`SELECT %s._mount.migrate_ds_schema('%s', '%s')`,
-		engines.Ident(sourceName), escapeSQLString(dsName), escapeSQLString(fromVersion),
+		engines.Ident(sourceName), dsName, fromVersion,
 	)
 	err = conn.QueryRow(ctx, query).Scan(&sql)
 	if err != nil {
