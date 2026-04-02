@@ -644,6 +644,7 @@ func customTokenRequest(ctx context.Context, tokenUrl string, data any, param *t
 	if err != nil {
 		return nil, err
 	}
+	defer res.Body.Close()
 	if res.StatusCode == http.StatusUnauthorized {
 		e := ErrUnauthorizedTokenRequest(res.Status)
 		return nil, &e

@@ -325,6 +325,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 	if err != nil {
 		return nil, err
 	}
+	defer res.Body.Close()
 	if res.StatusCode == 204 {
 		return nil, nil
 	}
