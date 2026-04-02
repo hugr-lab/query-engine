@@ -269,7 +269,14 @@ func (s *Source) Provision(ctx context.Context, querier sources.Querier) error {
 	if err != nil {
 		return fmt.Errorf("query template params: %w", err)
 	}
-	return ProvisionDataSources(ctx, s.pool, s, querier, tmplParams)
+	if err := ProvisionDataSources(ctx, s.pool, s, querier, tmplParams); err != nil {
+		return err
+	}
+	// Notify the app that provisioning is complete.
+	if err := callMountInit(ctx, s.pool, s.ds.Name); err != nil {
+		slog.Warn("mount init failed (non-fatal)", "app", s.ds.Name, "error", err)
+	}
+	return nil
 }
 
 // queryTemplateParams fetches embedder settings via core.embedder_settings function.

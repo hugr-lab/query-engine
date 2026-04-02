@@ -38,7 +38,7 @@ func main() {
 
 	c := client.NewClient(hugrURL, client.WithTimeout(5*time.Minute))
 
-	myApp := &TestApp{port: port}
+	myApp := &TestApp{port: port, client: c}
 	err := c.RunApplication(ctx, myApp, client.WithSecretKey(secret))
 	if err != nil {
 		log.Fatalf("app error: %v", err)
@@ -46,7 +46,8 @@ func main() {
 }
 
 type TestApp struct {
-	port string
+	port   string
+	client *client.Client
 }
 
 func (a *TestApp) Info() app.AppInfo {
@@ -67,7 +68,20 @@ func (a *TestApp) Listner() (net.Listener, error) {
 }
 
 func (a *TestApp) Init(ctx context.Context) error {
-	log.Println("TestApp initialized")
+	// Verify DB is accessible through hugr after provisioning
+	res, err := a.client.Query(ctx,
+		`{ test_app { store { events_aggregate { count } } } }`, nil)
+	if err != nil {
+		return fmt.Errorf("init: query hugr: %w", err)
+	}
+	defer res.Close()
+	var count struct {
+		Count int `json:"count"`
+	}
+	if err := res.ScanData("test_app.store.events_aggregate", &count); err != nil {
+		return fmt.Errorf("init: scan events count: %w", err)
+	}
+	log.Printf("TestApp initialized, events count: %d", count.Count)
 	return nil
 }
 
@@ -141,7 +155,7 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS severity TEXT DEFAULT 'info';
 
 // Compile-time interface checks.
 var (
-	_ app.DataSourceUser       = (*TestApp)(nil)
+	_ app.DataSourceUser           = (*TestApp)(nil)
 	_ app.ApplicationDBInitializer = (*TestApp)(nil)
 	_ app.ApplicationDBMigrator    = (*TestApp)(nil)
 )

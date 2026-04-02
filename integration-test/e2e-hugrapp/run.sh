@@ -176,6 +176,26 @@ run_test "auto-recovered: app DS works" \
     '"event_type":"app_start"'
 
 echo ""
+echo "=== Lifecycle: version upgrade (migration) ==="
+echo ""
+
+echo "Stopping test-app for version upgrade..."
+docker compose stop test-app 2>/dev/null
+sleep 5
+
+echo "Starting test-app with APP_VERSION=2.0.0..."
+APP_VERSION=2.0.0 docker compose up -d test-app 2>/dev/null
+sleep 15
+
+run_test "after upgrade: app function works" \
+    '{ function { test_app { add(a: 100, b: 200) } } }' \
+    '"add":300'
+
+run_test "after upgrade: migration ran (severity column)" \
+    '{ test_app { store { events { event_type severity } } } }' \
+    '"severity"'
+
+echo ""
 echo "=== Lifecycle: graceful shutdown ==="
 echo ""
 

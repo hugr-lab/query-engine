@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -64,7 +65,7 @@ func ProvisionDataSources(
 	appName := appSource.Name()
 
 	// Clean up stale DS registrations — unload + delete all app DS
-	if err := cleanupAppDataSources(ctx, querier, appName); err != nil {
+	if err := cleanupAppDataSources(ctx, querier, appName, dataSources); err != nil {
 		slog.Warn("cleanup app data sources failed (non-fatal)", "app", appName, "error", err)
 		return fmt.Errorf("cleanup provision data sources for app %s: %w", appName, err)
 	}
@@ -281,7 +282,7 @@ func migrateSchema(ctx context.Context, pool *db.Pool, pgConn *sql.DB, appSource
 
 // cleanupAppDataSources finds all DS registered for this app (name LIKE 'appName.%'),
 // unloads loaded ones, and deletes from data_sources (cascade removes catalog_sources link).
-func cleanupAppDataSources(ctx context.Context, querier Querier, appName string) error {
+func cleanupAppDataSources(ctx context.Context, querier Querier, appName string, dss []DataSourceInfo) error {
 	pattern := appName + ".%"
 	q := `query($pattern: String!) {
 		core { data_sources(filter: { name: { like: $pattern } }) { name } }
@@ -311,7 +312,12 @@ func cleanupAppDataSources(ctx context.Context, querier Querier, appName string)
 	}
 
 	for _, d := range ds {
-		slog.Info("cleanup: unloading app DS", "app", appName, "ds", d.Name)
+		if slices.ContainsFunc(dss, func(ds DataSourceInfo) bool {
+			return appName+"."+ds.Name == d.Name
+		}) {
+			continue
+		}
+		slog.Info("cleanup: unloading stale app DS", "app", appName, "ds", d.Name)
 		if err := querier.UnloadDataSource(ctx, d.Name); err != nil {
 			slog.Warn("cleanup: unload failed", "ds", d.Name, "error", err)
 		}

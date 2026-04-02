@@ -124,6 +124,23 @@ func readMountInitDSSchema(ctx context.Context, pool *db.Pool, sourceName, dsNam
 }
 
 // readMountMigrateDSSchema calls _mount.migrate_ds_schema(name, version) → returns migration SQL.
+// callMountInit calls _mount.init() to notify the app that provisioning is complete.
+func callMountInit(ctx context.Context, pool *db.Pool, sourceName string) error {
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	query := fmt.Sprintf(`SELECT %s._mount.init()`, engines.Ident(sourceName))
+	var result bool
+	err = conn.QueryRow(ctx, query).Scan(&result)
+	if err != nil {
+		return fmt.Errorf("mount init for %s: %w", sourceName, err)
+	}
+	return nil
+}
+
 func readMountMigrateDSSchema(ctx context.Context, pool *db.Pool, sourceName, dsName, fromVersion string) (string, error) {
 	conn, err := pool.Conn(ctx)
 	if err != nil {

@@ -149,59 +149,28 @@ func (c *Client) RunApplication(ctx context.Context, application app.Application
 	// Wait for gRPC server to start, then register with Hugr
 	time.AfterFunc(cfg.startupTimeout, func() {
 		path := info.URI
+		sep := "?"
 		if cfg.secretKey != "" {
-			path = fmt.Sprintf("%s?secret_key=%s", path, cfg.secretKey)
+			path += sep + "secret_key=" + cfg.secretKey
+			sep = "&"
+		}
+		if info.Version != "" {
+			path += sep + "version=" + info.Version
 		}
 
-		// Check if already registered
-		res, err := c.Query(ctx,
-			`query($name: String!) { core { data_sources_by_pk(name: $name) { type path } } }`,
-			map[string]any{"name": info.Name})
+		// Check if already registered in hugr
+		slog.Info("checking registration", "name", info.Name, "path", path)
+		existing, err := c.lookupDataSource(ctx, info.Name)
 		if err != nil {
-			slog.Error("check registered datasources:", "err", err.Error())
-			cancel()
-			return
-		}
-		defer res.Close()
-		if len(res.Errors) != 0 {
-			slog.Error("check registered datasources:", "err", res.Errors)
+			slog.Error("failed to check registration", "name", info.Name, "error", err)
 			cancel()
 			return
 		}
 
-		var existing struct {
-			Type string `json:"type"`
-			Path string `json:"path"`
-		}
-		err = res.ScanData("core.data_sources_by_pk", &existing)
-		if err != nil && !errors.Is(err, types.ErrNoData) {
-			slog.Error("check registered datasources:", "error", err)
-			cancel()
-			return
-		}
-		if !errors.Is(err, types.ErrNoData) {
-			if existing.Type != "hugr-app" {
-				slog.Error("data source type mismatch", "name", info.Name, "expected", "hugr-app", "got", existing.Type)
-				cancel()
-				return
-			}
-			// Update path if changed (app migrated to different host)
-			if existing.Path != path {
-				slog.Info("updating data source path", "name", info.Name, "old", existing.Path, "new", path)
-				res, err := c.Query(ctx,
-					`mutation($name: String!, $path: String!) { core { update_data_sources(filter: { name: { eq: $name } }, data: { path: $path }) { success } } }`,
-					map[string]any{"name": info.Name, "path": path})
-				if err != nil {
-					slog.Error("failed to update data source path", "error", err)
-					cancel()
-					res.Close()
-					return
-				}
-				res.Close()
-			}
-		}
-		if errors.Is(err, types.ErrNoData) {
-			// Not registered — register new
+		switch {
+		case existing == nil:
+			// Not registered — register new data source
+			slog.Info("registering new hugr-app", "name", info.Name)
 			ds := types.DataSource{
 				Name:        info.Name,
 				Type:        "hugr-app",
@@ -211,12 +180,30 @@ func (c *Client) RunApplication(ctx context.Context, application app.Application
 				AsModule:    true,
 				SelfDefined: true,
 			}
-			err = c.RegisterDataSource(ctx, ds)
-			if err != nil {
+			if err := c.RegisterDataSource(ctx, ds); err != nil {
 				slog.Error("failed to register data source", "error", err)
 				cancel()
 				return
 			}
+
+		case existing.Type != "hugr-app":
+			slog.Error("data source type mismatch", "name", info.Name, "expected", "hugr-app", "got", existing.Type)
+			cancel()
+			return
+
+		case existing.Path != path:
+			// Only version changed — update path so hugr sees new version on reload
+			slog.Info("version changed, updating path",
+				"name", info.Name, "old", existing.Path, "new", path)
+			if err := c.updateDataSourcePath(ctx, info.Name, path); err != nil {
+				slog.Error("failed to update data source path", "error", err)
+				cancel()
+				return
+			}
+
+		default:
+			// Same path (URI + secret + version) — just reload
+			slog.Info("already registered, reloading", "name", info.Name)
 		}
 
 		// Load (hugr auto-unloads and reloads if already loaded).
@@ -304,23 +291,6 @@ func validateAppInfo(info app.AppInfo) error {
 	return nil
 }
 
-func validateDataSourceName(name string) error {
-	if name == "" {
-		return errors.New("data source name cannot be empty")
-	}
-	if strings.HasPrefix(name, "_") {
-		return fmt.Errorf("data source name %q cannot start with '_'", name)
-	}
-	if strings.ContainsAny(name, " !@#$%^&*()+=[]{}|\\;:'\",<>/?") {
-		return fmt.Errorf("data source name %q contains invalid characters", name)
-	}
-	return nil
-}
-
-func appDataSourceName(appName, dsName string) string {
-	return appName + "." + dsName
-}
-
 func prefixFromName(name string) string {
 	// Use the application name as the prefix for the schema, replacing invalid characters with '_'
 	prefix := strings.Map(func(r rune) rune {
@@ -330,6 +300,43 @@ func prefixFromName(name string) string {
 		return '_'
 	}, name)
 	return prefix
+}
+
+type dsLookupResult struct {
+	Type string `json:"type"`
+	Path string `json:"path"`
+}
+
+func (c *Client) lookupDataSource(ctx context.Context, name string) (*dsLookupResult, error) {
+	res, err := c.Query(ctx,
+		`query($name: String!) { core { data_sources_by_pk(name: $name) { type path } } }`,
+		map[string]any{"name": name})
+	if err != nil {
+		return nil, err
+	}
+	defer res.Close()
+	if len(res.Errors) != 0 {
+		return nil, fmt.Errorf("query errors: %v", res.Errors)
+	}
+	var ds dsLookupResult
+	if err := res.ScanData("core.data_sources_by_pk", &ds); err != nil {
+		if errors.Is(err, types.ErrNoData) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &ds, nil
+}
+
+func (c *Client) updateDataSourcePath(ctx context.Context, name, path string) error {
+	res, err := c.Query(ctx,
+		`mutation($name: String!, $path: String!) { core { update_data_sources(filter: { name: { eq: $name } }, data: { path: $path }) { success } } }`,
+		map[string]any{"name": name, "path": path})
+	if err != nil {
+		return err
+	}
+	res.Close()
+	return nil
 }
 
 func newAppCatalog(ctx context.Context, mem memory.Allocator, app app.Application) (catalog.Catalog, error) {
