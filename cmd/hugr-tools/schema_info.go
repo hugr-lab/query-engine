@@ -84,7 +84,7 @@ func fetchSchemaInfo(ctx context.Context, client *hugr.Client, module string) (*
 	}
 	filter["hugr_type"] = map[string]any{"in": []string{"table", "view"}}
 
-	typesRes, err := client.Query(ctx, `query($filter: core_catalog_types_filter) {
+	typesRes, err := client.Query(ctx, `query($filter: core_types_filter) {
 		core {
 			catalog {
 				types(filter: $filter) {
@@ -105,9 +105,9 @@ func fetchSchemaInfo(ctx context.Context, client *hugr.Client, module string) (*
 	}
 
 	var types []struct {
-		Name     string `json:"name"`
-		HugrType string `json:"hugr_type"`
-		Catalog  string `json:"catalog"`
+		Name      string `json:"name"`
+		HugrType  string `json:"hugr_type"`
+		Catalog   string `json:"catalog"`
 		FieldsAgg *struct {
 			Count int `json:"_rows_count"`
 		} `json:"fields_aggregation"`
@@ -121,7 +121,7 @@ func fetchSchemaInfo(ctx context.Context, client *hugr.Client, module string) (*
 	}
 	introFilter["type_type"] = map[string]any{"in": []string{"function", "mutation_function"}}
 
-	introRes, err := client.Query(ctx, `query($filter: core_catalog_module_intro_filter) {
+	introRes, err := client.Query(ctx, `query($filter: core_module_intro_filter) {
 		core {
 			catalog {
 				module_intro(filter: $filter) {
@@ -149,7 +149,7 @@ func fetchSchemaInfo(ctx context.Context, client *hugr.Client, module string) (*
 	modulesRes, err := client.Query(ctx, `query {
 		core {
 			catalog {
-modules {
+				modules {
 					name
 				}
 			}

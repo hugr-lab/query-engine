@@ -5,6 +5,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	hugr "github.com/hugr-lab/query-engine"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/schollz/progressbar/v3"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/anthropic"
@@ -121,25 +123,25 @@ Flags:`)
 	var total int
 
 	n, err := s.summarizeDataObjects(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, types.ErrNoData) {
 		return fmt.Errorf("phase 1 (data objects): %w", err)
 	}
 	total += n
 
 	n, err = s.summarizeFunctions(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, types.ErrNoData) {
 		return fmt.Errorf("phase 2 (functions): %w", err)
 	}
 	total += n
 
 	n, err = s.summarizeDataSources(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, types.ErrNoData) {
 		return fmt.Errorf("phase 3 (data sources): %w", err)
 	}
 	total += n
 
 	n, err = s.summarizeModules(ctx)
-	if err != nil {
+	if err != nil && !errors.Is(err, types.ErrNoData) {
 		return fmt.Errorf("phase 4 (modules): %w", err)
 	}
 	total += n
@@ -195,22 +197,22 @@ type summarizer struct {
 // --- LLM Output Models ---
 
 type dataObjectSummary struct {
-	Short                      string                       `json:"short"`
-	Long                       string                       `json:"long"`
-	AggregationTypeShort       string                       `json:"aggregation_type_short,omitempty"`
-	AggregationTypeLong        string                       `json:"aggregation_type_long,omitempty"`
-	SubAggregationTypeShort    string                       `json:"sub_aggregation_type_short,omitempty"`
-	SubAggregationTypeLong     string                       `json:"sub_aggregation_type_long,omitempty"`
-	BucketAggregationTypeShort string                       `json:"bucket_aggregation_type_short,omitempty"`
-	BucketAggregationTypeLong  string                       `json:"bucket_aggregation_type_long,omitempty"`
-	Filter                     *filterSummary               `json:"filter,omitempty"`
-	Fields                     map[string]string            `json:"fields,omitempty"`
-	ExtraFields                map[string]string            `json:"extra_fields,omitempty"`
-	Relations                  map[string]relationSummary   `json:"relations,omitempty"`
-	FunctionCalls              map[string]string            `json:"function_calls,omitempty"`
-	Arguments                  *argumentsSummary            `json:"arguments,omitempty"`
-	Queries                    map[string]string            `json:"queries,omitempty"`
-	Mutations                  map[string]string            `json:"mutations,omitempty"`
+	Short                      string                     `json:"short"`
+	Long                       string                     `json:"long"`
+	AggregationTypeShort       string                     `json:"aggregation_type_short,omitempty"`
+	AggregationTypeLong        string                     `json:"aggregation_type_long,omitempty"`
+	SubAggregationTypeShort    string                     `json:"sub_aggregation_type_short,omitempty"`
+	SubAggregationTypeLong     string                     `json:"sub_aggregation_type_long,omitempty"`
+	BucketAggregationTypeShort string                     `json:"bucket_aggregation_type_short,omitempty"`
+	BucketAggregationTypeLong  string                     `json:"bucket_aggregation_type_long,omitempty"`
+	Filter                     *filterSummary             `json:"filter,omitempty"`
+	Fields                     map[string]string          `json:"fields,omitempty"`
+	ExtraFields                map[string]string          `json:"extra_fields,omitempty"`
+	Relations                  map[string]relationSummary `json:"relations,omitempty"`
+	FunctionCalls              map[string]string          `json:"function_calls,omitempty"`
+	Arguments                  *argumentsSummary          `json:"arguments,omitempty"`
+	Queries                    map[string]string          `json:"queries,omitempty"`
+	Mutations                  map[string]string          `json:"mutations,omitempty"`
 }
 
 type relationSummary struct {
@@ -787,7 +789,9 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 		core { catalog { types(filter: {name: {in: $names}}) { name } } }
 	}`, map[string]any{"names": []string{aggTypeName, subAggTypeName, bucketAggTypeName}})
 	if err == nil {
-		var aggTypes []struct{ Name string `json:"name"` }
+		var aggTypes []struct {
+			Name string `json:"name"`
+		}
 		_ = aggRes.ScanData("core.catalog.types", &aggTypes)
 		aggRes.Close()
 		for _, t := range aggTypes {
@@ -953,7 +957,7 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 	dsCtx := dataSourceContext{}
 	if typeInfo.Catalog != "" {
 		catRes, err := s.client.Query(ctx, `query($name: String!) {
-			core { catalog { catalogs_by_pk(name: $name) { name type description } } }
+			core { catalog { schema_catalogs_by_pk(name: $name) { name type description } } }
 		}`, map[string]any{"name": typeInfo.Catalog})
 		if err == nil {
 			var cat struct {
@@ -961,7 +965,7 @@ func (s *summarizer) prepareDataObjectContext(ctx context.Context, typeName stri
 				Type        string `json:"type"`
 				Description string `json:"description"`
 			}
-			if err := catRes.ScanData("core.catalog.catalogs_by_pk", &cat); err == nil {
+			if err := catRes.ScanData("core.catalog.schema_catalogs_by_pk", &cat); err == nil {
 				dsCtx.Name = cat.Name
 				dsCtx.SummaryText = cat.Description
 				if dsCtx.SummaryText != "" {
@@ -1220,7 +1224,7 @@ func (s *summarizer) writeBackDataObject(ctx context.Context, ds *dataObjectSumm
 // These types mirror the parent's fields but are generated without descriptions.
 func (s *summarizer) writeBackDerivedInputTypes(ctx context.Context, ds *dataObjectSummary, meta *dataObjectMeta) {
 	type derivedType struct {
-		suffix  string
+		suffix   string
 		typeDesc string
 	}
 	derived := []derivedType{
@@ -1290,7 +1294,7 @@ func (s *summarizer) summarizeDataObjects(ctx context.Context) (int, error) {
 		filter["catalog"] = map[string]any{"eq": s.catalog}
 	}
 
-	res, err := s.client.Query(ctx, `query($filter: core_catalog_types_filter) {
+	res, err := s.client.Query(ctx, `query($filter: core_types_filter) {
 		core {
 			catalog {
 				types(filter: $filter) {
@@ -1356,7 +1360,7 @@ func (s *summarizer) summarizeDataObjects(ctx context.Context) (int, error) {
 // prepareFunctionContext queries all context needed for a function.
 func (s *summarizer) prepareFunctionContext(ctx context.Context, typeName, fieldName string) (*functionTemplateData, *functionMeta, error) {
 	// Fetch function field info.
-	res, err := s.client.Query(ctx, `query($filter: core_catalog_fields_filter) {
+	res, err := s.client.Query(ctx, `query($filter: core_fields_filter) {
 		core {
 			catalog {
 				fields(filter: $filter, limit: 1) {
@@ -1469,7 +1473,7 @@ func (s *summarizer) prepareFunctionContext(ctx context.Context, typeName, field
 	dsCtx := dataSourceContext{Name: fn.Catalog}
 	if fn.Catalog != "" {
 		catRes, err := s.client.Query(ctx, `query($name: String!) {
-			core { catalog { catalogs_by_pk(name: $name) { name type description } } }
+			core { catalog { schema_catalogs_by_pk(name: $name) { name type description } } }
 		}`, map[string]any{"name": fn.Catalog})
 		if err == nil {
 			var c struct {
@@ -1477,7 +1481,7 @@ func (s *summarizer) prepareFunctionContext(ctx context.Context, typeName, field
 				Type        string `json:"type"`
 				Description string `json:"description"`
 			}
-			if err := catRes.ScanData("core.catalog.catalogs_by_pk", &c); err == nil {
+			if err := catRes.ScanData("core.catalog.schema_catalogs_by_pk", &c); err == nil {
 				dsCtx.SummaryText = c.Description
 				if dsCtx.SummaryText != "" {
 					dsCtx.SummaryText += " (" + c.Type + ")"
@@ -1555,7 +1559,7 @@ func (s *summarizer) summarizeFunctions(ctx context.Context) (int, error) {
 		filter["catalog"] = map[string]any{"eq": s.catalog}
 	}
 
-	res, err := s.client.Query(ctx, `query($filter: core_catalog_fields_filter) {
+	res, err := s.client.Query(ctx, `query($filter: core_fields_filter) {
 		core {
 			catalog {
 				fields(filter: $filter) {
@@ -1624,7 +1628,7 @@ func (s *summarizer) summarizeFunctions(ctx context.Context) (int, error) {
 func (s *summarizer) prepareDataSourceContext(ctx context.Context, name string) (*dataSourceTemplateData, error) {
 	// Fetch catalog info.
 	catRes, err := s.client.Query(ctx, `query($name: String!) {
-		core { catalog { catalogs_by_pk(name: $name) {
+		core { catalog { schema_catalogs_by_pk(name: $name) {
 			name type description read_only as_module
 			types_in_catalog(filter: {hugr_type: {in: ["table","view"]}}) {
 				name hugr_type description
@@ -1651,7 +1655,7 @@ func (s *summarizer) prepareDataSourceContext(ctx context.Context, name string) 
 			Description string `json:"description"`
 		} `json:"types_in_catalog"`
 	}
-	if err := catRes.ScanData("core.catalog.catalogs_by_pk", &cat); err != nil {
+	if err := catRes.ScanData("core.catalog.schema_catalogs_by_pk", &cat); err != nil {
 		return nil, fmt.Errorf("catalog %s not found: %w", name, err)
 	}
 
@@ -1742,10 +1746,10 @@ func (s *summarizer) summarizeDataSources(ctx context.Context) (int, error) {
 		filter["name"] = map[string]any{"eq": s.catalog}
 	}
 
-	res, err := s.client.Query(ctx, `query($filter: core_catalog_catalogs_filter) {
+	res, err := s.client.Query(ctx, `query($filter: core_schema_catalogs_filter) {
 		core {
 			catalog {
-				catalogs(filter: $filter) {
+				schema_catalogs(filter: $filter) {
 					name
 				}
 			}
@@ -1762,7 +1766,7 @@ func (s *summarizer) summarizeDataSources(ctx context.Context) (int, error) {
 	var catalogs []struct {
 		Name string `json:"name"`
 	}
-	if err := res.ScanData("core.catalog.catalogs", &catalogs); err != nil {
+	if err := res.ScanData("core.catalog.schema_catalogs", &catalogs); err != nil {
 		return 0, err
 	}
 
@@ -1840,7 +1844,7 @@ func (s *summarizer) prepareModuleContext(ctx context.Context, name string) (*mo
 	}
 
 	// Fetch tables/views with descriptions.
-	typesRes, err := s.client.Query(ctx, `query($filter: core_catalog_types_filter) {
+	typesRes, err := s.client.Query(ctx, `query($filter: core_types_filter) {
 		core { catalog { types(filter: $filter) { name hugr_type description catalog } } }
 	}`, map[string]any{
 		"filter": map[string]any{
@@ -1949,7 +1953,7 @@ func (s *summarizer) prepareModuleContext(ctx context.Context, name string) (*mo
 			names = append(names, n)
 		}
 		catRes, err := s.client.Query(ctx, `query($names: [String!]) {
-			core { catalog { catalogs(filter: {name: {in: $names}}) { name type description } } }
+			core { catalog { schema_catalogs(filter: {name: {in: $names}}) { name type description } } }
 		}`, map[string]any{"names": names})
 		if err == nil {
 			var cats []struct {
@@ -1957,7 +1961,7 @@ func (s *summarizer) prepareModuleContext(ctx context.Context, name string) (*mo
 				Type        string `json:"type"`
 				Description string `json:"description"`
 			}
-			_ = catRes.ScanData("core.catalog.catalogs", &cats)
+			_ = catRes.ScanData("core.catalog.schema_catalogs", &cats)
 			catRes.Close()
 			for _, c := range cats {
 				summary := c.Description
@@ -2066,7 +2070,7 @@ func (s *summarizer) summarizeModules(ctx context.Context) (int, error) {
 		"is_summarized": map[string]any{"eq": false},
 	}
 
-	res, err := s.client.Query(ctx, `query($filter: core_catalog_modules_filter) {
+	res, err := s.client.Query(ctx, `query($filter: core_modules_filter) {
 		core {
 			catalog {
 				modules(filter: $filter, order_by: [{field: "name", direction: DESC}]) {
@@ -2199,4 +2203,3 @@ func (s *summarizer) summarizeSingleSource(ctx context.Context, name string) err
 	fmt.Fprintf(os.Stderr, "  description: %s\n", dsSummary.Short)
 	return s.writeCatalogDesc(ctx, name, dsSummary.Short, dsSummary.Long)
 }
-
