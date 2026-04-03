@@ -28,7 +28,7 @@ You are a **Hugr GraphQL query builder**. Your goal is to construct a correct, e
 **Aggregation functions**:
 - Numeric: sum, avg, min, max, count, stddev, variance
 - String: count, any, first, last, list — NO min/max/avg/sum
-- Timestamp: min, max, count
+- Timestamp/DateTime: min, max, count
 
 **Time bucketing in keys**: `field(bucket: month)`, `_field_part(extract: year)`
 

@@ -106,7 +106,7 @@ filter: {
 | String | eq, in, is_null, like, ilike, regex |
 | Int, BigInt, Float | eq, gt, gte, lt, lte, in, is_null |
 | Boolean | eq, is_null |
-| Timestamp, Date, Time | eq, gt, gte, lt, lte, in, is_null |
+| Timestamp, DateTime, Date, Time | eq, gt, gte, lt, lte, in, is_null |
 | Geometry | contains, intersects, is_null |
 | JSON | eq, has, has_all, contains, is_null |
 | List types | eq, contains, intersects, is_null |
@@ -224,7 +224,7 @@ stores_aggregation {
 - `_rows_count` — total rows
 - Numeric (Float, Int, BigInt): `sum`, `avg`, `min`, `max`, `count`, `stddev`, `variance`
 - String: `count`, `any`, `first`, `last`, `list`, `list(distinct: true)` — NO min/max/avg/sum
-- Timestamp/Date: `min`, `max`, `count`
+- Timestamp/DateTime/Date: `min`, `max`, `count`
 - Boolean: `bool_and`, `bool_or`
 - General: `any`, `last`, `count`, `count(distinct: true)`
 - JSON: support `path` parameter (dot-separated, e.g. `path: "address.city"`)
@@ -271,8 +271,9 @@ Types: INTERSECTS, WITHIN, CONTAINS, DISJOINT, DWITHIN (+ buffer in meters)
 
 Auto-generated fields with arguments (hugr_type=`extra_field`, `arguments_count > 0`):
 
-- **Timestamp/Date** → `_<field>_part(extract: year)` — year, month, day, hour, dow, week, quarter, epoch
+- **Timestamp/DateTime/Date** → `_<field>_part(extract: year)` — year, month, day, hour, dow, week, quarter, epoch
   Original field gets `bucket` and `bucket_interval` args for time bucketing.
+  `DateTime` is a naive datetime WITHOUT timezone (not affected by SET TimeZone).
 - **Geometry** → `_<field>_measurement(type: Area)` — Area, Length, Perimeter + Spheroid variants
 - **Vector** → `_<field>_distance(vector: [...], distance: Cosine)` — Cosine, L2, Inner
 - **JSON** → `field(struct: {"name": "string", "age": "int"})` — typed extraction

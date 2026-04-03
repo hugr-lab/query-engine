@@ -9,7 +9,7 @@ Operators depend on the field type (check with `schema-type_fields`):
 | `eq` | all scalars | Equal to |
 | `gt`, `gte` | numeric, temporal, Interval | Greater than (or equal) |
 | `lt`, `lte` | numeric, temporal, Interval | Less than (or equal) |
-| `in` | String, numeric, Date, Time, Timestamp | In list |
+| `in` | String, numeric, Date, Time, Timestamp, DateTime | In list |
 | `is_null` | all | Is null check |
 | `like` | String | SQL LIKE pattern (`%` wildcard) |
 | `ilike` | String | Case-insensitive LIKE |

@@ -55,7 +55,7 @@ orders_bucket_aggregation(
 **Aggregation functions by type**:
 - Numeric: sum, avg, min, max, count
 - String: count, any, first, last, list — NO min/max/avg/sum
-- Timestamp: min, max, count
+- Timestamp/DateTime: min, max, count
 
 **Filtered aggregation** — `aggregations` field accepts `filter` for post-group filtering (SQL FILTER WHERE):
 ```graphql
