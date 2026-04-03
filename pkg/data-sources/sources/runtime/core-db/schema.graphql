@@ -150,59 +150,6 @@ type api_keys @table(name: "api_keys") @unique(fields: ["key"], query_suffix: "b
   claims: JSON
 }
 
-# --- Schema Management UDFs (registered by db.Provider.RegisterUDFs) ---
-
-extend type MutationFunction {
-  "Hard-delete a catalog and all its schema objects. Rejects if catalog has active engine."
-  _schema_hard_remove(name: String!): OperationResult
-    @function(name: "_schema_hard_remove")
-
-  "Reset catalog version to force recompilation on next startup."
-  _schema_version_clean(name: String!): OperationResult
-    @function(name: "_schema_version_clean")
-
-  "Update type description and mark as summarized."
-  _schema_update_type_desc(
-    name: String!
-    description: String!
-    long_description: String!
-  ): OperationResult
-    @function(name: "_schema_update_type_desc")
-
-  "Update field description and mark as summarized."
-  _schema_update_field_desc(
-    type_name: String!
-    name: String!
-    description: String!
-    long_description: String!
-  ): OperationResult
-    @function(name: "_schema_update_field_desc")
-
-  "Update module description and mark as summarized."
-  _schema_update_module_desc(
-    name: String!
-    description: String!
-    long_description: String!
-  ): OperationResult
-    @function(name: "_schema_update_module_desc")
-
-  "Update catalog description and mark as summarized."
-  _schema_update_catalog_desc(
-    name: String!
-    description: String!
-    long_description: String!
-  ): OperationResult
-    @function(name: "_schema_update_catalog_desc")
-
-  "Reset is_summarized flag so summarizer re-processes entities. scope: all|catalog|type"
-  _schema_reset_summarized(name: String = "", scope: String = "all"): OperationResult
-    @function(name: "_schema_reset_summarized")
-
-  "Recompute embeddings. Empty name = all entities."
-  _schema_reindex(name: String = "", batch_size: Int = 50): OperationResult
-    @function(name: "_schema_reindex")
-}
-
 # --- Cluster Node Registry ---
 
 """
@@ -224,46 +171,4 @@ type nodes @table(name: "_cluster_nodes") @module(name: "cluster") {
   last_heartbeat: Timestamp
   "Last error (null = healthy)"
   error: String
-}
-
-# --- Data Sources UDFs ---
-
-extend type Function {
-  http_data_source_request(
-    source: String!
-    path: String!
-    method: String!
-    headers: JSON!
-    parameters: JSON!
-    body: JSON!
-    jq: String!
-  ): [any]
-    @function(name: "http_data_source_request", is_table: true)
-
-  http_data_source_request_scalar(
-    source: String!
-    path: String!
-    method: String!
-    headers: JSON!
-    parameters: JSON!
-    body: JSON!
-    jq: String!
-  ):JSON
-    @function(name: "http_data_source_request_scalar")
-
-  create_embedding(
-    model: String!
-    input: String!
-  ): Vector
-    @function(name: "create_embedding")
-
-  embedder_settings: embedder_settings
-    @function(name: "hugr_embedder_settings")
-}
-
-type embedder_settings {
-  is_enabled: Boolean
-  name: String
-  model: String
-  dimensions: Int
 }

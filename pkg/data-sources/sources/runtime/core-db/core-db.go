@@ -1,11 +1,13 @@
 package coredb
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"errors"
 	"fmt"
 	"strings"
+	"text/template"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
@@ -16,7 +18,7 @@ import (
 )
 
 const (
-	Version           = "0.0.15"
+	Version           = "0.0.16"
 	dbName            = "core"
 	DefaultVectorSize = 768
 )
@@ -31,6 +33,9 @@ var InitSchema string
 
 //go:embed schema.graphql
 var schema string
+
+//go:embed schema_catalog_tmpl.graphql
+var schemaCatalogTmpl string
 
 type Config struct {
 	Path     string `json:"path"`
@@ -174,7 +179,28 @@ func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
 		EngineType:   string(s.e.Type()),
 		Capabilities: s.e.Capabilities(),
 	}
-	return cs.NewStringSource(s.Name(), s.e, opts, schema)
+
+	params := struct {
+		EmbeddingsEnabled bool
+		VectorSize        int
+		IsPostgres        bool
+	}{
+		EmbeddingsEnabled: s.c.VectorSize > 0,
+		VectorSize:        s.c.VectorSize,
+		IsPostgres:        s.dbType == sources.Postgres,
+	}
+
+	tmpl, err := template.New("schema").Parse(schemaCatalogTmpl)
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, params); err != nil {
+		return nil, err
+	}
+
+	return cs.NewStringSource(s.Name(), s.e, opts, schema, buf.String())
 }
 
 func checkDBVersion(ctx context.Context, db *db.Pool) error {

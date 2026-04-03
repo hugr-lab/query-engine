@@ -110,6 +110,7 @@ func loadConfig() Config {
 		},
 		CoreDB: coredb.Config{
 			Path:       viper.GetString("CORE_DB_PATH"),
+			VectorSize: viper.GetInt("EMBEDDER_VECTOR_SIZE"),
 			ReadOnly:   viper.GetBool("CORE_DB_READONLY"),
 			S3Endpoint: viper.GetString("CORE_DB_S3_ENDPOINT"),
 			S3Region:   viper.GetString("CORE_DB_S3_REGION"),

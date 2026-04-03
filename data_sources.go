@@ -41,10 +41,6 @@ func (s *Service) attachRuntimeSources(ctx context.Context, readonly bool) error
 	if err != nil {
 		return fmt.Errorf("attach meta info source: %w", err)
 	}
-	err = s.ds.AttachRuntimeSource(ctx, s.dbProvider.CatalogSource())
-	if err != nil {
-		return fmt.Errorf("attach catalog source: %w", err)
-	}
 	err = s.ds.AttachRuntimeSource(ctx, authrt.New())
 	if err != nil {
 		return fmt.Errorf("attach auth source: %w", err)
@@ -81,7 +77,6 @@ func (s *Service) attachRuntimeSourcesReadonly(ctx context.Context) error {
 	readonlySources := []sources.RuntimeSource{
 		s.cache,
 		metainfo.New(s),
-		s.dbProvider.CatalogSource(),
 		authrt.New(),
 		gis.New(),
 	}
