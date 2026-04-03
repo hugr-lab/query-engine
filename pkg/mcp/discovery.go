@@ -570,7 +570,7 @@ func aggStatsFields(s *Server, ctx context.Context, objectName, fieldName string
 	switch ft {
 	case "Float", "Int", "BigInt":
 		return "min max avg distinct: count"
-	case "Timestamp", "Date":
+	case "Timestamp", "Date", "DateTime":
 		return "min max distinct: count"
 	default:
 		// String, Boolean, Geometry, etc. — only count is safe.

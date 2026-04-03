@@ -18,13 +18,13 @@ func (s *Server) typeInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	}
 
 	var raw struct {
-		Name     string `json:"name"`
-		Kind     string `json:"kind"`
-		HugrType string `json:"hugr_type"`
-		Module   string `json:"module"`
-		Catalog  string `json:"catalog"`
-		Desc     string `json:"description"`
-		LongDesc string `json:"long_description"`
+		Name      string `json:"name"`
+		Kind      string `json:"kind"`
+		HugrType  string `json:"hugr_type"`
+		Module    string `json:"module"`
+		Catalog   string `json:"catalog"`
+		Desc      string `json:"description"`
+		LongDesc  string `json:"long_description"`
 		FieldsAgg struct {
 			Count     int `json:"_rows_count"`
 			HugrTypes struct {
@@ -85,7 +85,7 @@ func (s *Server) typeInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 		var argsAgg struct {
 			Count int `json:"_rows_count"`
 		}
-		argErr := s.queryScan(ctx, `query($filter: core_catalog_arguments_filter) {
+		argErr := s.queryScan(ctx, `query($filter: core_arguments_filter) {
 			core { catalog { arguments_aggregation(filter: $filter) { _rows_count } } }
 		}`, map[string]any{
 			"filter": map[string]any{"type_name": map[string]any{"eq": typeName}},
@@ -171,7 +171,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 
 		vars["relevance_query"] = relevanceQuery
 
-		gql := fmt.Sprintf(`query($filter: core_catalog_fields_filter, $limit: Int, $offset: Int, $relevance_query: String!) {
+		gql := fmt.Sprintf(`query($filter: core_fields_filter, $limit: Int, $offset: Int, $relevance_query: String!) {
 			core {
 				catalog {
 					fields(
@@ -210,7 +210,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		}
 	} else {
 		// Without relevance ranking.
-		gql := fmt.Sprintf(`query($filter: core_catalog_fields_filter, $limit: Int, $offset: Int) {
+		gql := fmt.Sprintf(`query($filter: core_fields_filter, $limit: Int, $offset: Int) {
 			core {
 				catalog {
 					fields(

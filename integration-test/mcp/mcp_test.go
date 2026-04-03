@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,33 +24,54 @@ import (
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 )
 
-// setupEngine bootstraps a full in-memory engine for MCP integration testing.
-// MCPEnabled is false — we create the MCP server separately to avoid the embedder requirement.
-func setupEngine(t *testing.T) *hugr.Service {
-	t.Helper()
+var (
+	testService *hugr.Service
+	testHandler http.Handler
+)
+
+func TestMain(m *testing.M) {
 	ctx := context.Background()
+
+	embedderURL := os.Getenv("EMBEDDER_URL")
+	vectorSize := 0
+	if v := os.Getenv("EMBEDDER_VECTOR_SIZE"); v != "" {
+		fmt.Sscanf(v, "%d", &vectorSize)
+	}
 
 	service, err := hugr.New(hugr.Config{
 		DB: db.Config{
 			Path: "",
 		},
-		CoreDB: coredb.New(coredb.Config{}),
-		Auth:   &auth.Config{},
+		CoreDB: coredb.New(coredb.Config{
+			VectorSize: vectorSize,
+		}),
+		Auth: &auth.Config{},
+		Embedder: hugr.EmbedderConfig{
+			URL:        embedderURL,
+			VectorSize: vectorSize,
+		},
+		MCPEnabled: true,
 	})
-	require.NoError(t, err)
-	t.Cleanup(func() { service.Close() })
+	if err != nil {
+		panic(err)
+	}
 
-	err = service.Init(ctx)
-	require.NoError(t, err)
+	if err := service.Init(ctx); err != nil {
+		panic(err)
+	}
 
-	return service
+	testService = service
+	srv := mcpserver.New(service, nil, true)
+	testHandler = srv.Handler()
+
+	code := m.Run()
+	service.Close()
+	os.Exit(code)
 }
 
-// setupMCP creates an MCP handler backed by the engine.
-func setupMCP(t *testing.T, service *hugr.Service) http.Handler {
+func handler(t *testing.T) http.Handler {
 	t.Helper()
-	srv := mcpserver.New(service, nil, true)
-	return srv.Handler()
+	return testHandler
 }
 
 // jsonRPC sends a JSON-RPC 2.0 request to the MCP handler and returns the response body.
@@ -106,9 +129,9 @@ func jsonRPC(t *testing.T, handler http.Handler, method string, params any) map[
 }
 
 // mcpInit sends the initialize handshake required before any tool calls.
-func mcpInit(t *testing.T, handler http.Handler) {
+func mcpInit(t *testing.T, h http.Handler) {
 	t.Helper()
-	resp := jsonRPC(t, handler, "initialize", map[string]any{
+	resp := jsonRPC(t, h, "initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
@@ -123,10 +146,8 @@ func mcpInit(t *testing.T, handler http.Handler) {
 // --- Tests ---
 
 func TestMCP_Initialize(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-
-	resp := jsonRPC(t, handler, "initialize", map[string]any{
+	h := handler(t)
+	resp := jsonRPC(t, h, "initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
@@ -145,11 +166,10 @@ func TestMCP_Initialize(t *testing.T) {
 }
 
 func TestMCP_ToolsList(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-	mcpInit(t, handler)
+	h := handler(t)
+	mcpInit(t, h)
 
-	resp := jsonRPC(t, handler, "tools/list", nil)
+	resp := jsonRPC(t, h, "tools/list", nil)
 	require.Contains(t, resp, "result")
 	result := resp["result"].(map[string]any)
 	tools := result["tools"].([]any)
@@ -181,11 +201,10 @@ func TestMCP_ToolsList(t *testing.T) {
 }
 
 func TestMCP_ResourcesList(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-	mcpInit(t, handler)
+	h := handler(t)
+	mcpInit(t, h)
 
-	resp := jsonRPC(t, handler, "resources/list", nil)
+	resp := jsonRPC(t, h, "resources/list", nil)
 	require.Contains(t, resp, "result")
 	result := resp["result"].(map[string]any)
 	resources := result["resources"].([]any)
@@ -195,11 +214,10 @@ func TestMCP_ResourcesList(t *testing.T) {
 }
 
 func TestMCP_PromptsList(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-	mcpInit(t, handler)
+	h := handler(t)
+	mcpInit(t, h)
 
-	resp := jsonRPC(t, handler, "prompts/list", nil)
+	resp := jsonRPC(t, h, "prompts/list", nil)
 	require.Contains(t, resp, "result")
 	result := resp["result"].(map[string]any)
 	prompts := result["prompts"].([]any)
@@ -209,12 +227,11 @@ func TestMCP_PromptsList(t *testing.T) {
 }
 
 func TestMCP_ValidateGraphQLQuery(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-	mcpInit(t, handler)
+	h := handler(t)
+	mcpInit(t, h)
 
 	// Valid query.
-	resp := jsonRPC(t, handler, "tools/call", map[string]any{
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
 		"name": "data-validate_graphql_query",
 		"arguments": map[string]any{
 			"query": `{ core { data_sources { name } } }`,
@@ -232,11 +249,10 @@ func TestMCP_ValidateGraphQLQuery(t *testing.T) {
 }
 
 func TestMCP_InlineGraphQLResult(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-	mcpInit(t, handler)
+	h := handler(t)
+	mcpInit(t, h)
 
-	resp := jsonRPC(t, handler, "tools/call", map[string]any{
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
 		"name": "data-inline_graphql_result",
 		"arguments": map[string]any{
 			"query": `{ core { data_sources { name } } }`,
@@ -256,12 +272,11 @@ func TestMCP_InlineGraphQLResult(t *testing.T) {
 }
 
 func TestMCP_SchemaTypeInfo(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-	mcpInit(t, handler)
+	h := handler(t)
+	mcpInit(t, h)
 
 	// Query a known type from the core catalog.
-	resp := jsonRPC(t, handler, "tools/call", map[string]any{
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
 		"name": "schema-type_info",
 		"arguments": map[string]any{
 			"type_name": "core_data_sources",
@@ -283,11 +298,10 @@ func TestMCP_SchemaTypeInfo(t *testing.T) {
 }
 
 func TestMCP_SchemaTypeFields(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-	mcpInit(t, handler)
+	h := handler(t)
+	mcpInit(t, h)
 
-	resp := jsonRPC(t, handler, "tools/call", map[string]any{
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
 		"name": "schema-type_fields",
 		"arguments": map[string]any{
 			"type_name": "core_data_sources",
@@ -317,11 +331,10 @@ func TestMCP_SchemaTypeFields(t *testing.T) {
 }
 
 func TestMCP_PromptGet(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-	mcpInit(t, handler)
+	h := handler(t)
+	mcpInit(t, h)
 
-	resp := jsonRPC(t, handler, "prompts/get", map[string]any{
+	resp := jsonRPC(t, h, "prompts/get", map[string]any{
 		"name": "start",
 	})
 	require.Contains(t, resp, "result")
@@ -332,11 +345,10 @@ func TestMCP_PromptGet(t *testing.T) {
 }
 
 func TestMCP_ResourceRead(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-	mcpInit(t, handler)
+	h := handler(t)
+	mcpInit(t, h)
 
-	resp := jsonRPC(t, handler, "resources/read", map[string]any{
+	resp := jsonRPC(t, h, "resources/read", map[string]any{
 		"uri": "hugr://overview",
 	})
 	require.Contains(t, resp, "result")
@@ -348,12 +360,154 @@ func TestMCP_ResourceRead(t *testing.T) {
 	assert.Contains(t, first["text"].(string), "Hugr")
 }
 
-func TestMCP_ValidateInvalidQuery(t *testing.T) {
-	service := setupEngine(t)
-	handler := setupMCP(t, service)
-	mcpInit(t, handler)
+func TestMCP_SchemaEnumValues(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
 
-	resp := jsonRPC(t, handler, "tools/call", map[string]any{
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name": "schema-enum_values",
+		"arguments": map[string]any{
+			"type_name": "GeometryType",
+		},
+	})
+	require.Contains(t, resp, "result")
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	require.NotEmpty(t, content)
+
+	textContent := content[0].(map[string]any)["text"].(string)
+	t.Logf("enum_values response: %.500s", textContent)
+	var enumResult map[string]any
+	require.NoError(t, json.Unmarshal([]byte(textContent), &enumResult))
+	assert.Equal(t, "GeometryType", enumResult["name"])
+	assert.Contains(t, enumResult, "values")
+	values := enumResult["values"].([]any)
+	assert.Greater(t, len(values), 0, "enum should have values")
+}
+
+func TestMCP_SchemaEnumValues_NotEnum(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name": "schema-enum_values",
+		"arguments": map[string]any{
+			"type_name": "core_data_sources",
+		},
+	})
+	require.Contains(t, resp, "result")
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	require.NotEmpty(t, content)
+
+	textContent := content[0].(map[string]any)["text"].(string)
+	assert.Contains(t, textContent, "not ENUM")
+}
+
+func TestMCP_FieldValues(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name": "discovery-field_values",
+		"arguments": map[string]any{
+			"object_name": "core_data_sources",
+			"field_name":  "type",
+			"limit":       5,
+		},
+	})
+	require.Contains(t, resp, "result")
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	require.NotEmpty(t, content)
+
+	textContent := content[0].(map[string]any)["text"].(string)
+	t.Logf("field_values response: %.500s", textContent)
+	// Should return values or an error message (not panic)
+	assert.NotEmpty(t, textContent)
+}
+
+func TestMCP_DiscoverySearchModules(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	// Without embeddings, search should return an error, not panic.
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name": "discovery-search_modules",
+		"arguments": map[string]any{
+			"query": "data sources",
+			"top_k": 3,
+		},
+	})
+	require.Contains(t, resp, "result")
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	require.NotEmpty(t, content)
+	// Should not panic — returns error or empty result
+	t.Logf("search_modules (no embeddings): %.300s", content[0].(map[string]any)["text"])
+}
+
+func TestMCP_DiscoverySearchDataSources(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name": "discovery-search_data_sources",
+		"arguments": map[string]any{
+			"query": "postgres",
+			"top_k": 3,
+		},
+	})
+	require.Contains(t, resp, "result")
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	require.NotEmpty(t, content)
+	t.Logf("search_data_sources (no embeddings): %.300s", content[0].(map[string]any)["text"])
+}
+
+func TestMCP_DiscoverySearchModuleDataObjects(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name": "discovery-search_module_data_objects",
+		"arguments": map[string]any{
+			"module": "core",
+			"query":  "data sources",
+			"top_k":  3,
+		},
+	})
+	require.Contains(t, resp, "result")
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	require.NotEmpty(t, content)
+	t.Logf("search_module_data_objects (no embeddings): %.300s", content[0].(map[string]any)["text"])
+}
+
+func TestMCP_DiscoverySearchModuleFunctions(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name": "discovery-search_module_functions",
+		"arguments": map[string]any{
+			"module": "core",
+			"query":  "load",
+			"top_k":  3,
+		},
+	})
+	require.Contains(t, resp, "result")
+	result := resp["result"].(map[string]any)
+	content := result["content"].([]any)
+	require.NotEmpty(t, content)
+	t.Logf("search_module_functions (no embeddings): %.300s", content[0].(map[string]any)["text"])
+}
+
+func TestMCP_ValidateInvalidQuery(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
 		"name": "data-validate_graphql_query",
 		"arguments": map[string]any{
 			"query": `{ nonexistent_field { name } }`,

@@ -25,14 +25,14 @@ type schema_catalogs @view(name: "_schema_catalogs", sql: """
   version: String
   description: String
   long_description: String
-  type: String
+  type: String @field_source(field: "source_type")
   prefix: String
   as_module: Boolean
   read_only: Boolean
   disabled: Boolean
   suspended: Boolean
   is_summarized: Boolean
-  {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}) {{ end }}
+  vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}) {{ end }}
 }
 
 # --- Catalog Dependencies ---
@@ -96,7 +96,7 @@ type types
     references_description: "Types in this catalog"
   )
   is_summarized: Boolean!
-  {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}){{ end }}
+  vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
 
 # --- Fields ---
@@ -149,7 +149,7 @@ type fields @view(name: "_schema_fields")
   is_pk: Boolean!
   is_summarized: Boolean!
   ordinal: Int!
-  {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}){{ end }}
+  vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
 
 # --- Arguments ---
@@ -232,7 +232,7 @@ type modules @view(name: "_schema_modules")
     references_description: "Module mutation function type"
   )
   is_summarized: Boolean!
-  {{ if .EmbeddingsEnabled }}vec: Vector @dim(len: {{ .VectorSize }}){{ end }}
+  vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
 
 # --- Module-Catalog M2M ---
