@@ -78,7 +78,7 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 	err := s.queryScan(ctx, `query($query: String!, $limit: Int) {
 		core {
 			catalog {
-				catalogs(
+				schema_catalogs(
 					order_by: [{field: "_distance_to_query", direction: ASC}]
 					limit: $limit
 				) {
@@ -91,7 +91,7 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 				}
 			}
 		}
-	}`, map[string]any{"query": query, "limit": topK}, "core.catalog.catalogs", &items)
+	}`, map[string]any{"query": query, "limit": topK}, "core.catalog.schema_catalogs", &items)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
@@ -146,7 +146,7 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 			} `json:"queries"`
 		} `json:"data_object"`
 	}
-	err := s.queryScan(ctx, `query($filter: core_catalog_types_filter, $limit: Int, $query: String!) {
+	err := s.queryScan(ctx, `query($filter: core_types_filter, $limit: Int, $query: String!) {
 		core {
 			catalog {
 				types(
@@ -232,7 +232,7 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 		FunctionRoot    string `json:"function_root"`
 		MutFunctionRoot string `json:"mut_function_root"`
 	}
-	err := s.queryScan(ctx, `query($filter: core_catalog_modules_filter) {
+	err := s.queryScan(ctx, `query($filter: core_modules_filter) {
 		core {
 			catalog {
 				modules(filter: $filter) {
@@ -294,7 +294,7 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 			Desc    string `json:"description"`
 		} `json:"arguments"`
 	}
-	err = s.queryScan(ctx, `query($filter: core_catalog_fields_filter, $limit: Int, $query: String!) {
+	err = s.queryScan(ctx, `query($filter: core_fields_filter, $limit: Int, $query: String!) {
 		core {
 			catalog {
 				fields(
@@ -416,7 +416,7 @@ func (s *Server) fieldValues(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		Name string `json:"name"`
 		Type string `json:"query_type"`
 	}
-	err = s.queryScan(ctx, `query($filter: core_catalog_data_object_queries_filter) {
+	err = s.queryScan(ctx, `query($filter: core_data_object_queries_filter) {
 		core { catalog { data_object_queries(filter: $filter) { name query_type } } }
 	}`, map[string]any{
 		"filter": map[string]any{"object_name": map[string]any{"eq": objectName}},
@@ -551,7 +551,7 @@ func aggStatsFields(s *Server, ctx context.Context, objectName, fieldName string
 	var fields []struct {
 		FieldType string `json:"field_type"`
 	}
-	_ = s.queryScan(ctx, `query($filter: core_catalog_fields_filter) {
+	_ = s.queryScan(ctx, `query($filter: core_fields_filter) {
 		core { catalog { fields(filter: $filter, limit: 1) { field_type } } }
 	}`, map[string]any{
 		"filter": map[string]any{

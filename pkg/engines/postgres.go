@@ -1235,7 +1235,7 @@ func (e *Postgres) VectorDistanceSQL(sql, distMetric string, vector ctypes.Vecto
 	case base.VectorSearchDistanceL2:
 		return fmt.Sprintf("%s <-> %s", sql, val), params, nil
 	case base.VectorSearchDistanceCosine:
-		return fmt.Sprintf("%s <=> %s", sql, val), params, nil
+		return fmt.Sprintf("COALESCE(%s <=> %s, 2.0)", sql, val), params, nil
 	case base.VectorSearchDistanceIP:
 		return fmt.Sprintf("%s <#> %s", sql, val), params, nil
 	default:

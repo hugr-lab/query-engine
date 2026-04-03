@@ -122,7 +122,9 @@ func (s *Service) Init(ctx context.Context) (err error) {
 
 	// 2. Ensure CoreDB source exists (default: in-memory).
 	if s.config.CoreDB == nil {
-		s.config.CoreDB = coredb.New(coredb.Config{})
+		s.config.CoreDB = coredb.New(coredb.Config{
+			VectorSize: s.config.Embedder.VectorSize,
+		})
 	}
 
 	// 3. Attach CoreDB early — creates _schema_* tables on first start.

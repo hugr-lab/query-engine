@@ -1,6 +1,6 @@
 {{ if isPostgres }}CREATE EXTENSION IF NOT EXISTS vector;{{ end }}
 
-CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.15' AS "version";
+CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.16' AS "version";
 
 CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}catalog_sources (
     name VARCHAR NOT NULL PRIMARY KEY,
@@ -221,6 +221,7 @@ ON CONFLICT (key) DO UPDATE SET value = '{"vec_size": {{ .VectorSize }}}';
 
 -- Non-PK indexes for query performance (both DuckDB and PostgreSQL).
 
+{{ if isPostgres }}
 -- _schema_types: frequent filters in type loading CTE and reconcile queries
 CREATE INDEX IF NOT EXISTS idx_schema_types_catalog   ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_types (catalog);
 CREATE INDEX IF NOT EXISTS idx_schema_types_hugr_type ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_types (hugr_type);
@@ -248,7 +249,6 @@ CREATE INDEX IF NOT EXISTS idx_schema_doq_object_name ON {{ if isAttachedDuckdb 
 -- _schema_catalog_dependencies: reverse lookup by depends_on
 CREATE INDEX IF NOT EXISTS idx_schema_catdeps_depends_on ON {{ if isAttachedDuckdb }}core.{{ end }}_schema_catalog_dependencies (depends_on);
 
-{{ if isPostgres }}
 -- PostgreSQL-specific: vector similarity indexes (HNSW)
 CREATE INDEX IF NOT EXISTS _schema_catalogs_vec_idx ON _schema_catalogs USING hnsw (vec vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS _schema_types_vec_idx ON _schema_types USING hnsw (vec vector_cosine_ops);
