@@ -18,13 +18,13 @@ func (s *Server) typeInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	}
 
 	var raw struct {
-		Name     string `json:"name"`
-		Kind     string `json:"kind"`
-		HugrType string `json:"hugr_type"`
-		Module   string `json:"module"`
-		Catalog  string `json:"catalog"`
-		Desc     string `json:"description"`
-		LongDesc string `json:"long_description"`
+		Name      string `json:"name"`
+		Kind      string `json:"kind"`
+		HugrType  string `json:"hugr_type"`
+		Module    string `json:"module"`
+		Catalog   string `json:"catalog"`
+		Desc      string `json:"description"`
+		LongDesc  string `json:"long_description"`
 		FieldsAgg struct {
 			Count     int `json:"_rows_count"`
 			HugrTypes struct {
@@ -170,15 +170,25 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		var agg aggResult
 
 		vars["relevance_query"] = relevanceQuery
+		// Semantic search uses one top-K; fetch enough rows for offset+limit (capped).
+		semanticK := limit + offset
+		if semanticK < limit {
+			semanticK = limit
+		}
+		const semanticKMax = 2000
+		if semanticK > semanticKMax {
+			semanticK = semanticKMax
+		}
+		vars["semantic_limit"] = semanticK
 
-		gql := fmt.Sprintf(`query($filter: core_catalog_fields_filter, $limit: Int, $offset: Int, $relevance_query: String!) {
+		gql := fmt.Sprintf(`query($filter: core_catalog_fields_filter, $limit: Int, $offset: Int, $semantic_limit: Int!, $relevance_query: String!) {
 			core {
 				catalog {
 					fields(
 						filter: $filter
-						order_by: [{field: "_distance_to_query", direction: ASC}]
-						limit: $limit
+						semantic: { query: $relevance_query, limit: $semantic_limit }
 						offset: $offset
+						limit: $limit
 					) {
 						name
 						field_type

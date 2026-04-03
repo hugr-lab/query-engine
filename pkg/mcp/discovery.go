@@ -21,13 +21,14 @@ func (s *Server) searchModules(ctx context.Context, req mcp.CallToolRequest) (*m
 		Desc     string  `json:"description"`
 		Distance float64 `json:"_distance_to_query"`
 	}
+	// Use semantic: { query, limit } instead of order_by on _distance_to_query.
+	// With CoreDB on PostgreSQL (postgres_query from DuckDB), order_by on the
+	// embedding distance field can generate invalid SQL; semantic search uses
+	// the dedicated vector-order path.
 	err := s.queryScan(ctx, `query($query: String!, $limit: Int) {
 		core {
 			catalog {
-				modules(
-					order_by: [{field: "_distance_to_query", direction: ASC}]
-					limit: $limit
-				) {
+				modules(semantic: { query: $query, limit: $limit }) {
 					name
 					description
 					_distance_to_query(query: $query)
@@ -78,10 +79,7 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 	err := s.queryScan(ctx, `query($query: String!, $limit: Int) {
 		core {
 			catalog {
-				catalogs(
-					order_by: [{field: "_distance_to_query", direction: ASC}]
-					limit: $limit
-				) {
+				catalogs(semantic: { query: $query, limit: $limit }) {
 					name
 					description
 					type
@@ -151,8 +149,7 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 			catalog {
 				types(
 					filter: $filter
-					order_by: [{field: "_distance_to_query", direction: ASC}]
-					limit: $limit
+					semantic: { query: $query, limit: $limit }
 				) {
 					name
 					hugr_type
@@ -299,8 +296,7 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 			catalog {
 				fields(
 					filter: $filter
-					order_by: [{field: "_distance_to_query", direction: ASC}]
-					limit: $limit
+					semantic: { query: $query, limit: $limit }
 				) {
 					name
 					description
