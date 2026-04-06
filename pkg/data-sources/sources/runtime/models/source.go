@@ -199,7 +199,7 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("INTEGER"),
 			runtime.DuckDBTypeInfoByNameMust("DOUBLE"),
 		},
-		OutputType:            llmResultType(),
+		OutputType:            llmResultDuckDBType,
 		IsSpecialNullHandling: true,
 	})
 	if err != nil {
@@ -298,7 +298,7 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("INTEGER"),
 			runtime.DuckDBTypeInfoByNameMust("DOUBLE"),
 		},
-		OutputType:            llmResultType(),
+		OutputType:            llmResultDuckDBType,
 		IsSpecialNullHandling: true,
 	})
 	if err != nil {
@@ -383,23 +383,17 @@ func llmResultToMap(r *sources.LLMResult) map[string]any {
 
 // DuckDB type constructors
 
-func llmResultType() duckdb.TypeInfo {
-	varchar, _ := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	intType, _ := duckdb.NewTypeInfo(duckdb.TYPE_INTEGER)
-
-	content, _ := duckdb.NewStructEntry(varchar, "content")
-	model, _ := duckdb.NewStructEntry(varchar, "model")
-	finishReason, _ := duckdb.NewStructEntry(varchar, "finish_reason")
-	promptTokens, _ := duckdb.NewStructEntry(intType, "prompt_tokens")
-	completionTokens, _ := duckdb.NewStructEntry(intType, "completion_tokens")
-	totalTokens, _ := duckdb.NewStructEntry(intType, "total_tokens")
-	provider, _ := duckdb.NewStructEntry(varchar, "provider")
-	latencyMs, _ := duckdb.NewStructEntry(intType, "latency_ms")
-	toolCalls, _ := duckdb.NewStructEntry(varchar, "tool_calls")
-
-	t, _ := duckdb.NewStructInfo(content, model, finishReason, promptTokens, completionTokens, totalTokens, provider, latencyMs, toolCalls)
-	return t
-}
+var llmResultDuckDBType = runtime.DuckDBStructTypeFromSchemaMust(map[string]any{
+	"content":           duckdb.TYPE_VARCHAR,
+	"model":             duckdb.TYPE_VARCHAR,
+	"finish_reason":     duckdb.TYPE_VARCHAR,
+	"prompt_tokens":     duckdb.TYPE_INTEGER,
+	"completion_tokens": duckdb.TYPE_INTEGER,
+	"total_tokens":      duckdb.TYPE_INTEGER,
+	"provider":          duckdb.TYPE_VARCHAR,
+	"latency_ms":        duckdb.TYPE_INTEGER,
+	"tool_calls":        duckdb.TYPE_VARCHAR,
+})
 
 var _ sources.RuntimeSourceDataSourceUser = (*Source)(nil)
 
