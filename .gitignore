@@ -12,4 +12,5 @@ internal/duckdb-air/
 integration-test/compiler/testdata/*/actual.graphql
 integration-test/e2e/testdata/duckdb/ducklake*/data/
 
-.test.env.test.env
+.test.env
+models.test
