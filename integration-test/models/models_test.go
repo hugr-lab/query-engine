@@ -234,6 +234,117 @@ func TestModels_ChatCompletion(t *testing.T) {
 	res3.Close()
 }
 
+// --- US3: Chat Completion with Tools ---
+
+func TestModels_ChatCompletionWithTools(t *testing.T) {
+	llmURL := os.Getenv("LLM_URL")
+	if llmURL == "" {
+		t.Skip("LLM_URL not set")
+	}
+
+	// Register
+	res := query(t, `mutation($data: core_data_sources_mut_input_data!) {
+		core { insert_data_sources(data: $data) { name } }
+	}`, map[string]any{
+		"data": map[string]any{
+			"name":      "test_tools_llm",
+			"type":      "llm-openai",
+			"prefix":    "test_tools_llm",
+			"as_module": false,
+			"path":      llmURL,
+		},
+	})
+	res.Close()
+	res = query(t, `mutation { function { core { load_data_source(name: "test_tools_llm") { success } } } }`, nil)
+	res.Close()
+
+	res = query(t, `{ function { core { models { chat_completion(
+		model: "test_tools_llm",
+		messages: ["{\"role\":\"user\",\"content\":\"What is the weather in London?\"}"],
+		tools: ["{\"name\":\"get_weather\",\"description\":\"Get weather for a city\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}"],
+		tool_choice: "auto",
+		max_tokens: 200
+	) {
+		content finish_reason tool_calls
+	} } } } }`, nil)
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		FinishReason string `json:"finish_reason"`
+		ToolCalls    string `json:"tool_calls"`
+	}
+	err := res.ScanData("function.core.models.chat_completion", &result)
+	require.NoError(t, err)
+	t.Logf("chat with tools: content=%q, finish=%s, tool_calls=%s",
+		result.Content, result.FinishReason, result.ToolCalls)
+
+	// Model may or may not call the tool — depends on the model.
+	// Just verify no panic and valid response.
+	assert.NotEmpty(t, result.FinishReason, "finish_reason should not be empty")
+
+	// Cleanup
+	res2 := query(t, `mutation { function { core { unload_data_source(name: "test_tools_llm") { success } } } }`, nil)
+	res2.Close()
+	res3 := query(t, `mutation { core { delete_data_sources(filter: { name: { eq: "test_tools_llm" } }) { success } } }`, nil)
+	res3.Close()
+}
+
+func TestModels_ChatCompletionMultiTurn(t *testing.T) {
+	llmURL := os.Getenv("LLM_URL")
+	if llmURL == "" {
+		t.Skip("LLM_URL not set")
+	}
+
+	// Register
+	res := query(t, `mutation($data: core_data_sources_mut_input_data!) {
+		core { insert_data_sources(data: $data) { name } }
+	}`, map[string]any{
+		"data": map[string]any{
+			"name":      "test_multi_llm",
+			"type":      "llm-openai",
+			"prefix":    "test_multi_llm",
+			"as_module": false,
+			"path":      llmURL,
+		},
+	})
+	res.Close()
+	res = query(t, `mutation { function { core { load_data_source(name: "test_multi_llm") { success } } } }`, nil)
+	res.Close()
+
+	// Multi-turn: system + user + assistant + user
+	res = query(t, `{ function { core { models { chat_completion(
+		model: "test_multi_llm",
+		messages: [
+			"{\"role\":\"system\",\"content\":\"You are a math tutor. Be concise.\"}",
+			"{\"role\":\"user\",\"content\":\"What is 2+2?\"}",
+			"{\"role\":\"assistant\",\"content\":\"4\"}",
+			"{\"role\":\"user\",\"content\":\"And 3+3?\"}"
+		],
+		max_tokens: 50,
+		temperature: 0.1
+	) {
+		content finish_reason prompt_tokens completion_tokens
+	} } } } }`, nil)
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		FinishReason string `json:"finish_reason"`
+		PromptTokens int    `json:"prompt_tokens"`
+	}
+	err := res.ScanData("function.core.models.chat_completion", &result)
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.FinishReason)
+	t.Logf("multi-turn: %q, finish=%s, prompt_tokens=%d", result.Content, result.FinishReason, result.PromptTokens)
+
+	// Cleanup
+	res2 := query(t, `mutation { function { core { unload_data_source(name: "test_multi_llm") { success } } } }`, nil)
+	res2.Close()
+	res3 := query(t, `mutation { core { delete_data_sources(filter: { name: { eq: "test_multi_llm" } }) { success } } }`, nil)
+	res3.Close()
+}
+
 // --- US5: Discovery ---
 
 func TestModels_Sources_WithRegistered(t *testing.T) {
