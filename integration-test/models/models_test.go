@@ -58,7 +58,7 @@ func registerDS(ctx context.Context, s *hugr.Service) {
 		mustQuery(ctx, s, `mutation { function { core { load_data_source(name: "test_embedder") { success } } } }`, nil)
 	}
 
-	// LLM DS
+	// LLM DS (OpenAI-compatible)
 	if url := os.Getenv("LLM_URL"); url != "" {
 		mustQuery(ctx, s, `mutation($data: core_data_sources_mut_input_data!) {
 			core { insert_data_sources(data: $data) { name } }
@@ -69,6 +69,34 @@ func registerDS(ctx context.Context, s *hugr.Service) {
 			},
 		})
 		mustQuery(ctx, s, `mutation { function { core { load_data_source(name: "test_llm") { success } } } }`, nil)
+	}
+
+	// Anthropic DS
+	if key := os.Getenv("ANTROPIC_KEY"); key != "" {
+		path := "https://api.anthropic.com/v1/messages?model=claude-sonnet-4-20250514&api_key=" + key + "&max_tokens=1024&timeout=60s"
+		mustQuery(ctx, s, `mutation($data: core_data_sources_mut_input_data!) {
+			core { insert_data_sources(data: $data) { name } }
+		}`, map[string]any{
+			"data": map[string]any{
+				"name": "test_anthropic", "type": "llm-anthropic",
+				"prefix": "test_anthropic", "as_module": false, "path": path,
+			},
+		})
+		mustQuery(ctx, s, `mutation { function { core { load_data_source(name: "test_anthropic") { success } } } }`, nil)
+	}
+
+	// Gemini DS
+	if key := os.Getenv("GEMENI_KEY"); key != "" {
+		path := "https://generativelanguage.googleapis.com/v1beta?model=gemini-2.5-flash&api_key=" + key + "&timeout=60s"
+		mustQuery(ctx, s, `mutation($data: core_data_sources_mut_input_data!) {
+			core { insert_data_sources(data: $data) { name } }
+		}`, map[string]any{
+			"data": map[string]any{
+				"name": "test_gemini", "type": "llm-gemini",
+				"prefix": "test_gemini", "as_module": false, "path": path,
+			},
+		})
+		mustQuery(ctx, s, `mutation { function { core { load_data_source(name: "test_gemini") { success } } } }`, nil)
 	}
 }
 
@@ -274,4 +302,134 @@ func TestModels_Sources_WithRegistered(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "test_embedder should appear in sources")
+}
+
+// --- Anthropic Provider ---
+
+func TestModels_Anthropic_Completion(t *testing.T) {
+	if os.Getenv("ANTROPIC_KEY") == "" {
+		t.Skip("ANTROPIC_KEY not set")
+	}
+	res := query(t, `{ function { core { models { completion(model: "test_anthropic", prompt: "What is 2+2? Answer with just the number.", max_tokens: 50) {
+		content model finish_reason prompt_tokens completion_tokens total_tokens provider latency_ms
+	} } } } }`, nil)
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		Model        string `json:"model"`
+		FinishReason string `json:"finish_reason"`
+		Provider     string `json:"provider"`
+		LatencyMs    int    `json:"latency_ms"`
+	}
+	err := res.ScanData("function.core.models.completion", &result)
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.Content)
+	assert.Equal(t, "anthropic", result.Provider)
+	assert.NotEmpty(t, result.FinishReason)
+	t.Logf("anthropic completion: %q, model=%s, finish=%s, provider=%s, latency=%dms",
+		result.Content, result.Model, result.FinishReason, result.Provider, result.LatencyMs)
+}
+
+func TestModels_Anthropic_ChatWithTools(t *testing.T) {
+	if os.Getenv("ANTROPIC_KEY") == "" {
+		t.Skip("ANTROPIC_KEY not set")
+	}
+	res := query(t, `{ function { core { models { chat_completion(
+		model: "test_anthropic",
+		messages: ["{\"role\":\"user\",\"content\":\"What is the weather in Paris?\"}"],
+		tools: ["{\"name\":\"get_weather\",\"description\":\"Get current weather for a city\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\",\"description\":\"City name\"}},\"required\":[\"city\"]}}"],
+		tool_choice: "auto",
+		max_tokens: 200
+	) {
+		content finish_reason tool_calls provider
+	} } } } }`, nil)
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		FinishReason string `json:"finish_reason"`
+		ToolCalls    string `json:"tool_calls"`
+		Provider     string `json:"provider"`
+	}
+	err := res.ScanData("function.core.models.chat_completion", &result)
+	require.NoError(t, err)
+	assert.Equal(t, "anthropic", result.Provider)
+	assert.NotEmpty(t, result.FinishReason)
+	t.Logf("anthropic chat+tools: content=%q, finish=%s, tool_calls=%s",
+		result.Content, result.FinishReason, result.ToolCalls)
+}
+
+// --- Gemini Provider ---
+
+func TestModels_Gemini_Completion(t *testing.T) {
+	if os.Getenv("GEMENI_KEY") == "" {
+		t.Skip("GEMENI_KEY not set")
+	}
+	res := query(t, `{ function { core { models { completion(model: "test_gemini", prompt: "What is 2+2? Answer with just the number.", max_tokens: 50) {
+		content model finish_reason prompt_tokens completion_tokens total_tokens provider latency_ms
+	} } } } }`, nil)
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		Model        string `json:"model"`
+		FinishReason string `json:"finish_reason"`
+		Provider     string `json:"provider"`
+		LatencyMs    int    `json:"latency_ms"`
+	}
+	err := res.ScanData("function.core.models.completion", &result)
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.Content)
+	assert.Equal(t, "gemini", result.Provider)
+	assert.NotEmpty(t, result.FinishReason)
+	t.Logf("gemini completion: %q, model=%s, finish=%s, provider=%s, latency=%dms",
+		result.Content, result.Model, result.FinishReason, result.Provider, result.LatencyMs)
+}
+
+func TestModels_Gemini_ChatWithTools(t *testing.T) {
+	if os.Getenv("GEMENI_KEY") == "" {
+		t.Skip("GEMENI_KEY not set")
+	}
+	res := query(t, `{ function { core { models { chat_completion(
+		model: "test_gemini",
+		messages: ["{\"role\":\"user\",\"content\":\"What is the weather in Tokyo?\"}"],
+		tools: ["{\"name\":\"get_weather\",\"description\":\"Get current weather for a city\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\",\"description\":\"City name\"}},\"required\":[\"city\"]}}"],
+		tool_choice: "auto",
+		max_tokens: 200
+	) {
+		content finish_reason tool_calls provider
+	} } } } }`, nil)
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		FinishReason string `json:"finish_reason"`
+		ToolCalls    string `json:"tool_calls"`
+		Provider     string `json:"provider"`
+	}
+	err := res.ScanData("function.core.models.chat_completion", &result)
+	require.NoError(t, err)
+	assert.Equal(t, "gemini", result.Provider)
+	assert.NotEmpty(t, result.FinishReason)
+	t.Logf("gemini chat+tools: content=%q, finish=%s, tool_calls=%s",
+		result.Content, result.FinishReason, result.ToolCalls)
+}
+
+// --- Multi-Provider Discovery ---
+
+func TestModels_Sources_AllProviders(t *testing.T) {
+	res := query(t, `{ function { core { models { model_sources { name type provider model } } } } }`, nil)
+	defer res.Close()
+
+	var srcs []map[string]any
+	err := res.ScanData("function.core.models.model_sources", &srcs)
+	require.NoError(t, err)
+
+	providers := map[string]bool{}
+	for _, s := range srcs {
+		providers[s["provider"].(string)] = true
+		t.Logf("source: name=%s type=%s provider=%s model=%s", s["name"], s["type"], s["provider"], s["model"])
+	}
+	t.Logf("total sources: %d, providers: %v", len(srcs), providers)
 }
