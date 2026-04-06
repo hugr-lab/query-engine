@@ -78,6 +78,9 @@ func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource)
 	if sq, ok := source.(RuntimeSourceQuerier); ok {
 		sq.QueryEngineSetup(s.qe)
 	}
+	if du, ok := source.(RuntimeSourceDataSourceUser); ok {
+		du.DataSourceServiceSetup(s)
+	}
 
 	err := source.Attach(ctx, s.db)
 	if err != nil && !errors.Is(err, ErrDataSourceAttached) {
@@ -277,6 +280,23 @@ func (s *Service) DataSource(name string) (Source, error) {
 	return ds, nil
 }
 
+// Resolve implements DataSourceResolver.
+func (s *Service) Resolve(name string) (Source, error) {
+	return s.DataSource(name)
+}
+
+// ResolveAll implements DataSourceResolver — returns all registered data sources.
+func (s *Service) ResolveAll() []Source {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]Source, 0, len(s.dataSources))
+	for _, ds := range s.dataSources {
+		result = append(result, ds)
+	}
+	return result
+}
+
 func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Source, error) {
 	switch ds.Type {
 	case Postgres:
@@ -352,7 +372,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 	return data, nil
 }
 
-func (s *Service) CreateEmbedding(ctx context.Context, source, input string) (ctypes.Vector, error) {
+func (s *Service) CreateEmbedding(ctx context.Context, source, input string) (*EmbeddingResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ds, ok := s.dataSources[source]
@@ -369,7 +389,7 @@ func (s *Service) CreateEmbedding(ctx context.Context, source, input string) (ct
 	return embeddingDs.CreateEmbedding(ctx, input)
 }
 
-func (s *Service) CreateEmbeddings(ctx context.Context, source string, input []string) ([]ctypes.Vector, error) {
+func (s *Service) CreateEmbeddings(ctx context.Context, source string, input []string) (*EmbeddingsResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ds, ok := s.dataSources[source]
