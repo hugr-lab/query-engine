@@ -95,8 +95,12 @@ type llm_result {
   provider: String
   "Request latency in milliseconds"
   latency_ms: Int
-  "Tool invocations as JSON array of {id, name, arguments}"
-  tool_calls: JSON
+  """
+  Tool invocations as JSON string. Normalized across all providers.
+  Format: [{"id":"call_123","name":"tool_name","arguments":{"key":"value"}}]
+  Empty string when no tools were called.
+  """
+  tool_calls: String
 }
 
 "Registered AI model data source info"
