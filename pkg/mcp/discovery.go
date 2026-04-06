@@ -151,6 +151,7 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 			Queries []struct {
 				Name      string `json:"name"`
 				QueryType string `json:"query_type"`
+				QueryRoot string `json:"query_root"`
 			} `json:"queries"`
 		} `json:"data_object"`
 	}
@@ -171,6 +172,7 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 						queries {
 							name
 							query_type
+							query_root
 						}
 					}
 				}
@@ -202,6 +204,9 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 		var queries []DataObjectQuery
 		if len(item.DataObject) > 0 {
 			for _, q := range item.DataObject[0].Queries {
+				if !filter.visibleField(q.QueryRoot, q.Name) {
+					continue
+				}
 				queries = append(queries, DataObjectQuery{Name: q.Name, QueryType: q.QueryType})
 			}
 		}

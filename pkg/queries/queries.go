@@ -13,7 +13,7 @@ func CreateEmbedding(ctx context.Context, qe types.Querier, model, text string) 
 		query ($model: String!, $input: String!) {
 			function {
 				core {
-					model {
+					models {
 						embedding(model: $model, input: $input) @cache(ttl: 300) {
 							vector
 						}
@@ -29,7 +29,7 @@ func CreateEmbedding(ctx context.Context, qe types.Querier, model, text string) 
 	}
 	defer res.Close()
 	var out types.EmbeddingResult
-	err = res.ScanData("function..model.embedding", &out)
+	err = res.ScanData("function.core.models.embedding", &out)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding from model %s: %w", model, err)
 	}
