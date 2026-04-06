@@ -1,0 +1,90 @@
+"""Create single embedding vector with token count."""
+extend type Function {
+  embedding(
+    """Name of the embedding data source."""
+    model: String!
+    """Text to embed."""
+    input: String!
+  ): embedding_result
+    @function(name: "core_models_embedding")
+}
+
+"""Create multiple embedding vectors in batch."""
+extend type Function {
+  embeddings(
+    """Name of the embedding data source."""
+    model: String!
+    """Texts to embed (JSON array)."""
+    input: String!
+  ): embeddings_result
+    @function(name: "core_models_embeddings")
+}
+
+"""Simple text completion."""
+extend type Function {
+  completion(
+    """Name of the LLM data source."""
+    model: String!
+    """Text prompt."""
+    prompt: String!
+    """Maximum tokens to generate."""
+    max_tokens: Int
+    """Sampling temperature (0-2)."""
+    temperature: Float
+  ): llm_result
+    @function(name: "core_models_completion")
+}
+
+"""Chat completion with tool calling support."""
+extend type Function {
+  chat_completion(
+    """Name of the LLM data source."""
+    model: String!
+    """Chat messages (JSON array)."""
+    messages: JSON!
+    """Available tools (JSON array)."""
+    tools: JSON
+    """Tool choice: auto, none, or tool name."""
+    tool_choice: String
+    """Maximum tokens to generate."""
+    max_tokens: Int
+    """Sampling temperature."""
+    temperature: Float
+  ): llm_result
+    @function(name: "core_models_chat_completion")
+}
+
+"""List all registered AI model data sources."""
+extend type Function {
+  model_sources: [model_source_info]
+    @function(name: "core_models_sources", is_table: true)
+}
+
+type embedding_result {
+  vector: Vector
+  token_count: Int
+}
+
+type embeddings_result {
+  vectors: [Vector]
+  token_count: Int
+}
+
+type llm_result {
+  content: String
+  model: String
+  finish_reason: String
+  prompt_tokens: Int
+  completion_tokens: Int
+  total_tokens: Int
+  provider: String
+  latency_ms: Int
+  tool_calls: JSON
+}
+
+type model_source_info {
+  name: String
+  type: String
+  provider: String
+  model: String
+}
