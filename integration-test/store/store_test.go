@@ -6,9 +6,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"testing"
-
 	"strings"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -68,7 +67,7 @@ func TestMain(m *testing.M) {
 		if !loadResult.Success {
 			panic(fmt.Sprintf("load_data_source failed: %s", loadResult.Message))
 		}
-		fmt.Printf("Redis data source loaded successfully: %s\n", loadResult.Message)
+		_ = loadResult // Redis loaded
 	}
 
 	code := m.Run()

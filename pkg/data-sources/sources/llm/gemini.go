@@ -9,11 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
-	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/ratelimit"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/types"
@@ -26,9 +24,7 @@ type GeminiSource struct {
 	isAttached bool
 	config     openAIConfig // reuse same config struct
 
-	resolver    sources.DataSourceResolver
-	limiter     *ratelimit.Limiter
-	limiterOnce sync.Once
+	rateLimitMixin
 }
 
 func NewGemini(ds types.DataSource, attached bool) (*GeminiSource, error) {
@@ -108,25 +104,6 @@ func (s *GeminiSource) Detach(_ context.Context, _ *db.Pool) error {
 	return nil
 }
 
-func (s *GeminiSource) SetDataSourceResolver(resolver sources.DataSourceResolver) {
-	s.resolver = resolver
-}
-
-func (s *GeminiSource) ensureLimiter() {
-	s.limiterOnce.Do(func() {
-		if s.config.RPM == 0 && s.config.TPM == 0 {
-			return
-		}
-		var store sources.StoreSource
-		if s.config.RateStore != "" && s.resolver != nil {
-			if ds, err := s.resolver.Resolve(s.config.RateStore); err == nil {
-				store, _ = ds.(sources.StoreSource)
-			}
-		}
-		s.limiter = ratelimit.New(s.ds.Name, s.config.RPM, s.config.TPM, store)
-	})
-}
-
 func (s *GeminiSource) CreateCompletion(ctx context.Context, prompt string, opts sources.LLMOptions) (*sources.LLMResult, error) {
 	return s.CreateChatCompletion(ctx, []sources.LLMMessage{{Role: "user", Content: prompt}}, opts)
 }
@@ -136,7 +113,7 @@ func (s *GeminiSource) CreateChatCompletion(ctx context.Context, messages []sour
 		return nil, sources.ErrDataSourceNotAttached
 	}
 
-	s.ensureLimiter()
+	s.rateLimitMixin.ensureLimiter(s.ds.Name, s.config)
 	if s.limiter != nil {
 		if err := s.limiter.Check(ctx); err != nil {
 			return nil, err

@@ -10,11 +10,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
-	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/ratelimit"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/types"
@@ -28,9 +26,7 @@ type OpenAISource struct {
 	isAttached bool
 	config     openAIConfig
 
-	resolver    sources.DataSourceResolver
-	limiter     *ratelimit.Limiter
-	limiterOnce sync.Once
+	rateLimitMixin
 }
 
 type openAIConfig struct {
@@ -132,28 +128,6 @@ func (s *OpenAISource) Detach(_ context.Context, _ *db.Pool) error {
 	return nil
 }
 
-// SetDataSourceResolver implements sources.SourceDataSourceUser.
-func (s *OpenAISource) SetDataSourceResolver(resolver sources.DataSourceResolver) {
-	s.resolver = resolver
-}
-
-// ensureLimiter lazily initializes the rate limiter on first use.
-// Deferred because the Redis store may not be attached when the LLM source attaches.
-func (s *OpenAISource) ensureLimiter() {
-	s.limiterOnce.Do(func() {
-		if s.config.RPM == 0 && s.config.TPM == 0 {
-			return
-		}
-		var store sources.StoreSource
-		if s.config.RateStore != "" && s.resolver != nil {
-			if ds, err := s.resolver.Resolve(s.config.RateStore); err == nil {
-				store, _ = ds.(sources.StoreSource)
-			}
-		}
-		s.limiter = ratelimit.New(s.ds.Name, s.config.RPM, s.config.TPM, store)
-	})
-}
-
 func (s *OpenAISource) CreateCompletion(ctx context.Context, prompt string, opts sources.LLMOptions) (*sources.LLMResult, error) {
 	messages := []sources.LLMMessage{
 		{Role: "user", Content: prompt},
@@ -166,7 +140,7 @@ func (s *OpenAISource) CreateChatCompletion(ctx context.Context, messages []sour
 		return nil, sources.ErrDataSourceNotAttached
 	}
 
-	s.ensureLimiter()
+	s.rateLimitMixin.ensureLimiter(s.ds.Name, s.config)
 	if s.limiter != nil {
 		if err := s.limiter.Check(ctx); err != nil {
 			return nil, err
