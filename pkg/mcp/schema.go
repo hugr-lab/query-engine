@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -15,6 +16,11 @@ func (s *Server) typeInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 
 	if typeName == "" {
 		return toolResultError("type_name is required"), nil
+	}
+
+	filter := newMCPFilter(ctx)
+	if !filter.visibleType(typeName) {
+		return toolResultError(fmt.Sprintf("type %q not found or not accessible", typeName)), nil
 	}
 
 	var raw struct {
@@ -36,7 +42,7 @@ func (s *Server) typeInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 		} `json:"fields_aggregation"`
 	}
 
-	err := s.queryScan(ctx, `query($name: String!) {
+	err := s.queryScanAdmin(ctx, `query($name: String!) {
 		core {
 			catalog {
 				types_by_pk(name: $name) {
@@ -85,7 +91,7 @@ func (s *Server) typeInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 		var argsAgg struct {
 			Count int `json:"_rows_count"`
 		}
-		argErr := s.queryScan(ctx, `query($filter: core_arguments_filter) {
+		argErr := s.queryScanAdmin(ctx, `query($filter: core_arguments_filter) {
 			core { catalog { arguments_aggregation(filter: $filter) { _rows_count } } }
 		}`, map[string]any{
 			"filter": map[string]any{"type_name": map[string]any{"eq": typeName}},
@@ -194,7 +200,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 			}
 		}`, argSelection)
 
-		res, err := s.querier.Query(ctx, gql, vars)
+		res, err := s.querier.Query(auth.ContextWithFullAccess(ctx), gql, vars)
 		if err != nil {
 			return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 		}
@@ -237,7 +243,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		}
 		var agg aggResult
 
-		res, err := s.querier.Query(ctx, gql, vars)
+		res, err := s.querier.Query(auth.ContextWithFullAccess(ctx), gql, vars)
 		if err != nil {
 			return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 		}
@@ -253,9 +259,13 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		}
 	}
 
-	// Convert to typed result.
+	// Convert to typed result, filtering by visibility.
+	filter := newMCPFilter(ctx)
 	result := make([]TypeFieldInfo, 0, len(fields))
 	for _, f := range fields {
+		if !filter.visibleField(typeName, f.Name) {
+			continue
+		}
 		item := TypeFieldInfo{
 			Name:      f.Name,
 			FieldType: f.FieldType,
@@ -308,7 +318,7 @@ func (s *Server) enumValues(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		EnumValues  []EnumValueInfo `json:"enum_values"`
 	}
 
-	err := s.queryScan(ctx, `query($name: String!) {
+	err := s.queryScanAdmin(ctx, `query($name: String!) {
 		core {
 			catalog {
 				types_by_pk(name: $name) {

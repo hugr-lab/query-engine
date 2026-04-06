@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -254,6 +255,7 @@ func toolLoggingMiddleware(debug bool) server.ToolHandlerMiddleware {
 // --- Helper functions ---
 
 // queryScan executes a GraphQL query and scans the result at the given path into target.
+// Uses the caller's context (with user permissions). Used for user data queries.
 func (s *Server) queryScan(ctx context.Context, gql string, vars map[string]any, path string, target any) error {
 	res, err := s.querier.Query(ctx, gql, vars)
 	if err != nil {
@@ -264,6 +266,13 @@ func (s *Server) queryScan(ctx context.Context, gql string, vars map[string]any,
 		return res.Err()
 	}
 	return res.ScanData(path, target)
+}
+
+// queryScanAdmin executes a catalog query with full access (no permission filtering).
+// Used for MCP discovery tools that need to see all catalog metadata.
+// Filtering is applied after fetch by the MCP permission layer.
+func (s *Server) queryScanAdmin(ctx context.Context, gql string, vars map[string]any, path string, target any) error {
+	return s.queryScan(auth.ContextWithFullAccess(ctx), gql, vars, path, target)
 }
 
 func toolResultJSON(v any) *mcp.CallToolResult {
