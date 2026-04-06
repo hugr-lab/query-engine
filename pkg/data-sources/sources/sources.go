@@ -5,7 +5,6 @@ import (
 	"time"
 
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
-	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/types"
@@ -95,80 +94,33 @@ type RuntimeSourceQuerier interface {
 
 type EmbeddingSource interface {
 	ModelSource
-	CreateEmbedding(ctx context.Context, input string) (*EmbeddingResult, error)
-	CreateEmbeddings(ctx context.Context, input []string) (*EmbeddingsResult, error)
+	CreateEmbedding(ctx context.Context, input string) (*types.EmbeddingResult, error)
+	CreateEmbeddings(ctx context.Context, input []string) (*types.EmbeddingsResult, error)
 }
 
 // ModelSource identifies a data source as an AI model.
 type ModelSource interface {
-	ModelInfo() ModelInfo
-}
-
-type ModelInfo struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`     // "llm" or "embedding"
-	Provider string `json:"provider"` // "openai", "anthropic", "gemini"
-	Model    string `json:"model"`
-}
-
-// EmbeddingResult is an enriched embedding response with token count.
-type EmbeddingResult struct {
-	Vector     ctypes.Vector `json:"vector"`
-	TokenCount int           `json:"token_count"`
-}
-
-// EmbeddingsResult is a batch embedding response with total token count.
-type EmbeddingsResult struct {
-	Vectors    []ctypes.Vector `json:"vectors"`
-	TokenCount int             `json:"token_count"`
+	ModelInfo() types.ModelInfo
 }
 
 // LLMSource provides text generation capabilities.
 type LLMSource interface {
 	ModelSource
-	CreateCompletion(ctx context.Context, prompt string, opts LLMOptions) (*LLMResult, error)
-	CreateChatCompletion(ctx context.Context, messages []LLMMessage, opts LLMOptions) (*LLMResult, error)
+	CreateCompletion(ctx context.Context, prompt string, opts types.LLMOptions) (*types.LLMResult, error)
+	CreateChatCompletion(ctx context.Context, messages []types.LLMMessage, opts types.LLMOptions) (*types.LLMResult, error)
 }
 
-type LLMMessage struct {
-	Role       string        `json:"role"`
-	Content    string        `json:"content"`
-	ToolCalls  []LLMToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string        `json:"tool_call_id,omitempty"`
-}
-
-type LLMTool struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Parameters  any    `json:"parameters"`
-}
-
-type LLMToolCall struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Arguments any    `json:"arguments"`
-}
-
-type LLMOptions struct {
-	MaxTokens   int       `json:"max_tokens,omitempty"`
-	Temperature float64   `json:"temperature,omitempty"`
-	TopP        float64   `json:"top_p,omitempty"`
-	Stop        []string  `json:"stop,omitempty"`
-	Tools       []LLMTool `json:"tools,omitempty"`
-	ToolChoice  string    `json:"tool_choice,omitempty"`
-}
-
-type LLMResult struct {
-	Content          string        `json:"content"`
-	Model            string        `json:"model"`
-	FinishReason     string        `json:"finish_reason"`
-	PromptTokens     int           `json:"prompt_tokens"`
-	CompletionTokens int           `json:"completion_tokens"`
-	TotalTokens      int           `json:"total_tokens"`
-	Provider         string        `json:"provider"`
-	LatencyMs        int           `json:"latency_ms"`
-	ToolCalls        []LLMToolCall `json:"tool_calls"`
-}
+// Type aliases for convenience — re-export from types sub-module.
+type (
+	ModelInfo        = types.ModelInfo
+	EmbeddingResult  = types.EmbeddingResult
+	EmbeddingsResult = types.EmbeddingsResult
+	LLMMessage       = types.LLMMessage
+	LLMTool          = types.LLMTool
+	LLMToolCall      = types.LLMToolCall
+	LLMOptions       = types.LLMOptions
+	LLMResult        = types.LLMResult
+)
 
 // DataSourceResolver resolves registered data sources by name.
 type DataSourceResolver interface {

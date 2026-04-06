@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -186,7 +185,7 @@ func (s *Source) CreateEmbeddings(ctx context.Context, input []string) (*sources
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	vectors := make([]ctypes.Vector, len(result.Data))
+	vectors := make([][]float64, len(result.Data))
 	for i := range result.Data {
 		vectors[i] = slices.Clone(result.Data[i].Embedding)
 	}

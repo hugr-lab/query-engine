@@ -25,7 +25,12 @@ func (p *Provider) computeEmbeddings(ctx context.Context, texts []string) ([]typ
 	if err != nil {
 		return nil, err
 	}
-	return result.Vectors, nil
+	// Convert [][]float64 to []types.Vector (same underlying type).
+	vecs := make([]types.Vector, len(result.Vectors))
+	for i, v := range result.Vectors {
+		vecs[i] = types.Vector(v)
+	}
+	return vecs, nil
 }
 
 
