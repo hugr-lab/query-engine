@@ -16,6 +16,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 //go:embed schema.graphql
@@ -65,9 +66,9 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 		model string
 		input string
 	}
-	err := db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[embeddingArgs, any]{
+	err := db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[embeddingArgs, *types.EmbeddingResult]{
 		Name: "core_models_embedding",
-		Execute: func(ctx context.Context, args embeddingArgs) (any, error) {
+		Execute: func(ctx context.Context, args embeddingArgs) (*types.EmbeddingResult, error) {
 			ds, err := s.resolver.Resolve(args.model)
 			if err != nil {
 				return nil, fmt.Errorf("model %q not found: %w", args.model, err)
@@ -76,24 +77,25 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 			if !ok {
 				return nil, fmt.Errorf("data source %q is not an embedding source", args.model)
 			}
-			result, err := emb.CreateEmbedding(ctx, args.input)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]any{
-				"vector":      []float32(vectorToFloat32(result.Vector)),
-				"token_count": int32(result.TokenCount),
-			}, nil
+			return emb.CreateEmbedding(ctx, args.input)
 		},
 		ConvertInput: func(args []driver.Value) (embeddingArgs, error) {
 			return embeddingArgs{model: args[0].(string), input: args[1].(string)}, nil
 		},
-		ConvertOutput: func(out any) (any, error) { return out, nil },
+		ConvertOutput: func(out *types.EmbeddingResult) (any, error) {
+			return map[string]any{
+				"vector":      out.Vector,
+				"token_count": int32(out.TokenCount),
+			}, nil
+		},
 		InputTypes: []duckdb.TypeInfo{
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: embeddingResultType(),
+		OutputType: runtime.DuckDBStructTypeFromSchemaMust(map[string]any{
+			"vector":      []duckdb.Type{duckdb.TYPE_FLOAT},
+			"token_count": duckdb.TYPE_INTEGER,
+		}),
 	})
 	if err != nil {
 		return fmt.Errorf("register core_models_embedding: %w", err)
@@ -104,9 +106,9 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 		model string
 		input string // JSON array of strings
 	}
-	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[embeddingsArgs, any]{
+	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[embeddingsArgs, *types.EmbeddingsResult]{
 		Name: "core_models_embeddings",
-		Execute: func(ctx context.Context, args embeddingsArgs) (any, error) {
+		Execute: func(ctx context.Context, args embeddingsArgs) (*types.EmbeddingsResult, error) {
 			ds, err := s.resolver.Resolve(args.model)
 			if err != nil {
 				return nil, fmt.Errorf("model %q not found: %w", args.model, err)
@@ -119,28 +121,29 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 			if err := json.Unmarshal([]byte(args.input), &inputs); err != nil {
 				return nil, fmt.Errorf("input must be a JSON array of strings: %w", err)
 			}
-			result, err := emb.CreateEmbeddings(ctx, inputs)
-			if err != nil {
-				return nil, err
-			}
-			vectors := make([]any, len(result.Vectors))
-			for i, v := range result.Vectors {
-				vectors[i] = vectorToFloat32(v)
-			}
-			return map[string]any{
-				"vectors":     vectors,
-				"token_count": int32(result.TokenCount),
-			}, nil
+			return emb.CreateEmbeddings(ctx, inputs)
 		},
 		ConvertInput: func(args []driver.Value) (embeddingsArgs, error) {
 			return embeddingsArgs{model: args[0].(string), input: args[1].(string)}, nil
 		},
-		ConvertOutput: func(out any) (any, error) { return out, nil },
+		ConvertOutput: func(out *types.EmbeddingsResult) (any, error) {
+			vectors := make([]any, len(out.Vectors))
+			for i, v := range out.Vectors {
+				vectors[i] = v
+			}
+			return map[string]any{
+				"vectors":     vectors,
+				"token_count": int32(out.TokenCount),
+			}, nil
+		},
 		InputTypes: []duckdb.TypeInfo{
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
-		OutputType: embeddingsResultType(),
+		OutputType: runtime.DuckDBStructTypeFromSchemaMust(map[string]any{
+			"vectors":     []duckdb.TypeInfo{runtime.DuckDBListInfoByNameMust("FLOAT")},
+			"token_count": duckdb.TYPE_INTEGER,
+		}),
 	})
 	if err != nil {
 		return fmt.Errorf("register core_models_embeddings: %w", err)
@@ -278,14 +281,14 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 		return fmt.Errorf("register core_models_chat_completion: %w", err)
 	}
 
-	// core_models_sources() → list of model_source_info structs
-	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionNoArgs[any]{
+	// core_models_sources() → JSON string (list of model_source_info)
+	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionNoArgs[string]{
 		Name: "core_models_sources",
-		Execute: func(ctx context.Context) (any, error) {
+		Execute: func(ctx context.Context) (string, error) {
 			if s.resolver == nil {
-				return []any{}, nil
+				return "[]", nil
 			}
-			var result []any
+			var result []map[string]any
 			for _, ds := range s.resolver.ResolveAll() {
 				ms, ok := ds.(sources.ModelSource)
 				if !ok {
@@ -299,10 +302,11 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 					"model":    info.Model,
 				})
 			}
-			return result, nil
+			b, _ := json.Marshal(result)
+			return string(b), nil
 		},
-		ConvertOutput: func(out any) (any, error) { return out, nil },
-		OutputType:    modelSourceInfoListType(),
+		ConvertOutput: func(out string) (any, error) { return out, nil },
+		OutputType:    runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 	})
 	if err != nil {
 		return fmt.Errorf("register core_models_sources: %w", err)
@@ -312,14 +316,6 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 }
 
 // helpers
-
-func vectorToFloat32(v []float64) []float32 {
-	out := make([]float32, len(v))
-	for i, f := range v {
-		out[i] = float32(f)
-	}
-	return out
-}
 
 func llmResultToMap(r *sources.LLMResult) map[string]any {
 	var toolCallsJSON string
@@ -342,21 +338,6 @@ func llmResultToMap(r *sources.LLMResult) map[string]any {
 
 // DuckDB type constructors
 
-func embeddingResultType() duckdb.TypeInfo {
-	floatType, _ := duckdb.NewTypeInfo(duckdb.TYPE_FLOAT)
-	vectorType, _ := duckdb.NewListInfo(floatType)
-	vectorEntry, _ := duckdb.NewStructEntry(vectorType, "vector")
-	intType, _ := duckdb.NewTypeInfo(duckdb.TYPE_INTEGER)
-	tokenEntry, _ := duckdb.NewStructEntry(intType, "token_count")
-	t, _ := duckdb.NewStructInfo(vectorEntry, tokenEntry)
-	return t
-}
-
-func embeddingsResultType() duckdb.TypeInfo {
-	// For now return VARCHAR (JSON) — list of vectors is complex to represent as DuckDB struct
-	return runtime.DuckDBTypeInfoByNameMust("VARCHAR")
-}
-
 func llmResultType() duckdb.TypeInfo {
 	varchar, _ := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
 	intType, _ := duckdb.NewTypeInfo(duckdb.TYPE_INTEGER)
@@ -375,16 +356,6 @@ func llmResultType() duckdb.TypeInfo {
 	return t
 }
 
-func modelSourceInfoListType() duckdb.TypeInfo {
-	varchar, _ := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	name, _ := duckdb.NewStructEntry(varchar, "name")
-	typ, _ := duckdb.NewStructEntry(varchar, "type")
-	provider, _ := duckdb.NewStructEntry(varchar, "provider")
-	model, _ := duckdb.NewStructEntry(varchar, "model")
-	s, _ := duckdb.NewStructInfo(name, typ, provider, model)
-	t, _ := duckdb.NewListInfo(s)
-	return t
-}
 
 var _ sources.RuntimeSourceDataSourceUser = (*Source)(nil)
 

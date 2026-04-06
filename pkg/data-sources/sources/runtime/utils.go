@@ -100,6 +100,19 @@ func DuckDBStructTypeFromSchema(schema map[string]any) (duckdb.TypeInfo, error) 
 				return nil, err
 			}
 			see = append(see, se)
+		case []duckdb.TypeInfo:
+			if len(v) != 1 {
+				return nil, errors.New("duckdb struct type must be a single typed")
+			}
+			ti, err := duckdb.NewListInfo(v[0])
+			if err != nil {
+				return nil, err
+			}
+			se, err := duckdb.NewStructEntry(ti, k)
+			if err != nil {
+				return nil, err
+			}
+			see = append(see, se)
 		default:
 			return nil, fmt.Errorf("unsupported duckdb struct type: %T", v)
 		}
