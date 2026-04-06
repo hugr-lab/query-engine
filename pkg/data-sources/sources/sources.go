@@ -28,6 +28,7 @@ const (
 	LLMOpenAI    types.DataSourceType = "llm-openai"
 	LLMAnthropic types.DataSourceType = "llm-anthropic"
 	LLMGemini    types.DataSourceType = "llm-gemini"
+	Redis        types.DataSourceType = "redis"
 )
 
 type Source interface {
@@ -132,4 +133,22 @@ type DataSourceResolver interface {
 // access to registered data sources. Follows RuntimeSourceQuerier pattern.
 type RuntimeSourceDataSourceUser interface {
 	DataSourceServiceSetup(resolver DataSourceResolver)
+}
+
+// SourceDataSourceUser is implemented by regular (non-runtime) data sources
+// that need access to other data sources (e.g., LLM sources needing Redis for rate limiting).
+type SourceDataSourceUser interface {
+	SetDataSourceResolver(resolver DataSourceResolver)
+}
+
+// StoreSource provides key-value store operations.
+// Named StoreSource (not RedisSource) to allow future non-Redis implementations.
+type StoreSource interface {
+	Get(ctx context.Context, key string) (string, bool, error)
+	Set(ctx context.Context, key string, value string, ttlSeconds int) error
+	Del(ctx context.Context, key string) error
+	Incr(ctx context.Context, key string) (int64, error)
+	IncrBy(ctx context.Context, key string, value int64) (int64, error)
+	Expire(ctx context.Context, key string, ttlSeconds int) error
+	Keys(ctx context.Context, pattern string) ([]string, error)
 }

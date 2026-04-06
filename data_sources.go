@@ -18,6 +18,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/gis"
 	metainfo "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/meta-info"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/models"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/store"
 	"github.com/hugr-lab/query-engine/types"
 )
 
@@ -62,6 +63,10 @@ func (s *Service) attachRuntimeSources(ctx context.Context, readonly bool) error
 	if err != nil {
 		return fmt.Errorf("attach models source: %w", err)
 	}
+	err = s.ds.AttachRuntimeSource(ctx, store.New())
+	if err != nil {
+		return fmt.Errorf("attach store source: %w", err)
+	}
 
 	// Attach cluster source if cluster mode is enabled.
 	if s.config.Cluster.Enabled {
@@ -85,6 +90,7 @@ func (s *Service) attachRuntimeSourcesReadonly(ctx context.Context) error {
 		authrt.New(),
 		gis.New(),
 		models.New(),
+		store.New(),
 	}
 
 	// Attach cluster source if cluster mode is enabled (workers too).
