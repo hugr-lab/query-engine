@@ -122,7 +122,8 @@ type response struct {
 		Embedding []float64 `json:"embedding"`
 	} `json:"data"`
 	Usage struct {
-		TotalTokens int `json:"total_tokens"`
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
 	} `json:"usage"`
 }
 
@@ -135,8 +136,9 @@ func (s *Source) CreateEmbedding(ctx context.Context, input string) (*sources.Em
 		return nil, errors.New("failed to create embedding")
 	}
 	return &sources.EmbeddingResult{
-		Vector:     result.Vectors[0],
-		TokenCount: result.TokenCount,
+		Vector:       result.Vectors[0],
+		TokenCount:   result.TokenCount,
+		PromptTokens: result.PromptTokens,
 	}, nil
 }
 
@@ -191,7 +193,8 @@ func (s *Source) CreateEmbeddings(ctx context.Context, input []string) (*sources
 	}
 
 	return &sources.EmbeddingsResult{
-		Vectors:    vectors,
-		TokenCount: result.Usage.TotalTokens,
+		Vectors:      vectors,
+		PromptTokens: result.Usage.PromptTokens, // assuming all tokens are prompt tokens for simplicity
+		TokenCount:   result.Usage.TotalTokens,
 	}, nil
 }

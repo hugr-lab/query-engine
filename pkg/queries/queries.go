@@ -28,13 +28,13 @@ func CreateEmbedding(ctx context.Context, qe types.Querier, model, text string) 
 		return nil, fmt.Errorf("failed to get embedding from model %s: %w", model, err)
 	}
 	defer res.Close()
-	var vec types.Vector
-	err = res.ScanData("function..model.embedding.vector", &vec)
+	var out types.EmbeddingResult
+	err = res.ScanData("function..model.embedding", &out)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding from model %s: %w", model, err)
 	}
-	if len(vec) == 0 {
+	if len(out.Vector) == 0 {
 		return nil, fmt.Errorf("model %s returned empty embedding", model)
 	}
-	return vec, nil
+	return out.Vector, nil
 }

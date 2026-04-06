@@ -34,10 +34,10 @@ extend type Function {
   chat_completion(
     # Name of the LLM data source.
     model: String!
-    # Chat messages (JSON array).
-    messages: JSON!
-    # Available tools (JSON array).
-    tools: JSON
+    # Chat messages (each element is a JSON string: {"role":"...","content":"..."}).
+    messages: [String!]!
+    # Available tools (each element is a JSON string).
+    tools: [String!]
     # Tool choice: auto, none, or tool name.
     tool_choice: String
     # Maximum tokens to generate.

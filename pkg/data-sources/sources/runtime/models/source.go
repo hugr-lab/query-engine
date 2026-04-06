@@ -199,17 +199,20 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 			runtime.DuckDBTypeInfoByNameMust("INTEGER"),
 			runtime.DuckDBTypeInfoByNameMust("DOUBLE"),
 		},
-		OutputType: llmResultType(),
+		OutputType:            llmResultType(),
+		IsSpecialNullHandling: true,
 	})
 	if err != nil {
 		return fmt.Errorf("register core_models_completion: %w", err)
 	}
 
 	// core_models_chat_completion(model, messages, tools, tool_choice, max_tokens, temperature)
+	// messages: [String!]! — each string is a JSON message object
+	// tools: [String!] — each string is a JSON tool definition
 	type chatArgs struct {
 		model       string
-		messages    string
-		tools       string
+		messages    []string
+		tools       []string
 		toolChoice  string
 		maxTokens   int32
 		temperature float64
@@ -225,19 +228,27 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 			if !ok {
 				return nil, fmt.Errorf("data source %q is not an LLM source", args.model)
 			}
+			// Parse each message JSON string
 			var messages []sources.LLMMessage
-			if err := json.Unmarshal([]byte(args.messages), &messages); err != nil {
-				return nil, fmt.Errorf("messages must be valid JSON: %w", err)
+			for _, msgStr := range args.messages {
+				var msg sources.LLMMessage
+				if err := json.Unmarshal([]byte(msgStr), &msg); err != nil {
+					return nil, fmt.Errorf("invalid message JSON: %w", err)
+				}
+				messages = append(messages, msg)
 			}
 			opts := sources.LLMOptions{
 				MaxTokens:   int(args.maxTokens),
 				Temperature: args.temperature,
 				ToolChoice:  args.toolChoice,
 			}
-			if args.tools != "" {
-				if err := json.Unmarshal([]byte(args.tools), &opts.Tools); err != nil {
-					return nil, fmt.Errorf("tools must be valid JSON: %w", err)
+			// Parse each tool JSON string
+			for _, toolStr := range args.tools {
+				var tool sources.LLMTool
+				if err := json.Unmarshal([]byte(toolStr), &tool); err != nil {
+					return nil, fmt.Errorf("invalid tool JSON: %w", err)
 				}
+				opts.Tools = append(opts.Tools, tool)
 			}
 			start := time.Now()
 			result, err := llm.CreateChatCompletion(ctx, messages, opts)
@@ -249,11 +260,23 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 		},
 		ConvertInput: func(args []driver.Value) (chatArgs, error) {
 			a := chatArgs{
-				model:    args[0].(string),
-				messages: args[1].(string),
+				model: args[0].(string),
 			}
+			// messages: LIST(VARCHAR) → []string
+			if args[1] != nil {
+				if msgs, ok := args[1].([]any); ok {
+					for _, m := range msgs {
+						a.messages = append(a.messages, m.(string))
+					}
+				}
+			}
+			// tools: LIST(VARCHAR) → []string
 			if args[2] != nil {
-				a.tools = args[2].(string)
+				if tools, ok := args[2].([]any); ok {
+					for _, t := range tools {
+						a.tools = append(a.tools, t.(string))
+					}
+				}
 			}
 			if args[3] != nil {
 				a.toolChoice = args[3].(string)
@@ -269,13 +292,14 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 		ConvertOutput: func(out any) (any, error) { return out, nil },
 		InputTypes: []duckdb.TypeInfo{
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
-			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
-			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBListInfoByNameMust("VARCHAR"),
+			runtime.DuckDBListInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 			runtime.DuckDBTypeInfoByNameMust("INTEGER"),
 			runtime.DuckDBTypeInfoByNameMust("DOUBLE"),
 		},
-		OutputType: llmResultType(),
+		OutputType:            llmResultType(),
+		IsSpecialNullHandling: true,
 	})
 	if err != nil {
 		return fmt.Errorf("register core_models_chat_completion: %w", err)
@@ -376,7 +400,6 @@ func llmResultType() duckdb.TypeInfo {
 	t, _ := duckdb.NewStructInfo(content, model, finishReason, promptTokens, completionTokens, totalTokens, provider, latencyMs, toolCalls)
 	return t
 }
-
 
 var _ sources.RuntimeSourceDataSourceUser = (*Source)(nil)
 

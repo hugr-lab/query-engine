@@ -10,14 +10,16 @@ type ModelInfo struct {
 
 // EmbeddingResult is an enriched embedding response with token count.
 type EmbeddingResult struct {
-	Vector     Vector `json:"vector"`
-	TokenCount int    `json:"token_count"`
+	Vector       Vector `json:"vector"`
+	PromptTokens int    `json:"prompt_tokens"`
+	TokenCount   int    `json:"token_count"`
 }
 
 // EmbeddingsResult is a batch embedding response with total token count.
 type EmbeddingsResult struct {
-	Vectors    []Vector `json:"vectors"`
-	TokenCount int      `json:"token_count"`
+	Vectors      []Vector `json:"vectors"`
+	TokenCount   int      `json:"token_count"`
+	PromptTokens int      `json:"prompt_tokens"`
 }
 
 // LLMMessage is a single message in a chat conversation.

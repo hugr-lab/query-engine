@@ -4,7 +4,8 @@
     "go.testEnvVars": {
         "CGO_CFLAGS":"-O1 -g",
         "EMBEDDER_URL":"http://localhost:1234/v1/embeddings?model=text-embedding-embeddinggemma-300m-qat&api_key=test",
-        "EMBEDDER_VECTOR_SIZE": "768" 
+        "EMBEDDER_VECTOR_SIZE": "768",
+        "LLM_URL": "http://localhost:1234/v1/chat/completions?model=\"openai/gpt-oss-20b\"timeout=120s"
     },
     "go.testTags": "duckdb_arrow",
     "gopls": {
