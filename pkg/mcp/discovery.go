@@ -21,7 +21,7 @@ func (s *Server) searchModules(ctx context.Context, req mcp.CallToolRequest) (*m
 		Desc     string  `json:"description"`
 		Distance float64 `json:"_distance_to_query"`
 	}
-	err := s.queryScan(ctx, `query($query: String!, $limit: Int) {
+	err := s.queryScanAdmin(ctx, `query($query: String!, $limit: Int) {
 		core {
 			catalog {
 				modules(
@@ -39,8 +39,12 @@ func (s *Server) searchModules(ctx context.Context, req mcp.CallToolRequest) (*m
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
 
+	filter := newMCPFilter(ctx)
 	var result []ModuleSearchItem
 	for _, item := range items {
+		if !filter.visibleModule(item.Name) {
+			continue
+		}
 		score := distanceToScore(item.Distance)
 		if minScore > 0 && score < minScore {
 			continue
@@ -75,7 +79,7 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 		AsModule bool    `json:"as_module"`
 		Distance float64 `json:"_distance_to_query"`
 	}
-	err := s.queryScan(ctx, `query($query: String!, $limit: Int) {
+	err := s.queryScanAdmin(ctx, `query($query: String!, $limit: Int) {
 		core {
 			catalog {
 				schema_catalogs(
@@ -96,8 +100,12 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
 
+	filter := newMCPFilter(ctx)
 	var result []DataSourceSearchItem
 	for _, item := range items {
+		if !filter.visibleDataSource(item.Name) {
+			continue
+		}
 		score := distanceToScore(item.Distance)
 		if minScore > 0 && score < minScore {
 			continue
@@ -143,10 +151,11 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 			Queries []struct {
 				Name      string `json:"name"`
 				QueryType string `json:"query_type"`
+				QueryRoot string `json:"query_root"`
 			} `json:"queries"`
 		} `json:"data_object"`
 	}
-	err := s.queryScan(ctx, `query($filter: core_types_filter, $limit: Int, $query: String!) {
+	err := s.queryScanAdmin(ctx, `query($filter: core_types_filter, $limit: Int, $query: String!) {
 		core {
 			catalog {
 				types(
@@ -163,6 +172,7 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 						queries {
 							name
 							query_type
+							query_root
 						}
 					}
 				}
@@ -180,8 +190,12 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
 
+	filter := newMCPFilter(ctx)
 	var result []DataObjectSearchItem
 	for _, item := range items {
+		if !filter.visibleType(item.Name) {
+			continue
+		}
 		score := distanceToScore(item.Distance)
 		if minScore > 0 && score < minScore {
 			continue
@@ -190,6 +204,9 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 		var queries []DataObjectQuery
 		if len(item.DataObject) > 0 {
 			for _, q := range item.DataObject[0].Queries {
+				if !filter.visibleField(q.QueryRoot, q.Name) {
+					continue
+				}
 				queries = append(queries, DataObjectQuery{Name: q.Name, QueryType: q.QueryType})
 			}
 		}
@@ -232,7 +249,7 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 		FunctionRoot    string `json:"function_root"`
 		MutFunctionRoot string `json:"mut_function_root"`
 	}
-	err := s.queryScan(ctx, `query($filter: core_modules_filter) {
+	err := s.queryScanAdmin(ctx, `query($filter: core_modules_filter) {
 		core {
 			catalog {
 				modules(filter: $filter) {
@@ -294,7 +311,7 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 			Desc    string `json:"description"`
 		} `json:"arguments"`
 	}
-	err = s.queryScan(ctx, `query($filter: core_fields_filter, $limit: Int, $query: String!) {
+	err = s.queryScanAdmin(ctx, `query($filter: core_fields_filter, $limit: Int, $query: String!) {
 		core {
 			catalog {
 				fields(
@@ -327,9 +344,21 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
 
+	filter := newMCPFilter(ctx)
 	var result []FunctionSearchItem
 	for _, f := range fields {
 		ri := rootMap[f.TypeName]
+
+		if ri.isMutation {
+			if !filter.visibleMutationFunction(ri.module, f.Name) {
+				continue
+			}
+		} else {
+			if !filter.visibleFunction(ri.module, f.Name) {
+				continue
+			}
+		}
+
 		score := distanceToScore(f.Distance)
 
 		var args []FunctionArgument
@@ -390,11 +419,17 @@ func (s *Server) fieldValues(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		filterArg = "filter_var"
 	}
 
+	// Check type visibility before querying data.
+	filter := newMCPFilter(ctx)
+	if !filter.visibleType(objectName) {
+		return toolResultError(fmt.Sprintf("type %q not found or not accessible", objectName)), nil
+	}
+
 	// Look up type info to get module path.
 	var typeInfo struct {
 		Module string `json:"module"`
 	}
-	err := s.queryScan(ctx, `query($name: String!) {
+	err := s.queryScanAdmin(ctx, `query($name: String!) {
 		core { catalog { types_by_pk(name: $name) { module } } }
 	}`, map[string]any{"name": objectName}, "core.catalog.types_by_pk", &typeInfo)
 	if err != nil {
@@ -416,7 +451,7 @@ func (s *Server) fieldValues(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		Name string `json:"name"`
 		Type string `json:"query_type"`
 	}
-	err = s.queryScan(ctx, `query($filter: core_data_object_queries_filter) {
+	err = s.queryScanAdmin(ctx, `query($filter: core_data_object_queries_filter) {
 		core { catalog { data_object_queries(filter: $filter) { name query_type } } }
 	}`, map[string]any{
 		"filter": map[string]any{"object_name": map[string]any{"eq": objectName}},
@@ -551,7 +586,7 @@ func aggStatsFields(s *Server, ctx context.Context, objectName, fieldName string
 	var fields []struct {
 		FieldType string `json:"field_type"`
 	}
-	_ = s.queryScan(ctx, `query($filter: core_fields_filter) {
+	_ = s.queryScanAdmin(ctx, `query($filter: core_fields_filter) {
 		core { catalog { fields(filter: $filter, limit: 1) { field_type } } }
 	}`, map[string]any{
 		"filter": map[string]any{
