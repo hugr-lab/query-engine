@@ -10,13 +10,13 @@ type ModelInfo struct {
 
 // EmbeddingResult is an enriched embedding response with token count.
 type EmbeddingResult struct {
-	Vector     []float64 `json:"vector"`
+	Vector     Vector `json:"vector"`
 	TokenCount int    `json:"token_count"`
 }
 
 // EmbeddingsResult is a batch embedding response with total token count.
 type EmbeddingsResult struct {
-	Vectors    [][]float64 `json:"vectors"`
+	Vectors    []Vector `json:"vectors"`
 	TokenCount int      `json:"token_count"`
 }
 

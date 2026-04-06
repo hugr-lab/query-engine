@@ -5,7 +5,6 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -109,6 +108,6 @@ func (e *Iceberg) JSONTypeCast(sql string) string {
 }
 
 // EngineVectorDistanceCalculator interface
-func (e *Iceberg) VectorDistanceSQL(sql, distMetric string, vector ctypes.Vector, params []any) (string, []any, error) {
+func (e *Iceberg) VectorDistanceSQL(sql, distMetric string, vector types.Vector, params []any) (string, []any, error) {
 	return e.duckdb.VectorDistanceSQL(sql, distMetric, vector, params)
 }

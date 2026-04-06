@@ -43,11 +43,11 @@ func New(ds types.DataSource, attached bool) (*Source, error) {
 	}, nil
 }
 
-func (s *Source) Name() string             { return s.ds.Name }
+func (s *Source) Name() string                 { return s.ds.Name }
 func (s *Source) Definition() types.DataSource { return s.ds }
-func (s *Source) ReadOnly() bool           { return s.ds.ReadOnly }
-func (s *Source) Engine() engines.Engine   { return s.engine }
-func (s *Source) IsAttached() bool         { return s.isAttached }
+func (s *Source) ReadOnly() bool               { return s.ds.ReadOnly }
+func (s *Source) Engine() engines.Engine       { return s.engine }
+func (s *Source) IsAttached() bool             { return s.isAttached }
 
 // ModelInfo implements sources.ModelSource.
 func (s *Source) ModelInfo() sources.ModelInfo {
@@ -185,7 +185,7 @@ func (s *Source) CreateEmbeddings(ctx context.Context, input []string) (*sources
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	vectors := make([][]float64, len(result.Data))
+	vectors := make([]types.Vector, len(result.Data))
 	for i := range result.Data {
 		vectors[i] = slices.Clone(result.Data[i].Embedding)
 	}

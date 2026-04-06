@@ -1,61 +1,53 @@
-"""Create single embedding vector with token count."""
 extend type Function {
+  # Create single embedding vector with token count.
   embedding(
-    """Name of the embedding data source."""
+    # Name of the embedding data source.
     model: String!
-    """Text to embed."""
+    # Text to embed.
     input: String!
   ): embedding_result
     @function(name: "core_models_embedding")
-}
 
-"""Create multiple embedding vectors in batch."""
-extend type Function {
+  # Create multiple embedding vectors in batch.
   embeddings(
-    """Name of the embedding data source."""
+    # Name of the embedding data source.
     model: String!
-    """Texts to embed (JSON array)."""
+    # Texts to embed (JSON array).
     input: String!
   ): embeddings_result
     @function(name: "core_models_embeddings")
-}
 
-"""Simple text completion."""
-extend type Function {
+  # Simple text completion.
   completion(
-    """Name of the LLM data source."""
+    # Name of the LLM data source.
     model: String!
-    """Text prompt."""
+    # Text prompt.
     prompt: String!
-    """Maximum tokens to generate."""
+    # Maximum tokens to generate.
     max_tokens: Int
-    """Sampling temperature (0-2)."""
+    # Sampling temperature (0-2).
     temperature: Float
   ): llm_result
     @function(name: "core_models_completion")
-}
 
-"""Chat completion with tool calling support."""
-extend type Function {
+  # Chat completion with tool calling support.
   chat_completion(
-    """Name of the LLM data source."""
+    # Name of the LLM data source.
     model: String!
-    """Chat messages (JSON array)."""
+    # Chat messages (JSON array).
     messages: JSON!
-    """Available tools (JSON array)."""
+    # Available tools (JSON array).
     tools: JSON
-    """Tool choice: auto, none, or tool name."""
+    # Tool choice: auto, none, or tool name.
     tool_choice: String
-    """Maximum tokens to generate."""
+    # Maximum tokens to generate.
     max_tokens: Int
-    """Sampling temperature."""
+    # Sampling temperature.
     temperature: Float
   ): llm_result
     @function(name: "core_models_chat_completion")
-}
 
-"""List all registered AI model data sources."""
-extend type Function {
+  # List all registered AI model data sources.
   model_sources: [model_source_info]
     @function(name: "core_models_sources", is_table: true)
 }

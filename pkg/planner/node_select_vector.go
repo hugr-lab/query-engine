@@ -8,7 +8,6 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/queries"
 	"github.com/hugr-lab/query-engine/types"
@@ -67,7 +66,7 @@ func vectorSearchNodes(e engines.Engine, info *sdl.Object, query *ast.Field, pre
 	if !ok {
 		return nil, sdl.ErrorPosf(query.Position, "vector is required")
 	}
-	vector, err := ctypes.ParseVector(vec)
+	vector, err := types.ParseVector(vec)
 	if err != nil {
 		return nil, sdl.ErrorPosf(query.Position, "invalid vector: %v", err)
 	}
@@ -178,7 +177,7 @@ func semanticSearchNodes(e engines.Engine, info *sdl.Object, query *ast.Field, p
 	return nodes, nil
 }
 
-func createEmbeddingForTable(ctx context.Context, qe types.Querier, info *sdl.Object, text string) (string, ctypes.Vector, error) {
+func createEmbeddingForTable(ctx context.Context, qe types.Querier, info *sdl.Object, text string) (string, types.Vector, error) {
 	d := info.Definition().Directives.ForName(base.EmbeddingsDirectiveName)
 	if d == nil {
 		return "", nil, errors.New("semantic search is not supported for this object")

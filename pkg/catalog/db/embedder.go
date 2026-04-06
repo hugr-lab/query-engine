@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 // Embedder creates embedding vectors. Implemented by embedding.Source.
@@ -32,7 +32,6 @@ func (p *Provider) computeEmbeddings(ctx context.Context, texts []string) ([]typ
 	}
 	return vecs, nil
 }
-
 
 // EmbeddingText returns the best available text for embedding generation.
 // Falls back through: longDesc → desc → syntheticDesc.

@@ -12,6 +12,12 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - N/A (refactoring, no storage changes) (001-client-module)
 - Go 1.26 + duckdb-go/v2 (CGo, UDF registration), gqlparser/v2 (GraphQL SDL), arrow-go/v18 (014-core-auth-source)
 - N/A (reads from request context only) (014-core-auth-source)
+- Go 1.26 (with `iter.Seq`, range-over-func) + `duckdb-go/v2` (CGo, build tag `duckdb_arrow`), `gqlparser/v2` (GraphQL AST), `apache/arrow-go/v18`, `itchyny/gojq` (JQ transforms) (001-timezone-support)
+- DuckDB embedded (primary), PostgreSQL (CoreDB for metadata, data source) (001-timezone-support)
+- Go 1.26 (with `iter.Seq`, range-over-func) + `duckdb-go/v2` (CGo, `duckdb_arrow`), `hugr-lab/airport-go` v0.2.1 (Arrow Flight gRPC), `gqlparser/v2` (GraphQL AST), `apache/arrow-go/v18` (001-hugr-apps)
+- DuckDB embedded (primary), PostgreSQL (CoreDB + app databases) (001-hugr-apps)
+- Go 1.26 + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `apache/arrow-go/v18` + DuckDB embedded, existing `Source`/`RuntimeSource` interfaces, `ScalarFunctionWithArgs` UDF pattern (001-ai-model-sources)
+- DuckDB (embedded), PostgreSQL (CoreDB for metadata) (001-ai-model-sources)
 
 ## Project Structure
 
@@ -28,6 +34,6 @@ Go 1.26: Follow standard conventions
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
-- 014-core-auth-source: Added Go 1.26 + duckdb-go/v2 (CGo, UDF registration), gqlparser/v2 (GraphQL SDL), arrow-go/v18
-- 001-client-module: Added Go 1.26 (main module), Go 1.22 (client sub-module) + arrow-go/v18, msgpack/v5, gqlparser/v2 (all pure Go for pkg/types); duckdb-go/v2 (CGo, stays in pkg/db only)
-- 001-iceberg-source: Added Go 1.26 (with `iter.Seq`, `iter.Seq2`, range-over-func) + `duckdb-go/v2` (CGo, build tag `duckdb_arrow`), `gqlparser/v2` (GraphQL AST), `apache/arrow-go/v18`, DuckDB iceberg extension
+- 001-ai-model-sources: Added Go 1.26 + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `apache/arrow-go/v18` + DuckDB embedded, existing `Source`/`RuntimeSource` interfaces, `ScalarFunctionWithArgs` UDF pattern
+- 001-hugr-apps: Added Go 1.26 (with `iter.Seq`, range-over-func) + `duckdb-go/v2` (CGo, `duckdb_arrow`), `hugr-lab/airport-go` v0.2.1 (Arrow Flight gRPC), `gqlparser/v2` (GraphQL AST), `apache/arrow-go/v18`
+- 001-timezone-support: Added Go 1.26 (with `iter.Seq`, range-over-func) + `duckdb-go/v2` (CGo, build tag `duckdb_arrow`), `gqlparser/v2` (GraphQL AST), `apache/arrow-go/v18`, `itchyny/gojq` (JQ transforms)
