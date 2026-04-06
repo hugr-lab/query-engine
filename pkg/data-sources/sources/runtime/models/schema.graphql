@@ -34,11 +34,20 @@ extend type Function {
   chat_completion(
     "Name of the LLM data source"
     model: String!
-    "Chat messages, each element is a JSON object with role and content fields"
+    """
+    Chat messages. Each element is a JSON string representing a message object.
+    Fields: role (system|user|assistant|tool), content (text),
+    tool_call_id (for tool result messages).
+    Example: ["{\"role\":\"user\",\"content\":\"Hello\"}"]
+    """
     messages: [String!]!
-    "Available tools, each element is a JSON object with name, description, parameters fields"
+    """
+    Available tools for the model to call. Each element is a JSON string
+    representing a tool definition with name, description, and parameters
+    (JSON Schema). Example: ["{\"name\":\"get_weather\",\"description\":\"Get weather\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}}}}"]
+    """
     tools: [String!]
-    "Tool choice: auto, none, or specific tool name"
+    "Tool choice: auto (model decides), none (no tools), or a specific tool name to force"
     tool_choice: String
     "Maximum tokens to generate"
     max_tokens: Int
