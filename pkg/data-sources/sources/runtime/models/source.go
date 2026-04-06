@@ -5,7 +5,6 @@ import (
 	"database/sql/driver"
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -396,6 +395,3 @@ var llmResultDuckDBType = runtime.DuckDBStructTypeFromSchemaMust(map[string]any{
 })
 
 var _ sources.RuntimeSourceDataSourceUser = (*Source)(nil)
-
-// Ensure unused imports are used
-var _ = errors.New

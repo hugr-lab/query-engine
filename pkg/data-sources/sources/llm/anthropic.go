@@ -112,18 +112,35 @@ func (s *AnthropicSource) CreateChatCompletion(ctx context.Context, messages []s
 			system = m.Content
 			continue
 		}
-		msg := map[string]any{"role": m.Role, "content": m.Content}
 		if m.Role == "tool" && m.ToolCallID != "" {
-			msg = map[string]any{
+			apiMessages = append(apiMessages, map[string]any{
 				"role": "user",
 				"content": []map[string]any{{
 					"type":        "tool_result",
 					"tool_use_id": m.ToolCallID,
 					"content":     m.Content,
 				}},
-			}
+			})
+			continue
 		}
-		apiMessages = append(apiMessages, msg)
+		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+			// Anthropic requires tool_use content blocks for assistant tool calls
+			content := []map[string]any{}
+			if m.Content != "" {
+				content = append(content, map[string]any{"type": "text", "text": m.Content})
+			}
+			for _, tc := range m.ToolCalls {
+				content = append(content, map[string]any{
+					"type":  "tool_use",
+					"id":    tc.ID,
+					"name":  tc.Name,
+					"input": tc.Arguments,
+				})
+			}
+			apiMessages = append(apiMessages, map[string]any{"role": "assistant", "content": content})
+			continue
+		}
+		apiMessages = append(apiMessages, map[string]any{"role": m.Role, "content": m.Content})
 	}
 
 	reqBody := map[string]any{
@@ -159,7 +176,10 @@ func (s *AnthropicSource) CreateChatCompletion(ctx context.Context, messages []s
 		}
 	}
 
-	body, _ := json.Marshal(reqBody)
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, s.config.Timeout)
 	defer cancel()
 
@@ -241,3 +261,8 @@ func parseAnthropicResponse(body []byte) (*sources.LLMResult, error) {
 
 	return result, nil
 }
+
+var (
+	_ sources.Source    = (*AnthropicSource)(nil)
+	_ sources.LLMSource = (*AnthropicSource)(nil)
+)

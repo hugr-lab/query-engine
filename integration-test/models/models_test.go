@@ -72,7 +72,7 @@ func registerDS(ctx context.Context, s *hugr.Service) {
 	}
 
 	// Anthropic DS
-	if key := os.Getenv("ANTROPIC_KEY"); key != "" {
+	if key := os.Getenv("ANTHROPIC_KEY"); key != "" {
 		path := "https://api.anthropic.com/v1/messages?model=claude-sonnet-4-20250514&api_key=" + key + "&max_tokens=1024&timeout=60s"
 		mustQuery(ctx, s, `mutation($data: core_data_sources_mut_input_data!) {
 			core { insert_data_sources(data: $data) { name } }
@@ -86,7 +86,7 @@ func registerDS(ctx context.Context, s *hugr.Service) {
 	}
 
 	// Gemini DS
-	if key := os.Getenv("GEMENI_KEY"); key != "" {
+	if key := os.Getenv("GEMINI_KEY"); key != "" {
 		path := "https://generativelanguage.googleapis.com/v1beta?model=gemini-2.5-flash&api_key=" + key + "&timeout=60s"
 		mustQuery(ctx, s, `mutation($data: core_data_sources_mut_input_data!) {
 			core { insert_data_sources(data: $data) { name } }
@@ -307,8 +307,8 @@ func TestModels_Sources_WithRegistered(t *testing.T) {
 // --- Anthropic Provider ---
 
 func TestModels_Anthropic_Completion(t *testing.T) {
-	if os.Getenv("ANTROPIC_KEY") == "" {
-		t.Skip("ANTROPIC_KEY not set")
+	if os.Getenv("ANTHROPIC_KEY") == "" {
+		t.Skip("ANTHROPIC_KEY not set")
 	}
 	res := query(t, `{ function { core { models { completion(model: "test_anthropic", prompt: "What is 2+2? Answer with just the number.", max_tokens: 50) {
 		content model finish_reason prompt_tokens completion_tokens total_tokens provider latency_ms
@@ -332,8 +332,8 @@ func TestModels_Anthropic_Completion(t *testing.T) {
 }
 
 func TestModels_Anthropic_ChatWithTools(t *testing.T) {
-	if os.Getenv("ANTROPIC_KEY") == "" {
-		t.Skip("ANTROPIC_KEY not set")
+	if os.Getenv("ANTHROPIC_KEY") == "" {
+		t.Skip("ANTHROPIC_KEY not set")
 	}
 	res := query(t, `{ function { core { models { chat_completion(
 		model: "test_anthropic",
@@ -356,6 +356,11 @@ func TestModels_Anthropic_ChatWithTools(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "anthropic", result.Provider)
 	assert.NotEmpty(t, result.FinishReason)
+	// Claude should call get_weather for "What is the weather in Paris?"
+	if result.FinishReason == "tool_use" {
+		assert.NotEmpty(t, result.ToolCalls, "tool_calls should not be empty when finish_reason is tool_use")
+		assert.Contains(t, result.ToolCalls, "get_weather", "should call get_weather tool")
+	}
 	t.Logf("anthropic chat+tools: content=%q, finish=%s, tool_calls=%s",
 		result.Content, result.FinishReason, result.ToolCalls)
 }
@@ -363,8 +368,8 @@ func TestModels_Anthropic_ChatWithTools(t *testing.T) {
 // --- Gemini Provider ---
 
 func TestModels_Gemini_Completion(t *testing.T) {
-	if os.Getenv("GEMENI_KEY") == "" {
-		t.Skip("GEMENI_KEY not set")
+	if os.Getenv("GEMINI_KEY") == "" {
+		t.Skip("GEMINI_KEY not set")
 	}
 	res := query(t, `{ function { core { models { completion(model: "test_gemini", prompt: "What is 2+2? Answer with just the number.", max_tokens: 50) {
 		content model finish_reason prompt_tokens completion_tokens total_tokens provider latency_ms
@@ -388,8 +393,8 @@ func TestModels_Gemini_Completion(t *testing.T) {
 }
 
 func TestModels_Gemini_ChatWithTools(t *testing.T) {
-	if os.Getenv("GEMENI_KEY") == "" {
-		t.Skip("GEMENI_KEY not set")
+	if os.Getenv("GEMINI_KEY") == "" {
+		t.Skip("GEMINI_KEY not set")
 	}
 	res := query(t, `{ function { core { models { chat_completion(
 		model: "test_gemini",
@@ -412,6 +417,10 @@ func TestModels_Gemini_ChatWithTools(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "gemini", result.Provider)
 	assert.NotEmpty(t, result.FinishReason)
+	// Gemini should call get_weather for "What is the weather in Tokyo?"
+	if result.FinishReason == "tool_use" || result.ToolCalls != "" {
+		assert.Contains(t, result.ToolCalls, "get_weather", "should call get_weather tool")
+	}
 	t.Logf("gemini chat+tools: content=%q, finish=%s, tool_calls=%s",
 		result.Content, result.FinishReason, result.ToolCalls)
 }

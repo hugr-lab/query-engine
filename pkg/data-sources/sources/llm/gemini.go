@@ -162,14 +162,17 @@ func (s *GeminiSource) CreateChatCompletion(ctx context.Context, messages []sour
 		reqBody["tools"] = []map[string]any{{"functionDeclarations": decls}}
 	}
 
-	body, _ := json.Marshal(reqBody)
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
 	ctx, cancel := context.WithTimeout(ctx, s.config.Timeout)
 	defer cancel()
 
 	// URL: {baseURL}/models/{model}:generateContent?key={api_key}
-	apiURL := fmt.Sprintf("%s/models/%s:generateContent", s.config.BaseURL, s.config.Model)
+	apiURL := fmt.Sprintf("%s/models/%s:generateContent", s.config.BaseURL, url.PathEscape(s.config.Model))
 	if s.config.ApiKey != "" {
-		apiURL += "?key=" + s.config.ApiKey
+		apiURL += "?key=" + url.QueryEscape(s.config.ApiKey)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(body))
@@ -253,3 +256,8 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 
 	return result, nil
 }
+
+var (
+	_ sources.Source    = (*GeminiSource)(nil)
+	_ sources.LLMSource = (*GeminiSource)(nil)
+)

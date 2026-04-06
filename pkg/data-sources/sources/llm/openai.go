@@ -298,3 +298,8 @@ func normalizeFinishReasonOpenAI(reason string) string {
 		return reason
 	}
 }
+
+var (
+	_ sources.Source    = (*OpenAISource)(nil)
+	_ sources.LLMSource = (*OpenAISource)(nil)
+)
