@@ -18,6 +18,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/hugrapp"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/iceberg"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/llm"
+	redissrc "github.com/hugr-lab/query-engine/pkg/data-sources/sources/redis"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mssql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/postgres"
@@ -150,6 +151,11 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 	err := ds.Attach(ctx, s.db)
 	if err != nil {
 		return err
+	}
+
+	// Inject resolver for sources that need access to other data sources (e.g., rate limiting).
+	if du, ok := ds.(SourceDataSourceUser); ok {
+		du.SetDataSourceResolver(s)
 	}
 
 	// Provision external resources (app databases) if source supports it.
@@ -327,6 +333,8 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 		return llm.NewAnthropic(ds, attached)
 	case LLMGemini:
 		return llm.NewGemini(ds, attached)
+	case Redis:
+		return redissrc.New(ds, attached)
 	default:
 		return nil, ErrUnknownDataSourceType
 	}

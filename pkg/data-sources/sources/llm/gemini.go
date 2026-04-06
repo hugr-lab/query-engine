@@ -23,6 +23,8 @@ type GeminiSource struct {
 	engine     engines.Engine
 	isAttached bool
 	config     openAIConfig // reuse same config struct
+
+	rateLimitMixin
 }
 
 func NewGemini(ds types.DataSource, attached bool) (*GeminiSource, error) {
@@ -75,11 +77,22 @@ func (s *GeminiSource) Attach(_ context.Context, _ *db.Pool) error {
 	if s.config.Timeout == 0 {
 		s.config.Timeout = 60 * time.Second
 	}
+	if rpm := u.Query().Get("rpm"); rpm != "" {
+		fmt.Sscanf(rpm, "%d", &s.config.RPM)
+	}
+	if tpm := u.Query().Get("tpm"); tpm != "" {
+		fmt.Sscanf(tpm, "%d", &s.config.TPM)
+	}
+	s.config.RateStore = u.Query().Get("rate_store")
+
 	q := u.Query()
 	q.Del("model")
 	q.Del("api_key")
 	q.Del("max_tokens")
 	q.Del("timeout")
+	q.Del("rpm")
+	q.Del("tpm")
+	q.Del("rate_store")
 	u.RawQuery = q.Encode()
 	s.config.BaseURL = u.String()
 	s.isAttached = true
@@ -98,6 +111,13 @@ func (s *GeminiSource) CreateCompletion(ctx context.Context, prompt string, opts
 func (s *GeminiSource) CreateChatCompletion(ctx context.Context, messages []sources.LLMMessage, opts sources.LLMOptions) (*sources.LLMResult, error) {
 	if !s.isAttached {
 		return nil, sources.ErrDataSourceNotAttached
+	}
+
+	s.rateLimitMixin.ensureLimiter(s.ds.Name, s.config)
+	if s.limiter != nil {
+		if err := s.limiter.Check(ctx); err != nil {
+			return nil, err
+		}
 	}
 	maxTokens := opts.MaxTokens
 	if maxTokens == 0 {
@@ -194,7 +214,16 @@ func (s *GeminiSource) CreateChatCompletion(ctx context.Context, messages []sour
 		return nil, fmt.Errorf("Gemini API error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
-	return parseGeminiResponse(respBody)
+	result, err := parseGeminiResponse(respBody)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.limiter != nil {
+		_ = s.limiter.Record(ctx, result.TotalTokens)
+	}
+
+	return result, nil
 }
 
 func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
@@ -258,6 +287,7 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 }
 
 var (
-	_ sources.Source    = (*GeminiSource)(nil)
-	_ sources.LLMSource = (*GeminiSource)(nil)
+	_ sources.Source              = (*GeminiSource)(nil)
+	_ sources.LLMSource           = (*GeminiSource)(nil)
+	_ sources.SourceDataSourceUser = (*GeminiSource)(nil)
 )

@@ -295,6 +295,41 @@ Use `schema-type_fields(include_arguments: true)` to discover available argument
 Additional tools: `discovery-search_data_sources`, `discovery-search_module_functions`,
 `schema-type_info`, `schema-enum_values`
 
+## Key-Value Store (core.store)
+
+The `core.store` module provides key-value operations on registered store data sources (e.g., Redis).
+
+**Read operations** (queries):
+```graphql
+query {
+  function { core { store {
+    get(store: "redis", key: "session:abc")
+    keys(store: "redis", pattern: "user:*")
+  } } }
+}
+```
+
+**Write operations** (mutations):
+```graphql
+mutation { function { core { store {
+  set(store: "redis", key: "counter", value: "0", ttl: 3600) { success message }
+} } } }
+
+mutation { function { core { store {
+  incr(store: "redis", key: "counter")
+} } } }
+
+mutation { function { core { store {
+  del(store: "redis", key: "temp:data") { success }
+} } } }
+
+mutation { function { core { store {
+  expire(store: "redis", key: "session:abc", ttl: 300) { success }
+} } } }
+```
+
+Operations: `get` (nullable String), `keys` (returns `[String]`), `set` (with optional TTL in seconds), `del`, `incr` (returns new value as BigInt), `expire` (set TTL on existing key).
+
 ## Critical Rules
 
 - ALWAYS call `schema-type_fields` before building queries — field names cannot be guessed

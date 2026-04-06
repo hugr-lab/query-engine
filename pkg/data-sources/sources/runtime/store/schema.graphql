@@ -1,0 +1,63 @@
+extend type Function {
+  "Get value by key. Returns null if key does not exist."
+  get(
+    "Name of the store data source"
+    store: String!
+    "Key to retrieve"
+    key: String!
+  ): String
+    @function(name: "core_store_get")
+
+  "List keys matching a glob pattern (e.g. user:*, ratelimit:*)"
+  keys(
+    "Name of the store data source"
+    store: String!
+    "Glob pattern"
+    pattern: String!
+  ): [String]
+    @function(name: "core_store_keys")
+}
+
+extend type MutationFunction {
+  "Set key-value pair with optional TTL"
+  set(
+    "Name of the store data source"
+    store: String!
+    "Key"
+    key: String!
+    "Value"
+    value: String!
+    "Time-to-live in seconds. 0 or null = no expiry"
+    ttl: Int
+  ): OperationResult
+    @function(name: "core_store_set")
+
+  "Delete a key"
+  del(
+    "Name of the store data source"
+    store: String!
+    "Key to delete"
+    key: String!
+  ): OperationResult
+    @function(name: "core_store_del")
+
+  "Atomically increment integer value. Creates key with value 1 if not exists."
+  incr(
+    "Name of the store data source"
+    store: String!
+    "Key to increment"
+    key: String!
+  ): BigInt
+    @function(name: "core_store_incr")
+
+  "Set TTL on an existing key"
+  expire(
+    "Name of the store data source"
+    store: String!
+    "Key"
+    key: String!
+    "TTL in seconds"
+    ttl: Int!
+  ): OperationResult
+    @function(name: "core_store_expire")
+}
