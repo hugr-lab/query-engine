@@ -67,7 +67,6 @@ func TestMain(m *testing.M) {
 		if !loadResult.Success {
 			panic(fmt.Sprintf("load_data_source failed: %s", loadResult.Message))
 		}
-		_ = loadResult // Redis loaded
 	}
 
 	code := m.Run()
