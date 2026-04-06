@@ -72,7 +72,11 @@ func (s *Service) RegisterUDF(ctx context.Context) error {
 	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[embeddingArgs, ctypes.Vector]{
 		Name: "create_embedding",
 		Execute: func(ctx context.Context, args embeddingArgs) (ctypes.Vector, error) {
-			return s.CreateEmbedding(ctx, args.source, args.input)
+			result, err := s.CreateEmbedding(ctx, args.source, args.input)
+			if err != nil {
+				return nil, err
+			}
+			return result.Vector, nil
 		},
 		InputTypes: []duckdb.TypeInfo{
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"), // source (catalog)

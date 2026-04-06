@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/airport"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/ducklake"
