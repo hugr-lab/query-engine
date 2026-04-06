@@ -246,44 +246,31 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 		return fmt.Errorf("register core_store_expire: %w", err)
 	}
 
-	// core_store_keys(store, pattern) → table(key VARCHAR)
+	// core_store_keys(store, pattern) → LIST(VARCHAR)
 	type keysArgs struct {
 		store   string
 		pattern string
 	}
-	type keyRow struct {
-		Key string
-	}
-	err = s.db.RegisterTableRowFunction(ctx, &db.TableRowFunctionWithArgs[keysArgs, keyRow]{
+	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[keysArgs, []string]{
 		Name: "core_store_keys",
-		Arguments: []duckdb.TypeInfo{
-			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
-			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		Execute: func(ctx context.Context, args keysArgs) ([]string, error) {
+			st, err := s.resolveStore(args.store)
+			if err != nil {
+				return nil, err
+			}
+			return st.Keys(ctx, args.pattern)
 		},
-		ColumnInfos: []duckdb.ColumnInfo{
-			{Name: "key", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		},
-		ConvertArgs: func(named map[string]any, args ...any) (keysArgs, error) {
+		ConvertInput: func(args []driver.Value) (keysArgs, error) {
 			return keysArgs{store: args[0].(string), pattern: args[1].(string)}, nil
 		},
-		Execute: func(ctx context.Context, input keysArgs) ([]keyRow, error) {
-			st, err := s.resolveStore(input.store)
-			if err != nil {
-				return nil, err
-			}
-			keys, err := st.Keys(ctx, input.pattern)
-			if err != nil {
-				return nil, err
-			}
-			rows := make([]keyRow, len(keys))
-			for i, k := range keys {
-				rows[i] = keyRow{Key: k}
-			}
-			return rows, nil
+		ConvertOutput: func(out []string) (any, error) {
+			return out, nil
 		},
-		FillRow: func(row keyRow, duckRow duckdb.Row) error {
-			return duckdb.SetRowValue(duckRow, 0, row.Key)
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
 		},
+		OutputType: runtime.DuckDBListInfoByNameMust("VARCHAR"),
 	})
 	if err != nil {
 		return fmt.Errorf("register core_store_keys: %w", err)

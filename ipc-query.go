@@ -247,7 +247,7 @@ func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomInfo {
 			return nil
 		}
 		return map[string]geomInfo{
-			"": geomInfo{
+			"": {
 				Format: "WKB",
 				SRID:   fi.GeometrySRID(),
 			},

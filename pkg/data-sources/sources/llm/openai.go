@@ -10,9 +10,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/ratelimit"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/types"
@@ -25,6 +27,10 @@ type OpenAISource struct {
 	engine     engines.Engine
 	isAttached bool
 	config     openAIConfig
+
+	resolver    sources.DataSourceResolver
+	limiter     *ratelimit.Limiter
+	limiterOnce sync.Once
 }
 
 type openAIConfig struct {
@@ -34,6 +40,9 @@ type openAIConfig struct {
 	ApiKeyHeader string
 	MaxTokens    int
 	Timeout      time.Duration
+	RPM          int    // max requests per minute (0 = unlimited)
+	TPM          int    // max tokens per minute (0 = unlimited)
+	RateStore    string // name of StoreSource for shared counters (empty = in-memory)
 }
 
 func NewOpenAI(ds types.DataSource, attached bool) (*OpenAISource, error) {
@@ -93,6 +102,14 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 		s.config.Timeout = 60 * time.Second
 	}
 
+	if rpm := u.Query().Get("rpm"); rpm != "" {
+		fmt.Sscanf(rpm, "%d", &s.config.RPM)
+	}
+	if tpm := u.Query().Get("tpm"); tpm != "" {
+		fmt.Sscanf(tpm, "%d", &s.config.TPM)
+	}
+	s.config.RateStore = u.Query().Get("rate_store")
+
 	// Strip query params to get base URL
 	q := u.Query()
 	q.Del("model")
@@ -100,6 +117,9 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 	q.Del("api_key_header")
 	q.Del("max_tokens")
 	q.Del("timeout")
+	q.Del("rpm")
+	q.Del("tpm")
+	q.Del("rate_store")
 	u.RawQuery = q.Encode()
 	s.config.BaseURL = u.String()
 
@@ -112,6 +132,28 @@ func (s *OpenAISource) Detach(_ context.Context, _ *db.Pool) error {
 	return nil
 }
 
+// SetDataSourceResolver implements sources.SourceDataSourceUser.
+func (s *OpenAISource) SetDataSourceResolver(resolver sources.DataSourceResolver) {
+	s.resolver = resolver
+}
+
+// ensureLimiter lazily initializes the rate limiter on first use.
+// Deferred because the Redis store may not be attached when the LLM source attaches.
+func (s *OpenAISource) ensureLimiter() {
+	s.limiterOnce.Do(func() {
+		if s.config.RPM == 0 && s.config.TPM == 0 {
+			return
+		}
+		var store sources.StoreSource
+		if s.config.RateStore != "" && s.resolver != nil {
+			if ds, err := s.resolver.Resolve(s.config.RateStore); err == nil {
+				store, _ = ds.(sources.StoreSource)
+			}
+		}
+		s.limiter = ratelimit.New(s.ds.Name, s.config.RPM, s.config.TPM, store)
+	})
+}
+
 func (s *OpenAISource) CreateCompletion(ctx context.Context, prompt string, opts sources.LLMOptions) (*sources.LLMResult, error) {
 	messages := []sources.LLMMessage{
 		{Role: "user", Content: prompt},
@@ -122,6 +164,13 @@ func (s *OpenAISource) CreateCompletion(ctx context.Context, prompt string, opts
 func (s *OpenAISource) CreateChatCompletion(ctx context.Context, messages []sources.LLMMessage, opts sources.LLMOptions) (*sources.LLMResult, error) {
 	if !s.isAttached {
 		return nil, sources.ErrDataSourceNotAttached
+	}
+
+	s.ensureLimiter()
+	if s.limiter != nil {
+		if err := s.limiter.Check(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	maxTokens := opts.MaxTokens
@@ -185,7 +234,16 @@ func (s *OpenAISource) CreateChatCompletion(ctx context.Context, messages []sour
 		return nil, fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
-	return parseOpenAIResponse(respBody, "openai")
+	result, err := parseOpenAIResponse(respBody, "openai")
+	if err != nil {
+		return nil, err
+	}
+
+	if s.limiter != nil {
+		_ = s.limiter.Record(ctx, result.TotalTokens)
+	}
+
+	return result, nil
 }
 
 // --- OpenAI format helpers ---
@@ -300,6 +358,7 @@ func normalizeFinishReasonOpenAI(reason string) string {
 }
 
 var (
-	_ sources.Source    = (*OpenAISource)(nil)
-	_ sources.LLMSource = (*OpenAISource)(nil)
+	_ sources.Source              = (*OpenAISource)(nil)
+	_ sources.LLMSource           = (*OpenAISource)(nil)
+	_ sources.SourceDataSourceUser = (*OpenAISource)(nil)
 )

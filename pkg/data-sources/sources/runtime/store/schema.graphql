@@ -1,5 +1,5 @@
-"Get value by key. Returns null if key does not exist."
 extend type Function {
+  "Get value by key. Returns null if key does not exist."
   get(
     "Name of the store data source"
     store: String!
@@ -14,12 +14,12 @@ extend type Function {
     store: String!
     "Glob pattern"
     pattern: String!
-  ): [store_key]
-    @function(name: "core_store_keys", is_table: true)
+  ): [String]
+    @function(name: "core_store_keys")
 }
 
-"Set key-value pair with optional TTL"
 extend type MutationFunction {
+  "Set key-value pair with optional TTL"
   set(
     "Name of the store data source"
     store: String!
@@ -60,9 +60,4 @@ extend type MutationFunction {
     ttl: Int!
   ): OperationResult
     @function(name: "core_store_expire")
-}
-
-"Key returned by the keys table function"
-type store_key {
-  key: String
 }

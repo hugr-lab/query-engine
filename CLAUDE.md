@@ -18,6 +18,7 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - DuckDB embedded (primary), PostgreSQL (CoreDB + app databases) (001-hugr-apps)
 - Go 1.26 + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `apache/arrow-go/v18` + DuckDB embedded, existing `Source`/`RuntimeSource` interfaces, `ScalarFunctionWithArgs` UDF pattern (001-ai-model-sources)
 - DuckDB (embedded), PostgreSQL (CoreDB for metadata) (001-ai-model-sources)
+- Redis 6.0+ (key-value), DuckDB (embedded), PostgreSQL (CoreDB) (001-redis-store-ratelimit)
 
 ## Project Structure
 
@@ -34,6 +35,6 @@ Go 1.26: Follow standard conventions
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- 001-redis-store-ratelimit: Added Go 1.26 + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `apache/arrow-go/v18`
 - 001-ai-model-sources: Added Go 1.26 + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `apache/arrow-go/v18` + DuckDB embedded, existing `Source`/`RuntimeSource` interfaces, `ScalarFunctionWithArgs` UDF pattern
 - 001-hugr-apps: Added Go 1.26 (with `iter.Seq`, range-over-func) + `duckdb-go/v2` (CGo, `duckdb_arrow`), `hugr-lab/airport-go` v0.2.1 (Arrow Flight gRPC), `gqlparser/v2` (GraphQL AST), `apache/arrow-go/v18`
-- 001-timezone-support: Added Go 1.26 (with `iter.Seq`, range-over-func) + `duckdb-go/v2` (CGo, build tag `duckdb_arrow`), `gqlparser/v2` (GraphQL AST), `apache/arrow-go/v18`, `itchyny/gojq` (JQ transforms)
