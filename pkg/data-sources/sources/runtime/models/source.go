@@ -281,32 +281,53 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 		return fmt.Errorf("register core_models_chat_completion: %w", err)
 	}
 
-	// core_models_sources() → JSON string (list of model_source_info)
-	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionNoArgs[string]{
+	// core_models_sources() → table function returning model source info rows
+	type modelSourceRow struct {
+		Name     string
+		Type     string
+		Provider string
+		Model    string
+	}
+	err = s.db.RegisterTableRowFunction(ctx, &db.TableRowFunctionNoArgs[modelSourceRow]{
 		Name: "core_models_sources",
-		Execute: func(ctx context.Context) (string, error) {
+		ColumnInfos: []duckdb.ColumnInfo{
+			{Name: "name", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
+			{Name: "type", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
+			{Name: "provider", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
+			{Name: "model", T: runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
+		},
+		Execute: func(ctx context.Context) ([]modelSourceRow, error) {
 			if s.resolver == nil {
-				return "[]", nil
+				return nil, nil
 			}
-			var result []map[string]any
+			var rows []modelSourceRow
 			for _, ds := range s.resolver.ResolveAll() {
 				ms, ok := ds.(sources.ModelSource)
 				if !ok {
 					continue
 				}
 				info := ms.ModelInfo()
-				result = append(result, map[string]any{
-					"name":     info.Name,
-					"type":     info.Type,
-					"provider": info.Provider,
-					"model":    info.Model,
+				rows = append(rows, modelSourceRow{
+					Name:     info.Name,
+					Type:     info.Type,
+					Provider: info.Provider,
+					Model:    info.Model,
 				})
 			}
-			b, _ := json.Marshal(result)
-			return string(b), nil
+			return rows, nil
 		},
-		ConvertOutput: func(out string) (any, error) { return out, nil },
-		OutputType:    runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		FillRow: func(row modelSourceRow, duckRow duckdb.Row) error {
+			if err := duckdb.SetRowValue(duckRow, 0, row.Name); err != nil {
+				return err
+			}
+			if err := duckdb.SetRowValue(duckRow, 1, row.Type); err != nil {
+				return err
+			}
+			if err := duckdb.SetRowValue(duckRow, 2, row.Provider); err != nil {
+				return err
+			}
+			return duckdb.SetRowValue(duckRow, 3, row.Model)
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("register core_models_sources: %w", err)

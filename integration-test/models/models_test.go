@@ -116,13 +116,13 @@ func TestModels_Embedding_NotFound(t *testing.T) {
 }
 
 func TestModels_Sources_Empty(t *testing.T) {
-	res := query(t, `{ function { core { models { model_sources } } } }`, nil)
+	res := query(t, `{ function { core { models { model_sources { name type provider model } } } } }`, nil)
 	defer res.Close()
 	require.Empty(t, res.Errors)
-	var result any
+	var result []map[string]any
 	err := res.ScanData("function.core.models.model_sources", &result)
 	require.NoError(t, err)
-	t.Logf("model_sources: %v", result)
+	t.Logf("model_sources: %v (count=%d)", result, len(result))
 }
 
 // --- US2: LLM Completion ---
@@ -271,16 +271,13 @@ func TestModels_Sources_WithRegistered(t *testing.T) {
 	res = query(t, `mutation { function { core { load_data_source(name: "disc_embedder") { success } } } }`, nil)
 	res.Close()
 
-	// Discovery — returns JSON string
-	res = query(t, `{ function { core { models { model_sources } } } }`, nil)
+	// Discovery — table function
+	res = query(t, `{ function { core { models { model_sources { name type provider model } } } } }`, nil)
 	defer res.Close()
 
-	var rawJSON string
-	scanErr := res.ScanData("function.core.models.model_sources", &rawJSON)
-	require.NoError(t, scanErr)
-
 	var srcs []map[string]any
-	require.NoError(t, json.Unmarshal([]byte(rawJSON), &srcs))
+	scanErr := res.ScanData("function.core.models.model_sources", &srcs)
+	require.NoError(t, scanErr)
 
 	found := false
 	for _, s := range srcs {

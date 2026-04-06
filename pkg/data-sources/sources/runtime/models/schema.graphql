@@ -47,9 +47,9 @@ extend type Function {
   ): llm_result
     @function(name: "core_models_chat_completion")
 
-  # List all registered AI model data sources (returns JSON array).
-  model_sources: JSON
-    @function(name: "core_models_sources")
+  # List all registered AI model data sources.
+  model_sources: [model_source_info]
+    @function(name: "core_models_sources", is_table: true)
 }
 
 type embedding_result {
