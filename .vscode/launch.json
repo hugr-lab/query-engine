@@ -29,6 +29,18 @@
             "buildFlags": ["-tags=duckdb_arrow"]
         },
         {
+            "name": "Launch server bug",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "env": {
+                "CGO_CFLAGS":"-O1 -g"
+            },
+            "envFile": "${workspaceFolder}/.local/.env.bug",
+            "program": "${workspaceFolder}/cmd/dev-server",
+            "buildFlags": ["-tags=duckdb_arrow"]
+        },
+        {
             "name": "Launch server with auth and db",
             "type": "go",
             "request": "launch",
@@ -108,6 +120,29 @@
             "args": [
                 "summarize",
                 "--url", "http://localhost:15003/ipc",
+                "--provider", "custom",
+                "--model", "openai/gpt-oss-20b",
+                "--base-url", "http://127.0.0.1:1234/v1",
+                "--api-key", "lm-studio",
+                "--llm-timeout", "5m",
+                "--max-connections", "2"
+            ],
+            "buildFlags": ["-tags=duckdb_arrow"]
+        },
+        {
+            "name": "hugr-tools: summarize dev server (secret local LLM)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "env": {
+                "CGO_CFLAGS": "-O1 -g"
+            },
+            "program": "${workspaceFolder}/cmd/hugr-tools",
+            "args": [
+                "summarize",
+                "--url", "http://localhost:15004/ipc",
+                "--secret", "secret-key",
+                "--secret-header", "x-hugr-secret-key",
                 "--provider", "custom",
                 "--model", "openai/gpt-oss-20b",
                 "--base-url", "http://127.0.0.1:1234/v1",

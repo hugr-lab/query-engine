@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -44,24 +43,20 @@ func New(ds types.DataSource, attached bool) (*Source, error) {
 	}, nil
 }
 
-func (s *Source) Name() string {
-	return s.ds.Name
-}
+func (s *Source) Name() string                 { return s.ds.Name }
+func (s *Source) Definition() types.DataSource { return s.ds }
+func (s *Source) ReadOnly() bool               { return s.ds.ReadOnly }
+func (s *Source) Engine() engines.Engine       { return s.engine }
+func (s *Source) IsAttached() bool             { return s.isAttached }
 
-func (s *Source) Definition() types.DataSource {
-	return s.ds
-}
-
-func (s *Source) ReadOnly() bool {
-	return s.ds.ReadOnly
-}
-
-func (s *Source) Engine() engines.Engine {
-	return s.engine
-}
-
-func (s *Source) IsAttached() bool {
-	return s.isAttached
+// ModelInfo implements sources.ModelSource.
+func (s *Source) ModelInfo() sources.ModelInfo {
+	return sources.ModelInfo{
+		Name:     s.ds.Name,
+		Type:     "embedding",
+		Provider: "openai", // all embedding sources use OpenAI-compatible API
+		Model:    s.config.Model,
+	}
 }
 
 func (s *Source) Attach(ctx context.Context, db *db.Pool) (err error) {
@@ -122,24 +117,32 @@ type request struct {
 	Model string   `json:"model"`
 }
 
-type Response struct {
+type response struct {
 	Data []struct {
 		Embedding []float64 `json:"embedding"`
 	} `json:"data"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
-func (s *Source) CreateEmbedding(ctx context.Context, input string) (ctypes.Vector, error) {
-	vectors, err := s.CreateEmbeddings(ctx, []string{input})
+func (s *Source) CreateEmbedding(ctx context.Context, input string) (*sources.EmbeddingResult, error) {
+	result, err := s.CreateEmbeddings(ctx, []string{input})
 	if err != nil {
 		return nil, err
 	}
-	if len(vectors) != 1 {
+	if len(result.Vectors) != 1 {
 		return nil, errors.New("failed to create embedding")
 	}
-	return vectors[0], nil
+	return &sources.EmbeddingResult{
+		Vector:       result.Vectors[0],
+		TokenCount:   result.TokenCount,
+		PromptTokens: result.PromptTokens,
+	}, nil
 }
 
-func (s *Source) CreateEmbeddings(ctx context.Context, input []string) ([]ctypes.Vector, error) {
+func (s *Source) CreateEmbeddings(ctx context.Context, input []string) (*sources.EmbeddingsResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if !s.isAttached {
@@ -147,7 +150,6 @@ func (s *Source) CreateEmbeddings(ctx context.Context, input []string) ([]ctypes
 	}
 
 	w := bytes.Buffer{}
-
 	err := json.NewEncoder(&w).Encode(request{
 		Input: input,
 		Model: s.config.Model,
@@ -181,14 +183,18 @@ func (s *Source) CreateEmbeddings(ctx context.Context, input []string) ([]ctypes
 		return nil, errors.New("failed to create embedding")
 	}
 
-	var result Response
+	var result response
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	vectors := make([]ctypes.Vector, len(result.Data))
+	vectors := make([]types.Vector, len(result.Data))
 	for i := range result.Data {
 		vectors[i] = slices.Clone(result.Data[i].Embedding)
 	}
 
-	return vectors, nil
+	return &sources.EmbeddingsResult{
+		Vectors:      vectors,
+		PromptTokens: result.Usage.PromptTokens, // assuming all tokens are prompt tokens for simplicity
+		TokenCount:   result.Usage.TotalTokens,
+	}, nil
 }

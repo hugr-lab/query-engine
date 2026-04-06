@@ -26,15 +26,14 @@ import (
 
 // hugr_type constants for types and fields (mirror base.HugrType* values).
 const (
-	hugrTypeTable    = "table"
-	hugrTypeView     = "view"
-	hugrTypeFunction = "function"
+	hugrTypeTable = "table"
+	hugrTypeView  = "view"
 
 	hugrFieldSelect     = "select"
 	hugrFieldFunction   = "function"
 	hugrFieldExtraField = "extra_field"
 
-	hugrFunctionTypes = "function,mutation_function,table_function,table_function_join"
+	hugrFunctionTypes = "function,mutation_function"
 )
 
 //go:embed templates

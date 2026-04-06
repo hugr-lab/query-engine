@@ -1,0 +1,116 @@
+extend type Function {
+  "Create single embedding vector with token count"
+  embedding(
+    "Name of the embedding data source"
+    model: String!
+    "Text to embed"
+    input: String!
+  ): embedding_result
+    @function(name: "core_models_embedding")
+
+  "Create multiple embedding vectors in batch"
+  embeddings(
+    "Name of the embedding data source"
+    model: String!
+    "Texts to embed as JSON array of strings"
+    input: String!
+  ): embeddings_result
+    @function(name: "core_models_embeddings")
+
+  "Simple text completion"
+  completion(
+    "Name of the LLM data source"
+    model: String!
+    "Text prompt"
+    prompt: String!
+    "Maximum tokens to generate"
+    max_tokens: Int
+    "Sampling temperature (0-2)"
+    temperature: Float
+  ): llm_result
+    @function(name: "core_models_completion")
+
+  "Chat completion with tool calling support"
+  chat_completion(
+    "Name of the LLM data source"
+    model: String!
+    """
+    Chat messages. Each element is a JSON string representing a message object.
+    Fields: role (system|user|assistant|tool), content (text),
+    tool_call_id (for tool result messages).
+    Example: ["{\"role\":\"user\",\"content\":\"Hello\"}"]
+    """
+    messages: [String!]!
+    """
+    Available tools for the model to call. Each element is a JSON string
+    representing a tool definition with name, description, and parameters
+    (JSON Schema). Example: ["{\"name\":\"get_weather\",\"description\":\"Get weather\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}}}}"]
+    """
+    tools: [String!]
+    "Tool choice: auto (model decides), none (no tools), or a specific tool name to force"
+    tool_choice: String
+    "Maximum tokens to generate"
+    max_tokens: Int
+    "Sampling temperature (0-2)"
+    temperature: Float
+  ): llm_result
+    @function(name: "core_models_chat_completion")
+
+  "List all registered AI model data sources"
+  model_sources: [model_source_info]
+    @function(name: "core_models_sources", is_table: true)
+}
+
+"Embedding result with vector and token usage"
+type embedding_result {
+  "Embedding vector"
+  vector: Vector
+  "Number of tokens consumed"
+  token_count: Int
+}
+
+"Batch embedding result with vectors and total token usage"
+type embeddings_result {
+  "Embedding vectors"
+  vectors: [Vector]
+  "Total number of tokens consumed"
+  token_count: Int
+}
+
+"Normalized LLM response from any provider"
+type llm_result {
+  "Generated text content"
+  content: String
+  "Model that generated the response"
+  model: String
+  "Reason generation stopped: stop, tool_use, or length"
+  finish_reason: String
+  "Number of input tokens"
+  prompt_tokens: Int
+  "Number of generated tokens"
+  completion_tokens: Int
+  "Total tokens (prompt + completion)"
+  total_tokens: Int
+  "Provider name: openai, anthropic, or gemini"
+  provider: String
+  "Request latency in milliseconds"
+  latency_ms: Int
+  """
+  Tool invocations as JSON string. Normalized across all providers.
+  Format: [{"id":"call_123","name":"tool_name","arguments":{"key":"value"}}]
+  Empty string when no tools were called.
+  """
+  tool_calls: String
+}
+
+"Registered AI model data source info"
+type model_source_info {
+  "Data source name"
+  name: String
+  "Model type: llm or embedding"
+  type: String
+  "Provider: openai, anthropic, or gemini"
+  provider: String
+  "Model identifier"
+  model: String
+}

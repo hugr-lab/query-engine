@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/types"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
+	"github.com/hugr-lab/query-engine/types"
 )
 
-// Embedder is an optional dependency for computing embedding vectors.
-// Defined in this package to avoid import cycles.
-// The engine wires it to an EmbeddingSource at init time.
+// Embedder creates embedding vectors. Implemented by embedding.Source.
 type Embedder interface {
-	CreateEmbedding(ctx context.Context, input string) (types.Vector, error)
-	CreateEmbeddings(ctx context.Context, inputs []string) ([]types.Vector, error)
+	CreateEmbedding(ctx context.Context, input string) (*sources.EmbeddingResult, error)
+	CreateEmbeddings(ctx context.Context, inputs []string) (*sources.EmbeddingsResult, error)
 }
 
 // computeEmbeddings computes embedding vectors for a batch of texts.
@@ -22,7 +21,16 @@ func (p *Provider) computeEmbeddings(ctx context.Context, texts []string) ([]typ
 	if p.embedder == nil || p.vecSize == 0 || len(texts) == 0 {
 		return make([]types.Vector, len(texts)), nil
 	}
-	return p.embedder.CreateEmbeddings(ctx, texts)
+	result, err := p.embedder.CreateEmbeddings(ctx, texts)
+	if err != nil {
+		return nil, err
+	}
+	// Convert [][]float64 to []types.Vector (same underlying type).
+	vecs := make([]types.Vector, len(result.Vectors))
+	for i, v := range result.Vectors {
+		vecs[i] = types.Vector(v)
+	}
+	return vecs, nil
 }
 
 // EmbeddingText returns the best available text for embedding generation.

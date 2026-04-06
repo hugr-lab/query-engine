@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/airport"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/duckdb"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/ducklake"
@@ -18,6 +17,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/http"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/hugrapp"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/iceberg"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/llm"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mssql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/postgres"
@@ -77,6 +77,9 @@ func (s *Service) SetSkipCatalogOps(skip bool) {
 func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource) error {
 	if sq, ok := source.(RuntimeSourceQuerier); ok {
 		sq.QueryEngineSetup(s.qe)
+	}
+	if du, ok := source.(RuntimeSourceDataSourceUser); ok {
+		du.DataSourceServiceSetup(s)
 	}
 
 	err := source.Attach(ctx, s.db)
@@ -277,6 +280,23 @@ func (s *Service) DataSource(name string) (Source, error) {
 	return ds, nil
 }
 
+// Resolve implements DataSourceResolver.
+func (s *Service) Resolve(name string) (Source, error) {
+	return s.DataSource(name)
+}
+
+// ResolveAll implements DataSourceResolver — returns all registered data sources.
+func (s *Service) ResolveAll() []Source {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]Source, 0, len(s.dataSources))
+	for _, ds := range s.dataSources {
+		result = append(result, ds)
+	}
+	return result
+}
+
 func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Source, error) {
 	switch ds.Type {
 	case Postgres:
@@ -301,6 +321,12 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 		return iceberg.New(ds, attached)
 	case HugrApp:
 		return hugrapp.New(ds, attached)
+	case LLMOpenAI:
+		return llm.NewOpenAI(ds, attached)
+	case LLMAnthropic:
+		return llm.NewAnthropic(ds, attached)
+	case LLMGemini:
+		return llm.NewGemini(ds, attached)
 	default:
 		return nil, ErrUnknownDataSourceType
 	}
@@ -352,7 +378,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 	return data, nil
 }
 
-func (s *Service) CreateEmbedding(ctx context.Context, source, input string) (ctypes.Vector, error) {
+func (s *Service) CreateEmbedding(ctx context.Context, source, input string) (*EmbeddingResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ds, ok := s.dataSources[source]
@@ -369,7 +395,7 @@ func (s *Service) CreateEmbedding(ctx context.Context, source, input string) (ct
 	return embeddingDs.CreateEmbedding(ctx, input)
 }
 
-func (s *Service) CreateEmbeddings(ctx context.Context, source string, input []string) ([]ctypes.Vector, error) {
+func (s *Service) CreateEmbeddings(ctx context.Context, source string, input []string) (*EmbeddingsResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ds, ok := s.dataSources[source]

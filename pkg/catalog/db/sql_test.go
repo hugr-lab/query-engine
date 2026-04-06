@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 func TestSqlLiteral(t *testing.T) {

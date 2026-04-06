@@ -17,6 +17,7 @@ import (
 	ducklakert "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/ducklake"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/gis"
 	metainfo "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/meta-info"
+	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/models"
 	"github.com/hugr-lab/query-engine/types"
 )
 
@@ -57,6 +58,10 @@ func (s *Service) attachRuntimeSources(ctx context.Context, readonly bool) error
 	if err != nil {
 		return fmt.Errorf("attach db management source: %w", err)
 	}
+	err = s.ds.AttachRuntimeSource(ctx, models.New())
+	if err != nil {
+		return fmt.Errorf("attach models source: %w", err)
+	}
 
 	// Attach cluster source if cluster mode is enabled.
 	if s.config.Cluster.Enabled {
@@ -79,6 +84,7 @@ func (s *Service) attachRuntimeSourcesReadonly(ctx context.Context) error {
 		metainfo.New(s),
 		authrt.New(),
 		gis.New(),
+		models.New(),
 	}
 
 	// Attach cluster source if cluster mode is enabled (workers too).

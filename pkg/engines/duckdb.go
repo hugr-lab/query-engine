@@ -158,7 +158,7 @@ func (e *DuckDB) SQLValue(v any) (string, error) {
 	case h3.Cell:
 		// Convert H3 cell to UBIGINT
 		return fmt.Sprintf("h3_string_to_h3('%s')", v.String()), nil
-	case ctypes.Vector:
+	case types.Vector:
 		if v == nil {
 			return "NULL", nil
 		}
@@ -1012,7 +1012,7 @@ func jsonStructRecursive(field *ast.Field, useNativeTypes bool, byFieldSource bo
 
 var _ EngineVectorDistanceCalculator = (*DuckDB)(nil)
 
-func (e *DuckDB) VectorDistanceSQL(sql, distMetric string, vector ctypes.Vector, params []any) (string, []any, error) {
+func (e *DuckDB) VectorDistanceSQL(sql, distMetric string, vector types.Vector, params []any) (string, []any, error) {
 	val := "$" + strconv.Itoa(len(params)+1)
 	params = append(params, vector)
 	switch distMetric {

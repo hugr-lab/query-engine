@@ -5,7 +5,6 @@ import (
 	"time"
 
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
-	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/types"
@@ -25,6 +24,10 @@ const (
 	DuckLake types.DataSourceType = "ducklake"
 	Iceberg  types.DataSourceType = "iceberg"
 	HugrApp  types.DataSourceType = "hugr-app"
+
+	LLMOpenAI    types.DataSourceType = "llm-openai"
+	LLMAnthropic types.DataSourceType = "llm-anthropic"
+	LLMGemini    types.DataSourceType = "llm-gemini"
 )
 
 type Source interface {
@@ -90,6 +93,43 @@ type RuntimeSourceQuerier interface {
 }
 
 type EmbeddingSource interface {
-	CreateEmbedding(ctx context.Context, input string) (ctypes.Vector, error)
-	CreateEmbeddings(ctx context.Context, input []string) ([]ctypes.Vector, error)
+	ModelSource
+	CreateEmbedding(ctx context.Context, input string) (*types.EmbeddingResult, error)
+	CreateEmbeddings(ctx context.Context, input []string) (*types.EmbeddingsResult, error)
+}
+
+// ModelSource identifies a data source as an AI model.
+type ModelSource interface {
+	ModelInfo() types.ModelInfo
+}
+
+// LLMSource provides text generation capabilities.
+type LLMSource interface {
+	ModelSource
+	CreateCompletion(ctx context.Context, prompt string, opts types.LLMOptions) (*types.LLMResult, error)
+	CreateChatCompletion(ctx context.Context, messages []types.LLMMessage, opts types.LLMOptions) (*types.LLMResult, error)
+}
+
+// Type aliases for convenience — re-export from types sub-module.
+type (
+	ModelInfo        = types.ModelInfo
+	EmbeddingResult  = types.EmbeddingResult
+	EmbeddingsResult = types.EmbeddingsResult
+	LLMMessage       = types.LLMMessage
+	LLMTool          = types.LLMTool
+	LLMToolCall      = types.LLMToolCall
+	LLMOptions       = types.LLMOptions
+	LLMResult        = types.LLMResult
+)
+
+// DataSourceResolver resolves registered data sources by name.
+type DataSourceResolver interface {
+	Resolve(name string) (Source, error)
+	ResolveAll() []Source
+}
+
+// RuntimeSourceDataSourceUser is implemented by runtime sources that need
+// access to registered data sources. Follows RuntimeSourceQuerier pattern.
+type RuntimeSourceDataSourceUser interface {
+	DataSourceServiceSetup(resolver DataSourceResolver)
 }

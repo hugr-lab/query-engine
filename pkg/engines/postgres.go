@@ -151,7 +151,7 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 			valueStrings = append(valueStrings, s)
 		}
 		return fmt.Sprintf("ARRAY[%s]", strings.Join(valueStrings, ",")), nil
-	case ctypes.Vector:
+	case types.Vector:
 		if v == nil {
 			return "NULL", nil
 		}
@@ -1228,7 +1228,7 @@ func extractPGJsonFieldByPath(path string, asText bool) string {
 
 var _ EngineVectorDistanceCalculator = (*Postgres)(nil)
 
-func (e *Postgres) VectorDistanceSQL(sql, distMetric string, vector ctypes.Vector, params []any) (string, []any, error) {
+func (e *Postgres) VectorDistanceSQL(sql, distMetric string, vector types.Vector, params []any) (string, []any, error) {
 	val := "$" + strconv.Itoa(len(params)+1)
 	params = append(params, vector)
 	switch distMetric {

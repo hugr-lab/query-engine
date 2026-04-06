@@ -73,7 +73,7 @@ type EngineTypeCaster interface {
 }
 
 type EngineVectorDistanceCalculator interface {
-	VectorDistanceSQL(sql, distMetric string, vector ctypes.Vector, params []any) (string, []any, error)
+	VectorDistanceSQL(sql, distMetric string, vector types.Vector, params []any) (string, []any, error)
 }
 
 type EngineKeyWordExtender interface {

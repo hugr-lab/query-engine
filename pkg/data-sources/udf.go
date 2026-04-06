@@ -8,9 +8,9 @@ import (
 	"fmt"
 
 	"github.com/duckdb/duckdb-go/v2"
-	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 func (s *Service) RegisterUDF(ctx context.Context) error {
@@ -69,10 +69,14 @@ func (s *Service) RegisterUDF(ctx context.Context) error {
 		input  string // input text
 	}
 
-	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[embeddingArgs, ctypes.Vector]{
+	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[embeddingArgs, types.Vector]{
 		Name: "create_embedding",
-		Execute: func(ctx context.Context, args embeddingArgs) (ctypes.Vector, error) {
-			return s.CreateEmbedding(ctx, args.source, args.input)
+		Execute: func(ctx context.Context, args embeddingArgs) (types.Vector, error) {
+			result, err := s.CreateEmbedding(ctx, args.source, args.input)
+			if err != nil {
+				return nil, err
+			}
+			return result.Vector, nil
 		},
 		InputTypes: []duckdb.TypeInfo{
 			runtime.DuckDBTypeInfoByNameMust("VARCHAR"), // source (catalog)
@@ -87,7 +91,7 @@ func (s *Service) RegisterUDF(ctx context.Context) error {
 				input:  args[1].(string), // input text
 			}, nil
 		},
-		ConvertOutput: func(out ctypes.Vector) (any, error) {
+		ConvertOutput: func(out types.Vector) (any, error) {
 			return out, nil
 		},
 		OutputType: runtime.DuckDBListInfoByNameMust("FLOAT"),

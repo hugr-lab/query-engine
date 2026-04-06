@@ -11,7 +11,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/db/schema"
-	"github.com/hugr-lab/query-engine/pkg/catalog/types"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 // Update persists compiled schema changes to the database.

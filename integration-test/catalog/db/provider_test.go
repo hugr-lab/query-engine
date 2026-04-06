@@ -17,7 +17,6 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	dbprovider "github.com/hugr-lab/query-engine/pkg/catalog/db"
-	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/embedding"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
@@ -2279,29 +2278,29 @@ func (s *testExtSource) Extensions(_ context.Context) iter.Seq[*ast.Definition] 
 // ─── Mock embedder ──────────────────────────────────────────────────────────
 
 type mockEmbedder struct {
-	vec       ctypes.Vector
+	vec       types.Vector
 	inputs    []string
 	callCount int
 }
 
-func (m *mockEmbedder) CreateEmbedding(_ context.Context, input string) (ctypes.Vector, error) {
+func (m *mockEmbedder) CreateEmbedding(_ context.Context, input string) (*sources.EmbeddingResult, error) {
 	m.inputs = append(m.inputs, input)
 	m.callCount++
-	return m.vec, nil
+	return &sources.EmbeddingResult{Vector: m.vec}, nil
 }
 
-func (m *mockEmbedder) CreateEmbeddings(_ context.Context, inputs []string) ([]ctypes.Vector, error) {
-	vecs := make([]ctypes.Vector, len(inputs))
+func (m *mockEmbedder) CreateEmbeddings(_ context.Context, inputs []string) (*sources.EmbeddingsResult, error) {
+	vecs := make([]types.Vector, len(inputs))
 	for i, input := range inputs {
 		m.inputs = append(m.inputs, input)
 		m.callCount++
 		vecs[i] = m.vec
 	}
-	return vecs, nil
+	return &sources.EmbeddingsResult{Vectors: vecs}, nil
 }
 
-func makeVector(size int) ctypes.Vector {
-	v := make(ctypes.Vector, size)
+func makeVector(size int) types.Vector {
+	v := make(types.Vector, size)
 	for i := range v {
 		v[i] = float64(i) * 0.01
 	}
@@ -2334,9 +2333,9 @@ func TestDuckDB_RealEmbedder(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify embedding source works directly.
-	vec, err := src.CreateEmbedding(ctx, "hello world")
+	res, err := src.CreateEmbedding(ctx, "hello world")
 	require.NoError(t, err)
-	assert.Equal(t, vecSize, len(vec), "expected %d-dim vector", vecSize)
+	assert.Equal(t, vecSize, len(res.Vector), "expected %d-dim vector", vecSize)
 
 	// Create DB provider with real embedder.
 	p, err := dbprovider.New(ctx, pool, dbprovider.Config{

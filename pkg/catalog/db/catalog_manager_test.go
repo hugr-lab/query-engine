@@ -1403,10 +1403,10 @@ func TestRealEmbedder_CatalogManager(t *testing.T) {
 	require.NoError(t, src.Attach(ctx, pool))
 
 	// Verify embedding source works directly.
-	vec, err := src.CreateEmbedding(ctx, "hello world")
+	res, err := src.CreateEmbedding(ctx, "hello world")
 	require.NoError(t, err)
-	assert.Equal(t, vecSize, len(vec), "expected %d-dim vector", vecSize)
-	t.Logf("embedding dim=%d, first 3 values: %v", len(vec), vec[:3])
+	assert.Equal(t, vecSize, len(res.Vector), "expected %d-dim vector", vecSize)
+	t.Logf("embedding dim=%d, first 3 values: %v", len(res.Vector), res.Vector[:3])
 
 	// Create compiler + provider (same as engine Init steps 4-5).
 	comp := compiler.New(compiler.GlobalRules()...)
