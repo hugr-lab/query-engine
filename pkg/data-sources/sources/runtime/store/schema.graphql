@@ -60,4 +60,52 @@ extend type MutationFunction {
     ttl: Int!
   ): OperationResult
     @function(name: "core_store_expire")
+
+  "Publish a message to a Pub/Sub channel"
+  publish(
+    "Name of the store data source"
+    store: String!
+    "Channel name"
+    channel: String!
+    "Message payload"
+    message: String!
+  ): OperationResult
+    @function(name: "core_store_publish")
+
+  "Configure Redis keyspace notification events (default KEA = all events)"
+  configure_keyspace_events(
+    "Name of the store data source"
+    store: String!
+    "Event types string (e.g. KEA, Kg, Ex). Default KEA"
+    events: String = "KEA"
+  ): OperationResult
+    @function(name: "core_store_configure_keyspace_events")
+}
+
+extend type Subscription {
+  "Subscribe to messages on a Pub/Sub channel"
+  subscribe(
+    "Name of the store data source"
+    store: String!
+    "Channel name"
+    channel: String!
+  ): store_message
+
+  "Watch for keyspace events matching a glob pattern"
+  watch(
+    "Name of the store data source"
+    store: String!
+    "Keyspace pattern (e.g. __keyevent@0__:*)"
+    pattern: String!
+  ): store_key_event
+}
+
+type store_message {
+  channel: String
+  message: String
+}
+
+type store_key_event {
+  key: String
+  event: String
 }

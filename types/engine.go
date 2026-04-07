@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
@@ -13,11 +14,28 @@ type validateOnlyKeyType struct{}
 
 type Querier interface {
 	Query(ctx context.Context, query string, vars map[string]any) (*Response, error)
+	Subscribe(ctx context.Context, query string, vars map[string]any) (*Subscription, error)
 	RegisterDataSource(ctx context.Context, ds DataSource) error
 	LoadDataSource(ctx context.Context, name string) error
 	UnloadDataSource(ctx context.Context, name string, opts ...UnloadOpt) error
 	DataSourceStatus(ctx context.Context, name string) (string, error)
 	DescribeDataSource(ctx context.Context, name string, self bool) (string, error)
+}
+
+// SubscriptionEvent is a data event in the subscription stream.
+// One event per data path (query) or per native source event batch.
+// Metadata (geometry, table info) is in Reader's Arrow schema metadata.
+type SubscriptionEvent struct {
+	Path   string             // Data object path (e.g. "core.data_sources"). Empty for native subscriptions.
+	Reader array.RecordReader // Data reader. Transport decides how to consume: graphql-ws reads all → JSON next; IPC streams batches.
+}
+
+// Subscription is the result of Querier.Subscribe.
+// Events channel produces SubscriptionEvents until closed.
+// Errors are reported via Reader.Err() after Reader.Next() returns false.
+type Subscription struct {
+	Events <-chan SubscriptionEvent
+	Cancel func()
 }
 
 type UnloadOpt func(*UnloadOpts)

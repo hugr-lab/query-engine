@@ -234,9 +234,12 @@ func (p *Provider) MutationType(ctx context.Context) *ast.Definition {
 	return p.mutationType
 }
 
-// SubscriptionType returns nil (subscriptions not supported).
-func (p *Provider) SubscriptionType(_ context.Context) *ast.Definition {
-	return nil
+// SubscriptionType returns the Subscription root type definition.
+func (p *Provider) SubscriptionType(ctx context.Context) *ast.Definition {
+	p.ensureRoots(ctx)
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.subscriptionType
 }
 
 // PossibleTypes returns implementations of an interface or union type.
@@ -370,6 +373,7 @@ func (p *Provider) ensureRoots(ctx context.Context) {
 	// potentially slow DB queries.
 	q := p.ForName(ctx, base.QueryBaseName)
 	m := p.ForName(ctx, base.MutationBaseName)
+	s := p.ForName(ctx, base.SubscriptionBaseName)
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -378,6 +382,7 @@ func (p *Provider) ensureRoots(ctx context.Context) {
 	}
 	p.queryType = q
 	p.mutationType = m
+	p.subscriptionType = s
 	p.rootsLoaded = true
 }
 

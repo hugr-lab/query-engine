@@ -10,6 +10,7 @@ const (
 	ModuleMutation
 	ModuleFunction
 	ModuleMutationFunction
+	ModuleSubscription
 )
 
 // ModuleRoot holds extracted module information from a type definition.
@@ -35,6 +36,8 @@ func ModuleRootInfo(def *ast.Definition) *ModuleRoot {
 			return &ModuleRoot{Type: ModuleFunction}
 		case FunctionMutationTypeName:
 			return &ModuleRoot{Type: ModuleMutationFunction}
+		case SubscriptionBaseName:
+			return &ModuleRoot{Type: ModuleSubscription}
 		default:
 			return nil
 		}
@@ -53,6 +56,8 @@ func ModuleRootInfo(def *ast.Definition) *ModuleRoot {
 			module.Type = ModuleFunction
 		case "MUT_FUNCTION":
 			module.Type = ModuleMutationFunction
+		case "SUBSCRIPTION":
+			module.Type = ModuleSubscription
 		}
 	}
 	return module

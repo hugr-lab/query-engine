@@ -472,6 +472,7 @@ enum ModuleObjectType @system {
   MUTATION
   MUT_FUNCTION
   QUERY
+  SUBSCRIPTION
 }
 type Mutation @system {
   delete_Airport(filter: Airport_filter): OperationResult @mutation(name: "Airport", type: DELETE, data_input: "") @catalog(name: "test", engine: "duckdb")
@@ -645,6 +646,22 @@ enum StringMeasurementAggregation @system {
 type StringSubAggregation @system {
   count: BigIntAggregation
   string_agg: StringAggregation
+}
+type Subscription @system {
+  """
+  Stream results of a regular query. If interval is set, re-executes periodically.
+  """
+  query(
+    """
+    Re-execution interval. If unset, query executes once and streams results.
+    """
+    interval: Interval
+
+    """
+    Max number of executions. 0 = unlimited (until client cancels).
+    """
+    count: Int = 0
+  ): Query @system
 }
 """
 The `Time` scalar type represents a time-of-day value encoded as an ISO 8601 time string (e.g. "15:04:05").

@@ -412,6 +412,11 @@ func (c *Client) ValidateQueryJSON(ctx context.Context, req types.JQRequest) err
 	return nil
 }
 
+func (c *Client) Subscribe(ctx context.Context, query string, vars map[string]any) (*types.Subscription, error) {
+	// TODO: implement IPC WebSocket subscription in US6 (T049)
+	return nil, errors.New("subscriptions not yet implemented in client")
+}
+
 func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error) {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(map[string]any{

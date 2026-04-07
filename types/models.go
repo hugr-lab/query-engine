@@ -54,6 +54,17 @@ type LLMOptions struct {
 	ToolChoice  string    `json:"tool_choice,omitempty"`
 }
 
+// LLMStreamEvent is a single event from a streaming LLM completion.
+type LLMStreamEvent struct {
+	Type             string `json:"type"`              // content_delta, tool_use, finish, error
+	Content          string `json:"content"`           // Token content (content_delta)
+	Model            string `json:"model"`             // Model identifier
+	FinishReason     string `json:"finish_reason"`     // Why generation stopped (finish)
+	ToolCalls        string `json:"tool_calls"`        // JSON-encoded tool calls (tool_use)
+	PromptTokens     int    `json:"prompt_tokens"`     // Input tokens (finish)
+	CompletionTokens int    `json:"completion_tokens"` // Output tokens (finish)
+}
+
 // LLMResult is the normalized response from any LLM provider.
 type LLMResult struct {
 	Content          string        `json:"content"`

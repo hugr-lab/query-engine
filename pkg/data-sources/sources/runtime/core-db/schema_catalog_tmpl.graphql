@@ -231,6 +231,15 @@ type modules @view(name: "_schema_modules")
     references_query: "module_mut_functions"
     references_description: "Module mutation function type"
   )
+  subscription_root: String @field_references(
+    name: "modules_subscription_ref"
+    field: "name"
+    references_name: "types"
+    query: "subscription"
+    description: "Root subscription type"
+    references_query: "module_subscriptions"
+    references_description: "Module subscription type"
+  )
   is_summarized: Boolean!
   vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
@@ -361,6 +370,11 @@ type module_intro @view(
   SELECT m.name, 'mut_function', qt.name, qft.name, qft.description, qft.hugr_type, qft.catalog
   FROM [_schema_modules] AS m
       INNER JOIN [_schema_types] AS qt ON m.mut_function_root = qt.name
+      INNER JOIN [_schema_fields] AS qft ON qt.name = qft.type_name
+  UNION ALL
+  SELECT m.name, 'subscription', qt.name, qft.name, qft.description, qft.hugr_type, qft.catalog
+  FROM [_schema_modules] AS m
+      INNER JOIN [_schema_types] AS qt ON m.subscription_root = qt.name
       INNER JOIN [_schema_fields] AS qft ON qt.name = qft.type_name
   """
   )

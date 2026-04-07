@@ -14,6 +14,7 @@ const (
 	QueryTypeFunction
 	QueryTypeFunctionMutation
 	QueryTypeH3Aggregation
+	QueryTypeSubscription
 )
 
 // QueryRequest is a classified entry from an operation's selection set.

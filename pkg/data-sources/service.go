@@ -35,6 +35,10 @@ type Service struct {
 	mu          sync.RWMutex
 	dataSources map[string]Source
 
+	// runtimeSources tracks attached runtime sources by name for subscription
+	// and other lookups that need the source instance (e.g. SubscriptionSource).
+	runtimeSources map[string]RuntimeSource
+
 	db       *db.Pool
 	qe       types.Querier
 	catalogs catalog.Manager
@@ -61,6 +65,7 @@ func New(qe types.Querier, db *db.Pool, cs catalog.Manager, embederSettings Embe
 	}
 	return &Service{
 		dataSources:      make(map[string]Source),
+		runtimeSources:   make(map[string]RuntimeSource),
 		catalogs:         cs,
 		db:               db,
 		qe:               qe,
@@ -87,6 +92,11 @@ func (s *Service) AttachRuntimeSource(ctx context.Context, source RuntimeSource)
 	if err != nil && !errors.Is(err, ErrDataSourceAttached) {
 		return err
 	}
+
+	// Track runtime source for subscription and other lookups.
+	s.mu.Lock()
+	s.runtimeSources[source.Name()] = source
+	s.mu.Unlock()
 
 	cat, err := source.Catalog(ctx)
 	if err != nil {
@@ -289,6 +299,14 @@ func (s *Service) DataSource(name string) (Source, error) {
 	}
 
 	return ds, nil
+}
+
+// RuntimeSourceByName returns a runtime source by name.
+func (s *Service) RuntimeSourceByName(name string) (RuntimeSource, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rs, ok := s.runtimeSources[name]
+	return rs, ok
 }
 
 // Resolve implements DataSourceResolver.

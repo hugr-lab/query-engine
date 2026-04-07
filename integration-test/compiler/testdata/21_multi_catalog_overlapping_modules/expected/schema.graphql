@@ -613,6 +613,7 @@ enum ModuleObjectType @system {
   MUTATION
   MUT_FUNCTION
   QUERY
+  SUBSCRIPTION
 }
 type Mutation @system {
   crm: _module_crm_mutation @module_catalog(name: "pg_crm") @module_catalog(name: "support")
@@ -737,6 +738,22 @@ enum StringMeasurementAggregation @system {
 type StringSubAggregation @system {
   count: BigIntAggregation
   string_agg: StringAggregation
+}
+type Subscription @system {
+  """
+  Stream results of a regular query. If interval is set, re-executes periodically.
+  """
+  query(
+    """
+    Re-execution interval. If unset, query executes once and streams results.
+    """
+    interval: Interval
+
+    """
+    Max number of executions. 0 = unlimited (until client cancels).
+    """
+    count: Int = 0
+  ): Query @system
 }
 type Ticket @table(name: "tickets") @module(name: "crm") @catalog(name: "support", engine: "duckdb") @filter_input(name: "Ticket_filter") @data_input(name: "Ticket_mut_input_data") @data_input(name: "Ticket_mut_data") @query(name: "Ticket", type: SELECT) @query(name: "Ticket_by_pk", type: SELECT_ONE) @mutation(name: "insert_Ticket", type: INSERT, data_input: "Ticket_mut_input_data") @mutation(name: "update_Ticket", type: UPDATE, data_input: "Ticket_mut_data") @mutation(name: "delete_Ticket", type: DELETE, data_input: "") @query(name: "Ticket_aggregation", type: AGGREGATE) @query(name: "Ticket_bucket_aggregation", type: AGGREGATE_BUCKET) {
   _join(fields: [String!]!): _join

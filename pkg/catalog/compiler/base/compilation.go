@@ -50,12 +50,14 @@ type CompilationContext interface {
 	// Field collectors for ASSEMBLE phase
 	RegisterQueryFields(objectName string, fields []*ast.FieldDefinition)
 	RegisterMutationFields(objectName string, fields []*ast.FieldDefinition)
+	RegisterSubscriptionFields(objectName string, fields []*ast.FieldDefinition)
 	RegisterFunctionFields(fields []*ast.FieldDefinition)
 	RegisterFunctionMutationFields(fields []*ast.FieldDefinition)
 
 	// Field collector getters for ASSEMBLE phase
 	QueryFields() map[string][]*ast.FieldDefinition
 	MutationFields() map[string][]*ast.FieldDefinition
+	SubscriptionFields() map[string][]*ast.FieldDefinition
 	FunctionFields() []*ast.FieldDefinition
 	FunctionMutationFields() []*ast.FieldDefinition
 

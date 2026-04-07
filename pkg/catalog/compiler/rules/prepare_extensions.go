@@ -41,9 +41,14 @@ func (r *InternalExtensionMerger) ProcessAll(ctx base.CompilationContext) error 
 			continue
 		}
 
-		// Function/MutationFunction: always promote to source so FunctionRule
-		// can process them. These are well-known system types that exist even
-		// when no provider is available (single-catalog compilation).
+		// Function/MutationFunction/Subscription: always process regardless of
+		// provider availability. These are well-known system types.
+		// Function/MutationFunction: promote to source so FunctionRule can process.
+		// Subscription: add as extension so ModuleAssembler can process.
+		if ext.Name == "Subscription" {
+			ctx.AddExtension(filterStubFields(ext))
+			continue
+		}
 		if ext.Name == "Function" || ext.Name == "MutationFunction" {
 			promoted := &ast.Definition{
 				Kind:        ext.Kind,

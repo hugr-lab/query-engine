@@ -14,6 +14,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/types"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 //go:embed schema.graphql
@@ -65,6 +66,50 @@ func (s *Source) resolveStore(name string) (sources.StoreSource, error) {
 		return nil, fmt.Errorf("data source %q is not a store source", name)
 	}
 	return st, nil
+}
+
+func (s *Source) resolvePubSubStore(name string) (sources.PubSubStoreSource, error) {
+	ds, err := s.resolver.Resolve(name)
+	if err != nil {
+		return nil, fmt.Errorf("store %q not found: %w", name, err)
+	}
+	ps, ok := ds.(sources.PubSubStoreSource)
+	if !ok {
+		return nil, fmt.Errorf("data source %q does not support pub/sub", name)
+	}
+	return ps, nil
+}
+
+// Subscribe implements sources.SubscriptionSource.
+func (s *Source) Subscribe(ctx context.Context, field *ast.Field, vars map[string]any) (*sources.SubscriptionResult, error) {
+	args := field.ArgumentMap(vars)
+
+	storeName, _ := args["store"].(string)
+	if storeName == "" {
+		return nil, fmt.Errorf("store argument is required")
+	}
+
+	ps, err := s.resolvePubSubStore(storeName)
+	if err != nil {
+		return nil, err
+	}
+
+	switch field.Name {
+	case "subscribe":
+		channel, _ := args["channel"].(string)
+		if channel == "" {
+			return nil, fmt.Errorf("channel argument is required")
+		}
+		return ps.Subscribe(ctx, channel)
+	case "watch":
+		pattern, _ := args["pattern"].(string)
+		if pattern == "" {
+			return nil, fmt.Errorf("pattern argument is required")
+		}
+		return ps.PSubscribe(ctx, pattern)
+	default:
+		return nil, fmt.Errorf("unknown subscription field %q", field.Name)
+	}
 }
 
 func (s *Source) registerUDFs(ctx context.Context) error {
@@ -276,7 +321,85 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 		return fmt.Errorf("register core_store_keys: %w", err)
 	}
 
+	// core_store_publish(store, channel, message) → OperationResult
+	type publishArgs struct {
+		store   string
+		channel string
+		message string
+	}
+	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[publishArgs, *types.OperationResult]{
+		Name: "core_store_publish",
+		Execute: func(ctx context.Context, args publishArgs) (*types.OperationResult, error) {
+			ps, err := s.resolvePubSubStore(args.store)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			if err := ps.Publish(ctx, args.channel, args.message); err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result("OK", 1, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) (publishArgs, error) {
+			return publishArgs{store: args[0].(string), channel: args[1].(string), message: args[2].(string)}, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) {
+			return out.ToDuckdb(), nil
+		},
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType: db.DuckDBOperationResult(),
+	})
+	if err != nil {
+		return fmt.Errorf("register core_store_publish: %w", err)
+	}
+
+	// core_store_configure_keyspace_events(store, events) → OperationResult
+	type configureKEArgs struct {
+		store  string
+		events string
+	}
+	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[configureKEArgs, *types.OperationResult]{
+		Name: "core_store_configure_keyspace_events",
+		Execute: func(ctx context.Context, args configureKEArgs) (*types.OperationResult, error) {
+			ps, err := s.resolvePubSubStore(args.store)
+			if err != nil {
+				return types.ErrResult(err), nil
+			}
+			if err := ps.ConfigSet(ctx, "notify-keyspace-events", args.events); err != nil {
+				return types.ErrResult(err), nil
+			}
+			return types.Result("OK", 1, 0), nil
+		},
+		ConvertInput: func(args []driver.Value) (configureKEArgs, error) {
+			a := configureKEArgs{store: args[0].(string)}
+			if args[1] != nil {
+				a.events = args[1].(string)
+			} else {
+				a.events = "KEA"
+			}
+			return a, nil
+		},
+		ConvertOutput: func(out *types.OperationResult) (any, error) {
+			return out.ToDuckdb(), nil
+		},
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType:            db.DuckDBOperationResult(),
+		IsSpecialNullHandling: true,
+	})
+	if err != nil {
+		return fmt.Errorf("register core_store_configure_keyspace_events: %w", err)
+	}
+
 	return nil
 }
 
-var _ sources.RuntimeSourceDataSourceUser = (*Source)(nil)
+var (
+	_ sources.RuntimeSourceDataSourceUser = (*Source)(nil)
+	_ sources.SubscriptionSource          = (*Source)(nil)
+)

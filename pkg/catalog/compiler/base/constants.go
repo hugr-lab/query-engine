@@ -40,6 +40,7 @@ const (
 	FunctionCallTableJoinDirectiveName     = "table_function_call_join"
 	JoinDirectiveName                      = "join"
 	ReferencesDirectiveName                = "references"
+	SubscriptionDirectiveName              = "subscription"
 	FieldReferencesDirectiveName           = "field_references"
 	ReferencesQueryDirectiveName           = "references_query"
 	FieldAggregationQueryDirectiveName     = "aggregation_query"
@@ -115,6 +116,7 @@ const (
 	FunctionMutationTypeName = "MutationFunction"
 	QueryBaseName            = "Query"
 	MutationBaseName         = "Mutation"
+	SubscriptionBaseName     = "Subscription"
 	OperationResultTypeName  = "OperationResult"
 )
 

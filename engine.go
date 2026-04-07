@@ -391,6 +391,7 @@ func (s *Service) endpoints() {
 	s.router.Handle("/query", mw(http.HandlerFunc(s.queryHandler)))
 	s.router.Handle("/jq-query", mw(http.HandlerFunc(s.jqHandler)))
 	s.router.Handle("/ipc", mw(http.HandlerFunc(s.ipcHandler)))
+	s.router.Handle("/subscribe", mw(http.HandlerFunc(s.subscribeHandler)))
 
 	// s.router.Handle("/schema", mw(http.HandlerFunc(s.schemaHandler))) // disabled: schemaHandler blocked on gqlparser requiring *ast.Schema
 
