@@ -63,3 +63,12 @@ type MutableProvider interface {
 	DropCatalog(ctx context.Context, name string, cascade bool) error
 	Update(ctx context.Context, changes DefinitionsSource) error
 }
+
+// SuspendableProvider is optionally implemented by providers that support
+// suspending/resuming catalogs without physically removing schema data.
+// The DB provider sets a suspended flag and invalidates the cache;
+// the static provider falls back to DropCatalog.
+type SuspendableProvider interface {
+	SuspendCatalog(ctx context.Context, name string) error
+	ResumeCatalog(ctx context.Context, name string) error
+}

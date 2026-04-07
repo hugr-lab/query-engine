@@ -57,7 +57,8 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 
 	_, err = s.DataSource(name)
 	if err == nil {
-		err = s.UnloadDataSource(ctx, name, false)
+		// Hard unload on reload — schema may have changed (DDL, self-defined introspection).
+		err = s.UnloadDataSource(ctx, name, true)
 		if err != nil && !errors.Is(err, errAlreadyUnloaded) {
 			return err
 		}
