@@ -54,8 +54,28 @@ var (
 func (c *memoryCatalog) AddCatalog(ctx context.Context, name string, catalog Catalog) (err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if reg, ok := c.catalogs[name]; ok && !reg.suspended {
+
+	reg, exists := c.catalogs[name]
+	if exists && !reg.suspended {
 		return ErrCatalogAlreadyExists
+	}
+
+	// If suspended and provider supports resume — just flip the flag,
+	// schema data is already in the DB.
+	if exists && reg.suspended {
+		if sp, ok := c.provider.(base.SuspendableProvider); ok {
+			if err := sp.ResumeCatalog(ctx, name); err != nil {
+				return err
+			}
+			reg.suspended = false
+			reg.source = catalog
+			version, _ := catalog.Version(ctx)
+			reg.version = version
+			c.catalogs[name] = reg
+			slog.Info("catalog resumed", "catalog", name, "version", version)
+			c.reactivateSuspended(ctx)
+			return nil
+		}
 	}
 
 	deps, err := c.compileAndApply(ctx, name, catalog)
@@ -255,7 +275,9 @@ func (c *memoryCatalog) reactivateSuspended(ctx context.Context) {
 	}
 }
 
-// SuspendCatalog removes a catalog from the active schema without deleting the registration.
+// SuspendCatalog suspends a catalog without deleting the registration.
+// If the provider supports SuspendableProvider, schema data is preserved
+// (only a flag is set). Otherwise falls back to DropCatalog.
 func (c *memoryCatalog) SuspendCatalog(ctx context.Context, name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -267,7 +289,13 @@ func (c *memoryCatalog) SuspendCatalog(ctx context.Context, name string) error {
 		return nil // already suspended
 	}
 	slog.Info("suspending catalog", "catalog", name)
-	_ = c.removeCatalog(ctx, name)
+	if sp, ok := c.provider.(base.SuspendableProvider); ok {
+		if err := sp.SuspendCatalog(ctx, name); err != nil {
+			return err
+		}
+	} else {
+		_ = c.removeCatalog(ctx, name)
+	}
 	reg.suspended = true
 	c.catalogs[name] = reg
 	return nil

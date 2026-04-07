@@ -10,6 +10,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/types"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 )
@@ -317,7 +318,7 @@ func cleanupAppDataSources(ctx context.Context, querier Querier, appName string,
 			continue
 		}
 		slog.Info("cleanup: unloading stale app DS", "app", appName, "ds", d.Name)
-		if err := querier.UnloadDataSource(ctx, d.Name); err != nil {
+		if err := querier.UnloadDataSource(ctx, d.Name, types.WithHardUnload()); err != nil {
 			slog.Warn("cleanup: unload failed", "ds", d.Name, "error", err)
 		}
 	}

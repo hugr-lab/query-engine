@@ -99,8 +99,22 @@ func (p *Provider) AddCatalog(ctx context.Context, name string, catalog sources.
 		return fmt.Errorf("check catalog: %w", err)
 	}
 
-	if rec != nil && !rec.Suspended && rec.Version == version {
-		// Version match (including compile options) — skip compilation, just store source handle.
+	if rec != nil && rec.Version == version {
+		if rec.Suspended {
+			// Suspended with same version — just resume, no recompilation needed.
+			// Schema data is still in the DB, only the suspended flag needs clearing.
+			if err := p.SetCatalogSuspended(ctx, name, false); err != nil {
+				return fmt.Errorf("unsuspend catalog: %w", err)
+			}
+			p.InvalidateCatalog(name)
+			p.mu.Lock()
+			p.catalogs[name] = catalog
+			p.mu.Unlock()
+			slog.Info("catalog resumed (version unchanged)", "catalog", name, "version", version)
+			p.reactivateSuspended(ctx)
+			return nil
+		}
+		// Active with same version — skip compilation, just store source handle.
 		slog.Debug("catalog version unchanged, skipping compilation",
 			"catalog", name, "version", version)
 		p.mu.Lock()
@@ -109,7 +123,7 @@ func (p *Provider) AddCatalog(ctx context.Context, name string, catalog sources.
 		return nil
 	}
 
-	// Need (re)compilation: new, suspended, or version/options mismatch.
+	// Need (re)compilation: new, or version/options mismatch.
 	if rec != nil && !rec.Suspended {
 		// Version mismatch — suspend dependents and drop existing schema objects.
 		slog.Info("catalog version changed, recompiling",
@@ -121,7 +135,9 @@ func (p *Provider) AddCatalog(ctx context.Context, name string, catalog sources.
 			return fmt.Errorf("drop old schema objects: %w", err)
 		}
 	} else if rec != nil && rec.Suspended {
-		// Reactivating a previously suspended catalog — clean stale objects.
+		// Suspended with version mismatch — need to recompile.
+		slog.Info("catalog version changed while suspended, recompiling",
+			"catalog", name, "old_version", rec.Version, "new_version", version)
 		if err := p.dropCatalogSchemaObjects(ctx, name); err != nil {
 			slog.Debug("drop suspended catalog objects (best-effort)",
 				"catalog", name, "error", err)
@@ -350,27 +366,60 @@ func (p *Provider) EnableCatalog(ctx context.Context, name string) error {
 	return nil
 }
 
-// SuspendCatalog removes a catalog from the active schema without deleting the registration.
+// SuspendCatalog marks a catalog as suspended without removing schema data.
+// Types remain in the database but are excluded from queries via the
+// disabled_catalogs CTE (WHERE suspended = true).
 func (p *Provider) SuspendCatalog(ctx context.Context, name string) error {
 	if err := p.SetCatalogSuspended(ctx, name, true); err != nil {
 		return fmt.Errorf("suspend catalog %s: %w", name, err)
 	}
-	// Remove compiled schema objects but keep the catalog record.
-	_ = p.DropCatalog(ctx, name, false)
 	p.InvalidateCatalog(name)
 	slog.Info("catalog suspended", "catalog", name)
 	return nil
 }
 
-// ReactivateCatalog re-compiles and re-applies a previously suspended catalog with a fresh source.
+// ResumeCatalog clears the suspended flag, making types visible again.
+func (p *Provider) ResumeCatalog(ctx context.Context, name string) error {
+	if err := p.SetCatalogSuspended(ctx, name, false); err != nil {
+		return fmt.Errorf("resume catalog %s: %w", name, err)
+	}
+	p.InvalidateCatalog(name)
+	slog.Info("catalog resumed", "catalog", name)
+	return nil
+}
+
+// ReactivateCatalog re-activates a previously suspended catalog.
+// If the version hasn't changed, schema data is still in the DB — just clear the suspended flag.
+// Otherwise, drop old objects and recompile.
 func (p *Provider) ReactivateCatalog(ctx context.Context, name string, source catalog.Catalog) error {
+	srcVersion, _ := source.Version(ctx)
+	compositeVersion := catalogVersionWithOptions(srcVersion, source.CompileOptions())
+
+	rec, _ := p.GetCatalog(ctx, name)
+	if rec != nil && rec.Version == compositeVersion {
+		// Version unchanged — schema data preserved, just resume.
+		if err := p.SetCatalogSuspended(ctx, name, false); err != nil {
+			return fmt.Errorf("unsuspend catalog %s: %w", name, err)
+		}
+		p.InvalidateCatalog(name)
+		p.mu.Lock()
+		p.catalogs[name] = source
+		p.mu.Unlock()
+		slog.Info("catalog reactivated (version unchanged)", "catalog", name, "version", compositeVersion)
+		p.reactivateSuspended(ctx)
+		return nil
+	}
+
+	// Version changed — need to drop old objects and recompile.
+	if err := p.dropCatalogSchemaObjects(ctx, name); err != nil {
+		slog.Debug("drop suspended catalog objects (best-effort)", "catalog", name, "error", err)
+	}
+
 	deps, err := p.compileAndApply(ctx, name, source)
 	if err != nil {
 		return fmt.Errorf("reactivate catalog %s: %w", name, err)
 	}
 
-	srcVersion, _ := source.Version(ctx)
-	compositeVersion := catalogVersionWithOptions(srcVersion, source.CompileOptions())
 	if err := p.SetCatalogVersion(ctx, name, compositeVersion); err != nil {
 		slog.Error("failed to set version during reactivation", "catalog", name, "error", err)
 	}
@@ -382,8 +431,8 @@ func (p *Provider) ReactivateCatalog(ctx context.Context, name string, source ca
 	p.catalogs[name] = source
 	p.mu.Unlock()
 
-	slog.Info("catalog reactivated", "catalog", name, "version", compositeVersion, "dependencies", deps)
-	p.reactivateSuspended(ctx) // try dependents
+	slog.Info("catalog reactivated (recompiled)", "catalog", name, "version", compositeVersion, "dependencies", deps)
+	p.reactivateSuspended(ctx)
 	return nil
 }
 
@@ -456,13 +505,7 @@ func (p *Provider) suspendDependentsVisited(ctx context.Context, name string, vi
 				"catalog", depName, "error", err)
 		}
 
-		// Drop schema objects (preserves catalog record + dependency metadata).
-		if err := p.dropCatalogSchemaObjects(ctx, depName); err != nil {
-			slog.Error("failed to drop dependent schema objects",
-				"catalog", depName, "error", err)
-		}
-
-		// Mark as suspended in DB.
+		// Mark as suspended in DB (schema data preserved for fast resume).
 		if err := p.SetCatalogSuspended(ctx, depName, true); err != nil {
 			slog.Error("failed to mark catalog as suspended",
 				"catalog", depName, "error", err)
@@ -510,6 +553,8 @@ func (p *Provider) reactivateSuspended(ctx context.Context) {
 
 		slog.Info("reactivating suspended catalog", "catalog", rec.Name)
 
+		// Dependent catalogs must be recompiled — their extension fields
+		// reference base types that may have changed.
 		deps, err := p.compileAndApply(ctx, rec.Name, source)
 		if err != nil {
 			slog.Error("failed to reactivate catalog",
@@ -529,7 +574,7 @@ func (p *Provider) reactivateSuspended(ctx context.Context) {
 		}
 
 		p.mu.Lock()
-		p.catalogs[rec.Name] = source // keep source handle after reactivation
+		p.catalogs[rec.Name] = source
 		p.mu.Unlock()
 
 		slog.Info("catalog reactivated",

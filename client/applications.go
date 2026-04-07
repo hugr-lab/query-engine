@@ -249,7 +249,7 @@ func (c *Client) RunApplication(ctx context.Context, application app.Application
 	if err := application.Shutdown(shutdownCtx); err != nil {
 		slog.Error("application shutdown error", "name", info.Name, "error", err)
 	}
-	if err := c.UnloadDataSource(shutdownCtx, info.Name); err != nil {
+	if err := c.UnloadDataSource(shutdownCtx, info.Name, types.WithHardUnload()); err != nil {
 		slog.Error("failed to unload data source on shutdown", "name", info.Name, "error", err)
 	}
 
