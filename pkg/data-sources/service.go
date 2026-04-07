@@ -18,10 +18,10 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/hugrapp"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/iceberg"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/llm"
-	redissrc "github.com/hugr-lab/query-engine/pkg/data-sources/sources/redis"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mssql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/mysql"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/postgres"
+	redissrc "github.com/hugr-lab/query-engine/pkg/data-sources/sources/redis"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
@@ -233,7 +233,7 @@ func (s *Service) Attach(ctx context.Context, name string) error {
 	return nil
 }
 
-func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
+func (s *Service) Detach(ctx context.Context, name string, db *db.Pool, hard bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -253,7 +253,12 @@ func (s *Service) Detach(ctx context.Context, name string, db *db.Pool) error {
 
 	// Skip schema removal in readonly/worker mode.
 	if !s.skipCatalogOps {
-		err := s.catalogs.RemoveCatalog(ctx, name)
+		var err error
+		if hard {
+			err = s.catalogs.RemoveCatalog(ctx, name)
+		} else {
+			err = s.catalogs.SuspendCatalog(ctx, name)
+		}
 		if !errors.Is(err, catalog.ErrCatalogNotFound) && err != nil {
 			return err
 		}

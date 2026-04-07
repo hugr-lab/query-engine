@@ -15,9 +15,21 @@ type Querier interface {
 	Query(ctx context.Context, query string, vars map[string]any) (*Response, error)
 	RegisterDataSource(ctx context.Context, ds DataSource) error
 	LoadDataSource(ctx context.Context, name string) error
-	UnloadDataSource(ctx context.Context, name string) error
+	UnloadDataSource(ctx context.Context, name string, opts ...UnloadOpt) error
 	DataSourceStatus(ctx context.Context, name string) (string, error)
 	DescribeDataSource(ctx context.Context, name string, self bool) (string, error)
+}
+
+type UnloadOpt func(*UnloadOpts)
+
+type UnloadOpts struct {
+	Hard bool
+}
+
+func WithHardUnload() UnloadOpt {
+	return func(opts *UnloadOpts) {
+		opts.Hard = true
+	}
 }
 
 type Request struct {

@@ -67,27 +67,39 @@ func (s *Source) registerUDF(ctx context.Context) error {
 		return err
 	}
 
-	err = s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[string, *types.OperationResult]{
+	type unloadArgs struct {
+		name string
+		hard bool
+	}
+	err = s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[unloadArgs, *types.OperationResult]{
 		Name: "unload_data_source",
-		Execute: func(ctx context.Context, name string) (*types.OperationResult, error) {
-			err := s.qe.UnloadDataSource(ctx, name)
+		Execute: func(ctx context.Context, args unloadArgs) (*types.OperationResult, error) {
+			var opts []types.UnloadOpt
+			if args.hard {
+				opts = append(opts, types.WithHardUnload())
+			}
+			err := s.qe.UnloadDataSource(ctx, args.name, opts...)
 			if err != nil {
 				return types.ErrResult(err), nil
 			}
 			return types.Result("Datasource was unloaded", 0, 0), nil
 		},
-		ConvertInput: func(args []driver.Value) (string, error) {
-			if len(args) != 1 {
-				return "", errors.New("invalid number of arguments")
+		ConvertInput: func(args []driver.Value) (unloadArgs, error) {
+			a := unloadArgs{name: args[0].(string)}
+			if len(args) > 1 && args[1] != nil {
+				a.hard = args[1].(bool)
 			}
-			name := args[0].(string)
-			return name, nil
+			return a, nil
 		},
 		ConvertOutput: func(out *types.OperationResult) (any, error) {
 			return out.ToDuckdb(), nil
 		},
-		InputTypes: []duckdb.TypeInfo{runtime.DuckDBTypeInfoByNameMust("VARCHAR")},
-		OutputType: db.DuckDBOperationResult(),
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("BOOLEAN"),
+		},
+		OutputType:            db.DuckDBOperationResult(),
+		IsSpecialNullHandling: true,
 	})
 	if err != nil {
 		return err

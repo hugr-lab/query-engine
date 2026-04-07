@@ -205,8 +205,12 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 	return s.ds.LoadDataSource(ctx, name)
 }
 
-func (s *Service) UnloadDataSource(ctx context.Context, name string) error {
-	return s.ds.UnloadDataSource(ctx, name)
+func (s *Service) UnloadDataSource(ctx context.Context, name string, opts ...types.UnloadOpt) error {
+	var cfg types.UnloadOpts
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return s.ds.UnloadDataSource(ctx, name, cfg.Hard)
 }
 
 func (s *Service) DataSourceStatus(ctx context.Context, name string) (string, error) {
