@@ -262,11 +262,16 @@ func (c *Client) LoadDataSource(ctx context.Context, name string) error {
 	return nil
 }
 
-func (c *Client) UnloadDataSource(ctx context.Context, name string) error {
-	res, err := c.Query(ctx, `mutation($name: String!){
+func (c *Client) UnloadDataSource(ctx context.Context, name string, opts ...types.UnloadOpt) error {
+	var cfg types.UnloadOpts
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	res, err := c.Query(ctx, `mutation($name: String!, $hard: Boolean=false){
 		function {
 			core{
-				unload_data_source(name:$name){
+				unload_data_source(name:$name, hard:$hard){
 					success
 					message
 				}
@@ -274,6 +279,7 @@ func (c *Client) UnloadDataSource(ctx context.Context, name string) error {
 		}
 	}`, map[string]any{
 		"name": name,
+		"hard": cfg.Hard,
 	})
 	if err != nil {
 		return err

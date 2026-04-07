@@ -25,7 +25,9 @@ func (m *mockQuerier) Query(ctx context.Context, query string, vars map[string]a
 
 func (m *mockQuerier) RegisterDataSource(ctx context.Context, ds types.DataSource) error { return nil }
 func (m *mockQuerier) LoadDataSource(ctx context.Context, name string) error             { return nil }
-func (m *mockQuerier) UnloadDataSource(ctx context.Context, name string) error           { return nil }
+func (m *mockQuerier) UnloadDataSource(ctx context.Context, name string, opts ...types.UnloadOpt) error {
+	return nil
+}
 func (m *mockQuerier) DataSourceStatus(ctx context.Context, name string) (string, error) {
 	return "", nil
 }

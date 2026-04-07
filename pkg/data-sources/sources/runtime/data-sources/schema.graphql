@@ -12,6 +12,8 @@ extend type MutationFunction {
   """
   unload_data_source(
     name: String!
+    "Hard remove catalog instead of suspending. Default false (suspend)."
+    hard: Boolean = false
   ): OperationResult @module(name: "core")
     @function(name: "unload_data_source")
 
