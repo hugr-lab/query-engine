@@ -13,7 +13,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// streamEventSchema is the Arrow schema for llm_stream_event records.
 var streamEventSchema = arrow.NewSchema([]arrow.Field{
 	{Name: "type", Type: arrow.BinaryTypes.String, Nullable: true},
 	{Name: "content", Type: arrow.BinaryTypes.String, Nullable: true},
@@ -23,6 +22,8 @@ var streamEventSchema = arrow.NewSchema([]arrow.Field{
 	{Name: "prompt_tokens", Type: arrow.PrimitiveTypes.Int32, Nullable: true},
 	{Name: "completion_tokens", Type: arrow.PrimitiveTypes.Int32, Nullable: true},
 }, nil)
+
+var _ sources.SubscriptionSource = (*Source)(nil)
 
 // Subscribe implements sources.SubscriptionSource for streaming LLM completions.
 func (s *Source) Subscribe(ctx context.Context, field *ast.Field, vars map[string]any) (*sources.SubscriptionResult, error) {
@@ -48,10 +49,7 @@ func (s *Source) subscribeCompletion(ctx context.Context, args map[string]any) (
 		return nil, fmt.Errorf("prompt argument is required")
 	}
 
-	opts := extractLLMOpts(args)
-	messages := []sources.LLMMessage{{Role: "user", Content: prompt}}
-
-	return s.startStream(ctx, modelName, messages, opts)
+	return s.startStream(ctx, modelName, []sources.LLMMessage{{Role: "user", Content: prompt}}, extractLLMOpts(args))
 }
 
 func (s *Source) subscribeChatCompletion(ctx context.Context, args map[string]any) (*sources.SubscriptionResult, error) {
@@ -79,8 +77,6 @@ func (s *Source) subscribeChatCompletion(ctx context.Context, args map[string]an
 	}
 
 	opts := extractLLMOpts(args)
-
-	// Parse tools if provided
 	if rawTools, ok := args["tools"].([]any); ok {
 		for _, raw := range rawTools {
 			toolStr, _ := raw.(string)
@@ -113,53 +109,47 @@ func (s *Source) startStream(ctx context.Context, modelName string, messages []s
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	reader := newChannelRecordReader(ctx, streamEventSchema)
+	pipe := newRecordPipe(ctx, streamEventSchema)
 
 	go func() {
-		defer reader.close()
-
+		defer pipe.Close()
 		err := streamSrc.CreateChatCompletionStream(ctx, messages, opts,
 			func(event *sources.LLMStreamEvent) error {
-				rec := streamEventToRecord(event)
-				return reader.send(ctx, rec)
+				return pipe.Send(buildEventRecord(event))
 			})
 		if err != nil {
-			reader.setErr(err)
+			pipe.SetErr(err)
 		}
 	}()
 
-	return &sources.SubscriptionResult{
-		Reader: reader,
-		Cancel: cancel,
-	}, nil
+	return &sources.SubscriptionResult{Reader: pipe, Cancel: cancel}, nil
 }
 
 func extractLLMOpts(args map[string]any) sources.LLMOptions {
 	var opts sources.LLMOptions
-	if mt, ok := args["max_tokens"]; ok && mt != nil {
-		switch v := mt.(type) {
+	if v, ok := args["max_tokens"]; ok && v != nil {
+		switch n := v.(type) {
 		case int:
-			opts.MaxTokens = v
+			opts.MaxTokens = n
 		case int64:
-			opts.MaxTokens = int(v)
+			opts.MaxTokens = int(n)
 		case float64:
-			opts.MaxTokens = int(v)
+			opts.MaxTokens = int(n)
 		}
 	}
-	if temp, ok := args["temperature"]; ok && temp != nil {
-		switch v := temp.(type) {
+	if v, ok := args["temperature"]; ok && v != nil {
+		switch n := v.(type) {
 		case float64:
-			opts.Temperature = v
+			opts.Temperature = n
 		case int:
-			opts.Temperature = float64(v)
+			opts.Temperature = float64(n)
 		}
 	}
 	return opts
 }
 
-func streamEventToRecord(event *sources.LLMStreamEvent) arrow.RecordBatch {
-	alloc := memory.NewGoAllocator()
-	b := array.NewRecordBuilder(alloc, streamEventSchema)
+func buildEventRecord(event *sources.LLMStreamEvent) arrow.RecordBatch {
+	b := array.NewRecordBuilder(memory.DefaultAllocator, streamEventSchema)
 	defer b.Release()
 
 	b.Field(0).(*array.StringBuilder).Append(event.Type)
@@ -173,113 +163,65 @@ func streamEventToRecord(event *sources.LLMStreamEvent) arrow.RecordBatch {
 	return b.NewRecord()
 }
 
-// channelRecordReader implements array.RecordReader backed by a channel.
-type channelRecordReader struct {
+// recordPipe is a channel-backed array.RecordReader.
+// Producer sends records via Send, consumer reads via Next/RecordBatch.
+// Close signals end-of-stream; context cancellation also stops reads.
+type recordPipe struct {
 	schema  *arrow.Schema
 	ch      chan arrow.RecordBatch
 	current arrow.RecordBatch
-	err     error
-	mu      sync.Mutex
-	done    bool
 	ctx     context.Context
-	refs    int64
+	err     error
+	closed  sync.Once
 }
 
-func newChannelRecordReader(ctx context.Context, schema *arrow.Schema) *channelRecordReader {
-	return &channelRecordReader{
+func newRecordPipe(ctx context.Context, schema *arrow.Schema) *recordPipe {
+	return &recordPipe{
 		schema: schema,
-		ch:     make(chan arrow.RecordBatch, 16),
+		ch:     make(chan arrow.RecordBatch, 4),
 		ctx:    ctx,
-		refs:   1,
 	}
 }
 
-func (r *channelRecordReader) send(ctx context.Context, rec arrow.RecordBatch) error {
+// Send a record to the consumer. Blocks if buffer is full. Returns error on cancellation.
+func (p *recordPipe) Send(rec arrow.RecordBatch) error {
 	select {
-	case <-ctx.Done():
+	case <-p.ctx.Done():
 		rec.Release()
-		return ctx.Err()
-	case r.ch <- rec:
+		return p.ctx.Err()
+	case p.ch <- rec:
 		return nil
 	}
 }
 
-func (r *channelRecordReader) close() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.closeLocked()
+// Close signals end-of-stream. Safe to call multiple times.
+func (p *recordPipe) Close() {
+	p.closed.Do(func() { close(p.ch) })
 }
 
-func (r *channelRecordReader) closeLocked() {
-	if !r.done {
-		r.done = true
-		close(r.ch)
+// SetErr records a producer-side error, readable via Err() after Next returns false.
+func (p *recordPipe) SetErr(err error) { p.err = err }
+
+func (p *recordPipe) Schema() *arrow.Schema           { return p.schema }
+func (p *recordPipe) Record() arrow.RecordBatch        { return p.current }
+func (p *recordPipe) RecordBatch() arrow.RecordBatch   { return p.current }
+func (p *recordPipe) Err() error                       { return p.err }
+func (p *recordPipe) Retain()                          {}
+func (p *recordPipe) Release()                         { p.Close() }
+
+func (p *recordPipe) Next() bool {
+	if p.current != nil {
+		p.current.Release()
+		p.current = nil
 	}
-}
-
-func (r *channelRecordReader) setErr(err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.err = err
-}
-
-func (r *channelRecordReader) Retain() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.refs++
-}
-
-func (r *channelRecordReader) Release() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.refs--
-	if r.refs <= 0 {
-		r.closeLocked()
-		if r.current != nil {
-			r.current.Release()
-			r.current = nil
-		}
-		// Drain remaining records
-		for rec := range r.ch {
-			rec.Release()
-		}
-	}
-}
-
-func (r *channelRecordReader) Schema() *arrow.Schema {
-	return r.schema
-}
-
-func (r *channelRecordReader) Next() bool {
-	if r.current != nil {
-		r.current.Release()
-		r.current = nil
-	}
-
 	select {
-	case <-r.ctx.Done():
+	case <-p.ctx.Done():
 		return false
-	case rec, ok := <-r.ch:
+	case rec, ok := <-p.ch:
 		if !ok {
 			return false
 		}
-		r.current = rec
+		p.current = rec
 		return true
 	}
 }
-
-func (r *channelRecordReader) Record() arrow.RecordBatch {
-	return r.current
-}
-
-func (r *channelRecordReader) RecordBatch() arrow.RecordBatch {
-	return r.current
-}
-
-func (r *channelRecordReader) Err() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.err
-}
-
-var _ sources.SubscriptionSource = (*Source)(nil)
