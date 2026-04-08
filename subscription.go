@@ -95,10 +95,10 @@ func (s *Service) executeQueryTick(ctx context.Context, queries []base.QueryRequ
 		wg.Add(1)
 		go func() {
 			defer func() {
-			if r := recover(); r != nil {
-				log.Printf("panic in subscription: %v", r)
-			}
-		}()
+				if r := recover(); r != nil {
+					log.Printf("panic in subscription path %s: %v", path, r)
+				}
+			}()
 			defer wg.Done()
 
 			reader, err := s.executeStreamPath(ctx, provider, q, vars)
@@ -278,15 +278,17 @@ type metadataReader struct {
 	finalize   func()
 	tableInfo  string
 	geomFields map[string]geomInfo
+	schema     *arrow.Schema // cached schema with geometry metadata
 	once       sync.Once
 	current    arrow.RecordBatch
 	chunkIdx   int
 }
 
 func (r *metadataReader) Schema() *arrow.Schema {
-	s := r.reader.Schema()
-	s = addGeometryFieldMeta(s, r.geomFields)
-	return s
+	if r.schema == nil {
+		r.schema = addGeometryFieldMeta(r.reader.Schema(), r.geomFields)
+	}
+	return r.schema
 }
 
 func (r *metadataReader) Next() bool {
