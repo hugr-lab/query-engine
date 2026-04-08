@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"runtime/debug"
 	"sync"
 	"time"
 
@@ -21,89 +20,50 @@ import (
 )
 
 // Subscribe creates a subscription from a GraphQL subscription query.
+// Dispatches to query streaming or native subscription based on the root field.
 func (s *Service) Subscribe(ctx context.Context, query string, vars map[string]any) (*types.Subscription, error) {
 	op, err := s.schema.ParseQuery(ctx, query, vars, "")
 	if err != nil {
 		return nil, err
 	}
-
 	if op.Definition.Operation != ast.Subscription {
 		return nil, fmt.Errorf("expected subscription operation, got %s", op.Definition.Operation)
 	}
-
 	if len(op.Definition.SelectionSet) == 0 {
 		return nil, fmt.Errorf("subscription must have at least one field")
 	}
-
 	rootField, ok := op.Definition.SelectionSet[0].(*ast.Field)
 	if !ok {
 		return nil, fmt.Errorf("subscription root selection must be a field")
 	}
 
-	// Path 1: query streaming — `subscription { query(...) { ... } }`
 	if rootField.Name == "query" {
 		return s.subscribeQuery(ctx, rootField, op)
 	}
-
-	// Path 2: native subscription — resolve via @catalog on leaf field
 	return s.subscribeNative(ctx, rootField, op)
 }
 
-// subscribeQuery handles `subscription { query(...) { ... } }`.
+// subscribeQuery streams results of a regular query with optional periodic re-execution.
 func (s *Service) subscribeQuery(ctx context.Context, queryField *ast.Field, op *catalog.Operation) (*types.Subscription, error) {
-	am := queryField.ArgumentMap(op.Variables)
-	var interval time.Duration
-	var count int
-
-	if v, ok := am["interval"]; ok && v != nil {
-		if str, ok := v.(string); ok {
-			d, err := time.ParseDuration(str)
-			if err != nil {
-				return nil, fmt.Errorf("invalid interval: %w", err)
-			}
-			interval = d
-		}
-	}
-	if v, ok := am["count"]; ok && v != nil {
-		switch c := v.(type) {
-		case int:
-			count = c
-		case int64:
-			count = int(c)
-		case float64:
-			count = int(c)
-		}
-	}
-
-	// Build inner query operation from the `query` field's selection set.
-	// The selection set is already enriched by the validator (definitions, types, etc.)
+	interval, count := parseIntervalCount(queryField.ArgumentMap(op.Variables))
 	innerQueries, _ := sdl.QueryRequestInfo(queryField.SelectionSet)
 
 	ctx, cancel := context.WithCancel(ctx)
 	eventCh := make(chan types.SubscriptionEvent)
 
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("panic in subscription query: %v\n%s", r, debug.Stack())
-			}
-		}()
+		defer recoverStreamPanic(nil)
 		defer close(eventCh)
-		// Note: do NOT defer cancel() here — consumer owns the context lifecycle.
-		// Producer just closes the channel when done.
 
-		tick := 0
-		for {
-			tick++
+		for tick := 1; ; tick++ {
 			s.executeQueryTick(ctx, innerQueries, op.Variables, eventCh)
 
 			if count > 0 && tick >= count {
 				return
 			}
 			if interval == 0 {
-				return // one-shot
+				return
 			}
-
 			select {
 			case <-ctx.Done():
 				return
@@ -112,13 +72,10 @@ func (s *Service) subscribeQuery(ctx context.Context, queryField *ast.Field, op 
 		}
 	}()
 
-	return &types.Subscription{
-		Events: eventCh,
-		Cancel: cancel,
-	}, nil
+	return &types.Subscription{Events: eventCh, Cancel: cancel}, nil
 }
 
-// executeQueryTick executes one round of the query and sends events.
+// executeQueryTick executes one round of the inner query.
 // Each FlatQuery path produces a SubscriptionEvent with its own RecordReader.
 func (s *Service) executeQueryTick(ctx context.Context, queries []base.QueryRequest, vars map[string]any, eventCh chan<- types.SubscriptionEvent) {
 	qm := sdl.FlatQuery(queries)
@@ -133,11 +90,7 @@ func (s *Service) executeQueryTick(ctx context.Context, queries []base.QueryRequ
 	for path, q := range qm {
 		wg.Add(1)
 		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("panic in subscription path %s: %v\n%s", path, r, debug.Stack())
-				}
-			}()
+			defer recoverStreamPanic(nil)
 			defer wg.Done()
 
 			reader, err := s.executeStreamPath(ctx, provider, q, vars)
@@ -147,7 +100,6 @@ func (s *Service) executeQueryTick(ctx context.Context, queries []base.QueryRequ
 				}
 				return
 			}
-
 			select {
 			case <-ctx.Done():
 				reader.Release()
@@ -159,24 +111,21 @@ func (s *Service) executeQueryTick(ctx context.Context, queries []base.QueryRequ
 }
 
 // executeStreamPath plans and executes a single query path as a stream.
-// Returns a RecordReader that cleans up table/connection on Release.
 func (s *Service) executeStreamPath(ctx context.Context, provider catalog.Provider, q base.QueryRequest, vars map[string]any) (array.RecordReader, error) {
 	plan, err := s.planner.Plan(ctx, provider, q.Field, vars)
 	if err != nil {
-		return nil, fmt.Errorf("failed to plan query: %w", err)
+		return nil, fmt.Errorf("plan: %w", err)
 	}
 	if err := plan.Compile(); err != nil {
-		return nil, fmt.Errorf("failed to compile query: %w", err)
+		return nil, fmt.Errorf("compile: %w", err)
 	}
 
 	if s.config.Debug {
-		ai := auth.AuthInfoFromContext(ctx)
-		if ai != nil {
+		if ai := auth.AuthInfoFromContext(ctx); ai != nil {
 			log.Printf("Subscription stream: User: %s, Role: %s, Query: %s (%s), SQL: %s",
 				ai.UserName, ai.Role, q.Field.Alias, q.Field.Name, plan.Log())
-		}
-		if auth.IsFullAccess(ctx) {
-			log.Printf("Subscription stream: Internal query: %s (%s), SQL: %s",
+		} else if auth.IsFullAccess(ctx) {
+			log.Printf("Subscription stream: Internal: %s (%s), SQL: %s",
 				q.Field.Alias, q.Field.Name, plan.Log())
 		}
 	}
@@ -185,7 +134,6 @@ func (s *Service) executeStreamPath(ctx context.Context, provider catalog.Provid
 	if err != nil {
 		return nil, err
 	}
-
 	reader, err := table.Reader(false)
 	if err != nil {
 		table.Release()
@@ -193,103 +141,52 @@ func (s *Service) executeStreamPath(ctx context.Context, provider catalog.Provid
 		return nil, err
 	}
 
-	return &finalizeReader{reader: reader, table: table, finalize: finalize}, nil
+	// Wrap reader with geometry and table info metadata from the query AST,
+	// matching the behavior of ipc-query.go writeArrowTableToIPC.
+	geomFields := geomFieldsInfoFromQuery(q.Field)
+	return &metadataReader{
+		reader:     reader,
+		table:      table,
+		finalize:   finalize,
+		tableInfo:  table.Info(),
+		geomFields: geomFields,
+	}, nil
 }
 
 // subscribeNative handles native subscription fields resolved via @catalog.
-// It walks through module wrapper fields to find the leaf subscription field,
-// reads its @catalog directive to resolve the data source, and delegates to
-// the source's SubscriptionSource.Subscribe method.
 func (s *Service) subscribeNative(ctx context.Context, rootField *ast.Field, op *catalog.Operation) (*types.Subscription, error) {
-	// Walk module path to find the leaf subscription field.
-	// Module fields are intermediate grouping fields without @catalog;
-	// the leaf field carries @catalog identifying the owning data source.
-	leafField := rootField
-	for {
-		catalogName := base.FieldDefCatalog(leafField.Definition)
-		if catalogName != "" {
-			break
-		}
-		// Not a leaf — descend into the first field of the selection set.
-		if len(leafField.SelectionSet) == 0 {
-			return nil, fmt.Errorf("subscription field %q has no @catalog and no nested selections", leafField.Name)
-		}
-		nested, ok := leafField.SelectionSet[0].(*ast.Field)
-		if !ok {
-			return nil, fmt.Errorf("subscription field %q: expected nested field, got %T", leafField.Name, leafField.SelectionSet[0])
-		}
-		leafField = nested
+	leafField := walkToLeafField(rootField)
+	if leafField == nil {
+		return nil, fmt.Errorf("could not find leaf subscription field with @catalog")
 	}
 
-	// Read the source name from @catalog directive.
 	catalogName := base.FieldDefCatalog(leafField.Definition)
 	if catalogName == "" {
 		return nil, fmt.Errorf("subscription field %q has no @catalog directive", leafField.Name)
 	}
 
-	// Resolve the data source — check regular sources first, then runtime sources.
-	var subSrc sources.SubscriptionSource
-	src, err := s.ds.DataSource(catalogName)
-	if err == nil {
-		var ok bool
-		subSrc, ok = src.(sources.SubscriptionSource)
-		if !ok {
-			return nil, fmt.Errorf("data source %q does not support native subscriptions", catalogName)
-		}
-	} else {
-		// Try runtime sources (e.g. core.models, core.store).
-		rs, found := s.ds.RuntimeSourceByName(catalogName)
-		if !found {
-			return nil, fmt.Errorf("failed to resolve data source %q: %w", catalogName, err)
-		}
-		var ok bool
-		subSrc, ok = rs.(sources.SubscriptionSource)
-		if !ok {
-			return nil, fmt.Errorf("runtime source %q does not support native subscriptions", catalogName)
-		}
+	subSrc, err := s.resolveSubscriptionSource(catalogName)
+	if err != nil {
+		return nil, err
 	}
 
-	// Call the source's Subscribe method.
 	result, err := subSrc.Subscribe(ctx, leafField, op.Variables)
 	if err != nil {
-		return nil, fmt.Errorf("subscription on source %q failed: %w", catalogName, err)
+		return nil, fmt.Errorf("subscription %q failed: %w", catalogName, err)
 	}
 
-	// Convert SubscriptionResult to types.Subscription by forwarding records
-	// from the result's Reader into an event channel.
+	// Bridge SubscriptionResult (single RecordReader) into types.Subscription (event channel).
+	// The source's Reader produces one record per event (e.g. one LLM token).
+	// We pass it directly as a single event — consumer iterates via Reader.Next().
 	ctx, cancel := context.WithCancel(ctx)
-	eventCh := make(chan types.SubscriptionEvent)
+	eventCh := make(chan types.SubscriptionEvent, 1)
 
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("panic in native subscription %s: %v\n%s", leafField.Name, r, debug.Stack())
-			}
-		}()
 		defer close(eventCh)
-		defer cancel()
-		defer result.Reader.Release()
-
-		for result.Reader.Next() {
-			batch := result.Reader.RecordBatch()
-			batch.Retain()
-			reader, err := array.NewRecordReader(batch.Schema(), []arrow.RecordBatch{batch})
-			if err != nil {
-				log.Printf("native subscription %s: failed to create record reader: %v", leafField.Name, err)
-				return
-			}
-			event := types.SubscriptionEvent{
-				Reader: reader,
-			}
-			select {
-			case <-ctx.Done():
-				reader.Release()
-				return
-			case eventCh <- event:
-			}
-		}
-		if err := result.Reader.Err(); err != nil {
-			log.Printf("native subscription %s: reader error: %v", leafField.Name, err)
+		select {
+		case <-ctx.Done():
+			result.Reader.Release()
+		case eventCh <- types.SubscriptionEvent{Reader: result.Reader}:
 		}
 	}()
 
@@ -304,22 +201,116 @@ func (s *Service) subscribeNative(ctx context.Context, rootField *ast.Field, op 
 	}, nil
 }
 
-// finalizeReader wraps a RecordReader with cleanup of table and DuckDB connection.
-type finalizeReader struct {
-	reader   array.RecordReader
-	table    types.ArrowTable
-	finalize func()
-	once     sync.Once
+// --- Helpers ---
+
+func parseIntervalCount(args map[string]any) (time.Duration, int) {
+	var interval time.Duration
+	var count int
+	if v, ok := args["interval"]; ok && v != nil {
+		if str, ok := v.(string); ok {
+			d, _ := time.ParseDuration(str)
+			interval = d
+		}
+	}
+	if v, ok := args["count"]; ok && v != nil {
+		switch c := v.(type) {
+		case int:
+			count = c
+		case int64:
+			count = int(c)
+		case float64:
+			count = int(c)
+		}
+	}
+	return interval, count
 }
 
-func (r *finalizeReader) Retain()                        { r.reader.Retain() }
-func (r *finalizeReader) Schema() *arrow.Schema           { return r.reader.Schema() }
-func (r *finalizeReader) Next() bool                      { return r.reader.Next() }
-func (r *finalizeReader) Record() arrow.RecordBatch       { return r.reader.Record() }
-func (r *finalizeReader) RecordBatch() arrow.RecordBatch  { return r.reader.RecordBatch() }
-func (r *finalizeReader) Err() error                      { return r.reader.Err() }
-func (r *finalizeReader) Release() {
+// walkToLeafField descends through module wrapper fields to find the leaf
+// subscription field that carries the @catalog directive.
+func walkToLeafField(field *ast.Field) *ast.Field {
+	for {
+		if field.Definition != nil && base.FieldDefCatalog(field.Definition) != "" {
+			return field
+		}
+		if len(field.SelectionSet) == 0 {
+			return nil
+		}
+		nested, ok := field.SelectionSet[0].(*ast.Field)
+		if !ok {
+			return nil
+		}
+		field = nested
+	}
+}
+
+// resolveSubscriptionSource resolves a data source by catalog name and asserts SubscriptionSource.
+func (s *Service) resolveSubscriptionSource(catalogName string) (sources.SubscriptionSource, error) {
+	// Regular data sources
+	if src, err := s.ds.DataSource(catalogName); err == nil {
+		if ss, ok := src.(sources.SubscriptionSource); ok {
+			return ss, nil
+		}
+		return nil, fmt.Errorf("data source %q does not support subscriptions", catalogName)
+	}
+	// Runtime sources (core.models, core.store)
+	if rs, ok := s.ds.RuntimeSourceByName(catalogName); ok {
+		if ss, ok := rs.(sources.SubscriptionSource); ok {
+			return ss, nil
+		}
+		return nil, fmt.Errorf("runtime source %q does not support subscriptions", catalogName)
+	}
+	return nil, fmt.Errorf("data source %q not found", catalogName)
+}
+
+// metadataReader wraps a RecordReader adding geometry and table info
+// metadata to the Arrow schema — matching ipc-query.go behavior.
+type metadataReader struct {
+	reader     array.RecordReader
+	table      types.ArrowTable
+	finalize   func()
+	tableInfo  string
+	geomFields map[string]geomInfo
+	once       sync.Once
+	current    arrow.RecordBatch
+	chunkIdx   int
+}
+
+func (r *metadataReader) Schema() *arrow.Schema {
+	s := r.reader.Schema()
+	s = addGeometryFieldMeta(s, r.geomFields)
+	return s
+}
+
+func (r *metadataReader) Next() bool {
+	if r.current != nil {
+		r.current.Release()
+		r.current = nil
+	}
+	if !r.reader.Next() {
+		return false
+	}
+	batch := r.reader.RecordBatch()
+	// Add chunk index and geometry metadata to each batch
+	meta := map[string]string{"chunk": fmt.Sprintf("%d", r.chunkIdx)}
+	if r.tableInfo != "" {
+		meta["table_info"] = r.tableInfo
+	}
+	ns := addMeta(batch.Schema(), meta)
+	ns = addGeometryFieldMeta(ns, r.geomFields)
+	r.current = array.NewRecordBatch(ns, batch.Columns(), batch.NumRows())
+	r.chunkIdx++
+	return true
+}
+
+func (r *metadataReader) Record() arrow.RecordBatch      { return r.current }
+func (r *metadataReader) RecordBatch() arrow.RecordBatch  { return r.current }
+func (r *metadataReader) Err() error                      { return r.reader.Err() }
+func (r *metadataReader) Retain()                         { r.reader.Retain() }
+func (r *metadataReader) Release() {
 	r.once.Do(func() {
+		if r.current != nil {
+			r.current.Release()
+		}
 		r.reader.Release()
 		r.table.Release()
 		r.finalize()
