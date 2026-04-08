@@ -600,6 +600,71 @@ func TestGoClient_SubscribePeriodic(t *testing.T) {
 	t.Logf("Go client periodic: %d events", eventCount)
 }
 
+func TestGoClient_MultipleSubscriptions(t *testing.T) {
+	c := client.NewClient(testServer.URL+"/ipc", client.WithTimeout(10*time.Second))
+	defer c.CloseSubscriptions()
+
+	ctx := context.Background()
+
+	// Start two subscriptions on the same shared connection
+	sub1, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 2) { name } } } } }`, nil)
+	require.NoError(t, err)
+
+	sub2, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 3) { name } } } } }`, nil)
+	require.NoError(t, err)
+
+	// Consume both
+	var rows1, rows2 int
+	for event := range sub1.Events {
+		for event.Reader.Next() {
+			rows1 += int(event.Reader.RecordBatch().NumRows())
+		}
+		event.Reader.Release()
+	}
+	for event := range sub2.Events {
+		for event.Reader.Next() {
+			rows2 += int(event.Reader.RecordBatch().NumRows())
+		}
+		event.Reader.Release()
+	}
+
+	assert.Greater(t, rows1, 0, "sub1 should have rows")
+	assert.Greater(t, rows2, 0, "sub2 should have rows")
+	t.Logf("Go client multiplexing: sub1=%d rows, sub2=%d rows", rows1, rows2)
+}
+
+func TestGoClient_ReuseAfterComplete(t *testing.T) {
+	c := client.NewClient(testServer.URL+"/ipc", client.WithTimeout(10*time.Second))
+	defer c.CloseSubscriptions()
+
+	ctx := context.Background()
+
+	// First subscription — completes
+	sub1, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 1) { name } } } } }`, nil)
+	require.NoError(t, err)
+	var rows1 int
+	for event := range sub1.Events {
+		for event.Reader.Next() {
+			rows1 += int(event.Reader.RecordBatch().NumRows())
+		}
+		event.Reader.Release()
+	}
+	assert.Greater(t, rows1, 0)
+
+	// Second subscription — reuses same connection
+	sub2, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 2) { name } } } } }`, nil)
+	require.NoError(t, err)
+	var rows2 int
+	for event := range sub2.Events {
+		for event.Reader.Next() {
+			rows2 += int(event.Reader.RecordBatch().NumRows())
+		}
+		event.Reader.Release()
+	}
+	assert.Greater(t, rows2, 0)
+	t.Logf("Go client reuse: sub1=%d rows, sub2=%d rows (same connection)", rows1, rows2)
+}
+
 func TestGraphQLWS_InvalidQuery(t *testing.T) {
 	conn := connectGraphQLWS(t)
 	defer conn.Close()
