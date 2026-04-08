@@ -53,6 +53,11 @@ func (s *Service) isStreamingRequest(r *http.Request) bool {
 
 // ipcStreamHandler handles WebSocket connections for hugr IPC arrow stream (Inter-Process Communication) streaming.
 func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in IPC stream handler: %v", r)
+		}
+	}()
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to upgrade connection: %v", err), http.StatusInternalServerError)

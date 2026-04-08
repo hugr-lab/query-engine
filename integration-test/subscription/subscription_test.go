@@ -576,18 +576,20 @@ func TestGoClient_SubscribePeriodic(t *testing.T) {
 	require.NoError(t, err)
 	defer sub.Cancel()
 
-	var eventCount int
+	// One event per path — reader receives batches from ALL ticks.
+	// reader.Next() → false only on subscription_complete (after count ticks).
+	var eventCount, totalBatches int
 	for event := range sub.Events {
 		eventCount++
-		// Drain reader
 		for event.Reader.Next() {
+			totalBatches++
 		}
 		event.Reader.Release()
 	}
 
-	// count=2 → 2 ticks, each with 1 path = 2 events
-	assert.GreaterOrEqual(t, eventCount, 2, "should receive events from 2 ticks")
-	t.Logf("Go client periodic: %d events", eventCount)
+	assert.Equal(t, 1, eventCount, "one event per path (reader spans all ticks)")
+	assert.GreaterOrEqual(t, totalBatches, 2, "batches from 2 ticks")
+	t.Logf("Go client periodic: %d events, %d total batches", eventCount, totalBatches)
 }
 
 func TestGoClient_MultipleSubscriptions(t *testing.T) {

@@ -70,10 +70,9 @@ type SubscriptionConn struct {
 // eventCh delivers one event per part (each with a pipe Reader).
 // activePipe is the current part's pipe being filled with batches.
 type activeSub struct {
-	eventCh    chan types.SubscriptionEvent
-	activePipe *batchPipe // current path's pipe
-	activePath string     // current path being streamed
-	done       bool
+	eventCh chan types.SubscriptionEvent
+	pipes   map[string]*batchPipe // one pipe per path, persists across ticks
+	done    bool
 }
 
 // Subscribe creates a subscription on this connection.
@@ -142,14 +141,10 @@ func (sc *SubscriptionConn) readLoop() {
 			}
 			switch msg.Type {
 			case "part_complete":
-				sc.subsMu.Lock()
-				sub := sc.subs[msg.SubscriptionID]
-				sc.subsMu.Unlock()
-				if sub != nil && sub.activePipe != nil {
-					sub.activePipe.Close()
-					sub.activePipe = nil
-					sub.activePath = ""
-				}
+				// Part complete = one tick for this path finished.
+				// Pipe stays open — next tick pushes into the same pipe.
+				// reader.Next() continues to yield batches across ticks.
+				// Pipe closes only on subscription_complete.
 			case "subscription_complete", "subscription_error":
 				if msg.Type == "subscription_error" {
 					log.Printf("subscription %s error: %s", msg.SubscriptionID, msg.Error)
@@ -178,16 +173,16 @@ func (sc *SubscriptionConn) readLoop() {
 				continue
 			}
 
-			// Ensure pipe exists for this path
-			if sub.activePipe == nil || sub.activePath != path {
-				// New path — close previous pipe (if any) and create new one
-				if sub.activePipe != nil {
-					sub.activePipe.Close()
+			// Ensure pipe exists for this path.
+			// One pipe per path per subscription — persists across ticks.
+			pipe, ok := sub.pipes[path]
+			if !ok {
+				pipe = newBatchPipe(sc.ctx)
+				if sub.pipes == nil {
+					sub.pipes = make(map[string]*batchPipe)
 				}
-				pipe := newBatchPipe(sc.ctx)
-				sub.activePipe = pipe
-				sub.activePath = path
-				// Send event to consumer with the new pipe
+				sub.pipes[path] = pipe
+				// Send event to consumer with the new pipe (once per path)
 				select {
 				case sub.eventCh <- types.SubscriptionEvent{Path: path, Reader: pipe}:
 				case <-sc.ctx.Done():
@@ -196,11 +191,11 @@ func (sc *SubscriptionConn) readLoop() {
 				}
 			}
 
-			// Push batches to active pipe
+			// Push batches to the path's pipe
 			for reader.Next() {
 				batch := reader.RecordBatch()
 				batch.Retain()
-				sub.activePipe.Send(batch)
+				pipe.Send(batch)
 			}
 			reader.Release()
 		}
@@ -233,10 +228,10 @@ func (sc *SubscriptionConn) completeSub(id string) {
 	}
 	sc.subsMu.Unlock()
 	if sub != nil && !sub.done {
-		if sub.activePipe != nil {
-			sub.activePipe.Close()
-		}
 		sub.done = true
+		for _, pipe := range sub.pipes {
+			pipe.Close()
+		}
 		close(sub.eventCh)
 	}
 }
@@ -249,10 +244,10 @@ func (sc *SubscriptionConn) removeSub(id string) {
 	}
 	sc.subsMu.Unlock()
 	if sub != nil && !sub.done {
-		if sub.activePipe != nil {
-			sub.activePipe.Close()
-		}
 		sub.done = true
+		for _, pipe := range sub.pipes {
+			pipe.Close()
+		}
 		close(sub.eventCh)
 	}
 }
@@ -264,10 +259,10 @@ func (sc *SubscriptionConn) closeAllSubs() {
 	sc.subsMu.Unlock()
 	for _, sub := range subs {
 		if !sub.done {
-			if sub.activePipe != nil {
-				sub.activePipe.Close()
-			}
 			sub.done = true
+			for _, pipe := range sub.pipes {
+				pipe.Close()
+			}
 			close(sub.eventCh)
 		}
 	}
