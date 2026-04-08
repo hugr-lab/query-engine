@@ -287,10 +287,15 @@ func newBatchPipe(ctx context.Context) *batchPipe {
 }
 
 func (p *batchPipe) Send(batch arrow.RecordBatch) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Channel closed — pipe already completed.
+			batch.Release()
+		}
+	}()
 	select {
 	case p.ch <- batch:
 	default:
-		// Buffer full — drop batch. Increase buffer or consumer too slow.
 		batch.Release()
 	}
 }

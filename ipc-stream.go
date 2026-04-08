@@ -201,7 +201,6 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 				_ = stream.sendStreamError(fmt.Errorf("received nil chunk from IPC stream"))
 				return
 			}
-			defer chunk.Release()
 			buf := bp.Get().(*bytes.Buffer)
 			writer := ipc.NewWriter(buf, ipc.WithLZ4())
 			err = writer.Write(chunk)

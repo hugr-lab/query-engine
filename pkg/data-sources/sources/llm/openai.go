@@ -493,10 +493,8 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 				PromptTokens:     totalPromptTokens,
 				CompletionTokens: totalCompletionTokens,
 			}
-			if len(choice.Delta.ToolCalls) > 0 {
-				// Serialize accumulated tool calls
-				b, _ := json.Marshal(choice.Delta.ToolCalls)
-				ev.ToolCalls = string(b)
+			if len(toolCallParts) > 0 {
+				ev.ToolCalls = strings.Join(toolCallParts, "")
 			}
 			if err := onEvent(ev); err != nil {
 				return err

@@ -55,11 +55,11 @@ func (s *Service) subscribeHandler(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
+	defer cancel() // Cancel first — stops all subscription goroutines before writeCh becomes unreachable
 
-	// Single writer channel — all writes go through here
+	// Single writer channel — all writes go through here.
+	// Not closed explicitly — GC handles it after all senders exit via ctx cancellation.
 	writeCh := make(chan gqlwsMessage, 256)
-	defer close(writeCh)
 
 	// Writer goroutine — only goroutine that touches conn.Write*
 	go func() {

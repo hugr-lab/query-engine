@@ -52,7 +52,11 @@ func (s *Service) subscribeQuery(ctx context.Context, queryField *ast.Field, op 
 	eventCh := make(chan types.SubscriptionEvent)
 
 	go func() {
-		defer recoverStreamPanic(nil)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("panic in subscription: %v", r)
+			}
+		}()
 		defer close(eventCh)
 
 		for tick := 1; ; tick++ {
@@ -90,7 +94,11 @@ func (s *Service) executeQueryTick(ctx context.Context, queries []base.QueryRequ
 	for path, q := range qm {
 		wg.Add(1)
 		go func() {
-			defer recoverStreamPanic(nil)
+			defer func() {
+			if r := recover(); r != nil {
+				log.Printf("panic in subscription: %v", r)
+			}
+		}()
 			defer wg.Done()
 
 			reader, err := s.executeStreamPath(ctx, provider, q, vars)
