@@ -4,8 +4,10 @@ package models_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -423,6 +425,165 @@ func TestModels_Gemini_ChatWithTools(t *testing.T) {
 	}
 	t.Logf("gemini chat+tools: content=%q, finish=%s, tool_calls=%s",
 		result.Content, result.FinishReason, result.ToolCalls)
+}
+
+// --- US6: LLM Streaming Subscriptions ---
+
+func TestModels_StreamCompletion_OpenAI(t *testing.T) {
+	if os.Getenv("LLM_URL") == "" {
+		t.Skip("LLM_URL not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	sub, err := testService.Subscribe(ctx,
+		`subscription { core { models { completion(model: "test_llm", prompt: "Count from 1 to 5", max_tokens: 100) {
+			type content finish_reason prompt_tokens completion_tokens
+		} } } }`, nil)
+	require.NoError(t, err)
+	defer sub.Cancel()
+
+	var events []map[string]any
+	for event := range sub.Events {
+		for event.Reader.Next() {
+			batch := event.Reader.RecordBatch()
+			schema := batch.Schema()
+			for i := 0; i < int(batch.NumRows()); i++ {
+				row := make(map[string]any)
+				for j := 0; j < int(batch.NumCols()); j++ {
+					row[schema.Field(j).Name] = batch.Column(j).GetOneForMarshal(i)
+				}
+				events = append(events, row)
+			}
+		}
+		require.NoError(t, event.Reader.Err())
+		event.Reader.Release()
+	}
+
+	require.NotEmpty(t, events, "should receive streaming events")
+	// Should have content_delta events and a finish event
+	var hasContent, hasFinish bool
+	for _, e := range events {
+		switch e["type"] {
+		case "content_delta":
+			hasContent = true
+		case "finish":
+			hasFinish = true
+		}
+	}
+	assert.True(t, hasContent, "should have content_delta events")
+	assert.True(t, hasFinish, "should have finish event")
+	t.Logf("OpenAI stream: %d events (content=%v, finish=%v)", len(events), hasContent, hasFinish)
+	for i, e := range events {
+		if i < 5 || e["type"] == "finish" {
+			t.Logf("  event %d: type=%v content=%v", i, e["type"], e["content"])
+		}
+	}
+}
+
+func TestModels_StreamChatCompletion_OpenAI(t *testing.T) {
+	if os.Getenv("LLM_URL") == "" {
+		t.Skip("LLM_URL not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	sub, err := testService.Subscribe(ctx,
+		`subscription { core { models { chat_completion(
+			model: "test_llm",
+			messages: ["{\"role\":\"user\",\"content\":\"Say hello in one word\"}"],
+			max_tokens: 50
+		) {
+			type content finish_reason
+		} } } }`, nil)
+	require.NoError(t, err)
+	defer sub.Cancel()
+
+	var eventCount int
+	var content string
+	for event := range sub.Events {
+		for event.Reader.Next() {
+			batch := event.Reader.RecordBatch()
+			schema := batch.Schema()
+			for i := 0; i < int(batch.NumRows()); i++ {
+				eventCount++
+				typeIdx := schema.FieldIndices("type")[0]
+				contentIdx := schema.FieldIndices("content")[0]
+				eventType := batch.Column(typeIdx).GetOneForMarshal(i)
+				eventContent := batch.Column(contentIdx).GetOneForMarshal(i)
+				if eventType == "content_delta" && eventContent != nil {
+					content += fmt.Sprintf("%v", eventContent)
+				}
+			}
+		}
+		event.Reader.Release()
+	}
+
+	assert.Greater(t, eventCount, 0, "should receive events")
+	assert.NotEmpty(t, content, "should have content")
+	t.Logf("OpenAI chat stream: %d events, content=%q", eventCount, content)
+}
+
+func TestModels_StreamCompletion_Anthropic(t *testing.T) {
+	if os.Getenv("ANTHROPIC_KEY") == "" {
+		t.Skip("ANTHROPIC_KEY not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	sub, err := testService.Subscribe(ctx,
+		`subscription { core { models { completion(model: "test_anthropic", prompt: "Say hello", max_tokens: 50) {
+			type content finish_reason
+		} } } }`, nil)
+	require.NoError(t, err)
+	defer sub.Cancel()
+
+	var events []string
+	for event := range sub.Events {
+		for event.Reader.Next() {
+			batch := event.Reader.RecordBatch()
+			schema := batch.Schema()
+			typeIdx := schema.FieldIndices("type")[0]
+			for i := 0; i < int(batch.NumRows()); i++ {
+				events = append(events, fmt.Sprintf("%v", batch.Column(typeIdx).GetOneForMarshal(i)))
+			}
+		}
+		event.Reader.Release()
+	}
+
+	require.NotEmpty(t, events, "should receive events")
+	t.Logf("Anthropic stream: %d events, types=%v", len(events), events)
+}
+
+func TestModels_StreamCompletion_Gemini(t *testing.T) {
+	if os.Getenv("GEMINI_KEY") == "" {
+		t.Skip("GEMINI_KEY not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	sub, err := testService.Subscribe(ctx,
+		`subscription { core { models { completion(model: "test_gemini", prompt: "Say hello", max_tokens: 50) {
+			type content finish_reason
+		} } } }`, nil)
+	require.NoError(t, err)
+	defer sub.Cancel()
+
+	var events []string
+	for event := range sub.Events {
+		for event.Reader.Next() {
+			batch := event.Reader.RecordBatch()
+			schema := batch.Schema()
+			typeIdx := schema.FieldIndices("type")[0]
+			for i := 0; i < int(batch.NumRows()); i++ {
+				events = append(events, fmt.Sprintf("%v", batch.Column(typeIdx).GetOneForMarshal(i)))
+			}
+		}
+		event.Reader.Release()
+	}
+
+	require.NotEmpty(t, events, "should receive events")
+	t.Logf("Gemini stream: %d events, types=%v", len(events), events)
 }
 
 // --- Multi-Provider Discovery ---

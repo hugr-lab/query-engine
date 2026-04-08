@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -263,4 +264,132 @@ func TestStore_KeysEmpty(t *testing.T) {
 	err := res.ScanData("function.core.store.keys", &keys)
 	require.NoError(t, err)
 	assert.Empty(t, keys)
+}
+
+// --- Subscription Tests ---
+
+func TestStore_Publish(t *testing.T) {
+	if os.Getenv("REDIS") == "" {
+		t.Skip("REDIS not set")
+	}
+	res := query(t, `mutation { function { core { store {
+		publish(store: "redis", channel: "test:channel", message: "hello from test") { success message }
+	} } } }`, nil)
+	defer res.Close()
+	var result struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	err := res.ScanData("function.core.store.publish", &result)
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+	t.Logf("publish: success=%v", result.Success)
+}
+
+func TestStore_SubscribePubSub(t *testing.T) {
+	if os.Getenv("REDIS") == "" {
+		t.Skip("REDIS not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Start subscription
+	sub, err := testService.Subscribe(ctx,
+		`subscription { core { store { subscribe(store: "redis", channel: "test:sub") { channel message } } } }`, nil)
+	require.NoError(t, err)
+	defer sub.Cancel()
+
+	// Give subscription time to establish
+	time.Sleep(500 * time.Millisecond)
+
+	// Publish a message
+	res := query(t, `mutation { function { core { store {
+		publish(store: "redis", channel: "test:sub", message: "subscription test message") { success }
+	} } } }`, nil)
+	res.Close()
+
+	// Read events — expect at least one message
+	var messages []map[string]any
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case event, ok := <-sub.Events:
+			if !ok {
+				goto done
+			}
+			for event.Reader.Next() {
+				batch := event.Reader.RecordBatch()
+				schema := batch.Schema()
+				for i := 0; i < int(batch.NumRows()); i++ {
+					row := make(map[string]any)
+					for j := 0; j < int(batch.NumCols()); j++ {
+						row[schema.Field(j).Name] = batch.Column(j).GetOneForMarshal(i)
+					}
+					messages = append(messages, row)
+				}
+			}
+			event.Reader.Release()
+			if len(messages) > 0 {
+				goto done
+			}
+		case <-timeout:
+			goto done
+		}
+	}
+done:
+
+	require.NotEmpty(t, messages, "should receive at least one pub/sub message")
+	msg := messages[0]
+	assert.Equal(t, "test:sub", msg["channel"])
+	assert.Equal(t, "subscription test message", msg["message"])
+	t.Logf("pub/sub: received %d messages, first: channel=%v message=%v", len(messages), msg["channel"], msg["message"])
+}
+
+func TestStore_SubscribeMultipleMessages(t *testing.T) {
+	if os.Getenv("REDIS") == "" {
+		t.Skip("REDIS not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	sub, err := testService.Subscribe(ctx,
+		`subscription { core { store { subscribe(store: "redis", channel: "test:multi") { channel message } } } }`, nil)
+	require.NoError(t, err)
+	defer sub.Cancel()
+
+	time.Sleep(500 * time.Millisecond)
+
+	// Publish 3 messages
+	for i := 0; i < 3; i++ {
+		res := query(t, fmt.Sprintf(`mutation { function { core { store {
+			publish(store: "redis", channel: "test:multi", message: "msg-%d") { success }
+		} } } }`, i), nil)
+		res.Close()
+	}
+
+	// Collect messages
+	var messages []string
+	timeout := time.After(10 * time.Second)
+	for len(messages) < 3 {
+		select {
+		case event, ok := <-sub.Events:
+			if !ok {
+				goto done
+			}
+			for event.Reader.Next() {
+				batch := event.Reader.RecordBatch()
+				msgIdx := batch.Schema().FieldIndices("message")[0]
+				for i := 0; i < int(batch.NumRows()); i++ {
+					messages = append(messages, fmt.Sprintf("%v", batch.Column(msgIdx).GetOneForMarshal(i)))
+				}
+			}
+			event.Reader.Release()
+		case <-timeout:
+			goto done
+		}
+	}
+done:
+
+	assert.GreaterOrEqual(t, len(messages), 3, "should receive at least 3 messages")
+	t.Logf("multi-message: received %d messages: %v", len(messages), messages)
 }

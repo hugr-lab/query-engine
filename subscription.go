@@ -22,11 +22,6 @@ import (
 
 // Subscribe creates a subscription from a GraphQL subscription query.
 func (s *Service) Subscribe(ctx context.Context, query string, vars map[string]any) (*types.Subscription, error) {
-	ctx, err := s.perm.ContextWithPermissions(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	op, err := s.schema.ParseQuery(ctx, query, vars, "")
 	if err != nil {
 		return nil, err
