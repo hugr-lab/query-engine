@@ -4,6 +4,8 @@ go 1.26
 
 require (
 	github.com/apache/arrow-go/v18 v18.5.2
+	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/hugr-lab/airport-go v0.2.1
 	github.com/hugr-lab/query-engine/types v0.3.18
 	github.com/paulmach/orb v0.13.0
@@ -14,8 +16,6 @@ require (
 require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
-	github.com/google/uuid v1.6.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.26 // indirect
