@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -255,14 +256,8 @@ func (s *Service) handleIPCSubscription(ctx context.Context, stream *stream, req
 			return
 		}
 
-		// Send part_start
-		_ = stream.writeJSON(StreamMessage{
-			Type:           "part_start",
-			SubscriptionID: subID,
-			Path:           event.Path,
-		})
-
-		// Stream Arrow batches
+		// Stream Arrow batches with subscription metadata in Arrow schema.
+		// No text frame markers needed — client routes by metadata.
 		for event.Reader.Next() {
 			if subCtx.Err() != nil {
 				break
@@ -272,17 +267,17 @@ func (s *Service) handleIPCSubscription(ctx context.Context, stream *stream, req
 				continue
 			}
 
-			// Send subscription_data text frame (marker before binary)
-			_ = stream.writeJSON(StreamMessage{
-				Type:           "subscription_data",
-				SubscriptionID: subID,
-			})
+			// Embed subscription_id and path in Arrow schema metadata
+			meta := map[string]string{
+				"subscription_id": subID,
+				"path":            event.Path,
+			}
+			tagged := array.NewRecordBatch(addMeta(chunk.Schema(), meta), chunk.Columns(), chunk.NumRows())
 
-			// Send Arrow IPC binary frame
 			buf := bp.Get().(*bytes.Buffer)
-			writer := ipc.NewWriter(buf, ipc.WithLZ4())
-			_ = writer.Write(chunk)
-			_ = writer.Close()
+			w := ipc.NewWriter(buf, ipc.WithLZ4())
+			_ = w.Write(tagged)
+			_ = w.Close()
 			err := stream.writeMessage(websocket.BinaryMessage, buf.Bytes())
 			buf.Reset()
 			bp.Put(buf)
@@ -292,14 +287,14 @@ func (s *Service) handleIPCSubscription(ctx context.Context, stream *stream, req
 			}
 		}
 
-		// Send part_complete
+		event.Reader.Release()
+
+		// Signal part complete — client closes the pipe for this path
 		_ = stream.writeJSON(StreamMessage{
 			Type:           "part_complete",
 			SubscriptionID: subID,
 			Path:           event.Path,
 		})
-
-		event.Reader.Release()
 	}
 }
 

@@ -149,6 +149,7 @@ type ClientConfig struct {
 	JQQueryUrl         string
 	Transport          http.RoundTripper
 	ArrowStructFlatten bool
+	SubPool            SubscriptionPoolConfig
 }
 
 type Client struct {
@@ -156,8 +157,8 @@ type Client struct {
 	c      *http.Client
 	config ClientConfig
 
-	subConnMu sync.Mutex
-	subConn   *subscriptionConn
+	subPoolMu sync.Mutex
+	subPool   *subscriptionPool
 }
 
 func NewClient(url string, opts ...Option) *Client {

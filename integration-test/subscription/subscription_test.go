@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"os"
 	"strings"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/types"
 )
 
 var (
@@ -374,57 +376,45 @@ func TestIPC_Subscribe(t *testing.T) {
 	}
 done:
 
-	// Should have part_start, subscription_data, binary frames, part_complete, subscription_complete
-	var hasPartStart, hasPartComplete, hasSubComplete, hasSubData bool
+	// Protocol: binary Arrow frames (with subscription_id in metadata) +
+	// part_complete + subscription_complete text frames
+	var hasPartComplete, hasSubComplete bool
 	for _, msg := range textMsgs {
 		switch msg.Type {
-		case "part_start":
-			hasPartStart = true
-			assert.Equal(t, "s1", msg.SubscriptionID)
-			assert.NotEmpty(t, msg.Path)
-		case "subscription_data":
-			hasSubData = true
 		case "part_complete":
 			hasPartComplete = true
+			assert.Equal(t, "s1", msg.SubscriptionID)
 		case "subscription_complete":
 			hasSubComplete = true
 			assert.Equal(t, "s1", msg.SubscriptionID)
 		}
 	}
 
-	assert.True(t, hasPartStart, "should have part_start")
 	assert.True(t, hasPartComplete, "should have part_complete")
 	assert.True(t, hasSubComplete, "should have subscription_complete")
-	// Note: with empty DB, there may be 0 data rows → no subscription_data/binary frames
-	t.Logf("IPC: %d text msgs, %d binary frames (hasSubData=%v)", len(textMsgs), binaryCount, hasSubData)
+	assert.Greater(t, binaryCount, 0, "should have binary Arrow frames")
+	t.Logf("IPC: %d text msgs, %d binary frames", len(textMsgs), binaryCount)
 }
 
 func TestIPC_Unsubscribe(t *testing.T) {
 	conn := connectIPC(t)
 	defer conn.Close()
 
-	// Subscribe to long-running periodic
+	// Subscribe to periodic with data (catalog.types always has data)
 	err := conn.WriteJSON(ipcMsg{
 		Type:           "subscribe",
 		SubscriptionID: "s-cancel",
-		Query:          `subscription { query(interval: "30s") { core { data_sources { name } } } }`,
+		Query:          `subscription { query(interval: "30s") { core { catalog { types(limit: 1) { name } } } } }`,
 	})
 	require.NoError(t, err)
 
-	// Wait for first data
+	// Wait for first binary frame (Arrow data)
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	for {
-		msgType, data, err := conn.ReadMessage()
+		msgType, _, err := conn.ReadMessage()
 		require.NoError(t, err)
-		if msgType == websocket.TextMessage {
-			var msg ipcMsg
-			json.Unmarshal(data, &msg)
-			if msg.Type == "subscription_data" || msg.Type == "part_start" {
-				break // got first data
-			}
-		}
 		if msgType == websocket.BinaryMessage {
-			break // got arrow data
+			break
 		}
 	}
 
@@ -606,27 +596,18 @@ func TestGoClient_MultipleSubscriptions(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Start two subscriptions on the same shared connection
 	sub1, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 2) { name } } } } }`, nil)
 	require.NoError(t, err)
-
 	sub2, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 3) { name } } } } }`, nil)
 	require.NoError(t, err)
 
-	// Consume both
+	// Drain both in parallel
 	var rows1, rows2 int
-	for event := range sub1.Events {
-		for event.Reader.Next() {
-			rows1 += int(event.Reader.RecordBatch().NumRows())
-		}
-		event.Reader.Release()
-	}
-	for event := range sub2.Events {
-		for event.Reader.Next() {
-			rows2 += int(event.Reader.RecordBatch().NumRows())
-		}
-		event.Reader.Release()
-	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); rows1 = drainSub(sub1) }()
+	go func() { defer wg.Done(); rows2 = drainSub(sub2) }()
+	wg.Wait()
 
 	assert.Greater(t, rows1, 0, "sub1 should have rows")
 	assert.Greater(t, rows2, 0, "sub2 should have rows")
@@ -651,7 +632,7 @@ func TestGoClient_ReuseAfterComplete(t *testing.T) {
 	}
 	assert.Greater(t, rows1, 0)
 
-	// Second subscription — reuses same connection
+	// Second subscription — reuses same pool connection
 	sub2, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 2) { name } } } } }`, nil)
 	require.NoError(t, err)
 	var rows2 int
@@ -662,7 +643,74 @@ func TestGoClient_ReuseAfterComplete(t *testing.T) {
 		event.Reader.Release()
 	}
 	assert.Greater(t, rows2, 0)
-	t.Logf("Go client reuse: sub1=%d rows, sub2=%d rows (same connection)", rows1, rows2)
+	t.Logf("Go client reuse: sub1=%d rows, sub2=%d rows (same pool conn)", rows1, rows2)
+}
+
+func TestGoClient_DedicatedConn(t *testing.T) {
+	c := client.NewClient(testServer.URL + "/ipc")
+	ctx := context.Background()
+
+	conn, err := c.NewSubscriptionConn(ctx)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	sub1, err := conn.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 2) { name } } } } }`, nil)
+	require.NoError(t, err)
+	sub2, err := conn.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 3) { name } } } } }`, nil)
+	require.NoError(t, err)
+
+	// Drain both in parallel — sequential drain deadlocks on shared connection
+	var rows1, rows2 int
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); rows1 = drainSub(sub1) }()
+	go func() { defer wg.Done(); rows2 = drainSub(sub2) }()
+	wg.Wait()
+
+	assert.Greater(t, rows1, 0)
+	assert.Greater(t, rows2, 0)
+	t.Logf("Go client dedicated conn: sub1=%d, sub2=%d rows", rows1, rows2)
+}
+
+func TestGoClient_Pool(t *testing.T) {
+	c := client.NewClient(testServer.URL+"/ipc",
+		client.WithTimeout(10*time.Second),
+		client.WithSubscriptionPool(2, 1),
+	)
+	defer c.CloseSubscriptions()
+
+	ctx := context.Background()
+
+	sub1, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 1) { name } } } } }`, nil)
+	require.NoError(t, err)
+	sub2, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 2) { name } } } } }`, nil)
+	require.NoError(t, err)
+	sub3, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 3) { name } } } } }`, nil)
+	require.NoError(t, err)
+
+	var r1, r2, r3 int
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() { defer wg.Done(); r1 = drainSub(sub1) }()
+	go func() { defer wg.Done(); r2 = drainSub(sub2) }()
+	go func() { defer wg.Done(); r3 = drainSub(sub3) }()
+	wg.Wait()
+
+	assert.Greater(t, r1, 0)
+	assert.Greater(t, r2, 0)
+	assert.Greater(t, r3, 0)
+	t.Logf("Go client pool(max=2): sub1=%d, sub2=%d, sub3=%d rows", r1, r2, r3)
+}
+
+func drainSub(sub *types.Subscription) int {
+	var rows int
+	for event := range sub.Events {
+		for event.Reader.Next() {
+			rows += int(event.Reader.RecordBatch().NumRows())
+		}
+		event.Reader.Release()
+	}
+	return rows
 }
 
 func TestGraphQLWS_InvalidQuery(t *testing.T) {
