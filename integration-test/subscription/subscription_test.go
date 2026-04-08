@@ -734,6 +734,96 @@ func TestGraphQLWS_InvalidQuery(t *testing.T) {
 		fmt.Sprintf("expected error or complete, got %s: %s", msg.Type, string(msg.Payload)))
 }
 
+func TestGoClient_TwoSubscriptionsSameData(t *testing.T) {
+	c := client.NewClient(testServer.URL+"/ipc", client.WithTimeout(30*time.Second))
+	defer c.CloseSubscriptions()
+
+	ctx := context.Background()
+
+	query := `subscription { query(interval: "500ms", count: 10) {
+		core { catalog {
+			types(limit: 100, order_by: [{field: "name", direction: ASC}]) { name kind }
+			fields(limit: 100, order_by: [{field: "name", direction: ASC}]) { name field_type }
+		} }
+	} }`
+
+	// Two subscriptions on the same connection with the same query
+	sub1, err := c.Subscribe(ctx, query, nil)
+	require.NoError(t, err)
+	sub2, err := c.Subscribe(ctx, query, nil)
+	require.NoError(t, err)
+
+	type subResult struct {
+		events int
+		paths  map[string]int // path → row count
+		sample map[string]string // path → first row JSON (for comparison)
+	}
+
+	collect := func(sub *types.Subscription) *subResult {
+		res := &subResult{paths: make(map[string]int), sample: make(map[string]string)}
+		for event := range sub.Events {
+			res.events++
+			for event.Reader.Next() {
+				batch := event.Reader.RecordBatch()
+				schema := batch.Schema()
+				for i := 0; i < int(batch.NumRows()); i++ {
+					res.paths[event.Path]++
+					// Capture first row per path for comparison
+					if _, ok := res.sample[event.Path]; !ok {
+						row := make(map[string]any)
+						for j := 0; j < int(batch.NumCols()); j++ {
+							row[schema.Field(j).Name] = batch.Column(j).GetOneForMarshal(i)
+						}
+						b, _ := json.Marshal(row)
+						res.sample[event.Path] = string(b)
+					}
+				}
+			}
+			event.Reader.Release()
+		}
+		return res
+	}
+
+	var r1, r2 *subResult
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); r1 = collect(sub1) }()
+	go func() { defer wg.Done(); r2 = collect(sub2) }()
+	wg.Wait()
+
+	// Each subscription should have 2 events (one per path: types + fields)
+	assert.Equal(t, 2, r1.events, "sub1: should have 2 events (one reader per path)")
+	assert.Equal(t, 2, r2.events, "sub2: should have 2 events (one reader per path)")
+
+	// Both should have data for both paths
+	assert.Len(t, r1.paths, 2, "sub1: should have 2 paths")
+	assert.Len(t, r2.paths, 2, "sub2: should have 2 paths")
+
+	// Each path should have rows from 10 ticks
+	for path, count := range r1.paths {
+		assert.Greater(t, count, 0, "sub1 path %s: should have rows", path)
+	}
+	for path, count := range r2.paths {
+		assert.Greater(t, count, 0, "sub2 path %s: should have rows", path)
+	}
+	// Both subscriptions should have same row counts per path
+	for path := range r1.paths {
+		assert.Equal(t, r1.paths[path], r2.paths[path],
+			"path %s: row counts should match between subscriptions", path)
+	}
+
+	// First row of each path should be identical (sorted, deterministic)
+	for path := range r1.sample {
+		assert.Equal(t, r1.sample[path], r2.sample[path],
+			"path %s: first row should match between subscriptions", path)
+	}
+
+	for path, count := range r1.paths {
+		t.Logf("path %s: sub1=%d rows, sub2=%d rows, first_row_match=%v",
+			path, count, r2.paths[path], r1.sample[path] == r2.sample[path])
+	}
+}
+
 func TestGraphQLWS_Introspection(t *testing.T) {
 	// Verify subscription type is visible in introspection via regular HTTP
 	ctx := context.Background()

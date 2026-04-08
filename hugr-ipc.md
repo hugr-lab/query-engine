@@ -202,33 +202,44 @@ Client → Server: subscribe
   {"type": "subscribe", "subscription_id": "s1",
    "query": "subscription { query { core { data_sources { name } } } }"}
 
-Server → Client: Arrow binary frames (with metadata)
+Server → Client: Arrow binary frames (with metadata in schema)
   Binary: Arrow IPC RecordBatch
     Schema metadata: {"subscription_id": "s1", "path": "core.data_sources"}
 
-Server → Client: part_complete (all batches for a path sent)
+Server → Client: part_complete (all batches for this execution sent)
   {"type": "part_complete", "subscription_id": "s1", "path": "core.data_sources"}
 
 Server → Client: subscription_complete (subscription ended)
   {"type": "subscription_complete", "subscription_id": "s1"}
 ```
 
+#### Reader per Path
+
+Each unique path in a subscription produces one `SubscriptionEvent` with a `Reader`. The reader yields batches from all ticks — it does NOT close between ticks.
+
+- `part_complete`: marker between ticks (reader stays open, batches keep flowing)
+- `subscription_complete`: reader closes, `reader.Next()` returns false
+
+For a multi-path query subscription with 2 paths and 10 ticks, the client receives 2 events (one reader per path), each yielding batches from all 10 ticks.
+
 #### Multiple Subscriptions
 
 ```
-Client → subscribe s1 (query streaming)
+Client → subscribe s1 (query streaming, 2 paths)
 Client → subscribe s2 (LLM streaming)
 
-Server → binary frame (s1 metadata in Arrow schema)
-Server → binary frame (s2 metadata in Arrow schema)
-Server → binary frame (s1 metadata)
-Server → part_complete s1
-Server → subscription_complete s1
-Server → binary frame (s2 metadata)
+Server → binary frame (s1, path=core.catalog.types)
+Server → binary frame (s2, LLM event)
+Server → binary frame (s1, path=core.catalog.fields)
+Server → part_complete s1 (tick 1 done for both paths)
+Server → binary frame (s1, path=core.catalog.types)  (tick 2)
+Server → binary frame (s2, LLM event)
 Server → subscription_complete s2
+Server → part_complete s1 (tick 2 done)
+Server → subscription_complete s1
 ```
 
-Binary frames from different subscriptions may interleave freely. The client routes each frame by reading `subscription_id` from the Arrow schema metadata.
+Binary frames from different subscriptions interleave freely. The client routes each frame by reading `subscription_id` and `path` from Arrow schema metadata.
 
 #### Periodic Subscriptions
 
@@ -237,14 +248,16 @@ Client → subscribe with interval
   {"type": "subscribe", "subscription_id": "s1",
    "query": "subscription { query(interval: \"10s\", count: 3) { ... } }"}
 
-Server → binary frames (tick 1)
-Server → part_complete s1
+Server → binary frames (tick 1, path A + path B)
+Server → part_complete s1 (tick 1)
 Server → binary frames (tick 2, after 10s)
-Server → part_complete s1
+Server → part_complete s1 (tick 2)
 Server → binary frames (tick 3, after 10s)
-Server → part_complete s1
-Server → subscription_complete s1
+Server → part_complete s1 (tick 3)
+Server → subscription_complete s1 (count exhausted)
 ```
+
+Reader stays open across all ticks. Consumer calls `reader.Next()` in a loop and receives batches from ticks 1, 2, 3 sequentially. After `subscription_complete`, `reader.Next()` returns false.
 
 #### Cancellation
 
