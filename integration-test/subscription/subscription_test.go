@@ -189,6 +189,56 @@ func TestGraphQLWS_PeriodicPolling(t *testing.T) {
 	t.Logf("periodic: %d next messages, complete=%v", nextCount, hasComplete)
 }
 
+func TestGraphQLWS_MultiPathQuery(t *testing.T) {
+	conn := connectGraphQLWS(t)
+	defer conn.Close()
+
+	// Subscribe to a query with multiple data object paths
+	payload, _ := json.Marshal(map[string]any{
+		"query": `subscription { query {
+			core {
+				catalog { types(limit: 2) { name kind } }
+				data_sources { name type }
+			}
+		} }`,
+	})
+	err := conn.WriteJSON(gqlwsMsg{ID: "multi", Type: "subscribe", Payload: payload})
+	require.NoError(t, err)
+
+	// Collect messages — expect rows from both paths interleaved
+	paths := map[string]int{}
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	for {
+		var msg gqlwsMsg
+		err := conn.ReadJSON(&msg)
+		if err != nil {
+			break
+		}
+		if msg.Type == "next" {
+			var p map[string]any
+			json.Unmarshal(msg.Payload, &p)
+			data, _ := p["data"].(map[string]any)
+			if data != nil {
+				if core, ok := data["core"].(map[string]any); ok {
+					if _, ok := core["catalog"]; ok {
+						paths["catalog"]++
+					}
+					if _, ok := core["data_sources"]; ok {
+						paths["data_sources"]++
+					}
+				}
+			}
+		}
+		if msg.Type == "complete" {
+			break
+		}
+	}
+
+	assert.Greater(t, paths["catalog"], 0, "should have catalog rows")
+	// data_sources may be empty in test DB but path should still be attempted
+	t.Logf("multi-path: catalog=%d rows, data_sources=%d rows", paths["catalog"], paths["data_sources"])
+}
+
 func TestGraphQLWS_Cancel(t *testing.T) {
 	conn := connectGraphQLWS(t)
 	defer conn.Close()

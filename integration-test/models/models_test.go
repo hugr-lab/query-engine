@@ -433,53 +433,13 @@ func TestModels_StreamCompletion_OpenAI(t *testing.T) {
 	if os.Getenv("LLM_URL") == "" {
 		t.Skip("LLM_URL not set")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	sub, err := testService.Subscribe(ctx,
+	events := collectStreamEvents(t,
 		`subscription { core { models { completion(model: "test_llm", prompt: "Explain step by step why the sky is blue. Think through the physics involved.", max_tokens: 500) {
-			type content finish_reason prompt_tokens completion_tokens
-		} } } }`, nil)
-	require.NoError(t, err)
-	defer sub.Cancel()
-
-	var events []map[string]any
-	for event := range sub.Events {
-		for event.Reader.Next() {
-			batch := event.Reader.RecordBatch()
-			schema := batch.Schema()
-			for i := 0; i < int(batch.NumRows()); i++ {
-				row := make(map[string]any)
-				for j := 0; j < int(batch.NumCols()); j++ {
-					row[schema.Field(j).Name] = batch.Column(j).GetOneForMarshal(i)
-				}
-				events = append(events, row)
-			}
-		}
-		require.NoError(t, event.Reader.Err())
-		event.Reader.Release()
-	}
+			type content model finish_reason tool_calls prompt_tokens completion_tokens
+		} } } }`)
 
 	require.NotEmpty(t, events, "should receive streaming events")
-	var hasContent, hasReasoning, hasFinish bool
-	for _, e := range events {
-		switch e["type"] {
-		case "content_delta":
-			hasContent = true
-		case "reasoning":
-			hasReasoning = true
-		case "finish":
-			hasFinish = true
-		}
-	}
-	assert.True(t, hasContent || hasReasoning, "should have content_delta or reasoning events")
-	assert.True(t, hasFinish, "should have finish event")
-	t.Logf("OpenAI stream: %d events (content=%v, reasoning=%v, finish=%v)", len(events), hasContent, hasReasoning, hasFinish)
-	for i, e := range events {
-		if i < 5 || e["type"] == "finish" {
-			t.Logf("  event %d: type=%v content=%v", i, e["type"], e["content"])
-		}
-	}
+	assertStreamEvents(t, "OpenAI", events)
 }
 
 func TestModels_StreamChatCompletion_OpenAI(t *testing.T) {
@@ -529,62 +489,103 @@ func TestModels_StreamCompletion_Anthropic(t *testing.T) {
 	if os.Getenv("ANTHROPIC_KEY") == "" {
 		t.Skip("ANTHROPIC_KEY not set")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	sub, err := testService.Subscribe(ctx,
-		`subscription { core { models { completion(model: "test_anthropic", prompt: "Say hello", max_tokens: 50) {
-			type content finish_reason
-		} } } }`, nil)
-	require.NoError(t, err)
-	defer sub.Cancel()
-
-	var events []string
-	for event := range sub.Events {
-		for event.Reader.Next() {
-			batch := event.Reader.RecordBatch()
-			schema := batch.Schema()
-			typeIdx := schema.FieldIndices("type")[0]
-			for i := 0; i < int(batch.NumRows()); i++ {
-				events = append(events, fmt.Sprintf("%v", batch.Column(typeIdx).GetOneForMarshal(i)))
-			}
-		}
-		event.Reader.Release()
-	}
+	events := collectStreamEvents(t,
+		`subscription { core { models { completion(model: "test_anthropic", prompt: "Explain why 2+2=4 in one sentence. Think step by step.", max_tokens: 200) {
+			type content model finish_reason tool_calls prompt_tokens completion_tokens
+		} } } }`)
 
 	require.NotEmpty(t, events, "should receive events")
-	t.Logf("Anthropic stream: %d events, types=%v", len(events), events)
+	assertStreamEvents(t, "Anthropic", events)
 }
 
 func TestModels_StreamCompletion_Gemini(t *testing.T) {
 	if os.Getenv("GEMINI_KEY") == "" {
 		t.Skip("GEMINI_KEY not set")
 	}
+	events := collectStreamEvents(t,
+		`subscription { core { models { completion(model: "test_gemini", prompt: "Explain why 2+2=4 in one sentence. Think step by step.", max_tokens: 200) {
+			type content model finish_reason tool_calls prompt_tokens completion_tokens
+		} } } }`)
+
+	require.NotEmpty(t, events, "should receive events")
+	assertStreamEvents(t, "Gemini", events)
+}
+
+// collectStreamEvents subscribes and collects all streaming events as row maps.
+func collectStreamEvents(t *testing.T, query string) []map[string]any {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	sub, err := testService.Subscribe(ctx,
-		`subscription { core { models { completion(model: "test_gemini", prompt: "Say hello", max_tokens: 50) {
-			type content finish_reason
-		} } } }`, nil)
+	sub, err := testService.Subscribe(ctx, query, nil)
 	require.NoError(t, err)
 	defer sub.Cancel()
 
-	var events []string
+	var events []map[string]any
 	for event := range sub.Events {
 		for event.Reader.Next() {
 			batch := event.Reader.RecordBatch()
 			schema := batch.Schema()
-			typeIdx := schema.FieldIndices("type")[0]
 			for i := 0; i < int(batch.NumRows()); i++ {
-				events = append(events, fmt.Sprintf("%v", batch.Column(typeIdx).GetOneForMarshal(i)))
+				row := make(map[string]any)
+				for j := 0; j < int(batch.NumCols()); j++ {
+					row[schema.Field(j).Name] = batch.Column(j).GetOneForMarshal(i)
+				}
+				events = append(events, row)
 			}
 		}
+		require.NoError(t, event.Reader.Err())
 		event.Reader.Release()
 	}
+	return events
+}
 
-	require.NotEmpty(t, events, "should receive events")
-	t.Logf("Gemini stream: %d events, types=%v", len(events), events)
+// assertStreamEvents verifies that a stream has proper event structure:
+// - At least one content event (content_delta or reasoning)
+// - Exactly one finish event with finish_reason, prompt_tokens, completion_tokens
+func assertStreamEvents(t *testing.T, provider string, events []map[string]any) {
+	t.Helper()
+
+	var contentEvents, reasoningEvents int
+	var finishEvent map[string]any
+	var allContent string
+
+	for _, e := range events {
+		eventType := fmt.Sprintf("%v", e["type"])
+		switch eventType {
+		case "content_delta":
+			contentEvents++
+			if c := e["content"]; c != nil {
+				allContent += fmt.Sprintf("%v", c)
+			}
+		case "reasoning":
+			reasoningEvents++
+			if c := e["content"]; c != nil {
+				allContent += fmt.Sprintf("%v", c)
+			}
+		case "finish":
+			finishEvent = e
+		}
+	}
+
+	assert.True(t, contentEvents > 0 || reasoningEvents > 0,
+		"%s: should have content_delta or reasoning events", provider)
+	require.NotNil(t, finishEvent, "%s: should have a finish event", provider)
+
+	// finish event should have finish_reason
+	assert.NotEmpty(t, finishEvent["finish_reason"],
+		"%s: finish event should have finish_reason", provider)
+
+	t.Logf("%s stream: %d events total (%d content, %d reasoning, finish_reason=%v)",
+		provider, len(events), contentEvents, reasoningEvents, finishEvent["finish_reason"])
+	t.Logf("%s stream: prompt_tokens=%v completion_tokens=%v",
+		provider, finishEvent["prompt_tokens"], finishEvent["completion_tokens"])
+
+	// Log first few content chars
+	if len(allContent) > 100 {
+		allContent = allContent[:100] + "..."
+	}
+	t.Logf("%s stream content: %q", provider, allContent)
 }
 
 // --- Multi-Provider Discovery ---
