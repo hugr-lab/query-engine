@@ -65,10 +65,9 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 	stream := &stream{
-		queryId:       uuid.NewString(),
-		conn:          conn,
-		subscriptions: make(map[string]context.CancelFunc),
-		writeCh:       make(chan wsMsg, 256),
+		queryId: uuid.NewString(),
+		conn:    conn,
+		writeCh: make(chan wsMsg, 256),
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	stream.connCancel = cancel
@@ -78,10 +77,11 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 			stream.cancel()
 		}
 		stream.activeQuery = nil
-		for id, subCancel := range stream.subscriptions {
-			subCancel()
-			delete(stream.subscriptions, id)
-		}
+		stream.subscriptions.Range(func(key, value any) bool {
+			value.(context.CancelFunc)()
+			stream.subscriptions.Delete(key)
+			return true
+		})
 		stream.connCancel()
 		return nil
 	})
@@ -233,7 +233,7 @@ func (s *Service) handleIPCSubscription(ctx context.Context, stream *stream, req
 	}
 
 	subCtx, subCancel := context.WithCancel(ctx)
-	stream.subscriptions[subID] = subCancel
+	stream.subscriptions.Store(subID, subCancel)
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -241,7 +241,7 @@ func (s *Service) handleIPCSubscription(ctx context.Context, stream *stream, req
 		}
 	}()
 	defer func() {
-		delete(stream.subscriptions, subID)
+		stream.subscriptions.Delete(subID)
 		subCancel()
 		_ = stream.writeJSON(StreamMessage{Type: "subscription_complete", SubscriptionID: subID})
 	}()
@@ -437,7 +437,7 @@ type stream struct {
 
 	activeQuery   *StreamMessage
 	cancel        context.CancelFunc
-	subscriptions map[string]context.CancelFunc
+	subscriptions sync.Map // map[string]context.CancelFunc
 }
 
 func (s *stream) setActiveQuery(ctx context.Context, req *StreamMessage) (context.Context, error) {
@@ -487,9 +487,8 @@ func (s *stream) ping(ctx context.Context) {
 }
 
 func (s *stream) cancelSubscription(id string) {
-	if cancel, ok := s.subscriptions[id]; ok {
-		cancel()
-		delete(s.subscriptions, id)
+	if v, ok := s.subscriptions.LoadAndDelete(id); ok {
+		v.(context.CancelFunc)()
 	}
 }
 
