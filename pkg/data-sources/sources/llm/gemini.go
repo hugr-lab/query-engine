@@ -358,7 +358,8 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 	}
 	if effectiveBudget > 0 {
 		reqBody["generationConfig"].(map[string]any)["thinkingConfig"] = map[string]any{
-			"thinkingBudget": effectiveBudget,
+			"thinkingBudget":  effectiveBudget,
+			"includeThoughts": true,
 		}
 	}
 	if systemInstruction != nil {
