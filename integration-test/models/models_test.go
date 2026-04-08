@@ -89,7 +89,7 @@ func registerDS(ctx context.Context, s *hugr.Service) {
 
 	// Gemini DS
 	if key := os.Getenv("GEMINI_KEY"); key != "" {
-		path := "https://generativelanguage.googleapis.com/v1beta?model=gemini-2.5-flash&api_key=" + key + "&timeout=60s"
+		path := "https://generativelanguage.googleapis.com/v1beta?model=gemini-3.1-pro-preview&api_key=" + key + "&max_tokens=4096&thinking_budget=2048&timeout=120s"
 		mustQuery(ctx, s, `mutation($data: core_data_sources_mut_input_data!) {
 			core { insert_data_sources(data: $data) { name } }
 		}`, map[string]any{
@@ -503,7 +503,7 @@ func TestModels_StreamCompletion_Gemini(t *testing.T) {
 		t.Skip("GEMINI_KEY not set")
 	}
 	events := collectStreamEvents(t,
-		`subscription { core { models { completion(model: "test_gemini", prompt: "Explain why 2+2=4 in one sentence. Think step by step.", max_tokens: 200) {
+		`subscription { core { models { completion(model: "test_gemini", prompt: "Explain why 2+2=4 in one sentence. Think step by step.", max_tokens: 4096) {
 			type content model finish_reason tool_calls prompt_tokens completion_tokens
 		} } } }`)
 
