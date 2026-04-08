@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -83,6 +85,9 @@ func (s *GeminiSource) Attach(_ context.Context, _ *db.Pool) error {
 	if tpm := u.Query().Get("tpm"); tpm != "" {
 		fmt.Sscanf(tpm, "%d", &s.config.TPM)
 	}
+	if tb := u.Query().Get("thinking_budget"); tb != "" {
+		fmt.Sscanf(tb, "%d", &s.config.ThinkingBudget)
+	}
 	s.config.RateStore = u.Query().Get("rate_store")
 
 	q := u.Query()
@@ -90,6 +95,7 @@ func (s *GeminiSource) Attach(_ context.Context, _ *db.Pool) error {
 	q.Del("api_key")
 	q.Del("max_tokens")
 	q.Del("timeout")
+	q.Del("thinking_budget")
 	q.Del("rpm")
 	q.Del("tpm")
 	q.Del("rate_store")
@@ -286,8 +292,226 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 	return result, nil
 }
 
+func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages []sources.LLMMessage, opts sources.LLMOptions,
+	onEvent func(event *sources.LLMStreamEvent) error) error {
+	if !s.isAttached {
+		return sources.ErrDataSourceNotAttached
+	}
+
+	s.rateLimitMixin.ensureLimiter(s.ds.Name, s.config)
+	if s.limiter != nil {
+		if err := s.limiter.Check(ctx); err != nil {
+			return err
+		}
+	}
+
+	maxTokens := opts.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = s.config.MaxTokens
+	}
+
+	// Resolve effective thinking budget
+	effectiveBudget := opts.ThinkingBudget
+	if s.config.ThinkingBudget > 0 && (effectiveBudget == 0 || effectiveBudget > s.config.ThinkingBudget) {
+		effectiveBudget = s.config.ThinkingBudget
+	}
+
+	// Separate system instruction
+	var systemInstruction *map[string]any
+	var contents []map[string]any
+	for _, m := range messages {
+		if m.Role == "system" {
+			si := map[string]any{"parts": []map[string]any{{"text": m.Content}}}
+			systemInstruction = &si
+			continue
+		}
+		role := m.Role
+		if role == "assistant" {
+			role = "model"
+		}
+		if m.Role == "tool" {
+			contents = append(contents, map[string]any{
+				"role": "function",
+				"parts": []map[string]any{{
+					"functionResponse": map[string]any{
+						"name":     m.ToolCallID,
+						"response": map[string]any{"result": m.Content},
+					},
+				}},
+			})
+			continue
+		}
+		parts := []map[string]any{{"text": m.Content}}
+		for _, tc := range m.ToolCalls {
+			parts = append(parts, map[string]any{
+				"functionCall": map[string]any{"name": tc.Name, "args": tc.Arguments},
+			})
+		}
+		contents = append(contents, map[string]any{"role": role, "parts": parts})
+	}
+
+	reqBody := map[string]any{
+		"contents": contents,
+		"generationConfig": map[string]any{
+			"maxOutputTokens": maxTokens,
+		},
+	}
+	if effectiveBudget > 0 {
+		reqBody["generationConfig"].(map[string]any)["thinkingConfig"] = map[string]any{
+			"thinkingBudget":  effectiveBudget,
+			"includeThoughts": true,
+		}
+	}
+	if systemInstruction != nil {
+		reqBody["system_instruction"] = *systemInstruction
+	}
+	if opts.Temperature > 0 {
+		reqBody["generationConfig"].(map[string]any)["temperature"] = opts.Temperature
+	}
+	if len(opts.Tools) > 0 {
+		decls := make([]map[string]any, len(opts.Tools))
+		for i, t := range opts.Tools {
+			decls[i] = map[string]any{
+				"name":        t.Name,
+				"description": t.Description,
+				"parameters":  t.Parameters,
+			}
+		}
+		reqBody["tools"] = []map[string]any{{"functionDeclarations": decls}}
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.config.Timeout)
+	defer cancel()
+
+	// URL: {baseURL}/models/{model}:streamGenerateContent?alt=sse&key={api_key}
+	apiURL := fmt.Sprintf("%s/models/%s:streamGenerateContent?alt=sse", s.config.BaseURL, url.PathEscape(s.config.Model))
+	if s.config.ApiKey != "" {
+		apiURL += "&key=" + url.QueryEscape(s.config.ApiKey)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Gemini API error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var totalPromptTokens, totalCompletionTokens int
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+
+		var chunk struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text         string `json:"text"`
+						Thought      bool   `json:"thought,omitempty"`
+						FunctionCall *struct {
+							Name string `json:"name"`
+							Args any    `json:"args"`
+						} `json:"functionCall"`
+					} `json:"parts"`
+				} `json:"content"`
+				FinishReason string `json:"finishReason"`
+			} `json:"candidates"`
+			UsageMetadata *struct {
+				PromptTokenCount     int `json:"promptTokenCount"`
+				CandidatesTokenCount int `json:"candidatesTokenCount"`
+			} `json:"usageMetadata"`
+		}
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+
+		if chunk.UsageMetadata != nil {
+			totalPromptTokens = chunk.UsageMetadata.PromptTokenCount
+			totalCompletionTokens = chunk.UsageMetadata.CandidatesTokenCount
+		}
+
+		if len(chunk.Candidates) == 0 {
+			continue
+		}
+		candidate := chunk.Candidates[0]
+
+		for _, part := range candidate.Content.Parts {
+			if part.Text != "" {
+				eventType := "content_delta"
+				if part.Thought {
+					eventType = "reasoning"
+				}
+				if err := onEvent(&sources.LLMStreamEvent{
+					Type:    eventType,
+					Content: part.Text,
+				}); err != nil {
+					return err
+				}
+			}
+			if part.FunctionCall != nil {
+				b, _ := json.Marshal([]map[string]any{
+					{"name": part.FunctionCall.Name, "args": part.FunctionCall.Args},
+				})
+				if err := onEvent(&sources.LLMStreamEvent{
+					Type:      "content_delta",
+					ToolCalls: string(b),
+				}); err != nil {
+					return err
+				}
+			}
+		}
+
+		if candidate.FinishReason != "" {
+			finishReason := candidate.FinishReason
+			switch candidate.FinishReason {
+			case "STOP":
+				finishReason = "stop"
+			case "MAX_TOKENS":
+				finishReason = "length"
+			}
+			if err := onEvent(&sources.LLMStreamEvent{
+				Type:             "finish",
+				FinishReason:     finishReason,
+				PromptTokens:     totalPromptTokens,
+				CompletionTokens: totalCompletionTokens,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("reading SSE stream: %w", err)
+	}
+
+	if s.limiter != nil {
+		_ = s.limiter.Record(ctx, totalPromptTokens+totalCompletionTokens)
+	}
+
+	return nil
+}
+
 var (
-	_ sources.Source              = (*GeminiSource)(nil)
-	_ sources.LLMSource           = (*GeminiSource)(nil)
+	_ sources.Source               = (*GeminiSource)(nil)
+	_ sources.LLMSource            = (*GeminiSource)(nil)
+	_ sources.LLMStreamingSource   = (*GeminiSource)(nil)
 	_ sources.SourceDataSourceUser = (*GeminiSource)(nil)
 )

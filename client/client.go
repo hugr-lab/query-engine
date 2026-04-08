@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"encoding/json"
+	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -148,12 +149,16 @@ type ClientConfig struct {
 	JQQueryUrl         string
 	Transport          http.RoundTripper
 	ArrowStructFlatten bool
+	SubPool            SubscriptionPoolConfig
 }
 
 type Client struct {
 	url    string
 	c      *http.Client
 	config ClientConfig
+
+	subPoolMu sync.Mutex
+	subPool   *subscriptionPool
 }
 
 func NewClient(url string, opts ...Option) *Client {
@@ -410,6 +415,10 @@ func (c *Client) ValidateQueryJSON(ctx context.Context, req types.JQRequest) err
 	}
 
 	return nil
+}
+
+func (c *Client) Subscribe(ctx context.Context, query string, vars map[string]any) (*types.Subscription, error) {
+	return c.subscribe(ctx, query, vars)
 }
 
 func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error) {

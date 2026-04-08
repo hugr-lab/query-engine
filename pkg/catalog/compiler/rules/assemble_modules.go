@@ -23,10 +23,11 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 
 	// Phase 1: Collect all fields per module.
 	type moduleFields struct {
-		queryFields     ast.FieldList
-		mutationFields  ast.FieldList
-		queryFuncFields ast.FieldList
-		mutFuncFields   ast.FieldList
+		queryFields        ast.FieldList
+		mutationFields     ast.FieldList
+		subscriptionFields ast.FieldList
+		queryFuncFields    ast.FieldList
+		mutFuncFields      ast.FieldList
 	}
 	modules := make(map[string]*moduleFields)
 	getOrCreate := func(mod string) *moduleFields {
@@ -105,6 +106,39 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 			mf.mutFuncFields = append(mf.mutFuncFields, f)
 		}
 		mutFuncExt.Fields = remaining
+	}
+
+	// Collect subscription fields from Subscription extensions.
+	if subExt := ctx.LookupExtension("Subscription"); subExt != nil {
+		var remaining ast.FieldList
+		for _, f := range subExt.Fields {
+			if f.Name == "_stub" || f.Name == "_placeholder" || f.Name == "query" {
+				remaining = append(remaining, f)
+				continue
+			}
+			mod := base.DirectiveArgString(f.Directives.ForName(base.ModuleDirectiveName), base.ArgName)
+			// For AsModule sources, fields without @module get module from compile options
+			if mod == "" && ctx.CompileOptions().AsModule {
+				mod = ctx.CompileOptions().Name
+			}
+			if mod == "" {
+				remaining = append(remaining, f)
+				continue
+			}
+			mf := getOrCreate(mod)
+			// Add @catalog and @subscription directives (compiler auto-generates)
+			if f.Directives.ForName(base.CatalogDirectiveName) == nil {
+				f.Directives = append(f.Directives, optsCatalogDirective(ctx.CompileOptions()))
+			}
+			if f.Directives.ForName(base.SubscriptionDirectiveName) == nil {
+				f.Directives = append(f.Directives, &ast.Directive{
+					Name:     base.SubscriptionDirectiveName,
+					Position: pos,
+				})
+			}
+			mf.subscriptionFields = append(mf.subscriptionFields, f)
+		}
+		subExt.Fields = remaining
 	}
 
 	if len(modules) == 0 {
@@ -343,6 +377,40 @@ func (r *ModuleAssembler) ProcessAll(ctx base.CompilationContext) error {
 						Type: ast.NamedType(childTypeName, pos), Position: pos,
 						Directives: ast.DirectiveList{modCatDir}},
 				},
+			})
+		}
+	}
+
+	// --- Subscription module types ---
+	for _, mod := range sortedMods {
+		mf := modules[mod]
+		if len(mf.subscriptionFields) == 0 {
+			continue
+		}
+		typeName := "_module_" + strings.ReplaceAll(mod, ".", "_") + "_subscription"
+		ensureType(typeName, mod, "SUBSCRIPTION")
+		ctx.AddExtension(&ast.Definition{
+			Kind: ast.Object, Name: typeName, Position: pos,
+			Fields: mf.subscriptionFields,
+		})
+
+		parts := strings.Split(mod, ".")
+		childTypeName := typeName
+		for i := len(parts) - 1; i >= 1; i-- {
+			parentMod := strings.Join(parts[:i], ".")
+			parentTypeName := "_module_" + strings.ReplaceAll(parentMod, ".", "_") + "_subscription"
+			ensureType(parentTypeName, parentMod, "SUBSCRIPTION")
+			wireChild(parentTypeName, parts[i], childTypeName,
+				"The root subscription object of the module "+strings.Join(parts[:i+1], "."))
+			childTypeName = parentTypeName
+		}
+
+		topMod := parts[0]
+		if !rootWired["subscription."+topMod] {
+			rootWired["subscription."+topMod] = true
+			ctx.RegisterSubscriptionFields("_module_"+topMod, []*ast.FieldDefinition{
+				{Name: topMod, Type: ast.NamedType(childTypeName, pos), Position: pos,
+					Directives: ast.DirectiveList{modCatDir}},
 			})
 		}
 	}

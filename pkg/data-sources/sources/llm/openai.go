@@ -2,6 +2,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -30,15 +32,16 @@ type OpenAISource struct {
 }
 
 type openAIConfig struct {
-	BaseURL      string
-	Model        string
-	ApiKey       string
-	ApiKeyHeader string
-	MaxTokens    int
-	Timeout      time.Duration
-	RPM          int    // max requests per minute (0 = unlimited)
-	TPM          int    // max tokens per minute (0 = unlimited)
-	RateStore    string // name of StoreSource for shared counters (empty = in-memory)
+	BaseURL        string
+	Model          string
+	ApiKey         string
+	ApiKeyHeader   string
+	MaxTokens      int
+	ThinkingBudget int // max thinking/reasoning tokens (0 = disabled)
+	Timeout        time.Duration
+	RPM            int    // max requests per minute (0 = unlimited)
+	TPM            int    // max tokens per minute (0 = unlimited)
+	RateStore      string // name of StoreSource for shared counters (empty = in-memory)
 }
 
 func NewOpenAI(ds types.DataSource, attached bool) (*OpenAISource, error) {
@@ -93,6 +96,10 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 		s.config.MaxTokens = 4096
 	}
 
+	if tb := u.Query().Get("thinking_budget"); tb != "" {
+		fmt.Sscanf(tb, "%d", &s.config.ThinkingBudget)
+	}
+
 	s.config.Timeout, _ = time.ParseDuration(u.Query().Get("timeout"))
 	if s.config.Timeout == 0 {
 		s.config.Timeout = 60 * time.Second
@@ -113,6 +120,7 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 	q.Del("api_key_header")
 	q.Del("max_tokens")
 	q.Del("timeout")
+	q.Del("thinking_budget")
 	q.Del("rpm")
 	q.Del("tpm")
 	q.Del("rate_store")
@@ -331,8 +339,183 @@ func normalizeFinishReasonOpenAI(reason string) string {
 	}
 }
 
+func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages []sources.LLMMessage, opts sources.LLMOptions,
+	onEvent func(event *sources.LLMStreamEvent) error) error {
+	if !s.isAttached {
+		return sources.ErrDataSourceNotAttached
+	}
+
+	s.rateLimitMixin.ensureLimiter(s.ds.Name, s.config)
+	if s.limiter != nil {
+		if err := s.limiter.Check(ctx); err != nil {
+			return err
+		}
+	}
+
+	maxTokens := opts.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = s.config.MaxTokens
+	}
+
+	reqBody := map[string]any{
+		"model":      s.config.Model,
+		"messages":   convertMessagesOpenAI(messages),
+		"max_tokens": maxTokens,
+		"stream":     true,
+	}
+	if opts.Temperature > 0 {
+		reqBody["temperature"] = opts.Temperature
+	}
+	if opts.TopP > 0 {
+		reqBody["top_p"] = opts.TopP
+	}
+	if len(opts.Stop) > 0 {
+		reqBody["stop"] = opts.Stop
+	}
+	if len(opts.Tools) > 0 {
+		reqBody["tools"] = convertToolsOpenAI(opts.Tools)
+	}
+	if opts.ToolChoice != "" {
+		reqBody["tool_choice"] = opts.ToolChoice
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, s.config.Timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", s.config.BaseURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if s.config.ApiKeyHeader != "" {
+		req.Header.Set(s.config.ApiKeyHeader, s.config.ApiKey)
+	} else if s.config.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+s.config.ApiKey)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var totalPromptTokens, totalCompletionTokens int
+	var toolCallParts []string
+
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+					ToolCalls        []struct {
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
+				} `json:"delta"`
+				FinishReason *string `json:"finish_reason"`
+			} `json:"choices"`
+			Model string `json:"model"`
+			Usage *struct {
+				PromptTokens     int `json:"prompt_tokens"`
+				CompletionTokens int `json:"completion_tokens"`
+			} `json:"usage"`
+		}
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+
+		if chunk.Usage != nil {
+			totalPromptTokens = chunk.Usage.PromptTokens
+			totalCompletionTokens = chunk.Usage.CompletionTokens
+		}
+
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		choice := chunk.Choices[0]
+
+		// Accumulate tool call argument fragments
+		for _, tc := range choice.Delta.ToolCalls {
+			if tc.Function.Arguments != "" {
+				toolCallParts = append(toolCallParts, tc.Function.Arguments)
+			}
+		}
+
+		if choice.Delta.ReasoningContent != "" {
+			if err := onEvent(&sources.LLMStreamEvent{
+				Type:    "reasoning",
+				Content: choice.Delta.ReasoningContent,
+				Model:   chunk.Model,
+			}); err != nil {
+				return err
+			}
+		}
+
+		if choice.Delta.Content != "" {
+			if err := onEvent(&sources.LLMStreamEvent{
+				Type:    "content_delta",
+				Content: choice.Delta.Content,
+				Model:   chunk.Model,
+			}); err != nil {
+				return err
+			}
+		}
+
+		if choice.FinishReason != nil {
+			ev := &sources.LLMStreamEvent{
+				Type:             "finish",
+				Model:            chunk.Model,
+				FinishReason:     normalizeFinishReasonOpenAI(*choice.FinishReason),
+				PromptTokens:     totalPromptTokens,
+				CompletionTokens: totalCompletionTokens,
+			}
+			if len(toolCallParts) > 0 {
+				ev.ToolCalls = strings.Join(toolCallParts, "")
+			}
+			if err := onEvent(ev); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("reading SSE stream: %w", err)
+	}
+
+	if s.limiter != nil {
+		_ = s.limiter.Record(ctx, totalPromptTokens+totalCompletionTokens)
+	}
+
+	return nil
+}
+
 var (
-	_ sources.Source              = (*OpenAISource)(nil)
-	_ sources.LLMSource           = (*OpenAISource)(nil)
+	_ sources.Source               = (*OpenAISource)(nil)
+	_ sources.LLMSource            = (*OpenAISource)(nil)
+	_ sources.LLMStreamingSource   = (*OpenAISource)(nil)
 	_ sources.SourceDataSourceUser = (*OpenAISource)(nil)
 )

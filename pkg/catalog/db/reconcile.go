@@ -66,12 +66,12 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 	// pointing to system root types (Query, Mutation, Function, MutationFunction).
 	if catalogName == SystemCatalogName {
 		if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (name, query_root, mutation_root, function_root, mut_function_root)
-			 VALUES ('', $1, $2, $3, $4)
+			`INSERT INTO %s (name, query_root, mutation_root, function_root, mut_function_root, subscription_root)
+			 VALUES ('', $1, $2, $3, $4, $5)
 			 ON CONFLICT (name) DO UPDATE SET
-			   query_root=$1, mutation_root=$2, function_root=$3, mut_function_root=$4`,
+			   query_root=$1, mutation_root=$2, function_root=$3, mut_function_root=$4, subscription_root=$5`,
 			p.table("_schema_modules"),
-		), base.QueryBaseName, base.MutationBaseName, base.FunctionTypeName, base.FunctionMutationTypeName); err != nil {
+		), base.QueryBaseName, base.MutationBaseName, base.FunctionTypeName, base.FunctionMutationTypeName, base.SubscriptionBaseName); err != nil {
 			return fmt.Errorf("reconcile root module: %w", err)
 		}
 	}
@@ -85,12 +85,13 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 
 	// Group by module name — a module may have multiple root types (query, mutation, etc.)
 	type moduleRecord struct {
-		queryRoot    string
-		mutationRoot string
-		functionRoot string
-		mutFuncRoot  string
-		typeNames    map[string]struct{} // all module type names
-		catalogs     map[string]struct{}
+		queryRoot        string
+		mutationRoot     string
+		functionRoot     string
+		mutFuncRoot      string
+		subscriptionRoot string
+		typeNames        map[string]struct{} // all module type names
+		catalogs         map[string]struct{}
 	}
 	moduleMap := make(map[string]*moduleRecord)
 
@@ -109,6 +110,8 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 			m.functionRoot = mi.typeName
 		case base.ModuleMutationFunction:
 			m.mutFuncRoot = mi.typeName
+		case base.ModuleSubscription:
+			m.subscriptionRoot = mi.typeName
 		}
 		m.typeNames[mi.typeName] = struct{}{}
 		for _, cat := range mi.catalogs {
@@ -128,13 +131,13 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 			m = &moduleRecord{typeNames: make(map[string]struct{}), catalogs: make(map[string]struct{})}
 			moduleMap[moduleName] = m
 			// Look up existing root type names from _schema_modules for this module.
-			var qr, mr, fr, mfr *string
+			var qr, mr, fr, mfr, sr *string
 			err := conn.QueryRow(ctx, fmt.Sprintf(
-				`SELECT query_root, mutation_root, function_root, mut_function_root FROM %s WHERE name = $1`,
+				`SELECT query_root, mutation_root, function_root, mut_function_root, subscription_root FROM %s WHERE name = $1`,
 				p.table("_schema_modules"),
-			), moduleName).Scan(&qr, &mr, &fr, &mfr)
+			), moduleName).Scan(&qr, &mr, &fr, &mfr, &sr)
 			if err == nil {
-				for _, ptr := range []*string{qr, mr, fr, mfr} {
+				for _, ptr := range []*string{qr, mr, fr, mfr, sr} {
 					if ptr != nil && *ptr != "" {
 						m.typeNames[*ptr] = struct{}{}
 					}
@@ -151,15 +154,16 @@ func (p *Provider) reconcileMetadata(ctx context.Context, catalogName string) er
 	var moduleTypeCatalogTriples [][3]string
 	for moduleName, m := range moduleMap {
 		if _, err := p.execWrite(ctx, conn, fmt.Sprintf(
-			`INSERT INTO %s (name, query_root, mutation_root, function_root, mut_function_root)
-			 VALUES ($1, $2, $3, $4, $5)
+			`INSERT INTO %s (name, query_root, mutation_root, function_root, mut_function_root, subscription_root)
+			 VALUES ($1, $2, $3, $4, $5, $6)
 			 ON CONFLICT (name) DO UPDATE SET
 			   query_root=COALESCE($2, %[1]s.query_root),
 			   mutation_root=COALESCE($3, %[1]s.mutation_root),
 			   function_root=COALESCE($4, %[1]s.function_root),
-			   mut_function_root=COALESCE($5, %[1]s.mut_function_root)`,
+			   mut_function_root=COALESCE($5, %[1]s.mut_function_root),
+			   subscription_root=COALESCE($6, %[1]s.subscription_root)`,
 			p.table("_schema_modules"),
-		), moduleName, nullStr(m.queryRoot), nullStr(m.mutationRoot), nullStr(m.functionRoot), nullStr(m.mutFuncRoot)); err != nil {
+		), moduleName, nullStr(m.queryRoot), nullStr(m.mutationRoot), nullStr(m.functionRoot), nullStr(m.mutFuncRoot), nullStr(m.subscriptionRoot)); err != nil {
 			return fmt.Errorf("reconcile module upsert: %w", err)
 		}
 		// Create a triple for each (type name, catalog) combination.

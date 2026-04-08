@@ -4,6 +4,8 @@ go 1.26
 
 require (
 	github.com/apache/arrow-go/v18 v18.5.2
+	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/hugr-lab/airport-go v0.2.1
 	github.com/hugr-lab/query-engine/types v0.3.18
 	github.com/paulmach/orb v0.13.0

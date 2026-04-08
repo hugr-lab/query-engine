@@ -42,6 +42,12 @@ func PrefixAndRegister(ctx base.CompilationContext, sourceNames map[string]bool)
 		for _, def := range ctx.PromotedDefinitions() {
 			renameFieldRefs(def.Fields, opts.Prefix, sourceNames)
 		}
+		// Rename type references in Subscription extension fields.
+		// Subscription extensions are not promoted (they go through AddExtension)
+		// but their field return types reference source definitions that were prefixed.
+		if ext := ctx.LookupExtension("Subscription"); ext != nil {
+			renameFieldRefs(ext.Fields, opts.Prefix, sourceNames)
+		}
 	}
 
 	return nil
@@ -139,7 +145,7 @@ func prefixDefinition(ctx base.CompilationContext, def *ast.Definition, sourceNa
 	// Also skip Function/MutationFunction types — they're system-level containers
 	// processed by FunctionRule which matches on exact name.
 	if opts.Prefix != "" && !isTable && !isView && !isFunc &&
-		def.Name != "Function" && def.Name != "MutationFunction" {
+		def.Name != "Function" && def.Name != "MutationFunction" && def.Name != "Subscription" {
 		switch def.Kind {
 		case ast.Object, ast.InputObject, ast.Interface, ast.Enum:
 			originalName := def.Name

@@ -65,9 +65,10 @@ type Provider struct {
 	cache *schemaCache
 
 	// Root type pointers, loaded on demand.
-	queryType    *ast.Definition
-	mutationType *ast.Definition
-	rootsLoaded  bool
+	queryType        *ast.Definition
+	mutationType     *ast.Definition
+	subscriptionType *ast.Definition
+	rootsLoaded      bool
 
 	// CatalogManager support: compiler for self-contained compilation,
 	// catalogs map for runtime source handles only (all state in DB).
@@ -367,11 +368,13 @@ func (p *Provider) InvalidateCatalog(catalog string) {
 	// so they're re-read from DB without the dropped catalog's fields.
 	p.cache.evictType("Query")
 	p.cache.evictType("Mutation")
+	p.cache.evictType("Subscription")
 	// Reset root type pointers so they're reloaded on next access.
 	p.mu.Lock()
 	p.rootsLoaded = false
 	p.queryType = nil
 	p.mutationType = nil
+	p.subscriptionType = nil
 	p.mu.Unlock()
 }
 
@@ -382,6 +385,7 @@ func (p *Provider) InvalidateAll() {
 	p.rootsLoaded = false
 	p.queryType = nil
 	p.mutationType = nil
+	p.subscriptionType = nil
 	p.mu.Unlock()
 }
 

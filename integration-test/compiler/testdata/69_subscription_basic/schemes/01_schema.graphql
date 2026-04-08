@@ -1,0 +1,16 @@
+type Event @table(name: "events") {
+  id: Int! @pk
+  name: String!
+  data: String
+}
+
+type stream_event {
+  type: String
+  content: String
+  timestamp: String
+}
+
+extend type Subscription {
+  stream(channel: String!): stream_event
+  watch(pattern: String!): stream_event
+}

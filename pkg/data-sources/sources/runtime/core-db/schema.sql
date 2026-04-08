@@ -1,6 +1,6 @@
 {{ if isPostgres }}CREATE EXTENSION IF NOT EXISTS vector;{{ end }}
 
-CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.16' AS "version";
+CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.17' AS "version";
 
 CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}catalog_sources (
     name VARCHAR NOT NULL PRIMARY KEY,
@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}_schema_module
     mutation_root VARCHAR,
     function_root VARCHAR,
     mut_function_root VARCHAR,
+    subscription_root VARCHAR,
     is_summarized BOOLEAN NOT NULL DEFAULT FALSE,
     disabled BOOLEAN NOT NULL DEFAULT FALSE,
     vec {{if isPostgres }} vector({{ .VectorSize }}) {{ else }} FLOAT[{{ .VectorSize }}] {{ end }}

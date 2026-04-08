@@ -3,8 +3,12 @@ package redis
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	goredis "github.com/redis/go-redis/v9"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -130,7 +134,114 @@ func (s *Source) Keys(ctx context.Context, pattern string) ([]string, error) {
 	return s.client.Keys(ctx, pattern).Result()
 }
 
+// --- PubSubStoreSource interface ---
+
+var pubsubSchema = arrow.NewSchema([]arrow.Field{
+	{Name: "channel", Type: arrow.BinaryTypes.String, Nullable: true},
+	{Name: "message", Type: arrow.BinaryTypes.String, Nullable: true},
+}, nil)
+
+func (s *Source) Subscribe(ctx context.Context, channel string) (*sources.SubscriptionResult, error) {
+	ps := s.client.Subscribe(ctx, channel)
+	return s.newPubSubResult(ctx, ps), nil
+}
+
+func (s *Source) PSubscribe(ctx context.Context, pattern string) (*sources.SubscriptionResult, error) {
+	ps := s.client.PSubscribe(ctx, pattern)
+	return s.newPubSubResult(ctx, ps), nil
+}
+
+func (s *Source) newPubSubResult(ctx context.Context, ps *goredis.PubSub) *sources.SubscriptionResult {
+	ch := ps.Channel()
+	reader := &channelRecordReader{
+		schema: pubsubSchema,
+		ch:     ch,
+		ctx:    ctx,
+	}
+	return &sources.SubscriptionResult{
+		Reader: reader,
+		Cancel: func() { ps.Close() },
+	}
+}
+
+func (s *Source) Publish(ctx context.Context, channel string, message string) error {
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	return s.client.Publish(ctx, channel, message).Err()
+}
+
+func (s *Source) ConfigGet(ctx context.Context, key string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	res, err := s.client.ConfigGet(ctx, key).Result()
+	if err != nil {
+		return "", err
+	}
+	if v, ok := res[key]; ok {
+		return v, nil
+	}
+	return "", nil
+}
+
+func (s *Source) ConfigSet(ctx context.Context, key string, value string) error {
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+	return s.client.ConfigSet(ctx, key, value).Err()
+}
+
+// channelRecordReader implements array.RecordReader over a go-redis PubSub channel.
+type channelRecordReader struct {
+	schema *arrow.Schema
+	ch     <-chan *goredis.Message
+	ctx    context.Context
+
+	current arrow.RecordBatch
+	err     error
+	refs    int64
+	once    sync.Once
+}
+
+func (r *channelRecordReader) Retain()              { r.refs++ }
+func (r *channelRecordReader) Schema() *arrow.Schema { return r.schema }
+func (r *channelRecordReader) Err() error            { return r.err }
+
+func (r *channelRecordReader) Release() {
+	r.once.Do(func() {
+		if r.current != nil {
+			r.current.Release()
+			r.current = nil
+		}
+	})
+}
+
+func (r *channelRecordReader) Next() bool {
+	if r.current != nil {
+		r.current.Release()
+		r.current = nil
+	}
+	select {
+	case <-r.ctx.Done():
+		r.err = r.ctx.Err()
+		return false
+	case msg, ok := <-r.ch:
+		if !ok {
+			return false
+		}
+		mem := memory.NewGoAllocator()
+		bldr := array.NewRecordBuilder(mem, r.schema)
+		defer bldr.Release()
+		bldr.Field(0).(*array.StringBuilder).Append(msg.Channel)
+		bldr.Field(1).(*array.StringBuilder).Append(msg.Payload)
+		r.current = bldr.NewRecordBatch()
+		return true
+	}
+}
+
+func (r *channelRecordReader) Record() arrow.RecordBatch      { return r.current }
+func (r *channelRecordReader) RecordBatch() arrow.RecordBatch  { return r.current }
+
 var (
-	_ sources.Source      = (*Source)(nil)
-	_ sources.StoreSource = (*Source)(nil)
+	_ sources.Source           = (*Source)(nil)
+	_ sources.StoreSource      = (*Source)(nil)
+	_ sources.PubSubStoreSource = (*Source)(nil)
 )

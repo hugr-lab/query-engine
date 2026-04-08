@@ -46,12 +46,24 @@ type LLMToolCall struct {
 
 // LLMOptions configures an LLM request.
 type LLMOptions struct {
-	MaxTokens   int       `json:"max_tokens,omitempty"`
-	Temperature float64   `json:"temperature,omitempty"`
-	TopP        float64   `json:"top_p,omitempty"`
-	Stop        []string  `json:"stop,omitempty"`
-	Tools       []LLMTool `json:"tools,omitempty"`
-	ToolChoice  string    `json:"tool_choice,omitempty"`
+	MaxTokens      int       `json:"max_tokens,omitempty"`
+	Temperature    float64   `json:"temperature,omitempty"`
+	TopP           float64   `json:"top_p,omitempty"`
+	Stop           []string  `json:"stop,omitempty"`
+	Tools          []LLMTool `json:"tools,omitempty"`
+	ToolChoice     string    `json:"tool_choice,omitempty"`
+	ThinkingBudget int       `json:"thinking_budget,omitempty"` // Token budget for reasoning/thinking (Anthropic, Gemini)
+}
+
+// LLMStreamEvent is a single event from a streaming LLM completion.
+type LLMStreamEvent struct {
+	Type             string `json:"type"`              // content_delta, reasoning, tool_use, finish, error
+	Content          string `json:"content"`           // Token content (content_delta, reasoning)
+	Model            string `json:"model"`             // Model identifier
+	FinishReason     string `json:"finish_reason"`     // stop, length, tool_use (finish only)
+	ToolCalls        string `json:"tool_calls"`        // JSON-encoded tool calls (tool_use only)
+	PromptTokens     int    `json:"prompt_tokens"`     // Input token count (finish only)
+	CompletionTokens int    `json:"completion_tokens"` // Output token count (finish only)
 }
 
 // LLMResult is the normalized response from any LLM provider.

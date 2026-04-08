@@ -30,6 +30,7 @@ type compilationContext struct {
 	// Field collectors for ASSEMBLE phase
 	queryFields         map[string][]*ast.FieldDefinition
 	mutationFields      map[string][]*ast.FieldDefinition
+	subscriptionFields  map[string][]*ast.FieldDefinition
 	functionFields      []*ast.FieldDefinition
 	functionMutFields   []*ast.FieldDefinition
 }
@@ -48,8 +49,9 @@ func newCompilationContext(
 		opts:           opts,
 		output:         output,
 		objects:        make(map[string]*base.ObjectInfo),
-		queryFields:    make(map[string][]*ast.FieldDefinition),
-		mutationFields: make(map[string][]*ast.FieldDefinition),
+		queryFields:        make(map[string][]*ast.FieldDefinition),
+		mutationFields:     make(map[string][]*ast.FieldDefinition),
+		subscriptionFields: make(map[string][]*ast.FieldDefinition),
 	}
 }
 
@@ -179,6 +181,10 @@ func (c *compilationContext) RegisterMutationFields(objectName string, fields []
 	c.mutationFields[objectName] = append(c.mutationFields[objectName], fields...)
 }
 
+func (c *compilationContext) RegisterSubscriptionFields(objectName string, fields []*ast.FieldDefinition) {
+	c.subscriptionFields[objectName] = append(c.subscriptionFields[objectName], fields...)
+}
+
 func (c *compilationContext) RegisterFunctionFields(fields []*ast.FieldDefinition) {
 	c.functionFields = append(c.functionFields, fields...)
 }
@@ -193,6 +199,10 @@ func (c *compilationContext) QueryFields() map[string][]*ast.FieldDefinition {
 
 func (c *compilationContext) MutationFields() map[string][]*ast.FieldDefinition {
 	return c.mutationFields
+}
+
+func (c *compilationContext) SubscriptionFields() map[string][]*ast.FieldDefinition {
+	return c.subscriptionFields
 }
 
 func (c *compilationContext) FunctionFields() []*ast.FieldDefinition {

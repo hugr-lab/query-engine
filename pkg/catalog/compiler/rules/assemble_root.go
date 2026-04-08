@@ -93,5 +93,20 @@ func (r *RootTypeAssembler) ProcessAll(ctx base.CompilationContext) error {
 		ctx.AddExtension(ext)
 	}
 
+	// Subscription base type (with query field) is defined in system_types.graphql.
+	// Collect subscription fields from sources into Subscription extension.
+	var subFields []*ast.FieldDefinition
+	for _, fields := range ctx.SubscriptionFields() {
+		subFields = append(subFields, fields...)
+	}
+	if len(subFields) > 0 {
+		ctx.AddExtension(&ast.Definition{
+			Kind:     ast.Object,
+			Name:     "Subscription",
+			Position: pos,
+			Fields:   subFields,
+		})
+	}
+
 	return nil
 }

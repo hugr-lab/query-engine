@@ -382,6 +382,10 @@ func fieldResolver(ctx context.Context, provider catalog.Provider, def *ast.Fiel
 			return di.Reason, nil
 		},
 		"hugr_type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			// @subscription → subscription field
+			if def.Directives.ForName(base.SubscriptionDirectiveName) != nil {
+				return base.HugrTypeFieldSubscription, nil
+			}
 			td := provider.ForName(ctx, def.Type.Name())
 			if td == nil {
 				return "", nil
@@ -428,6 +432,10 @@ func fieldResolver(ctx context.Context, provider catalog.Provider, def *ast.Fiel
 			return "", nil
 		},
 		"catalog": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			// @subscription fields have @catalog
+			if def.Directives.ForName(base.SubscriptionDirectiveName) != nil {
+				return base.FieldDefCatalog(def), nil
+			}
 			if sdl.IsFunction(def) {
 				info, err := sdl.FunctionInfo(def)
 				if err != nil {

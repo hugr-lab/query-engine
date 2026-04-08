@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -38,6 +39,8 @@ type StreamMessage struct {
 	Query          string                 `json:"query,omitempty"`
 	Variables      map[string]interface{} `json:"variables,omitempty"`
 	Error          string                 `json:"error,omitempty"`
+	SubscriptionID string                 `json:"subscription_id,omitempty"` // For subscribe/unsubscribe
+	Path           string                 `json:"path,omitempty"`           // Data object path for subscription events
 }
 
 func (s *Service) isStreamingRequest(r *http.Request) bool {
@@ -50,6 +53,11 @@ func (s *Service) isStreamingRequest(r *http.Request) bool {
 
 // ipcStreamHandler handles WebSocket connections for hugr IPC arrow stream (Inter-Process Communication) streaming.
 func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in IPC stream handler: %v", r)
+		}
+	}()
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to upgrade connection: %v", err), http.StatusInternalServerError)
@@ -59,16 +67,21 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 	stream := &stream{
 		queryId: uuid.NewString(),
 		conn:    conn,
+		writeCh: make(chan wsMsg, 256),
 	}
 	ctx, cancel := context.WithCancel(r.Context())
 	stream.connCancel = cancel
+	go stream.writer(ctx)
 	conn.SetCloseHandler(func(code int, text string) error {
-		stream.mu.Lock()
-		defer stream.mu.Unlock()
 		if stream.cancel != nil {
 			stream.cancel()
 		}
-		stream.activeQuery = nil // Clear active query on close
+		stream.activeQuery = nil
+		stream.subscriptions.Range(func(key, value any) bool {
+			value.(context.CancelFunc)()
+			stream.subscriptions.Delete(key)
+			return true
+		})
 		stream.connCancel()
 		return nil
 	})
@@ -129,12 +142,13 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				go s.handleIPCStream(ctx, stream)
 			case "cancel":
-				// Handle cancel request
-				stream.mu.Lock()
 				if stream.cancel != nil {
 					stream.cancel()
 				}
-				stream.mu.Unlock()
+			case "subscribe":
+				go s.handleIPCSubscription(ctx, stream, req)
+			case "unsubscribe":
+				stream.cancelSubscription(req.SubscriptionID)
 			default:
 				_ = stream.sendStreamError(fmt.Errorf("unknown IPC stream message type: %s", req.Type))
 			}
@@ -187,7 +201,6 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 				_ = stream.sendStreamError(fmt.Errorf("received nil chunk from IPC stream"))
 				return
 			}
-			defer chunk.Release()
 			buf := bp.Get().(*bytes.Buffer)
 			writer := ipc.NewWriter(buf, ipc.WithLZ4())
 			err = writer.Write(chunk)
@@ -206,6 +219,86 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 				return
 			}
 		}
+	}
+}
+
+// handleIPCSubscription handles a subscribe message on the IPC WebSocket.
+// Streams Arrow IPC binary frames with subscription_data text frame markers.
+func (s *Service) handleIPCSubscription(ctx context.Context, stream *stream, req StreamMessage) {
+	subID := req.SubscriptionID
+	if subID == "" {
+		_ = stream.sendStreamError(fmt.Errorf("subscribe requires subscription_id"))
+		return
+	}
+
+	subCtx, subCancel := context.WithCancel(ctx)
+	stream.subscriptions.Store(subID, subCancel)
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in IPC subscription %s: %v\n%s", subID, r, debug.Stack())
+		}
+	}()
+	defer func() {
+		stream.subscriptions.Delete(subID)
+		subCancel()
+		_ = stream.writeJSON(StreamMessage{Type: "subscription_complete", SubscriptionID: subID})
+	}()
+
+	sub, err := s.Subscribe(subCtx, req.Query, req.Variables)
+	if err != nil {
+		_ = stream.writeJSON(StreamMessage{Type: "subscription_error", SubscriptionID: subID, Error: err.Error()})
+		return
+	}
+	defer sub.Cancel()
+
+	bp := sync.Pool{New: func() any { return &bytes.Buffer{} }}
+
+	for event := range sub.Events {
+		if subCtx.Err() != nil {
+			event.Reader.Release()
+			return
+		}
+
+		// Stream Arrow batches with subscription metadata in Arrow schema.
+		// No text frame markers needed — client routes by metadata.
+		for event.Reader.Next() {
+			if subCtx.Err() != nil {
+				break
+			}
+			chunk := event.Reader.RecordBatch()
+			if chunk == nil {
+				continue
+			}
+
+			// Embed subscription_id and path in Arrow schema metadata
+			meta := map[string]string{
+				"subscription_id": subID,
+				"path":            event.Path,
+			}
+			tagged := array.NewRecordBatch(addMeta(chunk.Schema(), meta), chunk.Columns(), chunk.NumRows())
+
+			buf := bp.Get().(*bytes.Buffer)
+			w := ipc.NewWriter(buf, ipc.WithLZ4())
+			_ = w.Write(tagged)
+			_ = w.Close()
+			err := stream.writeMessage(websocket.BinaryMessage, buf.Bytes())
+			buf.Reset()
+			bp.Put(buf)
+			if err != nil {
+				event.Reader.Release()
+				return
+			}
+		}
+
+		event.Reader.Release()
+
+		// Signal part complete — client closes the pipe for this path
+		_ = stream.writeJSON(StreamMessage{
+			Type:           "part_complete",
+			SubscriptionID: subID,
+			Path:           event.Path,
+		})
 	}
 }
 
@@ -328,19 +421,25 @@ func (s *Service) dataObjectStreamQuery(ctx context.Context, dataObject string, 
 	return b.String(), nil
 }
 
+// wsMsg is a message to write to the WebSocket connection.
+type wsMsg struct {
+	msgType int    // websocket.TextMessage, BinaryMessage, or PingMessage
+	data    []byte // raw bytes for binary/ping
+	json    any    // JSON-serializable value (when data is nil)
+}
+
 type stream struct {
 	queryId    string
 	conn       *websocket.Conn
-	connCancel context.CancelFunc // Cancel function for connection context
+	connCancel context.CancelFunc
+	writeCh    chan wsMsg // Single writer goroutine reads from here
 
-	mu          sync.Mutex     // Protects the queries map
-	activeQuery *StreamMessage // Maps query IDs to StreamMessage
-	cancel      context.CancelFunc
+	activeQuery   *StreamMessage
+	cancel        context.CancelFunc
+	subscriptions sync.Map // map[string]context.CancelFunc
 }
 
 func (s *stream) setActiveQuery(ctx context.Context, req *StreamMessage) (context.Context, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.activeQuery != nil {
 		return nil, fmt.Errorf("stream %s: another query is already active on this connection", s.queryId)
 	}
@@ -351,43 +450,30 @@ func (s *stream) setActiveQuery(ctx context.Context, req *StreamMessage) (contex
 }
 
 func (s *stream) sendStreamComplete() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.cancel != nil {
 		s.cancel()
-		s.cancel = nil // Clear the cancel function after completion
+		s.cancel = nil
 	}
 	if s.activeQuery == nil {
 		return fmt.Errorf("stream %s: cannot complete stream: no active query found", s.queryId)
 	}
-	s.activeQuery = nil // Clear the active query after completion
-	// Send a completion message
-	msg := StreamMessage{
-		Type: "complete",
-	}
-	return s.conn.WriteJSON(msg)
+	s.activeQuery = nil
+	return s.writeJSON(StreamMessage{Type: "complete"})
 }
 
 func (s *stream) sendStreamError(err error) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	msg := StreamMessage{
-		Type:  "error",
-		Error: err.Error(),
-	}
-	return s.conn.WriteJSON(msg)
+	return s.writeJSON(StreamMessage{Type: "error", Error: err.Error()})
 }
 
 func (s *stream) ping(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := s.writeMessage(websocket.PingMessage, []byte{}); err != nil {
+			if err := s.writeMessage(websocket.PingMessage, nil); err != nil {
 				log.Printf("stream %s: Failed to send ping: %v", s.queryId, err)
 				if s.cancel != nil {
 					s.cancel()
@@ -399,11 +485,54 @@ func (s *stream) ping(ctx context.Context) {
 	}
 }
 
-func (s *stream) writeMessage(msgType int, data []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.conn == nil {
-		return fmt.Errorf("stream %s: cannot write message: WebSocket connection is closed", s.queryId)
+func (s *stream) cancelSubscription(id string) {
+	if v, ok := s.subscriptions.LoadAndDelete(id); ok {
+		v.(context.CancelFunc)()
 	}
-	return s.conn.WriteMessage(msgType, data)
+}
+
+// writer is the single goroutine that writes to the WebSocket connection.
+// All other goroutines send messages via writeCh.
+func (s *stream) writer(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-s.writeCh:
+			if !ok {
+				return
+			}
+			var err error
+			if msg.json != nil {
+				err = s.conn.WriteJSON(msg.json)
+			} else {
+				err = s.conn.WriteMessage(msg.msgType, msg.data)
+			}
+			if err != nil {
+				log.Printf("stream %s: write error: %v", s.queryId, err)
+				s.connCancel()
+				return
+			}
+		}
+	}
+}
+
+// writeJSON sends a JSON message through the write channel.
+func (s *stream) writeJSON(msg any) error {
+	select {
+	case s.writeCh <- wsMsg{json: msg}:
+		return nil
+	default:
+		return fmt.Errorf("stream %s: write channel full", s.queryId)
+	}
+}
+
+// writeMessage sends a raw message through the write channel.
+func (s *stream) writeMessage(msgType int, data []byte) error {
+	select {
+	case s.writeCh <- wsMsg{msgType: msgType, data: data}:
+		return nil
+	default:
+		return fmt.Errorf("stream %s: write channel full", s.queryId)
+	}
 }

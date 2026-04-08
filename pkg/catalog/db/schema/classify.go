@@ -134,6 +134,11 @@ func ClassifyField(field *ast.FieldDefinition, parentDef *ast.Definition, typeLo
 		}
 	}
 
+	// @subscription → subscription field
+	if field.Directives.ForName(base.SubscriptionDirectiveName) != nil {
+		return base.HugrTypeFieldSubscription
+	}
+
 	// Well-known field names on specific parent types.
 	// These fields are classified by their name + the parent type they belong to,
 	// not by their return type.

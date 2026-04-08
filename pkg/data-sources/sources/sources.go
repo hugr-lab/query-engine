@@ -4,10 +4,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow/array"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/types"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 const (
@@ -152,3 +154,34 @@ type StoreSource interface {
 	Expire(ctx context.Context, key string, ttlSeconds int) error
 	Keys(ctx context.Context, pattern string) ([]string, error)
 }
+
+// SubscriptionResult is returned by SubscriptionSource.Subscribe.
+type SubscriptionResult struct {
+	Reader array.RecordReader // Yields records incrementally; schema included.
+	Cancel func()            // Stops the subscription.
+}
+
+// SubscriptionSource is implemented by data sources that handle native subscriptions.
+type SubscriptionSource interface {
+	Subscribe(ctx context.Context, field *ast.Field, vars map[string]any) (*SubscriptionResult, error)
+}
+
+// PubSubStoreSource extends StoreSource with Pub/Sub capabilities.
+type PubSubStoreSource interface {
+	StoreSource
+	Subscribe(ctx context.Context, channel string) (*SubscriptionResult, error)
+	PSubscribe(ctx context.Context, pattern string) (*SubscriptionResult, error)
+	Publish(ctx context.Context, channel string, message string) error
+	ConfigGet(ctx context.Context, key string) (string, error)
+	ConfigSet(ctx context.Context, key string, value string) error
+}
+
+// LLMStreamingSource extends LLMSource with streaming completion support.
+type LLMStreamingSource interface {
+	LLMSource
+	CreateChatCompletionStream(ctx context.Context, messages []types.LLMMessage, opts types.LLMOptions,
+		onEvent func(event *types.LLMStreamEvent) error) error
+}
+
+// Type alias for LLMStreamEvent convenience.
+type LLMStreamEvent = types.LLMStreamEvent

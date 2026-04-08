@@ -114,3 +114,57 @@ type model_source_info {
   "Model identifier"
   model: String
 }
+
+extend type Subscription {
+  "Stream a text completion from an LLM model"
+  completion(
+    "Name of the LLM data source"
+    model: String!
+    "Text prompt"
+    prompt: String!
+    "Maximum tokens to generate"
+    max_tokens: Int
+    "Sampling temperature (0-2)"
+    temperature: Float
+    "Token budget for reasoning/thinking. Enables chain-of-thought for supported models (Anthropic, Gemini). 0 = disabled."
+    thinking_budget: Int
+  ): llm_stream_event
+
+  "Stream a chat completion from an LLM model with tool calling support"
+  chat_completion(
+    "Name of the LLM data source"
+    model: String!
+    # Chat messages. Each element is a JSON string representing a message object.
+    # Fields: role (system|user|assistant|tool), content (text),
+    # tool_call_id (for tool result messages).
+    messages: [String!]!
+    # Available tools for the model to call. Each element is a JSON string.
+    tools: [String!]
+    "Tool choice: auto (model decides), none (no tools), or a specific tool name"
+    tool_choice: String
+    "Maximum tokens to generate"
+    max_tokens: Int
+    "Sampling temperature (0-2)"
+    temperature: Float
+    "Token budget for reasoning/thinking. Enables chain-of-thought for supported models (Anthropic, Gemini). 0 = disabled."
+    thinking_budget: Int
+  ): llm_stream_event
+}
+
+"A single event from a streaming LLM completion"
+type llm_stream_event {
+  "Event type: content_delta, tool_use, finish, error"
+  type: String
+  "Token content (for content_delta events)"
+  content: String
+  "Model that generated the response"
+  model: String
+  "Reason generation stopped (for finish events)"
+  finish_reason: String
+  "JSON-encoded tool calls (for tool_use events)"
+  tool_calls: String
+  "Number of input tokens (for finish events)"
+  prompt_tokens: Int
+  "Number of generated tokens (for finish events)"
+  completion_tokens: Int
+}
