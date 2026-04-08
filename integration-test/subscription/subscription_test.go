@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	hugr "github.com/hugr-lab/query-engine"
+	"github.com/hugr-lab/query-engine/client"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -492,6 +493,61 @@ func TestIPC_SubscribeCoexistsWithQuery(t *testing.T) {
 
 	// Cleanup
 	conn.WriteJSON(ipcMsg{Type: "unsubscribe", SubscriptionID: "bg"})
+}
+
+// --- Go Client SDK tests ---
+
+func TestGoClient_Subscribe(t *testing.T) {
+	// Create a client pointing at the test server — anonymous auth passes without headers
+	c := client.NewClient(testServer.URL+"/ipc", client.WithTimeout(10*time.Second))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	sub, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 3) { name kind } } } } }`, nil)
+	require.NoError(t, err)
+	require.NotNil(t, sub)
+	defer sub.Cancel()
+
+	var eventCount int
+	var totalRows int
+	for event := range sub.Events {
+		eventCount++
+		for event.Reader.Next() {
+			batch := event.Reader.RecordBatch()
+			totalRows += int(batch.NumRows())
+		}
+		require.NoError(t, event.Reader.Err())
+		event.Reader.Release()
+	}
+
+	assert.Greater(t, eventCount, 0, "should receive at least one event")
+	assert.Greater(t, totalRows, 0, "should receive data rows")
+	t.Logf("Go client: %d events, %d total rows", eventCount, totalRows)
+}
+
+func TestGoClient_SubscribePeriodic(t *testing.T) {
+	c := client.NewClient(testServer.URL + "/ipc")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	sub, err := c.Subscribe(ctx, `subscription { query(interval: "1s", count: 2) { core { catalog { types(limit: 2) { name } } } } }`, nil)
+	require.NoError(t, err)
+	defer sub.Cancel()
+
+	var eventCount int
+	for event := range sub.Events {
+		eventCount++
+		// Drain reader
+		for event.Reader.Next() {
+		}
+		event.Reader.Release()
+	}
+
+	// count=2 → 2 ticks, each with 1 path = 2 events
+	assert.GreaterOrEqual(t, eventCount, 2, "should receive events from 2 ticks")
+	t.Logf("Go client periodic: %d events", eventCount)
 }
 
 func TestGraphQLWS_InvalidQuery(t *testing.T) {

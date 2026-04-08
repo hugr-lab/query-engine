@@ -29,7 +29,11 @@ type ipcSubMsg struct {
 }
 
 func (c *Client) subscribe(ctx context.Context, query string, vars map[string]any) (*types.Subscription, error) {
-	wsURL := strings.TrimSuffix(c.url, "/query")
+	// Derive WebSocket URL from the client URL.
+	// Client URL is typically http://host:port/ipc or http://host:port/query
+	wsURL := c.url
+	wsURL = strings.TrimSuffix(wsURL, "/query")
+	wsURL = strings.TrimSuffix(wsURL, "/ipc")
 	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
 	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
 	wsURL += "/ipc"
