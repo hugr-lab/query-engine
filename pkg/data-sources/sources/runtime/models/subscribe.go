@@ -207,6 +207,10 @@ func (r *channelRecordReader) send(ctx context.Context, rec arrow.RecordBatch) e
 func (r *channelRecordReader) close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.closeLocked()
+}
+
+func (r *channelRecordReader) closeLocked() {
 	if !r.done {
 		r.done = true
 		close(r.ch)
@@ -230,7 +234,7 @@ func (r *channelRecordReader) Release() {
 	defer r.mu.Unlock()
 	r.refs--
 	if r.refs <= 0 {
-		r.close()
+		r.closeLocked()
 		if r.current != nil {
 			r.current.Release()
 			r.current = nil
