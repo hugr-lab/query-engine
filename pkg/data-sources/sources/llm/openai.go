@@ -420,8 +420,9 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
+					ToolCalls        []struct {
 						ID       string `json:"id"`
 						Function struct {
 							Name      string `json:"name"`
@@ -455,6 +456,16 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 		for _, tc := range choice.Delta.ToolCalls {
 			if tc.Function.Arguments != "" {
 				toolCallParts = append(toolCallParts, tc.Function.Arguments)
+			}
+		}
+
+		if choice.Delta.ReasoningContent != "" {
+			if err := onEvent(&sources.LLMStreamEvent{
+				Type:    "reasoning",
+				Content: choice.Delta.ReasoningContent,
+				Model:   chunk.Model,
+			}); err != nil {
+				return err
 			}
 		}
 

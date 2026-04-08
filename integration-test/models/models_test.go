@@ -437,7 +437,7 @@ func TestModels_StreamCompletion_OpenAI(t *testing.T) {
 	defer cancel()
 
 	sub, err := testService.Subscribe(ctx,
-		`subscription { core { models { completion(model: "test_llm", prompt: "Count from 1 to 5", max_tokens: 100) {
+		`subscription { core { models { completion(model: "test_llm", prompt: "Explain step by step why the sky is blue. Think through the physics involved.", max_tokens: 500) {
 			type content finish_reason prompt_tokens completion_tokens
 		} } } }`, nil)
 	require.NoError(t, err)
@@ -461,19 +461,20 @@ func TestModels_StreamCompletion_OpenAI(t *testing.T) {
 	}
 
 	require.NotEmpty(t, events, "should receive streaming events")
-	// Should have content_delta events and a finish event
-	var hasContent, hasFinish bool
+	var hasContent, hasReasoning, hasFinish bool
 	for _, e := range events {
 		switch e["type"] {
 		case "content_delta":
 			hasContent = true
+		case "reasoning":
+			hasReasoning = true
 		case "finish":
 			hasFinish = true
 		}
 	}
-	assert.True(t, hasContent, "should have content_delta events")
+	assert.True(t, hasContent || hasReasoning, "should have content_delta or reasoning events")
 	assert.True(t, hasFinish, "should have finish event")
-	t.Logf("OpenAI stream: %d events (content=%v, finish=%v)", len(events), hasContent, hasFinish)
+	t.Logf("OpenAI stream: %d events (content=%v, reasoning=%v, finish=%v)", len(events), hasContent, hasReasoning, hasFinish)
 	for i, e := range events {
 		if i < 5 || e["type"] == "finish" {
 			t.Logf("  event %d: type=%v content=%v", i, e["type"], e["content"])
