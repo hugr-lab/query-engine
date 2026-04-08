@@ -85,6 +85,9 @@ func (s *GeminiSource) Attach(_ context.Context, _ *db.Pool) error {
 	if tpm := u.Query().Get("tpm"); tpm != "" {
 		fmt.Sscanf(tpm, "%d", &s.config.TPM)
 	}
+	if tb := u.Query().Get("thinking_budget"); tb != "" {
+		fmt.Sscanf(tb, "%d", &s.config.ThinkingBudget)
+	}
 	s.config.RateStore = u.Query().Get("rate_store")
 
 	q := u.Query()
@@ -92,6 +95,7 @@ func (s *GeminiSource) Attach(_ context.Context, _ *db.Pool) error {
 	q.Del("api_key")
 	q.Del("max_tokens")
 	q.Del("timeout")
+	q.Del("thinking_budget")
 	q.Del("rpm")
 	q.Del("tpm")
 	q.Del("rate_store")
@@ -306,6 +310,12 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 		maxTokens = s.config.MaxTokens
 	}
 
+	// Resolve effective thinking budget
+	effectiveBudget := opts.ThinkingBudget
+	if s.config.ThinkingBudget > 0 && (effectiveBudget == 0 || effectiveBudget > s.config.ThinkingBudget) {
+		effectiveBudget = s.config.ThinkingBudget
+	}
+
 	// Separate system instruction
 	var systemInstruction *map[string]any
 	var contents []map[string]any
@@ -345,6 +355,11 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 		"generationConfig": map[string]any{
 			"maxOutputTokens": maxTokens,
 		},
+	}
+	if effectiveBudget > 0 {
+		reqBody["generationConfig"].(map[string]any)["thinkingConfig"] = map[string]any{
+			"thinkingBudget": effectiveBudget,
+		}
 	}
 	if systemInstruction != nil {
 		reqBody["system_instruction"] = *systemInstruction
@@ -409,6 +424,7 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 				Content struct {
 					Parts []struct {
 						Text         string `json:"text"`
+						Thought      bool   `json:"thought,omitempty"`
 						FunctionCall *struct {
 							Name string `json:"name"`
 							Args any    `json:"args"`
@@ -438,8 +454,12 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 
 		for _, part := range candidate.Content.Parts {
 			if part.Text != "" {
+				eventType := "content_delta"
+				if part.Thought {
+					eventType = "reasoning"
+				}
 				if err := onEvent(&sources.LLMStreamEvent{
-					Type:    "content_delta",
+					Type:    eventType,
 					Content: part.Text,
 				}); err != nil {
 					return err

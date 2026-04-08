@@ -145,6 +145,16 @@ func extractLLMOpts(args map[string]any) sources.LLMOptions {
 			opts.Temperature = float64(n)
 		}
 	}
+	if v, ok := args["thinking_budget"]; ok && v != nil {
+		switch n := v.(type) {
+		case int:
+			opts.ThinkingBudget = n
+		case int64:
+			opts.ThinkingBudget = int(n)
+		case float64:
+			opts.ThinkingBudget = int(n)
+		}
+	}
 	return opts
 }
 

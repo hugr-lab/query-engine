@@ -85,6 +85,9 @@ func (s *AnthropicSource) Attach(_ context.Context, _ *db.Pool) error {
 	if tpm := u.Query().Get("tpm"); tpm != "" {
 		fmt.Sscanf(tpm, "%d", &s.config.TPM)
 	}
+	if tb := u.Query().Get("thinking_budget"); tb != "" {
+		fmt.Sscanf(tb, "%d", &s.config.ThinkingBudget)
+	}
 	s.config.RateStore = u.Query().Get("rate_store")
 
 	q := u.Query()
@@ -92,6 +95,7 @@ func (s *AnthropicSource) Attach(_ context.Context, _ *db.Pool) error {
 	q.Del("api_key")
 	q.Del("max_tokens")
 	q.Del("timeout")
+	q.Del("thinking_budget")
 	q.Del("rpm")
 	q.Del("tpm")
 	q.Del("rate_store")
@@ -356,6 +360,16 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 		"max_tokens": maxTokens,
 		"stream":     true,
 	}
+	effectiveBudget := opts.ThinkingBudget
+	if s.config.ThinkingBudget > 0 && (effectiveBudget == 0 || effectiveBudget > s.config.ThinkingBudget) {
+		effectiveBudget = s.config.ThinkingBudget
+	}
+	if effectiveBudget > 0 {
+		reqBody["thinking"] = map[string]any{
+			"type":          "enabled",
+			"budget_tokens": effectiveBudget,
+		}
+	}
 	if system != "" {
 		reqBody["system"] = system
 	}
@@ -445,14 +459,27 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 		case "content_block_delta":
 			var delta struct {
 				Delta struct {
-					Type string `json:"type"`
-					Text string `json:"text"`
+					Type     string `json:"type"`
+					Text     string `json:"text"`
+					Thinking string `json:"thinking"`
 				} `json:"delta"`
 			}
-			if err := json.Unmarshal([]byte(data), &delta); err == nil && delta.Delta.Type == "text_delta" {
+			if err := json.Unmarshal([]byte(data), &delta); err != nil {
+				continue
+			}
+			switch delta.Delta.Type {
+			case "text_delta":
 				if err := onEvent(&sources.LLMStreamEvent{
 					Type:    "content_delta",
 					Content: delta.Delta.Text,
+					Model:   model,
+				}); err != nil {
+					return err
+				}
+			case "thinking_delta":
+				if err := onEvent(&sources.LLMStreamEvent{
+					Type:    "reasoning",
+					Content: delta.Delta.Thinking,
 					Model:   model,
 				}); err != nil {
 					return err

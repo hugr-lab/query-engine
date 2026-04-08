@@ -32,15 +32,16 @@ type OpenAISource struct {
 }
 
 type openAIConfig struct {
-	BaseURL      string
-	Model        string
-	ApiKey       string
-	ApiKeyHeader string
-	MaxTokens    int
-	Timeout      time.Duration
-	RPM          int    // max requests per minute (0 = unlimited)
-	TPM          int    // max tokens per minute (0 = unlimited)
-	RateStore    string // name of StoreSource for shared counters (empty = in-memory)
+	BaseURL        string
+	Model          string
+	ApiKey         string
+	ApiKeyHeader   string
+	MaxTokens      int
+	ThinkingBudget int // max thinking/reasoning tokens (0 = disabled)
+	Timeout        time.Duration
+	RPM            int    // max requests per minute (0 = unlimited)
+	TPM            int    // max tokens per minute (0 = unlimited)
+	RateStore      string // name of StoreSource for shared counters (empty = in-memory)
 }
 
 func NewOpenAI(ds types.DataSource, attached bool) (*OpenAISource, error) {
@@ -95,6 +96,10 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 		s.config.MaxTokens = 4096
 	}
 
+	if tb := u.Query().Get("thinking_budget"); tb != "" {
+		fmt.Sscanf(tb, "%d", &s.config.ThinkingBudget)
+	}
+
 	s.config.Timeout, _ = time.ParseDuration(u.Query().Get("timeout"))
 	if s.config.Timeout == 0 {
 		s.config.Timeout = 60 * time.Second
@@ -115,6 +120,7 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 	q.Del("api_key_header")
 	q.Del("max_tokens")
 	q.Del("timeout")
+	q.Del("thinking_budget")
 	q.Del("rpm")
 	q.Del("tpm")
 	q.Del("rate_store")

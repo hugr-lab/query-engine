@@ -75,7 +75,7 @@ func registerDS(ctx context.Context, s *hugr.Service) {
 
 	// Anthropic DS
 	if key := os.Getenv("ANTHROPIC_KEY"); key != "" {
-		path := "https://api.anthropic.com/v1/messages?model=claude-sonnet-4-20250514&api_key=" + key + "&max_tokens=1024&timeout=60s"
+		path := "https://api.anthropic.com/v1/messages?model=claude-sonnet-4-20250514&api_key=" + key + "&max_tokens=4096&thinking_budget=2048&timeout=60s"
 		mustQuery(ctx, s, `mutation($data: core_data_sources_mut_input_data!) {
 			core { insert_data_sources(data: $data) { name } }
 		}`, map[string]any{
@@ -490,7 +490,7 @@ func TestModels_StreamCompletion_Anthropic(t *testing.T) {
 		t.Skip("ANTHROPIC_KEY not set")
 	}
 	events := collectStreamEvents(t,
-		`subscription { core { models { completion(model: "test_anthropic", prompt: "Explain why 2+2=4 in one sentence. Think step by step.", max_tokens: 200) {
+		`subscription { core { models { completion(model: "test_anthropic", prompt: "Explain why 2+2=4 in one sentence. Think step by step.", max_tokens: 4096) {
 			type content model finish_reason tool_calls prompt_tokens completion_tokens
 		} } } }`)
 

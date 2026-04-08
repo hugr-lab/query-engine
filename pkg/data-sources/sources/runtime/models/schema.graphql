@@ -126,6 +126,8 @@ extend type Subscription {
     max_tokens: Int
     "Sampling temperature (0-2)"
     temperature: Float
+    "Token budget for reasoning/thinking. Enables chain-of-thought for supported models (Anthropic, Gemini). 0 = disabled."
+    thinking_budget: Int
   ): llm_stream_event
 
   "Stream a chat completion from an LLM model with tool calling support"
@@ -144,6 +146,8 @@ extend type Subscription {
     max_tokens: Int
     "Sampling temperature (0-2)"
     temperature: Float
+    "Token budget for reasoning/thinking. Enables chain-of-thought for supported models (Anthropic, Gemini). 0 = disabled."
+    thinking_budget: Int
   ): llm_stream_event
 }
 
