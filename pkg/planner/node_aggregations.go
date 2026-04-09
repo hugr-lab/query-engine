@@ -739,7 +739,7 @@ func aggAggregationFieldNodes(ctx context.Context, e engines.EngineAggregator, d
 						}
 						return "SUM(1./" + field + ")::BIGINT", params, nil
 					}
-					return e.AggregateFuncSQL("count", "", "", "", nil, false, f.Field.ArgumentMap(vars), params)
+					return e.AggregateFuncSQL("count", "", "", "", nil, false, sdl.FieldArgumentMap(f.Field, vars), params)
 				},
 			})
 			continue
@@ -788,7 +788,7 @@ func aggAggregationFieldNodes(ctx context.Context, e engines.EngineAggregator, d
 							}
 							factor = "(1. / " + factor + ")"
 						}
-						sql, params, err := e.AggregateFuncSQL(ac.Field.Name, sql, sp, factor, fd, false, ac.Field.ArgumentMap(vars), params)
+						sql, params, err := e.AggregateFuncSQL(ac.Field.Name, sql, sp, factor, fd, false, sdl.FieldArgumentMap(ac.Field, vars), params)
 						if err != nil {
 							return "", nil, err
 						}

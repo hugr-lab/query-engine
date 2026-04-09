@@ -2,11 +2,52 @@ package sdl
 
 import (
 	"context"
+	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
+
+// varPattern matches $VarName references inside string values.
+var varPattern = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
+
+// InterpolateVars replaces $VarName references inside string values
+// of an argument map with corresponding values from the vars map.
+// Non-string values and unresolved references are left as-is.
+func InterpolateVars(args map[string]any, vars map[string]any) map[string]any {
+	if vars == nil || args == nil {
+		return args
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		if s, ok := v.(string); ok && strings.Contains(s, "$") {
+			out[k] = interpolateVarsInString(s, vars)
+		} else {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// FieldArgumentMap resolves a field's arguments and interpolates
+// $VarName references in string values from query variables.
+func FieldArgumentMap(field *ast.Field, vars map[string]any) map[string]any {
+	return InterpolateVars(field.ArgumentMap(vars), vars)
+}
+
+func interpolateVarsInString(s string, vars map[string]any) string {
+	return varPattern.ReplaceAllStringFunc(s, func(match string) string {
+		name := match[1:] // strip leading '$'
+		v, ok := vars[name]
+		if !ok {
+			return match
+		}
+		return fmt.Sprint(v)
+	})
+}
 
 // IsScalarType returns true if typeName is a registered scalar type.
 func IsScalarType(typeName string) bool {
