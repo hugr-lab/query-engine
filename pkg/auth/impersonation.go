@@ -84,7 +84,9 @@ func DetectImpersonation(ctx context.Context) context.Context {
 	if ai == nil || ai.AuthProvider != "x-hugr-secret" {
 		return ctx
 	}
-	// If role or userId differ from defaults, override headers were used
+	// If role or userId differ from ApiKeyProvider defaults ("admin"/"api"),
+	// the request used override headers — mark as impersonation for audit.
+	// These defaults match NewApiKey() in hugr/pkg/auth/auth.go:66-77.
 	if ai.Role == "admin" && ai.UserId == "api" {
 		return ctx // no override, using defaults
 	}

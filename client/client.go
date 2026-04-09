@@ -416,13 +416,7 @@ func (c *Client) QueryJSON(ctx context.Context, req types.JQRequest) (*types.Jso
 		return nil, err
 	}
 	reqHttp.Header.Set("Content-Type", "application/json")
-
-	// Add identity override headers if AsUser is set in context
-	if id := types.AsUserFromContext(ctx); id != nil {
-		reqHttp.Header.Set("x-hugr-user-id", id.UserId)
-		reqHttp.Header.Set("x-hugr-user-name", id.UserName)
-		reqHttp.Header.Set("x-hugr-role", id.Role)
-	}
+	setAsUserHeaders(ctx, reqHttp)
 
 	resp, err := c.c.Do(reqHttp)
 	if err != nil {
@@ -481,13 +475,7 @@ func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-
-	// Add identity override headers if AsUser is set in context
-	if id := types.AsUserFromContext(ctx); id != nil {
-		req.Header.Set("x-hugr-user-id", id.UserId)
-		req.Header.Set("x-hugr-user-name", id.UserName)
-		req.Header.Set("x-hugr-role", id.Role)
-	}
+	setAsUserHeaders(ctx, req)
 
 	resp, err := c.c.Do(req)
 	if err != nil {
