@@ -6,10 +6,16 @@ type auth_me {
   user_name: String!
   # Assigned role name
   role: String!
-  # Authentication method (jwt, apiKey, anonymous, dbApiKey)
+  # Authentication method (jwt, apiKey, anonymous, dbApiKey, impersonation)
   auth_type: String!
   # Authentication provider name or issuer
   auth_provider: String!
+  # Original admin user ID when impersonation is active (null otherwise)
+  impersonated_by_user_id: String
+  # Original admin user name when impersonation is active (null otherwise)
+  impersonated_by_user_name: String
+  # Original admin user role when impersonation is active (null otherwise)
+  impersonated_by_user_role: String
 }
 
 # Single permission entry for a role

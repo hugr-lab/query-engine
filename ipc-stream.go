@@ -41,6 +41,10 @@ type StreamMessage struct {
 	Error          string                 `json:"error,omitempty"`
 	SubscriptionID string                 `json:"subscription_id,omitempty"` // For subscribe/unsubscribe
 	Path           string                 `json:"path,omitempty"`           // Data object path for subscription events
+	// Identity override fields (optional, requires secret key auth on connection)
+	UserId   string `json:"user_id,omitempty"`
+	UserName string `json:"user_name,omitempty"`
+	Role     string `json:"role,omitempty"`
 }
 
 func (s *Service) isStreamingRequest(r *http.Request) bool {
@@ -135,12 +139,17 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				fallthrough
 			case "query":
-				ctx, err := stream.setActiveQuery(ctx, &req)
+				queryCtx, err := s.applyMessageImpersonation(ctx, req.UserId, req.UserName, req.Role)
+				if err != nil {
+					_ = stream.sendStreamError(fmt.Errorf("identity override error: %w", err))
+					continue
+				}
+				queryCtx, err = stream.setActiveQuery(queryCtx, &req)
 				if err != nil {
 					_ = stream.sendStreamError(fmt.Errorf("failed to set active query: %w", err))
 					continue
 				}
-				go s.handleIPCStream(ctx, stream)
+				go s.handleIPCStream(queryCtx, stream)
 			case "cancel":
 				if stream.cancel != nil {
 					stream.cancel()
@@ -154,6 +163,25 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// applyMessageImpersonation applies identity override from IPC message fields
+// and reloads permissions for the impersonated role. No-op if userId is empty.
+func (s *Service) applyMessageImpersonation(ctx context.Context, userId, userName, role string) (context.Context, error) {
+	if userId == "" {
+		return ctx, nil
+	}
+	ctx, err := auth.ApplyImpersonationFromMessage(ctx, userId, userName, role)
+	if err != nil {
+		return ctx, err
+	}
+	if s.perm != nil {
+		ctx, err = s.perm.ContextWithPermissions(ctx)
+		if err != nil {
+			return ctx, err
+		}
+	}
+	return ctx, nil
 }
 
 func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
@@ -229,6 +257,19 @@ func (s *Service) handleIPCSubscription(ctx context.Context, stream *stream, req
 	if subID == "" {
 		_ = stream.sendStreamError(fmt.Errorf("subscribe requires subscription_id"))
 		return
+	}
+
+	// Apply identity override if present in message
+	ctx, err := s.applyMessageImpersonation(ctx, req.UserId, req.UserName, req.Role)
+	if err != nil {
+		_ = stream.writeJSON(StreamMessage{Type: "subscription_error", SubscriptionID: subID, Error: err.Error()})
+		return
+	}
+	if s.config.Debug && auth.IsImpersonated(ctx) {
+		impBy := auth.ImpersonatedByFromContext(ctx)
+		ai := auth.AuthInfoFromContext(ctx)
+		log.Printf("stream %s: subscription %s impersonating user %s (role %s) by admin %s",
+			stream.queryId, subID, ai.UserId, ai.Role, impBy.UserId)
 	}
 
 	subCtx, subCancel := context.WithCancel(ctx)

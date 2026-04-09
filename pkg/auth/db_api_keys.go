@@ -131,8 +131,10 @@ func (p *DBApiKey) Authenticate(r *http.Request) (*AuthInfo, error) {
 	}
 
 	return &AuthInfo{
-		UserId:   userId,
-		UserName: userName,
-		Role:     role,
+		UserId:       userId,
+		UserName:     userName,
+		Role:         role,
+		AuthType:     "db-api-key",
+		AuthProvider: p.name,
 	}, nil
 }

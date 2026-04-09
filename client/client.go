@@ -36,6 +36,18 @@ func WithApiKey(apiKey string) Option {
 	}
 }
 
+// WithSecretKeyAuth sets the x-hugr-secret-key header for admin authentication.
+// This enables impersonation via types.AsUser context.
+func WithSecretKeyAuth(key string) Option {
+	return func(c *ClientConfig) {
+		c.Transport = &apiKeyTransport{
+			apiKey:       key,
+			apiKeyHeader: "x-hugr-secret-key",
+			transport:    c.Transport,
+		}
+	}
+}
+
 func WithApiKeyCustomHeader(apiKey, header string) Option {
 	return func(c *ClientConfig) {
 		c.Transport = &apiKeyTransport{
@@ -216,6 +228,32 @@ func (c *Client) Ping(ctx context.Context) (string, error) {
 	return nv.Version, err
 }
 
+// VerifyAdmin queries the server to verify the client has admin privileges.
+// Call after NewClient to ensure impersonation via AsUser will work.
+// VerifyAdmin queries the server to verify the client has admin privileges.
+// Call after NewClient to ensure impersonation via AsUser will work.
+func (c *Client) VerifyAdmin(ctx context.Context) error {
+	resp, err := c.Query(ctx, `{ function { core { auth { me { role auth_type } } } } }`, nil)
+	if err != nil {
+		return fmt.Errorf("admin verification failed: %w", err)
+	}
+	defer resp.Close()
+	if resp.Err() != nil {
+		return fmt.Errorf("admin verification failed: %w", resp.Err())
+	}
+	var me struct {
+		Role     string `json:"role"`
+		AuthType string `json:"auth_type"`
+	}
+	if err := resp.ScanData("function.core.auth.me", &me); err != nil {
+		return fmt.Errorf("admin verification: %w", err)
+	}
+	if me.Role != "admin" {
+		return fmt.Errorf("client is not admin (role: %s), impersonation not available", me.Role)
+	}
+	return nil
+}
+
 func (c *Client) RegisterDataSource(ctx context.Context, ds types.DataSource) error {
 	res, err := c.Query(ctx, `mutation($data: core_data_sources_mut_input_data!){
 		core{
@@ -378,6 +416,7 @@ func (c *Client) QueryJSON(ctx context.Context, req types.JQRequest) (*types.Jso
 		return nil, err
 	}
 	reqHttp.Header.Set("Content-Type", "application/json")
+	setAsUserHeaders(ctx, reqHttp)
 
 	resp, err := c.c.Do(reqHttp)
 	if err != nil {
@@ -436,6 +475,7 @@ func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	setAsUserHeaders(ctx, req)
 
 	resp, err := c.c.Do(req)
 	if err != nil {

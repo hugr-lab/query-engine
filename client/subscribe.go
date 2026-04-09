@@ -52,6 +52,10 @@ type ipcSubMsg struct {
 	Query          string         `json:"query,omitempty"`
 	Variables      map[string]any `json:"variables,omitempty"`
 	Error          string         `json:"error,omitempty"`
+	// Identity override fields (optional, requires secret key auth on connection)
+	UserId   string `json:"user_id,omitempty"`
+	UserName string `json:"user_name,omitempty"`
+	Role     string `json:"role,omitempty"`
 }
 
 // --- SubscriptionConn ---
@@ -88,11 +92,18 @@ func (sc *SubscriptionConn) Subscribe(ctx context.Context, query string, vars ma
 	sc.subs[subID] = sub
 	sc.subsMu.Unlock()
 
-	sc.mu.Lock()
-	err := sc.conn.WriteJSON(ipcSubMsg{
+	msg := ipcSubMsg{
 		Type: "subscribe", SubscriptionID: subID,
 		Query: query, Variables: vars,
-	})
+	}
+	if id := types.AsUserFromContext(ctx); id != nil {
+		msg.UserId = id.UserId
+		msg.UserName = id.UserName
+		msg.Role = id.Role
+	}
+
+	sc.mu.Lock()
+	err := sc.conn.WriteJSON(msg)
 	sc.mu.Unlock()
 	if err != nil {
 		sc.removeSub(subID)
@@ -433,13 +444,7 @@ func (c *Client) dialSubscriptionConn(ctx context.Context) (*SubscriptionConn, e
 	wsURL += "/ipc"
 
 	header := http.Header{}
-	if rt, ok := c.config.Transport.(*apiKeyTransport); ok {
-		h := rt.apiKeyHeader
-		if h == "" {
-			h = "x-hugr-api-key"
-		}
-		header.Set(h, rt.apiKey)
-	}
+	collectAuthHeaders(c.config.Transport, header)
 
 	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
 	if err != nil {
@@ -455,6 +460,33 @@ func (c *Client) dialSubscriptionConn(ctx context.Context) (*SubscriptionConn, e
 	}
 	go sc.readLoop()
 	return sc, nil
+}
+
+// collectAuthHeaders walks the transport chain and collects auth headers for WebSocket dial.
+func collectAuthHeaders(rt http.RoundTripper, header http.Header) {
+	if rt == nil {
+		return
+	}
+	switch t := rt.(type) {
+	case *apiKeyTransport:
+		h := t.apiKeyHeader
+		if h == "" {
+			h = "x-hugr-api-key"
+		}
+		header.Set(h, t.apiKey)
+		collectAuthHeaders(t.transport, header)
+	case *tokenTransport:
+		header.Set("Authorization", "Bearer "+t.token)
+		collectAuthHeaders(t.transport, header)
+	case *timezoneTransport:
+		collectAuthHeaders(t.transport, header)
+	case *noTimezoneTransport:
+		collectAuthHeaders(t.transport, header)
+	case *withUserRoleTransport:
+		collectAuthHeaders(t.transport, header)
+	case *withUserInfoTransport:
+		collectAuthHeaders(t.transport, header)
+	}
 }
 
 // CloseSubscriptions closes all pool connections.
