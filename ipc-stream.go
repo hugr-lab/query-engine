@@ -177,13 +177,7 @@ func (s *Service) applyMessageImpersonation(ctx context.Context, userId, userNam
 	}
 	impersonated := auth.BuildImpersonatedAuthInfo(original, userId, userName, role)
 	ctx = auth.ContextWithAuthInfo(ctx, impersonated)
-
-	ps := s.permStore()
-	ctx, err := ps.ContextWithPermissions(ctx)
-	if err != nil {
-		return ctx, err
-	}
-	return ctx, nil
+	return s.perm.ContextWithPermissions(ctx)
 }
 
 func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {

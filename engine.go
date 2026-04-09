@@ -519,16 +519,6 @@ func (s *Service) ProcessOperation(ctx context.Context, provider catalog.Provide
 	}
 }
 
-var permStub permissions.Store = &permissions.StubStore{}
-
-// permStore returns the permission store, falling back to a permissive stub if RBAC is not configured.
-func (s *Service) permStore() permissions.Store {
-	if s.perm != nil {
-		return s.perm
-	}
-	return permStub
-}
-
 // applyImpersonation checks for AsUser in context and applies identity override + permissions.
 // Returns the original context unchanged if no impersonation is requested.
 func (s *Service) applyImpersonation(ctx context.Context) (context.Context, error) {
@@ -542,13 +532,7 @@ func (s *Service) applyImpersonation(ctx context.Context) (context.Context, erro
 	}
 	impersonated := auth.BuildImpersonatedAuthInfo(original, id.UserId, id.UserName, id.Role)
 	ctx = auth.ContextWithAuthInfo(ctx, impersonated)
-
-	ps := s.permStore()
-	ctx, err := ps.ContextWithPermissions(ctx)
-	if err != nil {
-		return ctx, err
-	}
-	return ctx, nil
+	return s.perm.ContextWithPermissions(ctx)
 }
 
 func (s *Service) Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error) {
