@@ -49,8 +49,6 @@ func (s *Service) middlewares() func(next http.Handler) http.Handler {
 	s.config.Auth.Providers = pp
 	authMiddleware := auth.AuthMiddleware(*s.config.Auth)
 	mm = append(mm, authMiddleware)
-	// detect impersonation via override headers on secret-key auth
-	mm = append(mm, impersonationDetectMW)
 	// check endpoint access permissions
 	if s.perm != nil {
 		mm = append(mm, s.checkEndpointPermissionsMW)
@@ -70,13 +68,6 @@ func buildMW(middlewares ...func(next http.Handler) http.Handler) func(next http
 		}
 		return next
 	}
-}
-
-func impersonationDetectMW(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := auth.DetectImpersonation(r.Context())
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
 }
 
 func (s *Service) checkEndpointPermissionsMW(next http.Handler) http.Handler {

@@ -85,6 +85,10 @@ type roles @table(name: "roles") {
     Role disabled flag
   """
   disabled: Boolean @default(value: false)
+  """
+    Whether this role can impersonate other users
+  """
+  can_impersonate: Boolean @default(value: false)
 }
 
 """

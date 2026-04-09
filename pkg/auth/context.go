@@ -10,6 +10,10 @@ type AuthInfo struct {
 	AuthType     string
 	AuthProvider string
 	Token        string
+
+	// ImpersonatedBy holds the original admin identity when this request
+	// is running under impersonation. Nil means no impersonation.
+	ImpersonatedBy *AuthInfo
 }
 
 type authInfoKeyType string

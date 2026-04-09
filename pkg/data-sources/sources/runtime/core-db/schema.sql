@@ -1,6 +1,6 @@
 {{ if isPostgres }}CREATE EXTENSION IF NOT EXISTS vector;{{ end }}
 
-CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.17' AS "version";
+CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}"version" AS SELECT '0.0.18' AS "version";
 
 CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}catalog_sources (
     name VARCHAR NOT NULL PRIMARY KEY,
@@ -35,11 +35,12 @@ CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}data_source_catalogs (
 CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}roles (
     name VARCHAR NOT NULL PRIMARY KEY,
     description VARCHAR,
-    disabled BOOLEAN NOT NULL DEFAULT FALSE
+    disabled BOOLEAN NOT NULL DEFAULT FALSE,
+    can_impersonate BOOLEAN NOT NULL DEFAULT FALSE
 );
 
-INSERT INTO {{ if isAttachedDuckdb }}core.{{ end }}roles (name, description)
-VALUES ('admin', 'Admin role'), ('public', 'Public role'), ('readonly', 'Readonly role');
+INSERT INTO {{ if isAttachedDuckdb }}core.{{ end }}roles (name, description, can_impersonate)
+VALUES ('admin', 'Admin role', TRUE), ('public', 'Public role', FALSE), ('readonly', 'Readonly role', FALSE);
 
 CREATE TABLE {{ if isAttachedDuckdb }}core.{{ end }}permissions (
     role VARCHAR NOT NULL,

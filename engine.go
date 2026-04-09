@@ -54,6 +54,8 @@ type Service struct {
 
 	pendingSources []sources.RuntimeSource
 	initialized    bool
+
+	permStub permissions.Store // lazy-initialized stub for nil perm
 }
 
 type Config struct {
@@ -519,18 +521,35 @@ func (s *Service) ProcessOperation(ctx context.Context, provider catalog.Provide
 	}
 }
 
+// permStore returns the permission store, falling back to a permissive stub if RBAC is not configured.
+func (s *Service) permStore() permissions.Store {
+	if s.perm != nil {
+		return s.perm
+	}
+	if s.permStub == nil {
+		s.permStub = &permissions.StubStore{}
+	}
+	return s.permStub
+}
+
 // applyImpersonation checks for AsUser in context and applies identity override + permissions.
 // Returns the original context unchanged if no impersonation is requested.
 func (s *Service) applyImpersonation(ctx context.Context) (context.Context, error) {
-	ctx, err := auth.ApplyImpersonationCtx(ctx)
+	id := types.AsUserFromContext(ctx)
+	if id == nil {
+		return ctx, nil
+	}
+	original := auth.AuthInfoFromContext(ctx)
+	if original == nil {
+		return ctx, fmt.Errorf("identity override requires authentication")
+	}
+	impersonated := auth.BuildImpersonatedAuthInfo(original, id.UserId, id.UserName, id.Role)
+	ctx = auth.ContextWithAuthInfo(ctx, impersonated)
+
+	ps := s.permStore()
+	ctx, err := ps.ContextWithPermissions(ctx)
 	if err != nil {
 		return ctx, err
-	}
-	if auth.IsImpersonated(ctx) && s.perm != nil {
-		ctx, err = s.perm.ContextWithPermissions(ctx)
-		if err != nil {
-			return ctx, err
-		}
 	}
 	return ctx, nil
 }

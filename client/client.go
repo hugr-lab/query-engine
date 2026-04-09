@@ -229,9 +229,8 @@ func (c *Client) Ping(ctx context.Context) (string, error) {
 }
 
 // VerifyAdmin queries the server to verify the client has admin privileges.
-// Call after NewClient to ensure impersonation via AsUser will work.
-// VerifyAdmin queries the server to verify the client has admin privileges.
-// Call after NewClient to ensure impersonation via AsUser will work.
+// This is a client-side convenience check; the server enforces impersonation
+// authorization via the can_impersonate role property in the permissions system.
 func (c *Client) VerifyAdmin(ctx context.Context) error {
 	resp, err := c.Query(ctx, `{ function { core { auth { me { role auth_type } } } } }`, nil)
 	if err != nil {
@@ -249,7 +248,7 @@ func (c *Client) VerifyAdmin(ctx context.Context) error {
 		return fmt.Errorf("admin verification: %w", err)
 	}
 	if me.Role != "admin" {
-		return fmt.Errorf("client is not admin (role: %s), impersonation not available", me.Role)
+		return fmt.Errorf("client is not admin (role: %s), impersonation may not be available", me.Role)
 	}
 	return nil
 }

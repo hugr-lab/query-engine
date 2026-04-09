@@ -14,9 +14,10 @@ import (
 )
 
 type RolePermissions struct {
-	Name        string       `json:"name"`
-	Disabled    bool         `json:"disabled"`
-	Permissions []Permission `json:"permissions"`
+	Name           string       `json:"name"`
+	Disabled       bool         `json:"disabled"`
+	CanImpersonate bool         `json:"can_impersonate"`
+	Permissions    []Permission `json:"permissions"`
 }
 
 type Permission struct {
@@ -171,7 +172,7 @@ func AuthVars(ctx context.Context) map[string]any {
 
 	userIdInt, _ := strconv.Atoi(ai.UserId)
 
-	return map[string]any{
+	vars := map[string]any{
 		"[$auth.user_name]":   ai.UserName,
 		"[$auth.user_id]":     ai.UserId,
 		"[$auth.user_id_int]": userIdInt,
@@ -179,4 +180,10 @@ func AuthVars(ctx context.Context) map[string]any {
 		"[$auth.auth_type]":   ai.AuthType,
 		"[$auth.provider]":    ai.AuthProvider,
 	}
+	if ai.ImpersonatedBy != nil {
+		vars["[$auth.impersonated_by_role]"] = ai.ImpersonatedBy.Role
+		vars["[$auth.impersonated_by_user_id]"] = ai.ImpersonatedBy.UserId
+		vars["[$auth.impersonated_by_user_name]"] = ai.ImpersonatedBy.UserName
+	}
+	return vars
 }

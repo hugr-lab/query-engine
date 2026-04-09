@@ -171,15 +171,17 @@ func (s *Service) applyMessageImpersonation(ctx context.Context, userId, userNam
 	if userId == "" {
 		return ctx, nil
 	}
-	ctx, err := auth.ApplyImpersonationFromMessage(ctx, userId, userName, role)
+	original := auth.AuthInfoFromContext(ctx)
+	if original == nil {
+		return ctx, fmt.Errorf("identity override requires authentication")
+	}
+	impersonated := auth.BuildImpersonatedAuthInfo(original, userId, userName, role)
+	ctx = auth.ContextWithAuthInfo(ctx, impersonated)
+
+	ps := s.permStore()
+	ctx, err := ps.ContextWithPermissions(ctx)
 	if err != nil {
 		return ctx, err
-	}
-	if s.perm != nil {
-		ctx, err = s.perm.ContextWithPermissions(ctx)
-		if err != nil {
-			return ctx, err
-		}
 	}
 	return ctx, nil
 }

@@ -171,13 +171,17 @@ func TestImpersonation_Admin_Subscribe_TwoUsers_SameConnection(t *testing.T) {
 	}
 }
 
-// --- Anonymous impersonation (should be rejected/ignored) ---
+// --- Anonymous impersonation ---
+// With perm-based authorization, impersonation is allowed when the effective role
+// has can_impersonate=true. Since the anonymous provider assigns role "admin" in
+// this test setup, and admin has can_impersonate=true, impersonation is permitted.
 
-func TestImpersonation_Anonymous_Query_HeadersIgnored(t *testing.T) {
+func TestImpersonation_Anonymous_Query_AsUser(t *testing.T) {
 	c := newAnonymousClient(t)
 	ctx := context.Background()
 
-	// AsUser adds override headers, but anonymous provider ignores them
+	// Anonymous provider gives role "admin" which has can_impersonate=true,
+	// so impersonation via dedicated headers works.
 	impCtx := types.AsUser(ctx, "attacker", "Evil", "admin")
 	resp, err := c.Query(impCtx, meQuery, nil)
 	require.NoError(t, err)
@@ -188,37 +192,29 @@ func TestImpersonation_Anonymous_Query_HeadersIgnored(t *testing.T) {
 	err = resp.ScanData("function.core.auth.me", &me)
 	require.NoError(t, err)
 
-	assert.Equal(t, "anonymous", me.UserId, "override headers should be ignored")
-	assert.Equal(t, "anonymous", me.AuthType)
-	assert.Empty(t, me.ImpByUID)
+	assert.Equal(t, "attacker", me.UserId, "impersonation applied via can_impersonate")
+	assert.Equal(t, "impersonation", me.AuthType)
+	assert.Equal(t, "anonymous", me.ImpByUID, "impersonated by anonymous admin")
 }
 
-func TestImpersonation_Anonymous_Subscribe_Rejected(t *testing.T) {
+func TestImpersonation_Anonymous_Subscribe_AsUser(t *testing.T) {
 	c := newAnonymousClient(t)
 	defer c.CloseSubscriptions()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Anonymous IPC subscribe with identity fields — server rejects
+	// Anonymous with admin role can impersonate via IPC message fields
 	impCtx := types.AsUser(ctx, "attacker", "Evil", "admin")
-	sub, err := c.Subscribe(impCtx, `subscription { query(interval: "1s") { function { core { auth { me { user_id } } } } } }`, nil)
-	if err != nil {
-		assert.Contains(t, err.Error(), "secret key")
-		return
-	}
+	sub, err := c.Subscribe(impCtx, `subscription { query(interval: "1s") { function { core { auth { me { user_id auth_type } } } } } }`, nil)
+	require.NoError(t, err)
 	defer sub.Cancel()
 
-	// Subscription_error closes channel
 	select {
-	case event, ok := <-sub.Events:
-		if !ok {
-			return // rejected
-		}
-		if event.Reader != nil {
-			event.Reader.Release()
-		}
-		t.Fatal("expected subscription to be rejected")
+	case event := <-sub.Events:
+		require.NotNil(t, event.Reader)
+		require.True(t, event.Reader.Next())
+		event.Reader.Release()
 	case <-ctx.Done():
-		return
+		t.Fatal("timeout waiting for subscription event")
 	}
 }

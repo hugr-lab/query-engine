@@ -6,204 +6,174 @@ import (
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/hugr-lab/query-engine/types"
 )
 
-func TestApplyImpersonationCtx(t *testing.T) {
+func TestBuildImpersonatedAuthInfo(t *testing.T) {
+	original := &AuthInfo{
+		Role: "admin", UserId: "api", UserName: "api",
+		AuthType: "apiKey", AuthProvider: "x-hugr-secret",
+	}
+	result := BuildImpersonatedAuthInfo(original, "user-123", "John", "viewer")
+
+	if result.Role != "viewer" {
+		t.Errorf("Role = %q, want %q", result.Role, "viewer")
+	}
+	if result.UserId != "user-123" {
+		t.Errorf("UserId = %q, want %q", result.UserId, "user-123")
+	}
+	if result.UserName != "John" {
+		t.Errorf("UserName = %q, want %q", result.UserName, "John")
+	}
+	if result.AuthType != "impersonation" {
+		t.Errorf("AuthType = %q, want %q", result.AuthType, "impersonation")
+	}
+	if result.AuthProvider != "x-hugr-secret" {
+		t.Errorf("AuthProvider = %q, want %q", result.AuthProvider, "x-hugr-secret")
+	}
+	if result.ImpersonatedBy != original {
+		t.Error("ImpersonatedBy should point to original AuthInfo")
+	}
+}
+
+func TestIsImpersonated(t *testing.T) {
 	tests := []struct {
-		name        string
-		authInfo    *AuthInfo
-		asUser      *types.UserIdentity
-		wantErr     bool
-		wantRole    string
-		wantImpBy   bool
-		wantAuthTyp string
+		name    string
+		auth    *AuthInfo
+		wantImp bool
 	}{
 		{
-			name: "admin with AsUser — impersonation applied",
-			authInfo: &AuthInfo{
-				Role: "admin", UserId: "api", UserName: "api",
-				AuthType: "apiKey", AuthProvider: "x-hugr-secret",
+			name: "impersonated",
+			auth: &AuthInfo{
+				Role: "viewer", AuthType: "impersonation",
+				ImpersonatedBy: &AuthInfo{Role: "admin"},
 			},
-			asUser:      &types.UserIdentity{UserId: "user-123", UserName: "John", Role: "viewer"},
-			wantErr:     false,
-			wantRole:    "viewer",
-			wantImpBy:   true,
-			wantAuthTyp: "impersonation",
+			wantImp: true,
 		},
 		{
-			name: "no AsUser — no-op",
-			authInfo: &AuthInfo{
-				Role: "admin", UserId: "api", UserName: "api",
-				AuthType: "apiKey", AuthProvider: "x-hugr-secret",
+			name: "not impersonated",
+			auth: &AuthInfo{
+				Role: "admin", AuthType: "apiKey",
 			},
-			asUser:      nil,
-			wantErr:     false,
-			wantRole:    "admin",
-			wantImpBy:   false,
-			wantAuthTyp: "apiKey",
+			wantImp: false,
 		},
 		{
-			name: "OIDC user with AsUser — rejected",
-			authInfo: &AuthInfo{
-				Role: "user", UserId: "oidc-user", UserName: "OIDCUser",
-				AuthType: "oidc", AuthProvider: "oidc",
-			},
-			asUser:  &types.UserIdentity{UserId: "victim", UserName: "Victim", Role: "admin"},
-			wantErr: true,
-		},
-		{
-			name: "JWT user with AsUser — rejected",
-			authInfo: &AuthInfo{
-				Role: "user", UserId: "jwt-user", UserName: "JWTUser",
-				AuthType: "jwt", AuthProvider: "https://issuer.example.com",
-			},
-			asUser:  &types.UserIdentity{UserId: "victim", UserName: "Victim", Role: "admin"},
-			wantErr: true,
-		},
-		{
-			name: "anonymous with AsUser — rejected",
-			authInfo: &AuthInfo{
-				Role: "anonymous", UserId: "anonymous", UserName: "anonymous",
-				AuthType: "anonymous", AuthProvider: "anonymous",
-			},
-			asUser:  &types.UserIdentity{UserId: "victim", UserName: "Victim", Role: "admin"},
-			wantErr: true,
-		},
-		{
-			name: "db-api-key with AsUser — rejected",
-			authInfo: &AuthInfo{
-				Role: "user", UserId: "key-user", UserName: "KeyUser",
-				AuthType: "db-api-key", AuthProvider: "db-api-key",
-			},
-			asUser:  &types.UserIdentity{UserId: "victim", UserName: "Victim", Role: "admin"},
-			wantErr: true,
-		},
-		{
-			name: "cluster-internal with AsUser — rejected",
-			authInfo: &AuthInfo{
-				Role: "admin", UserId: "api", UserName: "api",
-				AuthType: "apiKey", AuthProvider: "cluster-internal",
-			},
-			asUser:  &types.UserIdentity{UserId: "victim", UserName: "Victim", Role: "viewer"},
-			wantErr: true,
-		},
-		{
-			name:    "nil auth with AsUser — rejected",
-			asUser:  &types.UserIdentity{UserId: "victim", UserName: "Victim", Role: "admin"},
-			wantErr: true,
+			name:    "nil auth",
+			wantImp: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			if tt.authInfo != nil {
-				ctx = ContextWithAuthInfo(ctx, tt.authInfo)
+			if tt.auth != nil {
+				ctx = ContextWithAuthInfo(ctx, tt.auth)
 			}
-			if tt.asUser != nil {
-				ctx = types.AsUser(ctx, tt.asUser.UserId, tt.asUser.UserName, tt.asUser.Role)
-			}
-
-			got, err := ApplyImpersonationCtx(ctx)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-
-			ai := AuthInfoFromContext(got)
-			if ai == nil {
-				t.Fatal("expected AuthInfo in context")
-			}
-			if ai.Role != tt.wantRole {
-				t.Errorf("role = %q, want %q", ai.Role, tt.wantRole)
-			}
-			if ai.AuthType != tt.wantAuthTyp {
-				t.Errorf("authType = %q, want %q", ai.AuthType, tt.wantAuthTyp)
-			}
-			if tt.wantImpBy != IsImpersonated(got) {
-				t.Errorf("IsImpersonated = %v, want %v", IsImpersonated(got), tt.wantImpBy)
-			}
-			if tt.wantImpBy {
-				impBy := ImpersonatedByFromContext(got)
-				if impBy == nil {
-					t.Fatal("expected ImpersonatedBy in context")
-				}
-				if impBy.AuthProvider != "x-hugr-secret" {
-					t.Errorf("impersonatedBy.AuthProvider = %q, want %q", impBy.AuthProvider, "x-hugr-secret")
-				}
+			if got := IsImpersonated(ctx); got != tt.wantImp {
+				t.Errorf("IsImpersonated = %v, want %v", got, tt.wantImp)
 			}
 		})
 	}
 }
 
-func TestApplyImpersonationFromMessage(t *testing.T) {
+func TestImpersonatedByFromContext(t *testing.T) {
+	original := &AuthInfo{Role: "admin", UserId: "api", AuthType: "apiKey"}
+	impersonated := &AuthInfo{
+		Role: "viewer", UserId: "user-123", AuthType: "impersonation",
+		ImpersonatedBy: original,
+	}
+	ctx := ContextWithAuthInfo(context.Background(), impersonated)
+
+	impBy := ImpersonatedByFromContext(ctx)
+	if impBy == nil {
+		t.Fatal("expected ImpersonatedBy, got nil")
+	}
+	if impBy.Role != "admin" {
+		t.Errorf("ImpersonatedBy.Role = %q, want %q", impBy.Role, "admin")
+	}
+
+	// No impersonation
+	ctx2 := ContextWithAuthInfo(context.Background(), &AuthInfo{Role: "admin"})
+	if ImpersonatedByFromContext(ctx2) != nil {
+		t.Error("expected nil ImpersonatedBy for non-impersonated auth")
+	}
+
+	// Nil context
+	if ImpersonatedByFromContext(context.Background()) != nil {
+		t.Error("expected nil ImpersonatedBy for empty context")
+	}
+}
+
+func TestApplyImpersonationHeaders(t *testing.T) {
 	tests := []struct {
-		name     string
-		authInfo *AuthInfo
-		userId   string
-		wantErr  bool
+		name         string
+		authInfo     *AuthInfo
+		impRole      string
+		impUserId    string
+		impUserName  string
+		wantImpBy    bool
+		wantRole     string
+		wantAuthType string
 	}{
 		{
-			name: "admin — allowed",
+			name: "with impersonation headers — applied",
 			authInfo: &AuthInfo{
-				Role: "admin", UserId: "api", AuthType: "apiKey", AuthProvider: "x-hugr-secret",
+				Role: "admin", UserId: "api", UserName: "api",
+				AuthType: "apiKey", AuthProvider: "x-hugr-secret",
 			},
-			userId: "user-123",
+			impRole:      "viewer",
+			impUserId:    "user-123",
+			impUserName:  "John",
+			wantImpBy:    true,
+			wantRole:     "viewer",
+			wantAuthType: "impersonation",
 		},
 		{
-			name:   "empty userId — no-op",
-			userId: "",
+			name: "no impersonation headers — unchanged",
+			authInfo: &AuthInfo{
+				Role: "admin", UserId: "api", UserName: "api",
+				AuthType: "apiKey", AuthProvider: "x-hugr-secret",
+			},
+			wantImpBy:    false,
+			wantRole:     "admin",
+			wantAuthType: "apiKey",
 		},
 		{
-			name: "OIDC — rejected",
+			name: "nested impersonation — ignored",
 			authInfo: &AuthInfo{
-				Role: "user", UserId: "oidc-user", AuthType: "oidc", AuthProvider: "oidc",
+				Role: "viewer", UserId: "user-123", UserName: "John",
+				AuthType: "impersonation", AuthProvider: "x-hugr-secret",
+				ImpersonatedBy: &AuthInfo{
+					Role: "admin", UserId: "api", AuthType: "apiKey",
+				},
 			},
-			userId:  "victim",
-			wantErr: true,
-		},
-		{
-			name: "cluster — rejected",
-			authInfo: &AuthInfo{
-				Role: "admin", UserId: "api", AuthType: "apiKey", AuthProvider: "cluster-internal",
-			},
-			userId:  "victim",
-			wantErr: true,
+			impRole:      "another",
+			impUserId:    "user-456",
+			wantImpBy:    true,     // already impersonated
+			wantRole:     "viewer", // unchanged
+			wantAuthType: "impersonation",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			if tt.authInfo != nil {
-				ctx = ContextWithAuthInfo(ctx, tt.authInfo)
+			req := httptest.NewRequest("GET", "/", nil)
+			if tt.impRole != "" {
+				req.Header.Set("x-hugr-impersonated-role", tt.impRole)
+				req.Header.Set("x-hugr-impersonated-user-id", tt.impUserId)
+				req.Header.Set("x-hugr-impersonated-user-name", tt.impUserName)
 			}
 
-			got, err := ApplyImpersonationFromMessage(ctx, tt.userId, "Name", "viewer")
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			result := applyImpersonationHeaders(req, tt.authInfo)
 
-			if tt.userId != "" {
-				ai := AuthInfoFromContext(got)
-				if ai.UserId != tt.userId {
-					t.Errorf("userId = %q, want %q", ai.UserId, tt.userId)
-				}
-				if ai.AuthType != "impersonation" {
-					t.Errorf("authType = %q, want %q", ai.AuthType, "impersonation")
-				}
+			if result.Role != tt.wantRole {
+				t.Errorf("Role = %q, want %q", result.Role, tt.wantRole)
+			}
+			if result.AuthType != tt.wantAuthType {
+				t.Errorf("AuthType = %q, want %q", result.AuthType, tt.wantAuthType)
+			}
+			hasImpBy := result.ImpersonatedBy != nil
+			if hasImpBy != tt.wantImpBy {
+				t.Errorf("ImpersonatedBy present = %v, want %v", hasImpBy, tt.wantImpBy)
 			}
 		})
 	}
@@ -264,55 +234,5 @@ func TestAnonymousIgnoresOverrideHeaders(t *testing.T) {
 	}
 	if authInfo.UserId != "anonymous" {
 		t.Errorf("userId = %q, want %q", authInfo.UserId, "anonymous")
-	}
-}
-
-func TestDetectImpersonation(t *testing.T) {
-	tests := []struct {
-		name    string
-		auth    *AuthInfo
-		wantImp bool
-	}{
-		{
-			name: "secret key with overridden role",
-			auth: &AuthInfo{
-				Role: "viewer", UserId: "user-123", UserName: "John",
-				AuthType: "apiKey", AuthProvider: "x-hugr-secret",
-			},
-			wantImp: true,
-		},
-		{
-			name: "secret key with defaults — no impersonation",
-			auth: &AuthInfo{
-				Role: "admin", UserId: "api", UserName: "api",
-				AuthType: "apiKey", AuthProvider: "x-hugr-secret",
-			},
-			wantImp: false,
-		},
-		{
-			name: "OIDC — no impersonation",
-			auth: &AuthInfo{
-				Role: "user", UserId: "oidc-user",
-				AuthType: "oidc", AuthProvider: "oidc",
-			},
-			wantImp: false,
-		},
-		{
-			name:    "nil auth — no impersonation",
-			wantImp: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			if tt.auth != nil {
-				ctx = ContextWithAuthInfo(ctx, tt.auth)
-			}
-			got := DetectImpersonation(ctx)
-			if IsImpersonated(got) != tt.wantImp {
-				t.Errorf("IsImpersonated = %v, want %v", IsImpersonated(got), tt.wantImp)
-			}
-		})
 	}
 }
