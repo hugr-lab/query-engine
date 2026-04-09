@@ -1365,6 +1365,28 @@ func TestIntrospectionQuery_DBProvider(t *testing.T) {
 		data, err := metadata.ProcessQuery(ctx, ss.Provider(), r, 20, nil)
 		require.NoError(t, err, "IntrospectionQuery should succeed on db.Provider")
 		require.NotNil(t, data, "IntrospectionQuery should return data")
+
+		// Verify that Subscription type appears in the types list when subscriptionType is non-nil.
+		// GraphiQL builds a client schema from introspection and fails if subscriptionType
+		// references a type not present in the types array.
+		schemaData, _ := data.(map[string]any)
+		if schemaData == nil {
+			continue
+		}
+		subType := schemaData["subscriptionType"]
+		if subType == nil {
+			continue
+		}
+		types, ok := schemaData["types"].([]map[string]any)
+		require.True(t, ok, "types should be a list of type objects")
+		found := false
+		for _, tp := range types {
+			if name, _ := tp["name"].(string); name == "Subscription" {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "Subscription type must appear in __schema.types when subscriptionType is non-nil")
 	}
 }
 

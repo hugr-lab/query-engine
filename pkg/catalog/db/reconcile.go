@@ -294,6 +294,8 @@ func (p *Provider) collectModuleInfo(ctx context.Context, conn *Connection, cata
 					info.rootKind = base.ModuleFunction
 				case "MUT_FUNCTION":
 					info.rootKind = base.ModuleMutationFunction
+				case "SUBSCRIPTION":
+					info.rootKind = base.ModuleSubscription
 				}
 			}
 		}
@@ -315,6 +317,8 @@ func (p *Provider) collectModuleInfo(ctx context.Context, conn *Connection, cata
 				info.rootKind = base.ModuleFunction
 			case base.FunctionMutationTypeName:
 				info.rootKind = base.ModuleMutationFunction
+			case base.SubscriptionBaseName:
+				info.rootKind = base.ModuleSubscription
 			default:
 				if mrDir == nil {
 					continue // Unknown module type without @module_root — skip.
