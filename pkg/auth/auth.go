@@ -50,6 +50,22 @@ var ErrForbidden = errors.New("forbidden")
 var ErrTokenExpired = errors.New("token expired")
 var ErrNeedAuth = errors.New("authentication required")
 
+// applyImpersonationHeaders checks for x-hugr-impersonated-* headers on the request.
+// If present, wraps the original AuthInfo as ImpersonatedBy and sets the target identity.
+func applyImpersonationHeaders(r *http.Request, original *AuthInfo) *AuthInfo {
+	targetRole := r.Header.Get("x-hugr-impersonated-role")
+	if targetRole == "" {
+		return original
+	}
+	// Don't allow nested impersonation
+	if original.ImpersonatedBy != nil {
+		return original
+	}
+	targetUserId := r.Header.Get("x-hugr-impersonated-user-id")
+	targetUserName := r.Header.Get("x-hugr-impersonated-user-name")
+	return BuildImpersonatedAuthInfo(original, targetUserId, targetUserName, targetRole)
+}
+
 // Provide middleware for authentication
 // Checks if api key allowed or token is valid
 // Get user and role from headers or token
@@ -81,6 +97,8 @@ func AuthMiddleware(c Config) func(next http.Handler) http.Handler {
 				}
 			}
 			if err == nil && authInfo != nil {
+				// Check for explicit impersonation headers
+				authInfo = applyImpersonationHeaders(r, authInfo)
 				r = r.WithContext(ContextWithAuthInfo(r.Context(), authInfo))
 				next.ServeHTTP(w, r)
 				return

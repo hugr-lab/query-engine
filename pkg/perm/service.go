@@ -3,6 +3,7 @@ package perm
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/types"
@@ -42,12 +43,33 @@ func (s *Service) RolePermissions(ctx context.Context) (RolePermissions, error) 
 		return RolePermissions{}, auth.ErrForbidden
 	}
 
+	// If impersonation is active, verify the original role is authorized to impersonate.
+	if info.ImpersonatedBy != nil {
+		origRole, err := s.loadRole(ctx, info.ImpersonatedBy.Role)
+		if err != nil {
+			return RolePermissions{}, fmt.Errorf("impersonation failed: original role %q: %w", info.ImpersonatedBy.Role, err)
+		}
+		if !origRole.CanImpersonate {
+			return RolePermissions{}, fmt.Errorf("role %q is not authorized to impersonate: %w", info.ImpersonatedBy.Role, auth.ErrForbidden)
+		}
+		targetRole, err := s.loadRole(ctx, info.Role)
+		if err != nil {
+			return RolePermissions{}, fmt.Errorf("impersonation failed: target role %q not found: %w", info.Role, err)
+		}
+		return targetRole, nil
+	}
+
+	return s.loadRole(ctx, info.Role)
+}
+
+func (s *Service) loadRole(ctx context.Context, roleName string) (RolePermissions, error) {
 	fc := auth.ContextWithFullAccess(ctx)
 	res, err := s.qe.Query(fc, `query ($role: String!, $cacheKey: String) {
 		core {
 			info: roles_by_pk (name: $role) @cache(key: $cacheKey, tags: ["$role_permissions"]) {
 				name
 				disabled
+				can_impersonate
 				permissions {
 					type_name
 					field_name
@@ -59,7 +81,7 @@ func (s *Service) RolePermissions(ctx context.Context) (RolePermissions, error) 
 			}
 		}
 	}
-	`, map[string]any{"role": info.Role, "cacheKey": "RolePermissions:" + info.Role})
+	`, map[string]any{"role": roleName, "cacheKey": "RolePermissions:" + roleName})
 	if errors.Is(err, types.ErrNoData) {
 		return RolePermissions{}, auth.ErrForbidden
 	}

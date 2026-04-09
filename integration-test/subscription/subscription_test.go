@@ -45,6 +45,11 @@ func TestMain(m *testing.M) {
 					Header:      "x-hugr-secret-key",
 					DefaultRole: "admin",
 				}),
+				auth.NewApiKey("x-hugr-public", auth.ApiKeyConfig{
+					Key:         "test-public-key",
+					Header:      "x-hugr-public-key",
+					DefaultRole: "public",
+				}),
 				auth.NewAnonymous(auth.AnonymousConfig{
 					Allowed: true,
 					Role:    "admin",

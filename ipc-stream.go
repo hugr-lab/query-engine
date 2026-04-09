@@ -171,17 +171,13 @@ func (s *Service) applyMessageImpersonation(ctx context.Context, userId, userNam
 	if userId == "" {
 		return ctx, nil
 	}
-	ctx, err := auth.ApplyImpersonationFromMessage(ctx, userId, userName, role)
-	if err != nil {
-		return ctx, err
+	original := auth.AuthInfoFromContext(ctx)
+	if original == nil {
+		return ctx, fmt.Errorf("identity override requires authentication")
 	}
-	if s.perm != nil {
-		ctx, err = s.perm.ContextWithPermissions(ctx)
-		if err != nil {
-			return ctx, err
-		}
-	}
-	return ctx, nil
+	impersonated := auth.BuildImpersonatedAuthInfo(original, userId, userName, role)
+	ctx = auth.ContextWithAuthInfo(ctx, impersonated)
+	return s.perm.ContextWithPermissions(ctx)
 }
 
 func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {

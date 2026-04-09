@@ -14,14 +14,15 @@ func AsUser(ctx context.Context, userId, userName, role string) context.Context 
 	return types.AsUser(ctx, userId, userName, role)
 }
 
-// setAsUserHeaders adds identity override headers to an HTTP request
-// if AsUser is set in the context.
+// setAsUserHeaders adds impersonation headers to an HTTP request
+// if AsUser is set in the context. Uses dedicated x-hugr-impersonated-* headers
+// separate from identity headers.
 func setAsUserHeaders(ctx context.Context, req *http.Request) {
 	id := types.AsUserFromContext(ctx)
 	if id == nil {
 		return
 	}
-	req.Header.Set("x-hugr-user-id", id.UserId)
-	req.Header.Set("x-hugr-user-name", id.UserName)
-	req.Header.Set("x-hugr-role", id.Role)
+	req.Header.Set("x-hugr-impersonated-user-id", id.UserId)
+	req.Header.Set("x-hugr-impersonated-user-name", id.UserName)
+	req.Header.Set("x-hugr-impersonated-role", id.Role)
 }
