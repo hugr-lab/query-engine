@@ -147,10 +147,12 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 						_ = stream.sendStreamError(fmt.Errorf("identity override error: %w", err))
 						continue
 					}
-					queryCtx, err = s.perm.ContextWithPermissions(queryCtx)
-					if err != nil {
-						_ = stream.sendStreamError(fmt.Errorf("permission error: %w", err))
-						continue
+					if s.perm != nil {
+						queryCtx, err = s.perm.ContextWithPermissions(queryCtx)
+						if err != nil {
+							_ = stream.sendStreamError(fmt.Errorf("permission error: %w", err))
+							continue
+						}
 					}
 				}
 				queryCtx, err = stream.setActiveQuery(queryCtx, &req)
@@ -257,10 +259,12 @@ func (s *Service) handleIPCSubscription(ctx context.Context, stream *stream, req
 			_ = stream.writeJSON(StreamMessage{Type: "subscription_error", SubscriptionID: subID, Error: err.Error()})
 			return
 		}
-		ctx, err = s.perm.ContextWithPermissions(ctx)
-		if err != nil {
-			_ = stream.writeJSON(StreamMessage{Type: "subscription_error", SubscriptionID: subID, Error: err.Error()})
-			return
+		if s.perm != nil {
+			ctx, err = s.perm.ContextWithPermissions(ctx)
+			if err != nil {
+				_ = stream.writeJSON(StreamMessage{Type: "subscription_error", SubscriptionID: subID, Error: err.Error()})
+				return
+			}
 		}
 		if s.config.Debug {
 			impBy := auth.ImpersonatedByFromContext(ctx)

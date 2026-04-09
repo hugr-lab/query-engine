@@ -96,6 +96,9 @@ func DetectImpersonation(ctx context.Context) context.Context {
 		AuthProvider: "x-hugr-secret",
 	}
 	ctx = ContextWithImpersonatedBy(ctx, originalAdmin)
-	ai.AuthType = "impersonation"
+	// Create a copy to avoid mutating the shared AuthInfo pointer
+	overridden := *ai
+	overridden.AuthType = "impersonation"
+	ctx = ContextWithAuthInfo(ctx, &overridden)
 	return ctx
 }

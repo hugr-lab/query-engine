@@ -417,6 +417,13 @@ func (c *Client) QueryJSON(ctx context.Context, req types.JQRequest) (*types.Jso
 	}
 	reqHttp.Header.Set("Content-Type", "application/json")
 
+	// Add identity override headers if AsUser is set in context
+	if id := types.AsUserFromContext(ctx); id != nil {
+		reqHttp.Header.Set("x-hugr-user-id", id.UserId)
+		reqHttp.Header.Set("x-hugr-user-name", id.UserName)
+		reqHttp.Header.Set("x-hugr-role", id.Role)
+	}
+
 	resp, err := c.c.Do(reqHttp)
 	if err != nil {
 		return nil, err
