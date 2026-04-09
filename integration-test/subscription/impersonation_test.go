@@ -171,6 +171,56 @@ func TestImpersonation_Admin_Subscribe_TwoUsers_SameConnection(t *testing.T) {
 	}
 }
 
+// --- Impersonation denied (role without can_impersonate) ---
+
+func newPublicClient(t *testing.T) *client.Client {
+	t.Helper()
+	url := strings.TrimSuffix(testServer.URL, "/") + "/ipc"
+	return client.NewClient(url, client.WithApiKeyCustomHeader("test-public-key", "x-hugr-public-key"))
+}
+
+func TestImpersonation_PublicRole_Query_Denied(t *testing.T) {
+	c := newPublicClient(t)
+	ctx := context.Background()
+
+	// public role has can_impersonate=false — impersonation must be denied
+	impCtx := types.AsUser(ctx, "attacker", "Evil", "admin")
+	resp, err := c.Query(impCtx, meQuery, nil)
+	require.Error(t, err)
+	if resp != nil {
+		resp.Close()
+	}
+	// HTTP middleware catches ErrForbidden from perm.ContextWithPermissions and returns 403
+	assert.Contains(t, err.Error(), "403")
+}
+
+func TestImpersonation_PublicRole_Subscribe_Denied(t *testing.T) {
+	c := newPublicClient(t)
+	defer c.CloseSubscriptions()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// public role has can_impersonate=false — IPC subscription impersonation must be denied
+	impCtx := types.AsUser(ctx, "attacker", "Evil", "admin")
+	sub, err := c.Subscribe(impCtx, `subscription { query(interval: "1s") { function { core { auth { me { user_id } } } } } }`, nil)
+	if err != nil {
+		assert.Contains(t, err.Error(), "not authorized to impersonate")
+		return
+	}
+	defer sub.Cancel()
+
+	// If subscribe succeeded, the first event should be an error
+	select {
+	case _, ok := <-sub.Events:
+		if !ok {
+			return // channel closed = rejected
+		}
+		t.Fatal("expected subscription to be rejected for public role")
+	case <-ctx.Done():
+		return
+	}
+}
+
 // --- Anonymous impersonation ---
 // With perm-based authorization, impersonation is allowed when the effective role
 // has can_impersonate=true. Since the anonymous provider assigns role "admin" in

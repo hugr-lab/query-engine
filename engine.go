@@ -54,8 +54,6 @@ type Service struct {
 
 	pendingSources []sources.RuntimeSource
 	initialized    bool
-
-	permStub permissions.Store // lazy-initialized stub for nil perm
 }
 
 type Config struct {
@@ -521,15 +519,14 @@ func (s *Service) ProcessOperation(ctx context.Context, provider catalog.Provide
 	}
 }
 
+var permStub permissions.Store = &permissions.StubStore{}
+
 // permStore returns the permission store, falling back to a permissive stub if RBAC is not configured.
 func (s *Service) permStore() permissions.Store {
 	if s.perm != nil {
 		return s.perm
 	}
-	if s.permStub == nil {
-		s.permStub = &permissions.StubStore{}
-	}
-	return s.permStub
+	return permStub
 }
 
 // applyImpersonation checks for AsUser in context and applies identity override + permissions.
