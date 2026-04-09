@@ -22,6 +22,10 @@ import (
 // Subscribe creates a subscription from a GraphQL subscription query.
 // Dispatches to query streaming or native subscription based on the root field.
 func (s *Service) Subscribe(ctx context.Context, query string, vars map[string]any) (*types.Subscription, error) {
+	ctx, err := s.applyImpersonation(ctx)
+	if err != nil {
+		return nil, err
+	}
 	op, err := s.schema.ParseQuery(ctx, query, vars, "")
 	if err != nil {
 		return nil, err

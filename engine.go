@@ -519,7 +519,27 @@ func (s *Service) ProcessOperation(ctx context.Context, provider catalog.Provide
 	}
 }
 
+// applyImpersonation checks for AsUser in context and applies identity override + permissions.
+// Returns the original context unchanged if no impersonation is requested.
+func (s *Service) applyImpersonation(ctx context.Context) (context.Context, error) {
+	ctx, err := auth.ApplyImpersonationCtx(ctx)
+	if err != nil {
+		return ctx, err
+	}
+	if auth.IsImpersonated(ctx) && s.perm != nil {
+		ctx, err = s.perm.ContextWithPermissions(ctx)
+		if err != nil {
+			return ctx, err
+		}
+	}
+	return ctx, nil
+}
+
 func (s *Service) Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error) {
+	ctx, err := s.applyImpersonation(ctx)
+	if err != nil {
+		return nil, err
+	}
 	res := s.ProcessQuery(ctx, types.Request{
 		Query:     query,
 		Variables: vars,

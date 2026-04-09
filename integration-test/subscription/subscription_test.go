@@ -40,6 +40,11 @@ func TestMain(m *testing.M) {
 		CoreDB: coredb.New(coredb.Config{}),
 		Auth: &auth.Config{
 			Providers: []auth.AuthProvider{
+				auth.NewApiKey("x-hugr-secret", auth.ApiKeyConfig{
+					Key:         "test-secret-key",
+					Header:      "x-hugr-secret-key",
+					DefaultRole: "admin",
+				}),
 				auth.NewAnonymous(auth.AnonymousConfig{
 					Allowed: true,
 					Role:    "admin",
