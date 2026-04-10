@@ -94,7 +94,10 @@ func (s *Server) typeInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 		argErr := s.queryScanAdmin(ctx, `query($filter: core_arguments_filter) {
 			core { catalog { arguments_aggregation(filter: $filter) { _rows_count } } }
 		}`, map[string]any{
-			"filter": map[string]any{"type_name": map[string]any{"eq": typeName}},
+			"filter": map[string]any{
+				"type_name":      map[string]any{"eq": typeName},
+				"is_arg_default": map[string]any{"eq": false},
+			},
 		}, "core.catalog.arguments_aggregation", &argsAgg)
 		if argErr == nil && argsAgg.Count > 0 {
 			hasArgs = true
@@ -162,7 +165,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	// Build field selection based on flags.
 	argSelection := ""
 	if includeArgs {
-		argSelection = `arguments { name arg_type description }`
+		argSelection = `arguments(filter: { is_arg_default: { eq: false } }) { name arg_type description }`
 	}
 
 	var fields []rawField
@@ -192,7 +195,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 						description
 						hugr_type
 						_distance_to_query(query: $relevance_query)
-						arguments_aggregation { _rows_count }
+						arguments_aggregation(filter: { is_arg_default: { eq: false } }) { _rows_count }
 						%s
 					}
 					fields_aggregation(filter: $filter) { _rows_count }
@@ -230,7 +233,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 						field_type_name
 						description
 						hugr_type
-						arguments_aggregation { _rows_count }
+						arguments_aggregation(filter: { is_arg_default: { eq: false } }) { _rows_count }
 						%s
 					}
 					fields_aggregation(filter: $filter) { _rows_count }

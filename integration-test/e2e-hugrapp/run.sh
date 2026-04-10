@@ -34,6 +34,26 @@ run_test() {
     fi
 }
 
+run_test_not_contains() {
+    local name="$1"
+    local query="$2"
+    local forbidden="$3"
+
+    result=$(curl -sf -X POST "$HUGR_URL/query" \
+        -H "Content-Type: application/json" \
+        -d "{\"query\": \"$query\"}" 2>/dev/null || echo "CURL_FAILED")
+
+    if echo "$result" | grep -q "$forbidden"; then
+        echo "  FAIL: $name"
+        echo "    Did NOT expect to contain: $forbidden"
+        echo "    Got: $result"
+        FAIL=$((FAIL + 1))
+    else
+        echo "  PASS: $name"
+        PASS=$((PASS + 1))
+    fi
+}
+
 echo ""
 echo "=== Happy path tests ==="
 echo ""
@@ -92,6 +112,23 @@ run_test "mutation function not callable as query" \
 run_test "admin module mutation reset_counter" \
     'mutation { function { test_app { admin { reset_counter } } } }' \
     '"reset_counter":0'
+
+# ArgFromContext tests (server-injected args via @arg_default)
+run_test "app function whoami_ctx (auth context injected)" \
+    '{ function { test_app { whoami_ctx } } }' \
+    '"whoami_ctx":"anonymous:admin"'
+
+run_test_not_contains "whoami_ctx hides user_id arg from introspection" \
+    '{ __type(name: \"function_test_app\") { fields { name args { name } } } }' \
+    'user_id'
+
+run_test "whoami_ctx rejects client-supplied server-injected arg" \
+    '{ function { test_app { whoami_ctx(user_id: \"attacker\") } } }' \
+    'error'
+
+run_test "admin module audit_ctx with @arg_default in named schema" \
+    '{ function { test_app { admin { audit_ctx } } } }' \
+    '"audit_ctx":"audit:anonymous:admin"'
 
 # HugrSchema test (custom SDL for DS — has payload field with description)
 run_test "app DS with HugrSchema (custom SDL)" \

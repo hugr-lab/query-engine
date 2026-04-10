@@ -17,6 +17,11 @@ type Function struct {
 	JsonCast     bool
 	SkipNullArg  bool
 
+	// ArgDefaults maps argument name → context placeholder expression for
+	// arguments declared with @arg_default. The planner resolves these from
+	// perm.AuthVars(ctx) at request time and injects the value into the SQL call.
+	ArgDefaults map[string]string
+
 	sql   string
 	field *ast.FieldDefinition
 }
@@ -37,9 +42,32 @@ func FunctionInfo(field *ast.FieldDefinition) (*Function, error) {
 		SkipNullArg:  base.DirectiveArgString(d, base.ArgSkipNullArg) == "true" && len(field.Arguments) == 1,
 		JsonCast:     !isTable && base.FieldDefDirectiveArgString(field, base.FunctionDirectiveName, base.ArgJsonCast) == "true",
 		ReturnsTable: isTable,
+		ArgDefaults:  collectArgDefaults(field.Arguments),
 		sql:          base.DirectiveArgString(d, base.ArgSQL),
 		field:        field,
 	}, nil
+}
+
+// collectArgDefaults walks an argument definition list and returns a map of
+// argument name → @arg_default placeholder expression. Returns nil if no
+// argument has the directive.
+func collectArgDefaults(args ast.ArgumentDefinitionList) map[string]string {
+	var out map[string]string
+	for _, a := range args {
+		d := a.Directives.ForName(base.ArgDefaultDirectiveName)
+		if d == nil {
+			continue
+		}
+		value := base.DirectiveArgString(d, base.ArgValue)
+		if value == "" {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string)
+		}
+		out[a.Name] = value
+	}
+	return out
 }
 
 func (f *Function) Definition() *ast.FieldDefinition {
@@ -300,6 +328,15 @@ func (f *FunctionCall) JoinConditionsTemplate() string {
 func (f *FunctionCall) ArgumentValues(ctx context.Context, defs base.DefinitionsSource, vars map[string]any) (FieldQueryArguments, error) {
 	args := make([]FieldQueryArgument, 0, len(f.query.Definition.Arguments))
 	for _, def := range f.query.Definition.Arguments {
+		// Skip arguments declared with @arg_default — their values are server-injected
+		// by the planner before this function runs. Reject client overrides.
+		if def.Directives.ForName(base.ArgDefaultDirectiveName) != nil {
+			if f.query.Arguments.ForName(def.Name) != nil {
+				return nil, ErrorPosf(f.query.Position,
+					"argument %q is server-injected and cannot be set by client", def.Name)
+			}
+			continue
+		}
 		arg := f.query.Arguments.ForName(def.Name)
 		if arg == nil && def.DefaultValue == nil {
 			if def.Type.NonNull {

@@ -36,6 +36,7 @@ const (
 	QueryDirectiveName                     = "query"
 	MutationDirectiveName                  = "mutation"
 	FunctionDirectiveName                  = "function"
+	ArgDefaultDirectiveName                = "arg_default"
 	FunctionCallDirectiveName              = "function_call"
 	FunctionCallTableJoinDirectiveName     = "table_function_call_join"
 	JoinDirectiveName                      = "join"
@@ -246,4 +247,5 @@ const (
 	ArgLen                   = "len"
 	ArgSRID                  = "srid"
 	ArgArgs                  = "args"
+	ArgValue                 = "value"
 )

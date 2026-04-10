@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -35,9 +36,14 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 				return err
 			}
 		}
+		// Validate @arg_default on field arguments and on input type fields.
+		// Catches all definitions — fields with @function/@function_call/
+		// @table_function_call_join, plus input types used as @args(name:).
+		if err := validateArgDefaults(def); err != nil {
+			return err
+		}
 	}
-	// Also validate extensions (e.g. "extend type Function { ... }" kept separate
-	// by ExtensionsSource). Only Function/MutationFunction SQL validation applies.
+	// Also validate extensions for SQL refs and @arg_default usage.
 	if extSrc, ok := ctx.Source().(base.ExtensionsSource); ok {
 		for ext := range extSrc.Extensions(ctx.Context()) {
 			if ext.Name == "Function" || ext.Name == "MutationFunction" {
@@ -45,7 +51,74 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 					return err
 				}
 			}
+			if err := validateArgDefaults(ext); err != nil {
+				return err
+			}
 		}
+	}
+	return nil
+}
+
+// validateArgDefaults walks a type definition and validates every @arg_default
+// directive it contains:
+//
+//   - On field arguments: only allowed when the field has @function,
+//     @function_call, or @table_function_call_join.
+//   - On input type fields: always allowed (input types are validated by
+//     consumers like @args(name:)).
+//
+// Each directive's value must be a known placeholder, and the underlying
+// argument/field must not have a GraphQL default value.
+func validateArgDefaults(def *ast.Definition) error {
+	if def.Kind == ast.InputObject {
+		for _, field := range def.Fields {
+			if err := validateArgDefaultDirective(
+				field.Directives.ForName(base.ArgDefaultDirectiveName),
+				field.Name, field.DefaultValue, field.Position,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, field := range def.Fields {
+		isFunctionLike := field.Directives.ForName(base.FunctionDirectiveName) != nil ||
+			field.Directives.ForName(base.FunctionCallDirectiveName) != nil ||
+			field.Directives.ForName(base.FunctionCallTableJoinDirectiveName) != nil
+		for _, arg := range field.Arguments {
+			d := arg.Directives.ForName(base.ArgDefaultDirectiveName)
+			if d == nil {
+				continue
+			}
+			if !isFunctionLike {
+				return gqlerror.ErrorPosf(d.Position,
+					"@arg_default on %s.%s argument %q: only valid on arguments of fields with @function, @function_call, or @table_function_call_join",
+					def.Name, field.Name, arg.Name)
+			}
+			if err := validateArgDefaultDirective(d, arg.Name, arg.DefaultValue, arg.Position); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateArgDefaultDirective(d *ast.Directive, name string, defaultValue *ast.Value, pos *ast.Position) error {
+	if d == nil {
+		return nil
+	}
+	value := base.DirectiveArgString(d, base.ArgValue)
+	if value == "" {
+		return gqlerror.ErrorPosf(d.Position,
+			"@arg_default on %q: value is required", name)
+	}
+	if !sdl.IsKnownPlaceholder(value) {
+		return gqlerror.ErrorPosf(d.Position,
+			"@arg_default on %q: placeholder %q is not a known context variable", name, value)
+	}
+	if defaultValue != nil {
+		return gqlerror.ErrorPosf(pos,
+			"@arg_default on %q: argument cannot have both default value and @arg_default directive", name)
 	}
 	return nil
 }

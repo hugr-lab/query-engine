@@ -11,6 +11,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -296,7 +297,10 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 		if !ok {
 			am = map[string]any{}
 		}
-		err = info.ApplyArguments(ctx, defs, am, e)
+		// perm.AuthVars(ctx) provides [$auth.*] and similar context placeholders
+		// for resolving @arg_default input fields and embedded placeholders in
+		// @view(sql:) templates.
+		err = info.ApplyArguments(ctx, defs, am, e, perm.AuthVars(ctx))
 		if err != nil {
 			return nil, false, err
 		}

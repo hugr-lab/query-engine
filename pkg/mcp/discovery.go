@@ -325,7 +325,7 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 					field_type_name
 					type_name
 					_distance_to_query(query: $query)
-					arguments {
+					arguments(filter: { is_arg_default: { eq: false } }) {
 						name
 						arg_type
 						description

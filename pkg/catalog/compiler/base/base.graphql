@@ -10,6 +10,16 @@ directive @function(
 	json_cast: Boolean
 ) on FIELD_DEFINITION
 
+# Bind a function/view argument to a server-injected context placeholder.
+# The argument is hidden from clients (introspection, MCP, validation) and the
+# resolved context value is injected into the function call SQL at request time.
+# Allowed values are limited to a whitelist of known placeholders, see
+# pkg/catalog/sdl/placeholders.go.
+directive @arg_default(
+	"Context placeholder expression, e.g. \"[$auth.user_id]\""
+	value: String!
+) on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
+
 
 # Mark object as table in the datasource
 directive @table(

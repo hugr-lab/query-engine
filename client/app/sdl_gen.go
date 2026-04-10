@@ -146,6 +146,14 @@ func moduleDirective(moduleName string) *ast.Directive {
 	}
 }
 
+// argDefaultDirective creates @arg_default(value: "...") for server-injected arguments.
+func argDefaultDirective(placeholder ContextPlaceholder) *ast.Directive {
+	return &ast.Directive{
+		Name:      "arg_default",
+		Arguments: ast.ArgumentList{{Name: "value", Value: strVal(string(placeholder))}},
+	}
+}
+
 // --- Generators for handler.go ---
 
 // generateScalarFuncSDL generates SDL for a scalar function using gqlparser AST.
@@ -164,11 +172,18 @@ func generateScalarFuncSDL(schema, name string, def *funcDef) string {
 		Directives:  directives,
 	}
 	for _, a := range def.args {
-		field.Arguments = append(field.Arguments, &ast.ArgumentDefinition{
+		// Server-injected args via @arg_default are nullable in the public schema
+		// (clients never set them; the planner injects the value or NULL).
+		nonNull := a.contextValue == ""
+		argDef := &ast.ArgumentDefinition{
 			Name:        a.name,
 			Description: a.description,
-			Type:        gqlType(a.typ.graphql, true),
-		})
+			Type:        gqlType(a.typ.graphql, nonNull),
+		}
+		if a.contextValue != "" {
+			argDef.Directives = append(argDef.Directives, argDefaultDirective(a.contextValue))
+		}
+		field.Arguments = append(field.Arguments, argDef)
 	}
 
 	// extend type Function (or MutationFunction for mutation-flagged scalar functions) { ... }
@@ -203,11 +218,17 @@ func generateTableFuncSDL(schema, name string, def *funcDef) string {
 			Name: inputTypeName,
 		}
 		for _, a := range def.args {
-			inputDef.Fields = append(inputDef.Fields, &ast.FieldDefinition{
+			// Server-injected args via @arg_default are nullable in the public schema.
+			nonNull := a.contextValue == ""
+			fd := &ast.FieldDefinition{
 				Name:        a.name,
 				Description: a.description,
-				Type:        gqlType(a.typ.graphql, true),
-			})
+				Type:        gqlType(a.typ.graphql, nonNull),
+			}
+			if a.contextValue != "" {
+				fd.Directives = append(fd.Directives, argDefaultDirective(a.contextValue))
+			}
+			inputDef.Fields = append(inputDef.Fields, fd)
 		}
 		defs = append(defs, inputDef)
 	}

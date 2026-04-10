@@ -116,6 +116,46 @@ func TestMux_HandleTableFunc_MutationRejected(t *testing.T) {
 	}
 }
 
+func TestMux_ArgFromContext_InvalidPlaceholder(t *testing.T) {
+	mux := New()
+	err := mux.HandleFunc("default", "bad", func(w *Result, r *Request) error {
+		return nil
+	}, Return(String), ArgFromContext("user_id", String, ContextPlaceholder("[$invalid]")))
+	if err == nil {
+		t.Fatal("expected error for unknown placeholder")
+	}
+	if !strings.Contains(err.Error(), "not a known context variable") {
+		t.Errorf("error should mention unknown context variable, got: %v", err)
+	}
+}
+
+func TestMux_ArgFromContext_DuplicateName(t *testing.T) {
+	mux := New()
+	err := mux.HandleFunc("default", "bad", func(w *Result, r *Request) error {
+		return nil
+	},
+		Return(String),
+		Arg("user_id", String),
+		ArgFromContext("user_id", String, AuthUserID),
+	)
+	if err == nil {
+		t.Fatal("expected error for duplicate argument name")
+	}
+	if !strings.Contains(err.Error(), "duplicate argument") {
+		t.Errorf("error should mention duplicate argument, got: %v", err)
+	}
+}
+
+func TestMux_ArgFromContext_TableFunc_Allowed(t *testing.T) {
+	mux := New()
+	err := mux.HandleTableFunc("default", "ok", func(w *Result, r *Request) error {
+		return nil
+	}, ArgFromContext("user_id", String, AuthUserID), ColPK("id", Int64))
+	if err != nil {
+		t.Fatalf("ArgFromContext should be allowed on table functions, got error: %v", err)
+	}
+}
+
 func TestMux_Table_AutoSDL(t *testing.T) {
 	mux := New()
 

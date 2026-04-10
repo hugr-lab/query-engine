@@ -248,6 +248,9 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 			}
 			res := []map[string]any{}
 			for _, f := range def.Fields {
+				if isArgServerInjected(f.Directives) {
+					continue
+				}
 				data, err := inputValueResolver(ctx, provider, f, field.SelectionSet, maxDepth-1)
 				if err != nil {
 					return nil, err
@@ -358,6 +361,9 @@ func fieldResolver(ctx context.Context, provider catalog.Provider, def *ast.Fiel
 		"args": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			res := []map[string]any{}
 			for _, a := range def.Arguments {
+				if isArgServerInjected(a.Directives) {
+					continue
+				}
 				data, err := argumentResolver(ctx, provider, a, field.SelectionSet, maxDepth-1)
 				if err != nil {
 					return nil, err
@@ -537,6 +543,13 @@ func inputValueResolver(ctx context.Context, provider catalog.Provider, def *ast
 // parser placeholders in shared system types.
 func isPlaceholderField(name string) bool {
 	return name == "_stub" || name == "_placeholder"
+}
+
+// isArgServerInjected returns true if the argument or input field is marked
+// with @arg_default — meaning its value is injected from a server-side context
+// and should be hidden from client-facing schema introspection.
+func isArgServerInjected(directives ast.DirectiveList) bool {
+	return directives.ForName(base.ArgDefaultDirectiveName) != nil
 }
 
 

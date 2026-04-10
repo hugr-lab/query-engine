@@ -10,6 +10,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -257,6 +258,29 @@ func functionCallSQL(ctx context.Context, defs base.DefinitionsSource, e engines
 	for k, v := range call.ArgumentMap() {
 		sql = strings.ReplaceAll(sql, "["+k+"]", "["+v+"]")
 	}
+
+	// Substitute known context placeholders ([$auth.*], [$catalog]) embedded in the
+	// SQL template. The whitelist lives in pkg/catalog/sdl/placeholders.go. Missing
+	// or empty values become NULL — auth/perm middleware already handles unauthenticated
+	// requests; the function's own logic decides how to handle a NULL identity.
+	sql, params = substitutePlaceholders(ctx, sql, params)
+
+	// Resolve arguments declared with @arg_default before user-supplied args.
+	// Hidden args have a [arg_name] placeholder in the SQL template (auto-generated
+	// or user-written) which gets substituted with the resolved context value.
+	if len(info.ArgDefaults) > 0 {
+		authVars := perm.AuthVars(ctx)
+		for argName, placeholder := range info.ArgDefaults {
+			value, ok := authVars[placeholder]
+			if !ok || isEmptyContextValue(value) {
+				sql = strings.ReplaceAll(sql, "["+argName+"]", "NULL")
+				continue
+			}
+			params = append(params, value)
+			sql = strings.ReplaceAll(sql, "["+argName+"]", "$"+strconv.Itoa(len(params)))
+		}
+	}
+
 	queryArg, err := call.ArgumentValues(ctx, defs, vars)
 	if err != nil {
 		return "", nil, err
@@ -274,4 +298,43 @@ func functionCallSQL(ctx context.Context, defs base.DefinitionsSource, e engines
 	}
 
 	return sql, params, nil
+}
+
+// substitutePlaceholders replaces known context placeholders ([$auth.*], [$catalog])
+// in the SQL string with parameterized values resolved from the request context.
+// Missing or empty values are substituted as the literal "NULL".
+func substitutePlaceholders(ctx context.Context, sql string, params []any) (string, []any) {
+	authVars := perm.AuthVars(ctx)
+	for placeholder := range sdl.KnownArgPlaceholders {
+		if !strings.Contains(sql, placeholder) {
+			continue
+		}
+		value, ok := authVars[placeholder]
+		if !ok || isEmptyContextValue(value) {
+			sql = strings.ReplaceAll(sql, placeholder, "NULL")
+			continue
+		}
+		params = append(params, value)
+		sql = strings.ReplaceAll(sql, placeholder, "$"+strconv.Itoa(len(params)))
+	}
+	return sql, params
+}
+
+// isEmptyContextValue reports whether a context placeholder value is "empty"
+// for the purpose of NULL substitution. Treats nil, empty string, and zero
+// integer as empty — covers the [$auth.user_id_int] case where strconv.Atoi
+// returns 0 for non-numeric/empty user IDs.
+func isEmptyContextValue(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch val := v.(type) {
+	case string:
+		return val == ""
+	case int:
+		return val == 0
+	case int64:
+		return val == 0
+	}
+	return false
 }
