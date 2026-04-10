@@ -141,7 +141,11 @@ func (m *CatalogMux) WithSDL(sdl string) {
 }
 
 // SDL returns the full GraphQL SDL for the catalog.
-// If WithSDL was called, returns that string. Otherwise collects SDL from all registered items.
+// If WithSDL was called, returns that string. Otherwise collects SDL from all
+// registered items across non-system schemas. Objects from the default schema
+// have no @module directive; objects from named schemas get @module(name)
+// injected per-definition during SDL generation (see schemaModuleName in
+// sdl_gen.go). System schemas (_mount, _funcs) are excluded.
 func (m *CatalogMux) SDL() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -149,27 +153,9 @@ func (m *CatalogMux) SDL() string {
 		return m.rawSDL
 	}
 	var b strings.Builder
-	for _, s := range m.schemas {
-		s.writeSDL(&b)
-	}
-	return b.String()
-}
-
-// SDLWithModules returns the full GraphQL SDL with module directives.
-// Objects from the default schema have no @module. Other schemas get
-// @module(name: schemaName) injected per-definition during SDL generation
-// (see schemaModuleName in sdl_gen.go). System schemas (_mount, _funcs)
-// are excluded.
-func (m *CatalogMux) SDLWithModules() string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.rawSDL != "" {
-		return m.rawSDL
-	}
-	var b strings.Builder
 	for name, s := range m.schemas {
-		if name == "_mount" || name == "_funcs" {
-			continue // system schemas excluded
+		if ReservedSchemas[name] {
+			continue
 		}
 		s.writeSDL(&b)
 	}
