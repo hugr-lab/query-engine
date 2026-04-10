@@ -170,7 +170,7 @@ func (p *Provider) SetDefinitionDescription(ctx context.Context, name, desc, lon
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 			`UPDATE %s SET description=$2, long_description=$3, is_summarized=true, vec=$4 WHERE name=$1`,
 			p.table("_schema_types"),
-		), name, desc, longDesc, vec)
+		), name, desc, longDesc, vec.Vector)
 	} else {
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 			`UPDATE %s SET description=$2, long_description=$3, is_summarized=true WHERE name=$1`,
@@ -207,7 +207,7 @@ func (p *Provider) SetFieldDescription(ctx context.Context, typeName, fieldName,
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 			`UPDATE %s SET description=$3, long_description=$4, is_summarized=true, vec=$5 WHERE type_name=$1 AND name=$2`,
 			p.table("_schema_fields"),
-		), typeName, fieldName, desc, longDesc, vec)
+		), typeName, fieldName, desc, longDesc, vec.Vector)
 	} else {
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 			`UPDATE %s SET description=$3, long_description=$4, is_summarized=true WHERE type_name=$1 AND name=$2`,
@@ -244,7 +244,7 @@ func (p *Provider) SetModuleDescription(ctx context.Context, name, desc, longDes
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 			`UPDATE %s SET description=$2, long_description=$3, is_summarized=true, vec=$4 WHERE name=$1`,
 			p.table("_schema_modules"),
-		), name, desc, longDesc, vec)
+		), name, desc, longDesc, vec.Vector)
 	} else {
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 			`UPDATE %s SET description=$2, long_description=$3, is_summarized=true WHERE name=$1`,
@@ -279,7 +279,7 @@ func (p *Provider) SetCatalogDescription(ctx context.Context, name, desc, longDe
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 			`UPDATE %s SET description=$2, long_description=$3, is_summarized=true, vec=$4 WHERE name=$1`,
 			p.table("_schema_catalogs"),
-		), name, desc, longDesc, vec)
+		), name, desc, longDesc, vec.Vector)
 	} else {
 		_, err = p.execWrite(ctx, conn, fmt.Sprintf(
 			`UPDATE %s SET description=$2, long_description=$3, is_summarized=true WHERE name=$1`,
