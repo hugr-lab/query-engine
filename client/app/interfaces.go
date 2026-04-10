@@ -8,7 +8,8 @@ import (
 	"github.com/hugr-lab/airport-go/catalog"
 )
 
-// DefaultSchemaName is the schema name treated as root level (no @module directive).
+// DefaultSchema is the fixed schema name treated as root level (no @module directive).
+// All other schema names become nested modules.
 const DefaultSchema = "default"
 
 // ReservedSchemas that cannot be used by app developers.
@@ -18,19 +19,10 @@ var ReservedSchemas = map[string]bool{
 }
 
 type AppInfo struct {
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Version       string `json:"version"`
-	URI           string `json:"uri"`
-	DefaultSchema string `json:"default_schema,omitempty"` // default: "default"
-}
-
-// DefaultSchemaName returns the schema name treated as root (no @module).
-func (i AppInfo) DefaultSchemaName() string {
-	if i.DefaultSchema == "" {
-		return "default"
-	}
-	return i.DefaultSchema
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Version     string `json:"version"`
+	URI         string `json:"uri"`
 }
 
 type Application interface {

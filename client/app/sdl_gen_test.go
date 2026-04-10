@@ -312,14 +312,30 @@ func TestGenerateScalarFuncSDL_Mutation(t *testing.T) {
 		isMutation: true,
 	}
 
-	sdl := generateScalarFuncSDL("notify", "send", def)
+	// Default schema: no @module directive expected
+	sdl := generateScalarFuncSDL(DefaultSchema, "send", def)
 	mustContain(t, sdl, "extend type MutationFunction")
 	mustNotContain(t, sdl, "extend type Function ")
-	mustContain(t, sdl, `@function(name: "\"notify\".\"SEND\""`)
+	mustContain(t, sdl, `@function(name: "\"default\".\"SEND\""`)
 	mustContain(t, sdl, "Send a notification")
 	mustContain(t, sdl, "user_id: String!")
 	mustContain(t, sdl, "message: String!")
 	mustContain(t, sdl, "): String")
+	mustNotContain(t, sdl, "@module")
+}
+
+func TestGenerateScalarFuncSDL_Mutation_NamedSchema(t *testing.T) {
+	retType := Int64
+	def := &funcDef{
+		retType:    &retType,
+		isMutation: true,
+	}
+
+	// Named schema: both MutationFunction extension AND @module directive expected
+	sdl := generateScalarFuncSDL("admin", "reset", def)
+	mustContain(t, sdl, "extend type MutationFunction")
+	mustContain(t, sdl, `@module(name: "admin")`)
+	mustContain(t, sdl, `@function(name: "\"admin\".\"RESET\""`)
 }
 
 // --- Table function SDL (parameterized view) ---

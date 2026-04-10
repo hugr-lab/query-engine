@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -99,6 +100,19 @@ func TestMux_HandleTableFunc_MissingCols(t *testing.T) {
 	}, Arg("query", String))
 	if err == nil {
 		t.Fatal("expected error for missing Col()")
+	}
+}
+
+func TestMux_HandleTableFunc_MutationRejected(t *testing.T) {
+	mux := New()
+	err := mux.HandleTableFunc("users", "bad", func(w *Result, r *Request) error {
+		return nil
+	}, ColPK("id", Int64), Mutation())
+	if err == nil {
+		t.Fatal("expected error: Mutation() is only valid for scalar functions")
+	}
+	if !strings.Contains(err.Error(), "Mutation()") {
+		t.Errorf("error should mention Mutation(), got: %v", err)
 	}
 }
 

@@ -212,6 +212,9 @@ func registerTableFunc(m *CatalogMux, schema, name string, handler HandlerFunc, 
 	if len(def.cols) == 0 {
 		return fmt.Errorf("HandleTableFunc %s.%s: at least one Col() option is required", schema, name)
 	}
+	if def.isMutation {
+		return fmt.Errorf("HandleTableFunc %s.%s: Mutation() is only valid for scalar functions", schema, name)
+	}
 
 	tf := &handlerTableFunc{
 		funcName: strings.ToUpper(name),
