@@ -153,11 +153,13 @@ extend type Function {
 
 **Raw JSON without struct definition**: `app.Return(app.JSON)` for opaque JSON returns; `app.Arg(name, app.JSON)` for opaque JSON inputs.
 
-**Lists of scalars**: `app.ReturnList(app.String)` for `[String!]!`. Uses native Arrow LIST as the wire format. The handler returns a Go slice (`[]string`, `[]int64`, etc.) via `Set`.
+**Lists of scalars**: `app.ReturnList(app.String)` for `[String!]`-style returns. Uses native Arrow LIST as the wire format (not JSON), so the handler returns a Go slice via `Set`: `[]string`, `[]int64`, `[]float64`, `[]bool`, and other scalar slice types are supported (`[]any` works as a fallback). The outer list is nullable, matching the scalar-return convention — elements are non-null.
 
 **Lists of structs are NOT supported as scalar function returns** — use `HandleTableFunc` instead.
 
 **Type deduplication**: the same `StructType` (by name) used in multiple functions is emitted once in SDL. Conflicting registrations (same name, different fields) fail at registration time.
+
+**Thread safety**: `HandleFunc` / `HandleTableFunc` (and the other registration methods) are **not** safe to call concurrently on the same `CatalogMux`. Build the catalog from a single goroutine (typically inside `Application.Catalog`), then publish it — after the catalog is handed to the runtime, all reads are safe for any number of goroutines.
 
 ## Options
 

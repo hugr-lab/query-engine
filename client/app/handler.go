@@ -92,6 +92,15 @@ type funcDef struct {
 	invalidReturn string
 }
 
+// returnTypeName returns a human-readable return-type name for error messages,
+// safely handling table functions (where retType is nil).
+func returnTypeName(d *funcDef) string {
+	if d == nil || d.retType == nil {
+		return "<none>"
+	}
+	return d.retType.graphql
+}
+
 // returnsJSON reports whether the function's return type uses the JSON wire
 // format (raw JSON or struct via JSON). Used by Result.SetJSON to validate
 // that the handler is using the right helper.
@@ -138,25 +147,31 @@ func Return(typ Type) Option {
 }
 
 // ReturnList declares that the scalar function returns a list of the given
-// scalar element type (e.g. ReturnList(app.String) → [String!]!).
+// scalar element type (e.g. ReturnList(app.String) → [String!]).
 //
 // The wire format is a native Arrow LIST of the element's underlying type
 // (NOT JSON), so DuckDB receives a proper LIST value and the planner does
-// not need json_cast. The handler returns a Go slice via Set or SetJSON
-// (which will marshal slices via standard rules).
+// not need json_cast. The handler returns a Go slice via Set.
 //
 // ReturnList does NOT support struct element types — for lists of structs,
 // register the function as a table function via HandleTableFunc instead.
 // Passing a struct type sets a registration error that fails registration.
+//
+// The generated SDL preserves the scalar-return convention (outer-nullable,
+// element-non-null): `[String!]`.
 func ReturnList(typ Type) Option {
 	return func(d *funcDef) {
 		if typ.structDef != nil {
 			d.invalidReturn = "ReturnList does not support struct element types; use HandleTableFunc for lists of structs"
 			return
 		}
+		// Element graphql name is preserved in retType.graphql; the
+		// returnsList flag tells the SDL generator to wrap it in a proper
+		// ast.Type{Elem:...} list rather than stuffing brackets into a
+		// named type.
 		listType := Type{
 			dt:      arrow.ListOfNonNullable(typ.dt),
-			graphql: "[" + typ.graphql + "!]",
+			graphql: typ.graphql,
 		}
 		d.retType = &listType
 		d.returnsList = true
@@ -286,13 +301,14 @@ func (w *Result) Set(v any) error {
 }
 
 // SetJSON marshals the value to a JSON string and stores it as the scalar
-// return. Use this when the function's Return type is JSON, a struct (via
-// Struct().AsType()), or a list (via ReturnList).
+// return. Use this when the function's Return type is JSON or a struct (via
+// Struct().AsType()).
 //
-// Returns an error if the function's return type is not JSON-compatible.
+// Returns an error if the function's return type is not JSON-compatible
+// (including when called on a table function).
 func (w *Result) SetJSON(v any) error {
 	if w.def != nil && !w.def.returnsJSON() {
-		return fmt.Errorf("Result.SetJSON: only valid for JSON, struct, or list return types, got %s", w.def.retType.graphql)
+		return fmt.Errorf("Result.SetJSON: only valid for JSON or struct scalar return types, got %s", returnTypeName(w.def))
 	}
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -307,10 +323,11 @@ func (w *Result) SetJSON(v any) error {
 //   - []byte: stored as string(b) (assumed valid JSON)
 //   - any other value: marshaled via json.Marshal
 //
-// Returns an error if the function's return type is not JSON-compatible.
+// Returns an error if the function's return type is not JSON-compatible
+// (including when called on a table function).
 func (w *Result) SetJSONValue(v any) error {
 	if w.def != nil && !w.def.returnsJSON() {
-		return fmt.Errorf("Result.SetJSONValue: only valid for JSON, struct, or list return types, got %s", w.def.retType.graphql)
+		return fmt.Errorf("Result.SetJSONValue: only valid for JSON or struct scalar return types, got %s", returnTypeName(w.def))
 	}
 	switch val := v.(type) {
 	case string:
@@ -676,47 +693,97 @@ func appendValue(bldr array.Builder, v any) error {
 
 // appendListValues iterates over a Go slice and appends each element to the
 // list builder's value builder. Supports common scalar slice types directly
-// and falls back to []any with per-element appendValue.
+// and falls back to []any with per-element appendValue. For slice element
+// types not listed here, wrap the values in []any or convert to one of the
+// supported slice types.
 func appendListValues(valueBldr array.Builder, v any) error {
 	switch slice := v.(type) {
 	case []string:
-		for _, s := range slice {
-			if err := appendValue(valueBldr, s); err != nil {
-				return err
-			}
-		}
-	case []int64:
-		for _, n := range slice {
-			if err := appendValue(valueBldr, n); err != nil {
-				return err
-			}
-		}
-	case []int:
-		for _, n := range slice {
-			if err := appendValue(valueBldr, n); err != nil {
-				return err
-			}
-		}
-	case []float64:
-		for _, n := range slice {
-			if err := appendValue(valueBldr, n); err != nil {
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
 				return err
 			}
 		}
 	case []bool:
-		for _, b := range slice {
-			if err := appendValue(valueBldr, b); err != nil {
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []int:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []int8:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []int16:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []int32:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []int64:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []uint8:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []uint16:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []uint32:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []uint64:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []float32:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []float64:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
 				return err
 			}
 		}
 	case []any:
-		for _, item := range slice {
-			if err := appendValue(valueBldr, item); err != nil {
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
 				return err
 			}
 		}
 	default:
-		return fmt.Errorf("unsupported list value type: %T (expected []string, []int64, []int, []float64, []bool, or []any)", v)
+		return fmt.Errorf("unsupported list value type: %T (expected a scalar slice like []string, []int64, []float64, or []any)", v)
 	}
 	return nil
 }

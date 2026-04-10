@@ -121,6 +121,12 @@ func (s *StructType) AsType() Type {
 // used by CatalogMux for type deduplication. Order is significant — fields
 // at the same index must match in name, type, nullability, list-ness,
 // description, and field source.
+//
+// Type comparison is by GraphQL name only (af.typ.graphql), not by nested
+// structDef. Struct names must be globally unique in the catalog anyway
+// (two structs with the same name are considered "the same type"), so a
+// name-level match is sufficient to catch accidental collisions during
+// registration.
 func equalStructFields(a, b *StructType) bool {
 	if a == nil || b == nil {
 		return a == b

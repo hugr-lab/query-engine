@@ -196,10 +196,20 @@ func generateScalarFuncSDL(schema, name string, def *funcDef) string {
 		directives = append(directives, moduleDirective(mod))
 	}
 
+	var retType *ast.Type
+	if def.returnsList {
+		// Native Arrow LIST wire: [Elem!] (outer-nullable, matching the
+		// scalar-return convention used by gqlType above).
+		retType = &ast.Type{
+			Elem: gqlType(def.retType.graphql, true),
+		}
+	} else {
+		retType = gqlType(def.retType.graphql, false)
+	}
 	field := &ast.FieldDefinition{
 		Name:        name,
 		Description: def.description,
-		Type:        gqlType(def.retType.graphql, false),
+		Type:        retType,
 		Directives:  directives,
 	}
 	for _, a := range def.args {
