@@ -125,16 +125,6 @@ func (s *muxSchema) writeSDL(b *strings.Builder) {
 	}
 }
 
-// writeSDLWithModule writes SDL for all items, injecting @module(name) directive.
-// This is used for non-default schemas that become nested modules in hugr.
-func (s *muxSchema) writeSDLWithModule(b *strings.Builder, moduleName string) {
-	// For now, same as writeSDL — @module injection happens at the hugr server side
-	// via compiler options (AsModule + prefix). The SDL itself doesn't need @module
-	// because hugr's compilation pipeline handles module nesting via the source name
-	// (e.g., "analytics.reports" → ModuleAssembler creates nested modules).
-	s.writeSDL(b)
-}
-
 // Compile-time interface checks.
 var (
 	_ catalog.Schema              = (*muxSchema)(nil)

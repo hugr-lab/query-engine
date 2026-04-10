@@ -64,6 +64,7 @@ type funcDef struct {
 	args        []argDef
 	cols        []colDef // for table functions: result columns
 	retType     *Type    // for scalar functions: return type
+	isMutation  bool     // for scalar functions: extend MutationFunction instead of Function
 }
 
 // Desc sets the function description.
@@ -91,6 +92,15 @@ func ArgDesc(name string, typ Type, description string) Option {
 func Return(typ Type) Option {
 	return func(d *funcDef) {
 		d.retType = &typ
+	}
+}
+
+// Mutation marks a scalar function as a mutation. The generated SDL will
+// extend MutationFunction instead of Function, exposing the function as a
+// GraphQL mutation operation rather than a query.
+func Mutation() Option {
+	return func(d *funcDef) {
+		d.isMutation = true
 	}
 }
 

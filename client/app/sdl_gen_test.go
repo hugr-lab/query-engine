@@ -300,6 +300,28 @@ func TestGenerateScalarFuncSDL(t *testing.T) {
 	mustContain(t, sdl, "): BigInt")
 }
 
+func TestGenerateScalarFuncSDL_Mutation(t *testing.T) {
+	retType := String
+	def := &funcDef{
+		description: "Send a notification",
+		args: []argDef{
+			{name: "user_id", typ: String, description: "Recipient"},
+			{name: "message", typ: String, description: "Message body"},
+		},
+		retType:    &retType,
+		isMutation: true,
+	}
+
+	sdl := generateScalarFuncSDL("notify", "send", def)
+	mustContain(t, sdl, "extend type MutationFunction")
+	mustNotContain(t, sdl, "extend type Function ")
+	mustContain(t, sdl, `@function(name: "\"notify\".\"SEND\""`)
+	mustContain(t, sdl, "Send a notification")
+	mustContain(t, sdl, "user_id: String!")
+	mustContain(t, sdl, "message: String!")
+	mustContain(t, sdl, "): String")
+}
+
 // --- Table function SDL (parameterized view) ---
 
 func TestGenerateTableFuncSDL(t *testing.T) {

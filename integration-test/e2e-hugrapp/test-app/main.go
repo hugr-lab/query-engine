@@ -177,6 +177,23 @@ func (a *TestApp) Catalog(ctx context.Context) (catalog.Catalog, error) {
 		return nil, err
 	}
 
+	// Mutation function: registered with app.Mutation() so it appears under
+	// MutationFunction (callable via GraphQL `mutation { ... }`).
+	err = mux.HandleFunc("default", "send_message", func(w *app.Result, r *app.Request) error {
+		to := r.String("to")
+		body := r.String("body")
+		return w.Set(fmt.Sprintf("sent to %s: %s", to, body))
+	},
+		app.Desc("Send a message to a recipient (mutation)"),
+		app.Arg("to", app.String),
+		app.Arg("body", app.String),
+		app.Return(app.String),
+		app.Mutation(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	mux.Table("default", &staticTable{})
 
 	// Table function: search(query) returns filtered items
@@ -205,6 +222,18 @@ func (a *TestApp) Catalog(ctx context.Context) (catalog.Catalog, error) {
 	err = mux.HandleFunc("admin", "user_count", func(w *app.Result, r *app.Request) error {
 		return w.Set(int64(99))
 	}, app.Return(app.Int64), app.Desc("Total users in admin"))
+	if err != nil {
+		return nil, err
+	}
+
+	// Mutation in named schema "admin" — verifies @module + MutationFunction together.
+	err = mux.HandleFunc("admin", "reset_counter", func(w *app.Result, r *app.Request) error {
+		return w.Set(int64(0))
+	},
+		app.Desc("Reset the counter (admin mutation)"),
+		app.Return(app.Int64),
+		app.Mutation(),
+	)
 	if err != nil {
 		return nil, err
 	}

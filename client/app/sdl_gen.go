@@ -171,10 +171,14 @@ func generateScalarFuncSDL(schema, name string, def *funcDef) string {
 		})
 	}
 
-	// extend type Function { ... }
+	// extend type Function (or MutationFunction for mutation-flagged scalar functions) { ... }
+	rootType := "Function"
+	if def.isMutation {
+		rootType = "MutationFunction"
+	}
 	ext := &ast.Definition{
 		Kind:   ast.Object,
-		Name:   "Function",
+		Name:   rootType,
 		Fields: ast.FieldList{field},
 	}
 

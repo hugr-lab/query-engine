@@ -156,27 +156,22 @@ func (m *CatalogMux) SDL() string {
 }
 
 // SDLWithModules returns the full GraphQL SDL with module directives.
-// Objects from defaultSchema have no @module. Other schemas get @module(name: schemaName).
-// System schemas (_mount, _funcs) are excluded.
-func (m *CatalogMux) SDLWithModules(defaultSchema string) string {
+// Objects from the default schema have no @module. Other schemas get
+// @module(name: schemaName) injected per-definition during SDL generation
+// (see schemaModuleName in sdl_gen.go). System schemas (_mount, _funcs)
+// are excluded.
+func (m *CatalogMux) SDLWithModules() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if m.rawSDL != "" {
 		return m.rawSDL
 	}
-	if defaultSchema == "" {
-		defaultSchema = "default"
-	}
 	var b strings.Builder
 	for name, s := range m.schemas {
-		switch name {
-		case "_mount", "_funcs":
+		if name == "_mount" || name == "_funcs" {
 			continue // system schemas excluded
-		case defaultSchema:
-			s.writeSDL(&b) // no @module
-		default:
-			s.writeSDLWithModule(&b, name) // adds @module(name)
 		}
+		s.writeSDL(&b)
 	}
 	return b.String()
 }

@@ -89,7 +89,23 @@ After connecting, your app is queryable:
 
 ## Options
 
-**Function options**: `Arg(name, type)`, `ArgDesc(name, type, desc)`, `Return(type)`, `Desc(description)`
+**Function options**: `Arg(name, type)`, `ArgDesc(name, type, desc)`, `Return(type)`, `Desc(description)`, `Mutation()`
+
+`Mutation()` marks a scalar function as a GraphQL mutation. Without it, the function is exposed as a query (extends `Function`); with it, the function extends `MutationFunction` and must be called via `mutation { ... }`. Use it for operations with side effects.
+
+```go
+mux.HandleFunc("default", "send_email",
+    func(w *app.Result, r *app.Request) error {
+        return w.Set(fmt.Sprintf("sent to %s", r.String("to")))
+    },
+    app.Arg("to", app.String),
+    app.Arg("body", app.String),
+    app.Return(app.String),
+    app.Mutation(),
+)
+
+// GraphQL: mutation { function { my_app { send_email(to: "alice", body: "hi") } } }
+```
 
 **Table column options**: `Col(name, type)`, `ColPK(name, type)`, `ColDesc(name, type, desc)`, `ColNullable(name, type)`
 
