@@ -87,9 +87,81 @@ After connecting, your app is queryable:
 
 **Per-item SDL wrapping**: `app.WithSDL(table, sdl)`, `app.WithScalarFuncSDL(fn, sdl)`, `app.WithTableFuncSDL(fn, sdl)`, `app.WithTableRefSDL(ref, sdl)`
 
+## Struct Return and Input Types
+
+For functions that return or accept structured data, use the `Struct` / `InputStruct` builders. The wire format is JSON; the planner inlines complex argument values automatically and casts JSON returns to typed GraphQL structures via `@function(json_cast: true)`.
+
+```go
+// Output struct with @field_source rename and a list field
+weather := app.Struct("weather_result").
+    Desc("Current weather snapshot").
+    Field("temp", app.Float64).
+    Field("humidity", app.Int64).
+    FieldFromSource("city", app.String, "city_name").
+    FieldList("conditions", app.String) // [String!]!
+
+// Input struct
+location := app.InputStruct("location_input").
+    Field("lat", app.Float64).
+    Field("lon", app.Float64)
+
+mux.HandleFunc("default", "get_weather",
+    func(w *app.Result, r *app.Request) error {
+        var loc struct{ Lat, Lon float64 }
+        if err := r.JSON("location", &loc); err != nil {
+            return err
+        }
+        return w.SetJSON(map[string]any{
+            "temp":       22.5,
+            "humidity":   60,
+            "city_name":  "Berlin",
+            "conditions": []string{"sunny", "windy"},
+        })
+    },
+    app.Arg("location", location.AsType()),
+    app.Return(weather.AsType()),
+)
+```
+
+Generated SDL:
+
+```graphql
+input location_input {
+    lat: Float!
+    lon: Float!
+}
+
+"""Current weather snapshot"""
+type weather_result {
+    temp: Float!
+    humidity: BigInt!
+    city: String! @field_source(field: "city_name")
+    conditions: [String!]!
+}
+
+extend type Function {
+    get_weather(location: location_input!): weather_result
+        @function(name: "...", json_cast: true)
+}
+```
+
+**Helpers**:
+
+- `Result.SetJSON(v)` — marshals `v` to JSON and stores as the return value. Runtime check ensures the function's return type accepts JSON.
+- `Result.SetJSONValue(v)` — accepts `string`, `[]byte`, or any value (marshaled). Most flexible variant.
+- `Request.JSON(name, &out)` — unmarshals the named arg's JSON string value into `out`.
+
+**Raw JSON without struct definition**: `app.Return(app.JSON)` for opaque JSON returns; `app.Arg(name, app.JSON)` for opaque JSON inputs.
+
+**Lists of scalars**: `app.ReturnList(app.String)` for `[String!]!`. Uses native Arrow LIST as the wire format. The handler returns a Go slice (`[]string`, `[]int64`, etc.) via `Set`.
+
+**Lists of structs are NOT supported as scalar function returns** — use `HandleTableFunc` instead.
+
+**Type deduplication**: the same `StructType` (by name) used in multiple functions is emitted once in SDL. Conflicting registrations (same name, different fields) fail at registration time.
+
 ## Options
 
-**Function options**: `Arg(name, type)`, `ArgDesc(name, type, desc)`, `ArgFromContext(name, type, placeholder)`, `Return(type)`, `Desc(description)`, `Mutation()`
+**Function options**: `Arg(name, type)`, `ArgDesc(name, type, desc)`, `ArgFromContext(name, type, placeholder)`, `Return(type)`, `ReturnList(type)`, `Desc(description)`, `Mutation()`
 
 `ArgFromContext()` declares a server-injected function argument bound to a context placeholder. The argument is hidden from the GraphQL schema — clients cannot see or set it. At handler execution time, read it via `r.String(name)` / `r.Int64(name)` like any other argument.
 

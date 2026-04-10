@@ -211,6 +211,64 @@ func (a *TestApp) Catalog(ctx context.Context) (catalog.Catalog, error) {
 		return nil, err
 	}
 
+	// Struct return: typed GraphQL output via JSON wire + @function(json_cast: true)
+	identityType := app.Struct("identity_info").
+		Desc("Caller identity snapshot").
+		Field("user_id", app.String).
+		Field("role", app.String).
+		FieldFromSource("auth", app.String, "auth_type")
+
+	err = mux.HandleFunc("default", "whoami_struct", func(w *app.Result, r *app.Request) error {
+		return w.SetJSON(map[string]any{
+			"user_id":   "anonymous",
+			"role":      "admin",
+			"auth_type": "anonymous",
+		})
+	},
+		app.Desc("Return caller identity as a typed struct"),
+		app.Return(identityType.AsType()),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Struct input: takes a typed GraphQL input object, handler unmarshals via r.JSON
+	queryInput := app.InputStruct("echo_query_input").
+		Field("query", app.String).
+		Field("limit", app.Int64)
+
+	err = mux.HandleFunc("default", "echo_input", func(w *app.Result, r *app.Request) error {
+		var in struct {
+			Query string `json:"query"`
+			Limit int64  `json:"limit"`
+		}
+		if err := r.JSON("input", &in); err != nil {
+			return fmt.Errorf("decode input: %w", err)
+		}
+		return w.SetJSON(map[string]any{
+			"received_query": in.Query,
+			"received_limit": in.Limit,
+		})
+	},
+		app.Desc("Echo back the input as raw JSON"),
+		app.Arg("input", queryInput.AsType()),
+		app.Return(app.JSON),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// List of scalars return: ReturnList(String) → [String!]! via native Arrow LIST
+	err = mux.HandleFunc("default", "list_tags", func(w *app.Result, r *app.Request) error {
+		return w.Set([]string{"go", "graphql", "duckdb"})
+	},
+		app.Desc("Return a fixed list of tag names"),
+		app.ReturnList(app.String),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	mux.Table("default", &staticTable{})
 
 	// Table function: search(query) returns filtered items

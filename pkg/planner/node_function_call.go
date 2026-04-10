@@ -291,6 +291,18 @@ func functionCallSQL(ctx context.Context, defs base.DefinitionsSource, e engines
 			sql = strings.ReplaceAll(sql, "["+a.Name+"]", "")
 		case a.Value == nil:
 			sql = strings.ReplaceAll(sql, "["+a.Name+"]", "NULL")
+		case isComplexValue(a.Value):
+			// Complex types (input objects, lists of input objects) cannot be passed
+			// through standard SQL parameter binding. Inline them as engine-formatted
+			// literals. The DuckDB engine's SQLValue serializes map[string]any and
+			// []map[string]any as '<json>'::JSON literals; AirportEngine, MySqlEngine,
+			// MssqlEngine, HttpEngine, Iceberg and DuckLake all delegate to the
+			// DuckDB SQLValue, so the behavior is uniform across the engine matrix.
+			literal, err := e.SQLValue(a.Value)
+			if err != nil {
+				return "", nil, fmt.Errorf("inline complex arg %s: %w", a.Name, err)
+			}
+			sql = strings.ReplaceAll(sql, "["+a.Name+"]", literal)
 		default:
 			params = append(params, a.Value)
 			sql = strings.ReplaceAll(sql, "["+a.Name+"]", "$"+strconv.Itoa(len(params)))
@@ -298,6 +310,26 @@ func functionCallSQL(ctx context.Context, defs base.DefinitionsSource, e engines
 	}
 
 	return sql, params, nil
+}
+
+// isComplexValue reports whether the value cannot be passed through standard
+// SQL parameter binding and must be inlined as an engine literal. Maps, slices
+// of maps, and slices containing complex elements all qualify.
+func isComplexValue(v any) bool {
+	switch val := v.(type) {
+	case map[string]any:
+		return true
+	case []map[string]any:
+		return true
+	case []any:
+		for _, item := range val {
+			if _, ok := item.(map[string]any); ok {
+				return true
+			}
+		}
+		return false
+	}
+	return false
 }
 
 // substitutePlaceholders replaces known context placeholders ([$auth.*], [$catalog])

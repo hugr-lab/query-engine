@@ -67,13 +67,17 @@ func boolVal(v bool) *ast.Value {
 	return &ast.Value{Kind: ast.BooleanValue, Raw: "false"}
 }
 
-// functionDirective creates @function(name: "...") or @function(name: "...", is_table: true).
-func functionDirective(source string, isTable bool) *ast.Directive {
+// functionDirective creates @function(name: "...") with optional is_table and
+// json_cast modifiers.
+func functionDirective(source string, isTable bool, jsonCast bool) *ast.Directive {
 	args := ast.ArgumentList{
 		{Name: "name", Value: strVal(source)},
 	}
 	if isTable {
 		args = append(args, &ast.Argument{Name: "is_table", Value: boolVal(true)})
+	}
+	if jsonCast {
+		args = append(args, &ast.Argument{Name: "json_cast", Value: boolVal(true)})
 	}
 	return &ast.Directive{Name: "function", Arguments: args}
 }
@@ -157,10 +161,37 @@ func argDefaultDirective(placeholder ContextPlaceholder) *ast.Directive {
 // --- Generators for handler.go ---
 
 // generateScalarFuncSDL generates SDL for a scalar function using gqlparser AST.
+//
+// When the return type or any argument type carries a struct definition, the
+// corresponding GraphQL type definitions are emitted alongside the function
+// extension. For struct or list returns, the @function directive is augmented
+// with json_cast: true so the planner casts the JSON wire output to the typed
+// structure.
+//
+// For complex argument values, no SQL template is generated — the planner
+// inlines complex values via engine.SQLValue at request time.
 func generateScalarFuncSDL(schema, name string, def *funcDef) string {
 	source := sqlSourceName(schema, name)
 
-	directives := ast.DirectiveList{functionDirective(source, false)}
+	// Collect any struct/input type definitions referenced by the function.
+	var typeDefs []*ast.Definition
+	jsonCast := false
+	if def.retType != nil {
+		if def.retType.structDef != nil {
+			typeDefs = append(typeDefs, buildStructDefinition(def.retType.structDef))
+			jsonCast = true
+		}
+		// List-of-scalars returns use native Arrow LIST as wire — no json_cast,
+		// no struct type definition. The GraphQL return type already encodes
+		// the list shape ([T!]!).
+	}
+	for _, a := range def.args {
+		if a.typ.structDef != nil {
+			typeDefs = append(typeDefs, buildStructDefinition(a.typ.structDef))
+		}
+	}
+
+	directives := ast.DirectiveList{functionDirective(source, false, jsonCast)}
 	if mod := schemaModuleName(schema); mod != "" {
 		directives = append(directives, moduleDirective(mod))
 	}
@@ -197,7 +228,43 @@ func generateScalarFuncSDL(schema, name string, def *funcDef) string {
 		Fields: ast.FieldList{field},
 	}
 
-	return formatDefinitions(nil, []*ast.Definition{ext})
+	return formatDefinitions(typeDefs, []*ast.Definition{ext})
+}
+
+// buildStructDefinition converts a *StructType into a gqlparser ast.Definition.
+// Output structs become Object types; input structs become InputObject types.
+// Fields support nullable, list, and field_source modifiers.
+func buildStructDefinition(s *StructType) *ast.Definition {
+	kind := ast.Object
+	if s.kind == StructKindInput {
+		kind = ast.InputObject
+	}
+	def := &ast.Definition{
+		Kind:        kind,
+		Name:        s.name,
+		Description: s.description,
+	}
+	for _, f := range s.fields {
+		var typ *ast.Type
+		if f.isList {
+			typ = &ast.Type{
+				Elem:    &ast.Type{NamedType: f.typ.graphql, NonNull: true},
+				NonNull: true,
+			}
+		} else {
+			typ = gqlType(f.typ.graphql, !f.nullable)
+		}
+		fd := &ast.FieldDefinition{
+			Name:        f.name,
+			Description: f.description,
+			Type:        typ,
+		}
+		if f.fieldSource != "" && s.kind == StructKindOutput {
+			fd.Directives = append(fd.Directives, fieldSourceDirective(f.fieldSource))
+		}
+		def.Fields = append(def.Fields, fd)
+	}
+	return def
 }
 
 // generateTableFuncSDL generates SDL for a table function as a parameterized view:

@@ -433,3 +433,127 @@ func TestTableFunc_Signature(t *testing.T) {
 		t.Error("table func return type should be nil")
 	}
 }
+
+// --- SetJSON / SetJSONValue / Request.JSON ---
+
+func TestSetJSON_RuntimeCheck_NonJSONReturn(t *testing.T) {
+	def := &funcDef{retType: &Int64}
+	w := &Result{def: def}
+	err := w.SetJSON(map[string]any{"foo": "bar"})
+	if err == nil {
+		t.Fatal("expected error for SetJSON on Int64 return type")
+	}
+}
+
+func TestSetJSON_StructReturn(t *testing.T) {
+	weather := Struct("weather").Field("temp", Float64)
+	rt := weather.AsType()
+	def := &funcDef{retType: &rt}
+	w := &Result{def: def}
+
+	if err := w.SetJSON(map[string]any{"temp": 22.5}); err != nil {
+		t.Fatalf("expected SetJSON to succeed for struct return, got: %v", err)
+	}
+	s, ok := w.value.(string)
+	if !ok {
+		t.Fatalf("expected value to be string, got %T", w.value)
+	}
+	if s != `{"temp":22.5}` {
+		t.Errorf("expected JSON %q, got %q", `{"temp":22.5}`, s)
+	}
+}
+
+func TestSetJSON_RawJSONReturn(t *testing.T) {
+	rt := JSON
+	def := &funcDef{retType: &rt}
+	w := &Result{def: def}
+
+	if err := w.SetJSON([]string{"a", "b", "c"}); err != nil {
+		t.Fatalf("expected SetJSON to succeed for JSON return, got: %v", err)
+	}
+	if w.value != `["a","b","c"]` {
+		t.Errorf("got %v", w.value)
+	}
+}
+
+func TestReturnList_NativeArrowWire(t *testing.T) {
+	// ReturnList uses a native Arrow LIST wire (not JSON), so returnsJSON()
+	// should be false and the handler should pass a Go slice via Set, not SetJSON.
+	def := &funcDef{}
+	ReturnList(String)(def)
+	if def.returnsJSON() {
+		t.Error("ReturnList should NOT use JSON wire — it uses native Arrow LIST")
+	}
+	if !def.returnsList {
+		t.Error("expected returnsList = true")
+	}
+}
+
+func TestSetJSONValue_String(t *testing.T) {
+	rt := JSON
+	def := &funcDef{retType: &rt}
+	w := &Result{def: def}
+
+	if err := w.SetJSONValue(`{"raw":"json"}`); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.value != `{"raw":"json"}` {
+		t.Errorf("expected passthrough, got %v", w.value)
+	}
+}
+
+func TestSetJSONValue_Bytes(t *testing.T) {
+	rt := JSON
+	def := &funcDef{retType: &rt}
+	w := &Result{def: def}
+
+	if err := w.SetJSONValue([]byte(`{"raw":"json"}`)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.value != `{"raw":"json"}` {
+		t.Errorf("expected passthrough, got %v", w.value)
+	}
+}
+
+func TestSetJSONValue_Marshal(t *testing.T) {
+	rt := JSON
+	def := &funcDef{retType: &rt}
+	w := &Result{def: def}
+
+	if err := w.SetJSONValue(map[string]any{"a": 1}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if w.value != `{"a":1}` {
+		t.Errorf("expected marshaled JSON, got %v", w.value)
+	}
+}
+
+func TestRequest_JSON_Unmarshal(t *testing.T) {
+	r := &Request{
+		ctx: context.Background(),
+		args: map[string]any{
+			"input": `{"name":"alice","age":30}`,
+		},
+	}
+	var out struct {
+		Name string `json:"name"`
+		Age  int    `json:"age"`
+	}
+	if err := r.JSON("input", &out); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Name != "alice" || out.Age != 30 {
+		t.Errorf("got %+v", out)
+	}
+}
+
+func TestRequest_JSON_Empty(t *testing.T) {
+	r := &Request{
+		ctx:  context.Background(),
+		args: map[string]any{"input": ""},
+	}
+	var out struct{ Name string }
+	if err := r.JSON("input", &out); err != nil {
+		t.Errorf("expected nil error for empty arg, got: %v", err)
+	}
+}

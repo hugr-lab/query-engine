@@ -488,3 +488,134 @@ func TestArrowToGraphQL(t *testing.T) {
 		}
 	}
 }
+
+// --- Struct return / JSON / list return ---
+
+func TestGenerateScalarFuncSDL_StructReturn(t *testing.T) {
+	weather := Struct("weather_result").
+		Desc("Current weather snapshot").
+		Field("temp", Float64).
+		Field("humidity", Int64)
+
+	retType := weather.AsType()
+	def := &funcDef{
+		args: []argDef{
+			{name: "lat", typ: Float64},
+			{name: "lon", typ: Float64},
+		},
+		retType: &retType,
+	}
+
+	sdl := generateScalarFuncSDL("default", "get_weather", def)
+	mustContain(t, sdl, "type weather_result")
+	mustContain(t, sdl, "Current weather snapshot")
+	mustContain(t, sdl, "temp: Float!")
+	mustContain(t, sdl, "humidity: BigInt!")
+	mustContain(t, sdl, "extend type Function")
+	mustContain(t, sdl, "get_weather")
+	mustContain(t, sdl, ": weather_result")
+	mustContain(t, sdl, "json_cast: true")
+	// No sql: template — planner inlines complex args automatically.
+	mustNotContain(t, sdl, `sql: "`)
+}
+
+func TestGenerateScalarFuncSDL_RawJSONReturn(t *testing.T) {
+	retType := JSON
+	def := &funcDef{retType: &retType}
+
+	sdl := generateScalarFuncSDL("default", "raw_data", def)
+	mustContain(t, sdl, ": JSON")
+	// Raw JSON return does NOT need json_cast (JSON is the wire type already).
+	mustNotContain(t, sdl, "json_cast: true")
+}
+
+func TestGenerateScalarFuncSDL_ListReturn(t *testing.T) {
+	def := &funcDef{}
+	ReturnList(String)(def)
+
+	sdl := generateScalarFuncSDL("default", "list_tags", def)
+	mustContain(t, sdl, ": [String!]")
+	// Native Arrow LIST wire — no json_cast needed
+	mustNotContain(t, sdl, "json_cast: true")
+}
+
+func TestGenerateScalarFuncSDL_FieldFromSource(t *testing.T) {
+	weather := Struct("weather_result").
+		Field("temp", Float64).
+		FieldFromSource("city", String, "city_name")
+
+	retType := weather.AsType()
+	def := &funcDef{retType: &retType}
+
+	sdl := generateScalarFuncSDL("default", "get_weather", def)
+	mustContain(t, sdl, "city: String! @field_source(field: \"city_name\")")
+}
+
+func TestGenerateScalarFuncSDL_FieldList(t *testing.T) {
+	weather := Struct("weather_result").
+		Field("temp", Float64).
+		FieldList("conditions", String)
+
+	retType := weather.AsType()
+	def := &funcDef{retType: &retType}
+
+	sdl := generateScalarFuncSDL("default", "get_weather", def)
+	mustContain(t, sdl, "conditions: [String!]!")
+}
+
+func TestGenerateScalarFuncSDL_StructInput(t *testing.T) {
+	location := InputStruct("location_input").
+		Field("lat", Float64).
+		Field("lon", Float64)
+
+	retType := JSON
+	def := &funcDef{
+		args: []argDef{
+			{name: "location", typ: location.AsType()},
+		},
+		retType: &retType,
+	}
+
+	sdl := generateScalarFuncSDL("default", "lookup", def)
+	mustContain(t, sdl, "input location_input")
+	mustContain(t, sdl, "lat: Float!")
+	mustContain(t, sdl, "lon: Float!")
+	mustContain(t, sdl, "location: location_input!")
+	// Raw JSON return — no json_cast
+	mustNotContain(t, sdl, "json_cast: true")
+	// No sql: template — planner inlines automatically
+	mustNotContain(t, sdl, `sql: "`)
+}
+
+func TestGenerateScalarFuncSDL_RawJSONInput(t *testing.T) {
+	retType := String
+	def := &funcDef{
+		args: []argDef{
+			{name: "payload", typ: JSON},
+		},
+		retType: &retType,
+	}
+
+	sdl := generateScalarFuncSDL("default", "echo", def)
+	mustContain(t, sdl, "payload: JSON!")
+	// Raw JSON arg, scalar return → no struct definition emitted
+	mustNotContain(t, sdl, "input")
+}
+
+func TestGenerateScalarFuncSDL_StructInputAndOutput(t *testing.T) {
+	location := InputStruct("location_input").Field("lat", Float64).Field("lon", Float64)
+	weather := Struct("weather_result").Field("temp", Float64)
+
+	retType := weather.AsType()
+	def := &funcDef{
+		args: []argDef{
+			{name: "location", typ: location.AsType()},
+		},
+		retType: &retType,
+	}
+
+	sdl := generateScalarFuncSDL("default", "get_weather", def)
+	mustContain(t, sdl, "input location_input")
+	mustContain(t, sdl, "type weather_result")
+	mustContain(t, sdl, "json_cast: true")
+}

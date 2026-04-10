@@ -130,6 +130,27 @@ run_test "admin module audit_ctx with @arg_default in named schema" \
     '{ function { test_app { admin { audit_ctx } } } }' \
     '"audit_ctx":"audit:anonymous:admin"'
 
+# Struct return / input / list return tests
+run_test "app whoami_struct returns typed user_id" \
+    '{ function { test_app { whoami_struct { user_id role auth } } } }' \
+    '"user_id":"anonymous"'
+
+run_test "app whoami_struct field_source rename works" \
+    '{ function { test_app { whoami_struct { auth } } } }' \
+    '"auth":"anonymous"'
+
+run_test "app echo_input round-trips struct argument" \
+    '{ function { test_app { echo_input(input: { query: \"hello\", limit: 5 }) } } }' \
+    'received_query'
+
+run_test "app echo_input received_limit value" \
+    '{ function { test_app { echo_input(input: { query: \"x\", limit: 42 }) } } }' \
+    'received_limit'
+
+run_test "app list_tags returns array of strings" \
+    '{ function { test_app { list_tags } } }' \
+    'graphql'
+
 # HugrSchema test (custom SDL for DS — has payload field with description)
 run_test "app DS with HugrSchema (custom SDL)" \
     '{ test_app { store { events { event_type payload } } } }' \
