@@ -184,6 +184,14 @@ type arguments @view(name: "_schema_arguments")
   is_list: Boolean!
   is_non_null: Boolean!
   default_value: String
+  "GraphQL directives applied to this argument, as a JSON array."
+  directives: JSON
+  """
+  True if this argument is server-injected via @arg_default — its value comes
+  from a context placeholder (like [$auth.user_id]) and clients cannot set it.
+  Hidden from MCP discovery and GraphQL introspection at the engine level.
+  """
+  is_arg_default: Boolean! @sql(exp: "{{ if .IsPostgres }}directives::TEXT LIKE '%\"name\":\"arg_default\"%'{{ else }}CAST(directives AS VARCHAR) LIKE '%\"name\":\"arg_default\"%'{{ end }}")
 }
 
 # --- Modules ---

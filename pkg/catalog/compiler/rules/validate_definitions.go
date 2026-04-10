@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -28,10 +29,19 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 			if err := validateFunctionSQL(def); err != nil {
 				return err
 			}
+			if err := validateArgDefaultsOnFunction(def); err != nil {
+				return err
+			}
 		}
 		// Validate @view + @args consistency
 		if def.Directives.ForName(base.ObjectViewDirectiveName) != nil && def.Directives.ForName(base.ViewArgsDirectiveName) != nil {
 			if err := validateViewArgs(ctx, def); err != nil {
+				return err
+			}
+		}
+		// Validate @arg_default on input type fields (used by parameterized view args input types)
+		if def.Kind == ast.InputObject {
+			if err := validateArgDefaultsOnInput(def); err != nil {
 				return err
 			}
 		}
@@ -44,8 +54,58 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 				if err := validateFunctionSQL(ext); err != nil {
 					return err
 				}
+				if err := validateArgDefaultsOnFunction(ext); err != nil {
+					return err
+				}
 			}
 		}
+	}
+	return nil
+}
+
+// validateArgDefaultsOnFunction validates @arg_default directives on arguments of
+// fields belonging to Function/MutationFunction types. Each placeholder must be in
+// the whitelist, and the argument must not have a GraphQL default value.
+func validateArgDefaultsOnFunction(def *ast.Definition) error {
+	for _, field := range def.Fields {
+		if field.Directives.ForName(base.FunctionDirectiveName) == nil {
+			continue
+		}
+		for _, arg := range field.Arguments {
+			if err := validateArgDefaultDirective(arg.Directives.ForName(base.ArgDefaultDirectiveName), arg.Name, arg.DefaultValue, arg.Position); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// validateArgDefaultsOnInput validates @arg_default directives on input object fields.
+func validateArgDefaultsOnInput(def *ast.Definition) error {
+	for _, field := range def.Fields {
+		if err := validateArgDefaultDirective(field.Directives.ForName(base.ArgDefaultDirectiveName), field.Name, field.DefaultValue, field.Position); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateArgDefaultDirective(d *ast.Directive, name string, defaultValue *ast.Value, pos *ast.Position) error {
+	if d == nil {
+		return nil
+	}
+	value := base.DirectiveArgString(d, base.ArgValue)
+	if value == "" {
+		return gqlerror.ErrorPosf(d.Position,
+			"@arg_default on %q: value is required", name)
+	}
+	if !sdl.IsKnownPlaceholder(value) {
+		return gqlerror.ErrorPosf(d.Position,
+			"@arg_default on %q: placeholder %q is not a known context variable", name, value)
+	}
+	if defaultValue != nil {
+		return gqlerror.ErrorPosf(pos,
+			"@arg_default on %q: argument cannot have both default value and @arg_default directive", name)
 	}
 	return nil
 }

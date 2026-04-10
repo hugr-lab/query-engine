@@ -89,7 +89,41 @@ After connecting, your app is queryable:
 
 ## Options
 
-**Function options**: `Arg(name, type)`, `ArgDesc(name, type, desc)`, `Return(type)`, `Desc(description)`, `Mutation()`
+**Function options**: `Arg(name, type)`, `ArgDesc(name, type, desc)`, `ArgFromContext(name, type, placeholder)`, `Return(type)`, `Desc(description)`, `Mutation()`
+
+`ArgFromContext()` declares a server-injected function argument bound to a context placeholder. The argument is hidden from the GraphQL schema — clients cannot see or set it. At handler execution time, read it via `r.String(name)` / `r.Int64(name)` like any other argument.
+
+```go
+mux.HandleFunc("default", "my_orders",
+    func(w *app.Result, r *app.Request) error {
+        userID := r.String("user_id") // injected from auth context
+        limit := r.Int64("limit")
+        // ... fetch orders for userID ...
+        return w.Set("ok")
+    },
+    app.Arg("limit", app.Int64),
+    app.ArgFromContext("user_id", app.String, app.AuthUserID),
+    app.Return(app.String),
+)
+
+// GraphQL: { function { my_app { my_orders(limit: 10) } } }
+// Note: user_id is NOT in the schema — server-injected.
+```
+
+**Available placeholders** (typed `app.ContextPlaceholder` constants):
+
+| Constant | Resolves to |
+|----------|-------------|
+| `app.AuthUserID` | Authenticated user ID (string) |
+| `app.AuthUserIDInt` | Authenticated user ID parsed as integer |
+| `app.AuthUserName` | Authenticated user display name |
+| `app.AuthRole` | Authenticated role |
+| `app.AuthType` | Auth method (`apiKey`, `jwt`, `oidc`, etc.) |
+| `app.AuthProvider` | Auth provider name |
+| `app.AuthImpersonatedByRole` | Original role when impersonating |
+| `app.AuthImpersonatedByUserID` | Original user ID when impersonating |
+| `app.AuthImpersonatedByUserName` | Original user name when impersonating |
+| `app.Catalog` | Current catalog name |
 
 `Mutation()` marks a scalar function as a GraphQL mutation. Without it, the function is exposed as a query (extends `Function`); with it, the function extends `MutationFunction` and must be called via `mutation { ... }`. Use it for operations with side effects.
 

@@ -338,6 +338,82 @@ func TestGenerateScalarFuncSDL_Mutation_NamedSchema(t *testing.T) {
 	mustContain(t, sdl, `@function(name: "\"admin\".\"RESET\""`)
 }
 
+func TestGenerateScalarFuncSDL_ArgFromContext(t *testing.T) {
+	retType := String
+	def := &funcDef{
+		description: "Get current user's display name",
+		args: []argDef{
+			{name: "user_id", typ: String, contextValue: AuthUserID},
+		},
+		retType: &retType,
+	}
+
+	sdl := generateScalarFuncSDL("default", "whoami", def)
+	mustContain(t, sdl, "extend type Function")
+	// Server-injected args are nullable (clients never set them)
+	mustContain(t, sdl, "user_id: String")
+	mustNotContain(t, sdl, "user_id: String!")
+	mustContain(t, sdl, `@arg_default(value: "[$auth.user_id]")`)
+}
+
+func TestGenerateScalarFuncSDL_MixedArgs(t *testing.T) {
+	retType := String
+	def := &funcDef{
+		args: []argDef{
+			{name: "limit", typ: Int64},
+			{name: "user_id", typ: String, contextValue: AuthUserID},
+			{name: "role", typ: String, contextValue: AuthRole},
+		},
+		retType: &retType,
+	}
+
+	sdl := generateScalarFuncSDL("default", "my_orders", def)
+	mustContain(t, sdl, "limit: BigInt!")  // regular arg stays non-null
+	mustContain(t, sdl, "user_id: String") // server-injected, nullable
+	mustContain(t, sdl, "role: String")    // server-injected, nullable
+	mustNotContain(t, sdl, "user_id: String!")
+	mustNotContain(t, sdl, "role: String!")
+	mustContain(t, sdl, `@arg_default(value: "[$auth.user_id]")`)
+	mustContain(t, sdl, `@arg_default(value: "[$auth.role]")`)
+}
+
+func TestGenerateScalarFuncSDL_ArgFromContext_NamedSchema(t *testing.T) {
+	retType := Int64
+	def := &funcDef{
+		args: []argDef{
+			{name: "user_id", typ: String, contextValue: AuthUserID},
+		},
+		retType: &retType,
+	}
+
+	sdl := generateScalarFuncSDL("admin", "audit", def)
+	mustContain(t, sdl, "extend type Function")
+	mustContain(t, sdl, `@module(name: "admin")`)
+	mustContain(t, sdl, `@arg_default(value: "[$auth.user_id]")`)
+}
+
+func TestGenerateTableFuncSDL_ArgFromContext(t *testing.T) {
+	def := &funcDef{
+		args: []argDef{
+			{name: "limit", typ: Int64},
+			{name: "user_id", typ: String, contextValue: AuthUserID},
+		},
+		cols: []colDef{
+			{name: "id", typ: Int64, pk: true},
+			{name: "title", typ: String},
+		},
+	}
+
+	sdl := generateTableFuncSDL("default", "my_items", def)
+	// Input type contains both regular and context args
+	mustContain(t, sdl, "input my_items_args")
+	mustContain(t, sdl, "limit: BigInt!")
+	// Server-injected args are nullable
+	mustContain(t, sdl, "user_id: String")
+	mustNotContain(t, sdl, "user_id: String!")
+	mustContain(t, sdl, `@arg_default(value: "[$auth.user_id]")`)
+}
+
 // --- Table function SDL (parameterized view) ---
 
 func TestGenerateTableFuncSDL(t *testing.T) {

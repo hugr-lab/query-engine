@@ -194,6 +194,23 @@ func (a *TestApp) Catalog(ctx context.Context) (catalog.Catalog, error) {
 		return nil, err
 	}
 
+	// whoami_ctx: scalar function with two server-injected arguments via
+	// ArgFromContext. The arguments are hidden from the GraphQL schema; the
+	// hugr planner injects [$auth.user_id] and [$auth.role] at request time.
+	err = mux.HandleFunc("default", "whoami_ctx", func(w *app.Result, r *app.Request) error {
+		userID := r.String("user_id")
+		role := r.String("role")
+		return w.Set(fmt.Sprintf("%s:%s", userID, role))
+	},
+		app.Desc("Return the caller's identity from auth context"),
+		app.ArgFromContext("user_id", app.String, app.AuthUserID),
+		app.ArgFromContext("role", app.String, app.AuthRole),
+		app.Return(app.String),
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	mux.Table("default", &staticTable{})
 
 	// Table function: search(query) returns filtered items
@@ -233,6 +250,22 @@ func (a *TestApp) Catalog(ctx context.Context) (catalog.Catalog, error) {
 		app.Desc("Reset the counter (admin mutation)"),
 		app.Return(app.Int64),
 		app.Mutation(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// audit_ctx: ArgFromContext in a named schema — verifies @module + @arg_default
+	// together. Returns the impersonating user's identity if available, else current.
+	err = mux.HandleFunc("admin", "audit_ctx", func(w *app.Result, r *app.Request) error {
+		userID := r.String("user_id")
+		role := r.String("role")
+		return w.Set(fmt.Sprintf("audit:%s:%s", userID, role))
+	},
+		app.Desc("Audit caller identity (admin module)"),
+		app.ArgFromContext("user_id", app.String, app.AuthUserID),
+		app.ArgFromContext("role", app.String, app.AuthRole),
+		app.Return(app.String),
 	)
 	if err != nil {
 		return nil, err

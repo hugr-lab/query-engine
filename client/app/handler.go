@@ -49,6 +49,12 @@ type argDef struct {
 	name        string
 	typ         Type
 	description string
+
+	// contextValue, if non-empty, marks this argument as server-injected from
+	// a context placeholder (e.g. AuthUserID). The generated SDL emits an
+	// @arg_default directive on the argument, hugr filters it from clients,
+	// and the planner injects the resolved context value at request time.
+	contextValue ContextPlaceholder
 }
 
 type colDef struct {
@@ -60,7 +66,7 @@ type colDef struct {
 }
 
 type funcDef struct {
-	description string   // function description
+	description string // function description
 	args        []argDef
 	cols        []colDef // for table functions: result columns
 	retType     *Type    // for scalar functions: return type
@@ -101,6 +107,31 @@ func Return(typ Type) Option {
 func Mutation() Option {
 	return func(d *funcDef) {
 		d.isMutation = true
+	}
+}
+
+// ArgFromContext declares a function argument whose value is server-injected
+// from a context placeholder. The argument is hidden from the GraphQL schema —
+// clients cannot pass a value for it. At handler execution time, read it via
+// Request.String(name), Request.Int64(name), etc., the same as a regular argument.
+//
+// Use the predefined ContextPlaceholder constants (AuthUserID, AuthRole, etc.).
+// Passing an unknown placeholder fails at registration time.
+//
+// Example:
+//
+//	mux.HandleFunc("default", "my_orders", handler,
+//	    app.Arg("limit", app.Int64),
+//	    app.ArgFromContext("user_id", app.String, app.AuthUserID),
+//	    app.Return(app.String),
+//	)
+func ArgFromContext(name string, typ Type, placeholder ContextPlaceholder) Option {
+	return func(d *funcDef) {
+		d.args = append(d.args, argDef{
+			name:         name,
+			typ:          typ,
+			contextValue: placeholder,
+		})
 	}
 }
 
@@ -192,6 +223,9 @@ func registerScalarFunc(m *CatalogMux, schema, name string, handler HandlerFunc,
 	if def.retType == nil {
 		return fmt.Errorf("HandleFunc %s.%s: Return() option is required", schema, name)
 	}
+	if err := validateArgs(schema, name, def.args); err != nil {
+		return err
+	}
 
 	sf := &handlerScalarFunc{
 		funcName: strings.ToUpper(name),
@@ -215,6 +249,9 @@ func registerTableFunc(m *CatalogMux, schema, name string, handler HandlerFunc, 
 	if def.isMutation {
 		return fmt.Errorf("HandleTableFunc %s.%s: Mutation() is only valid for scalar functions", schema, name)
 	}
+	if err := validateArgs(schema, name, def.args); err != nil {
+		return err
+	}
 
 	tf := &handlerTableFunc{
 		funcName: strings.ToUpper(name),
@@ -223,6 +260,22 @@ func registerTableFunc(m *CatalogMux, schema, name string, handler HandlerFunc, 
 	}
 	tf.sdl = generateTableFuncSDL(schema, name, def)
 	m.TableFunc(schema, tf)
+	return nil
+}
+
+// validateArgs checks the function's argument list for duplicate names and
+// validates ArgFromContext placeholders against the known whitelist.
+func validateArgs(schema, name string, args []argDef) error {
+	seen := make(map[string]bool, len(args))
+	for _, a := range args {
+		if seen[a.name] {
+			return fmt.Errorf("%s.%s: duplicate argument name %q", schema, name, a.name)
+		}
+		seen[a.name] = true
+		if a.contextValue != "" && !IsKnownArgPlaceholder(a.contextValue) {
+			return fmt.Errorf("%s.%s: ArgFromContext placeholder %q is not a known context variable", schema, name, string(a.contextValue))
+		}
+	}
 	return nil
 }
 
@@ -360,8 +413,8 @@ func (f *handlerTableFunc) Execute(ctx context.Context, params []any, opts *cata
 		}
 	}()
 
-	rec := array.NewRecord(schema, arrays, int64(nRows))
-	return array.NewRecordReader(schema, []arrow.Record{rec})
+	rec := array.NewRecordBatch(schema, arrays, int64(nRows))
+	return array.NewRecordReader(schema, []arrow.RecordBatch{rec})
 }
 
 // --- Arrow helpers ---

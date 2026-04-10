@@ -157,8 +157,8 @@ type sqlBuilder interface {
 	FunctionCall(name string, positional []any, named map[string]any) (string, error)
 }
 
-func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSource, args map[string]any, builder sqlBuilder) (err error) {
-	if !info.HasArguments() || len(args) == 0 {
+func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSource, args map[string]any, builder sqlBuilder, contextVars map[string]any) (err error) {
+	if !info.HasArguments() {
 		return nil
 	}
 	it := defs.ForName(ctx, info.InputArgsName)
@@ -166,10 +166,46 @@ func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSou
 		return ErrorPosf(info.def.Position, "input object %s not found", info.InputArgsName)
 	}
 
+	// Backward-compatible early exit: when there are no client-provided args AND
+	// the input type has no @arg_default fields, the original behavior was to
+	// leave the template untouched. Preserve this unless the view template
+	// also references an [$auth.*] / [$catalog] placeholder that needs resolving.
+	if len(args) == 0 && !inputHasArgDefault(it) && !sqlHasContextPlaceholder(info.sql) {
+		return nil
+	}
+
 	var posArgs []any
 	namedArgs := make(map[string]any)
 
 	for _, field := range it.Fields {
+		// Server-injected fields: client cannot pass a value; resolve from context vars.
+		if d := field.Directives.ForName(base.ArgDefaultDirectiveName); d != nil {
+			if _, provided := args[field.Name]; provided {
+				return ErrorPosf(field.Position,
+					"argument %q is server-injected and cannot be set by client", field.Name)
+			}
+			placeholder := base.DirectiveArgString(d, base.ArgValue)
+			val := contextVars[placeholder]
+			if info.sql != "" {
+				sv, sverr := builder.SQLValue(val)
+				if sverr != nil {
+					return ErrorPosf(field.Position, "wrong context value for %s: %s", field.Name, sverr.Error())
+				}
+				info.sql = strings.ReplaceAll(info.sql, "[$"+field.Name+"]", sv)
+				continue
+			}
+			if nd := field.Directives.ForName(base.InputFieldNamedArgDirectiveName); nd != nil {
+				name := field.Name
+				if fn := base.DirectiveArgString(nd, base.ArgName); fn != "" {
+					name = fn
+				}
+				namedArgs[name] = val
+				continue
+			}
+			posArgs = append(posArgs, val)
+			continue
+		}
+
 		val := args[field.Name]
 		if val == nil && field.Type.NonNull {
 			return ErrorPosf(field.Position, "argument %s is required", field.Name)
@@ -193,11 +229,47 @@ func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSou
 		posArgs = append(posArgs, val)
 	}
 	if info.sql != "" {
+		// Substitute any remaining context placeholders ([$auth.*], [$catalog]) embedded
+		// directly in the @view(sql:) template.
+		for placeholder, value := range contextVars {
+			if !strings.Contains(info.sql, placeholder) {
+				continue
+			}
+			sv, sverr := builder.SQLValue(value)
+			if sverr != nil {
+				return ErrorPosf(info.def.Position, "wrong context value for placeholder %s: %s", placeholder, sverr.Error())
+			}
+			info.sql = strings.ReplaceAll(info.sql, placeholder, sv)
+		}
 		return nil
 	}
 	info.sql, err = builder.FunctionCall(info.Name, posArgs, namedArgs)
 	info.functionCall = true
 	return err
+}
+
+// inputHasArgDefault returns true if any field of the input type has @arg_default.
+func inputHasArgDefault(def *ast.Definition) bool {
+	for _, f := range def.Fields {
+		if f.Directives.ForName(base.ArgDefaultDirectiveName) != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// sqlHasContextPlaceholder returns true if the SQL string contains any known
+// context placeholder ([$auth.*], [$catalog]).
+func sqlHasContextPlaceholder(sql string) bool {
+	if sql == "" {
+		return false
+	}
+	for placeholder := range KnownArgPlaceholders {
+		if strings.Contains(sql, placeholder) {
+			return true
+		}
+	}
+	return false
 }
 
 func (info *Object) SQL(ctx context.Context, prefix string) string {
