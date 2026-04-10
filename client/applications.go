@@ -616,11 +616,8 @@ func (a *schemaSdlFunc) Execute(ctx context.Context, input arrow.RecordBatch) (a
 	if err != nil {
 		return nil, fmt.Errorf("schema_sdl: %w", err)
 	}
-	// If the catalog is a CatalogMux, use SDLWithModules for default schema support
 	var sdl string
-	if mux, ok := cat.(*app.CatalogMux); ok {
-		sdl = mux.SDLWithModules(a.app.Info().DefaultSchemaName())
-	} else if provider, ok := cat.(interface{ SDL() string }); ok {
+	if provider, ok := cat.(interface{ SDL() string }); ok {
 		sdl = provider.SDL()
 	}
 	b := array.NewStringBuilder(a.mem)

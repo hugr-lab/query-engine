@@ -80,6 +80,19 @@ run_test "admin module table function audit" \
     '{ test_app { admin { admin_audit(args: { limit: 10 }) { id action user_name } } } }' \
     '"action":"login"'
 
+# Mutation function tests (Mutation() option → MutationFunction extension)
+run_test "app mutation function send_message" \
+    'mutation { function { test_app { send_message(to: \"alice\", body: \"hi\") } } }' \
+    '"send_message":"sent to alice: hi"'
+
+run_test "mutation function not callable as query" \
+    '{ function { test_app { send_message(to: \"x\", body: \"y\") } } }' \
+    'error'
+
+run_test "admin module mutation reset_counter" \
+    'mutation { function { test_app { admin { reset_counter } } } }' \
+    '"reset_counter":0'
+
 # HugrSchema test (custom SDL for DS — has payload field with description)
 run_test "app DS with HugrSchema (custom SDL)" \
     '{ test_app { store { events { event_type payload } } } }' \
