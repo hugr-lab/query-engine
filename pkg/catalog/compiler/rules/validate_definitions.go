@@ -29,9 +29,6 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 			if err := validateFunctionSQL(def); err != nil {
 				return err
 			}
-			if err := validateArgDefaultsOnFunction(def); err != nil {
-				return err
-			}
 		}
 		// Validate @view + @args consistency
 		if def.Directives.ForName(base.ObjectViewDirectiveName) != nil && def.Directives.ForName(base.ViewArgsDirectiveName) != nil {
@@ -39,40 +36,22 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 				return err
 			}
 		}
-		// Validate @arg_default on input type fields (used by parameterized view args input types)
-		if def.Kind == ast.InputObject {
-			if err := validateArgDefaultsOnInput(def); err != nil {
-				return err
-			}
+		// Validate @arg_default on field arguments and on input type fields.
+		// Catches all definitions — fields with @function/@function_call/
+		// @table_function_call_join, plus input types used as @args(name:).
+		if err := validateArgDefaults(def); err != nil {
+			return err
 		}
 	}
-	// Also validate extensions (e.g. "extend type Function { ... }" kept separate
-	// by ExtensionsSource). Only Function/MutationFunction SQL validation applies.
+	// Also validate extensions for SQL refs and @arg_default usage.
 	if extSrc, ok := ctx.Source().(base.ExtensionsSource); ok {
 		for ext := range extSrc.Extensions(ctx.Context()) {
 			if ext.Name == "Function" || ext.Name == "MutationFunction" {
 				if err := validateFunctionSQL(ext); err != nil {
 					return err
 				}
-				if err := validateArgDefaultsOnFunction(ext); err != nil {
-					return err
-				}
 			}
-		}
-	}
-	return nil
-}
-
-// validateArgDefaultsOnFunction validates @arg_default directives on arguments of
-// fields belonging to Function/MutationFunction types. Each placeholder must be in
-// the whitelist, and the argument must not have a GraphQL default value.
-func validateArgDefaultsOnFunction(def *ast.Definition) error {
-	for _, field := range def.Fields {
-		if field.Directives.ForName(base.FunctionDirectiveName) == nil {
-			continue
-		}
-		for _, arg := range field.Arguments {
-			if err := validateArgDefaultDirective(arg.Directives.ForName(base.ArgDefaultDirectiveName), arg.Name, arg.DefaultValue, arg.Position); err != nil {
+			if err := validateArgDefaults(ext); err != nil {
 				return err
 			}
 		}
@@ -80,11 +59,45 @@ func validateArgDefaultsOnFunction(def *ast.Definition) error {
 	return nil
 }
 
-// validateArgDefaultsOnInput validates @arg_default directives on input object fields.
-func validateArgDefaultsOnInput(def *ast.Definition) error {
+// validateArgDefaults walks a type definition and validates every @arg_default
+// directive it contains:
+//
+//   - On field arguments: only allowed when the field has @function,
+//     @function_call, or @table_function_call_join.
+//   - On input type fields: always allowed (input types are validated by
+//     consumers like @args(name:)).
+//
+// Each directive's value must be a known placeholder, and the underlying
+// argument/field must not have a GraphQL default value.
+func validateArgDefaults(def *ast.Definition) error {
+	if def.Kind == ast.InputObject {
+		for _, field := range def.Fields {
+			if err := validateArgDefaultDirective(
+				field.Directives.ForName(base.ArgDefaultDirectiveName),
+				field.Name, field.DefaultValue, field.Position,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	for _, field := range def.Fields {
-		if err := validateArgDefaultDirective(field.Directives.ForName(base.ArgDefaultDirectiveName), field.Name, field.DefaultValue, field.Position); err != nil {
-			return err
+		isFunctionLike := field.Directives.ForName(base.FunctionDirectiveName) != nil ||
+			field.Directives.ForName(base.FunctionCallDirectiveName) != nil ||
+			field.Directives.ForName(base.FunctionCallTableJoinDirectiveName) != nil
+		for _, arg := range field.Arguments {
+			d := arg.Directives.ForName(base.ArgDefaultDirectiveName)
+			if d == nil {
+				continue
+			}
+			if !isFunctionLike {
+				return gqlerror.ErrorPosf(d.Position,
+					"@arg_default on %s.%s argument %q: only valid on arguments of fields with @function, @function_call, or @table_function_call_join",
+					def.Name, field.Name, arg.Name)
+			}
+			if err := validateArgDefaultDirective(d, arg.Name, arg.DefaultValue, arg.Position); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

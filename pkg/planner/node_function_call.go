@@ -272,7 +272,7 @@ func functionCallSQL(ctx context.Context, defs base.DefinitionsSource, e engines
 		authVars := perm.AuthVars(ctx)
 		for argName, placeholder := range info.ArgDefaults {
 			value, ok := authVars[placeholder]
-			if !ok || value == nil || value == "" {
+			if !ok || isEmptyContextValue(value) {
 				sql = strings.ReplaceAll(sql, "["+argName+"]", "NULL")
 				continue
 			}
@@ -302,7 +302,7 @@ func functionCallSQL(ctx context.Context, defs base.DefinitionsSource, e engines
 
 // substitutePlaceholders replaces known context placeholders ([$auth.*], [$catalog])
 // in the SQL string with parameterized values resolved from the request context.
-// Missing or nil/empty values are substituted as the literal "NULL".
+// Missing or empty values are substituted as the literal "NULL".
 func substitutePlaceholders(ctx context.Context, sql string, params []any) (string, []any) {
 	authVars := perm.AuthVars(ctx)
 	for placeholder := range sdl.KnownArgPlaceholders {
@@ -310,7 +310,7 @@ func substitutePlaceholders(ctx context.Context, sql string, params []any) (stri
 			continue
 		}
 		value, ok := authVars[placeholder]
-		if !ok || value == nil || value == "" {
+		if !ok || isEmptyContextValue(value) {
 			sql = strings.ReplaceAll(sql, placeholder, "NULL")
 			continue
 		}
@@ -318,4 +318,23 @@ func substitutePlaceholders(ctx context.Context, sql string, params []any) (stri
 		sql = strings.ReplaceAll(sql, placeholder, "$"+strconv.Itoa(len(params)))
 	}
 	return sql, params
+}
+
+// isEmptyContextValue reports whether a context placeholder value is "empty"
+// for the purpose of NULL substitution. Treats nil, empty string, and zero
+// integer as empty — covers the [$auth.user_id_int] case where strconv.Atoi
+// returns 0 for non-numeric/empty user IDs.
+func isEmptyContextValue(v any) bool {
+	if v == nil {
+		return true
+	}
+	switch val := v.(type) {
+	case string:
+		return val == ""
+	case int:
+		return val == 0
+	case int64:
+		return val == 0
+	}
+	return false
 }

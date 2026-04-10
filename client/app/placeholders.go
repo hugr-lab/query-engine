@@ -30,8 +30,6 @@ const (
 	AuthImpersonatedByUserID ContextPlaceholder = "[$auth.impersonated_by_user_id]"
 	// AuthImpersonatedByUserName — original user name when impersonating.
 	AuthImpersonatedByUserName ContextPlaceholder = "[$auth.impersonated_by_user_name]"
-	// Catalog — current catalog name.
-	Catalog ContextPlaceholder = "[$catalog]"
 )
 
 // knownArgPlaceholders is the validation set used by ArgFromContext.
@@ -45,7 +43,6 @@ var knownArgPlaceholders = map[ContextPlaceholder]bool{
 	AuthImpersonatedByRole:     true,
 	AuthImpersonatedByUserID:   true,
 	AuthImpersonatedByUserName: true,
-	Catalog:                    true,
 }
 
 // IsKnownArgPlaceholder reports whether the given context placeholder is in

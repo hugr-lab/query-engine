@@ -117,16 +117,60 @@ outer:
 	return true
 }
 
-func TestSubstitutePlaceholders_CatalogPreserved(t *testing.T) {
-	// [$catalog] is normally substituted upstream by Function.SQL() before reaching
-	// substitutePlaceholders. Verify our generic loop also handles it correctly if
-	// it does encounter the placeholder (e.g., via auth context catalog mechanism).
+func TestSubstitutePlaceholders_UserIDIntZero(t *testing.T) {
+	// Regression: when user_id is non-numeric (e.g. "alice"), strconv.Atoi
+	// returns 0 in perm.AuthVars, and isEmptyContextValue(int(0)) must return
+	// true so the placeholder resolves to NULL instead of leaking 0 as a
+	// valid parameter.
+	authInfo := &auth.AuthInfo{
+		Role:     "admin",
+		UserId:   "alice", // non-numeric → user_id_int becomes 0
+		UserName: "Alice",
+	}
+	ctx := auth.ContextWithAuthInfo(context.Background(), authInfo)
+
+	sql := "lookup([$auth.user_id_int])"
+	got, params := substitutePlaceholders(ctx, sql, nil)
+	if got != "lookup(NULL)" {
+		t.Errorf("expected NULL substitution for zero user_id_int, got %q", got)
+	}
+	if len(params) != 0 {
+		t.Errorf("expected empty params, got %v", params)
+	}
+}
+
+func TestIsEmptyContextValue(t *testing.T) {
+	cases := []struct {
+		name  string
+		value any
+		empty bool
+	}{
+		{"nil", nil, true},
+		{"empty string", "", true},
+		{"int zero", 0, true},
+		{"int64 zero", int64(0), true},
+		{"non-empty string", "alice", false},
+		{"int positive", 42, false},
+		{"int64 positive", int64(42), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isEmptyContextValue(tc.value); got != tc.empty {
+				t.Errorf("isEmptyContextValue(%v) = %v, want %v", tc.value, got, tc.empty)
+			}
+		})
+	}
+}
+
+func TestSubstitutePlaceholders_CatalogNotInWhitelist(t *testing.T) {
+	// [$catalog] is intentionally NOT in KnownArgPlaceholders. It is resolved
+	// upstream by Function.SQL() before substitutePlaceholders runs, so the
+	// generic loop must leave it alone if it ever appears here.
 	ctx := context.Background()
 	sql := "lookup([$catalog].x)"
 	got, params := substitutePlaceholders(ctx, sql, nil)
-	// No catalog in AuthVars by default → NULL substitution
-	if !strings.Contains(got, "NULL") {
-		t.Errorf("expected NULL substitution for unset catalog, got %q", got)
+	if got != sql {
+		t.Errorf("[$catalog] should be left unchanged by substitutePlaceholders, got %q", got)
 	}
 	if len(params) != 0 {
 		t.Errorf("expected empty params, got %v", params)

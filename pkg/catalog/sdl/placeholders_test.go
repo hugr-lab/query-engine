@@ -13,7 +13,6 @@ func TestIsKnownPlaceholder(t *testing.T) {
 		"[$auth.impersonated_by_role]",
 		"[$auth.impersonated_by_user_id]",
 		"[$auth.impersonated_by_user_name]",
-		"[$catalog]",
 	}
 	for _, p := range known {
 		if !IsKnownPlaceholder(p) {
@@ -29,6 +28,7 @@ func TestIsKnownPlaceholder(t *testing.T) {
 		"$auth.user_id",   // missing brackets
 		"[$auth.user_id", // missing closing bracket
 		"user_id",
+		"[$catalog]", // intentionally NOT in @arg_default whitelist
 	}
 	for _, p := range unknown {
 		if IsKnownPlaceholder(p) {

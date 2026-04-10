@@ -306,10 +306,9 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 		TypeName      string  `json:"type_name"`
 		Distance      float64 `json:"_distance_to_query"`
 		Arguments     []struct {
-			Name         string `json:"name"`
-			ArgType      string `json:"arg_type"`
-			Desc         string `json:"description"`
-			IsArgDefault bool   `json:"is_arg_default"`
+			Name    string `json:"name"`
+			ArgType string `json:"arg_type"`
+			Desc    string `json:"description"`
 		} `json:"arguments"`
 	}
 	err = s.queryScanAdmin(ctx, `query($filter: core_fields_filter, $limit: Int, $query: String!) {
