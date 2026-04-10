@@ -307,6 +307,71 @@ func TestMux_MultipleSchemas(t *testing.T) {
 	}
 }
 
+func TestMux_StructDedup_Identical(t *testing.T) {
+	mux := New()
+
+	user := Struct("user").Field("id", String).Field("name", String)
+	err := mux.HandleFunc("app", "get_user_by_id",
+		func(w *Result, r *Request) error { return w.SetJSON(map[string]any{"id": "1", "name": "Alice"}) },
+		Arg("id", String), Return(user.AsType()))
+	if err != nil {
+		t.Fatalf("first registration failed: %v", err)
+	}
+
+	user2 := Struct("user").Field("id", String).Field("name", String)
+	err = mux.HandleFunc("app", "get_user_by_email",
+		func(w *Result, r *Request) error { return w.SetJSON(map[string]any{"id": "1", "name": "Alice"}) },
+		Arg("email", String), Return(user2.AsType()))
+	if err != nil {
+		t.Fatalf("second registration with identical struct should be allowed, got: %v", err)
+	}
+
+	if len(mux.structTypes) != 1 {
+		t.Errorf("expected 1 struct type registered, got %d", len(mux.structTypes))
+	}
+}
+
+func TestMux_StructDedup_Conflict(t *testing.T) {
+	mux := New()
+
+	v1 := Struct("user").Field("id", String)
+	err := mux.HandleFunc("app", "f1",
+		func(w *Result, r *Request) error { return w.SetJSON(map[string]any{"id": "1"}) },
+		Return(v1.AsType()))
+	if err != nil {
+		t.Fatalf("first registration failed: %v", err)
+	}
+
+	v2 := Struct("user").Field("name", String) // different fields → conflict
+	err = mux.HandleFunc("app", "f2",
+		func(w *Result, r *Request) error { return w.SetJSON(map[string]any{"name": "Alice"}) },
+		Return(v2.AsType()))
+	if err == nil {
+		t.Fatal("expected conflict error for mismatched struct fields")
+	}
+	if !strings.Contains(err.Error(), "already registered with different fields") {
+		t.Errorf("expected conflict message, got: %v", err)
+	}
+}
+
+func TestMux_ReturnList_Struct_Rejected(t *testing.T) {
+	mux := New()
+
+	user := Struct("user").Field("id", String)
+	err := mux.HandleFunc("app", "list_users",
+		func(w *Result, r *Request) error { return nil },
+		ReturnList(user.AsType()))
+	if err == nil {
+		t.Fatal("expected error for ReturnList(struct)")
+	}
+	if !strings.Contains(err.Error(), "ReturnList does not support struct") {
+		t.Errorf("expected struct-rejection message, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "HandleTableFunc") {
+		t.Errorf("expected error to mention HandleTableFunc, got: %v", err)
+	}
+}
+
 func TestMux_SameSchemaMultipleRegistrations(t *testing.T) {
 	mux := New()
 

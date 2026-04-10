@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -14,29 +15,39 @@ import (
 )
 
 // Type wraps an arrow.DataType with a GraphQL type name for SDL generation.
+// When structDef is non-nil, the type represents a custom struct that the SDL
+// generator emits as a separate type definition; the wire representation is a
+// JSON string (arrow.BinaryTypes.String).
 type Type struct {
-	dt      arrow.DataType
-	graphql string
+	dt        arrow.DataType
+	graphql   string
+	structDef *StructType
 }
 
 // Arrow type references — use these in Arg(), Return(), Col() options.
 var (
-	Boolean   = Type{arrow.FixedWidthTypes.Boolean, "Boolean"}
-	Int8      = Type{arrow.PrimitiveTypes.Int8, "Int"}
-	Int16     = Type{arrow.PrimitiveTypes.Int16, "Int"}
-	Int32     = Type{arrow.PrimitiveTypes.Int32, "Int"}
-	Int64     = Type{arrow.PrimitiveTypes.Int64, "BigInt"}
-	Uint8     = Type{arrow.PrimitiveTypes.Uint8, "UInt"}
-	Uint16    = Type{arrow.PrimitiveTypes.Uint16, "UInt"}
-	Uint32    = Type{arrow.PrimitiveTypes.Uint32, "UInt"}
-	Uint64    = Type{arrow.PrimitiveTypes.Uint64, "BigUInt"}
-	Float32   = Type{arrow.PrimitiveTypes.Float32, "Float"}
-	Float64   = Type{arrow.PrimitiveTypes.Float64, "Float"}
-	String    = Type{arrow.BinaryTypes.String, "String"}
-	Binary    = Type{arrow.BinaryTypes.Binary, "Base64"}
-	Timestamp = Type{arrow.FixedWidthTypes.Timestamp_us, "DateTime"}
-	Date      = Type{arrow.FixedWidthTypes.Date32, "Date"}
-	Geometry  = Type{catalog.NewGeometryExtensionType(), "Geometry"}
+	Boolean   = Type{dt: arrow.FixedWidthTypes.Boolean, graphql: "Boolean"}
+	Int8      = Type{dt: arrow.PrimitiveTypes.Int8, graphql: "Int"}
+	Int16     = Type{dt: arrow.PrimitiveTypes.Int16, graphql: "Int"}
+	Int32     = Type{dt: arrow.PrimitiveTypes.Int32, graphql: "Int"}
+	Int64     = Type{dt: arrow.PrimitiveTypes.Int64, graphql: "BigInt"}
+	Uint8     = Type{dt: arrow.PrimitiveTypes.Uint8, graphql: "UInt"}
+	Uint16    = Type{dt: arrow.PrimitiveTypes.Uint16, graphql: "UInt"}
+	Uint32    = Type{dt: arrow.PrimitiveTypes.Uint32, graphql: "UInt"}
+	Uint64    = Type{dt: arrow.PrimitiveTypes.Uint64, graphql: "BigUInt"}
+	Float32   = Type{dt: arrow.PrimitiveTypes.Float32, graphql: "Float"}
+	Float64   = Type{dt: arrow.PrimitiveTypes.Float64, graphql: "Float"}
+	String    = Type{dt: arrow.BinaryTypes.String, graphql: "String"}
+	Binary    = Type{dt: arrow.BinaryTypes.Binary, graphql: "Base64"}
+	Timestamp = Type{dt: arrow.FixedWidthTypes.Timestamp_us, graphql: "DateTime"}
+	Date      = Type{dt: arrow.FixedWidthTypes.Date32, graphql: "Date"}
+	Geometry  = Type{dt: catalog.NewGeometryExtensionType(), graphql: "Geometry"}
+
+	// JSON is the raw JSON scalar type. The wire representation is a string;
+	// the handler is responsible for json.Marshal / json.Unmarshal of complex
+	// values. In the public GraphQL schema this is the JSON scalar — clients
+	// receive the raw JSON value.
+	JSON = Type{dt: arrow.BinaryTypes.String, graphql: "JSON"}
 )
 
 // HandlerFunc is the function signature for scalar and table function handlers.
@@ -71,6 +82,40 @@ type funcDef struct {
 	cols        []colDef // for table functions: result columns
 	retType     *Type    // for scalar functions: return type
 	isMutation  bool     // for scalar functions: extend MutationFunction instead of Function
+
+	// returnsList is true when the function returns a list of scalars
+	// (registered via app.ReturnList). The wire format is JSON.
+	returnsList bool
+
+	// invalidReturn carries a registration-time validation error message.
+	// When non-empty, registerScalarFunc returns an error before SDL generation.
+	invalidReturn string
+}
+
+// returnTypeName returns a human-readable return-type name for error messages,
+// safely handling table functions (where retType is nil).
+func returnTypeName(d *funcDef) string {
+	if d == nil || d.retType == nil {
+		return "<none>"
+	}
+	return d.retType.graphql
+}
+
+// returnsJSON reports whether the function's return type uses the JSON wire
+// format (raw JSON or struct via JSON). Used by Result.SetJSON to validate
+// that the handler is using the right helper.
+//
+// Note: list-of-scalars returns (registered via ReturnList) use a native
+// Arrow LIST as the wire type, NOT JSON. The handler should call Set with a
+// Go slice ([]string, []int64, etc.), not SetJSON.
+func (d *funcDef) returnsJSON() bool {
+	if d.retType == nil {
+		return false
+	}
+	if d.retType.structDef != nil {
+		return true
+	}
+	return d.retType.graphql == "JSON"
 }
 
 // Desc sets the function description.
@@ -98,6 +143,38 @@ func ArgDesc(name string, typ Type, description string) Option {
 func Return(typ Type) Option {
 	return func(d *funcDef) {
 		d.retType = &typ
+	}
+}
+
+// ReturnList declares that the scalar function returns a list of the given
+// scalar element type (e.g. ReturnList(app.String) → [String!]).
+//
+// The wire format is a native Arrow LIST of the element's underlying type
+// (NOT JSON), so DuckDB receives a proper LIST value and the planner does
+// not need json_cast. The handler returns a Go slice via Set.
+//
+// ReturnList does NOT support struct element types — for lists of structs,
+// register the function as a table function via HandleTableFunc instead.
+// Passing a struct type sets a registration error that fails registration.
+//
+// The generated SDL preserves the scalar-return convention (outer-nullable,
+// element-non-null): `[String!]`.
+func ReturnList(typ Type) Option {
+	return func(d *funcDef) {
+		if typ.structDef != nil {
+			d.invalidReturn = "ReturnList does not support struct element types; use HandleTableFunc for lists of structs"
+			return
+		}
+		// Element graphql name is preserved in retType.graphql; the
+		// returnsList flag tells the SDL generator to wrap it in a proper
+		// ast.Type{Elem:...} list rather than stuffing brackets into a
+		// named type.
+		listType := Type{
+			dt:      arrow.ListOfNonNullable(typ.dt),
+			graphql: typ.graphql,
+		}
+		d.retType = &listType
+		d.returnsList = true
 	}
 }
 
@@ -188,6 +265,20 @@ func (r *Request) Bytes(name string) []byte          { v, _ := r.args[name].([]b
 func (r *Request) Geometry(name string) orb.Geometry { v, _ := r.args[name].(orb.Geometry); return v }
 func (r *Request) Get(name string) any               { return r.args[name] }
 
+// JSON unmarshals the named argument's JSON string value into out.
+// Use this for arguments declared with Arg(name, JSON) or Arg(name, struct.AsType()),
+// where the planner inlines the GraphQL input value as a JSON literal that
+// arrives at the handler as a string.
+//
+// Returns nil (no-op) if the argument is empty.
+func (r *Request) JSON(name string, out any) error {
+	s, _ := r.args[name].(string)
+	if s == "" {
+		return nil
+	}
+	return json.Unmarshal([]byte(s), out)
+}
+
 // Result writes function output.
 // For scalar functions, use Set() to write the return value.
 // For table functions, use Append() to write rows.
@@ -197,11 +288,59 @@ type Result struct {
 
 	// table mode
 	rows [][]any
+
+	// def is a back-pointer to the function definition, used by SetJSON to
+	// validate that the function's return type accepts JSON output.
+	def *funcDef
 }
 
 // Set writes a scalar function return value.
 func (w *Result) Set(v any) error {
 	w.value = v
+	return nil
+}
+
+// SetJSON marshals the value to a JSON string and stores it as the scalar
+// return. Use this when the function's Return type is JSON or a struct (via
+// Struct().AsType()).
+//
+// Returns an error if the function's return type is not JSON-compatible
+// (including when called on a table function).
+func (w *Result) SetJSON(v any) error {
+	if w.def != nil && !w.def.returnsJSON() {
+		return fmt.Errorf("Result.SetJSON: only valid for JSON or struct scalar return types, got %s", returnTypeName(w.def))
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("Result.SetJSON: marshal: %w", err)
+	}
+	w.value = string(b)
+	return nil
+}
+
+// SetJSONValue is the most flexible JSON setter. It accepts:
+//   - string: stored as-is (assumed valid JSON)
+//   - []byte: stored as string(b) (assumed valid JSON)
+//   - any other value: marshaled via json.Marshal
+//
+// Returns an error if the function's return type is not JSON-compatible
+// (including when called on a table function).
+func (w *Result) SetJSONValue(v any) error {
+	if w.def != nil && !w.def.returnsJSON() {
+		return fmt.Errorf("Result.SetJSONValue: only valid for JSON or struct scalar return types, got %s", returnTypeName(w.def))
+	}
+	switch val := v.(type) {
+	case string:
+		w.value = val
+	case []byte:
+		w.value = string(val)
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Errorf("Result.SetJSONValue: marshal: %w", err)
+		}
+		w.value = string(b)
+	}
 	return nil
 }
 
@@ -220,11 +359,17 @@ func registerScalarFunc(m *CatalogMux, schema, name string, handler HandlerFunc,
 	for _, o := range opts {
 		o(def)
 	}
+	if def.invalidReturn != "" {
+		return fmt.Errorf("HandleFunc %s.%s: %s", schema, name, def.invalidReturn)
+	}
 	if def.retType == nil {
 		return fmt.Errorf("HandleFunc %s.%s: Return() option is required", schema, name)
 	}
 	if err := validateArgs(schema, name, def.args); err != nil {
 		return err
+	}
+	if err := m.registerStructTypes(def); err != nil {
+		return fmt.Errorf("HandleFunc %s.%s: %w", schema, name, err)
 	}
 
 	sf := &handlerScalarFunc{
@@ -251,6 +396,9 @@ func registerTableFunc(m *CatalogMux, schema, name string, handler HandlerFunc, 
 	}
 	if err := validateArgs(schema, name, def.args); err != nil {
 		return err
+	}
+	if err := m.registerStructTypes(def); err != nil {
+		return fmt.Errorf("HandleTableFunc %s.%s: %w", schema, name, err)
 	}
 
 	tf := &handlerTableFunc{
@@ -319,7 +467,7 @@ func (f *handlerScalarFunc) Execute(ctx context.Context, input arrow.RecordBatch
 			req.args[a.name] = v
 		}
 
-		res := &Result{}
+		res := &Result{def: f.def}
 		if err := f.handler(res, req); err != nil {
 			return nil, fmt.Errorf("row %d: %w", row, err)
 		}
@@ -371,7 +519,7 @@ func (f *handlerTableFunc) Execute(ctx context.Context, params []any, opts *cata
 		}
 	}
 
-	res := &Result{}
+	res := &Result{def: f.def}
 	if err := f.handler(res, req); err != nil {
 		return nil, err
 	}
@@ -527,12 +675,115 @@ func appendValue(bldr array.Builder, v any) error {
 		default:
 			return fmt.Errorf("expected []byte or orb.Geometry, got %T", v)
 		}
+	case *array.ListBuilder:
+		// Native Arrow LIST builder for ReturnList(scalar) — accepts a Go slice
+		// of the underlying scalar type. Append each element to the value builder.
+		b.Append(true)
+		valueBldr := b.ValueBuilder()
+		return appendListValues(valueBldr, v)
 	default:
 		// Extension type builders (geometry uses binary builder underneath)
 		if eb, ok := bldr.(*array.ExtensionBuilder); ok {
 			return appendValue(eb.StorageBuilder(), v)
 		}
 		return fmt.Errorf("unsupported builder type: %T", bldr)
+	}
+	return nil
+}
+
+// appendListValues iterates over a Go slice and appends each element to the
+// list builder's value builder. Supports common scalar slice types directly
+// and falls back to []any with per-element appendValue. For slice element
+// types not listed here, wrap the values in []any or convert to one of the
+// supported slice types.
+func appendListValues(valueBldr array.Builder, v any) error {
+	switch slice := v.(type) {
+	case []string:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []bool:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []int:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []int8:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []int16:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []int32:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []int64:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []uint8:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []uint16:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []uint32:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []uint64:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []float32:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []float64:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, x := range slice {
+			if err := appendValue(valueBldr, x); err != nil {
+				return err
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported list value type: %T (expected a scalar slice like []string, []int64, []float64, or []any)", v)
 	}
 	return nil
 }

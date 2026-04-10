@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -15,18 +16,71 @@ import (
 // The catalog is static once built — SDL does not change at runtime.
 // For dynamic multi-catalog scenarios, see MultiCatalogProvider in client/apps.
 //
-// All methods are safe for concurrent use from multiple goroutines.
+// Thread safety: read methods (Schemas, Schema, SDL) and the direct
+// registration methods (ScalarFunc, TableFunc, Table, TableRef, ...) are
+// safe for concurrent use. The higher-level registration helpers HandleFunc
+// and HandleTableFunc additionally update the shared struct-type registry
+// and are **not** goroutine-safe among themselves: build the catalog from a
+// single goroutine (typically Application.Catalog), then publish it. After
+// the catalog is handed to the runtime, all subsequent reads are safe for
+// any number of goroutines.
 type CatalogMux struct {
 	mu      sync.RWMutex
 	schemas map[string]*muxSchema
 	rawSDL  string // user-provided SDL override; if set, SDL() returns this
+
+	// structTypes tracks registered struct type definitions by name for
+	// deduplication. The same struct used in multiple functions is emitted
+	// once in SDL; conflicting definitions (same name, different fields)
+	// fail at registration time.
+	structTypes map[string]*StructType
 }
 
 // New creates a new empty CatalogMux.
 func New() *CatalogMux {
 	return &CatalogMux{
-		schemas: make(map[string]*muxSchema),
+		schemas:     make(map[string]*muxSchema),
+		structTypes: make(map[string]*StructType),
 	}
+}
+
+// registerStructTypes walks a function definition and registers each struct
+// type it references (return type and arguments). For each struct:
+//   - if not yet registered, store it
+//   - if already registered with identical fields, reuse silently
+//   - if already registered with different fields, return an error
+//
+// Not goroutine-safe: see the thread-safety note on CatalogMux. Call only
+// during single-goroutine catalog construction (before publishing to the
+// runtime).
+func (m *CatalogMux) registerStructTypes(def *funcDef) error {
+	if def == nil {
+		return nil
+	}
+	collect := func(t *Type) error {
+		if t == nil || t.structDef == nil {
+			return nil
+		}
+		s := t.structDef
+		existing, ok := m.structTypes[s.name]
+		if !ok {
+			m.structTypes[s.name] = s
+			return nil
+		}
+		if !equalStructFields(existing, s) {
+			return fmt.Errorf("struct type %q already registered with different fields", s.name)
+		}
+		return nil
+	}
+	if err := collect(def.retType); err != nil {
+		return err
+	}
+	for i := range def.args {
+		if err := collect(&def.args[i].typ); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // HandleFunc registers a Go function as a scalar function.
