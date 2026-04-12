@@ -52,11 +52,11 @@ func NewOpenAI(ds types.DataSource, attached bool) (*OpenAISource, error) {
 	}, nil
 }
 
-func (s *OpenAISource) Name() string             { return s.ds.Name }
+func (s *OpenAISource) Name() string                 { return s.ds.Name }
 func (s *OpenAISource) Definition() types.DataSource { return s.ds }
-func (s *OpenAISource) Engine() engines.Engine   { return s.engine }
-func (s *OpenAISource) IsAttached() bool         { return s.isAttached }
-func (s *OpenAISource) ReadOnly() bool           { return true }
+func (s *OpenAISource) Engine() engines.Engine       { return s.engine }
+func (s *OpenAISource) IsAttached() bool             { return s.isAttached }
+func (s *OpenAISource) ReadOnly() bool               { return true }
 
 func (s *OpenAISource) ModelInfo() sources.ModelInfo {
 	return sources.ModelInfo{
@@ -162,7 +162,7 @@ func (s *OpenAISource) CreateChatCompletion(ctx context.Context, messages []sour
 
 	// Build request body
 	reqBody := map[string]any{
-		"model":      s.config.Model,
+		"model":      strings.Trim(s.config.Model, "\""),
 		"messages":   convertMessagesOpenAI(messages),
 		"max_tokens": maxTokens,
 	}
@@ -358,10 +358,17 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 	}
 
 	reqBody := map[string]any{
-		"model":      s.config.Model,
+		"model":      strings.Trim(s.config.Model, "\""), // some providers (e.g. Ollama) require unquoted model names
 		"messages":   convertMessagesOpenAI(messages),
 		"max_tokens": maxTokens,
 		"stream":     true,
+		// Ask the OpenAI-compatible endpoint to send token usage on the
+		// final SSE chunk. Without this, the streaming response carries
+		// no `usage` block (LM Studio, vLLM, llama.cpp and the official
+		// OpenAI API all gate it on this option), so the LLMStreamEvent
+		// `finish` event ends up with PromptTokens=0 / CompletionTokens=0
+		// and downstream consumers can't display per-message cost.
+		"stream_options": map[string]any{"include_usage": true},
 	}
 	if opts.Temperature > 0 {
 		reqBody["temperature"] = opts.Temperature
@@ -411,6 +418,12 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 
 	var totalPromptTokens, totalCompletionTokens int
 	var toolCallParts []string
+	// finishEvent is captured when the model emits a finish_reason, but
+	// emitted only AFTER the SSE stream ends. With `stream_options.include_usage`
+	// the OpenAI-compatible server sends a trailing chunk with `choices: []`
+	// and a `usage` block — that arrives strictly after the finish chunk, so
+	// emitting the finish event eagerly would always lose the token counts.
+	var finishEvent *sources.LLMStreamEvent
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -486,19 +499,30 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 		}
 
 		if choice.FinishReason != nil {
-			ev := &sources.LLMStreamEvent{
-				Type:             "finish",
-				Model:            chunk.Model,
-				FinishReason:     normalizeFinishReasonOpenAI(*choice.FinishReason),
-				PromptTokens:     totalPromptTokens,
-				CompletionTokens: totalCompletionTokens,
+			// Capture the finish event but defer emitting it. The trailing
+			// usage-only chunk that follows (when include_usage is set) will
+			// update totalPromptTokens / totalCompletionTokens before we
+			// flush below.
+			finishEvent = &sources.LLMStreamEvent{
+				Type:         "finish",
+				Model:        chunk.Model,
+				FinishReason: normalizeFinishReasonOpenAI(*choice.FinishReason),
 			}
 			if len(toolCallParts) > 0 {
-				ev.ToolCalls = strings.Join(toolCallParts, "")
+				finishEvent.ToolCalls = strings.Join(toolCallParts, "")
 			}
-			if err := onEvent(ev); err != nil {
-				return err
-			}
+		}
+	}
+
+	// Flush the finish event with the final accumulated token counts
+	// (populated either from the finish chunk itself for providers that
+	// inline `usage`, or from the trailing usage-only chunk for those that
+	// honor `stream_options.include_usage`).
+	if finishEvent != nil {
+		finishEvent.PromptTokens = totalPromptTokens
+		finishEvent.CompletionTokens = totalCompletionTokens
+		if err := onEvent(finishEvent); err != nil {
+			return err
 		}
 	}
 
