@@ -77,6 +77,7 @@ type activeSub struct {
 	eventCh chan types.SubscriptionEvent
 	pipes   map[string]*batchPipe // one pipe per path, persists across ticks
 	done    bool
+	sub     *types.Subscription // back-pointer to set Err on subscription_error
 }
 
 // Subscribe creates a subscription on this connection.
@@ -86,10 +87,21 @@ func (sc *SubscriptionConn) Subscribe(ctx context.Context, query string, vars ma
 	}
 
 	subID := uuid.NewString()
-	sub := &activeSub{eventCh: make(chan types.SubscriptionEvent, 16)}
+	as := &activeSub{eventCh: make(chan types.SubscriptionEvent, 16)}
+
+	result := &types.Subscription{
+		Events: as.eventCh,
+		Cancel: func() {
+			sc.mu.Lock()
+			_ = sc.conn.WriteJSON(ipcSubMsg{Type: "unsubscribe", SubscriptionID: subID})
+			sc.mu.Unlock()
+			sc.removeSub(subID)
+		},
+	}
+	as.sub = result
 
 	sc.subsMu.Lock()
-	sc.subs[subID] = sub
+	sc.subs[subID] = as
 	sc.subsMu.Unlock()
 
 	msg := ipcSubMsg{
@@ -110,15 +122,7 @@ func (sc *SubscriptionConn) Subscribe(ctx context.Context, query string, vars ma
 		return nil, fmt.Errorf("send subscribe: %w", err)
 	}
 
-	return &types.Subscription{
-		Events: sub.eventCh,
-		Cancel: func() {
-			sc.mu.Lock()
-			_ = sc.conn.WriteJSON(ipcSubMsg{Type: "unsubscribe", SubscriptionID: subID})
-			sc.mu.Unlock()
-			sc.removeSub(subID)
-		},
-	}, nil
+	return result, nil
 }
 
 // Count returns the number of active subscriptions.
@@ -159,6 +163,11 @@ func (sc *SubscriptionConn) readLoop() {
 			case "subscription_complete", "subscription_error":
 				if msg.Type == "subscription_error" {
 					log.Printf("subscription %s error: %s", msg.SubscriptionID, msg.Error)
+					sc.subsMu.Lock()
+					if as := sc.subs[msg.SubscriptionID]; as != nil && as.sub != nil {
+						as.sub.SetErr(fmt.Errorf("%s", msg.Error))
+					}
+					sc.subsMu.Unlock()
 				}
 				sc.completeSub(msg.SubscriptionID)
 			}

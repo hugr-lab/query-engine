@@ -19,6 +19,15 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - Go 1.26 + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `apache/arrow-go/v18` + DuckDB embedded, existing `Source`/`RuntimeSource` interfaces, `ScalarFunctionWithArgs` UDF pattern (001-ai-model-sources)
 - DuckDB (embedded), PostgreSQL (CoreDB for metadata) (001-ai-model-sources)
 - Redis 6.0+ (key-value), DuckDB (embedded), PostgreSQL (CoreDB) (001-redis-store-ratelimit)
+- Go 1.26 with `iter.Seq`, range-over-func + `duckdb-go/v2` (CGo, build tag `duckdb_arrow`), `gqlparser/v2` (GraphQL AST), `apache/arrow-go/v18`, `gorilla/websocket` (existing dep), `redis/go-redis/v9` (existing dep for store) (001-graphql-subscriptions)
+- DuckDB embedded (primary query engine), PostgreSQL CoreDB (schema metadata), Redis (store source) (001-graphql-subscriptions)
+- Go 1.26 (with `iter.Seq`, range-over-func) + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `gorilla/websocket`, `apache/arrow-go/v18` (001-client-impersonation)
+- N/A (reads from existing permission system via `core.roles_by_pk`) (001-client-impersonation)
+- DuckDB embedded + PostgreSQL CoreDB (roles table migration in hugr repo) (001-perm-impersonation)
+- Go 1.26 (with `iter.Seq`, range-over-func) + `gqlparser/v2` (GraphQL AST + directive parsing), `duckdb-go/v2` (CGo, `duckdb_arrow`), `apache/arrow-go/v18` (001-function-arg-placeholders)
+- DuckDB embedded + PostgreSQL CoreDB (no migration needed — `_schema_arguments.directives` JSON column already exists) (001-function-arg-placeholders)
+- Go 1.26 (with `iter.Seq`, range-over-func) + `gqlparser/v2` (GraphQL AST + directive parsing), `duckdb-go/v2` (CGo, `duckdb_arrow`), `apache/arrow-go/v18`, `airport-go` (Arrow Flight protocol for hugr-app catalog) (001-hugrapp-struct-args)
+- DuckDB embedded; no schema changes (001-hugrapp-struct-args)
 
 ## Project Structure
 
@@ -35,6 +44,6 @@ Go 1.26: Follow standard conventions
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
-- 001-redis-store-ratelimit: Added Go 1.26 + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `apache/arrow-go/v18`
-- 001-ai-model-sources: Added Go 1.26 + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `apache/arrow-go/v18` + DuckDB embedded, existing `Source`/`RuntimeSource` interfaces, `ScalarFunctionWithArgs` UDF pattern
-- 001-hugr-apps: Added Go 1.26 (with `iter.Seq`, range-over-func) + `duckdb-go/v2` (CGo, `duckdb_arrow`), `hugr-lab/airport-go` v0.2.1 (Arrow Flight gRPC), `gqlparser/v2` (GraphQL AST), `apache/arrow-go/v18`
+- 001-hugrapp-struct-args: Added Go 1.26 (with `iter.Seq`, range-over-func) + `gqlparser/v2` (GraphQL AST + directive parsing), `duckdb-go/v2` (CGo, `duckdb_arrow`), `apache/arrow-go/v18`, `airport-go` (Arrow Flight protocol for hugr-app catalog)
+- 001-function-arg-placeholders: Added Go 1.26 (with `iter.Seq`, range-over-func) + `gqlparser/v2` (GraphQL AST + directive parsing), `duckdb-go/v2` (CGo, `duckdb_arrow`), `apache/arrow-go/v18`
+- 001-perm-impersonation: Added Go 1.26 (with `iter.Seq`, range-over-func) + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `gorilla/websocket`, `apache/arrow-go/v18`
