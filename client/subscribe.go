@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -165,7 +166,7 @@ func (sc *SubscriptionConn) readLoop() {
 					log.Printf("subscription %s error: %s", msg.SubscriptionID, msg.Error)
 					sc.subsMu.Lock()
 					if as := sc.subs[msg.SubscriptionID]; as != nil && as.sub != nil {
-						as.sub.SetErr(fmt.Errorf("%s", msg.Error))
+						as.sub.SetErr(errors.New(msg.Error))
 					}
 					sc.subsMu.Unlock()
 				}
