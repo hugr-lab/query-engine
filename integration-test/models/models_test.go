@@ -4,6 +4,7 @@ package models_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -604,4 +605,86 @@ func TestModels_Sources_AllProviders(t *testing.T) {
 		t.Logf("source: name=%s type=%s provider=%s model=%s", s["name"], s["type"], s["provider"], s["model"])
 	}
 	t.Logf("total sources: %d, providers: %v", len(srcs), providers)
+}
+
+// --- US4: Streaming Tool Call Format Tests ---
+
+const streamToolCallQuery = `subscription { core { models { chat_completion(
+	model: "%s",
+	messages: ["{\"role\":\"user\",\"content\":\"What is the weather in London?\"}"],
+	tools: ["{\"name\":\"get_weather\",\"description\":\"Get weather for a city\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}"],
+	tool_choice: "auto",
+	max_tokens: 200
+) {
+	type content finish_reason tool_calls prompt_tokens completion_tokens
+} } } }`
+
+// assertStreamToolCalls validates that the finish event tool_calls field
+// contains a valid []LLMToolCall JSON array with id, name, and arguments.
+func assertStreamToolCalls(t *testing.T, provider string, events []map[string]any) {
+	t.Helper()
+
+	var finishEvent map[string]any
+	for _, e := range events {
+		if fmt.Sprintf("%v", e["type"]) == "finish" {
+			finishEvent = e
+		}
+	}
+	require.NotNil(t, finishEvent, "%s: should have a finish event", provider)
+
+	toolCallsRaw := finishEvent["tool_calls"]
+	require.NotNil(t, toolCallsRaw, "%s: finish event should have tool_calls", provider)
+
+	toolCallsStr := fmt.Sprintf("%v", toolCallsRaw)
+	require.NotEmpty(t, toolCallsStr, "%s: tool_calls should not be empty", provider)
+
+	var calls []types.LLMToolCall
+	err := json.Unmarshal([]byte(toolCallsStr), &calls)
+	require.NoError(t, err, "%s: tool_calls should parse as []LLMToolCall, got: %s", provider, toolCallsStr)
+	require.NotEmpty(t, calls, "%s: should have at least one tool call", provider)
+
+	for i, tc := range calls {
+		assert.NotEmpty(t, tc.Name, "%s: tool call[%d] should have a name", provider, i)
+		assert.NotNil(t, tc.Arguments, "%s: tool call[%d] should have arguments", provider, i)
+		t.Logf("%s stream tool call[%d]: id=%s name=%s args=%v", provider, i, tc.ID, tc.Name, tc.Arguments)
+	}
+
+	t.Logf("%s stream finish: finish_reason=%v, tool_calls=%d items", provider, finishEvent["finish_reason"], len(calls))
+}
+
+func TestModels_StreamChatCompletionWithTools_OpenAI(t *testing.T) {
+	if os.Getenv("LLM_URL") == "" {
+		t.Skip("LLM_URL not set")
+	}
+	events := collectStreamEvents(t, fmt.Sprintf(streamToolCallQuery, "test_llm"))
+	require.NotEmpty(t, events, "should receive streaming events")
+	assertStreamToolCalls(t, "OpenAI", events)
+}
+
+func TestModels_StreamChatCompletionWithTools_Anthropic(t *testing.T) {
+	if os.Getenv("ANTHROPIC_KEY") == "" {
+		t.Skip("ANTHROPIC_KEY not set")
+	}
+	// Anthropic with thinking requires max_tokens > thinking_budget (configured at 2048).
+	q := `subscription { core { models { chat_completion(
+		model: "test_anthropic",
+		messages: ["{\"role\":\"user\",\"content\":\"What is the weather in London?\"}"],
+		tools: ["{\"name\":\"get_weather\",\"description\":\"Get weather for a city\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\"}},\"required\":[\"city\"]}}"],
+		tool_choice: "auto",
+		max_tokens: 4096
+	) {
+		type content finish_reason tool_calls prompt_tokens completion_tokens
+	} } } }`
+	events := collectStreamEvents(t, q)
+	require.NotEmpty(t, events, "should receive streaming events")
+	assertStreamToolCalls(t, "Anthropic", events)
+}
+
+func TestModels_StreamChatCompletionWithTools_Gemini(t *testing.T) {
+	if os.Getenv("GEMINI_KEY") == "" {
+		t.Skip("GEMINI_KEY not set")
+	}
+	events := collectStreamEvents(t, fmt.Sprintf(streamToolCallQuery, "test_gemini"))
+	require.NotEmpty(t, events, "should receive streaming events")
+	assertStreamToolCalls(t, "Gemini", events)
 }

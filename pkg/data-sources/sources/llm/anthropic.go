@@ -427,6 +427,15 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 	var model string
 	var promptTokens, completionTokens int
 
+	// pendingToolCalls accumulates tool call data from content_block_start
+	// (id, name) and content_block_delta (input_json_delta fragments).
+	type pendingToolCall struct {
+		ID       string
+		Name     string
+		ArgsJSON strings.Builder
+	}
+	pendingToolCallsByIndex := make(map[int]*pendingToolCall)
+
 	scanner := bufio.NewScanner(resp.Body)
 	var currentEventType string
 	for scanner.Scan() {
@@ -456,12 +465,33 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 				promptTokens = msg.Message.Usage.InputTokens
 			}
 
+		case "content_block_start":
+			var cbs struct {
+				Index        int `json:"index"`
+				ContentBlock struct {
+					Type string `json:"type"`
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"content_block"`
+			}
+			if err := json.Unmarshal([]byte(data), &cbs); err != nil {
+				continue
+			}
+			if cbs.ContentBlock.Type == "tool_use" {
+				pendingToolCallsByIndex[cbs.Index] = &pendingToolCall{
+					ID:   cbs.ContentBlock.ID,
+					Name: cbs.ContentBlock.Name,
+				}
+			}
+
 		case "content_block_delta":
 			var delta struct {
+				Index int `json:"index"`
 				Delta struct {
-					Type     string `json:"type"`
-					Text     string `json:"text"`
-					Thinking string `json:"thinking"`
+					Type        string `json:"type"`
+					Text        string `json:"text"`
+					Thinking    string `json:"thinking"`
+					PartialJSON string `json:"partial_json"`
 				} `json:"delta"`
 			}
 			if err := json.Unmarshal([]byte(data), &delta); err != nil {
@@ -483,6 +513,10 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 					Model:   model,
 				}); err != nil {
 					return err
+				}
+			case "input_json_delta":
+				if ptc := pendingToolCallsByIndex[delta.Index]; ptc != nil {
+					ptc.ArgsJSON.WriteString(delta.Delta.PartialJSON)
 				}
 			}
 
@@ -510,13 +544,30 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 						finishReason = md.Delta.StopReason
 					}
 				}
-				if err := onEvent(&sources.LLMStreamEvent{
+				ev := &sources.LLMStreamEvent{
 					Type:             "finish",
 					Model:            model,
 					FinishReason:     finishReason,
 					PromptTokens:     promptTokens,
 					CompletionTokens: completionTokens,
-				}); err != nil {
+				}
+				if len(pendingToolCallsByIndex) > 0 {
+					var calls []sources.LLMToolCall
+					for _, ptc := range pendingToolCallsByIndex {
+						var args any
+						if s := ptc.ArgsJSON.String(); s != "" {
+							_ = json.Unmarshal([]byte(s), &args)
+						}
+						calls = append(calls, sources.LLMToolCall{
+							ID:        ptc.ID,
+							Name:      ptc.Name,
+							Arguments: args,
+						})
+					}
+					b, _ := json.Marshal(calls)
+					ev.ToolCalls = string(b)
+				}
+				if err := onEvent(ev); err != nil {
 					return err
 				}
 			}
