@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
 	"sync"
 
@@ -16,8 +15,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/hugr-lab/query-engine/types"
+	"github.com/coder/websocket"
 )
 
 // --- Options ---
@@ -63,8 +62,8 @@ type ipcSubMsg struct {
 
 // SubscriptionConn is a single WebSocket connection multiplexing subscriptions.
 type SubscriptionConn struct {
-	conn   *websocket.Conn
-	mu     sync.Mutex // protects conn writes
+	conn *websocket.Conn
+	mu   sync.Mutex // protects conn writes
 	subs   map[string]*activeSub
 	subsMu sync.Mutex
 	ctx    context.Context
@@ -94,7 +93,8 @@ func (sc *SubscriptionConn) Subscribe(ctx context.Context, query string, vars ma
 		Events: as.eventCh,
 		Cancel: func() {
 			sc.mu.Lock()
-			_ = sc.conn.WriteJSON(ipcSubMsg{Type: "unsubscribe", SubscriptionID: subID})
+			data, _ := json.Marshal(ipcSubMsg{Type: "unsubscribe", SubscriptionID: subID})
+			_ = sc.conn.Write(sc.ctx, websocket.MessageText, data)
 			sc.mu.Unlock()
 			sc.removeSub(subID)
 		},
@@ -115,8 +115,13 @@ func (sc *SubscriptionConn) Subscribe(ctx context.Context, query string, vars ma
 		msg.Role = id.Role
 	}
 
+	data, err := json.Marshal(msg)
+	if err != nil {
+		sc.removeSub(subID)
+		return nil, fmt.Errorf("marshal subscribe: %w", err)
+	}
 	sc.mu.Lock()
-	err := sc.conn.WriteJSON(msg)
+	err = sc.conn.Write(sc.ctx, websocket.MessageText, data)
 	sc.mu.Unlock()
 	if err != nil {
 		sc.removeSub(subID)
@@ -136,7 +141,7 @@ func (sc *SubscriptionConn) Count() int {
 // Close closes the connection and all subscriptions.
 func (sc *SubscriptionConn) Close() {
 	sc.cancel()
-	_ = sc.conn.Close()
+	_ = sc.conn.Close(websocket.StatusNormalClosure, "")
 }
 
 func (sc *SubscriptionConn) readLoop() {
@@ -144,13 +149,13 @@ func (sc *SubscriptionConn) readLoop() {
 	defer sc.closeAllSubs()
 
 	for {
-		msgType, data, err := sc.conn.ReadMessage()
+		msgType, data, err := sc.conn.Read(sc.ctx)
 		if err != nil {
 			return
 		}
 
 		switch msgType {
-		case websocket.TextMessage:
+		case websocket.MessageText:
 			var msg ipcSubMsg
 			if err := json.Unmarshal(data, &msg); err != nil {
 				continue
@@ -173,7 +178,7 @@ func (sc *SubscriptionConn) readLoop() {
 				sc.completeSub(msg.SubscriptionID)
 			}
 
-		case websocket.BinaryMessage:
+		case websocket.MessageBinary:
 			// Arrow IPC batch with subscription metadata in schema.
 			// Read subscription_id and path from Arrow schema metadata.
 			reader, err := ipc.NewReader(bytes.NewReader(data), ipc.WithAllocator(memory.DefaultAllocator))
@@ -449,17 +454,15 @@ func (c *Client) dialSubscriptionConn(ctx context.Context) (*SubscriptionConn, e
 	wsURL := c.url
 	wsURL = strings.TrimSuffix(wsURL, "/query")
 	wsURL = strings.TrimSuffix(wsURL, "/ipc")
-	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
-	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
 	wsURL += "/ipc"
 
-	header := http.Header{}
-	collectAuthHeaders(c.config.Transport, header)
-
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPClient: c.c,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("websocket connect: %w", err)
 	}
+	conn.SetReadLimit(64 * 1024 * 1024) // 64MB for Arrow IPC batches
 
 	connCtx, connCancel := context.WithCancel(ctx)
 	sc := &SubscriptionConn{
@@ -470,33 +473,6 @@ func (c *Client) dialSubscriptionConn(ctx context.Context) (*SubscriptionConn, e
 	}
 	go sc.readLoop()
 	return sc, nil
-}
-
-// collectAuthHeaders walks the transport chain and collects auth headers for WebSocket dial.
-func collectAuthHeaders(rt http.RoundTripper, header http.Header) {
-	if rt == nil {
-		return
-	}
-	switch t := rt.(type) {
-	case *apiKeyTransport:
-		h := t.apiKeyHeader
-		if h == "" {
-			h = "x-hugr-api-key"
-		}
-		header.Set(h, t.apiKey)
-		collectAuthHeaders(t.transport, header)
-	case *tokenTransport:
-		header.Set("Authorization", "Bearer "+t.token)
-		collectAuthHeaders(t.transport, header)
-	case *timezoneTransport:
-		collectAuthHeaders(t.transport, header)
-	case *noTimezoneTransport:
-		collectAuthHeaders(t.transport, header)
-	case *withUserRoleTransport:
-		collectAuthHeaders(t.transport, header)
-	case *withUserInfoTransport:
-		collectAuthHeaders(t.transport, header)
-	}
 }
 
 // CloseSubscriptions closes all pool connections.
