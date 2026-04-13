@@ -1142,13 +1142,16 @@ type SearchResults
 }
 
 func TestValidate_ViewArgs_SQLWithUnknownRef(t *testing.T) {
+	// [$unknown_field] (with $ prefix) is an argument reference — must be
+	// declared in the args input type. [table_name] (without $) is a database
+	// table reference and is NOT validated at compile time.
 	sdl := `
 input SearchArgs {
   search_term: String!
 }
 
 type SearchResults
-  @view(name: "search_results", sql: "SELECT * FROM search WHERE x = [unknown_field]")
+  @view(name: "search_results", sql: "SELECT * FROM [search] WHERE x = [$unknown_field]")
   @args(name: "SearchArgs") {
   id: Int! @pk
   title: String!
@@ -1156,7 +1159,7 @@ type SearchResults
 `
 	err := compileNewOnly(t, sdl)
 	if err == nil {
-		t.Fatal("expected error for unknown SQL ref in view, got nil")
+		t.Fatal("expected error for unknown SQL arg ref in view, got nil")
 	}
 	if !strings.Contains(err.Error(), "unknown_field") {
 		t.Fatalf("expected error to mention 'unknown_field', got: %v", err)

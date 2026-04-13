@@ -99,7 +99,7 @@ func (i *Interval) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
-	*i = Interval(time.Duration(d))
+	*i = Interval(time.Duration(d) * time.Second)
 	return nil
 }
 
@@ -109,6 +109,9 @@ func ParseIntervalValue(v any) (time.Duration, error) {
 	}
 	switch v := v.(type) {
 	case string:
+		if v == "" {
+			return 0, nil
+		}
 		d, err := ParseSQLInterval(v)
 		if err != nil {
 			return 0, err
@@ -117,6 +120,8 @@ func ParseIntervalValue(v any) (time.Duration, error) {
 	case int:
 		return time.Duration(v) * time.Second, nil
 	case int64:
+		return time.Duration(v) * time.Second, nil
+	case float64:
 		return time.Duration(v) * time.Second, nil
 	case time.Duration:
 		return v, nil
@@ -130,34 +135,43 @@ func ParseIntervalValue(v any) (time.Duration, error) {
 var intervalRegex = regexp.MustCompile(`(?i)(\d+)\s*(day|hour|minute|second)s?`)
 
 func ParseSQLInterval(s string) (time.Duration, error) {
+	// Try Go duration format first: "10m", "1h30m", "5s", "10m2s"
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
+	}
+
+	// Try SQL interval format: "10 minutes", "1 hour 30 seconds"
 	matches := intervalRegex.FindAllStringSubmatch(s, -1)
-	if matches == nil {
-		return 0, fmt.Errorf("invalid interval format: %s", s)
+	if matches != nil {
+		var totalDuration time.Duration
+		for _, match := range matches {
+			value, err := strconv.Atoi(match[1])
+			if err != nil {
+				return 0, fmt.Errorf("invalid number in interval: %s", match[1])
+			}
+			unit := strings.ToLower(match[2])
+			switch unit {
+			case "day", "days", "d":
+				totalDuration += time.Duration(value) * 24 * time.Hour
+			case "hour", "hours", "h":
+				totalDuration += time.Duration(value) * time.Hour
+			case "minute", "minutes", "m":
+				totalDuration += time.Duration(value) * time.Minute
+			case "second", "seconds", "s":
+				totalDuration += time.Duration(value) * time.Second
+			default:
+				return 0, fmt.Errorf("invalid time unit in interval: %s", unit)
+			}
+		}
+		return totalDuration, nil
 	}
 
-	var totalDuration time.Duration
-	for _, match := range matches {
-		value, err := strconv.Atoi(match[1])
-		if err != nil {
-			return 0, fmt.Errorf("invalid number in interval: %s", match[1])
-		}
-
-		unit := strings.ToLower(match[2])
-		switch unit {
-		case "day", "days", "d":
-			totalDuration += time.Duration(value) * 24 * time.Hour
-		case "hour", "hours", "h":
-			totalDuration += time.Duration(value) * time.Hour
-		case "minute", "minutes", "m":
-			totalDuration += time.Duration(value) * time.Minute
-		case "second", "seconds", "s":
-			totalDuration += time.Duration(value) * time.Second
-		default:
-			return 0, fmt.Errorf("invalid time unit in interval: %s", unit)
-		}
+	// Try bare number: "2" → 2 seconds
+	if v, err := strconv.ParseFloat(s, 64); err == nil {
+		return time.Duration(v * float64(time.Second)), nil
 	}
 
-	return totalDuration, nil
+	return 0, fmt.Errorf("invalid interval format: %s", s)
 }
 
 func IntervalToSQLValue(v any) (string, error) {
