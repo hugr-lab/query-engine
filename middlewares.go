@@ -136,7 +136,13 @@ func timezoneMW(next http.Handler) http.Handler {
 
 func compressMW(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Add your compression logic here
+		// Skip compression for WebSocket upgrades — the connection will be
+		// hijacked and deferred Close() on gzip/brotli writers would write
+		// to the hijacked connection causing "response.Write on hijacked connection".
+		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			next.ServeHTTP(w, r)
+			return
+		}
 		accept := r.Header.Get("Accept-Encoding")
 		switch {
 		case strings.Contains(accept, "br"):
