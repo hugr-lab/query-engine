@@ -417,7 +417,15 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 	}
 
 	var totalPromptTokens, totalCompletionTokens int
-	var toolCallParts []string
+	// pendingToolCalls accumulates tool call fragments keyed by delta index.
+	// Each entry captures id/name from the first delta and concatenates
+	// argument JSON fragments across subsequent deltas.
+	type pendingToolCall struct {
+		ID       string
+		Name     string
+		ArgsJSON strings.Builder
+	}
+	var pendingToolCalls []*pendingToolCall
 	// finishEvent is captured when the model emits a finish_reason, but
 	// emitted only AFTER the SSE stream ends. With `stream_options.include_usage`
 	// the OpenAI-compatible server sends a trailing chunk with `choices: []`
@@ -442,6 +450,7 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 					Content          string `json:"content"`
 					ReasoningContent string `json:"reasoning_content"`
 					ToolCalls        []struct {
+						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Function struct {
 							Name      string `json:"name"`
@@ -471,11 +480,21 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 		}
 		choice := chunk.Choices[0]
 
-		// Accumulate tool call argument fragments
+		// Accumulate tool call fragments per-index.
+		// The first delta for each index carries id and function.name;
+		// subsequent deltas carry only argument fragments.
 		for _, tc := range choice.Delta.ToolCalls {
-			if tc.Function.Arguments != "" {
-				toolCallParts = append(toolCallParts, tc.Function.Arguments)
+			for tc.Index >= len(pendingToolCalls) {
+				pendingToolCalls = append(pendingToolCalls, &pendingToolCall{})
 			}
+			ptc := pendingToolCalls[tc.Index]
+			if tc.ID != "" {
+				ptc.ID = tc.ID
+			}
+			if tc.Function.Name != "" {
+				ptc.Name = tc.Function.Name
+			}
+			ptc.ArgsJSON.WriteString(tc.Function.Arguments)
 		}
 
 		if choice.Delta.ReasoningContent != "" {
@@ -508,8 +527,21 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 				Model:        chunk.Model,
 				FinishReason: normalizeFinishReasonOpenAI(*choice.FinishReason),
 			}
-			if len(toolCallParts) > 0 {
-				finishEvent.ToolCalls = strings.Join(toolCallParts, "")
+			if len(pendingToolCalls) > 0 {
+				var calls []sources.LLMToolCall
+				for _, ptc := range pendingToolCalls {
+					var args any
+					if s := ptc.ArgsJSON.String(); s != "" {
+						_ = json.Unmarshal([]byte(s), &args)
+					}
+					calls = append(calls, sources.LLMToolCall{
+						ID:        ptc.ID,
+						Name:      ptc.Name,
+						Arguments: args,
+					})
+				}
+				b, _ := json.Marshal(calls)
+				finishEvent.ToolCalls = string(b)
 			}
 		}
 	}

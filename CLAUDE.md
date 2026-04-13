@@ -28,6 +28,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - DuckDB embedded + PostgreSQL CoreDB (no migration needed — `_schema_arguments.directives` JSON column already exists) (001-function-arg-placeholders)
 - Go 1.26 (with `iter.Seq`, range-over-func) + `gqlparser/v2` (GraphQL AST + directive parsing), `duckdb-go/v2` (CGo, `duckdb_arrow`), `apache/arrow-go/v18`, `airport-go` (Arrow Flight protocol for hugr-app catalog) (001-hugrapp-struct-args)
 - DuckDB embedded; no schema changes (001-hugrapp-struct-args)
+- Go 1.26 with `duckdb_arrow` build tag + `duckdb-go/v2`, `gqlparser/v2`, `apache/arrow-go/v18` (001-streaming-tool-calls)
+- N/A (no storage changes) (001-streaming-tool-calls)
 
 ## Project Structure
 
@@ -44,6 +46,6 @@ Go 1.26: Follow standard conventions
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- 001-streaming-tool-calls: Added Go 1.26 with `duckdb_arrow` build tag + `duckdb-go/v2`, `gqlparser/v2`, `apache/arrow-go/v18`
 - 001-hugrapp-struct-args: Added Go 1.26 (with `iter.Seq`, range-over-func) + `gqlparser/v2` (GraphQL AST + directive parsing), `duckdb-go/v2` (CGo, `duckdb_arrow`), `apache/arrow-go/v18`, `airport-go` (Arrow Flight protocol for hugr-app catalog)
 - 001-function-arg-placeholders: Added Go 1.26 (with `iter.Seq`, range-over-func) + `gqlparser/v2` (GraphQL AST + directive parsing), `duckdb-go/v2` (CGo, `duckdb_arrow`), `apache/arrow-go/v18`
-- 001-perm-impersonation: Added Go 1.26 (with `iter.Seq`, range-over-func) + `duckdb-go/v2` (CGo, `duckdb_arrow`), `gqlparser/v2`, `gorilla/websocket`, `apache/arrow-go/v18`

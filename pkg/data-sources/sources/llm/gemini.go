@@ -239,6 +239,7 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 				Parts []struct {
 					Text         string `json:"text"`
 					FunctionCall *struct {
+						ID   string `json:"id"`
 						Name string `json:"name"`
 						Args any    `json:"args"`
 					} `json:"functionCall"`
@@ -279,6 +280,7 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 			}
 			if part.FunctionCall != nil {
 				result.ToolCalls = append(result.ToolCalls, sources.LLMToolCall{
+					ID:        part.FunctionCall.ID,
 					Name:      part.FunctionCall.Name,
 					Arguments: part.FunctionCall.Args,
 				})
@@ -411,6 +413,7 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 	}
 
 	var totalPromptTokens, totalCompletionTokens int
+	var accToolCalls []sources.LLMToolCall
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -427,6 +430,7 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 						Text         string `json:"text"`
 						Thought      bool   `json:"thought,omitempty"`
 						FunctionCall *struct {
+							ID   string `json:"id"`
 							Name string `json:"name"`
 							Args any    `json:"args"`
 						} `json:"functionCall"`
@@ -467,15 +471,11 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 				}
 			}
 			if part.FunctionCall != nil {
-				b, _ := json.Marshal([]map[string]any{
-					{"name": part.FunctionCall.Name, "args": part.FunctionCall.Args},
+				accToolCalls = append(accToolCalls, sources.LLMToolCall{
+					ID:        part.FunctionCall.ID,
+					Name:      part.FunctionCall.Name,
+					Arguments: part.FunctionCall.Args,
 				})
-				if err := onEvent(&sources.LLMStreamEvent{
-					Type:      "content_delta",
-					ToolCalls: string(b),
-				}); err != nil {
-					return err
-				}
 			}
 		}
 
@@ -487,12 +487,20 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 			case "MAX_TOKENS":
 				finishReason = "length"
 			}
-			if err := onEvent(&sources.LLMStreamEvent{
+			ev := &sources.LLMStreamEvent{
 				Type:             "finish",
 				FinishReason:     finishReason,
 				PromptTokens:     totalPromptTokens,
 				CompletionTokens: totalCompletionTokens,
-			}); err != nil {
+			}
+			if len(accToolCalls) > 0 {
+				b, _ := json.Marshal(accToolCalls)
+				ev.ToolCalls = string(b)
+				if finishReason == "stop" {
+					ev.FinishReason = "tool_use"
+				}
+			}
+			if err := onEvent(ev); err != nil {
 				return err
 			}
 		}
