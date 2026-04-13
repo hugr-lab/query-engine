@@ -212,7 +212,8 @@ enum UniqueRuleType @system {
 }
 
 directive @cache(
-	ttl: Int
+	"Time to live for the cache entry"
+	ttl: Interval
 	"""
 	Cache key for the query
 	"""

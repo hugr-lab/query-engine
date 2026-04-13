@@ -21,28 +21,32 @@ func (s *Server) searchModules(ctx context.Context, req mcp.CallToolRequest) (*m
 		Desc     string  `json:"description"`
 		Distance float64 `json:"_distance_to_query"`
 	}
-	err := s.queryScanAdmin(ctx, `query($query: String!, $limit: Int) {
+	err := s.queryScanAdmin(ctx, `query($query: String!) {
 		core {
 			catalog {
 				modules(
 					order_by: [{field: "_distance_to_query", direction: ASC}]
-					limit: $limit
-				) {
+				) @cache(ttl: "10m") {
 					name
 					description
 					_distance_to_query(query: $query)
 				}
 			}
 		}
-	}`, map[string]any{"query": query, "limit": topK}, "core.catalog.modules", &items)
+	}`, map[string]any{"query": query}, "core.catalog.modules", &items)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
 
 	filter := newMCPFilter(ctx)
 	var result []ModuleSearchItem
+	var total int
 	for _, item := range items {
 		if !filter.visibleModule(item.Name) {
+			continue
+		}
+		total++
+		if len(result) >= topK {
 			continue
 		}
 		score := distanceToScore(item.Distance)
@@ -57,7 +61,7 @@ func (s *Server) searchModules(ctx context.Context, req mcp.CallToolRequest) (*m
 	}
 
 	return toolResultJSON(SearchResult[ModuleSearchItem]{
-		Total:    len(items),
+		Total:    total,
 		Returned: len(result),
 		Items:    result,
 	}), nil
@@ -79,13 +83,12 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 		AsModule bool    `json:"as_module"`
 		Distance float64 `json:"_distance_to_query"`
 	}
-	err := s.queryScanAdmin(ctx, `query($query: String!, $limit: Int) {
+	err := s.queryScanAdmin(ctx, `query($query: String!) {
 		core {
 			catalog {
 				schema_catalogs(
 					order_by: [{field: "_distance_to_query", direction: ASC}]
-					limit: $limit
-				) {
+				) @cache(ttl: "10m") {
 					name
 					description
 					type
@@ -95,15 +98,20 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 				}
 			}
 		}
-	}`, map[string]any{"query": query, "limit": topK}, "core.catalog.schema_catalogs", &items)
+	}`, map[string]any{"query": query}, "core.catalog.schema_catalogs", &items)
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
 
 	filter := newMCPFilter(ctx)
 	var result []DataSourceSearchItem
+	var total int
 	for _, item := range items {
 		if !filter.visibleDataSource(item.Name) {
+			continue
+		}
+		total++
+		if len(result) >= topK {
 			continue
 		}
 		score := distanceToScore(item.Distance)
@@ -121,7 +129,7 @@ func (s *Server) searchDataSources(ctx context.Context, req mcp.CallToolRequest)
 	}
 
 	return toolResultJSON(SearchResult[DataSourceSearchItem]{
-		Total:    len(items),
+		Total:    total,
 		Returned: len(result),
 		Items:    result,
 	}), nil
@@ -162,7 +170,7 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 					filter: $filter
 					order_by: [{field: "_distance_to_query", direction: ASC}]
 					limit: $limit
-				) {
+				) @cache(ttl: "10m") {
 					name
 					hugr_type
 					description
@@ -183,7 +191,7 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 			"hugr_type": map[string]any{"in": []string{"table", "view"}},
 			"module":    moduleFilter,
 		},
-		"limit": topK,
+		"limit": 100,
 		"query": query,
 	}, "core.catalog.types", &items)
 	if err != nil {
@@ -192,8 +200,13 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 
 	filter := newMCPFilter(ctx)
 	var result []DataObjectSearchItem
+	var total int
 	for _, item := range items {
 		if !filter.visibleType(item.Name) {
+			continue
+		}
+		total++
+		if len(result) >= topK {
 			continue
 		}
 		score := distanceToScore(item.Distance)
@@ -222,7 +235,7 @@ func (s *Server) searchModuleDataObjects(ctx context.Context, req mcp.CallToolRe
 	}
 
 	return toolResultJSON(SearchResult[DataObjectSearchItem]{
-		Total:    len(items),
+		Total:    total,
 		Returned: len(result),
 		Items:    result,
 	}), nil

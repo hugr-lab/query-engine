@@ -453,8 +453,10 @@ func validateFunctionSQL(def *ast.Definition) error {
 
 // validateViewArgs validates @view + @args consistency:
 // - The @args input type must exist and be INPUT_OBJECT
-// - If @view has sql: argument, [paramName] references must be either
-//   view fields, $-prefixed system vars, or input args fields
+// - If @view has sql: argument, [$paramName] references must be either
+//   args input fields, known context placeholders ([$auth.*]), or [$catalog].
+//   Non-$-prefixed references like [table_name] are database table/view names
+//   resolved at runtime by Object.SQL() and are not validated here.
 func validateViewArgs(ctx base.CompilationContext, def *ast.Definition) error {
 	argsDir := def.Directives.ForName(base.ViewArgsDirectiveName)
 	argInputName := base.DirectiveArgString(argsDir, base.ArgName)
@@ -485,19 +487,28 @@ func validateViewArgs(ctx base.CompilationContext, def *ast.Definition) error {
 
 	refs := extractFieldsFromSQL(sql)
 	for _, ref := range refs {
-		if strings.HasPrefix(ref, "$") {
+		if !strings.HasPrefix(ref, "$") {
+			// No $ prefix → database table/view reference (e.g. [sales]).
+			// Resolved at runtime by Object.SQL() with source prefix.
 			continue
 		}
-		// Check if ref is a field of the view itself
-		if hasField(def, ref) {
+		// $ prefix → argument or context placeholder.
+		argName := ref[1:] // strip leading "$"
+
+		// [$catalog] — system variable resolved by Object.SQL()
+		if ref == base.CatalogSystemVariableName {
 			continue
 		}
-		// Check if ref is a field of the args input type
-		if inputDef.Fields.ForName(ref) != nil {
+		// [$auth.*] — known context placeholders resolved by ApplyArguments()
+		if sdl.IsKnownPlaceholder("[" + ref + "]") {
+			continue
+		}
+		// Must be an args input field: [$field_name]
+		if inputDef.Fields.ForName(argName) != nil {
 			continue
 		}
 		return gqlerror.ErrorPosf(viewDir.Position,
-			"@view on %q: sql references unknown field or argument %q", def.Name, ref)
+			"@view on %q: sql references unknown argument \"[$%s]\"", def.Name, argName)
 	}
 	return nil
 }
