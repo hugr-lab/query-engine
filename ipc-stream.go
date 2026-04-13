@@ -94,14 +94,10 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 			msgType, data, readErr := conn.Read(ctx)
 			if readErr != nil {
 				status := websocket.CloseStatus(readErr)
-				if status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway {
-					break
+				if status != websocket.StatusNormalClosure && status != websocket.StatusGoingAway && ctx.Err() == nil {
+					log.Printf("Unexpected WebSocket close: %v", readErr)
 				}
-				if ctx.Err() != nil {
-					break
-				}
-				log.Printf("Unexpected WebSocket close: %v", readErr)
-				break
+				return
 			}
 			if msgType != websocket.MessageText {
 				continue
