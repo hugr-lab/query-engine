@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"runtime/debug"
@@ -95,8 +97,13 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 			if readErr != nil {
 				if s.config.Debug && ctx.Err() == nil {
 					status := websocket.CloseStatus(readErr)
-					if status != websocket.StatusNormalClosure && status != websocket.StatusGoingAway {
-						log.Printf("stream %s: WebSocket closed: %v", stream.queryId, readErr)
+					switch {
+					case status == websocket.StatusNormalClosure, status == websocket.StatusGoingAway:
+						// clean close
+					case errors.Is(readErr, io.EOF):
+						log.Printf("stream %s: client disconnected", stream.queryId)
+					default:
+						log.Printf("stream %s: WebSocket error: %v", stream.queryId, readErr)
 					}
 				}
 				return
