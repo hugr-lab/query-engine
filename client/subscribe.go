@@ -139,14 +139,12 @@ func (sc *SubscriptionConn) Count() int {
 	return len(sc.subs)
 }
 
-// Close gracefully shuts down the WebSocket connection:
-// 1. Cancel context → readLoop's conn.Read returns → readLoop exits
-// 2. Wait for readLoop to finish (so no concurrent readers)
-// 3. Send close frame to server
+// Close gracefully shuts down the WebSocket connection.
+// conn.Close sends the close frame; readLoop's conn.Read sees it and
+// returns, triggering deferred cancel() + closeAllSubs().
 func (sc *SubscriptionConn) Close() {
-	sc.cancel()
-	<-sc.done // wait for readLoop to exit
 	sc.conn.Close(websocket.StatusNormalClosure, "shutdown")
+	<-sc.done
 }
 
 func (sc *SubscriptionConn) readLoop() {
