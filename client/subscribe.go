@@ -68,6 +68,7 @@ type SubscriptionConn struct {
 	subsMu sync.Mutex
 	ctx    context.Context
 	cancel context.CancelFunc
+	done   chan struct{} // closed when readLoop exits
 }
 
 // activeSub tracks one subscription on the connection.
@@ -138,13 +139,18 @@ func (sc *SubscriptionConn) Count() int {
 	return len(sc.subs)
 }
 
-// Close closes the connection and all subscriptions.
+// Close gracefully shuts down the WebSocket connection:
+// 1. Cancel context → readLoop's conn.Read returns → readLoop exits
+// 2. Wait for readLoop to finish (so no concurrent readers)
+// 3. Send close frame to server
 func (sc *SubscriptionConn) Close() {
 	sc.cancel()
-	_ = sc.conn.Close(websocket.StatusNormalClosure, "")
+	<-sc.done // wait for readLoop to exit
+	sc.conn.Close(websocket.StatusNormalClosure, "shutdown")
 }
 
 func (sc *SubscriptionConn) readLoop() {
+	defer close(sc.done)
 	defer sc.cancel()
 	defer sc.closeAllSubs()
 
@@ -473,6 +479,7 @@ func (c *Client) dialSubscriptionConn(ctx context.Context) (*SubscriptionConn, e
 		subs:   make(map[string]*activeSub),
 		ctx:    connCtx,
 		cancel: connCancel,
+		done:   make(chan struct{}),
 	}
 	go sc.readLoop()
 	return sc, nil
