@@ -456,6 +456,9 @@ func (c *Client) dialSubscriptionConn(ctx context.Context) (*SubscriptionConn, e
 	wsURL = strings.TrimSuffix(wsURL, "/ipc")
 	wsURL += "/ipc"
 
+	// Use the request context only for the dial handshake.
+	// The connection itself must outlive the first Subscribe() call
+	// because it is shared via the pool across multiple subscriptions.
 	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		HTTPClient: c.c,
 	})
@@ -464,7 +467,7 @@ func (c *Client) dialSubscriptionConn(ctx context.Context) (*SubscriptionConn, e
 	}
 	conn.SetReadLimit(64 * 1024 * 1024) // 64MB for Arrow IPC batches
 
-	connCtx, connCancel := context.WithCancel(ctx)
+	connCtx, connCancel := context.WithCancel(context.Background())
 	sc := &SubscriptionConn{
 		conn:   conn,
 		subs:   make(map[string]*activeSub),
