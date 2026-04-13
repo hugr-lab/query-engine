@@ -1,10 +1,13 @@
 package hugr
 
 import (
+	"bufio"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -192,4 +195,12 @@ func (c *compressResponseWriter) Flush() {
 	if _, ok := c.ResponseWriter.(http.Flusher); ok {
 		c.ResponseWriter.(http.Flusher).Flush()
 	}
+}
+
+// Hijack implements http.Hijacker to allow WebSocket upgrades through compression middleware.
+func (c *compressResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := c.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
 }

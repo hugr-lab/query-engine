@@ -6,15 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/http/httptest"
-	"sync"
 	"os"
-	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -82,20 +80,23 @@ type gqlwsMsg struct {
 
 func connectGraphQLWS(t *testing.T) *websocket.Conn {
 	t.Helper()
-	wsURL := strings.Replace(testServer.URL, "http://", "ws://", 1) + "/subscribe"
-	header := http.Header{}
-	header.Set("Sec-WebSocket-Protocol", "graphql-transport-ws")
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
+	ctx := context.Background()
+	wsURL := testServer.URL + "/subscribe"
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		Subprotocols: []string{"graphql-transport-ws"},
+	})
 	require.NoError(t, err)
 
 	// connection_init
-	err = conn.WriteJSON(gqlwsMsg{Type: "connection_init"})
+	data, _ := json.Marshal(gqlwsMsg{Type: "connection_init"})
+	err = conn.Write(ctx, websocket.MessageText, data)
 	require.NoError(t, err)
 
 	// connection_ack
-	var ack gqlwsMsg
-	err = conn.ReadJSON(&ack)
+	_, ackData, err := conn.Read(ctx)
 	require.NoError(t, err)
+	var ack gqlwsMsg
+	require.NoError(t, json.Unmarshal(ackData, &ack))
 	assert.Equal(t, "connection_ack", ack.Type)
 
 	return conn
@@ -103,25 +104,26 @@ func connectGraphQLWS(t *testing.T) *websocket.Conn {
 
 func TestGraphQLWS_QueryStreaming(t *testing.T) {
 	conn := connectGraphQLWS(t)
-	defer conn.Close()
+	defer conn.CloseNow()
 
 	// Subscribe to a query — use catalog.types which always has data
 	payload, _ := json.Marshal(map[string]any{
 		"query": `subscription { query { core { catalog { types(limit: 3) { name kind } } } } }`,
 	})
-	err := conn.WriteJSON(gqlwsMsg{ID: "1", Type: "subscribe", Payload: payload})
+	wdata, _ := json.Marshal(gqlwsMsg{ID: "1", Type: "subscribe", Payload: payload})
+	err := conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
 
 	// Collect next messages
 	var messages []gqlwsMsg
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	for {
 		var msg gqlwsMsg
-		err := conn.ReadJSON(&msg)
+		_, rdata, err := conn.Read(context.Background())
 		if err != nil {
 			t.Logf("read error (expected at end): %v", err)
 			break
 		}
+		json.Unmarshal(rdata, &msg)
 		messages = append(messages, msg)
 		if msg.Type == "complete" || msg.Type == "error" {
 			break
@@ -158,24 +160,25 @@ func TestGraphQLWS_QueryStreaming(t *testing.T) {
 
 func TestGraphQLWS_PeriodicPolling(t *testing.T) {
 	conn := connectGraphQLWS(t)
-	defer conn.Close()
+	defer conn.CloseNow()
 
 	// Subscribe with interval=1s, count=2 — use catalog.types which always has data
 	payload, _ := json.Marshal(map[string]any{
 		"query": `subscription { query(interval: "1s", count: 2) { core { catalog { types(limit: 3) { name } } } } }`,
 	})
-	err := conn.WriteJSON(gqlwsMsg{ID: "poll", Type: "subscribe", Payload: payload})
+	wdata, _ := json.Marshal(gqlwsMsg{ID: "poll", Type: "subscribe", Payload: payload})
+	err := conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
 
 	// Collect messages — expect 2 rounds of data + complete
 	var messages []gqlwsMsg
-	conn.SetReadDeadline(time.Now().Add(15 * time.Second))
 	for {
 		var msg gqlwsMsg
-		err := conn.ReadJSON(&msg)
+		_, rdata, err := conn.Read(context.Background())
 		if err != nil {
 			break
 		}
+		json.Unmarshal(rdata, &msg)
 		messages = append(messages, msg)
 		if msg.Type == "complete" || msg.Type == "error" {
 			break
@@ -203,7 +206,7 @@ func TestGraphQLWS_PeriodicPolling(t *testing.T) {
 
 func TestGraphQLWS_MultiPathQuery(t *testing.T) {
 	conn := connectGraphQLWS(t)
-	defer conn.Close()
+	defer conn.CloseNow()
 
 	// Subscribe to a query with multiple data object paths
 	payload, _ := json.Marshal(map[string]any{
@@ -214,18 +217,19 @@ func TestGraphQLWS_MultiPathQuery(t *testing.T) {
 			}
 		} }`,
 	})
-	err := conn.WriteJSON(gqlwsMsg{ID: "multi", Type: "subscribe", Payload: payload})
+	wdata, _ := json.Marshal(gqlwsMsg{ID: "multi", Type: "subscribe", Payload: payload})
+	err := conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
 
 	// Collect messages — expect rows from both paths interleaved
 	paths := map[string]int{}
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	for {
 		var msg gqlwsMsg
-		err := conn.ReadJSON(&msg)
+		_, rdata, err := conn.Read(context.Background())
 		if err != nil {
 			break
 		}
+		json.Unmarshal(rdata, &msg)
 		if msg.Type == "next" {
 			var p map[string]any
 			json.Unmarshal(msg.Payload, &p)
@@ -253,34 +257,36 @@ func TestGraphQLWS_MultiPathQuery(t *testing.T) {
 
 func TestGraphQLWS_Cancel(t *testing.T) {
 	conn := connectGraphQLWS(t)
-	defer conn.Close()
+	defer conn.CloseNow()
 
 	// Subscribe to periodic — first tick executes immediately, then waits interval
 	payload, _ := json.Marshal(map[string]any{
 		"query": `subscription { query(interval: "60s") { core { catalog { types(limit: 1) { name } } } } }`,
 	})
-	err := conn.WriteJSON(gqlwsMsg{ID: "cancel-test", Type: "subscribe", Payload: payload})
+	wdata, _ := json.Marshal(gqlwsMsg{ID: "cancel-test", Type: "subscribe", Payload: payload})
+	err := conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
 
 	// Wait for first message (next or complete from first tick)
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	var msg gqlwsMsg
-	err = conn.ReadJSON(&msg)
+	_, rdata, err := conn.Read(context.Background())
 	require.NoError(t, err)
+	json.Unmarshal(rdata, &msg)
 	// First tick should produce at least a complete for the tick
 	t.Logf("first message: type=%s", msg.Type)
 
 	// Send complete (cancel) — should stop the periodic subscription
-	err = conn.WriteJSON(gqlwsMsg{ID: "cancel-test", Type: "complete"})
+	wdata, _ = json.Marshal(gqlwsMsg{ID: "cancel-test", Type: "complete"})
+	err = conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
 
 	// Should receive complete back (may receive more next messages first)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	for {
-		err = conn.ReadJSON(&msg)
+		_, rdata, err = conn.Read(context.Background())
 		if err != nil {
 			break
 		}
+		json.Unmarshal(rdata, &msg)
 		if msg.Type == "complete" {
 			break
 		}
@@ -290,26 +296,27 @@ func TestGraphQLWS_Cancel(t *testing.T) {
 
 func TestGraphQLWS_Multiplexing(t *testing.T) {
 	conn := connectGraphQLWS(t)
-	defer conn.Close()
+	defer conn.CloseNow()
 
 	// Subscribe two queries simultaneously
 	for _, id := range []string{"sub-a", "sub-b"} {
 		payload, _ := json.Marshal(map[string]any{
 			"query": `subscription { query { core { data_sources { name } } } }`,
 		})
-		err := conn.WriteJSON(gqlwsMsg{ID: id, Type: "subscribe", Payload: payload})
+		wdata, _ := json.Marshal(gqlwsMsg{ID: id, Type: "subscribe", Payload: payload})
+		err := conn.Write(context.Background(), websocket.MessageText, wdata)
 		require.NoError(t, err)
 	}
 
 	// Collect messages for both
 	ids := map[string]int{}
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	for {
 		var msg gqlwsMsg
-		err := conn.ReadJSON(&msg)
+		_, rdata, err := conn.Read(context.Background())
 		if err != nil {
 			break
 		}
+		json.Unmarshal(rdata, &msg)
 		ids[msg.ID]++
 		if ids["sub-a"] > 0 && ids["sub-b"] > 0 {
 			// Both produced messages
@@ -329,11 +336,13 @@ func TestGraphQLWS_Multiplexing(t *testing.T) {
 
 func connectIPC(t *testing.T) *websocket.Conn {
 	t.Helper()
-	wsURL := strings.Replace(testServer.URL, "http://", "ws://", 1) + "/ipc"
-	header := http.Header{}
-	header.Set("Sec-WebSocket-Protocol", "hugr-ipc-ws")
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
+	ctx := context.Background()
+	wsURL := testServer.URL + "/ipc"
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		Subprotocols: []string{"hugr-ipc-ws"},
+	})
 	require.NoError(t, err)
+	conn.SetReadLimit(64 * 1024 * 1024)
 	return conn
 }
 
@@ -347,28 +356,28 @@ type ipcMsg struct {
 
 func TestIPC_Subscribe(t *testing.T) {
 	conn := connectIPC(t)
-	defer conn.Close()
+	defer conn.CloseNow()
 
 	// Send subscribe — use catalog.types which always has data
-	err := conn.WriteJSON(ipcMsg{
+	wdata, _ := json.Marshal(ipcMsg{
 		Type:           "subscribe",
 		SubscriptionID: "s1",
 		Query:          `subscription { query { core { catalog { types(limit: 3) { name kind } } } } }`,
 	})
+	err := conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
 
 	// Collect messages
 	var textMsgs []ipcMsg
 	var binaryCount int
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	for {
-		msgType, data, err := conn.ReadMessage()
+		msgType, data, err := conn.Read(context.Background())
 		if err != nil {
 			t.Logf("read error: %v", err)
 			break
 		}
 		switch msgType {
-		case websocket.TextMessage:
+		case websocket.MessageText:
 			var msg ipcMsg
 			json.Unmarshal(data, &msg)
 			textMsgs = append(textMsgs, msg)
@@ -376,7 +385,7 @@ func TestIPC_Subscribe(t *testing.T) {
 			if msg.Type == "subscription_complete" || msg.Type == "subscription_error" {
 				goto done
 			}
-		case websocket.BinaryMessage:
+		case websocket.MessageBinary:
 			binaryCount++
 			t.Logf("binary: %d bytes", len(data))
 		}
@@ -408,41 +417,41 @@ done:
 
 func TestIPC_Unsubscribe(t *testing.T) {
 	conn := connectIPC(t)
-	defer conn.Close()
+	defer conn.CloseNow()
 
 	// Subscribe to periodic with data (catalog.types always has data)
-	err := conn.WriteJSON(ipcMsg{
+	wdata, _ := json.Marshal(ipcMsg{
 		Type:           "subscribe",
 		SubscriptionID: "s-cancel",
 		Query:          `subscription { query(interval: "30s") { core { catalog { types(limit: 1) { name } } } } }`,
 	})
+	err := conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
 
 	// Wait for first binary frame (Arrow data)
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	for {
-		msgType, _, err := conn.ReadMessage()
+		msgType, _, err := conn.Read(context.Background())
 		require.NoError(t, err)
-		if msgType == websocket.BinaryMessage {
+		if msgType == websocket.MessageBinary {
 			break
 		}
 	}
 
 	// Unsubscribe
-	err = conn.WriteJSON(ipcMsg{
+	wdata, _ = json.Marshal(ipcMsg{
 		Type:           "unsubscribe",
 		SubscriptionID: "s-cancel",
 	})
+	err = conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
 
 	// Should get subscription_complete
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	for {
-		msgType, data, err := conn.ReadMessage()
+		msgType, data, err := conn.Read(context.Background())
 		if err != nil {
 			break
 		}
-		if msgType == websocket.TextMessage {
+		if msgType == websocket.MessageText {
 			var msg ipcMsg
 			json.Unmarshal(data, &msg)
 			if msg.Type == "subscription_complete" {
@@ -456,27 +465,27 @@ func TestIPC_Unsubscribe(t *testing.T) {
 
 func TestIPC_MultipleSubscriptions(t *testing.T) {
 	conn := connectIPC(t)
-	defer conn.Close()
+	defer conn.CloseNow()
 
 	// Subscribe two queries
 	for _, id := range []string{"ms1", "ms2"} {
-		err := conn.WriteJSON(ipcMsg{
+		wdata, _ := json.Marshal(ipcMsg{
 			Type:           "subscribe",
 			SubscriptionID: id,
 			Query:          `subscription { query { core { data_sources { name } } } }`,
 		})
+		err := conn.Write(context.Background(), websocket.MessageText, wdata)
 		require.NoError(t, err)
 	}
 
 	// Collect — expect messages from both subscription IDs
 	seen := map[string]bool{}
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	for {
-		msgType, data, err := conn.ReadMessage()
+		msgType, data, err := conn.Read(context.Background())
 		if err != nil {
 			break
 		}
-		if msgType == websocket.TextMessage {
+		if msgType == websocket.MessageText {
 			var msg ipcMsg
 			json.Unmarshal(data, &msg)
 			if msg.SubscriptionID != "" {
@@ -493,47 +502,58 @@ func TestIPC_MultipleSubscriptions(t *testing.T) {
 }
 
 func TestIPC_SubscribeCoexistsWithQuery(t *testing.T) {
-	t.Skip("TODO: IPC query coexistence with active subscriptions needs stream mutex rework")
+	// Test that a regular query can run on the same connection as an active subscription.
 	conn := connectIPC(t)
-	defer conn.Close()
+	defer conn.CloseNow()
 
-	// Start a subscription
-	err := conn.WriteJSON(ipcMsg{
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Start a subscription (first tick fires immediately, then waits 30s)
+	wdata, _ := json.Marshal(ipcMsg{
 		Type:           "subscribe",
 		SubscriptionID: "bg",
 		Query:          `subscription { query(interval: "30s") { core { data_sources { name } } } }`,
 	})
+	err := conn.Write(ctx, websocket.MessageText, wdata)
 	require.NoError(t, err)
 
-	// Wait for subscription to produce data
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	// Wait for first subscription tick to complete (part_complete text message)
 	for {
-		msgType, data, err := conn.ReadMessage()
+		msgType, data, err := conn.Read(ctx)
 		require.NoError(t, err)
-		if msgType == websocket.BinaryMessage || (msgType == websocket.TextMessage && strings.Contains(string(data), "subscription_data")) {
-			break
+		if msgType == websocket.MessageText {
+			var msg ipcMsg
+			json.Unmarshal(data, &msg)
+			if msg.Type == "part_complete" && msg.SubscriptionID == "bg" {
+				break
+			}
 		}
+		// Also accept binary frames (Arrow IPC data from subscription)
 	}
 
 	// Now send a regular query on the same connection
-	err = conn.WriteJSON(map[string]any{
+	wdata, _ = json.Marshal(map[string]any{
 		"type":  "query",
 		"query": `{ core { data_sources { name } } }`,
 	})
+	err = conn.Write(ctx, websocket.MessageText, wdata)
 	require.NoError(t, err)
 
-	// Should receive query results (binary) and then complete
+	// Should receive query results (binary) and then "complete" text message.
+	// Skip any subscription events that may arrive concurrently.
 	var gotQueryComplete bool
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
 	for {
-		msgType, data, err := conn.ReadMessage()
+		msgType, data, err := conn.Read(ctx)
 		if err != nil {
+			t.Logf("read error: %v", err)
 			break
 		}
-		if msgType == websocket.TextMessage {
+		if msgType == websocket.MessageText {
 			var msg map[string]string
 			json.Unmarshal(data, &msg)
-			if msg["type"] == "complete" {
+			// "complete" from query (no subscription_id) vs "part_complete" from subscription
+			if msg["type"] == "complete" && msg["subscription_id"] == "" {
 				gotQueryComplete = true
 				break
 			}
@@ -542,7 +562,8 @@ func TestIPC_SubscribeCoexistsWithQuery(t *testing.T) {
 	assert.True(t, gotQueryComplete, "regular query should complete on same connection")
 
 	// Cleanup
-	conn.WriteJSON(ipcMsg{Type: "unsubscribe", SubscriptionID: "bg"})
+	wdata, _ = json.Marshal(ipcMsg{Type: "unsubscribe", SubscriptionID: "bg"})
+	conn.Write(ctx, websocket.MessageText, wdata)
 }
 
 // --- Go Client SDK tests ---
@@ -727,18 +748,19 @@ func drainSub(sub *types.Subscription) int {
 
 func TestGraphQLWS_InvalidQuery(t *testing.T) {
 	conn := connectGraphQLWS(t)
-	defer conn.Close()
+	defer conn.CloseNow()
 
 	payload, _ := json.Marshal(map[string]any{
 		"query": `subscription { nonexistent_field }`,
 	})
-	err := conn.WriteJSON(gqlwsMsg{ID: "bad", Type: "subscribe", Payload: payload})
+	wdata, _ := json.Marshal(gqlwsMsg{ID: "bad", Type: "subscribe", Payload: payload})
+	err := conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
 
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	var msg gqlwsMsg
-	err = conn.ReadJSON(&msg)
+	_, rdata, err := conn.Read(context.Background())
 	require.NoError(t, err)
+	json.Unmarshal(rdata, &msg)
 	// Should get error
 	assert.True(t, msg.Type == "error" || msg.Type == "complete",
 		fmt.Sprintf("expected error or complete, got %s: %s", msg.Type, string(msg.Payload)))
@@ -765,7 +787,7 @@ func TestGoClient_TwoSubscriptionsSameData(t *testing.T) {
 
 	type subResult struct {
 		events int
-		paths  map[string]int // path → row count
+		paths  map[string]int    // path → row count
 		sample map[string]string // path → first row JSON (for comparison)
 	}
 

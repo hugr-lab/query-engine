@@ -3,18 +3,18 @@ package hugr
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"runtime/debug"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/coder/websocket"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -22,14 +22,11 @@ import (
 	"github.com/vektah/gqlparser/v2/formatter"
 )
 
-var upgrader = &websocket.Upgrader{
-	Subprotocols: []string{"hugr-ipc-ws"},
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for IPC WebSocket connections
-	},
-	HandshakeTimeout: 10 * time.Second,
-	ReadBufferSize:   128 * 1024 * 1024, // 128 MB
-	WriteBufferSize:  128 * 1024 * 1024, // 128 MB
+var ipcAcceptOptions = &websocket.AcceptOptions{
+	Subprotocols:         []string{"hugr-ipc-ws"},
+	InsecureSkipVerify:   true, // Allow all origins
+	CompressionMode:      websocket.CompressionDisabled,
+	CompressionThreshold: 0,
 }
 
 type StreamMessage struct {
@@ -62,12 +59,13 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("panic in IPC stream handler: %v", r)
 		}
 	}()
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := websocket.Accept(w, r, ipcAcceptOptions)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to upgrade connection: %v", err), http.StatusInternalServerError)
 		return
 	}
-	defer conn.Close()
+	conn.SetReadLimit(128 * 1024 * 1024) // 128 MB for Arrow IPC batches
+	defer conn.Close(websocket.StatusNormalClosure, "")
 	stream := &stream{
 		queryId: uuid.NewString(),
 		conn:    conn,
@@ -76,24 +74,6 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	stream.connCancel = cancel
 	go stream.writer(ctx)
-	conn.SetCloseHandler(func(code int, text string) error {
-		if stream.cancel != nil {
-			stream.cancel()
-		}
-		stream.activeQuery = nil
-		stream.subscriptions.Range(func(key, value any) bool {
-			value.(context.CancelFunc)()
-			stream.subscriptions.Delete(key)
-			return true
-		})
-		stream.connCancel()
-		return nil
-	})
-	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
-	go stream.ping(ctx)
 	if s.config.Debug {
 		if auth.IsFullAccess(ctx) {
 			log.Printf("stream %s: IPC stream connection established: full access", stream.queryId)
@@ -111,16 +91,23 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		default:
+			msgType, data, readErr := conn.Read(ctx)
+			if readErr != nil {
+				status := websocket.CloseStatus(readErr)
+				if status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway {
+					break
+				}
+				if ctx.Err() != nil {
+					break
+				}
+				log.Printf("Unexpected WebSocket close: %v", readErr)
+				break
+			}
+			if msgType != websocket.MessageText {
+				continue
+			}
 			var req StreamMessage
-			err = conn.ReadJSON(&req)
-			if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
-				break
-			}
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("Unexpected WebSocket close: %v", err)
-				break
-			}
-			if err != nil {
+			if err := json.Unmarshal(data, &req); err != nil {
 				_ = stream.sendStreamError(fmt.Errorf("failed to read IPC request: %w", err))
 				continue
 			}
@@ -235,7 +222,7 @@ func (s *Service) handleIPCStream(ctx context.Context, stream *stream) {
 				bp.Put(buf)
 				return
 			}
-			err = stream.writeMessage(websocket.BinaryMessage, buf.Bytes())
+			err = stream.writeMessage(websocket.MessageBinary, buf.Bytes())
 			buf.Reset()
 			bp.Put(buf)
 			if err != nil {
@@ -319,7 +306,7 @@ func (s *Service) handleIPCSubscription(ctx context.Context, stream *stream, req
 			w := ipc.NewWriter(buf, ipc.WithLZ4())
 			_ = w.Write(tagged)
 			_ = w.Close()
-			err := stream.writeMessage(websocket.BinaryMessage, buf.Bytes())
+			err := stream.writeMessage(websocket.MessageBinary, buf.Bytes())
 			buf.Reset()
 			bp.Put(buf)
 			if err != nil {
@@ -460,9 +447,8 @@ func (s *Service) dataObjectStreamQuery(ctx context.Context, dataObject string, 
 
 // wsMsg is a message to write to the WebSocket connection.
 type wsMsg struct {
-	msgType int    // websocket.TextMessage, BinaryMessage, or PingMessage
-	data    []byte // raw bytes for binary/ping
-	json    any    // JSON-serializable value (when data is nil)
+	msgType websocket.MessageType // websocket.MessageText or MessageBinary
+	data    []byte                // raw bytes
 }
 
 type stream struct {
@@ -502,26 +488,6 @@ func (s *stream) sendStreamError(err error) error {
 	return s.writeJSON(StreamMessage{Type: "error", Error: err.Error()})
 }
 
-func (s *stream) ping(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if err := s.writeMessage(websocket.PingMessage, nil); err != nil {
-				log.Printf("stream %s: Failed to send ping: %v", s.queryId, err)
-				if s.cancel != nil {
-					s.cancel()
-				}
-				s.connCancel()
-				return
-			}
-		}
-	}
-}
-
 func (s *stream) cancelSubscription(id string) {
 	if v, ok := s.subscriptions.LoadAndDelete(id); ok {
 		v.(context.CancelFunc)()
@@ -539,13 +505,7 @@ func (s *stream) writer(ctx context.Context) {
 			if !ok {
 				return
 			}
-			var err error
-			if msg.json != nil {
-				err = s.conn.WriteJSON(msg.json)
-			} else {
-				err = s.conn.WriteMessage(msg.msgType, msg.data)
-			}
-			if err != nil {
+			if err := s.conn.Write(ctx, msg.msgType, msg.data); err != nil {
 				log.Printf("stream %s: write error: %v", s.queryId, err)
 				s.connCancel()
 				return
@@ -556,8 +516,12 @@ func (s *stream) writer(ctx context.Context) {
 
 // writeJSON sends a JSON message through the write channel.
 func (s *stream) writeJSON(msg any) error {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("stream %s: marshal error: %w", s.queryId, err)
+	}
 	select {
-	case s.writeCh <- wsMsg{json: msg}:
+	case s.writeCh <- wsMsg{msgType: websocket.MessageText, data: data}:
 		return nil
 	default:
 		return fmt.Errorf("stream %s: write channel full", s.queryId)
@@ -565,7 +529,7 @@ func (s *stream) writeJSON(msg any) error {
 }
 
 // writeMessage sends a raw message through the write channel.
-func (s *stream) writeMessage(msgType int, data []byte) error {
+func (s *stream) writeMessage(msgType websocket.MessageType, data []byte) error {
 	select {
 	case s.writeCh <- wsMsg{msgType: msgType, data: data}:
 		return nil
