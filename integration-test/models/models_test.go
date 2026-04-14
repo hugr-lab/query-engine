@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -420,26 +421,27 @@ func TestModels_Gemini_ChatWithTools(t *testing.T) {
 		tool_choice: "auto",
 		max_tokens: 200
 	) {
-		content finish_reason tool_calls provider
+		content finish_reason tool_calls provider thought_signature
 	} } } } }`, nil)
 	defer res.Close()
 
 	var result struct {
-		Content      string `json:"content"`
-		FinishReason string `json:"finish_reason"`
-		ToolCalls    string `json:"tool_calls"`
-		Provider     string `json:"provider"`
+		Content          string `json:"content"`
+		FinishReason     string `json:"finish_reason"`
+		ToolCalls        string `json:"tool_calls"`
+		Provider         string `json:"provider"`
+		ThoughtSignature string `json:"thought_signature"`
 	}
 	err := res.ScanData("function.core.models.chat_completion", &result)
 	require.NoError(t, err)
 	assert.Equal(t, "gemini", result.Provider)
 	assert.NotEmpty(t, result.FinishReason)
-	// Gemini should call get_weather for "What is the weather in Tokyo?"
 	if result.FinishReason == "tool_use" || result.ToolCalls != "" {
 		assert.Contains(t, result.ToolCalls, "get_weather", "should call get_weather tool")
+		assert.NotEmpty(t, result.ThoughtSignature, "Gemini 2.5+ should return thought_signature with tool calls")
 	}
-	t.Logf("gemini chat+tools: content=%q, finish=%s, tool_calls=%s",
-		result.Content, result.FinishReason, result.ToolCalls)
+	t.Logf("gemini chat+tools: content=%q, finish=%s, tool_calls=%s, thought_sig=%q",
+		result.Content, result.FinishReason, result.ToolCalls, result.ThoughtSignature[:min(len(result.ThoughtSignature), 50)])
 }
 
 // --- OpenAI Remote Provider (official API) ---
@@ -716,7 +718,7 @@ const streamToolCallQuery = `subscription { core { models { chat_completion(
 	tool_choice: "auto",
 	max_tokens: 200
 ) {
-	type content finish_reason tool_calls prompt_tokens completion_tokens
+	type content finish_reason tool_calls prompt_tokens completion_tokens thought_signature
 } } } }`
 
 // assertStreamToolCalls validates that the finish event tool_calls field
@@ -746,7 +748,10 @@ func assertStreamToolCalls(t *testing.T, provider string, events []map[string]an
 	for i, tc := range calls {
 		assert.NotEmpty(t, tc.Name, "%s: tool call[%d] should have a name", provider, i)
 		assert.NotNil(t, tc.Arguments, "%s: tool call[%d] should have arguments", provider, i)
-		t.Logf("%s stream tool call[%d]: id=%s name=%s args=%v thought_sig=%q", provider, i, tc.ID, tc.Name, tc.Arguments, tc.ThoughtSignature)
+		t.Logf("%s stream tool call[%d]: id=%s name=%s args=%v", provider, i, tc.ID, tc.Name, tc.Arguments)
+	}
+	if ts := finishEvent["thought_signature"]; ts != nil && fmt.Sprintf("%v", ts) != "" {
+		t.Logf("%s stream thought_signature=%q", provider, ts)
 	}
 
 	t.Logf("%s stream finish: finish_reason=%v, tool_calls=%d items", provider, finishEvent["finish_reason"], len(calls))
@@ -787,4 +792,292 @@ func TestModels_StreamChatCompletionWithTools_Gemini(t *testing.T) {
 	events := collectStreamEvents(t, fmt.Sprintf(streamToolCallQuery, "test_gemini"))
 	require.NotEmpty(t, events, "should receive streaming events")
 	assertStreamToolCalls(t, "Gemini", events)
+}
+
+// --- Multi-turn Tool Call Round-trip Tests ---
+// These verify the full cycle: request with tools → tool_calls response →
+// send tool results in history → model responds with content.
+// Critical for Gemini thoughtSignature placement and correct message format.
+
+const roundTripToolDef = `{"name":"get_weather","description":"Get current weather for a city","parameters":{"type":"object","properties":{"city":{"type":"string","description":"City name"}},"required":["city"]}}`
+
+func truncateStr(s string, n int) string {
+	if len(s) > n {
+		return s[:n] + "..."
+	}
+	return s
+}
+
+// testToolCallRoundTrip runs a two-step non-streaming tool call cycle.
+func testToolCallRoundTrip(t *testing.T, modelName, provider string, maxTokens int) {
+	t.Helper()
+
+	userMsg := `{"role":"user","content":"What is the weather in Tokyo? You must use the get_weather tool."}`
+
+	// Step 1: chat_completion with tools → model should call get_weather
+	step1Q := fmt.Sprintf(`query($messages: [String!]!, $tools: [String!]) {
+		function { core { models { chat_completion(
+			model: "%s", messages: $messages, tools: $tools,
+			tool_choice: "auto", max_tokens: %d
+		) { content finish_reason tool_calls provider thought_signature } } } } }`, modelName, maxTokens)
+
+	res := query(t, step1Q, map[string]any{
+		"messages": []string{userMsg},
+		"tools":    []string{roundTripToolDef},
+	})
+	defer res.Close()
+
+	var result struct {
+		Content          string `json:"content"`
+		FinishReason     string `json:"finish_reason"`
+		ToolCalls        string `json:"tool_calls"`
+		Provider         string `json:"provider"`
+		ThoughtSignature string `json:"thought_signature"`
+	}
+	err := res.ScanData("function.core.models.chat_completion", &result)
+	require.NoError(t, err)
+	assert.Equal(t, provider, result.Provider)
+	require.NotEmpty(t, result.ToolCalls, "%s: model should call tools for weather question", provider)
+
+	var toolCalls []types.LLMToolCall
+	err = json.Unmarshal([]byte(result.ToolCalls), &toolCalls)
+	require.NoError(t, err, "%s: tool_calls JSON parse failed: %s", provider, result.ToolCalls)
+	require.NotEmpty(t, toolCalls, "%s: should have at least one tool call", provider)
+
+	for i, tc := range toolCalls {
+		t.Logf("Step 1 — %s tool_call[%d]: id=%s name=%s args=%v",
+			provider, i, tc.ID, tc.Name, tc.Arguments)
+	}
+	if result.ThoughtSignature != "" {
+		t.Logf("Step 1 — %s thought_signature=%q", provider, truncateStr(result.ThoughtSignature, 50))
+	}
+
+	// Step 2: Build multi-turn messages with tool results
+	// thought_signature is on the assistant MESSAGE, not on individual tool calls
+	assistantMsg := types.LLMMessage{
+		Role:             "assistant",
+		Content:          result.Content,
+		ToolCalls:        toolCalls,
+		ThoughtSignature: result.ThoughtSignature,
+	}
+	assistantJSON, err := json.Marshal(assistantMsg)
+	require.NoError(t, err)
+
+	messages := []string{userMsg, string(assistantJSON)}
+	for _, tc := range toolCalls {
+		toolID := tc.ID
+		if toolID == "" {
+			toolID = tc.Name
+		}
+		toolResult := types.LLMMessage{
+			Role:       "tool",
+			Content:    `{"temperature": 22, "condition": "sunny", "humidity": 65}`,
+			ToolCallID: toolID,
+		}
+		toolJSON, err := json.Marshal(toolResult)
+		require.NoError(t, err)
+		messages = append(messages, string(toolJSON))
+	}
+
+	t.Logf("Step 2 — sending %d messages back to %s", len(messages), provider)
+
+	// Step 3: Second request with tool results in history → should get content response
+	step2Q := fmt.Sprintf(`query($messages: [String!]!, $tools: [String!]) {
+		function { core { models { chat_completion(
+			model: "%s", messages: $messages, tools: $tools, max_tokens: %d
+		) { content finish_reason tool_calls provider } } } } }`, modelName, maxTokens)
+
+	res2 := query(t, step2Q, map[string]any{
+		"messages": messages,
+		"tools":    []string{roundTripToolDef},
+	})
+	defer res2.Close()
+
+	var result2 struct {
+		Content      string `json:"content"`
+		FinishReason string `json:"finish_reason"`
+		Provider     string `json:"provider"`
+	}
+	err = res2.ScanData("function.core.models.chat_completion", &result2)
+	require.NoError(t, err)
+	assert.Equal(t, provider, result2.Provider)
+	assert.NotEmpty(t, result2.Content, "%s: should respond with content after tool results", provider)
+
+	t.Logf("Step 3 — %s response: %q (finish=%s)", provider, truncateStr(result2.Content, 200), result2.FinishReason)
+}
+
+func TestModels_Gemini_ToolCallRoundTrip(t *testing.T) {
+	if os.Getenv("GEMINI_KEY") == "" {
+		t.Skip("GEMINI_KEY not set")
+	}
+	testToolCallRoundTrip(t, "test_gemini", "gemini", 4096)
+}
+
+func TestModels_Anthropic_ToolCallRoundTrip(t *testing.T) {
+	if os.Getenv("ANTHROPIC_KEY") == "" {
+		t.Skip("ANTHROPIC_KEY not set")
+	}
+	testToolCallRoundTrip(t, "test_anthropic", "anthropic", 4096)
+}
+
+func TestModels_OpenAIRemote_ToolCallRoundTrip(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	testToolCallRoundTrip(t, "test_openai_remote", "openai", 200)
+}
+
+// --- Streaming Multi-turn Tool Call Round-trip Tests ---
+
+// gqlString escapes a raw string for use as an inline GraphQL string literal.
+func gqlString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\r", `\r`)
+	s = strings.ReplaceAll(s, "\t", `\t`)
+	return `"` + s + `"`
+}
+
+// buildInlineStreamQuery builds a subscription query with messages and tools inlined.
+func buildInlineStreamQuery(modelName string, messages []string, tools []string, maxTokens int, toolChoice string) string {
+	var msgLiterals []string
+	for _, m := range messages {
+		msgLiterals = append(msgLiterals, gqlString(m))
+	}
+	var toolLiterals []string
+	for _, t := range tools {
+		toolLiterals = append(toolLiterals, gqlString(t))
+	}
+	toolChoicePart := ""
+	if toolChoice != "" {
+		toolChoicePart = fmt.Sprintf(`, tool_choice: "%s"`, toolChoice)
+	}
+	return fmt.Sprintf(`subscription { core { models { chat_completion(
+		model: "%s", messages: [%s], tools: [%s]%s, max_tokens: %d
+	) { type content finish_reason tool_calls prompt_tokens completion_tokens thought_signature } } } }`,
+		modelName,
+		strings.Join(msgLiterals, ", "),
+		strings.Join(toolLiterals, ", "),
+		toolChoicePart,
+		maxTokens)
+}
+
+// testStreamToolCallRoundTrip runs a two-step streaming tool call cycle.
+func testStreamToolCallRoundTrip(t *testing.T, modelName, provider string, maxTokens int, timeout time.Duration) {
+	t.Helper()
+
+	userMsg := `{"role":"user","content":"What is the weather in Tokyo? You must use the get_weather tool."}`
+
+	// Step 1: Stream chat with tools → collect tool calls from finish event
+	step1Q := buildInlineStreamQuery(modelName, []string{userMsg}, []string{roundTripToolDef}, maxTokens, "auto")
+
+	events := collectStreamEventsWithTimeout(t, step1Q, timeout)
+	require.NotEmpty(t, events, "%s stream: should receive events in step 1", provider)
+
+	var finishEvent map[string]any
+	for _, e := range events {
+		if fmt.Sprintf("%v", e["type"]) == "finish" {
+			finishEvent = e
+		}
+	}
+	require.NotNil(t, finishEvent, "%s stream: should have finish event", provider)
+
+	toolCallsRaw := finishEvent["tool_calls"]
+	require.NotNil(t, toolCallsRaw, "%s stream: finish event should have tool_calls", provider)
+	toolCallsStr := fmt.Sprintf("%v", toolCallsRaw)
+
+	var toolCalls []types.LLMToolCall
+	err := json.Unmarshal([]byte(toolCallsStr), &toolCalls)
+	require.NoError(t, err, "%s stream: tool_calls parse failed: %s", provider, toolCallsStr)
+	require.NotEmpty(t, toolCalls)
+
+	for i, tc := range toolCalls {
+		t.Logf("Step 1 stream — %s tool_call[%d]: id=%s name=%s args=%v",
+			provider, i, tc.ID, tc.Name, tc.Arguments)
+	}
+	// thought_signature at finish event level, not per tool call
+	thoughtSig := ""
+	if ts := finishEvent["thought_signature"]; ts != nil {
+		thoughtSig = fmt.Sprintf("%v", ts)
+	}
+	if thoughtSig != "" {
+		t.Logf("Step 1 stream — %s thought_signature=%q", provider, truncateStr(thoughtSig, 50))
+	}
+
+	// Step 2: Build messages with tool results
+	// thought_signature goes on the assistant MESSAGE
+	assistantMsg := types.LLMMessage{
+		Role:             "assistant",
+		ToolCalls:        toolCalls,
+		ThoughtSignature: thoughtSig,
+	}
+	assistantJSON, _ := json.Marshal(assistantMsg)
+	messages := []string{userMsg, string(assistantJSON)}
+
+	for _, tc := range toolCalls {
+		toolID := tc.ID
+		if toolID == "" {
+			toolID = tc.Name
+		}
+		toolResult := types.LLMMessage{
+			Role:       "tool",
+			Content:    `{"temperature": 22, "condition": "sunny", "humidity": 65}`,
+			ToolCallID: toolID,
+		}
+		toolJSON, _ := json.Marshal(toolResult)
+		messages = append(messages, string(toolJSON))
+	}
+
+	t.Logf("Step 2 stream — sending %d messages to %s", len(messages), provider)
+
+	// Step 3: Stream second request with tool results → should get content
+	step2Q := buildInlineStreamQuery(modelName, messages, []string{roundTripToolDef}, maxTokens, "")
+
+	events2 := collectStreamEventsWithTimeout(t, step2Q, timeout)
+	require.NotEmpty(t, events2, "%s stream: should receive events in step 2", provider)
+
+	var contentEvents int
+	var allContent string
+	var finishEvent2 map[string]any
+	for _, e := range events2 {
+		switch fmt.Sprintf("%v", e["type"]) {
+		case "content_delta", "reasoning":
+			contentEvents++
+			if c := e["content"]; c != nil {
+				allContent += fmt.Sprintf("%v", c)
+			}
+		case "finish":
+			finishEvent2 = e
+		}
+	}
+
+	require.NotNil(t, finishEvent2, "%s stream: should have finish event in step 2", provider)
+	// Some providers (Gemini) may return content only in finish event
+	assert.True(t, contentEvents > 0 || allContent != "" || finishEvent2["finish_reason"] == "stop",
+		"%s stream: should have content or successful finish after tool results", provider)
+
+	t.Logf("Step 3 stream — %s: %d content events, content=%q, finish=%v",
+		provider, contentEvents, truncateStr(allContent, 200), finishEvent2["finish_reason"])
+}
+
+func TestModels_StreamToolCallRoundTrip_Gemini(t *testing.T) {
+	if os.Getenv("GEMINI_KEY") == "" {
+		t.Skip("GEMINI_KEY not set")
+	}
+	testStreamToolCallRoundTrip(t, "test_gemini", "gemini", 4096, 120*time.Second)
+}
+
+func TestModels_StreamToolCallRoundTrip_Anthropic(t *testing.T) {
+	if os.Getenv("ANTHROPIC_KEY") == "" {
+		t.Skip("ANTHROPIC_KEY not set")
+	}
+	testStreamToolCallRoundTrip(t, "test_anthropic", "anthropic", 4096, 120*time.Second)
+}
+
+func TestModels_StreamToolCallRoundTrip_OpenAIRemote(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	testStreamToolCallRoundTrip(t, "test_openai_remote", "openai", 200, 120*time.Second)
 }

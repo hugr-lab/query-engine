@@ -137,49 +137,8 @@ func (s *GeminiSource) CreateChatCompletion(ctx context.Context, messages []sour
 		maxTokens = s.config.MaxTokens
 	}
 
-	// Separate system instruction
 	var systemInstruction *map[string]any
-	var contents []map[string]any
-	for _, m := range messages {
-		if m.Role == "system" {
-			si := map[string]any{"parts": []map[string]any{{"text": m.Content}}}
-			systemInstruction = &si
-			continue
-		}
-		role := m.Role
-		if role == "assistant" {
-			role = "model"
-		}
-		if m.Role == "tool" {
-			// Gemini requires echoing the original functionCall part (with
-			// thoughtSignature) alongside the functionResponse.
-			parts := []map[string]any{}
-			if tc := findToolCall(messages, m.ToolCallID); tc != nil {
-				fc := map[string]any{"name": tc.Name, "args": tc.Arguments}
-				if tc.ThoughtSignature != "" {
-					fc["thoughtSignature"] = tc.ThoughtSignature
-				}
-				parts = append(parts, map[string]any{"functionCall": fc})
-			}
-			parts = append(parts, map[string]any{
-				"functionResponse": map[string]any{
-					"name":     m.ToolCallID,
-					"response": map[string]any{"result": m.Content},
-				},
-			})
-			contents = append(contents, map[string]any{"role": "function", "parts": parts})
-			continue
-		}
-		parts := []map[string]any{{"text": m.Content}}
-		for _, tc := range m.ToolCalls {
-			fc := map[string]any{"name": tc.Name, "args": tc.Arguments}
-			if tc.ThoughtSignature != "" {
-				fc["thoughtSignature"] = tc.ThoughtSignature
-			}
-			parts = append(parts, map[string]any{"functionCall": fc})
-		}
-		contents = append(contents, map[string]any{"role": role, "parts": parts})
-	}
+	contents := convertMessagesGemini(messages, &systemInstruction)
 
 	reqBody := map[string]any{
 		"contents": contents,
@@ -293,15 +252,17 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 			result.FinishReason = c.FinishReason
 		}
 		for _, part := range c.Content.Parts {
+			if part.ThoughtSignature != "" {
+				result.ThoughtSignature = part.ThoughtSignature
+			}
 			if part.Text != "" {
 				result.Content += part.Text
 			}
 			if part.FunctionCall != nil {
 				result.ToolCalls = append(result.ToolCalls, sources.LLMToolCall{
-					ID:               part.FunctionCall.ID,
-					Name:             part.FunctionCall.Name,
-					Arguments:        part.FunctionCall.Args,
-					ThoughtSignature: part.ThoughtSignature,
+					ID:        part.FunctionCall.ID,
+					Name:      part.FunctionCall.Name,
+					Arguments: part.FunctionCall.Args,
 				})
 				if result.FinishReason == "" {
 					result.FinishReason = "tool_use"
@@ -337,49 +298,8 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 		effectiveBudget = s.config.ThinkingBudget
 	}
 
-	// Separate system instruction
 	var systemInstruction *map[string]any
-	var contents []map[string]any
-	for _, m := range messages {
-		if m.Role == "system" {
-			si := map[string]any{"parts": []map[string]any{{"text": m.Content}}}
-			systemInstruction = &si
-			continue
-		}
-		role := m.Role
-		if role == "assistant" {
-			role = "model"
-		}
-		if m.Role == "tool" {
-			// Gemini requires echoing the original functionCall part (with
-			// thoughtSignature) alongside the functionResponse.
-			parts := []map[string]any{}
-			if tc := findToolCall(messages, m.ToolCallID); tc != nil {
-				fc := map[string]any{"name": tc.Name, "args": tc.Arguments}
-				if tc.ThoughtSignature != "" {
-					fc["thoughtSignature"] = tc.ThoughtSignature
-				}
-				parts = append(parts, map[string]any{"functionCall": fc})
-			}
-			parts = append(parts, map[string]any{
-				"functionResponse": map[string]any{
-					"name":     m.ToolCallID,
-					"response": map[string]any{"result": m.Content},
-				},
-			})
-			contents = append(contents, map[string]any{"role": "function", "parts": parts})
-			continue
-		}
-		parts := []map[string]any{{"text": m.Content}}
-		for _, tc := range m.ToolCalls {
-			fc := map[string]any{"name": tc.Name, "args": tc.Arguments}
-			if tc.ThoughtSignature != "" {
-				fc["thoughtSignature"] = tc.ThoughtSignature
-			}
-			parts = append(parts, map[string]any{"functionCall": fc})
-		}
-		contents = append(contents, map[string]any{"role": role, "parts": parts})
-	}
+	contents := convertMessagesGemini(messages, &systemInstruction)
 
 	reqBody := map[string]any{
 		"contents": contents,
@@ -443,6 +363,7 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 
 	var totalPromptTokens, totalCompletionTokens int
 	var accToolCalls []sources.LLMToolCall
+	var accThoughtSig string
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -487,7 +408,11 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 		}
 		candidate := chunk.Candidates[0]
 
+		var chunkThoughtSig string
 		for _, part := range candidate.Content.Parts {
+			if part.ThoughtSignature != "" {
+				chunkThoughtSig = part.ThoughtSignature
+			}
 			if part.Text != "" {
 				eventType := "content_delta"
 				if part.Thought {
@@ -502,12 +427,14 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 			}
 			if part.FunctionCall != nil {
 				accToolCalls = append(accToolCalls, sources.LLMToolCall{
-					ID:               part.FunctionCall.ID,
-					Name:             part.FunctionCall.Name,
-					Arguments:        part.FunctionCall.Args,
-					ThoughtSignature: part.ThoughtSignature,
+					ID:        part.FunctionCall.ID,
+					Name:      part.FunctionCall.Name,
+					Arguments: part.FunctionCall.Args,
 				})
 			}
+		}
+		if chunkThoughtSig != "" {
+			accThoughtSig = chunkThoughtSig
 		}
 
 		if candidate.FinishReason != "" {
@@ -523,6 +450,7 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 				FinishReason:     finishReason,
 				PromptTokens:     totalPromptTokens,
 				CompletionTokens: totalCompletionTokens,
+				ThoughtSignature: accThoughtSig,
 			}
 			if len(accToolCalls) > 0 {
 				b, _ := json.Marshal(accToolCalls)
@@ -548,19 +476,70 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 	return nil
 }
 
-// findToolCall searches messages for a tool call matching the given ID.
-// Used to recover the original functionCall (with thoughtSignature) when
-// building Gemini functionResponse messages.
-func findToolCall(messages []sources.LLMMessage, id string) *sources.LLMToolCall {
-	for i := len(messages) - 1; i >= 0; i-- {
-		for j := range messages[i].ToolCalls {
-			tc := &messages[i].ToolCalls[j]
-			if tc.ID == id || tc.Name == id {
-				return tc
-			}
+// convertMessagesGemini converts normalized LLMMessages to Gemini API contents format.
+// - "system" messages → systemInstruction
+// - "assistant" messages → "model" with functionCall Parts (thoughtSignature on first)
+// - "tool" messages → grouped into "user" with functionResponse Parts
+// - other → "user" with text Part
+func convertMessagesGemini(messages []sources.LLMMessage, systemInstruction **map[string]any) []map[string]any {
+	var contents []map[string]any
+	for _, m := range messages {
+		if m.Role == "system" {
+			si := map[string]any{"parts": []map[string]any{{"text": m.Content}}}
+			*systemInstruction = &si
+			continue
 		}
+		role := m.Role
+		if role == "assistant" {
+			role = "model"
+		}
+		// Tool response messages → functionResponse Parts, grouped into "user" content
+		if m.Role == "tool" {
+			frPart := map[string]any{
+				"functionResponse": map[string]any{
+					"name":     m.ToolCallID,
+					"response": map[string]any{"result": m.Content},
+				},
+			}
+			// Group consecutive tool responses into one "user" content
+			if n := len(contents); n > 0 {
+				last := contents[n-1]
+				if last["role"] == "user" {
+					if parts, ok := last["parts"].([]map[string]any); ok && len(parts) > 0 {
+						if _, ok := parts[0]["functionResponse"]; ok {
+							last["parts"] = append(parts, frPart)
+							continue
+						}
+					}
+				}
+			}
+			contents = append(contents, map[string]any{
+				"role":  "user",
+				"parts": []map[string]any{frPart},
+			})
+			continue
+		}
+		// Regular messages (user, assistant/model)
+		var parts []map[string]any
+		if m.Content != "" {
+			parts = append(parts, map[string]any{"text": m.Content})
+		}
+		for i, tc := range m.ToolCalls {
+			fcPart := map[string]any{
+				"functionCall": map[string]any{"name": tc.Name, "args": tc.Arguments},
+			}
+			// thoughtSignature on FIRST functionCall Part only (Gemini 2.5+ requirement)
+			if i == 0 && m.ThoughtSignature != "" {
+				fcPart["thoughtSignature"] = m.ThoughtSignature
+			}
+			parts = append(parts, fcPart)
+		}
+		if len(parts) == 0 {
+			parts = []map[string]any{{"text": ""}}
+		}
+		contents = append(contents, map[string]any{"role": role, "parts": parts})
 	}
-	return nil
+	return contents
 }
 
 var (
