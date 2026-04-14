@@ -115,6 +115,18 @@ func registerDS(ctx context.Context, s *hugr.Service) {
 			},
 		})
 		mustQuery(ctx, s, `mutation { function { core { load_data_source(name: "test_openai_remote") { success } } } }`, nil)
+
+		// OpenAI Responses API DS (same key, Responses API endpoint)
+		responsesPath := "https://api.openai.com/v1/responses?model=\"gpt-5.4-mini-2026-03-17\"&api_key=" + key + "&max_tokens=4096&timeout=120s&reasoning_summary=auto"
+		mustQuery(ctx, s, `mutation($data: core_data_sources_mut_input_data!) {
+			core { insert_data_sources(data: $data) { name } }
+		}`, map[string]any{
+			"data": map[string]any{
+				"name": "test_openai_responses", "type": "llm-openai",
+				"prefix": "test_openai_responses", "as_module": false, "path": responsesPath,
+			},
+		})
+		mustQuery(ctx, s, `mutation { function { core { load_data_source(name: "test_openai_responses") { success } } } }`, nil)
 	}
 }
 
@@ -1286,4 +1298,91 @@ func TestModels_StreamThinkingToolCallRoundTrip_Anthropic(t *testing.T) {
 
 	t.Logf("Step 3 stream — %d content events, content=%q, finish=%v",
 		contentEvents, truncateStr(allContent, 200), finishEvent2["finish_reason"])
+}
+
+// --- OpenAI Responses API Tests ---
+
+func TestModels_OpenAIResponses_Completion(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	res := query(t, `{ function { core { models { completion(model: "test_openai_responses", prompt: "What is 2+2? Answer with just the number.", max_tokens: 50) {
+		content model finish_reason prompt_tokens completion_tokens total_tokens provider latency_ms thinking
+	} } } } }`, nil)
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		Model        string `json:"model"`
+		FinishReason string `json:"finish_reason"`
+		Provider     string `json:"provider"`
+		LatencyMs    int    `json:"latency_ms"`
+		Thinking     string `json:"thinking"`
+	}
+	err := res.ScanData("function.core.models.completion", &result)
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.Content)
+	assert.Equal(t, "openai", result.Provider)
+	assert.NotEmpty(t, result.FinishReason)
+	t.Logf("responses api completion: %q, model=%s, finish=%s, thinking=%q",
+		result.Content, result.Model, result.FinishReason, truncateStr(result.Thinking, 80))
+}
+
+func TestModels_OpenAIResponses_ChatWithTools(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	res := query(t, `query($messages: [String!]!, $tools: [String!]) {
+		function { core { models { chat_completion(
+			model: "test_openai_responses", messages: $messages, tools: $tools,
+			tool_choice: "auto", max_tokens: 200
+		) { content finish_reason tool_calls provider } } } } }`, map[string]any{
+		"messages": []string{`{"role":"user","content":"What is the weather in Paris?"}`},
+		"tools":    []string{roundTripToolDef},
+	})
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		FinishReason string `json:"finish_reason"`
+		ToolCalls    string `json:"tool_calls"`
+		Provider     string `json:"provider"`
+	}
+	err := res.ScanData("function.core.models.chat_completion", &result)
+	require.NoError(t, err)
+	assert.Equal(t, "openai", result.Provider)
+	assert.NotEmpty(t, result.FinishReason)
+	if result.FinishReason == "tool_use" {
+		assert.NotEmpty(t, result.ToolCalls)
+		assert.Contains(t, result.ToolCalls, "get_weather")
+	}
+	t.Logf("responses api chat+tools: content=%q, finish=%s, tool_calls=%s",
+		result.Content, result.FinishReason, result.ToolCalls)
+}
+
+func TestModels_OpenAIResponses_ToolCallRoundTrip(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	testToolCallRoundTrip(t, "test_openai_responses", "openai", 200)
+}
+
+func TestModels_OpenAIResponses_StreamCompletion(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	events := collectStreamEventsWithTimeout(t,
+		`subscription { core { models { completion(model: "test_openai_responses", prompt: "Say hello in one word.", max_tokens: 50) {
+			type content model finish_reason tool_calls prompt_tokens completion_tokens thinking
+		} } } }`, 120*time.Second)
+
+	require.NotEmpty(t, events, "should receive streaming events")
+	assertStreamEvents(t, "OpenAI Responses", events)
+}
+
+func TestModels_OpenAIResponses_StreamToolCallRoundTrip(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	testStreamToolCallRoundTrip(t, "test_openai_responses", "openai", 200, 120*time.Second)
 }

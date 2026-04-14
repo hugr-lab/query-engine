@@ -32,16 +32,19 @@ type OpenAISource struct {
 }
 
 type openAIConfig struct {
-	BaseURL        string
-	Model          string
-	ApiKey         string
-	ApiKeyHeader   string
-	MaxTokens      int
-	ThinkingBudget int // max thinking/reasoning tokens (0 = disabled)
-	Timeout        time.Duration
-	RPM            int    // max requests per minute (0 = unlimited)
-	TPM            int    // max tokens per minute (0 = unlimited)
-	RateStore      string // name of StoreSource for shared counters (empty = in-memory)
+	BaseURL          string
+	Model            string
+	ApiKey           string
+	ApiKeyHeader     string
+	MaxTokens        int
+	ThinkingBudget   int // max thinking/reasoning tokens (0 = disabled)
+	Timeout          time.Duration
+	RPM              int    // max requests per minute (0 = unlimited)
+	TPM              int    // max tokens per minute (0 = unlimited)
+	RateStore        string // name of StoreSource for shared counters (empty = in-memory)
+	UseResponsesAPI  bool   // use OpenAI Responses API instead of Chat Completions
+	ReasoningSummary string // "auto", "concise", "detailed" (Responses API only)
+	ReasoningEffort  string // "low", "medium", "high" (Responses API only)
 }
 
 func NewOpenAI(ds types.DataSource, attached bool) (*OpenAISource, error) {
@@ -119,6 +122,15 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 	}
 	s.config.RateStore = u.Query().Get("rate_store")
 
+	// Responses API detection
+	if u.Query().Get("use_responses_api") == "true" {
+		s.config.UseResponsesAPI = true
+	} else if strings.Contains(u.Path, "/responses") {
+		s.config.UseResponsesAPI = true
+	}
+	s.config.ReasoningSummary = u.Query().Get("reasoning_summary")
+	s.config.ReasoningEffort = u.Query().Get("reasoning_effort")
+
 	// Strip query params to get base URL
 	q := u.Query()
 	q.Del("model")
@@ -130,6 +142,9 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 	q.Del("rpm")
 	q.Del("tpm")
 	q.Del("rate_store")
+	q.Del("use_responses_api")
+	q.Del("reasoning_summary")
+	q.Del("reasoning_effort")
 	u.RawQuery = q.Encode()
 	s.config.BaseURL = u.String()
 
@@ -150,6 +165,9 @@ func (s *OpenAISource) CreateCompletion(ctx context.Context, prompt string, opts
 }
 
 func (s *OpenAISource) CreateChatCompletion(ctx context.Context, messages []sources.LLMMessage, opts sources.LLMOptions) (*sources.LLMResult, error) {
+	if s.config.UseResponsesAPI {
+		return s.createResponsesCompletion(ctx, messages, opts)
+	}
 	if !s.isAttached {
 		return nil, sources.ErrDataSourceNotAttached
 	}
@@ -355,6 +373,9 @@ func normalizeFinishReasonOpenAI(reason string) string {
 
 func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages []sources.LLMMessage, opts sources.LLMOptions,
 	onEvent func(event *sources.LLMStreamEvent) error) error {
+	if s.config.UseResponsesAPI {
+		return s.createResponsesStream(ctx, messages, opts, onEvent)
+	}
 	if !s.isAttached {
 		return sources.ErrDataSourceNotAttached
 	}
