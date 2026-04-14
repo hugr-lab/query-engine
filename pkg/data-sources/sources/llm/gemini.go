@@ -151,15 +151,23 @@ func (s *GeminiSource) CreateChatCompletion(ctx context.Context, messages []sour
 			role = "model"
 		}
 		if m.Role == "tool" {
-			contents = append(contents, map[string]any{
-				"role": "function",
-				"parts": []map[string]any{{
-					"functionResponse": map[string]any{
-						"name":     m.ToolCallID,
-						"response": map[string]any{"result": m.Content},
-					},
-				}},
+			// Gemini requires echoing the original functionCall part (with
+			// thoughtSignature) alongside the functionResponse.
+			parts := []map[string]any{}
+			if tc := findToolCall(messages, m.ToolCallID); tc != nil {
+				fc := map[string]any{"name": tc.Name, "args": tc.Arguments}
+				if tc.ThoughtSignature != "" {
+					fc["thoughtSignature"] = tc.ThoughtSignature
+				}
+				parts = append(parts, map[string]any{"functionCall": fc})
+			}
+			parts = append(parts, map[string]any{
+				"functionResponse": map[string]any{
+					"name":     m.ToolCallID,
+					"response": map[string]any{"result": m.Content},
+				},
 			})
+			contents = append(contents, map[string]any{"role": "function", "parts": parts})
 			continue
 		}
 		parts := []map[string]any{{"text": m.Content}}
@@ -248,11 +256,11 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 				Parts []struct {
 					Text         string `json:"text"`
 					FunctionCall *struct {
-						ID               string `json:"id"`
-						Name             string `json:"name"`
-						Args             any    `json:"args"`
-						ThoughtSignature string `json:"thoughtSignature"`
+						ID   string `json:"id"`
+						Name string `json:"name"`
+						Args any    `json:"args"`
 					} `json:"functionCall"`
+					ThoughtSignature string `json:"thoughtSignature"`
 				} `json:"parts"`
 			} `json:"content"`
 			FinishReason string `json:"finishReason"`
@@ -293,7 +301,7 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 					ID:               part.FunctionCall.ID,
 					Name:             part.FunctionCall.Name,
 					Arguments:        part.FunctionCall.Args,
-					ThoughtSignature: part.FunctionCall.ThoughtSignature,
+					ThoughtSignature: part.ThoughtSignature,
 				})
 				if result.FinishReason == "" {
 					result.FinishReason = "tool_use"
@@ -343,15 +351,23 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 			role = "model"
 		}
 		if m.Role == "tool" {
-			contents = append(contents, map[string]any{
-				"role": "function",
-				"parts": []map[string]any{{
-					"functionResponse": map[string]any{
-						"name":     m.ToolCallID,
-						"response": map[string]any{"result": m.Content},
-					},
-				}},
+			// Gemini requires echoing the original functionCall part (with
+			// thoughtSignature) alongside the functionResponse.
+			parts := []map[string]any{}
+			if tc := findToolCall(messages, m.ToolCallID); tc != nil {
+				fc := map[string]any{"name": tc.Name, "args": tc.Arguments}
+				if tc.ThoughtSignature != "" {
+					fc["thoughtSignature"] = tc.ThoughtSignature
+				}
+				parts = append(parts, map[string]any{"functionCall": fc})
+			}
+			parts = append(parts, map[string]any{
+				"functionResponse": map[string]any{
+					"name":     m.ToolCallID,
+					"response": map[string]any{"result": m.Content},
+				},
 			})
+			contents = append(contents, map[string]any{"role": "function", "parts": parts})
 			continue
 		}
 		parts := []map[string]any{{"text": m.Content}}
@@ -443,11 +459,11 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 						Text         string `json:"text"`
 						Thought      bool   `json:"thought,omitempty"`
 						FunctionCall *struct {
-							ID               string `json:"id"`
-							Name             string `json:"name"`
-							Args             any    `json:"args"`
-							ThoughtSignature string `json:"thoughtSignature"`
+							ID   string `json:"id"`
+							Name string `json:"name"`
+							Args any    `json:"args"`
 						} `json:"functionCall"`
+						ThoughtSignature string `json:"thoughtSignature"`
 					} `json:"parts"`
 				} `json:"content"`
 				FinishReason string `json:"finishReason"`
@@ -489,7 +505,7 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 					ID:               part.FunctionCall.ID,
 					Name:             part.FunctionCall.Name,
 					Arguments:        part.FunctionCall.Args,
-					ThoughtSignature: part.FunctionCall.ThoughtSignature,
+					ThoughtSignature: part.ThoughtSignature,
 				})
 			}
 		}
@@ -529,6 +545,21 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 		_ = s.limiter.Record(ctx, totalPromptTokens+totalCompletionTokens)
 	}
 
+	return nil
+}
+
+// findToolCall searches messages for a tool call matching the given ID.
+// Used to recover the original functionCall (with thoughtSignature) when
+// building Gemini functionResponse messages.
+func findToolCall(messages []sources.LLMMessage, id string) *sources.LLMToolCall {
+	for i := len(messages) - 1; i >= 0; i-- {
+		for j := range messages[i].ToolCalls {
+			tc := &messages[i].ToolCalls[j]
+			if tc.ID == id || tc.Name == id {
+				return tc
+			}
+		}
+	}
 	return nil
 }
 
