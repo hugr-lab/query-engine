@@ -101,8 +101,10 @@ type llm_result {
   Empty string when no tools were called.
   """
   tool_calls: String
-  "Gemini 2.5+ thought signature for function call verification. Include in assistant message for tool result round-trip."
+  "Gemini 2.5+ / Anthropic thought signature for function call verification. Include in assistant message for tool result round-trip."
   thought_signature: String
+  "Thinking/reasoning content (Anthropic extended thinking text, OpenAI reasoning summary)"
+  thinking: String
 }
 
 "Registered AI model data source info"
@@ -169,6 +171,8 @@ type llm_stream_event {
   prompt_tokens: Int
   "Number of generated tokens (for finish events)"
   completion_tokens: Int
-  "Gemini 2.5+ thought signature (for finish events with tool calls)"
+  "Gemini 2.5+ / Anthropic thought signature (for finish events with tool calls)"
   thought_signature: String
+  "Accumulated thinking content (for finish events)"
+  thinking: String
 }

@@ -156,9 +156,16 @@ func (s *AnthropicSource) CreateChatCompletion(ctx context.Context, messages []s
 			})
 			continue
 		}
-		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
-			// Anthropic requires tool_use content blocks for assistant tool calls
+		if m.Role == "assistant" && (len(m.ToolCalls) > 0 || m.Thinking != "") {
 			content := []map[string]any{}
+			// Thinking block must come first (Anthropic requires unmodified thinking blocks)
+			if m.Thinking != "" {
+				thinkingBlock := map[string]any{"type": "thinking", "thinking": m.Thinking}
+				if m.ThoughtSignature != "" {
+					thinkingBlock["signature"] = m.ThoughtSignature
+				}
+				content = append(content, thinkingBlock)
+			}
 			if m.Content != "" {
 				content = append(content, map[string]any{"type": "text", "text": m.Content})
 			}
@@ -176,10 +183,27 @@ func (s *AnthropicSource) CreateChatCompletion(ctx context.Context, messages []s
 		apiMessages = append(apiMessages, map[string]any{"role": m.Role, "content": m.Content})
 	}
 
+	// Resolve effective thinking budget
+	effectiveBudget := opts.ThinkingBudget
+	if s.config.ThinkingBudget > 0 && (effectiveBudget == 0 || effectiveBudget > s.config.ThinkingBudget) {
+		effectiveBudget = s.config.ThinkingBudget
+	}
+
+	// Anthropic requires max_tokens > thinking budget
+	if effectiveBudget > 0 && maxTokens <= effectiveBudget {
+		maxTokens = effectiveBudget + 1024
+	}
+
 	reqBody := map[string]any{
 		"model":      s.config.Model,
 		"messages":   apiMessages,
 		"max_tokens": maxTokens,
+	}
+	if effectiveBudget > 0 {
+		reqBody["thinking"] = map[string]any{
+			"type":          "enabled",
+			"budget_tokens": effectiveBudget,
+		}
 	}
 	if system != "" {
 		reqBody["system"] = system
@@ -252,11 +276,13 @@ func (s *AnthropicSource) CreateChatCompletion(ctx context.Context, messages []s
 func parseAnthropicResponse(body []byte) (*sources.LLMResult, error) {
 	var resp struct {
 		Content []struct {
-			Type  string `json:"type"`
-			Text  string `json:"text"`
-			ID    string `json:"id"`
-			Name  string `json:"name"`
-			Input any    `json:"input"`
+			Type      string `json:"type"`
+			Text      string `json:"text"`
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			Input     any    `json:"input"`
+			Thinking  string `json:"thinking"`  // type: "thinking"
+			Signature string `json:"signature"` // type: "thinking"
 		} `json:"content"`
 		Model      string `json:"model"`
 		StopReason string `json:"stop_reason"`
@@ -290,6 +316,9 @@ func parseAnthropicResponse(body []byte) (*sources.LLMResult, error) {
 
 	for _, block := range resp.Content {
 		switch block.Type {
+		case "thinking":
+			result.Thinking = block.Thinking
+			result.ThoughtSignature = block.Signature
 		case "text":
 			result.Content += block.Text
 		case "tool_use":
@@ -341,8 +370,15 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 			})
 			continue
 		}
-		if m.Role == "assistant" && len(m.ToolCalls) > 0 {
+		if m.Role == "assistant" && (len(m.ToolCalls) > 0 || m.Thinking != "") {
 			content := []map[string]any{}
+			if m.Thinking != "" {
+				thinkingBlock := map[string]any{"type": "thinking", "thinking": m.Thinking}
+				if m.ThoughtSignature != "" {
+					thinkingBlock["signature"] = m.ThoughtSignature
+				}
+				content = append(content, thinkingBlock)
+			}
 			if m.Content != "" {
 				content = append(content, map[string]any{"type": "text", "text": m.Content})
 			}
@@ -432,6 +468,8 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 
 	var model string
 	var promptTokens, completionTokens int
+	var accThinking strings.Builder
+	var accThoughtSig string
 
 	// pendingToolCalls accumulates tool call data from content_block_start
 	// (id, name) and content_block_delta (input_json_delta fragments).
@@ -475,18 +513,24 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 			var cbs struct {
 				Index        int `json:"index"`
 				ContentBlock struct {
-					Type string `json:"type"`
-					ID   string `json:"id"`
-					Name string `json:"name"`
+					Type      string `json:"type"`
+					ID        string `json:"id"`
+					Name      string `json:"name"`
+					Signature string `json:"signature"` // thinking block signature
 				} `json:"content_block"`
 			}
 			if err := json.Unmarshal([]byte(data), &cbs); err != nil {
 				continue
 			}
-			if cbs.ContentBlock.Type == "tool_use" {
+			switch cbs.ContentBlock.Type {
+			case "tool_use":
 				pendingToolCallsByIndex[cbs.Index] = &pendingToolCall{
 					ID:   cbs.ContentBlock.ID,
 					Name: cbs.ContentBlock.Name,
+				}
+			case "thinking":
+				if cbs.ContentBlock.Signature != "" {
+					accThoughtSig = cbs.ContentBlock.Signature
 				}
 			}
 
@@ -497,6 +541,7 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 					Type        string `json:"type"`
 					Text        string `json:"text"`
 					Thinking    string `json:"thinking"`
+					Signature   string `json:"signature"`
 					PartialJSON string `json:"partial_json"`
 				} `json:"delta"`
 			}
@@ -513,6 +558,7 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 					return err
 				}
 			case "thinking_delta":
+				accThinking.WriteString(delta.Delta.Thinking)
 				if err := onEvent(&sources.LLMStreamEvent{
 					Type:    "reasoning",
 					Content: delta.Delta.Thinking,
@@ -520,6 +566,8 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 				}); err != nil {
 					return err
 				}
+			case "signature_delta":
+				accThoughtSig = delta.Delta.Signature
 			case "input_json_delta":
 				if ptc := pendingToolCallsByIndex[delta.Index]; ptc != nil {
 					ptc.ArgsJSON.WriteString(delta.Delta.PartialJSON)
@@ -556,6 +604,8 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 					FinishReason:     finishReason,
 					PromptTokens:     promptTokens,
 					CompletionTokens: completionTokens,
+					ThoughtSignature: accThoughtSig,
+					Thinking:         accThinking.String(),
 				}
 				if len(pendingToolCallsByIndex) > 0 {
 					var calls []sources.LLMToolCall
