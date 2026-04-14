@@ -320,6 +320,17 @@ func (s *Service) handleIPCSubscription(ctx context.Context, stream *stream, req
 			}
 		}
 
+		// Check for provider errors after reading all batches
+		if err := event.Reader.Err(); err != nil {
+			_ = stream.writeJSON(StreamMessage{
+				Type:           "subscription_error",
+				SubscriptionID: subID,
+				Error:          err.Error(),
+			})
+			event.Reader.Release()
+			return
+		}
+
 		event.Reader.Release()
 
 		// Signal part complete — client closes the pipe for this path
