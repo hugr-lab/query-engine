@@ -24,10 +24,11 @@ type EmbeddingsResult struct {
 
 // LLMMessage is a single message in a chat conversation.
 type LLMMessage struct {
-	Role       string        `json:"role"`
-	Content    string        `json:"content"`
-	ToolCalls  []LLMToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string        `json:"tool_call_id,omitempty"`
+	Role             string        `json:"role"`
+	Content          string        `json:"content"`
+	ToolCalls        []LLMToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string        `json:"tool_call_id,omitempty"`
+	ThoughtSignature string        `json:"thought_signature,omitempty"` // Gemini 2.5+: Part-level signature for the first functionCall
 }
 
 // LLMTool is a tool definition provided to the model.
@@ -39,10 +40,9 @@ type LLMTool struct {
 
 // LLMToolCall is a tool invocation from the model.
 type LLMToolCall struct {
-	ID               string `json:"id"`
-	Name             string `json:"name"`
-	Arguments        any    `json:"arguments"`
-	ThoughtSignature string `json:"thought_signature,omitempty"` // Gemini 2.5+: required for tool result roundtrip
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments any    `json:"arguments"`
 }
 
 // LLMOptions configures an LLM request.
@@ -65,6 +65,7 @@ type LLMStreamEvent struct {
 	ToolCalls        string `json:"tool_calls"`        // JSON-encoded tool calls (tool_use only)
 	PromptTokens     int    `json:"prompt_tokens"`     // Input token count (finish only)
 	CompletionTokens int    `json:"completion_tokens"` // Output token count (finish only)
+	ThoughtSignature string `json:"thought_signature"` // Gemini 2.5+: Part-level signature (finish only)
 }
 
 // LLMResult is the normalized response from any LLM provider.
@@ -78,4 +79,5 @@ type LLMResult struct {
 	Provider         string        `json:"provider"`
 	LatencyMs        int           `json:"latency_ms"`
 	ToolCalls        []LLMToolCall `json:"tool_calls"`
+	ThoughtSignature string        `json:"thought_signature,omitempty"` // Gemini 2.5+: Part-level signature
 }
