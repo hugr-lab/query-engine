@@ -39,9 +39,10 @@ type LLMTool struct {
 
 // LLMToolCall is a tool invocation from the model.
 type LLMToolCall struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Arguments any    `json:"arguments"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Arguments        any    `json:"arguments"`
+	ThoughtSignature string `json:"thought_signature,omitempty"` // Gemini 2.5+: required for tool result roundtrip
 }
 
 // LLMOptions configures an LLM request.

@@ -37,11 +37,11 @@ func NewGemini(ds types.DataSource, attached bool) (*GeminiSource, error) {
 	}, nil
 }
 
-func (s *GeminiSource) Name() string             { return s.ds.Name }
+func (s *GeminiSource) Name() string                 { return s.ds.Name }
 func (s *GeminiSource) Definition() types.DataSource { return s.ds }
-func (s *GeminiSource) Engine() engines.Engine   { return s.engine }
-func (s *GeminiSource) IsAttached() bool         { return s.isAttached }
-func (s *GeminiSource) ReadOnly() bool           { return true }
+func (s *GeminiSource) Engine() engines.Engine       { return s.engine }
+func (s *GeminiSource) IsAttached() bool             { return s.isAttached }
+func (s *GeminiSource) ReadOnly() bool               { return true }
 
 func (s *GeminiSource) ModelInfo() sources.ModelInfo {
 	return sources.ModelInfo{
@@ -68,7 +68,14 @@ func (s *GeminiSource) Attach(_ context.Context, _ *db.Pool) error {
 	if s.config.Model == "" {
 		return errors.New("model is required in the data source path")
 	}
+	if strings.HasPrefix(s.config.Model, "\"") && strings.HasSuffix(s.config.Model, "\"") {
+		s.config.Model = strings.Trim(s.config.Model, "\"")
+	}
 	s.config.ApiKey = u.Query().Get("api_key")
+	if strings.HasPrefix(s.config.ApiKey, "\"") && strings.HasSuffix(s.config.ApiKey, "\"") {
+		s.config.ApiKey = strings.Trim(s.config.ApiKey, "\"")
+	}
+
 	if mt := u.Query().Get("max_tokens"); mt != "" {
 		fmt.Sscanf(mt, "%d", &s.config.MaxTokens)
 	}
@@ -157,9 +164,11 @@ func (s *GeminiSource) CreateChatCompletion(ctx context.Context, messages []sour
 		}
 		parts := []map[string]any{{"text": m.Content}}
 		for _, tc := range m.ToolCalls {
-			parts = append(parts, map[string]any{
-				"functionCall": map[string]any{"name": tc.Name, "args": tc.Arguments},
-			})
+			fc := map[string]any{"name": tc.Name, "args": tc.Arguments}
+			if tc.ThoughtSignature != "" {
+				fc["thoughtSignature"] = tc.ThoughtSignature
+			}
+			parts = append(parts, map[string]any{"functionCall": fc})
 		}
 		contents = append(contents, map[string]any{"role": role, "parts": parts})
 	}
@@ -239,9 +248,10 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 				Parts []struct {
 					Text         string `json:"text"`
 					FunctionCall *struct {
-						ID   string `json:"id"`
-						Name string `json:"name"`
-						Args any    `json:"args"`
+						ID               string `json:"id"`
+						Name             string `json:"name"`
+						Args             any    `json:"args"`
+						ThoughtSignature string `json:"thoughtSignature"`
 					} `json:"functionCall"`
 				} `json:"parts"`
 			} `json:"content"`
@@ -280,9 +290,10 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 			}
 			if part.FunctionCall != nil {
 				result.ToolCalls = append(result.ToolCalls, sources.LLMToolCall{
-					ID:        part.FunctionCall.ID,
-					Name:      part.FunctionCall.Name,
-					Arguments: part.FunctionCall.Args,
+					ID:               part.FunctionCall.ID,
+					Name:             part.FunctionCall.Name,
+					Arguments:        part.FunctionCall.Args,
+					ThoughtSignature: part.FunctionCall.ThoughtSignature,
 				})
 				if result.FinishReason == "" {
 					result.FinishReason = "tool_use"
@@ -345,9 +356,11 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 		}
 		parts := []map[string]any{{"text": m.Content}}
 		for _, tc := range m.ToolCalls {
-			parts = append(parts, map[string]any{
-				"functionCall": map[string]any{"name": tc.Name, "args": tc.Arguments},
-			})
+			fc := map[string]any{"name": tc.Name, "args": tc.Arguments}
+			if tc.ThoughtSignature != "" {
+				fc["thoughtSignature"] = tc.ThoughtSignature
+			}
+			parts = append(parts, map[string]any{"functionCall": fc})
 		}
 		contents = append(contents, map[string]any{"role": role, "parts": parts})
 	}
@@ -430,9 +443,10 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 						Text         string `json:"text"`
 						Thought      bool   `json:"thought,omitempty"`
 						FunctionCall *struct {
-							ID   string `json:"id"`
-							Name string `json:"name"`
-							Args any    `json:"args"`
+							ID               string `json:"id"`
+							Name             string `json:"name"`
+							Args             any    `json:"args"`
+							ThoughtSignature string `json:"thoughtSignature"`
 						} `json:"functionCall"`
 					} `json:"parts"`
 				} `json:"content"`
@@ -472,9 +486,10 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 			}
 			if part.FunctionCall != nil {
 				accToolCalls = append(accToolCalls, sources.LLMToolCall{
-					ID:        part.FunctionCall.ID,
-					Name:      part.FunctionCall.Name,
-					Arguments: part.FunctionCall.Args,
+					ID:               part.FunctionCall.ID,
+					Name:             part.FunctionCall.Name,
+					Arguments:        part.FunctionCall.Args,
+					ThoughtSignature: part.FunctionCall.ThoughtSignature,
 				})
 			}
 		}

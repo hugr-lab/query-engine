@@ -2,9 +2,11 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -445,6 +447,9 @@ func (s *Server) fieldValues(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	err := s.queryScanAdmin(ctx, `query($name: String!) {
 		core { catalog { types_by_pk(name: $name) { module } } }
 	}`, map[string]any{"name": objectName}, "core.catalog.types_by_pk", &typeInfo)
+	if errors.Is(err, types.ErrNoData) {
+		return toolResultError(fmt.Sprintf("type %q not found", objectName)), nil
+	}
 	if err != nil {
 		return toolResultError(fmt.Sprintf("type lookup: %v", err)), nil
 	}

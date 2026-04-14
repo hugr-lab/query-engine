@@ -86,7 +86,13 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 	if s.config.Model == "" {
 		return errors.New("model is required in the data source path")
 	}
+	if strings.HasPrefix(s.config.Model, "\"") && strings.HasSuffix(s.config.Model, "\"") {
+		s.config.Model = strings.Trim(s.config.Model, "\"")
+	}
 	s.config.ApiKey = u.Query().Get("api_key")
+	if strings.HasPrefix(s.config.ApiKey, "\"") && strings.HasSuffix(s.config.ApiKey, "\"") {
+		s.config.ApiKey = strings.Trim(s.config.ApiKey, "\"")
+	}
 	s.config.ApiKeyHeader = u.Query().Get("api_key_header")
 
 	if mt := u.Query().Get("max_tokens"); mt != "" {
@@ -164,7 +170,7 @@ func (s *OpenAISource) CreateChatCompletion(ctx context.Context, messages []sour
 	reqBody := map[string]any{
 		"model":      strings.Trim(s.config.Model, "\""),
 		"messages":   convertMessagesOpenAI(messages),
-		"max_tokens": maxTokens,
+		"max_completion_tokens": maxTokens,
 	}
 	if opts.Temperature > 0 {
 		reqBody["temperature"] = opts.Temperature
@@ -260,12 +266,20 @@ func convertMessagesOpenAI(msgs []sources.LLMMessage) []map[string]any {
 func convertToolsOpenAI(tools []sources.LLMTool) []map[string]any {
 	result := make([]map[string]any, len(tools))
 	for i, t := range tools {
+		params := t.Parameters
+		// Ensure "required" key exists in parameters — some model templates
+		// (e.g. Gemma4 in LM Studio) crash on missing "required" field.
+		if pm, ok := params.(map[string]any); ok {
+			if _, hasRequired := pm["required"]; !hasRequired {
+				pm["required"] = []string{}
+			}
+		}
 		result[i] = map[string]any{
 			"type": "function",
 			"function": map[string]any{
 				"name":        t.Name,
 				"description": t.Description,
-				"parameters":  t.Parameters,
+				"parameters":  params,
 			},
 		}
 	}
@@ -360,7 +374,7 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 	reqBody := map[string]any{
 		"model":      strings.Trim(s.config.Model, "\""), // some providers (e.g. Ollama) require unquoted model names
 		"messages":   convertMessagesOpenAI(messages),
-		"max_tokens": maxTokens,
+		"max_completion_tokens": maxTokens,
 		"stream":     true,
 		// Ask the OpenAI-compatible endpoint to send token usage on the
 		// final SSE chunk. Without this, the streaming response carries

@@ -37,11 +37,11 @@ func NewAnthropic(ds types.DataSource, attached bool) (*AnthropicSource, error) 
 	}, nil
 }
 
-func (s *AnthropicSource) Name() string             { return s.ds.Name }
+func (s *AnthropicSource) Name() string                 { return s.ds.Name }
 func (s *AnthropicSource) Definition() types.DataSource { return s.ds }
-func (s *AnthropicSource) Engine() engines.Engine   { return s.engine }
-func (s *AnthropicSource) IsAttached() bool         { return s.isAttached }
-func (s *AnthropicSource) ReadOnly() bool           { return true }
+func (s *AnthropicSource) Engine() engines.Engine       { return s.engine }
+func (s *AnthropicSource) IsAttached() bool             { return s.isAttached }
+func (s *AnthropicSource) ReadOnly() bool               { return true }
 
 func (s *AnthropicSource) ModelInfo() sources.ModelInfo {
 	return sources.ModelInfo{
@@ -65,10 +65,16 @@ func (s *AnthropicSource) Attach(_ context.Context, _ *db.Pool) error {
 		return err
 	}
 	s.config.Model = u.Query().Get("model")
+	if strings.HasPrefix(s.config.Model, "\"") && strings.HasSuffix(s.config.Model, "\"") {
+		s.config.Model = strings.Trim(s.config.Model, "\"")
+	}
 	if s.config.Model == "" {
 		return errors.New("model is required in the data source path")
 	}
 	s.config.ApiKey = u.Query().Get("api_key")
+	if strings.HasPrefix(s.config.ApiKey, "\"") && strings.HasSuffix(s.config.ApiKey, "\"") {
+		s.config.ApiKey = strings.Trim(s.config.ApiKey, "\"")
+	}
 	if mt := u.Query().Get("max_tokens"); mt != "" {
 		fmt.Sscanf(mt, "%d", &s.config.MaxTokens)
 	}

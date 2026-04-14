@@ -101,6 +101,20 @@ func registerDS(ctx context.Context, s *hugr.Service) {
 		})
 		mustQuery(ctx, s, `mutation { function { core { load_data_source(name: "test_gemini") { success } } } }`, nil)
 	}
+
+	// OpenAI Remote DS (official API, not LM Studio)
+	if key := os.Getenv("OPENAI_KEY"); key != "" {
+		path := "https://api.openai.com/v1/chat/completions?model=\"gpt-5.4-mini-2026-03-17\"&api_key=" + key + "&max_tokens=4096&timeout=120s"
+		mustQuery(ctx, s, `mutation($data: core_data_sources_mut_input_data!) {
+			core { insert_data_sources(data: $data) { name } }
+		}`, map[string]any{
+			"data": map[string]any{
+				"name": "test_openai_remote", "type": "llm-openai",
+				"prefix": "test_openai_remote", "as_module": false, "path": path,
+			},
+		})
+		mustQuery(ctx, s, `mutation { function { core { load_data_source(name: "test_openai_remote") { success } } } }`, nil)
+	}
 }
 
 func mustQuery(ctx context.Context, s *hugr.Service, q string, vars map[string]any) {
@@ -428,6 +442,88 @@ func TestModels_Gemini_ChatWithTools(t *testing.T) {
 		result.Content, result.FinishReason, result.ToolCalls)
 }
 
+// --- OpenAI Remote Provider (official API) ---
+
+func TestModels_OpenAIRemote_Completion(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	res := query(t, `{ function { core { models { completion(model: "test_openai_remote", prompt: "What is 2+2? Answer with just the number.", max_tokens: 50) {
+		content model finish_reason prompt_tokens completion_tokens total_tokens provider latency_ms
+	} } } } }`, nil)
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		Model        string `json:"model"`
+		FinishReason string `json:"finish_reason"`
+		Provider     string `json:"provider"`
+		LatencyMs    int    `json:"latency_ms"`
+	}
+	err := res.ScanData("function.core.models.completion", &result)
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.Content)
+	assert.Equal(t, "openai", result.Provider)
+	assert.NotEmpty(t, result.FinishReason)
+	t.Logf("openai remote completion: %q, model=%s, finish=%s, provider=%s, latency=%dms",
+		result.Content, result.Model, result.FinishReason, result.Provider, result.LatencyMs)
+}
+
+func TestModels_OpenAIRemote_ChatWithTools(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	res := query(t, `{ function { core { models { chat_completion(
+		model: "test_openai_remote",
+		messages: ["{\"role\":\"user\",\"content\":\"What is the weather in Paris?\"}"],
+		tools: ["{\"name\":\"get_weather\",\"description\":\"Get current weather for a city\",\"parameters\":{\"type\":\"object\",\"properties\":{\"city\":{\"type\":\"string\",\"description\":\"City name\"}},\"required\":[\"city\"]}}"],
+		tool_choice: "auto",
+		max_tokens: 200
+	) {
+		content finish_reason tool_calls provider
+	} } } } }`, nil)
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		FinishReason string `json:"finish_reason"`
+		ToolCalls    string `json:"tool_calls"`
+		Provider     string `json:"provider"`
+	}
+	err := res.ScanData("function.core.models.chat_completion", &result)
+	require.NoError(t, err)
+	assert.Equal(t, "openai", result.Provider)
+	assert.NotEmpty(t, result.FinishReason)
+	if result.FinishReason == "tool_use" {
+		assert.NotEmpty(t, result.ToolCalls, "tool_calls should not be empty when finish_reason is tool_use")
+		assert.Contains(t, result.ToolCalls, "get_weather", "should call get_weather tool")
+	}
+	t.Logf("openai remote chat+tools: content=%q, finish=%s, tool_calls=%s",
+		result.Content, result.FinishReason, result.ToolCalls)
+}
+
+func TestModels_StreamCompletion_OpenAIRemote(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	events := collectStreamEventsWithTimeout(t,
+		`subscription { core { models { completion(model: "test_openai_remote", prompt: "Say hello in one word.", max_tokens: 50) {
+			type content model finish_reason tool_calls prompt_tokens completion_tokens
+		} } } }`, 120*time.Second)
+
+	require.NotEmpty(t, events, "should receive streaming events")
+	assertStreamEvents(t, "OpenAI Remote", events)
+}
+
+func TestModels_StreamChatCompletionWithTools_OpenAIRemote(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	events := collectStreamEventsWithTimeout(t, fmt.Sprintf(streamToolCallQuery, "test_openai_remote"), 120*time.Second)
+	require.NotEmpty(t, events, "should receive streaming events")
+	assertStreamToolCalls(t, "OpenAI Remote", events)
+}
+
 // --- US6: LLM Streaming Subscriptions ---
 
 func TestModels_StreamCompletion_OpenAI(t *testing.T) {
@@ -514,8 +610,12 @@ func TestModels_StreamCompletion_Gemini(t *testing.T) {
 
 // collectStreamEvents subscribes and collects all streaming events as row maps.
 func collectStreamEvents(t *testing.T, query string) []map[string]any {
+	return collectStreamEventsWithTimeout(t, query, 60*time.Second)
+}
+
+func collectStreamEventsWithTimeout(t *testing.T, query string, timeout time.Duration) []map[string]any {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	sub, err := testService.Subscribe(ctx, query, nil)
@@ -646,7 +746,7 @@ func assertStreamToolCalls(t *testing.T, provider string, events []map[string]an
 	for i, tc := range calls {
 		assert.NotEmpty(t, tc.Name, "%s: tool call[%d] should have a name", provider, i)
 		assert.NotNil(t, tc.Arguments, "%s: tool call[%d] should have arguments", provider, i)
-		t.Logf("%s stream tool call[%d]: id=%s name=%s args=%v", provider, i, tc.ID, tc.Name, tc.Arguments)
+		t.Logf("%s stream tool call[%d]: id=%s name=%s args=%v thought_sig=%q", provider, i, tc.ID, tc.Name, tc.Arguments, tc.ThoughtSignature)
 	}
 
 	t.Logf("%s stream finish: finish_reason=%v, tool_calls=%d items", provider, finishEvent["finish_reason"], len(calls))
