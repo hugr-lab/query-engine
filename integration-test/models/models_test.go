@@ -115,6 +115,18 @@ func registerDS(ctx context.Context, s *hugr.Service) {
 			},
 		})
 		mustQuery(ctx, s, `mutation { function { core { load_data_source(name: "test_openai_remote") { success } } } }`, nil)
+
+		// OpenAI Responses API DS (same key, Responses API endpoint)
+		responsesPath := "https://api.openai.com/v1/responses?model=\"gpt-5.4-mini-2026-03-17\"&api_key=" + key + "&max_tokens=4096&timeout=120s&reasoning_summary=auto"
+		mustQuery(ctx, s, `mutation($data: core_data_sources_mut_input_data!) {
+			core { insert_data_sources(data: $data) { name } }
+		}`, map[string]any{
+			"data": map[string]any{
+				"name": "test_openai_responses", "type": "llm-openai",
+				"prefix": "test_openai_responses", "as_module": false, "path": responsesPath,
+			},
+		})
+		mustQuery(ctx, s, `mutation { function { core { load_data_source(name: "test_openai_responses") { success } } } }`, nil)
 	}
 }
 
@@ -1080,4 +1092,297 @@ func TestModels_StreamToolCallRoundTrip_OpenAIRemote(t *testing.T) {
 		t.Skip("OPENAI_KEY not set")
 	}
 	testStreamToolCallRoundTrip(t, "test_openai_remote", "openai", 200, 120*time.Second)
+}
+
+// --- Anthropic Thinking Round-trip Tests ---
+// Verify that thinking content (thinking text + thought_signature) survives
+// the full tool call round-trip with extended thinking enabled.
+
+func TestModels_Anthropic_ThinkingToolCallRoundTrip(t *testing.T) {
+	if os.Getenv("ANTHROPIC_KEY") == "" {
+		t.Skip("ANTHROPIC_KEY not set")
+	}
+
+	userMsg := `{"role":"user","content":"What is the weather in Tokyo? You must use the get_weather tool."}`
+
+	// Step 1: chat_completion with thinking_budget + tools
+	step1Q := `query($messages: [String!]!, $tools: [String!]) {
+		function { core { models { chat_completion(
+			model: "test_anthropic", messages: $messages, tools: $tools,
+			tool_choice: "auto", max_tokens: 4096
+		) { content finish_reason tool_calls provider thought_signature thinking } } } } }`
+
+	res := query(t, step1Q, map[string]any{
+		"messages": []string{userMsg},
+		"tools":    []string{roundTripToolDef},
+	})
+	defer res.Close()
+
+	var result struct {
+		Content          string `json:"content"`
+		FinishReason     string `json:"finish_reason"`
+		ToolCalls        string `json:"tool_calls"`
+		Provider         string `json:"provider"`
+		ThoughtSignature string `json:"thought_signature"`
+		Thinking         string `json:"thinking"`
+	}
+	err := res.ScanData("function.core.models.chat_completion", &result)
+	require.NoError(t, err)
+	assert.Equal(t, "anthropic", result.Provider)
+	require.NotEmpty(t, result.ToolCalls, "anthropic: should call tools")
+
+	var toolCalls []types.LLMToolCall
+	err = json.Unmarshal([]byte(result.ToolCalls), &toolCalls)
+	require.NoError(t, err)
+	require.NotEmpty(t, toolCalls)
+
+	// Anthropic with thinking_budget should return thinking content
+	assert.NotEmpty(t, result.Thinking, "anthropic: should return thinking content with thinking_budget")
+	assert.NotEmpty(t, result.ThoughtSignature, "anthropic: should return thought_signature (thinking signature)")
+
+	t.Logf("Step 1 — thinking=%q (len=%d), thought_sig=%q",
+		truncateStr(result.Thinking, 80), len(result.Thinking), truncateStr(result.ThoughtSignature, 40))
+	for i, tc := range toolCalls {
+		t.Logf("Step 1 — tool_call[%d]: id=%s name=%s", i, tc.ID, tc.Name)
+	}
+
+	// Step 2: Build assistant message WITH thinking fields for round-trip
+	assistantMsg := types.LLMMessage{
+		Role:             "assistant",
+		Content:          result.Content,
+		ToolCalls:        toolCalls,
+		ThoughtSignature: result.ThoughtSignature,
+		Thinking:         result.Thinking,
+	}
+	assistantJSON, err := json.Marshal(assistantMsg)
+	require.NoError(t, err)
+
+	messages := []string{userMsg, string(assistantJSON)}
+	for _, tc := range toolCalls {
+		toolID := tc.ID
+		if toolID == "" {
+			toolID = tc.Name
+		}
+		toolResult := types.LLMMessage{
+			Role:       "tool",
+			Content:    `{"temperature": 22, "condition": "sunny", "humidity": 65}`,
+			ToolCallID: toolID,
+		}
+		toolJSON, _ := json.Marshal(toolResult)
+		messages = append(messages, string(toolJSON))
+	}
+
+	t.Logf("Step 2 — sending %d messages with thinking back to anthropic", len(messages))
+
+	// Step 3: Second request with tool results + thinking in history
+	step2Q := `query($messages: [String!]!, $tools: [String!]) {
+		function { core { models { chat_completion(
+			model: "test_anthropic", messages: $messages, tools: $tools, max_tokens: 4096
+		) { content finish_reason provider } } } } }`
+
+	res2 := query(t, step2Q, map[string]any{
+		"messages": messages,
+		"tools":    []string{roundTripToolDef},
+	})
+	defer res2.Close()
+
+	var result2 struct {
+		Content      string `json:"content"`
+		FinishReason string `json:"finish_reason"`
+		Provider     string `json:"provider"`
+	}
+	err = res2.ScanData("function.core.models.chat_completion", &result2)
+	require.NoError(t, err)
+	assert.Equal(t, "anthropic", result2.Provider)
+	assert.NotEmpty(t, result2.Content, "anthropic: should respond with content after thinking + tool results")
+
+	t.Logf("Step 3 — response: %q (finish=%s)", truncateStr(result2.Content, 200), result2.FinishReason)
+}
+
+func TestModels_StreamThinkingToolCallRoundTrip_Anthropic(t *testing.T) {
+	if os.Getenv("ANTHROPIC_KEY") == "" {
+		t.Skip("ANTHROPIC_KEY not set")
+	}
+
+	userMsg := `{"role":"user","content":"What is the weather in Tokyo? You must use the get_weather tool."}`
+
+	// Step 1: Stream with thinking
+	step1Q := buildInlineStreamQuery("test_anthropic", []string{userMsg}, []string{roundTripToolDef}, 4096, "auto")
+	events := collectStreamEventsWithTimeout(t, step1Q, 120*time.Second)
+	require.NotEmpty(t, events)
+
+	var finishEvent map[string]any
+	var reasoningEvents int
+	for _, e := range events {
+		switch fmt.Sprintf("%v", e["type"]) {
+		case "reasoning":
+			reasoningEvents++
+		case "finish":
+			finishEvent = e
+		}
+	}
+	require.NotNil(t, finishEvent, "should have finish event")
+
+	toolCallsRaw := finishEvent["tool_calls"]
+	require.NotNil(t, toolCallsRaw, "finish should have tool_calls")
+	var toolCalls []types.LLMToolCall
+	err := json.Unmarshal([]byte(fmt.Sprintf("%v", toolCallsRaw)), &toolCalls)
+	require.NoError(t, err)
+	require.NotEmpty(t, toolCalls)
+
+	// Check thinking in finish event
+	thinking := ""
+	if v := finishEvent["thinking"]; v != nil {
+		thinking = fmt.Sprintf("%v", v)
+	}
+	thoughtSig := ""
+	if v := finishEvent["thought_signature"]; v != nil {
+		thoughtSig = fmt.Sprintf("%v", v)
+	}
+
+	assert.NotEmpty(t, thinking, "anthropic stream: finish should have thinking")
+	assert.NotEmpty(t, thoughtSig, "anthropic stream: finish should have thought_signature")
+	assert.Greater(t, reasoningEvents, 0, "anthropic stream: should have reasoning events")
+
+	t.Logf("Step 1 stream — %d reasoning events, thinking len=%d, thought_sig=%q",
+		reasoningEvents, len(thinking), truncateStr(thoughtSig, 40))
+
+	// Step 2: Build messages with thinking for round-trip
+	assistantMsg := types.LLMMessage{
+		Role:             "assistant",
+		ToolCalls:        toolCalls,
+		ThoughtSignature: thoughtSig,
+		Thinking:         thinking,
+	}
+	assistantJSON, _ := json.Marshal(assistantMsg)
+	messages := []string{userMsg, string(assistantJSON)}
+	for _, tc := range toolCalls {
+		toolID := tc.ID
+		if toolID == "" {
+			toolID = tc.Name
+		}
+		toolResult := types.LLMMessage{
+			Role:       "tool",
+			Content:    `{"temperature": 22, "condition": "sunny", "humidity": 65}`,
+			ToolCallID: toolID,
+		}
+		toolJSON, _ := json.Marshal(toolResult)
+		messages = append(messages, string(toolJSON))
+	}
+
+	t.Logf("Step 2 stream — sending %d messages with thinking back to anthropic", len(messages))
+
+	// Step 3: Stream second request
+	step2Q := buildInlineStreamQuery("test_anthropic", messages, []string{roundTripToolDef}, 4096, "")
+	events2 := collectStreamEventsWithTimeout(t, step2Q, 120*time.Second)
+	require.NotEmpty(t, events2)
+
+	var contentEvents int
+	var allContent string
+	var finishEvent2 map[string]any
+	for _, e := range events2 {
+		switch fmt.Sprintf("%v", e["type"]) {
+		case "content_delta":
+			contentEvents++
+			if c := e["content"]; c != nil {
+				allContent += fmt.Sprintf("%v", c)
+			}
+		case "finish":
+			finishEvent2 = e
+		}
+	}
+
+	require.NotNil(t, finishEvent2, "should have finish event in step 2")
+	assert.Greater(t, contentEvents, 0, "should have content after thinking + tool results")
+	assert.NotEmpty(t, allContent, "should have content text")
+
+	t.Logf("Step 3 stream — %d content events, content=%q, finish=%v",
+		contentEvents, truncateStr(allContent, 200), finishEvent2["finish_reason"])
+}
+
+// --- OpenAI Responses API Tests ---
+
+func TestModels_OpenAIResponses_Completion(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	res := query(t, `{ function { core { models { completion(model: "test_openai_responses", prompt: "What is 2+2? Answer with just the number.", max_tokens: 50) {
+		content model finish_reason prompt_tokens completion_tokens total_tokens provider latency_ms thinking
+	} } } } }`, nil)
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		Model        string `json:"model"`
+		FinishReason string `json:"finish_reason"`
+		Provider     string `json:"provider"`
+		LatencyMs    int    `json:"latency_ms"`
+		Thinking     string `json:"thinking"`
+	}
+	err := res.ScanData("function.core.models.completion", &result)
+	require.NoError(t, err)
+	assert.NotEmpty(t, result.Content)
+	assert.Equal(t, "openai", result.Provider)
+	assert.NotEmpty(t, result.FinishReason)
+	t.Logf("responses api completion: %q, model=%s, finish=%s, thinking=%q",
+		result.Content, result.Model, result.FinishReason, truncateStr(result.Thinking, 80))
+}
+
+func TestModels_OpenAIResponses_ChatWithTools(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	res := query(t, `query($messages: [String!]!, $tools: [String!]) {
+		function { core { models { chat_completion(
+			model: "test_openai_responses", messages: $messages, tools: $tools,
+			tool_choice: "auto", max_tokens: 200
+		) { content finish_reason tool_calls provider } } } } }`, map[string]any{
+		"messages": []string{`{"role":"user","content":"What is the weather in Paris?"}`},
+		"tools":    []string{roundTripToolDef},
+	})
+	defer res.Close()
+
+	var result struct {
+		Content      string `json:"content"`
+		FinishReason string `json:"finish_reason"`
+		ToolCalls    string `json:"tool_calls"`
+		Provider     string `json:"provider"`
+	}
+	err := res.ScanData("function.core.models.chat_completion", &result)
+	require.NoError(t, err)
+	assert.Equal(t, "openai", result.Provider)
+	assert.NotEmpty(t, result.FinishReason)
+	if result.FinishReason == "tool_use" {
+		assert.NotEmpty(t, result.ToolCalls)
+		assert.Contains(t, result.ToolCalls, "get_weather")
+	}
+	t.Logf("responses api chat+tools: content=%q, finish=%s, tool_calls=%s",
+		result.Content, result.FinishReason, result.ToolCalls)
+}
+
+func TestModels_OpenAIResponses_ToolCallRoundTrip(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	testToolCallRoundTrip(t, "test_openai_responses", "openai", 200)
+}
+
+func TestModels_OpenAIResponses_StreamCompletion(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	events := collectStreamEventsWithTimeout(t,
+		`subscription { core { models { completion(model: "test_openai_responses", prompt: "Say hello in one word.", max_tokens: 50) {
+			type content model finish_reason tool_calls prompt_tokens completion_tokens thinking
+		} } } }`, 120*time.Second)
+
+	require.NotEmpty(t, events, "should receive streaming events")
+	assertStreamEvents(t, "OpenAI Responses", events)
+}
+
+func TestModels_OpenAIResponses_StreamToolCallRoundTrip(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+	testStreamToolCallRoundTrip(t, "test_openai_responses", "openai", 200, 120*time.Second)
 }

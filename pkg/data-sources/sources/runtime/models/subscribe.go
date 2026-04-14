@@ -22,6 +22,7 @@ var streamEventSchema = arrow.NewSchema([]arrow.Field{
 	{Name: "prompt_tokens", Type: arrow.PrimitiveTypes.Int32, Nullable: true},
 	{Name: "completion_tokens", Type: arrow.PrimitiveTypes.Int32, Nullable: true},
 	{Name: "thought_signature", Type: arrow.BinaryTypes.String, Nullable: true},
+	{Name: "thinking", Type: arrow.BinaryTypes.String, Nullable: true},
 }, nil)
 
 var _ sources.SubscriptionSource = (*Source)(nil)
@@ -171,6 +172,7 @@ func buildEventRecord(event *sources.LLMStreamEvent) arrow.RecordBatch {
 	b.Field(5).(*array.Int32Builder).Append(int32(event.PromptTokens))
 	b.Field(6).(*array.Int32Builder).Append(int32(event.CompletionTokens))
 	b.Field(7).(*array.StringBuilder).Append(event.ThoughtSignature)
+	b.Field(8).(*array.StringBuilder).Append(event.Thinking)
 
 	return b.NewRecord()
 }
