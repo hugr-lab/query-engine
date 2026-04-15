@@ -105,6 +105,17 @@ func WithTimeout(timeout time.Duration) Option {
 	}
 }
 
+func WithTraceID(traceID string) Option {
+	return func(c *ClientConfig) {
+		if traceID != "" {
+			c.Transport = &traceIDTransport{
+				traceID:   traceID,
+				transport: c.Transport,
+			}
+		}
+	}
+}
+
 func WithTransport(transport http.RoundTripper) Option {
 	return func(c *ClientConfig) {
 		c.Transport = transport
@@ -749,6 +760,19 @@ func (t *noTimezoneTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	return t.transport.RoundTrip(req)
 }
 
+type traceIDTransport struct {
+	traceID   string
+	transport http.RoundTripper
+}
+
+func (t *traceIDTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("X-Trace-Id", t.traceID)
+	if t.transport == nil {
+		return http.DefaultTransport.RoundTrip(req)
+	}
+	return t.transport.RoundTrip(req)
+}
+
 // hasTimezoneTransport walks the transport chain and returns true if a
 // timezoneTransport or noTimezoneTransport is already present.
 func hasTimezoneTransport(rt http.RoundTripper) bool {
@@ -765,6 +789,8 @@ func hasTimezoneTransport(rt http.RoundTripper) bool {
 		case *withUserInfoTransport:
 			rt = t.transport
 		case *tokenTransport:
+			rt = t.transport
+		case *traceIDTransport:
 			rt = t.transport
 		default:
 			return false

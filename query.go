@@ -18,6 +18,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/pkg/metadata"
+	"github.com/hugr-lab/query-engine/pkg/trace"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
@@ -308,43 +309,45 @@ func (s *Service) processQueryParallel(
 func (s *Service) processDataQuery(ctx context.Context, provider catalog.Provider, query base.QueryRequest, vars map[string]any) (data any, ext map[string]any, err error) {
 	defer recoverPanic(&err)
 	start := time.Now()
+	logger := trace.LoggerFromContext(ctx)
 	var plannerTime, compileTime time.Duration
 	dataFunc := func() (any, error) {
+		if ti := trace.FromContext(ctx); ti != nil {
+			ctx = trace.StartSpan(ctx, "planner.plan", "field", query.Field.Name)
+		}
 		plan, err := s.planner.Plan(ctx, provider, query.Field, vars)
+		trace.EndSpan(ctx)
 		if err != nil {
+			logger.Error("planner.plan.error", "field", query.Field.Name, "error", err)
 			return nil, err
 		}
 		plannerTime = time.Since(start)
 		err = plan.Compile()
 		if err != nil {
+			logger.Error("planner.compile.error", "field", query.Field.Name, "error", err)
 			return nil, err
 		}
 		compileTime = time.Since(start)
 
-		if s.config.Debug {
-			ai := auth.AuthInfoFromContext(ctx)
-			if ai != nil {
-				log.Printf("User: %s, Role: %s, Query: %s (%s), SQL: %s",
-					ai.UserName,
-					ai.Role,
-					query.Field.Alias,
-					query.Field.Name,
-					plan.Log(),
-				)
-			}
-			if auth.IsFullAccess(ctx) {
-				log.Printf("Internal query: %s (%s), SQL: %s",
-					query.Field.Alias,
-					query.Field.Name,
-					plan.Log(),
-				)
-			}
+		logger.Debug("planner.sql", "field", query.Field.Name,
+			"alias", query.Field.Alias, "sql", plan.Log())
+
+		if ai := auth.AuthInfoFromContext(ctx); ai != nil {
+			logger.Debug("query.user", "user", ai.UserName, "role", ai.Role,
+				"field", query.Field.Name)
 		}
 		if types.IsValidateOnlyContext(ctx) {
 			return nil, nil
 		}
-		// execute query
-		return plan.Execute(ctx, s.db)
+		if ti := trace.FromContext(ctx); ti != nil {
+			ctx = trace.StartSpan(ctx, "db.execute", "field", query.Field.Name)
+		}
+		result, err := plan.Execute(ctx, s.db)
+		trace.EndSpan(ctx)
+		if err != nil {
+			logger.Error("db.execute.error", "field", query.Field.Name, "error", err)
+		}
+		return result, err
 	}
 
 	ci := cache.QueryInfo(query.Field, vars)

@@ -29,6 +29,7 @@ const (
 	UnnestDirectiveName      = "unnest"
 	NoPushdownDirectiveName  = "no_pushdown"
 	AtDirectiveName          = "at"
+	TraceDirectiveName       = "trace"
 )
 
 // Query/mutation directive names.

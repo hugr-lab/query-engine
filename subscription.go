@@ -15,6 +15,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/planner"
+	"github.com/hugr-lab/query-engine/pkg/trace"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -107,9 +108,7 @@ func (s *Service) executeQueryTick(ctx context.Context, queries []base.QueryRequ
 
 			reader, err := s.executeStreamPath(ctx, provider, q, vars)
 			if err != nil {
-				if s.config.Debug {
-					log.Printf("subscription path %s error: %v", path, err)
-				}
+				trace.LoggerFromContext(ctx).Warn("subscription.path.error", "path", path, "error", err)
 				return
 			}
 			select {
@@ -132,14 +131,10 @@ func (s *Service) executeStreamPath(ctx context.Context, provider catalog.Provid
 		return nil, fmt.Errorf("compile: %w", err)
 	}
 
-	if s.config.Debug {
-		if ai := auth.AuthInfoFromContext(ctx); ai != nil {
-			log.Printf("Subscription stream: User: %s, Role: %s, Query: %s (%s), SQL: %s",
-				ai.UserName, ai.Role, q.Field.Alias, q.Field.Name, plan.Log())
-		} else if auth.IsFullAccess(ctx) {
-			log.Printf("Subscription stream: Internal: %s (%s), SQL: %s",
-				q.Field.Alias, q.Field.Name, plan.Log())
-		}
+	logger := trace.LoggerFromContext(ctx)
+	logger.Debug("subscription.sql", "field", q.Field.Name, "alias", q.Field.Alias, "sql", plan.Log())
+	if ai := auth.AuthInfoFromContext(ctx); ai != nil {
+		logger.Debug("subscription.user", "user", ai.UserName, "role", ai.Role, "field", q.Field.Name)
 	}
 
 	table, finalize, err := plan.ExecuteStream(ctx, s.db)
