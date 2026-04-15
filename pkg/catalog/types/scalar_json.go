@@ -22,7 +22,7 @@ func (s *jsonScalar) Name() string { return "JSON" }
 func (s *jsonScalar) SDL() string {
 	return `"""
 The ` + "`JSON`" + ` scalar type represents arbitrary JSON data, encoded as a JSON string.
-Filter operators: eq, has, has_all, contains, is_null
+Filter operators: eq, has, has_all, contains, is_null, field, not, or, and
 Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter)
 """
 scalar JSON
@@ -32,6 +32,31 @@ input JSONFilter @system {
   has: String
   has_all: [String!]
   contains: JSON
+  is_null: Boolean
+  field: [JSONFieldFilter!]
+  not: JSONFilter
+  or: [JSONFilter!]
+  and: [JSONFilter!]
+}
+
+"""
+Filter by a nested JSON field at a given path.
+The path uses dot notation (e.g. "catalog.field_name").
+Optional coalesce replaces NULL with a default before comparison.
+"""
+input JSONFieldFilter @system {
+  path: String!
+  coalesce: JSON
+  eq: JSON
+  gt: JSON
+  gte: JSON
+  lt: JSON
+  lte: JSON
+  in: [JSON!]
+  not_in: [JSON!]
+  like: String
+  ilike: String
+  regex: String
   is_null: Boolean
 }
 

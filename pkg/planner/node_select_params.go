@@ -715,12 +715,89 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 		if v == nil {
 			continue
 		}
-		filter, p, err := e.FilterOperationSQLValue(sqlName, path, op, v, params)
-		if err != nil {
-			return "", nil, err
+		switch op {
+		case "field":
+			// field: [JSONFieldFilter!] — array of field-level filters
+			arr, ok := v.([]any)
+			if !ok {
+				return "", nil, fmt.Errorf("field filter value must be an array")
+			}
+			for _, item := range arr {
+				m, ok := item.(map[string]any)
+				if !ok {
+					return "", nil, fmt.Errorf("field filter item must be an object")
+				}
+				q, p, err := engines.JSONFieldFilterSQL(e, sqlName, m, params)
+				if err != nil {
+					return "", nil, err
+				}
+				filters = append(filters, "("+q+")")
+				params = p
+			}
+		case "not":
+			// not: JSONFilter — negate a sub-filter
+			m, ok := v.(map[string]any)
+			if !ok {
+				return "", nil, fmt.Errorf("not filter value must be an object")
+			}
+			q, p, err := filterSQLValue(ctx, e, defs, field, sqlName, path, m, params)
+			if err != nil {
+				return "", nil, err
+			}
+			filters = append(filters, "NOT("+q+")")
+			params = p
+		case "or":
+			// or: [JSONFilter!] — OR combination
+			arr, ok := v.([]any)
+			if !ok {
+				return "", nil, fmt.Errorf("or filter value must be an array")
+			}
+			var orFilters []string
+			for _, item := range arr {
+				m, ok := item.(map[string]any)
+				if !ok {
+					return "", nil, fmt.Errorf("or filter item must be an object")
+				}
+				q, p, err := filterSQLValue(ctx, e, defs, field, sqlName, path, m, params)
+				if err != nil {
+					return "", nil, err
+				}
+				orFilters = append(orFilters, "("+q+")")
+				params = p
+			}
+			if len(orFilters) > 0 {
+				filters = append(filters, "("+strings.Join(orFilters, " OR ")+")")
+			}
+		case "and":
+			// and: [JSONFilter!] — explicit AND combination
+			arr, ok := v.([]any)
+			if !ok {
+				return "", nil, fmt.Errorf("and filter value must be an array")
+			}
+			var andFilters []string
+			for _, item := range arr {
+				m, ok := item.(map[string]any)
+				if !ok {
+					return "", nil, fmt.Errorf("and filter item must be an object")
+				}
+				q, p, err := filterSQLValue(ctx, e, defs, field, sqlName, path, m, params)
+				if err != nil {
+					return "", nil, err
+				}
+				andFilters = append(andFilters, "("+q+")")
+				params = p
+			}
+			if len(andFilters) > 0 {
+				filters = append(filters, "("+strings.Join(andFilters, " AND ")+")")
+			}
+		default:
+			filter, p, err := e.FilterOperationSQLValue(sqlName, path, op, v, params)
+			if err != nil {
+				return "", nil, err
+			}
+			filters = append(filters, "("+filter+")")
+			params = p
 		}
-		filters = append(filters, "("+filter+")")
-		params = p
 	}
 	if len(filters) == 1 {
 		return strings.TrimPrefix(strings.TrimSuffix(filters[0], ")"), "("), params, nil
