@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/paulmach/orb"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -282,6 +283,87 @@ func Test_repackStructRecursive(t *testing.T) {
 				}},
 			},
 			expected: "{subfield1A: list_transform(field1['subfield1'],lambda _value: {subsubfield1: _value['subsubfield1']})}",
+		},
+		{
+			name: "nested geometry from GeoJSON string (OpenAPI StringAsGeoJson)",
+			field: func() *ast.Field {
+				coordsDef := &ast.FieldDefinition{
+					Name: "coordinates",
+					Type: ast.NamedType("Geometry", nil),
+					Directives: ast.DirectiveList{
+						base.FieldSqlDirective("ST_GeomFromGeoJSON([coordinates])"),
+					},
+				}
+				dirType := &ast.Definition{
+					Name:   "Direction",
+					Fields: []*ast.FieldDefinition{coordsDef},
+				}
+				return &ast.Field{
+					Alias: "row",
+					Name:  "row",
+					SelectionSet: ast.SelectionSet{
+						&ast.Field{
+							Alias:            "coords",
+							Name:             "coordinates",
+							Definition:       coordsDef,
+							ObjectDefinition: dirType,
+						},
+					},
+					Definition: &ast.FieldDefinition{
+						Name: "row", Type: ast.NamedType("Object", nil),
+					},
+					ObjectDefinition: &ast.Definition{Fields: []*ast.FieldDefinition{
+						{Name: "row", Type: ast.NamedType("Object", nil)},
+					}},
+				}
+			}(),
+			expected: "{coords: ST_AsGeoJSON(ST_GeomFromGeoJSON(row['coordinates']))}",
+		},
+		{
+			name: "list of objects with geometry from GeoJSON string",
+			field: func() *ast.Field {
+				coordsDef := &ast.FieldDefinition{
+					Name: "coordinates",
+					Type: ast.NamedType("Geometry", nil),
+					Directives: ast.DirectiveList{
+						base.FieldSqlDirective("ST_GeomFromGeoJSON([coordinates])"),
+					},
+				}
+				dirType := &ast.Definition{
+					Name:   "Direction",
+					Fields: []*ast.FieldDefinition{coordsDef},
+				}
+				return &ast.Field{
+					Alias: "light",
+					Name:  "light",
+					SelectionSet: ast.SelectionSet{
+						&ast.Field{
+							Alias: "directionsOut",
+							Name:  "directions",
+							SelectionSet: ast.SelectionSet{
+								&ast.Field{
+									Alias:            "coords",
+									Name:             "coordinates",
+									Definition:       coordsDef,
+									ObjectDefinition: dirType,
+								},
+							},
+							ObjectDefinition: dirType,
+							Definition: &ast.FieldDefinition{
+								Name: "directions",
+								Type: &ast.Type{NamedType: "", Elem: ast.NamedType("Direction", nil)},
+							},
+						},
+					},
+					Definition: &ast.FieldDefinition{
+						Name: "light", Type: ast.NamedType("Object", nil),
+					},
+					ObjectDefinition: &ast.Definition{Fields: []*ast.FieldDefinition{
+						{Name: "light", Type: ast.NamedType("Object", nil)},
+					}},
+				}
+			}(),
+			expected: "{directionsOut: list_transform(light['directions'],lambda _value: {coords: ST_AsGeoJSON(ST_GeomFromGeoJSON(_value['coordinates']))})}",
 		},
 	}
 

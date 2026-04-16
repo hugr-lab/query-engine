@@ -905,9 +905,10 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 		if fi.IsCalcField() {
 			extractValue = fi.SQLFieldFunc("", func(s string) string { return sql + extractStructFieldByPath(s) })
 		}
-		if fi.IsTransformed() {
-			extractValue = fi.TransformSQL(extractValue)
-		}
+		// Do not call TransformSQL here: for calc fields, SQLFieldFunc already substitutes
+		// all [field] placeholders (including when the only placeholder matches this field name).
+		// Applying TransformSQL again would re-wrap the expression (e.g. double ST_GeomFromGeoJSON),
+		// and DuckDB would coerce the inner geometry to WKT for the outer parse, causing errors.
 		if f.Field.Definition.Type.NamedType == "" && f.Field.Definition.Type.Elem == nil {
 			continue
 		}

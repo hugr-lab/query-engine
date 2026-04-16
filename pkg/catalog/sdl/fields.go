@@ -134,21 +134,6 @@ func (f *Field) SQLFieldFunc(prefix string, fn func(string) string) string {
 	return sql
 }
 
-func (f *Field) IsTransformed() bool {
-	if f.sql == "" {
-		return false
-	}
-	fields := f.UsingFields()
-	return len(fields) == 1 && fields[0] == f.Name
-}
-
-func (f *Field) TransformSQL(sql string) string {
-	if f.sql == "" {
-		return sql
-	}
-	return strings.ReplaceAll(f.sql, "["+f.Name+"]", sql)
-}
-
 func (f *Field) UsingFields() []string {
 	return ExtractFieldsFromSQL(f.sql)
 }
