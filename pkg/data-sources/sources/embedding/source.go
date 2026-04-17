@@ -71,6 +71,11 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) (err error) {
 		return err
 	}
 
+	s.ds.Path, err = sources.ResolveProviderScheme(s.ds.Path)
+	if err != nil {
+		return err
+	}
+
 	u, err := url.Parse(s.ds.Path)
 	if err != nil {
 		return err
