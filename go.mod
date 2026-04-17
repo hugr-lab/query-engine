@@ -3,8 +3,8 @@ module github.com/hugr-lab/query-engine
 go 1.26
 
 require (
-	github.com/hugr-lab/query-engine/client v0.3.18
-	github.com/hugr-lab/query-engine/types v0.3.18
+	github.com/hugr-lab/query-engine/client v0.3.29
+	github.com/hugr-lab/query-engine/types v0.3.29
 )
 
 require (
@@ -119,9 +119,4 @@ require (
 	golang.org/x/tools v0.43.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-)
-
-replace (
-	github.com/hugr-lab/query-engine/client => ./client
-	github.com/hugr-lab/query-engine/types => ./types
 )

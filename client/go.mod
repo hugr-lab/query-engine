@@ -7,7 +7,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/google/uuid v1.6.0
 	github.com/hugr-lab/airport-go v0.2.1
-	github.com/hugr-lab/query-engine/types v0.3.18
+	github.com/hugr-lab/query-engine/types v0.3.29
 	github.com/paulmach/orb v0.13.0
 	github.com/vektah/gqlparser/v2 v2.5.32
 	google.golang.org/grpc v1.80.0
@@ -34,5 +34,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260406210006-6f92a3bedf2d // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
-
-replace github.com/hugr-lab/query-engine/types => ../types
