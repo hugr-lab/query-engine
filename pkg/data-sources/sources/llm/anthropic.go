@@ -60,6 +60,10 @@ func (s *AnthropicSource) Attach(_ context.Context, _ *db.Pool) error {
 	if err != nil {
 		return err
 	}
+	path, err = sources.ResolveProviderScheme(path)
+	if err != nil {
+		return err
+	}
 	u, err := url.Parse(path)
 	if err != nil {
 		return err
