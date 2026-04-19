@@ -90,6 +90,8 @@ func (r *Response) Table(path string) (ArrowTable, error) {
 	return t, nil
 }
 
+// Scan behaves like ScanObject for single-value types and ScanTable for slices.
+// See ScanObject and ScanTable for details and error conditions.
 func Scan[T any](resp *Response, path string) (T, error) {
 	var zero T
 
