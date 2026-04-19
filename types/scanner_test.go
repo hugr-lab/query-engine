@@ -19,7 +19,7 @@ func newMultiBatchTable(t *testing.T, batches, batchRows int) *ArrowTableChunked
 	}, nil)
 	tbl := NewArrowTable()
 	counter := int32(0)
-	for i := 0; i < batches; i++ {
+	for range batches {
 		b := array.NewRecordBuilder(mem, schema)
 		for j := 0; j < batchRows; j++ {
 			b.Field(0).(*array.Int32Builder).Append(counter)
@@ -180,6 +180,70 @@ func buildMixedResponse(t *testing.T) *Response {
 			"rows":    rowsTbl,
 			"version": "1.2.3",
 		},
+	}
+}
+
+func TestResponse_Scan(t *testing.T) {
+	r := buildMixedResponse(t)
+	defer r.Close()
+
+	// Slices of struct scan via ScanTable.
+	type row struct {
+		N int32 `json:"n"`
+	}
+	rows, err := Scan[[]row](r, "rows")
+	if err != nil {
+		t.Fatalf("ScanTable: %v", err)
+	}
+	if len(rows) != 2 || rows[0].N != 10 || rows[1].N != 20 {
+		t.Fatalf("rows: %+v", rows)
+	}
+
+	// Into []map[string]any.
+	maps, err := Scan[[]map[string]any](r, "rows")
+	if err != nil {
+		t.Fatalf("ScanTable into maps: %v", err)
+	}
+	if len(maps) != 2 || maps[0]["n"].(int32) != 10 {
+		t.Fatalf("maps: %+v", maps)
+	}
+
+	// Error cases.
+	_, err = Scan[[]row](r, "core.info")
+	if !errors.Is(err, ErrWrongDataPath) {
+		t.Fatalf("Scan on object path: want ErrWrongDataPath, got %v", err)
+	}
+	_, err = Scan[[]row](r, "missing")
+	if !errors.Is(err, ErrWrongDataPath) {
+		t.Fatalf("Scan missing: want ErrWrongDataPath, got %v", err)
+	}
+
+	// Single values scan via ScanObject.
+
+	// *JsonValue leaf scans via JSON marshal/unmarshal.
+	info, err := Scan[struct {
+		Version string `json:"version"`
+	}](r, "core.info")
+	if err != nil {
+		t.Fatalf("ScanObject: %v", err)
+	}
+	if info.Version != "1.2.3" {
+		t.Fatalf("version: %q", info.Version)
+	}
+
+	// Scalar leaf at top level — JSON-roundtrip into a string works.
+	version, err := Scan[string](r, "version")
+	if err != nil {
+		t.Fatalf("ScanObject version: %v", err)
+	}
+	if version != "1.2.3" {
+		t.Fatalf("version scalar: %q", version)
+	}
+
+	// ScanObject on a table path must return ErrWrongDataPath.
+	_, err = Scan[any](r, "core.users")
+	if !errors.Is(err, ErrWrongDataPath) {
+		t.Fatalf("ScanObject on table path: want ErrWrongDataPath, got %v", err)
 	}
 }
 

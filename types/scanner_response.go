@@ -2,6 +2,7 @@ package types
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 )
@@ -87,6 +88,32 @@ func (r *Response) Table(path string) (ArrowTable, error) {
 		return nil, ErrWrongDataPath
 	}
 	return t, nil
+}
+
+func Scan[T any](resp *Response, path string) (T, error) {
+	var zero T
+
+	if resp == nil {
+		return zero, errors.New("response is nil")
+	}
+
+	// If T is slice use ScanTable, otherwise use ScanObject
+	if t := reflect.TypeOf(any(zero)); t != nil && t.Kind() == reflect.Slice {
+		var dest T
+		err := resp.ScanTable(path, &dest)
+		if err != nil {
+			return zero, err
+		}
+		return dest, nil
+	}
+
+	var dest T
+	err := resp.ScanObject(path, &dest)
+	if err != nil {
+		return zero, err
+	}
+
+	return dest, nil
 }
 
 // ScanObject behaves like ScanData for non-table paths; returns
