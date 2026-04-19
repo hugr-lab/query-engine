@@ -34,6 +34,7 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - N/A (no schema changes) (001-llm-thinking-roundtrip)
 - Go 1.26 with `duckdb_arrow` build tag + `duckdb-go/v2` (CGo), `net/url` (stdlib) (001-provider-url-schemes)
 - N/A (no schema changes — resolution happens in-memory during Attach) (001-provider-url-schemes)
+- N/A — feature reads Arrow records already materialised in (001-arrow-scanner)
 
 ## Project Structure
 
@@ -50,6 +51,6 @@ Go 1.26: Follow standard conventions
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- 001-arrow-scanner: Added Go 1.26 (with `iter.Seq`, range-over-func)
 - 001-provider-url-schemes: Added Go 1.26 with `duckdb_arrow` build tag + `duckdb-go/v2` (CGo), `net/url` (stdlib)
 - 001-llm-thinking-roundtrip: Added Go 1.26 with `duckdb_arrow` build tag + `duckdb-go/v2` (CGo), `gqlparser/v2`, `apache/arrow-go/v18`
-- 001-streaming-tool-calls: Added Go 1.26 with `duckdb_arrow` build tag + `duckdb-go/v2`, `gqlparser/v2`, `apache/arrow-go/v18`
