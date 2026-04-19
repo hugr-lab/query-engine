@@ -107,6 +107,65 @@ err = resp.ScanData("devices", &devices)
 fmt.Println(resp.Data)
 ```
 
+### Scanning Arrow Tables
+
+For columns that don't round-trip cleanly through JSON — timestamps
+(timezone is lost) and geometry (arrives as base64 WKB bytes) — use the
+Arrow-native scanner API on `types.Response`. Struct fields are resolved
+by `json` tag, matching `ScanData` conventions.
+
+```go
+import "github.com/paulmach/orb"
+
+type Building struct {
+    ID   int64        `json:"id"`
+    Name string       `json:"name"`
+    Geom orb.Geometry `json:"geom"`    // decoded automatically
+    Area float64      `json:"area_sqm"`
+}
+
+resp, _ := c.Query(ctx, `{ osm { buildings { id name geom area_sqm } } }`, nil)
+defer resp.Close()
+
+var rows []Building
+if err := resp.ScanTable("osm.buildings", &rows); err != nil {
+    log.Fatal(err)
+}
+```
+
+- `Response.Tables()` / `Response.Objects()` — list dotted paths to
+  Arrow tables vs. plain object leaves in the response tree.
+- `Response.Table(path) (ArrowTable, error)` — typed accessor.
+- `Response.ScanObject(path, dest)` — JSON-backed scan for non-table
+  leaves (same semantics as `ScanData`, errors on table paths).
+- `Response.ScanTable(path, dest)` — whole-table iterate into
+  `*[]StructT` or `*[]map[string]any`.
+- `ArrowTable.Rows()` — `database/sql.Rows`-style cursor for streaming.
+
+**Type rules:**
+
+| Arrow column | Go destination | Behaviour |
+|---|---|---|
+| `Timestamp(unit, tz)` | `time.Time` | Honours unit + timezone; UTC default when tz empty. |
+| `Timestamp(unit, "")` | `types.DateTime` | Naive, no timezone applied. |
+| Geometry (`geoarrow.wkb`, `geoarrow.wkt`, native coords, `hugr.geojson`) | `orb.Geometry` / `orb.Point` / `orb.LineString` / … | Transparent decode. |
+| Geometry | `[]byte` / `string` / `any` / `map[string]any` | Raw storage passthrough. |
+| String with JSON content | `map[string]any` / `[]any` / `any` | Auto `json.Unmarshal`. |
+| String | `string` | Unchanged. |
+
+For custom geometry encodings, register a decoder:
+
+```go
+types.RegisterGeometryDecoder("myorg.geo.xyz", func(
+    arr arrow.Array, row int, meta arrow.Metadata,
+) (orb.Geometry, error) {
+    return myParse(arr.(*array.String).Value(row))
+})
+```
+
+`ScanData` continues to work unchanged. Migrate call sites opportunistically
+when you hit timestamp or geometry fields.
+
 ### Validate Without Executing
 
 ```go

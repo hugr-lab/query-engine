@@ -14,10 +14,22 @@ import (
 	"github.com/paulmach/orb/geojson"
 )
 
-// GeometryDecoder converts an Arrow cell into an orb.Geometry. Registered
-// against an Arrow extension name via RegisterGeometryDecoder. The scanner
-// invokes a decoder when the destination Go type is geometry-typed and the
-// column carries a recognised extension name.
+// GeometryDecoder converts an Arrow cell into an orb.Geometry. It is
+// registered against an Arrow extension name via RegisterGeometryDecoder.
+// The scanner invokes a decoder when the destination Go type is
+// orb.Geometry (or a concrete subtype) and the column carries that
+// extension name — either via an ExtensionArray's ExtensionType().ExtensionName()
+// or via an ARROW:extension:name entry in the column's field metadata.
+//
+// Built-in decoders are registered for: geoarrow.wkb, geoarrow.wkt,
+// geoarrow.point, geoarrow.linestring, geoarrow.polygon, geoarrow.multipoint,
+// geoarrow.multilinestring, geoarrow.multipolygon, hugr.geojson. The
+// native union forms geoarrow.geometry and geoarrow.geometrycollection are
+// registered as stub decoders that error clearly — override them if your
+// data actually carries those encodings.
+//
+// Return (nil, nil) for a cell that is logically null; the scanner zeroes
+// the destination in that case.
 type GeometryDecoder func(arr arrow.Array, row int, fieldMeta arrow.Metadata) (orb.Geometry, error)
 
 var (
@@ -25,9 +37,21 @@ var (
 	geometryDecodersMu sync.RWMutex
 )
 
-// RegisterGeometryDecoder binds an Arrow extension name to a decoder. If name
-// is already registered the new decoder replaces the old one. Safe to call
-// from init; uses an RWMutex for thread-safety.
+// RegisterGeometryDecoder binds an Arrow extension name to a decoder. If the
+// name is already registered, the new decoder replaces the old one. Passing
+// a nil fn deletes the entry. Safe to call from init or at runtime;
+// thread-safe via an internal RWMutex.
+//
+// Example — register a decoder for a custom WKT+EWKT encoding:
+//
+//	func init() {
+//	    types.RegisterGeometryDecoder("myorg.geo.ewkt", func(
+//	        arr arrow.Array, row int, meta arrow.Metadata,
+//	    ) (orb.Geometry, error) {
+//	        s := arr.(*array.String).Value(row)
+//	        return myparser.ParseEWKT(s)
+//	    })
+//	}
 func RegisterGeometryDecoder(name string, fn GeometryDecoder) {
 	geometryDecodersMu.Lock()
 	defer geometryDecodersMu.Unlock()

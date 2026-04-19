@@ -1,3 +1,12 @@
+// Arrow-native scanner — see scanner.go, scanner_convert.go,
+// scanner_geometry.go, scanner_response.go. Use Response.ScanTable /
+// Response.Rows / ArrowTable.Rows to read Arrow results directly into Go
+// structs without a JSON round-trip. Struct fields are resolved by the
+// standard `json` tag. Timestamps preserve unit + timezone metadata;
+// geometry columns decode to orb.Geometry for every encoding the engine
+// emits. Callers can plug in custom geometry encodings via
+// RegisterGeometryDecoder.
+
 package types
 
 import (
@@ -11,6 +20,18 @@ import (
 
 // Rows is a cursor over the rows of an ArrowTable. The shape follows
 // database/sql.Rows. A Rows is NOT safe for concurrent use across goroutines.
+//
+// Typical use:
+//
+//	tbl, _ := resp.Table("core.users")
+//	rows, _ := tbl.Rows()
+//	defer rows.Close()
+//	for rows.Next() {
+//	    var u User
+//	    if err := rows.Scan(&u); err != nil { return err }
+//	    // ...
+//	}
+//	if err := rows.Err(); err != nil { return err }
 type Rows interface {
 	// Next advances the cursor to the next row. Returns false at end-of-stream
 	// or on error; inspect Err() to distinguish. Calling Next after it returned
@@ -37,12 +58,18 @@ type Rows interface {
 
 var _ Rows = (*rowScanner)(nil)
 
-// Scanner state errors.
+// Scanner state errors. All are wrapped by Rows.Scan when the call site
+// violates the cursor contract; use errors.Is to match.
 var (
+	// ErrScanBeforeNext is returned when Scan is called before the first Next.
 	ErrScanBeforeNext = errors.New("types: Scan called before Next")
-	ErrScanAfterEnd   = errors.New("types: Scan called after end of stream")
-	ErrScanClosed     = errors.New("types: Rows is closed")
-	ErrScanNilDest    = errors.New("types: Scan dest is nil")
+	// ErrScanAfterEnd is returned when Scan is called after Next returned false.
+	ErrScanAfterEnd = errors.New("types: Scan called after end of stream")
+	// ErrScanClosed is returned when any operation is attempted on a closed Rows.
+	ErrScanClosed = errors.New("types: Rows is closed")
+	// ErrScanNilDest is returned when Scan is passed a nil destination.
+	ErrScanNilDest = errors.New("types: Scan dest is nil")
+	// ErrScanNotPointer is returned when Scan's dest is not a non-nil pointer.
 	ErrScanNotPointer = errors.New("types: Scan dest must be a non-nil pointer")
 )
 
