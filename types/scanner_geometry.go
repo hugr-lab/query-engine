@@ -97,11 +97,21 @@ func fieldGeometryName(f arrow.Field) string {
 // orbGeometryType is the reflect.Type of the orb.Geometry interface.
 var orbGeometryType = reflect.TypeOf((*orb.Geometry)(nil)).Elem()
 
-// isGeometryDest returns true when the Go destination type is orb.Geometry
-// or one of the concrete orb types (Point, LineString, Polygon, Multi*,
-// Ring, Bound, Collection).
+// geojsonGeometryType is the reflect.Type of geojson.Geometry (the wrapper
+// struct from paulmach/orb/geojson that implements JSON marshal/unmarshal).
+// Supporting it here lets callers write one struct definition that works
+// for both ScanTable (Arrow path) and ScanObject (JSON path): over Arrow
+// the scanner wraps the decoded orb.Geometry via geojson.NewGeometry;
+// over JSON the stdlib decoder populates it natively.
+var geojsonGeometryType = reflect.TypeOf(geojson.Geometry{})
+
+// isGeometryDest returns true when the Go destination type is orb.Geometry,
+// a concrete orb subtype (Point, LineString, Polygon, Multi*, Ring, Bound,
+// Collection), or geojson.Geometry. Called with the already-dereferenced
+// type (pointer destinations are unwrapped in buildConvertFunc), so both
+// `geojson.Geometry` and `*geojson.Geometry` fields are covered.
 func isGeometryDest(t reflect.Type) bool {
-	if t == orbGeometryType {
+	if t == orbGeometryType || t == geojsonGeometryType {
 		return true
 	}
 	// A concrete orb type implements orb.Geometry.
@@ -141,24 +151,42 @@ func geometryConvertFunc(extName string, fieldMeta arrow.Metadata, dstType refle
 			dst.Set(reflect.Zero(dst.Type()))
 			return nil
 		}
-		// Assign.
-		if dstType == orbGeometryType {
-			dst.Set(reflect.ValueOf(geom))
-			return nil
-		}
-		// Concrete subtype — type-check the decoded value.
-		gv := reflect.ValueOf(geom)
-		if gv.Type() == dstType {
-			dst.Set(gv)
-			return nil
-		}
-		// Allow value-kind dereference if orb returns a pointer vs value mismatch.
-		if gv.Kind() == reflect.Pointer && gv.Elem().Type() == dstType {
-			dst.Set(gv.Elem())
-			return nil
-		}
-		return fmt.Errorf("%w: decoded %T is not assignable to %s", ErrGeometryDecode, geom, dstType)
+		return assignGeometry(geom, dstType, dst)
 	}, nil
+}
+
+// assignGeometry writes a decoded orb.Geometry into dst, with the type
+// adaptation rules the scanner supports. dst is the already-dereferenced
+// reflect.Value (pointer unwrapping done in buildConvertFunc).
+//
+// Supported destination types:
+//   - orb.Geometry interface              → direct assignment.
+//   - concrete orb subtype (orb.Point…)   → type-check the decoded value.
+//   - geojson.Geometry                    → wrap via geojson.NewGeometry so
+//                                            the same struct definition works
+//                                            for ScanTable and ScanObject.
+func assignGeometry(geom orb.Geometry, dstType reflect.Type, dst reflect.Value) error {
+	if dstType == orbGeometryType {
+		dst.Set(reflect.ValueOf(geom))
+		return nil
+	}
+	if dstType == geojsonGeometryType {
+		if g := geojson.NewGeometry(geom); g != nil {
+			dst.Set(reflect.ValueOf(*g))
+		}
+		return nil
+	}
+	// Concrete orb subtype — type-check the decoded value.
+	gv := reflect.ValueOf(geom)
+	if gv.Type() == dstType {
+		dst.Set(gv)
+		return nil
+	}
+	if gv.Kind() == reflect.Pointer && gv.Elem().Type() == dstType {
+		dst.Set(gv.Elem())
+		return nil
+	}
+	return fmt.Errorf("%w: decoded %T is not assignable to %s", ErrGeometryDecode, geom, dstType)
 }
 
 // autoStringGeometryConvertFunc handles the case where a String / LargeString
@@ -193,16 +221,7 @@ func autoStringGeometryConvertFunc(fieldMeta arrow.Metadata, dstType reflect.Typ
 			dst.Set(reflect.Zero(dst.Type()))
 			return nil
 		}
-		if dstType == orbGeometryType {
-			dst.Set(reflect.ValueOf(geom))
-			return nil
-		}
-		gv := reflect.ValueOf(geom)
-		if gv.Type() == dstType {
-			dst.Set(gv)
-			return nil
-		}
-		return fmt.Errorf("%w: decoded %T is not assignable to %s", ErrGeometryDecode, geom, dstType)
+		return assignGeometry(geom, dstType, dst)
 	}
 }
 

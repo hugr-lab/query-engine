@@ -10,6 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkb"
+	"github.com/paulmach/orb/geojson"
 )
 
 // wkbFieldMeta returns Arrow field metadata tagged with the given extension name.
@@ -448,6 +449,66 @@ func TestGeometry_BadBytes(t *testing.T) {
 	msg := err.Error()
 	if !strings.Contains(msg, `scan column "geom"`) || !strings.Contains(msg, "row 0") {
 		t.Fatalf("error message missing column+row: %s", msg)
+	}
+}
+
+// TestGeometry_GeojsonGeometryDest verifies that geojson.Geometry (the wrapper
+// struct from paulmach/orb/geojson) is supported as a destination type so
+// callers can use the same struct definition for both ScanTable (Arrow) and
+// ScanObject (JSON). Covers WKB, untagged GeoJSON string, and pointer fields.
+func TestGeometry_GeojsonGeometryDest(t *testing.T) {
+	pt := orb.Point{10, 20}
+	wkbBytes, err := wkb.Marshal(pt)
+	if err != nil {
+		t.Fatalf("wkb.Marshal: %v", err)
+	}
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "wkb_geom", Type: arrow.BinaryTypes.Binary, Metadata: extNameMeta("geoarrow.wkb")},
+		{Name: "json_geom", Type: arrow.BinaryTypes.String}, // untagged JSON
+	}, nil)
+	tbl := newTestTable(t, schema, func(b *array.RecordBuilder) {
+		b.Field(0).(*array.BinaryBuilder).Append(wkbBytes)
+		b.Field(1).(*array.StringBuilder).Append(`{"type":"LineString","coordinates":[[0,0],[1,1]]}`)
+	})
+	defer tbl.Release()
+
+	// Value-kind destination.
+	type rowVal struct {
+		WKB  geojson.Geometry `json:"wkb_geom"`
+		JSON geojson.Geometry `json:"json_geom"`
+	}
+	rows, _ := tbl.Rows()
+	defer rows.Close()
+	rows.Next()
+	var rv rowVal
+	if err := rows.Scan(&rv); err != nil {
+		t.Fatalf("Scan value: %v", err)
+	}
+	if g := rv.WKB.Geometry(); !orb.Equal(g, pt) {
+		t.Fatalf("wkb → geojson.Geometry: want %v, got %v", pt, g)
+	}
+	wantLS := orb.LineString{{0, 0}, {1, 1}}
+	if g := rv.JSON.Geometry(); !orb.Equal(g, wantLS) {
+		t.Fatalf("json string → geojson.Geometry: want %v, got %v", wantLS, g)
+	}
+
+	// Pointer-kind destination.
+	type rowPtr struct {
+		WKB  *geojson.Geometry `json:"wkb_geom"`
+		JSON *geojson.Geometry `json:"json_geom"`
+	}
+	rows2, _ := tbl.Rows()
+	defer rows2.Close()
+	rows2.Next()
+	var rp rowPtr
+	if err := rows2.Scan(&rp); err != nil {
+		t.Fatalf("Scan pointer: %v", err)
+	}
+	if rp.WKB == nil || !orb.Equal(rp.WKB.Geometry(), pt) {
+		t.Fatalf("*geojson.Geometry wkb: %v", rp.WKB)
+	}
+	if rp.JSON == nil || !orb.Equal(rp.JSON.Geometry(), wantLS) {
+		t.Fatalf("*geojson.Geometry json: %v", rp.JSON)
 	}
 }
 
