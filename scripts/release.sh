@@ -14,7 +14,9 @@ MOD="github.com/hugr-lab/query-engine"
 # direct first — bypass proxy.golang.org cache for fresh tags;
 # fallback to proxy for every other dependency.
 export GOPROXY="direct,https://proxy.golang.org,direct"
-export GOFLAGS="-mod=mod"
+# Disable parent workspace so `go get`/`go mod tidy` operate on this repo's
+# go.mod instead of the outer go.work (which forces readonly mode).
+export GOWORK=off
 
 # Safety checks
 [[ -z "$(git status --porcelain)" ]] || { echo "Error: working tree dirty"; exit 1; }
