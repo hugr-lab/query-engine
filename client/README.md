@@ -198,6 +198,31 @@ if err := resp.ScanObject("tf.digital_twin.roads_by_pk", &road); err != nil {
 concrete := road.Geom.Geometry()   // -> orb.LineString, orb.Point, ...
 ```
 
+#### One struct for both paths
+
+`*geojson.Geometry` works on **both** scanning paths — the Arrow scanner
+wraps the decoded geometry via `geojson.NewGeometry`, and `ScanObject`
+lets stdlib JSON populate it natively. Write one struct and use it for
+list and `by_pk` queries alike:
+
+```go
+type Part struct {
+    ID   int64             `json:"id"`
+    Name string            `json:"name"`
+    Geom *geojson.Geometry `json:"geom"`   // works via ScanTable and ScanObject
+}
+
+// Arrow table (list selection):
+resp, _ := c.Query(ctx, `{ ... { parts { id name geom } } }`, nil)
+var parts []Part
+_ = resp.ScanTable("...parts", &parts)
+
+// JSON object (by_pk or function call):
+resp, _ := c.Query(ctx, `{ ... { parts_by_pk(id: 42) { id name geom } } }`, nil)
+var part Part
+_ = resp.ScanObject("...parts_by_pk", &part)
+```
+
 `ScanData` continues to work unchanged. Migrate call sites
 opportunistically when you hit timestamp or geometry fields.
 
