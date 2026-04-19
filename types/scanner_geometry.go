@@ -94,16 +94,24 @@ func fieldGeometryName(f arrow.Field) string {
 	return ""
 }
 
-// orbGeometryType is the reflect.Type of the orb.Geometry interface.
-var orbGeometryType = reflect.TypeOf((*orb.Geometry)(nil)).Elem()
+// Reflect-type constants for geometry destination matching. Precomputed to
+// avoid per-plan-build reflect.TypeOf calls and to make the recognised-type
+// list explicit (vs. string-comparing PkgPath, which would break silently if
+// orb were renamed or vendored).
+var (
+	orbGeometryType     = reflect.TypeOf((*orb.Geometry)(nil)).Elem()
+	geojsonGeometryType = reflect.TypeOf(geojson.Geometry{})
 
-// geojsonGeometryType is the reflect.Type of geojson.Geometry (the wrapper
-// struct from paulmach/orb/geojson that implements JSON marshal/unmarshal).
-// Supporting it here lets callers write one struct definition that works
-// for both ScanTable (Arrow path) and ScanObject (JSON path): over Arrow
-// the scanner wraps the decoded orb.Geometry via geojson.NewGeometry;
-// over JSON the stdlib decoder populates it natively.
-var geojsonGeometryType = reflect.TypeOf(geojson.Geometry{})
+	orbPointType           = reflect.TypeOf(orb.Point{})
+	orbMultiPointType      = reflect.TypeOf(orb.MultiPoint{})
+	orbLineStringType      = reflect.TypeOf(orb.LineString{})
+	orbMultiLineStringType = reflect.TypeOf(orb.MultiLineString{})
+	orbRingType            = reflect.TypeOf(orb.Ring{})
+	orbPolygonType         = reflect.TypeOf(orb.Polygon{})
+	orbMultiPolygonType    = reflect.TypeOf(orb.MultiPolygon{})
+	orbCollectionType      = reflect.TypeOf(orb.Collection{})
+	orbBoundType           = reflect.TypeOf(orb.Bound{})
+)
 
 // isGeometryDest returns true when the Go destination type is orb.Geometry,
 // a concrete orb subtype (Point, LineString, Polygon, Multi*, Ring, Bound,
@@ -111,31 +119,33 @@ var geojsonGeometryType = reflect.TypeOf(geojson.Geometry{})
 // type (pointer destinations are unwrapped in buildConvertFunc), so both
 // `geojson.Geometry` and `*geojson.Geometry` fields are covered.
 func isGeometryDest(t reflect.Type) bool {
-	if t == orbGeometryType || t == geojsonGeometryType {
+	switch t {
+	case orbGeometryType, geojsonGeometryType,
+		orbPointType, orbMultiPointType,
+		orbLineStringType, orbMultiLineStringType,
+		orbRingType, orbPolygonType, orbMultiPolygonType,
+		orbCollectionType, orbBoundType:
 		return true
-	}
-	// A concrete orb type implements orb.Geometry.
-	if reflect.PointerTo(t).Implements(orbGeometryType) || t.Implements(orbGeometryType) {
-		// Keep it to types declared in the orb package to avoid false positives.
-		return t.PkgPath() == "github.com/paulmach/orb"
 	}
 	return false
 }
 
 // geometryConvertFunc builds a convertFunc that decodes the cell via the
-// registered decoder for extName, then assigns the result to dst.
-// If the destination is a concrete orb subtype, a type check is performed.
-// The field's metadata is closed over so decoders have access to SRID /
-// encoding hints without reaching into array internals.
+// decoder registered for extName, then assigns the result to dst. The
+// decoder is looked up once at plan-build time so the hot path is lock-free;
+// callers who re-register decoders after building a plan get the snapshotted
+// behaviour for existing cursors. If the destination is a concrete orb
+// subtype, a type check is performed. The field's metadata is closed over
+// so decoders have access to SRID / encoding hints.
 func geometryConvertFunc(extName string, fieldMeta arrow.Metadata, dstType reflect.Type) (convertFunc, error) {
+	dec, ok := lookupGeometryDecoder(extName)
+	if !ok {
+		return nil, fmt.Errorf("%w: no decoder registered for extension %q", ErrGeometryDecode, extName)
+	}
 	return func(col arrow.Array, row int, dst reflect.Value) error {
 		if col.IsNull(row) {
 			dst.Set(reflect.Zero(dst.Type()))
 			return nil
-		}
-		dec, ok := lookupGeometryDecoder(extName)
-		if !ok {
-			return fmt.Errorf("%w: no decoder registered for extension %q", ErrGeometryDecode, extName)
 		}
 		// Extension arrays expose the storage via Storage(); decoders may
 		// expect the raw storage rather than the extension wrapper.
@@ -171,19 +181,19 @@ func assignGeometry(geom orb.Geometry, dstType reflect.Type, dst reflect.Value) 
 		return nil
 	}
 	if dstType == geojsonGeometryType {
-		if g := geojson.NewGeometry(geom); g != nil {
-			dst.Set(reflect.ValueOf(*g))
+		if wrapped := geojson.NewGeometry(geom); wrapped != nil {
+			dst.Set(reflect.ValueOf(*wrapped))
 		}
 		return nil
 	}
 	// Concrete orb subtype — type-check the decoded value.
-	gv := reflect.ValueOf(geom)
-	if gv.Type() == dstType {
-		dst.Set(gv)
+	geomValue := reflect.ValueOf(geom)
+	if geomValue.Type() == dstType {
+		dst.Set(geomValue)
 		return nil
 	}
-	if gv.Kind() == reflect.Pointer && gv.Elem().Type() == dstType {
-		dst.Set(gv.Elem())
+	if geomValue.Kind() == reflect.Pointer && geomValue.Elem().Type() == dstType {
+		dst.Set(geomValue.Elem())
 		return nil
 	}
 	return fmt.Errorf("%w: decoded %T is not assignable to %s", ErrGeometryDecode, geom, dstType)
@@ -192,8 +202,12 @@ func assignGeometry(geom orb.Geometry, dstType reflect.Type, dst reflect.Value) 
 // autoStringGeometryConvertFunc handles the case where a String / LargeString
 // column carries geometry but no ARROW:extension:name metadata tags it.
 // Observed on engine-emitted nested paths (e.g. tf.digital_twin.roads.parts[].geom).
-// Strategy: peek at the first non-space byte — '{' → GeoJSON, otherwise WKT.
+// Strategy: peek at the first non-space byte of each row — '{' → GeoJSON,
+// otherwise WKT. Both decoders are snapshotted at plan-build time so the
+// hot path is lock-free.
 func autoStringGeometryConvertFunc(fieldMeta arrow.Metadata, dstType reflect.Type) convertFunc {
+	geojsonDec, _ := lookupGeometryDecoder("hugr.geojson")
+	wktDec, _ := lookupGeometryDecoder("geoarrow.wkt")
 	return func(col arrow.Array, row int, dst reflect.Value) error {
 		if col.IsNull(row) {
 			dst.Set(reflect.Zero(dst.Type()))
@@ -208,10 +222,14 @@ func autoStringGeometryConvertFunc(fieldMeta arrow.Metadata, dstType reflect.Typ
 		default:
 			return fmt.Errorf("%w: auto geometry expected string storage, got %s", ErrGeometryDecode, col.DataType())
 		}
-		extName := detectStringGeometryKind(s)
-		dec, ok := lookupGeometryDecoder(extName)
-		if !ok {
-			return fmt.Errorf("%w: no decoder for inferred extension %q", ErrGeometryDecode, extName)
+		var dec GeometryDecoder
+		if looksLikeGeoJSON(s) {
+			dec = geojsonDec
+		} else {
+			dec = wktDec
+		}
+		if dec == nil {
+			return fmt.Errorf("%w: no decoder available for auto-detected geometry string", ErrGeometryDecode)
 		}
 		geom, err := dec(col, row, fieldMeta)
 		if err != nil {
@@ -225,20 +243,22 @@ func autoStringGeometryConvertFunc(fieldMeta arrow.Metadata, dstType reflect.Typ
 	}
 }
 
-// detectStringGeometryKind peeks at leading whitespace-trimmed bytes to
-// distinguish GeoJSON from WKT.
-func detectStringGeometryKind(s string) string {
+// looksLikeGeoJSON returns true if s starts (after whitespace) with '{' — the
+// only JSON-object opener. Empty strings count as GeoJSON too: the GeoJSON
+// decoder returns (nil, nil) on empty bytes, which the caller treats as a
+// null geometry — the same behaviour a blank WKT string would get.
+func looksLikeGeoJSON(s string) bool {
 	for _, r := range s {
 		switch r {
 		case ' ', '\t', '\r', '\n':
 			continue
 		case '{':
-			return "hugr.geojson"
+			return true
 		default:
-			return "geoarrow.wkt"
+			return false
 		}
 	}
-	return "hugr.geojson" // empty — decoder will return nil
+	return true
 }
 
 // ─── Default decoders ────────────────────────────────────────────────────────

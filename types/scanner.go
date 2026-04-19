@@ -96,6 +96,16 @@ type rowScanner struct {
 	exhausted bool // true after reader.Next() returned false
 }
 
+// emptyRows is returned when ArrowTable.Rows() is called on a table with no
+// records. Next() always returns false; Scan errors out.
+type emptyRows struct{}
+
+func (emptyRows) Next() bool          { return false }
+func (emptyRows) Scan(dest any) error { return ErrScanAfterEnd }
+func (emptyRows) Err() error          { return nil }
+func (emptyRows) Close() error        { return nil }
+func (emptyRows) Columns() []string   { return nil }
+
 func newRowScanner(r array.RecordReader) (*rowScanner, error) {
 	if r == nil {
 		return nil, errors.New("types: nil RecordReader")
@@ -248,11 +258,11 @@ func (s *rowScanner) scanIntoStruct(target reflect.Value) error {
 		plan = p
 		s.plans[t] = plan
 	}
-	for _, fm := range plan.fields {
-		dst := target.FieldByIndex(fm.fieldPath)
-		col := s.rec.Column(fm.colIdx)
-		if err := fm.convert(col, s.row, dst); err != nil {
-			name := s.cols[fm.colIdx]
+	for _, mapping := range plan.fields {
+		dst := target.FieldByIndex(mapping.fieldPath)
+		col := s.rec.Column(mapping.colIdx)
+		if err := mapping.convert(col, s.row, dst); err != nil {
+			name := s.cols[mapping.colIdx]
 			return fmt.Errorf("scan column %q row %d: %w", name, s.row, err)
 		}
 	}
@@ -273,11 +283,7 @@ func (s *rowScanner) scanIntoMap(target reflect.Value) error {
 	for i, name := range s.cols {
 		col := s.rec.Column(i)
 		if col.IsNull(s.row) {
-			if wantsAny {
-				target.SetMapIndex(reflect.ValueOf(name), reflect.Zero(elemType))
-			} else {
-				target.SetMapIndex(reflect.ValueOf(name), reflect.Zero(elemType))
-			}
+			target.SetMapIndex(reflect.ValueOf(name), reflect.Zero(elemType))
 			continue
 		}
 		val := defaultConvertValue(col, s.row, s.schema.Field(i))
@@ -320,16 +326,6 @@ func (s *rowScanner) scanIntoSlice(target reflect.Value) error {
 	target.Set(out)
 	return nil
 }
-
-// emptyRows is returned when ArrowTable.Rows() is called on a table with no
-// records. Next() always returns false; Scan errors out.
-type emptyRows struct{}
-
-func (emptyRows) Next() bool           { return false }
-func (emptyRows) Scan(dest any) error  { return ErrScanAfterEnd }
-func (emptyRows) Err() error           { return nil }
-func (emptyRows) Close() error         { return nil }
-func (emptyRows) Columns() []string    { return nil }
 
 // scanIntoInterface fills *any with a map[string]any of the row.
 func (s *rowScanner) scanIntoInterface(target reflect.Value) error {

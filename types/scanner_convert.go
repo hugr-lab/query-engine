@@ -15,6 +15,16 @@ import (
 // convertFunc writes the value at (col, row) into dst.
 type convertFunc func(col arrow.Array, row int, dst reflect.Value) error
 
+// Package-level reflect.Type constants for destination-type pattern matching.
+// Precomputed to avoid reflect.TypeOf calls on every plan build.
+var (
+	timeTimeType     = reflect.TypeOf(time.Time{})
+	dateTimeType     = reflect.TypeOf(DateTime{})
+	timeDurationType = reflect.TypeOf(time.Duration(0))
+	byteSliceType    = reflect.TypeOf([]byte(nil))
+	stringType       = reflect.TypeOf("")
+)
+
 // fieldMapping binds a destination struct field to an Arrow column.
 type fieldMapping struct {
 	colIdx    int
@@ -156,13 +166,13 @@ func buildConvertFunc(afield arrow.Field, dstType reflect.Type) (convertFunc, er
 func buildPlainConvertFunc(afield arrow.Field, dstType reflect.Type) (convertFunc, error) {
 	// Special destination-typed cases first (more specific than kind-based matching).
 	switch dstType {
-	case reflect.TypeOf(time.Time{}):
+	case timeTimeType:
 		return timeConvertFunc(afield), nil
-	case reflect.TypeOf(DateTime{}):
+	case dateTimeType:
 		return dateTimeConvertFunc(afield), nil
-	case reflect.TypeOf(time.Duration(0)):
+	case timeDurationType:
 		return durationConvertFunc(afield), nil
-	case reflect.TypeOf([]byte(nil)):
+	case byteSliceType:
 		return bytesConvertFunc(), nil
 	}
 
@@ -445,26 +455,23 @@ func arrowToDuration(col arrow.Array, row int, dt arrow.DataType) (time.Duration
 	switch a := col.(type) {
 	case *array.Time32:
 		tt := dt.(*arrow.Time32Type)
-		return time.Duration(timeUnitToNanos(int64(a.Value(row)), tt.Unit)), nil
+		return time.Duration(timestampToNanos(int64(a.Value(row)), tt.Unit)), nil
 	case *array.Time64:
 		tt := dt.(*arrow.Time64Type)
-		return time.Duration(timeUnitToNanos(int64(a.Value(row)), tt.Unit)), nil
+		return time.Duration(timestampToNanos(int64(a.Value(row)), tt.Unit)), nil
 	case *array.MonthInterval:
 		return 0, fmt.Errorf("MonthInterval cannot be scanned into time.Duration")
 	}
-	// arrow-go's Duration array: fall back to int64 scaled by unit if available via reflection.
+	// arrow-go's Duration array: fall back via interface lookup if the binding
+	// doesn't expose a concrete array.Duration.
 	if a, ok := col.(interface {
 		Value(int) arrow.Duration
 	}); ok {
 		if dur, ok2 := dt.(*arrow.DurationType); ok2 {
-			return time.Duration(timeUnitToNanos(int64(a.Value(row)), dur.Unit)), nil
+			return time.Duration(timestampToNanos(int64(a.Value(row)), dur.Unit)), nil
 		}
 	}
 	return 0, fmt.Errorf("cannot scan Arrow %s into time.Duration", dt)
-}
-
-func timeUnitToNanos(raw int64, unit arrow.TimeUnit) int64 {
-	return timestampToNanos(raw, unit)
 }
 
 // ─── Numeric helpers ─────────────────────────────────────────────────────────
@@ -491,6 +498,10 @@ func asInt64(col arrow.Array, row int) (int64, error) {
 	return 0, fmt.Errorf("cannot scan Arrow %s into int", col.DataType())
 }
 
+// asUint64 reads a numeric Arrow column as uint64. Negative values from
+// signed-integer columns are rejected — silent wrap-around on signed→unsigned
+// is a common source of hard-to-diagnose bugs. If you need the wrap behaviour,
+// read into int64 first and convert explicitly.
 func asUint64(col arrow.Array, row int) (uint64, error) {
 	switch a := col.(type) {
 	case *array.Uint8:
@@ -502,13 +513,29 @@ func asUint64(col arrow.Array, row int) (uint64, error) {
 	case *array.Uint64:
 		return a.Value(row), nil
 	case *array.Int8:
-		return uint64(a.Value(row)), nil
+		v := a.Value(row)
+		if v < 0 {
+			return 0, fmt.Errorf("cannot scan negative Int8 value %d into uint", v)
+		}
+		return uint64(v), nil
 	case *array.Int16:
-		return uint64(a.Value(row)), nil
+		v := a.Value(row)
+		if v < 0 {
+			return 0, fmt.Errorf("cannot scan negative Int16 value %d into uint", v)
+		}
+		return uint64(v), nil
 	case *array.Int32:
-		return uint64(a.Value(row)), nil
+		v := a.Value(row)
+		if v < 0 {
+			return 0, fmt.Errorf("cannot scan negative Int32 value %d into uint", v)
+		}
+		return uint64(v), nil
 	case *array.Int64:
-		return uint64(a.Value(row)), nil
+		v := a.Value(row)
+		if v < 0 {
+			return 0, fmt.Errorf("cannot scan negative Int64 value %d into uint", v)
+		}
+		return uint64(v), nil
 	}
 	return 0, fmt.Errorf("cannot scan Arrow %s into uint", col.DataType())
 }
@@ -530,7 +557,10 @@ func asFloat64(col arrow.Array, row int) (float64, error) {
 
 func sliceConvertFunc(afield arrow.Field, dstType reflect.Type) (convertFunc, error) {
 	elem := dstType.Elem()
-	// Build element convertFunc based on the list's value type.
+	// Build element convertFunc based on the list's value type. byteSliceType
+	// was already handled by buildPlainConvertFunc; any other []T against a
+	// non-list Arrow column is a schema mismatch — report it at plan-build
+	// time so the caller gets an actionable error.
 	var valueField arrow.Field
 	switch lt := afield.Type.(type) {
 	case *arrow.ListType:
@@ -540,8 +570,7 @@ func sliceConvertFunc(afield arrow.Field, dstType reflect.Type) (convertFunc, er
 	case *arrow.FixedSizeListType:
 		valueField = arrow.Field{Name: "item", Type: lt.ElemField().Type, Nullable: lt.ElemField().Nullable}
 	default:
-		// not a list — e.g. []byte handled elsewhere, []any default via raw
-		return anyConvertFunc(afield), nil
+		return nil, fmt.Errorf("cannot scan Arrow %s into slice %s", afield.Type, dstType)
 	}
 	innerConv, err := buildConvertFunc(valueField, elem)
 	if err != nil {
@@ -592,7 +621,7 @@ func mapConvertFunc(afield arrow.Field, dstType reflect.Type) (convertFunc, erro
 	}
 	keyField := arrow.Field{Name: "key", Type: mt.KeyField().Type}
 	valField := arrow.Field{Name: "value", Type: mt.ItemField().Type, Nullable: mt.ItemField().Nullable}
-	keyConv, err := buildConvertFunc(keyField, reflect.TypeOf(""))
+	keyConv, err := buildConvertFunc(keyField, stringType)
 	if err != nil {
 		return nil, err
 	}
@@ -615,7 +644,7 @@ func mapConvertFunc(afield arrow.Field, dstType reflect.Type) (convertFunc, erro
 		keys := ma.Keys()
 		items := ma.Items()
 		for j := int(s); j < int(e); j++ {
-			k := reflect.New(reflect.TypeOf("")).Elem()
+			k := reflect.New(stringType).Elem()
 			if err := keyConv(keys, j, k); err != nil {
 				return err
 			}
@@ -837,10 +866,10 @@ func defaultConvertValue(col arrow.Array, row int, afield arrow.Field) any {
 		return time.Unix(0, int64(a.Value(row))*int64(time.Millisecond)).UTC()
 	case *array.Time32:
 		tt := afield.Type.(*arrow.Time32Type)
-		return time.Duration(timeUnitToNanos(int64(a.Value(row)), tt.Unit))
+		return time.Duration(timestampToNanos(int64(a.Value(row)), tt.Unit))
 	case *array.Time64:
 		tt := afield.Type.(*arrow.Time64Type)
-		return time.Duration(timeUnitToNanos(int64(a.Value(row)), tt.Unit))
+		return time.Duration(timestampToNanos(int64(a.Value(row)), tt.Unit))
 	case *array.Timestamp:
 		tt := afield.Type.(*arrow.TimestampType)
 		ns := timestampToNanos(int64(a.Value(row)), tt.Unit)

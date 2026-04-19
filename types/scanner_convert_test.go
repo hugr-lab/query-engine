@@ -1,6 +1,7 @@
 package types
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +113,92 @@ func TestConvert_NullsIntoPointers(t *testing.T) {
 	}
 	if got[1].N != nil {
 		t.Fatalf("row 1 pointer: want nil, got %v", *got[1].N)
+	}
+}
+
+// TestConvert_TypedMapDest covers the scanIntoMap branch where the
+// destination map's element type is NOT an interface (e.g. map[string]int32).
+// Each column value is converted through convertIntoValue into the
+// element's reflect.Type.
+func TestConvert_TypedMapDest(t *testing.T) {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "a", Type: arrow.PrimitiveTypes.Int32},
+		{Name: "b", Type: arrow.PrimitiveTypes.Int32, Nullable: true},
+	}, nil)
+	tbl := newTestTable(t, schema, func(b *array.RecordBuilder) {
+		b.Field(0).(*array.Int32Builder).Append(7)
+		b.Field(1).(*array.Int32Builder).AppendValues([]int32{0}, []bool{false})
+	})
+	defer tbl.Release()
+
+	rows, _ := tbl.Rows()
+	defer rows.Close()
+	rows.Next()
+	m := map[string]int32{}
+	if err := rows.Scan(&m); err != nil {
+		t.Fatalf("Scan typed map: %v", err)
+	}
+	if m["a"] != 7 {
+		t.Fatalf("a: want 7, got %d", m["a"])
+	}
+	// Null column → zero value for int32.
+	if m["b"] != 0 {
+		t.Fatalf("b (null): want 0, got %d", m["b"])
+	}
+}
+
+// TestConvert_SliceTypeMismatch verifies that asking for a typed slice
+// against a non-list Arrow column returns an explicit plan-build error
+// instead of a confusing runtime assignment failure.
+func TestConvert_SliceTypeMismatch(t *testing.T) {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "n", Type: arrow.PrimitiveTypes.Int32},
+	}, nil)
+	tbl := newTestTable(t, schema, func(b *array.RecordBuilder) {
+		b.Field(0).(*array.Int32Builder).Append(1)
+	})
+	defer tbl.Release()
+
+	type bad struct {
+		N []int `json:"n"`
+	}
+	rows, _ := tbl.Rows()
+	defer rows.Close()
+	rows.Next()
+	var out bad
+	err := rows.Scan(&out)
+	if err == nil {
+		t.Fatal("expected error for []int dest against int32 column")
+	}
+	if !strings.Contains(err.Error(), "slice") {
+		t.Fatalf("error should mention slice, got: %v", err)
+	}
+}
+
+// TestConvert_NegativeToUint verifies that a negative signed integer column
+// value rejected (not silently wrapped) when scanning into a uint field.
+func TestConvert_NegativeToUint(t *testing.T) {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "n", Type: arrow.PrimitiveTypes.Int32},
+	}, nil)
+	tbl := newTestTable(t, schema, func(b *array.RecordBuilder) {
+		b.Field(0).(*array.Int32Builder).Append(-1)
+	})
+	defer tbl.Release()
+
+	type row struct {
+		N uint32 `json:"n"`
+	}
+	rows, _ := tbl.Rows()
+	defer rows.Close()
+	rows.Next()
+	var r row
+	err := rows.Scan(&r)
+	if err == nil {
+		t.Fatal("expected error for negative Int32 → uint32")
+	}
+	if !strings.Contains(err.Error(), "negative") {
+		t.Fatalf("error should mention negative, got: %v", err)
 	}
 }
 
