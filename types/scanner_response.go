@@ -90,7 +90,8 @@ func (r *Response) Table(path string) (ArrowTable, error) {
 	return t, nil
 }
 
-// Scan behaves like ScanObject for single-value types and ScanTable for slices.
+// Scan is a generic version of ScanObject and ScanTable. If T is a slice type,
+// it behaves like ScanTable; otherwise, it behaves like ScanObject.
 // See ScanObject and ScanTable for details and error conditions.
 func Scan[T any](resp *Response, path string) (T, error) {
 	var zero T
@@ -99,7 +100,7 @@ func Scan[T any](resp *Response, path string) (T, error) {
 		return zero, errors.New("response is nil")
 	}
 
-	// If T is slice use ScanTable, otherwise use ScanObject
+	// If T is slice use ScanTable, otherwise use ScanObject.
 	if t := reflect.TypeOf(any(zero)); t != nil && t.Kind() == reflect.Slice {
 		var dest T
 		err := resp.ScanTable(path, &dest)
