@@ -608,41 +608,13 @@ func structConvertFunc(afield arrow.Field, dstType reflect.Type) (convertFunc, e
 	if !ok {
 		return nil, fmt.Errorf("cannot scan Arrow %s into struct %s", afield.Type, dstType)
 	}
-	// Build a mini-plan: list of (struct child field idx, convert func, Go field index path).
-	type sm struct {
-		childIdx  int
-		fieldPath []int
-		convert   convertFunc
-	}
-	var mappings []sm
-	for i := 0; i < dstType.NumField(); i++ {
-		f := dstType.Field(i)
-		if !f.IsExported() {
-			continue
-		}
-		name := jsonFieldName(f)
-		if name == "" || name == "-" {
-			continue
-		}
-		childIdx := -1
-		for j := 0; j < st.NumFields(); j++ {
-			if st.Field(j).Name == name {
-				childIdx = j
-				break
-			}
-		}
-		if childIdx < 0 {
-			continue
-		}
-		conv, err := buildConvertFunc(st.Field(childIdx), f.Type)
-		if err != nil {
-			return nil, fmt.Errorf("field %s: %w", name, err)
-		}
-		mappings = append(mappings, sm{
-			childIdx:  childIdx,
-			fieldPath: []int{i},
-			convert:   conv,
-		})
+	// Build a mini-plan via a shared helper. Anonymous embedded struct fields
+	// are flattened — same rule as collectFields uses at the top level, so
+	// behaviour is consistent whether the destination struct is the cursor's
+	// top-level dest or a list element / nested struct field.
+	var mappings []structMapping
+	if err := collectStructMappings(dstType, nil, st, &mappings); err != nil {
+		return nil, err
 	}
 
 	return func(col arrow.Array, row int, dst reflect.Value) error {
@@ -661,6 +633,60 @@ func structConvertFunc(afield arrow.Field, dstType reflect.Type) (convertFunc, e
 		}
 		return nil
 	}, nil
+}
+
+type structMapping struct {
+	childIdx  int
+	fieldPath []int
+	convert   convertFunc
+}
+
+// collectStructMappings walks a Go struct type against an Arrow StructType,
+// recursing into anonymous embedded Go struct fields so their children are
+// matched against the same Arrow parent's children. Mirrors collectFields's
+// flatten rule but for the nested (Arrow Struct → Go struct) conversion path.
+func collectStructMappings(dstType reflect.Type, prefix []int, st *arrow.StructType, out *[]structMapping) error {
+	for i := 0; i < dstType.NumField(); i++ {
+		f := dstType.Field(i)
+		if !f.IsExported() {
+			continue
+		}
+		path := append(append([]int{}, prefix...), i)
+		name := jsonFieldName(f)
+		if name == "-" {
+			continue
+		}
+		// Anonymous embedded struct without json tag: flatten.
+		if f.Anonymous && name == "" && f.Type.Kind() == reflect.Struct {
+			if err := collectStructMappings(f.Type, path, st, out); err != nil {
+				return err
+			}
+			continue
+		}
+		if name == "" {
+			continue
+		}
+		childIdx := -1
+		for j := 0; j < st.NumFields(); j++ {
+			if st.Field(j).Name == name {
+				childIdx = j
+				break
+			}
+		}
+		if childIdx < 0 {
+			continue
+		}
+		conv, err := buildConvertFunc(st.Field(childIdx), f.Type)
+		if err != nil {
+			return fmt.Errorf("field %s: %w", name, err)
+		}
+		*out = append(*out, structMapping{
+			childIdx:  childIdx,
+			fieldPath: path,
+			convert:   conv,
+		})
+	}
+	return nil
 }
 
 // anyConvertFunc writes whatever defaultConvertValue produces into an interface{}

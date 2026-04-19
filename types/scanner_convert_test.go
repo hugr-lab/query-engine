@@ -359,6 +359,95 @@ func TestTimestampUnknownTZ(t *testing.T) {
 	}
 }
 
+// TestConvert_EmbeddedStruct verifies Go anonymous embedding (flatten) works
+// both at the top-level destination AND inside a nested Arrow struct field
+// (the list-element / reference case that powers real nested GraphQL shapes).
+func TestConvert_EmbeddedStruct(t *testing.T) {
+	// Arrow schema:
+	//   id     int64
+	//   name   string
+	//   nested struct<id:int64, label:string>
+	//   xs     list<struct<id:int64, value:int32>>
+	nestedType := arrow.StructOf(
+		arrow.Field{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		arrow.Field{Name: "label", Type: arrow.BinaryTypes.String},
+	)
+	listElemType := arrow.StructOf(
+		arrow.Field{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		arrow.Field{Name: "value", Type: arrow.PrimitiveTypes.Int32},
+	)
+	listType := arrow.ListOf(listElemType)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "name", Type: arrow.BinaryTypes.String},
+		{Name: "nested", Type: nestedType},
+		{Name: "xs", Type: listType},
+	}, nil)
+
+	tbl := newTestTable(t, schema, func(b *array.RecordBuilder) {
+		b.Field(0).(*array.Int64Builder).Append(42)
+		b.Field(1).(*array.StringBuilder).Append("alpha")
+		nb := b.Field(2).(*array.StructBuilder)
+		nb.Append(true)
+		nb.FieldBuilder(0).(*array.Int64Builder).Append(99)
+		nb.FieldBuilder(1).(*array.StringBuilder).Append("nested-label")
+		lb := b.Field(3).(*array.ListBuilder)
+		lb.Append(true)
+		esb := lb.ValueBuilder().(*array.StructBuilder)
+		for i, v := range []int32{10, 20} {
+			esb.Append(true)
+			esb.FieldBuilder(0).(*array.Int64Builder).Append(int64(i + 1))
+			esb.FieldBuilder(1).(*array.Int32Builder).Append(v)
+		}
+	})
+	defer tbl.Release()
+
+	// Base struct embedded both at top level and inside the list element.
+	type Base struct {
+		ID int64 `json:"id"`
+	}
+	type Nested struct {
+		Base         // embedded — inherit "id" from here
+		Label string `json:"label"`
+	}
+	type ListItem struct {
+		Base          // embedded inside a list-element struct
+		Value int32  `json:"value"`
+	}
+	type Row struct {
+		Base                    // top-level embedded
+		Name   string    `json:"name"`
+		Nested Nested    `json:"nested"`
+		Xs     []ListItem `json:"xs"`
+	}
+
+	rows, _ := tbl.Rows()
+	defer rows.Close()
+	rows.Next()
+	var r Row
+	if err := rows.Scan(&r); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if r.ID != 42 {
+		t.Fatalf("top-level embedded ID: want 42, got %d", r.ID)
+	}
+	if r.Name != "alpha" {
+		t.Fatalf("Name: %q", r.Name)
+	}
+	if r.Nested.ID != 99 || r.Nested.Label != "nested-label" {
+		t.Fatalf("nested embedded: %+v", r.Nested)
+	}
+	if len(r.Xs) != 2 {
+		t.Fatalf("xs len: %d", len(r.Xs))
+	}
+	if r.Xs[0].ID != 1 || r.Xs[0].Value != 10 {
+		t.Fatalf("xs[0] embedded: %+v", r.Xs[0])
+	}
+	if r.Xs[1].ID != 2 || r.Xs[1].Value != 20 {
+		t.Fatalf("xs[1] embedded: %+v", r.Xs[1])
+	}
+}
+
 // TestConvert_ListAndStruct covers nested list and struct scan.
 func TestConvert_ListAndStruct(t *testing.T) {
 	listType := arrow.ListOf(arrow.PrimitiveTypes.Int32)
