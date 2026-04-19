@@ -359,6 +359,49 @@ func TestTimestampUnknownTZ(t *testing.T) {
 	}
 }
 
+// TestConvert_JSONStringScalar covers the GraphQL-JSON-scalar case: a String
+// (utf8) column carrying JSON text, and a Go destination typed as
+// map[string]any / []any / any. The scanner auto-unmarshals — no special
+// tagging required (GraphQL JSON scalars often arrive as plain utf8 over IPC).
+func TestConvert_JSONStringScalar(t *testing.T) {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "obj", Type: arrow.BinaryTypes.String},
+		{Name: "arr", Type: arrow.BinaryTypes.String},
+		{Name: "anyfield", Type: arrow.BinaryTypes.String},
+	}, nil)
+	tbl := newTestTable(t, schema, func(b *array.RecordBuilder) {
+		b.Field(0).(*array.StringBuilder).Append(`{"k":"v","n":42,"nested":{"x":true}}`)
+		b.Field(1).(*array.StringBuilder).Append(`[1,2,3]`)
+		b.Field(2).(*array.StringBuilder).Append(`"hello"`)
+	})
+	defer tbl.Release()
+
+	type row struct {
+		Obj map[string]any `json:"obj"`
+		Arr []any          `json:"arr"`
+		Any any            `json:"anyfield"`
+	}
+	rows, _ := tbl.Rows()
+	defer rows.Close()
+	rows.Next()
+	var r row
+	if err := rows.Scan(&r); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if r.Obj["k"] != "v" || r.Obj["n"].(float64) != 42 {
+		t.Fatalf("obj: %+v", r.Obj)
+	}
+	if nested, ok := r.Obj["nested"].(map[string]any); !ok || nested["x"] != true {
+		t.Fatalf("obj nested: %+v", r.Obj["nested"])
+	}
+	if len(r.Arr) != 3 || r.Arr[0].(float64) != 1 {
+		t.Fatalf("arr: %+v", r.Arr)
+	}
+	if s, _ := r.Any.(string); s != "hello" {
+		t.Fatalf("any: %v (%T)", r.Any, r.Any)
+	}
+}
+
 // TestConvert_EmbeddedStruct verifies Go anonymous embedding (flatten) works
 // both at the top-level destination AND inside a nested Arrow struct field
 // (the list-element / reference case that powers real nested GraphQL shapes).

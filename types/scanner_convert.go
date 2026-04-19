@@ -129,11 +129,25 @@ func buildConvertFunc(afield arrow.Field, dstType reflect.Type) (convertFunc, er
 	// concrete subtype), route through the geometry decoder registry.
 	if isGeometryDest(dstType) {
 		extName := fieldGeometryName(afield)
+		if extName == "" {
+			// Heuristic fallback: the engine doesn't always tag nested-path
+			// geometry columns with ARROW:extension:name (observed on
+			// tf.digital_twin.roads.parts[].geom where the utf8 column
+			// carries GeoJSON text without metadata). Infer from storage:
+			//   Binary / LargeBinary → WKB
+			//   String / LargeString → peek at first non-space byte to pick
+			//                           between GeoJSON ('{') and WKT.
+			switch afield.Type.ID() {
+			case arrow.BINARY, arrow.LARGE_BINARY:
+				extName = "geoarrow.wkb"
+			case arrow.STRING, arrow.LARGE_STRING:
+				// Use a special "auto" decoder that inspects the first byte.
+				return autoStringGeometryConvertFunc(afield.Metadata, dstType), nil
+			}
+		}
 		if extName != "" {
 			return geometryConvertFunc(extName, afield.Metadata, dstType)
 		}
-		// No extension name on this column — fall through to default converter
-		// so the field receives whatever the raw Arrow value is.
 	}
 
 	return buildPlainConvertFunc(afield, dstType)
@@ -150,6 +164,19 @@ func buildPlainConvertFunc(afield arrow.Field, dstType reflect.Type) (convertFun
 		return durationConvertFunc(afield), nil
 	case reflect.TypeOf([]byte(nil)):
 		return bytesConvertFunc(), nil
+	}
+
+	// String column → map / slice / any destination: treat the string as
+	// JSON text and unmarshal. Useful for GraphQL JSON scalars, which travel
+	// as utf8 over IPC (e.g. tf attribute_values.value).
+	if isStringArrowType(afield.Type) {
+		switch dstType.Kind() {
+		case reflect.Map, reflect.Slice, reflect.Interface:
+			if dstType.Kind() != reflect.Slice || dstType.Elem().Kind() != reflect.Uint8 {
+				// []byte is handled earlier in the function; don't JSON-decode it.
+				return jsonStringConvertFunc(dstType), nil
+			}
+		}
 	}
 
 	switch dstType.Kind() {
@@ -687,6 +714,47 @@ func collectStructMappings(dstType reflect.Type, prefix []int, st *arrow.StructT
 		})
 	}
 	return nil
+}
+
+// isStringArrowType reports whether the Arrow type is one of the string-like
+// primitive types.
+func isStringArrowType(dt arrow.DataType) bool {
+	switch dt.ID() {
+	case arrow.STRING, arrow.LARGE_STRING:
+		return true
+	}
+	return false
+}
+
+// jsonStringConvertFunc treats the Arrow string value as a JSON document and
+// unmarshals it into the destination. Used when a GraphQL JSON scalar travels
+// as utf8 storage and the Go destination is map[string]any, []any, or any.
+func jsonStringConvertFunc(dstType reflect.Type) convertFunc {
+	return func(col arrow.Array, row int, dst reflect.Value) error {
+		if col.IsNull(row) {
+			dst.Set(reflect.Zero(dst.Type()))
+			return nil
+		}
+		var s string
+		switch a := col.(type) {
+		case *array.String:
+			s = a.Value(row)
+		case *array.LargeString:
+			s = a.Value(row)
+		default:
+			return fmt.Errorf("jsonStringConvertFunc: unexpected column type %s", col.DataType())
+		}
+		if s == "" {
+			dst.Set(reflect.Zero(dst.Type()))
+			return nil
+		}
+		target := reflect.New(dstType).Interface()
+		if err := json.Unmarshal([]byte(s), target); err != nil {
+			return fmt.Errorf("json unmarshal: %w", err)
+		}
+		dst.Set(reflect.ValueOf(target).Elem())
+		return nil
+	}
 }
 
 // anyConvertFunc writes whatever defaultConvertValue produces into an interface{}

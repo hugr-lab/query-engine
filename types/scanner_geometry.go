@@ -137,6 +137,67 @@ func geometryConvertFunc(extName string, fieldMeta arrow.Metadata, dstType refle
 	}, nil
 }
 
+// autoStringGeometryConvertFunc handles the case where a String / LargeString
+// column carries geometry but no ARROW:extension:name metadata tags it.
+// Observed on engine-emitted nested paths (e.g. tf.digital_twin.roads.parts[].geom).
+// Strategy: peek at the first non-space byte — '{' → GeoJSON, otherwise WKT.
+func autoStringGeometryConvertFunc(fieldMeta arrow.Metadata, dstType reflect.Type) convertFunc {
+	return func(col arrow.Array, row int, dst reflect.Value) error {
+		if col.IsNull(row) {
+			dst.Set(reflect.Zero(dst.Type()))
+			return nil
+		}
+		var s string
+		switch a := col.(type) {
+		case *array.String:
+			s = a.Value(row)
+		case *array.LargeString:
+			s = a.Value(row)
+		default:
+			return fmt.Errorf("%w: auto geometry expected string storage, got %s", ErrGeometryDecode, col.DataType())
+		}
+		extName := detectStringGeometryKind(s)
+		dec, ok := lookupGeometryDecoder(extName)
+		if !ok {
+			return fmt.Errorf("%w: no decoder for inferred extension %q", ErrGeometryDecode, extName)
+		}
+		geom, err := dec(col, row, fieldMeta)
+		if err != nil {
+			return fmt.Errorf("%w: %s", ErrGeometryDecode, err.Error())
+		}
+		if geom == nil {
+			dst.Set(reflect.Zero(dst.Type()))
+			return nil
+		}
+		if dstType == orbGeometryType {
+			dst.Set(reflect.ValueOf(geom))
+			return nil
+		}
+		gv := reflect.ValueOf(geom)
+		if gv.Type() == dstType {
+			dst.Set(gv)
+			return nil
+		}
+		return fmt.Errorf("%w: decoded %T is not assignable to %s", ErrGeometryDecode, geom, dstType)
+	}
+}
+
+// detectStringGeometryKind peeks at leading whitespace-trimmed bytes to
+// distinguish GeoJSON from WKT.
+func detectStringGeometryKind(s string) string {
+	for _, r := range s {
+		switch r {
+		case ' ', '\t', '\r', '\n':
+			continue
+		case '{':
+			return "hugr.geojson"
+		default:
+			return "geoarrow.wkt"
+		}
+	}
+	return "hugr.geojson" // empty — decoder will return nil
+}
+
 // ─── Default decoders ────────────────────────────────────────────────────────
 
 func init() {

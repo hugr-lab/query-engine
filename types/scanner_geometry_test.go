@@ -451,6 +451,104 @@ func TestGeometry_BadBytes(t *testing.T) {
 	}
 }
 
+// TestGeometry_UntaggedStringAuto verifies that a String column carrying
+// geometry WITHOUT any ARROW:extension:name metadata still decodes into
+// orb.Geometry. The engine's ipc-query addGeometryFieldMeta walker misses
+// some nested paths (observed on tf.digital_twin.roads.parts[].geom).
+// The scanner's heuristic peeks at the first non-space byte: '{' → GeoJSON,
+// otherwise → WKT.
+func TestGeometry_UntaggedStringAuto(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload string
+		want    orb.Geometry
+	}{
+		{"geojson point", `{"type":"Point","coordinates":[1,2]}`, orb.Point{1, 2}},
+		{"geojson line", `{"type":"LineString","coordinates":[[0,0],[1,1],[2,2]]}`,
+			orb.LineString{{0, 0}, {1, 1}, {2, 2}}},
+		{"wkt point", `POINT (5 6)`, orb.Point{5, 6}},
+		{"wkt line with leading space", `   LINESTRING (0 0, 1 1)`, orb.LineString{{0, 0}, {1, 1}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			schema := arrow.NewSchema([]arrow.Field{
+				{Name: "g", Type: arrow.BinaryTypes.String}, // no metadata!
+			}, nil)
+			tbl := newTestTable(t, schema, func(b *array.RecordBuilder) {
+				b.Field(0).(*array.StringBuilder).Append(tc.payload)
+			})
+			defer tbl.Release()
+
+			type row struct {
+				G orb.Geometry `json:"g"`
+			}
+			rows, _ := tbl.Rows()
+			defer rows.Close()
+			rows.Next()
+			var r row
+			if err := rows.Scan(&r); err != nil {
+				t.Fatalf("Scan: %v", err)
+			}
+			if !orb.Equal(r.G, tc.want) {
+				t.Fatalf("want %v, got %v", tc.want, r.G)
+			}
+		})
+	}
+}
+
+// TestGeometry_UntaggedStringInsideList covers the real-world shape that
+// triggered the heuristic fallback: a list-of-struct column where one struct
+// field is an untagged string carrying GeoJSON.
+func TestGeometry_UntaggedStringInsideList(t *testing.T) {
+	partType := arrow.StructOf(
+		arrow.Field{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		arrow.Field{Name: "geom", Type: arrow.BinaryTypes.String}, // untagged
+	)
+	listType := arrow.ListOf(partType)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "parts", Type: listType},
+	}, nil)
+
+	tbl := newTestTable(t, schema, func(b *array.RecordBuilder) {
+		lb := b.Field(0).(*array.ListBuilder)
+		lb.Append(true)
+		sb := lb.ValueBuilder().(*array.StructBuilder)
+		sb.Append(true)
+		sb.FieldBuilder(0).(*array.Int64Builder).Append(1)
+		sb.FieldBuilder(1).(*array.StringBuilder).Append(`{"type":"Point","coordinates":[10,20]}`)
+		sb.Append(true)
+		sb.FieldBuilder(0).(*array.Int64Builder).Append(2)
+		sb.FieldBuilder(1).(*array.StringBuilder).Append(`{"type":"LineString","coordinates":[[0,0],[5,5]]}`)
+	})
+	defer tbl.Release()
+
+	type Part struct {
+		ID   int64        `json:"id"`
+		Geom orb.Geometry `json:"geom"`
+	}
+	type Row struct {
+		Parts []Part `json:"parts"`
+	}
+
+	rows, _ := tbl.Rows()
+	defer rows.Close()
+	rows.Next()
+	var r Row
+	if err := rows.Scan(&r); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(r.Parts) != 2 {
+		t.Fatalf("want 2 parts, got %d", len(r.Parts))
+	}
+	if !orb.Equal(r.Parts[0].Geom, orb.Point{10, 20}) {
+		t.Fatalf("part[0].geom: %v", r.Parts[0].Geom)
+	}
+	want := orb.LineString{{0, 0}, {5, 5}}
+	if !orb.Equal(r.Parts[1].Geom, want) {
+		t.Fatalf("part[1].geom: %v", r.Parts[1].Geom)
+	}
+}
+
 // TestGeometry_RegisterCustom — FR-013 / SC-006: custom decoder hook.
 func TestGeometry_RegisterCustom(t *testing.T) {
 	const myExt = "test.fake-geo"
