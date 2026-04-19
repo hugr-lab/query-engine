@@ -183,7 +183,7 @@ func buildMixedResponse(t *testing.T) *Response {
 	}
 }
 
-func TestResponse_Scan(t *testing.T) {
+func Test_Scan(t *testing.T) {
 	r := buildMixedResponse(t)
 	defer r.Close()
 
