@@ -158,8 +158,9 @@ func (r *Response) ScanData(path string, dest interface{}) error {
 }
 
 var (
-	ErrNoData        = errors.New("no data")
-	ErrWrongDataPath = errors.New("wrong data path")
+	ErrNoData         = errors.New("no data")
+	ErrWrongDataPath  = errors.New("wrong data path")
+	ErrGeometryDecode = errors.New("geometry decode")
 )
 
 func scanRecursive(path string, data any, dest interface{}) error {

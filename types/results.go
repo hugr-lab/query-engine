@@ -23,6 +23,9 @@ type ArrowTable interface {
 	EncodeMsgpack(enc *msgpack.Encoder) error
 	Records() ([]arrow.RecordBatch, error)
 	Reader(retain bool) (array.RecordReader, error)
+	// Rows returns a cursor over this table. The cursor retains the underlying
+	// Arrow resources; callers MUST call Close on the returned Rows.
+	Rows() (Rows, error)
 }
 
 var _ ArrowTable = (*ArrowTableChunked)(nil)
@@ -116,6 +119,20 @@ func (t *ArrowTableChunked) Reader(retain bool) (array.RecordReader, error) {
 		t.Retain()
 	}
 	return reader, nil
+}
+
+// Rows returns a cursor-style scanner over this table. The cursor takes a
+// retained reference to the underlying record reader; callers MUST call
+// Close on the returned Rows (or let it reach end-of-stream).
+func (t *ArrowTableChunked) Rows() (Rows, error) {
+	reader, err := t.Reader(true)
+	if err != nil {
+		return nil, err
+	}
+	if reader == nil {
+		return emptyRows{}, nil
+	}
+	return newRowScanner(reader)
 }
 
 func (t *ArrowTableChunked) RowData(i int) (map[string]any, bool) {
@@ -573,6 +590,18 @@ func (t *ArrowTableStream) Reader(retain bool) (array.RecordReader, error) {
 	t.reader.Release()
 	t.reader = reader
 	return array.NewRecordReader(rr[0].Schema(), rr)
+}
+
+// Rows returns a cursor-style scanner over this streaming table. The cursor
+// consumes the underlying reader; callers MUST call Close on the returned
+// Rows (or let it reach end-of-stream).
+func (t *ArrowTableStream) Rows() (Rows, error) {
+	if t.reader == nil {
+		return emptyRows{}, nil
+	}
+	// Retain ownership: the scanner assumes it can Release the reader.
+	t.reader.Retain()
+	return newRowScanner(t.reader)
 }
 
 func (t *ArrowTableStream) MarshalJSON() ([]byte, error) {
