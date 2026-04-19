@@ -140,16 +140,18 @@ func TestRowScanner_EmptyTable(t *testing.T) {
 
 // ─── Response navigation tests (US4) ─────────────────────────────────────────
 
-// buildMixedResponse returns a Response with tables + objects at nested paths.
-// Data shape:
+// buildMixedResponse returns a Response mixing ArrowTable leaves with the
+// engine's two object-leaf shapes: *JsonValue (used for by_pk / function
+// results over IPC) and plain scalars.
 //
 //	core:
-//	  users  -> ArrowTable
-//	  info   -> map[string]any{"version": "1.2.3"}
+//	  users     -> ArrowTable
+//	  info      -> *JsonValue (JSON object for function call)
 //	function:
 //	  core:
-//	    load_ds -> map[string]any{"success": true}
-//	rows -> ArrowTable
+//	    load_ds -> *JsonValue
+//	rows         -> ArrowTable
+//	version      -> "1.2.3" (scalar at the top level)
 func buildMixedResponse(t *testing.T) *Response {
 	t.Helper()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -162,18 +164,21 @@ func buildMixedResponse(t *testing.T) *Response {
 		b.Field(0).(*array.Int32Builder).Append(10)
 		b.Field(0).(*array.Int32Builder).Append(20)
 	})
+	info := JsonValue(`{"version":"1.2.3"}`)
+	loadDs := JsonValue(`{"success":true}`)
 	return &Response{
 		Data: map[string]any{
 			"core": map[string]any{
 				"users": usersTbl,
-				"info":  map[string]any{"version": "1.2.3"},
+				"info":  &info,
 			},
 			"function": map[string]any{
 				"core": map[string]any{
-					"load_ds": map[string]any{"success": true},
+					"load_ds": &loadDs,
 				},
 			},
-			"rows": rowsTbl,
+			"rows":    rowsTbl,
+			"version": "1.2.3",
 		},
 	}
 }
@@ -185,10 +190,12 @@ func TestResponse_TablesAndObjects(t *testing.T) {
 	tables := r.Tables()
 	objects := r.Objects()
 
-	// Tables should contain "core.users" and "rows"; Objects should contain
-	// "core.info" and "function.core.load_ds". Each path in exactly one list.
 	wantTables := map[string]bool{"core.users": true, "rows": true}
-	wantObjects := map[string]bool{"core.info": true, "function.core.load_ds": true}
+	wantObjects := map[string]bool{
+		"core.info":             true,
+		"function.core.load_ds": true,
+		"version":               true,
+	}
 
 	seen := map[string]int{}
 	for _, p := range tables {
@@ -239,6 +246,7 @@ func TestResponse_ScanObject(t *testing.T) {
 	r := buildMixedResponse(t)
 	defer r.Close()
 
+	// *JsonValue leaf scans via JSON marshal/unmarshal.
 	var info struct {
 		Version string `json:"version"`
 	}
@@ -247,6 +255,15 @@ func TestResponse_ScanObject(t *testing.T) {
 	}
 	if info.Version != "1.2.3" {
 		t.Fatalf("version: %q", info.Version)
+	}
+
+	// Scalar leaf at top level — JSON-roundtrip into a string works.
+	var version string
+	if err := r.ScanObject("version", &version); err != nil {
+		t.Fatalf("ScanObject version: %v", err)
+	}
+	if version != "1.2.3" {
+		t.Fatalf("version scalar: %q", version)
 	}
 
 	// ScanObject on a table path must return ErrWrongDataPath.

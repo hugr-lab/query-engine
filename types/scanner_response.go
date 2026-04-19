@@ -14,10 +14,12 @@ func (r *Response) Tables() []string {
 	return tables
 }
 
-// Objects returns every dotted path in Response.Data that points to a
-// "leaf object" — a map that carries data fields (at least one non-map,
-// non-ArrowTable direct child) rather than pure namespacing. Together with
-// Tables this covers every meaningful leaf in the response.
+// Objects returns every dotted path in Response.Data that points to a leaf
+// value that is NOT an ArrowTable — most commonly a *types.JsonValue emitted
+// for object-shaped GraphQL selections (by_pk results, function calls,
+// etc.), but also raw scalars or slices. map[string]any values are treated
+// as namespaces and descended into. Together with Tables this covers every
+// meaningful leaf in the response tree.
 func (r *Response) Objects() []string {
 	_, objects := classifyPaths(r)
 	return objects
@@ -31,52 +33,35 @@ func classifyPaths(r *Response) (tables, objects []string) {
 	return tables, objects
 }
 
-// walkForPaths walks the response tree. A map is treated as a "namespace"
-// when every direct child is itself a map or an ArrowTable — in that case we
-// recurse into child maps and emit child tables. Any other map is a "leaf
-// object" and is emitted via the objects list; tables nested inside that
-// object (if any) are still recorded as table paths so they can be scanned.
+// walkForPaths walks the response tree under the simplest rule that matches
+// how the engine actually shapes responses:
+//
+//   - map[string]any is always a namespace — recurse into it.
+//   - ArrowTable child → add to tables.
+//   - Anything else (*JsonValue, scalars, slices, other types) → add to objects.
+//
+// The engine wraps non-table, non-namespace results in *types.JsonValue
+// (see writeJsonValueToIPC / the IPC client decoder), so this catches them
+// without needing a special case. If a caller builds a response with a
+// map-valued leaf in hand, they should scan the inner scalars one level
+// deeper; use ScanObject on any path whose leaf you want to materialise.
 func walkForPaths(v any, prefix string, tables, objects *[]string) {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return
 	}
-	if isNamespaceMap(m) {
-		for k, val := range m {
-			path := joinPath(prefix, k)
-			if _, isTable := val.(ArrowTable); isTable {
-				*tables = append(*tables, path)
-				continue
-			}
-			walkForPaths(val, path, tables, objects)
-		}
-		return
-	}
-	// Leaf object: emit this path, then record table children (one level).
-	if prefix != "" {
-		*objects = append(*objects, prefix)
-	}
 	for k, val := range m {
+		path := joinPath(prefix, k)
 		if _, isTable := val.(ArrowTable); isTable {
-			*tables = append(*tables, joinPath(prefix, k))
-		}
-	}
-}
-
-func isNamespaceMap(m map[string]any) bool {
-	if len(m) == 0 {
-		return false
-	}
-	for _, v := range m {
-		if _, isMap := v.(map[string]any); isMap {
+			*tables = append(*tables, path)
 			continue
 		}
-		if _, isTable := v.(ArrowTable); isTable {
+		if _, isMap := val.(map[string]any); isMap {
+			walkForPaths(val, path, tables, objects)
 			continue
 		}
-		return false
+		*objects = append(*objects, path)
 	}
-	return true
 }
 
 func joinPath(prefix, k string) string {

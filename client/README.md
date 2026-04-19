@@ -107,12 +107,25 @@ err = resp.ScanData("devices", &devices)
 fmt.Println(resp.Data)
 ```
 
-### Scanning Arrow Tables
+### Scanning Results
 
-For columns that don't round-trip cleanly through JSON — timestamps
-(timezone is lost) and geometry (arrives as base64 WKB bytes) — use the
-Arrow-native scanner API on `types.Response`. Struct fields are resolved
-by `json` tag, matching `ScanData` conventions.
+The response tree has two kinds of leaves:
+
+- **ArrowTables** — list/aggregation selections. Come back column-oriented;
+  decode via `ScanTable` / `Rows()`. JSON round-trip is *not* involved,
+  so timestamps keep their timezone and geometry decodes to `orb.Geometry`.
+- **JSON objects** — `by_pk`, function calls, scalar fields. Come back
+  as `*types.JsonValue`; decode via `ScanObject` / existing `ScanData`
+  (they go through `encoding/json`).
+
+`Response.Tables()` and `Response.Objects()` return the dotted paths in
+each bucket, so callers can pick the right scan method automatically.
+
+#### ArrowTable path (`ScanTable` / `Rows()`)
+
+Struct fields resolved by `json` tag. Geometry columns decode to
+`orb.Geometry` (or a concrete subtype) for every encoding the engine
+emits.
 
 ```go
 import "github.com/paulmach/orb"
@@ -120,7 +133,7 @@ import "github.com/paulmach/orb"
 type Building struct {
     ID   int64        `json:"id"`
     Name string       `json:"name"`
-    Geom orb.Geometry `json:"geom"`    // decoded automatically
+    Geom orb.Geometry `json:"geom"`    // transparent decode
     Area float64      `json:"area_sqm"`
 }
 
@@ -133,38 +146,60 @@ if err := resp.ScanTable("osm.buildings", &rows); err != nil {
 }
 ```
 
-- `Response.Tables()` / `Response.Objects()` — list dotted paths to
-  Arrow tables vs. plain object leaves in the response tree.
-- `Response.Table(path) (ArrowTable, error)` — typed accessor.
-- `Response.ScanObject(path, dest)` — JSON-backed scan for non-table
-  leaves (same semantics as `ScanData`, errors on table paths).
-- `Response.ScanTable(path, dest)` — whole-table iterate into
-  `*[]StructT` or `*[]map[string]any`.
-- `ArrowTable.Rows()` — `database/sql.Rows`-style cursor for streaming.
+For streaming, use the `database/sql.Rows`-style cursor:
 
-**Type rules:**
+```go
+tbl, _ := resp.Table("osm.buildings")
+cur, _ := tbl.Rows()
+defer cur.Close()
+for cur.Next() {
+    var b Building
+    if err := cur.Scan(&b); err != nil { return err }
+    // ...
+}
+```
+
+**Arrow column → Go destination matrix:**
 
 | Arrow column | Go destination | Behaviour |
 |---|---|---|
 | `Timestamp(unit, tz)` | `time.Time` | Honours unit + timezone; UTC default when tz empty. |
 | `Timestamp(unit, "")` | `types.DateTime` | Naive, no timezone applied. |
 | Geometry (`geoarrow.wkb`, `geoarrow.wkt`, native coords, `hugr.geojson`) | `orb.Geometry` / `orb.Point` / `orb.LineString` / … | Transparent decode. |
+| Untagged string with geometry content | `orb.Geometry` | Heuristic: `{` → GeoJSON, else WKT. |
 | Geometry | `[]byte` / `string` / `any` / `map[string]any` | Raw storage passthrough. |
 | String with JSON content | `map[string]any` / `[]any` / `any` | Auto `json.Unmarshal`. |
 | String | `string` | Unchanged. |
 
-For custom geometry encodings, register a decoder:
+Register custom extensions with `types.RegisterGeometryDecoder(name, fn)`.
+
+#### JSON-object path (`ScanObject`)
+
+`by_pk` lookups and function-call results come back as JSON. `ScanObject`
+runs `json.Marshal`/`Unmarshal` internally, so anything the standard
+library's JSON decoder supports works. **Caveat:** `orb.Geometry` is an
+interface — stdlib JSON can't unmarshal into it directly. Use
+`*geojson.Geometry` (from `paulmach/orb/geojson`) instead and call
+`.Geometry()` to obtain the concrete `orb.Geometry`:
 
 ```go
-types.RegisterGeometryDecoder("myorg.geo.xyz", func(
-    arr arrow.Array, row int, meta arrow.Metadata,
-) (orb.Geometry, error) {
-    return myParse(arr.(*array.String).Value(row))
-})
+import "github.com/paulmach/orb/geojson"
+
+type Road struct {
+    ID   int64             `json:"id"`
+    Name string            `json:"name"`
+    Geom *geojson.Geometry `json:"geom"`
+}
+
+var road Road
+if err := resp.ScanObject("tf.digital_twin.roads_by_pk", &road); err != nil {
+    log.Fatal(err)
+}
+concrete := road.Geom.Geometry()   // -> orb.LineString, orb.Point, ...
 ```
 
-`ScanData` continues to work unchanged. Migrate call sites opportunistically
-when you hit timestamp or geometry fields.
+`ScanData` continues to work unchanged. Migrate call sites
+opportunistically when you hit timestamp or geometry fields.
 
 ### Validate Without Executing
 
