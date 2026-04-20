@@ -572,7 +572,7 @@ func TestModels_StreamChatCompletion_OpenAI(t *testing.T) {
 	defer sub.Cancel()
 
 	var eventCount int
-	var content string
+	var content strings.Builder
 	for event := range sub.Events {
 		for event.Reader.Next() {
 			batch := event.Reader.RecordBatch()
@@ -584,7 +584,7 @@ func TestModels_StreamChatCompletion_OpenAI(t *testing.T) {
 				eventType := batch.Column(typeIdx).GetOneForMarshal(i)
 				eventContent := batch.Column(contentIdx).GetOneForMarshal(i)
 				if eventType == "content_delta" && eventContent != nil {
-					content += fmt.Sprintf("%v", eventContent)
+					fmt.Fprintf(&content, "%v", eventContent)
 				}
 			}
 		}
@@ -593,7 +593,7 @@ func TestModels_StreamChatCompletion_OpenAI(t *testing.T) {
 
 	assert.Greater(t, eventCount, 0, "should receive events")
 	// Note: some OpenAI-compatible servers may return content in finish event only
-	t.Logf("OpenAI chat stream: %d events, content=%q", eventCount, content)
+	t.Logf("OpenAI chat stream: %d events, content=%q", eventCount, content.String())
 }
 
 func TestModels_StreamCompletion_Anthropic(t *testing.T) {
@@ -1239,7 +1239,7 @@ func TestModels_StreamThinkingToolCallRoundTrip_Anthropic(t *testing.T) {
 	toolCallsRaw := finishEvent["tool_calls"]
 	require.NotNil(t, toolCallsRaw, "finish should have tool_calls")
 	var toolCalls []types.LLMToolCall
-	err := json.Unmarshal([]byte(fmt.Sprintf("%v", toolCallsRaw)), &toolCalls)
+	err := json.Unmarshal(fmt.Appendf(nil, "%v", toolCallsRaw), &toolCalls)
 	require.NoError(t, err)
 	require.NotEmpty(t, toolCalls)
 
