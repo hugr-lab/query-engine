@@ -81,6 +81,7 @@ func (s *Server) inlineGraphQLResult(ctx context.Context, req mcp.CallToolReques
 	}
 	if isTruncated {
 		result["data"] = fmt.Sprintf("[truncated: result is %d bytes, max is %d. Increase max_result_size or use jq_transform to reduce output]", originalSize, maxResultSize)
+		result["preview"] = string(b[:2000])
 	} else {
 		result["data"] = json.RawMessage(b)
 	}
