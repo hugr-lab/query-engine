@@ -35,6 +35,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - Go 1.26 with `duckdb_arrow` build tag + `duckdb-go/v2` (CGo), `net/url` (stdlib) (001-provider-url-schemes)
 - N/A (no schema changes — resolution happens in-memory during Attach) (001-provider-url-schemes)
 - N/A — feature reads Arrow records already materialised in (001-arrow-scanner)
+- Go 1.26 (via `duckdb_arrow` build tag; same as rest of `pkg/data-sources/sources/llm/`) + standard library only for the fix (`encoding/json`, `bufio`, `strings`, `io`); test paths use `github.com/stretchr/testify/require`, `assert`, and the existing subscription harness in `integration-test/models`. (001-openai-responses-fc-args)
+- N/A — the fix is entirely in-memory stream parsing. No schema migrations, no persisted state. (001-openai-responses-fc-args)
 
 ## Project Structure
 
@@ -51,6 +53,6 @@ Go 1.26: Follow standard conventions
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- 001-openai-responses-fc-args: Added Go 1.26 (via `duckdb_arrow` build tag; same as rest of `pkg/data-sources/sources/llm/`) + standard library only for the fix (`encoding/json`, `bufio`, `strings`, `io`); test paths use `github.com/stretchr/testify/require`, `assert`, and the existing subscription harness in `integration-test/models`.
 - 001-arrow-scanner: Added Go 1.26 (with `iter.Seq`, range-over-func)
 - 001-provider-url-schemes: Added Go 1.26 with `duckdb_arrow` build tag + `duckdb-go/v2` (CGo), `net/url` (stdlib)
-- 001-llm-thinking-roundtrip: Added Go 1.26 with `duckdb_arrow` build tag + `duckdb-go/v2` (CGo), `gqlparser/v2`, `apache/arrow-go/v18`

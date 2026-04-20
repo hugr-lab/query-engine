@@ -299,19 +299,27 @@ func parseResponsesResponse(body []byte) (*sources.LLMResult, error) {
 }
 
 // parseResponsesStream parses SSE events from a streaming Responses API response.
+//
+// Pending function calls are keyed by item_id (the stable handle OpenAI uses on
+// function_call_arguments.delta / .done events). The external call_id — which
+// the provider expects echoed back on the tool-result follow-up message — is
+// captured once on response.output_item.added and emitted upward as
+// LLMToolCall.ID.
 func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamEvent) error) error {
 	type pendingFunctionCall struct {
-		CallID string
-		Name   string
-		Args   strings.Builder
+		ItemID      string
+		CallID      string
+		Name        string
+		OutputIndex int
+		Args        strings.Builder
+		FinalArgs   string
+		Done        bool
 	}
 
 	var (
-		accThinking      strings.Builder
-		pendingCalls     = map[string]*pendingFunctionCall{} // by call_id
-		promptTokens     int
-		completionTokens int
-		model            string
+		accThinking     strings.Builder
+		pendingByItemID = map[string]*pendingFunctionCall{}
+		pendingOrder    []*pendingFunctionCall
 	)
 
 	scanner := bufio.NewScanner(body)
@@ -325,23 +333,38 @@ func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamE
 			break
 		}
 
+		// Fields are unioned across event types; absent fields parse as
+		// zero values. Comments note which events populate each field.
 		var event struct {
 			Type string `json:"type"`
 
-			// response.output_text.delta
+			// output_text.delta, reasoning_summary_text.delta,
+			// function_call_arguments.delta
 			Delta string `json:"delta"`
 
-			// response.function_call_arguments.delta
-			CallID string `json:"call_id"`
+			// function_call_arguments.delta, function_call_arguments.done,
+			// output_text.delta, reasoning_summary_text.delta — item
+			// correlation handle.
+			ItemID string `json:"item_id"`
 
-			// response.output_item.added — function_call start
+			// output_item.added, function_call_arguments.delta/done —
+			// stable index within the response, used for ordered flush.
+			OutputIndex int `json:"output_index"`
+
+			// function_call_arguments.done — authoritative final args
+			// string for a single function_call item.
+			Arguments string `json:"arguments"`
+
+			// output_item.added — item.id is the map key; item.call_id
+			// is the external id surfaced later as LLMToolCall.ID.
 			Item struct {
+				ID     string `json:"id"`
 				Type   string `json:"type"`
 				CallID string `json:"call_id"`
 				Name   string `json:"name"`
 			} `json:"item"`
 
-			// response.completed
+			// response.completed — terminal usage + model metadata.
 			Response struct {
 				Model string `json:"model"`
 				Usage struct {
@@ -350,7 +373,8 @@ func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamE
 				} `json:"usage"`
 			} `json:"response"`
 
-			// summary_text
+			// reasoning_summary_text.* — unused today; parsed for
+			// forward compatibility with richer reasoning events.
 			Text string `json:"text"`
 		}
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
@@ -376,38 +400,51 @@ func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamE
 			}
 
 		case "response.output_item.added":
-			if event.Item.Type == "function_call" {
-				pendingCalls[event.Item.CallID] = &pendingFunctionCall{
-					CallID: event.Item.CallID,
-					Name:   event.Item.Name,
-				}
+			if event.Item.Type != "function_call" || event.Item.ID == "" {
+				break
 			}
+			pc := &pendingFunctionCall{
+				ItemID:      event.Item.ID,
+				CallID:      event.Item.CallID,
+				Name:        event.Item.Name,
+				OutputIndex: event.OutputIndex,
+			}
+			pendingByItemID[event.Item.ID] = pc
+			pendingOrder = append(pendingOrder, pc)
 
 		case "response.function_call_arguments.delta":
-			if pc := pendingCalls[event.CallID]; pc != nil {
+			if pc := pendingByItemID[event.ItemID]; pc != nil {
 				pc.Args.WriteString(event.Delta)
 			}
 
-		case "response.completed":
-			model = event.Response.Model
-			promptTokens = event.Response.Usage.InputTokens
-			completionTokens = event.Response.Usage.OutputTokens
+		case "response.function_call_arguments.done":
+			if pc := pendingByItemID[event.ItemID]; pc != nil {
+				pc.FinalArgs = event.Arguments
+				pc.Done = true
+			}
 
+		case "response.completed":
 			ev := &sources.LLMStreamEvent{
 				Type:             "finish",
-				Model:            model,
+				Model:            event.Response.Model,
 				FinishReason:     "stop",
-				PromptTokens:     promptTokens,
-				CompletionTokens: completionTokens,
+				PromptTokens:     event.Response.Usage.InputTokens,
+				CompletionTokens: event.Response.Usage.OutputTokens,
 				Thinking:         accThinking.String(),
 			}
 
-			if len(pendingCalls) > 0 {
-				var calls []sources.LLMToolCall
-				for _, pc := range pendingCalls {
+			if len(pendingOrder) > 0 {
+				calls := make([]sources.LLMToolCall, 0, len(pendingOrder))
+				for _, pc := range pendingOrder {
+					// Prefer the authoritative final args from the .done
+					// event; fall back to the accumulated delta stream.
+					raw := pc.Args.String()
+					if pc.Done {
+						raw = pc.FinalArgs
+					}
 					var args any
-					if s := pc.Args.String(); s != "" {
-						_ = json.Unmarshal([]byte(s), &args)
+					if raw != "" {
+						_ = json.Unmarshal([]byte(raw), &args)
 					}
 					calls = append(calls, sources.LLMToolCall{
 						ID:        pc.CallID,
