@@ -333,21 +333,30 @@ func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamE
 			break
 		}
 
+		// Fields are unioned across event types; absent fields parse as
+		// zero values. Comments note which events populate each field.
 		var event struct {
 			Type string `json:"type"`
 
-			// response.output_text.delta / function_call_arguments.delta
+			// output_text.delta, reasoning_summary_text.delta,
+			// function_call_arguments.delta
 			Delta string `json:"delta"`
 
-			// function_call_arguments.delta / .done correlate by item_id.
-			ItemID      string `json:"item_id"`
-			OutputIndex int    `json:"output_index"`
+			// function_call_arguments.delta, function_call_arguments.done,
+			// output_text.delta, reasoning_summary_text.delta — item
+			// correlation handle.
+			ItemID string `json:"item_id"`
 
-			// response.function_call_arguments.done — authoritative final args.
+			// output_item.added, function_call_arguments.delta/done —
+			// stable index within the response, used for ordered flush.
+			OutputIndex int `json:"output_index"`
+
+			// function_call_arguments.done — authoritative final args
+			// string for a single function_call item.
 			Arguments string `json:"arguments"`
 
-			// response.output_item.added — item.id is the stable handle used
-			// as the map key; item.call_id is the external id surfaced later.
+			// output_item.added — item.id is the map key; item.call_id
+			// is the external id surfaced later as LLMToolCall.ID.
 			Item struct {
 				ID     string `json:"id"`
 				Type   string `json:"type"`
@@ -355,7 +364,7 @@ func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamE
 				Name   string `json:"name"`
 			} `json:"item"`
 
-			// response.completed
+			// response.completed — terminal usage + model metadata.
 			Response struct {
 				Model string `json:"model"`
 				Usage struct {
@@ -364,7 +373,8 @@ func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamE
 				} `json:"usage"`
 			} `json:"response"`
 
-			// summary_text
+			// reasoning_summary_text.* — unused today; parsed for
+			// forward compatibility with richer reasoning events.
 			Text string `json:"text"`
 		}
 		if err := json.Unmarshal([]byte(data), &event); err != nil {
@@ -426,9 +436,11 @@ func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamE
 			if len(pendingOrder) > 0 {
 				calls := make([]sources.LLMToolCall, 0, len(pendingOrder))
 				for _, pc := range pendingOrder {
-					raw := pc.FinalArgs
-					if raw == "" {
-						raw = pc.Args.String()
+					// Prefer the authoritative final args from the .done
+					// event; fall back to the accumulated delta stream.
+					raw := pc.Args.String()
+					if pc.Done {
+						raw = pc.FinalArgs
 					}
 					var args any
 					if raw != "" {

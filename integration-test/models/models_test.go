@@ -1004,6 +1004,9 @@ func testStreamToolCallRoundTrip(t *testing.T, modelName, provider string, maxTo
 	require.NoError(t, err, "%s stream: tool_calls parse failed: %s", provider, toolCallsStr)
 	require.NotEmpty(t, toolCalls)
 
+	// Per-call shape assertions. Coupled to `roundTripToolDef` — all call
+	// sites pass that tool, whose single required parameter is `city`.
+	// If a caller ever passes a different tool, update the key here.
 	for i, tc := range toolCalls {
 		t.Logf("Step 1 stream — %s tool_call[%d]: id=%s name=%s args=%v",
 			provider, i, tc.ID, tc.Name, tc.Arguments)
