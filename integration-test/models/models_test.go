@@ -1007,6 +1007,16 @@ func testStreamToolCallRoundTrip(t *testing.T, modelName, provider string, maxTo
 	for i, tc := range toolCalls {
 		t.Logf("Step 1 stream — %s tool_call[%d]: id=%s name=%s args=%v",
 			provider, i, tc.ID, tc.Name, tc.Arguments)
+		require.NotEmptyf(t, tc.ID, "%s stream: tool_call[%d] id empty", provider, i)
+		require.NotEmptyf(t, tc.Name, "%s stream: tool_call[%d] name empty", provider, i)
+		require.NotNilf(t, tc.Arguments,
+			"%s stream: tool_call[%d] arguments nil (id=%s name=%s) — streaming accumulator likely dropped deltas",
+			provider, i, tc.ID, tc.Name)
+		argsMap, ok := tc.Arguments.(map[string]any)
+		require.Truef(t, ok, "%s stream: tool_call[%d] arguments not an object: %T", provider, i, tc.Arguments)
+		require.NotEmptyf(t, argsMap, "%s stream: tool_call[%d] arguments empty map", provider, i)
+		require.Containsf(t, argsMap, "city",
+			"%s stream: tool_call[%d] missing 'city' in arguments: %v", provider, i, argsMap)
 	}
 	// thought_signature at finish event level, not per tool call
 	thoughtSig := ""
@@ -1385,4 +1395,64 @@ func TestModels_OpenAIResponses_StreamToolCallRoundTrip(t *testing.T) {
 		t.Skip("OPENAI_KEY not set")
 	}
 	testStreamToolCallRoundTrip(t, "test_openai_responses", "openai", 200, 120*time.Second)
+}
+
+// TestModels_OpenAIResponses_StreamMultiToolCall verifies that the Responses API
+// streaming parser correctly attributes streamed arguments to each of multiple
+// parallel function calls in a single response — exercising the item_id-keyed
+// accumulator with two concurrent in-flight calls.
+func TestModels_OpenAIResponses_StreamMultiToolCall(t *testing.T) {
+	if os.Getenv("OPENAI_KEY") == "" {
+		t.Skip("OPENAI_KEY not set")
+	}
+
+	userMsg := `{"role":"user","content":"Get the current weather in Paris and in London. You must call the get_weather tool twice — once for Paris and once for London. Do not combine both cities into a single call."}`
+
+	q := buildInlineStreamQuery("test_openai_responses", []string{userMsg}, []string{roundTripToolDef}, 500, "auto")
+	events := collectStreamEventsWithTimeout(t, q, 180*time.Second)
+	require.NotEmpty(t, events, "should receive streaming events")
+
+	var finishEvent map[string]any
+	for _, e := range events {
+		if fmt.Sprintf("%v", e["type"]) == "finish" {
+			finishEvent = e
+		}
+	}
+	require.NotNil(t, finishEvent, "should have finish event")
+
+	toolCallsRaw := finishEvent["tool_calls"]
+	require.NotNil(t, toolCallsRaw, "finish event should have tool_calls")
+	toolCallsStr := fmt.Sprintf("%v", toolCallsRaw)
+
+	var toolCalls []types.LLMToolCall
+	err := json.Unmarshal([]byte(toolCallsStr), &toolCalls)
+	require.NoError(t, err, "tool_calls parse failed: %s", toolCallsStr)
+
+	for i, tc := range toolCalls {
+		t.Logf("multi tool_call[%d]: id=%s name=%s args=%v", i, tc.ID, tc.Name, tc.Arguments)
+	}
+
+	require.GreaterOrEqualf(t, len(toolCalls), 2,
+		"expected at least 2 parallel tool calls, got %d: %s", len(toolCalls), toolCallsStr)
+
+	seenIDs := make(map[string]bool, len(toolCalls))
+	seenCities := make(map[string]bool, len(toolCalls))
+	for i, tc := range toolCalls {
+		require.NotEmptyf(t, tc.ID, "tool_call[%d] id empty", i)
+		require.Falsef(t, seenIDs[tc.ID], "duplicate tool_call id %q at index %d", tc.ID, i)
+		seenIDs[tc.ID] = true
+
+		require.Equalf(t, "get_weather", tc.Name, "tool_call[%d] unexpected name", i)
+
+		argsMap, ok := tc.Arguments.(map[string]any)
+		require.Truef(t, ok, "tool_call[%d] arguments not an object: %T", i, tc.Arguments)
+		require.NotEmptyf(t, argsMap, "tool_call[%d] arguments empty map", i)
+
+		city, _ := argsMap["city"].(string)
+		require.NotEmptyf(t, city, "tool_call[%d] missing 'city' in arguments: %v", i, argsMap)
+		seenCities[strings.ToLower(city)] = true
+	}
+
+	require.Truef(t, seenCities["paris"], "expected a tool call with city=Paris, got cities=%v", seenCities)
+	require.Truef(t, seenCities["london"], "expected a tool call with city=London, got cities=%v", seenCities)
 }

@@ -299,19 +299,27 @@ func parseResponsesResponse(body []byte) (*sources.LLMResult, error) {
 }
 
 // parseResponsesStream parses SSE events from a streaming Responses API response.
+//
+// Pending function calls are keyed by item_id (the stable handle OpenAI uses on
+// function_call_arguments.delta / .done events). The external call_id — which
+// the provider expects echoed back on the tool-result follow-up message — is
+// captured once on response.output_item.added and emitted upward as
+// LLMToolCall.ID.
 func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamEvent) error) error {
 	type pendingFunctionCall struct {
-		CallID string
-		Name   string
-		Args   strings.Builder
+		ItemID      string
+		CallID      string
+		Name        string
+		OutputIndex int
+		Args        strings.Builder
+		FinalArgs   string
+		Done        bool
 	}
 
 	var (
-		accThinking      strings.Builder
-		pendingCalls     = map[string]*pendingFunctionCall{} // by call_id
-		promptTokens     int
-		completionTokens int
-		model            string
+		accThinking     strings.Builder
+		pendingByItemID = map[string]*pendingFunctionCall{}
+		pendingOrder    []*pendingFunctionCall
 	)
 
 	scanner := bufio.NewScanner(body)
@@ -328,14 +336,20 @@ func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamE
 		var event struct {
 			Type string `json:"type"`
 
-			// response.output_text.delta
+			// response.output_text.delta / function_call_arguments.delta
 			Delta string `json:"delta"`
 
-			// response.function_call_arguments.delta
-			CallID string `json:"call_id"`
+			// function_call_arguments.delta / .done correlate by item_id.
+			ItemID      string `json:"item_id"`
+			OutputIndex int    `json:"output_index"`
 
-			// response.output_item.added — function_call start
+			// response.function_call_arguments.done — authoritative final args.
+			Arguments string `json:"arguments"`
+
+			// response.output_item.added — item.id is the stable handle used
+			// as the map key; item.call_id is the external id surfaced later.
 			Item struct {
+				ID     string `json:"id"`
 				Type   string `json:"type"`
 				CallID string `json:"call_id"`
 				Name   string `json:"name"`
@@ -376,38 +390,49 @@ func parseResponsesStream(body io.Reader, onEvent func(event *sources.LLMStreamE
 			}
 
 		case "response.output_item.added":
-			if event.Item.Type == "function_call" {
-				pendingCalls[event.Item.CallID] = &pendingFunctionCall{
-					CallID: event.Item.CallID,
-					Name:   event.Item.Name,
-				}
+			if event.Item.Type != "function_call" || event.Item.ID == "" {
+				break
 			}
+			pc := &pendingFunctionCall{
+				ItemID:      event.Item.ID,
+				CallID:      event.Item.CallID,
+				Name:        event.Item.Name,
+				OutputIndex: event.OutputIndex,
+			}
+			pendingByItemID[event.Item.ID] = pc
+			pendingOrder = append(pendingOrder, pc)
 
 		case "response.function_call_arguments.delta":
-			if pc := pendingCalls[event.CallID]; pc != nil {
+			if pc := pendingByItemID[event.ItemID]; pc != nil {
 				pc.Args.WriteString(event.Delta)
 			}
 
-		case "response.completed":
-			model = event.Response.Model
-			promptTokens = event.Response.Usage.InputTokens
-			completionTokens = event.Response.Usage.OutputTokens
+		case "response.function_call_arguments.done":
+			if pc := pendingByItemID[event.ItemID]; pc != nil {
+				pc.FinalArgs = event.Arguments
+				pc.Done = true
+			}
 
+		case "response.completed":
 			ev := &sources.LLMStreamEvent{
 				Type:             "finish",
-				Model:            model,
+				Model:            event.Response.Model,
 				FinishReason:     "stop",
-				PromptTokens:     promptTokens,
-				CompletionTokens: completionTokens,
+				PromptTokens:     event.Response.Usage.InputTokens,
+				CompletionTokens: event.Response.Usage.OutputTokens,
 				Thinking:         accThinking.String(),
 			}
 
-			if len(pendingCalls) > 0 {
-				var calls []sources.LLMToolCall
-				for _, pc := range pendingCalls {
+			if len(pendingOrder) > 0 {
+				calls := make([]sources.LLMToolCall, 0, len(pendingOrder))
+				for _, pc := range pendingOrder {
+					raw := pc.FinalArgs
+					if raw == "" {
+						raw = pc.Args.String()
+					}
 					var args any
-					if s := pc.Args.String(); s != "" {
-						_ = json.Unmarshal([]byte(s), &args)
+					if raw != "" {
+						_ = json.Unmarshal([]byte(raw), &args)
 					}
 					calls = append(calls, sources.LLMToolCall{
 						ID:        pc.CallID,
