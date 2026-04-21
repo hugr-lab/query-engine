@@ -15,7 +15,7 @@
           "event": {
             "id": 2,
             "name": "Workshop",
-            "value": 50.0
+            "value": 50
           },
           "id": 2,
           "name": "Desktop"
@@ -24,7 +24,7 @@
           "event": {
             "id": 3,
             "name": "Meetup",
-            "value": 0.0
+            "value": 0
           },
           "id": 3,
           "name": "Tablet"

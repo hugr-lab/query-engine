@@ -11,31 +11,31 @@
             }
           },
           "key": {
-            "created_at": "2025-03-01 00:00:00+00"
+            "created_at": "2025-03-01T00:00:00Z"
           }
         },
         {
           "aggregations": {
             "_rows_count": 2,
             "value": {
-              "avg": 100.0,
-              "sum": 200.0
+              "avg": 100,
+              "sum": 200
             }
           },
           "key": {
-            "created_at": "2025-04-01 00:00:00+00"
+            "created_at": "2025-04-01T00:00:00Z"
           }
         },
         {
           "aggregations": {
             "_rows_count": 1,
             "value": {
-              "avg": 25.0,
-              "sum": 25.0
+              "avg": 25,
+              "sum": 25
             }
           },
           "key": {
-            "created_at": "2025-05-01 00:00:00+00"
+            "created_at": "2025-05-01T00:00:00Z"
           }
         }
       ]

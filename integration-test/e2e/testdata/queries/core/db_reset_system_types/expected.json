@@ -4,8 +4,8 @@
       "core": {
         "db": {
           "reset_system_types": {
-            "success": true,
-            "message": "System types version cleared, restart to recompile"
+            "message": "System types version cleared, restart to recompile",
+            "success": true
           }
         }
       }

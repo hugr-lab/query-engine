@@ -3,10 +3,10 @@
     "dl_test": {
       "sensors": [
         {
-          "humidity": 68.0,
+          "humidity": 68,
           "id": 1,
           "name": "sensor_a",
-          "temperature": 24.0
+          "temperature": 24
         },
         {
           "humidity": 70.2,
@@ -21,10 +21,10 @@
           "temperature": 21.8
         },
         {
-          "humidity": 60.0,
+          "humidity": 60,
           "id": 4,
           "name": "sensor_d",
-          "temperature": 25.0
+          "temperature": 25
         },
         {
           "humidity": 80.1,
@@ -33,10 +33,10 @@
           "temperature": 19.5
         },
         {
-          "humidity": 45.0,
+          "humidity": 45,
           "id": 100,
           "name": "sensor_new",
-          "temperature": 30.0
+          "temperature": 30
         }
       ]
     }

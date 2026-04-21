@@ -4,7 +4,7 @@
       "default": {
         "default_sensors": [
           {
-            "humidity": 65.0,
+            "humidity": 65,
             "id": 1,
             "name": "sensor_a",
             "temperature": 22.5
@@ -22,10 +22,10 @@
             "temperature": 21.8
           },
           {
-            "humidity": 60.0,
+            "humidity": 60,
             "id": 4,
             "name": "sensor_d",
-            "temperature": 25.0
+            "temperature": 25
           },
           {
             "humidity": 80.1,

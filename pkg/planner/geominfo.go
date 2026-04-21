@@ -60,21 +60,30 @@ type geomFieldMeta struct {
 // share one source of truth.
 func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomFieldMeta {
 	if sdl.IsScalarType(query.Definition.Type.Name()) {
-		if query.Definition.Type.NamedType == base.H3CellTypeName {
+		switch query.Definition.Type.NamedType {
+		case base.H3CellTypeName:
 			return map[string]geomFieldMeta{
 				"": {format: "H3Cell"},
 			}
+		case base.JSONTypeName:
+			// JSON-typed scalar fields arrive from the SQL layer as utf8
+			// values carrying JSON text. RecordToJSON embeds them raw
+			// (unquoted) when it sees Format == "JSONString" on the
+			// enclosing table's GeometryInfo map — same mechanism as
+			// GeoJSONString for nested geometry.
+			return map[string]geomFieldMeta{
+				"": {format: "JSONString"},
+			}
+		case base.GeometryTypeName:
+			fi := sdl.FieldInfo(query)
+			if fi == nil {
+				return nil
+			}
+			return map[string]geomFieldMeta{
+				"": {format: "WKB", srid: fi.GeometrySRID()},
+			}
 		}
-		if query.Definition.Type.NamedType != base.GeometryTypeName {
-			return nil
-		}
-		fi := sdl.FieldInfo(query)
-		if fi == nil {
-			return nil
-		}
-		return map[string]geomFieldMeta{
-			"": {format: "WKB", srid: fi.GeometrySRID()},
-		}
+		return nil
 	}
 	meta := map[string]geomFieldMeta{}
 	for _, s := range engines.SelectedFields(query.SelectionSet) {
@@ -84,8 +93,14 @@ func geomFieldsInfoFromQuery(query *ast.Field) map[string]geomFieldMeta {
 		}
 		for field, m := range info {
 			if field != "" {
+				// Nested field — upgrade Geometry's WKB to GeoJSONString
+				// (the wrapped SQL path emits these as JSON strings inside
+				// the parent struct). JSONString / H3Cell keep their own
+				// formats through nesting.
 				field = s.Field.Alias + "." + field
-				m.format = "GeoJSONString"
+				if m.format == "WKB" {
+					m.format = "GeoJSONString"
+				}
 			}
 			if field == "" {
 				field = s.Field.Alias
