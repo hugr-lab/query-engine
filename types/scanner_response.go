@@ -90,7 +90,7 @@ func Scan[T any](resp *Response, path string) (T, error) {
 	}
 	// Use a typed-nil *T to derive T's reflect kind; works even when T
 	// is an interface whose zero value is nil.
-	t := reflect.TypeOf((*T)(nil)).Elem()
+	t := reflect.TypeFor[T]()
 	if t != nil && t.Kind() == reflect.Slice {
 		var dest T
 		if err := resp.ScanTable(path, &dest); err != nil {
