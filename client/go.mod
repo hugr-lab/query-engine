@@ -4,10 +4,10 @@ go 1.26
 
 require (
 	github.com/apache/arrow-go/v18 v18.5.2
+	github.com/coder/websocket v1.8.14
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/websocket v1.5.3
 	github.com/hugr-lab/airport-go v0.2.1
-	github.com/hugr-lab/query-engine/types v0.3.18
+	github.com/hugr-lab/query-engine/types v0.3.31
 	github.com/paulmach/orb v0.13.0
 	github.com/vektah/gqlparser/v2 v2.5.32
 	google.golang.org/grpc v1.80.0
@@ -22,6 +22,7 @@ require (
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/net v0.52.0 // indirect
@@ -34,5 +35,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260406210006-6f92a3bedf2d // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
-
-replace github.com/hugr-lab/query-engine/types => ../types

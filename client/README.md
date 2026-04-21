@@ -107,6 +107,125 @@ err = resp.ScanData("devices", &devices)
 fmt.Println(resp.Data)
 ```
 
+### Scanning Results
+
+The response tree has two kinds of leaves:
+
+- **ArrowTables** — list/aggregation selections. Come back column-oriented;
+  decode via `ScanTable` / `Rows()`. JSON round-trip is *not* involved,
+  so timestamps keep their timezone and geometry decodes to `orb.Geometry`.
+- **JSON objects** — `by_pk`, function calls, scalar fields. Come back
+  as `*types.JsonValue`; decode via `ScanObject` / existing `ScanData`
+  (they go through `encoding/json`).
+
+`Response.Tables()` and `Response.Objects()` return the dotted paths in
+each bucket, so callers can pick the right scan method automatically.
+
+#### ArrowTable path (`ScanTable` / `Rows()`)
+
+Struct fields resolved by `json` tag. Geometry columns decode to
+`orb.Geometry` (or a concrete subtype) for every encoding the engine
+emits.
+
+```go
+import "github.com/paulmach/orb"
+
+type Building struct {
+    ID   int64        `json:"id"`
+    Name string       `json:"name"`
+    Geom orb.Geometry `json:"geom"`    // transparent decode
+    Area float64      `json:"area_sqm"`
+}
+
+resp, _ := c.Query(ctx, `{ osm { buildings { id name geom area_sqm } } }`, nil)
+defer resp.Close()
+
+var rows []Building
+if err := resp.ScanTable("osm.buildings", &rows); err != nil {
+    log.Fatal(err)
+}
+```
+
+For streaming, use the `database/sql.Rows`-style cursor:
+
+```go
+tbl, _ := resp.Table("osm.buildings")
+cur, _ := tbl.Rows()
+defer cur.Close()
+for cur.Next() {
+    var b Building
+    if err := cur.Scan(&b); err != nil { return err }
+    // ...
+}
+```
+
+**Arrow column → Go destination matrix:**
+
+| Arrow column | Go destination | Behaviour |
+|---|---|---|
+| `Timestamp(unit, tz)` | `time.Time` | Honours unit + timezone; UTC default when tz empty. |
+| `Timestamp(unit, "")` | `types.DateTime` | Naive, no timezone applied. |
+| Geometry (`geoarrow.wkb`, `geoarrow.wkt`, native coords, `hugr.geojson`) | `orb.Geometry` / `orb.Point` / `orb.LineString` / … | Transparent decode. |
+| Untagged string with geometry content | `orb.Geometry` | Heuristic: `{` → GeoJSON, else WKT. |
+| Geometry | `[]byte` / `string` / `any` / `map[string]any` | Raw storage passthrough. |
+| String with JSON content | `map[string]any` / `[]any` / `any` | Auto `json.Unmarshal`. |
+| String | `string` | Unchanged. |
+
+Register custom extensions with `types.RegisterGeometryDecoder(name, fn)`.
+
+#### JSON-object path (`ScanObject`)
+
+`by_pk` lookups and function-call results come back as JSON. `ScanObject`
+runs `json.Marshal`/`Unmarshal` internally, so anything the standard
+library's JSON decoder supports works. **Caveat:** `orb.Geometry` is an
+interface — stdlib JSON can't unmarshal into it directly. Use
+`*geojson.Geometry` (from `paulmach/orb/geojson`) instead and call
+`.Geometry()` to obtain the concrete `orb.Geometry`:
+
+```go
+import "github.com/paulmach/orb/geojson"
+
+type Road struct {
+    ID   int64             `json:"id"`
+    Name string            `json:"name"`
+    Geom *geojson.Geometry `json:"geom"`
+}
+
+var road Road
+if err := resp.ScanObject("tf.digital_twin.roads_by_pk", &road); err != nil {
+    log.Fatal(err)
+}
+concrete := road.Geom.Geometry()   // -> orb.LineString, orb.Point, ...
+```
+
+#### One struct for both paths
+
+`*geojson.Geometry` works on **both** scanning paths — the Arrow scanner
+wraps the decoded geometry via `geojson.NewGeometry`, and `ScanObject`
+lets stdlib JSON populate it natively. Write one struct and use it for
+list and `by_pk` queries alike:
+
+```go
+type Part struct {
+    ID   int64             `json:"id"`
+    Name string            `json:"name"`
+    Geom *geojson.Geometry `json:"geom"`   // works via ScanTable and ScanObject
+}
+
+// Arrow table (list selection):
+resp, _ := c.Query(ctx, `{ ... { parts { id name geom } } }`, nil)
+var parts []Part
+_ = resp.ScanTable("...parts", &parts)
+
+// JSON object (by_pk or function call):
+resp, _ := c.Query(ctx, `{ ... { parts_by_pk(id: 42) { id name geom } } }`, nil)
+var part Part
+_ = resp.ScanObject("...parts_by_pk", &part)
+```
+
+`ScanData` continues to work unchanged. Migrate call sites
+opportunistically when you hit timestamp or geometry fields.
+
 ### Validate Without Executing
 
 ```go

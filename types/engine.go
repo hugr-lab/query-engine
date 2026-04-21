@@ -32,11 +32,20 @@ type SubscriptionEvent struct {
 
 // Subscription is the result of Querier.Subscribe.
 // Events channel produces SubscriptionEvents until closed.
-// Errors are reported via Reader.Err() after Reader.Next() returns false.
+// Errors are reported via Reader.Err() after Reader.Next() returns false,
+// or via Err() after Events is closed (for subscription-level errors).
 type Subscription struct {
 	Events <-chan SubscriptionEvent
 	Cancel func()
+	err    error
 }
+
+// Err returns the subscription-level error (e.g. from subscription_error frame).
+// Call after Events channel is closed.
+func (s *Subscription) Err() error { return s.err }
+
+// SetErr sets the subscription-level error. Called by the transport layer.
+func (s *Subscription) SetErr(err error) { s.err = err }
 
 type UnloadOpt func(*UnloadOpts)
 
@@ -149,8 +158,9 @@ func (r *Response) ScanData(path string, dest interface{}) error {
 }
 
 var (
-	ErrNoData        = errors.New("no data")
-	ErrWrongDataPath = errors.New("wrong data path")
+	ErrNoData         = errors.New("no data")
+	ErrWrongDataPath  = errors.New("wrong data path")
+	ErrGeometryDecode = errors.New("geometry decode")
 )
 
 func scanRecursive(path string, data any, dest interface{}) error {

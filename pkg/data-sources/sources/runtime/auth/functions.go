@@ -22,14 +22,14 @@ func registerFunctions(ctx context.Context, pool *db.Pool) error {
 				return nil, nil
 			}
 			result := map[string]any{
-				"user_id":                    info.UserId,
-				"user_name":                  info.UserName,
-				"role":                       info.Role,
-				"auth_type":                  info.AuthType,
-				"auth_provider":              info.AuthProvider,
-				"impersonated_by_user_id":    "",
-				"impersonated_by_user_name":  "",
-				"impersonated_by_user_role":  "",
+				"user_id":                   info.UserId,
+				"user_name":                 info.UserName,
+				"role":                      info.Role,
+				"auth_type":                 info.AuthType,
+				"auth_provider":             info.AuthProvider,
+				"impersonated_by_user_id":   "",
+				"impersonated_by_user_name": "",
+				"impersonated_by_user_role": "",
 			}
 			if impBy := auth.ImpersonatedByFromContext(ctx); impBy != nil {
 				result["impersonated_by_user_id"] = impBy.UserId
@@ -197,14 +197,14 @@ func marshalJSONField(v map[string]any) (string, error) {
 
 func meOutputType() duckdb.TypeInfo {
 	return runtime.DuckDBStructTypeFromSchemaMust(map[string]any{
-		"user_id":                    "VARCHAR",
-		"user_name":                  "VARCHAR",
-		"role":                       "VARCHAR",
-		"auth_type":                  "VARCHAR",
-		"auth_provider":              "VARCHAR",
-		"impersonated_by_user_id":    "VARCHAR",
-		"impersonated_by_user_name":  "VARCHAR",
-		"impersonated_by_user_role":  "VARCHAR",
+		"user_id":                   "VARCHAR",
+		"user_name":                 "VARCHAR",
+		"role":                      "VARCHAR",
+		"auth_type":                 "VARCHAR",
+		"auth_provider":             "VARCHAR",
+		"impersonated_by_user_id":   "VARCHAR",
+		"impersonated_by_user_name": "VARCHAR",
+		"impersonated_by_user_role": "VARCHAR",
 	})
 }
 

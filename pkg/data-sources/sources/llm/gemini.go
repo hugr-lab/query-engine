@@ -37,11 +37,11 @@ func NewGemini(ds types.DataSource, attached bool) (*GeminiSource, error) {
 	}, nil
 }
 
-func (s *GeminiSource) Name() string             { return s.ds.Name }
+func (s *GeminiSource) Name() string                 { return s.ds.Name }
 func (s *GeminiSource) Definition() types.DataSource { return s.ds }
-func (s *GeminiSource) Engine() engines.Engine   { return s.engine }
-func (s *GeminiSource) IsAttached() bool         { return s.isAttached }
-func (s *GeminiSource) ReadOnly() bool           { return true }
+func (s *GeminiSource) Engine() engines.Engine       { return s.engine }
+func (s *GeminiSource) IsAttached() bool             { return s.isAttached }
+func (s *GeminiSource) ReadOnly() bool               { return true }
 
 func (s *GeminiSource) ModelInfo() sources.ModelInfo {
 	return sources.ModelInfo{
@@ -60,6 +60,10 @@ func (s *GeminiSource) Attach(_ context.Context, _ *db.Pool) error {
 	if err != nil {
 		return err
 	}
+	path, err = sources.ResolveProviderScheme(path)
+	if err != nil {
+		return err
+	}
 	u, err := url.Parse(path)
 	if err != nil {
 		return err
@@ -68,7 +72,14 @@ func (s *GeminiSource) Attach(_ context.Context, _ *db.Pool) error {
 	if s.config.Model == "" {
 		return errors.New("model is required in the data source path")
 	}
+	if strings.HasPrefix(s.config.Model, "\"") && strings.HasSuffix(s.config.Model, "\"") {
+		s.config.Model = strings.Trim(s.config.Model, "\"")
+	}
 	s.config.ApiKey = u.Query().Get("api_key")
+	if strings.HasPrefix(s.config.ApiKey, "\"") && strings.HasSuffix(s.config.ApiKey, "\"") {
+		s.config.ApiKey = strings.Trim(s.config.ApiKey, "\"")
+	}
+
 	if mt := u.Query().Get("max_tokens"); mt != "" {
 		fmt.Sscanf(mt, "%d", &s.config.MaxTokens)
 	}
@@ -130,39 +141,8 @@ func (s *GeminiSource) CreateChatCompletion(ctx context.Context, messages []sour
 		maxTokens = s.config.MaxTokens
 	}
 
-	// Separate system instruction
 	var systemInstruction *map[string]any
-	var contents []map[string]any
-	for _, m := range messages {
-		if m.Role == "system" {
-			si := map[string]any{"parts": []map[string]any{{"text": m.Content}}}
-			systemInstruction = &si
-			continue
-		}
-		role := m.Role
-		if role == "assistant" {
-			role = "model"
-		}
-		if m.Role == "tool" {
-			contents = append(contents, map[string]any{
-				"role": "function",
-				"parts": []map[string]any{{
-					"functionResponse": map[string]any{
-						"name":     m.ToolCallID,
-						"response": map[string]any{"result": m.Content},
-					},
-				}},
-			})
-			continue
-		}
-		parts := []map[string]any{{"text": m.Content}}
-		for _, tc := range m.ToolCalls {
-			parts = append(parts, map[string]any{
-				"functionCall": map[string]any{"name": tc.Name, "args": tc.Arguments},
-			})
-		}
-		contents = append(contents, map[string]any{"role": role, "parts": parts})
-	}
+	contents := convertMessagesGemini(messages, &systemInstruction)
 
 	reqBody := map[string]any{
 		"contents": contents,
@@ -239,9 +219,11 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 				Parts []struct {
 					Text         string `json:"text"`
 					FunctionCall *struct {
+						ID   string `json:"id"`
 						Name string `json:"name"`
 						Args any    `json:"args"`
 					} `json:"functionCall"`
+					ThoughtSignature string `json:"thoughtSignature"`
 				} `json:"parts"`
 			} `json:"content"`
 			FinishReason string `json:"finishReason"`
@@ -274,11 +256,15 @@ func parseGeminiResponse(body []byte) (*sources.LLMResult, error) {
 			result.FinishReason = c.FinishReason
 		}
 		for _, part := range c.Content.Parts {
+			if part.ThoughtSignature != "" {
+				result.ThoughtSignature = part.ThoughtSignature
+			}
 			if part.Text != "" {
 				result.Content += part.Text
 			}
 			if part.FunctionCall != nil {
 				result.ToolCalls = append(result.ToolCalls, sources.LLMToolCall{
+					ID:        part.FunctionCall.ID,
 					Name:      part.FunctionCall.Name,
 					Arguments: part.FunctionCall.Args,
 				})
@@ -316,39 +302,8 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 		effectiveBudget = s.config.ThinkingBudget
 	}
 
-	// Separate system instruction
 	var systemInstruction *map[string]any
-	var contents []map[string]any
-	for _, m := range messages {
-		if m.Role == "system" {
-			si := map[string]any{"parts": []map[string]any{{"text": m.Content}}}
-			systemInstruction = &si
-			continue
-		}
-		role := m.Role
-		if role == "assistant" {
-			role = "model"
-		}
-		if m.Role == "tool" {
-			contents = append(contents, map[string]any{
-				"role": "function",
-				"parts": []map[string]any{{
-					"functionResponse": map[string]any{
-						"name":     m.ToolCallID,
-						"response": map[string]any{"result": m.Content},
-					},
-				}},
-			})
-			continue
-		}
-		parts := []map[string]any{{"text": m.Content}}
-		for _, tc := range m.ToolCalls {
-			parts = append(parts, map[string]any{
-				"functionCall": map[string]any{"name": tc.Name, "args": tc.Arguments},
-			})
-		}
-		contents = append(contents, map[string]any{"role": role, "parts": parts})
-	}
+	contents := convertMessagesGemini(messages, &systemInstruction)
 
 	reqBody := map[string]any{
 		"contents": contents,
@@ -411,6 +366,8 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 	}
 
 	var totalPromptTokens, totalCompletionTokens int
+	var accToolCalls []sources.LLMToolCall
+	var accThoughtSig string
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -427,9 +384,11 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 						Text         string `json:"text"`
 						Thought      bool   `json:"thought,omitempty"`
 						FunctionCall *struct {
+							ID   string `json:"id"`
 							Name string `json:"name"`
 							Args any    `json:"args"`
 						} `json:"functionCall"`
+						ThoughtSignature string `json:"thoughtSignature"`
 					} `json:"parts"`
 				} `json:"content"`
 				FinishReason string `json:"finishReason"`
@@ -453,7 +412,11 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 		}
 		candidate := chunk.Candidates[0]
 
+		var chunkThoughtSig string
 		for _, part := range candidate.Content.Parts {
+			if part.ThoughtSignature != "" {
+				chunkThoughtSig = part.ThoughtSignature
+			}
 			if part.Text != "" {
 				eventType := "content_delta"
 				if part.Thought {
@@ -467,16 +430,15 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 				}
 			}
 			if part.FunctionCall != nil {
-				b, _ := json.Marshal([]map[string]any{
-					{"name": part.FunctionCall.Name, "args": part.FunctionCall.Args},
+				accToolCalls = append(accToolCalls, sources.LLMToolCall{
+					ID:        part.FunctionCall.ID,
+					Name:      part.FunctionCall.Name,
+					Arguments: part.FunctionCall.Args,
 				})
-				if err := onEvent(&sources.LLMStreamEvent{
-					Type:      "content_delta",
-					ToolCalls: string(b),
-				}); err != nil {
-					return err
-				}
 			}
+		}
+		if chunkThoughtSig != "" {
+			accThoughtSig = chunkThoughtSig
 		}
 
 		if candidate.FinishReason != "" {
@@ -487,12 +449,21 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 			case "MAX_TOKENS":
 				finishReason = "length"
 			}
-			if err := onEvent(&sources.LLMStreamEvent{
+			ev := &sources.LLMStreamEvent{
 				Type:             "finish",
 				FinishReason:     finishReason,
 				PromptTokens:     totalPromptTokens,
 				CompletionTokens: totalCompletionTokens,
-			}); err != nil {
+				ThoughtSignature: accThoughtSig,
+			}
+			if len(accToolCalls) > 0 {
+				b, _ := json.Marshal(accToolCalls)
+				ev.ToolCalls = string(b)
+				if finishReason == "stop" {
+					ev.FinishReason = "tool_use"
+				}
+			}
+			if err := onEvent(ev); err != nil {
 				return err
 			}
 		}
@@ -507,6 +478,72 @@ func (s *GeminiSource) CreateChatCompletionStream(ctx context.Context, messages 
 	}
 
 	return nil
+}
+
+// convertMessagesGemini converts normalized LLMMessages to Gemini API contents format.
+// - "system" messages → systemInstruction
+// - "assistant" messages → "model" with functionCall Parts (thoughtSignature on first)
+// - "tool" messages → grouped into "user" with functionResponse Parts
+// - other → "user" with text Part
+func convertMessagesGemini(messages []sources.LLMMessage, systemInstruction **map[string]any) []map[string]any {
+	var contents []map[string]any
+	for _, m := range messages {
+		if m.Role == "system" {
+			si := map[string]any{"parts": []map[string]any{{"text": m.Content}}}
+			*systemInstruction = &si
+			continue
+		}
+		role := m.Role
+		if role == "assistant" {
+			role = "model"
+		}
+		// Tool response messages → functionResponse Parts, grouped into "user" content
+		if m.Role == "tool" {
+			frPart := map[string]any{
+				"functionResponse": map[string]any{
+					"name":     m.ToolCallID,
+					"response": map[string]any{"result": m.Content},
+				},
+			}
+			// Group consecutive tool responses into one "user" content
+			if n := len(contents); n > 0 {
+				last := contents[n-1]
+				if last["role"] == "user" {
+					if parts, ok := last["parts"].([]map[string]any); ok && len(parts) > 0 {
+						if _, ok := parts[0]["functionResponse"]; ok {
+							last["parts"] = append(parts, frPart)
+							continue
+						}
+					}
+				}
+			}
+			contents = append(contents, map[string]any{
+				"role":  "user",
+				"parts": []map[string]any{frPart},
+			})
+			continue
+		}
+		// Regular messages (user, assistant/model)
+		var parts []map[string]any
+		if m.Content != "" {
+			parts = append(parts, map[string]any{"text": m.Content})
+		}
+		for i, tc := range m.ToolCalls {
+			fcPart := map[string]any{
+				"functionCall": map[string]any{"name": tc.Name, "args": tc.Arguments},
+			}
+			// thoughtSignature on FIRST functionCall Part only (Gemini 2.5+ requirement)
+			if i == 0 && m.ThoughtSignature != "" {
+				fcPart["thoughtSignature"] = m.ThoughtSignature
+			}
+			parts = append(parts, fcPart)
+		}
+		if len(parts) == 0 {
+			parts = []map[string]any{{"text": ""}}
+		}
+		contents = append(contents, map[string]any{"role": role, "parts": parts})
+	}
+	return contents
 }
 
 var (

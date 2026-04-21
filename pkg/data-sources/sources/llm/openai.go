@@ -32,16 +32,19 @@ type OpenAISource struct {
 }
 
 type openAIConfig struct {
-	BaseURL        string
-	Model          string
-	ApiKey         string
-	ApiKeyHeader   string
-	MaxTokens      int
-	ThinkingBudget int // max thinking/reasoning tokens (0 = disabled)
-	Timeout        time.Duration
-	RPM            int    // max requests per minute (0 = unlimited)
-	TPM            int    // max tokens per minute (0 = unlimited)
-	RateStore      string // name of StoreSource for shared counters (empty = in-memory)
+	BaseURL          string
+	Model            string
+	ApiKey           string
+	ApiKeyHeader     string
+	MaxTokens        int
+	ThinkingBudget   int // max thinking/reasoning tokens (0 = disabled)
+	Timeout          time.Duration
+	RPM              int    // max requests per minute (0 = unlimited)
+	TPM              int    // max tokens per minute (0 = unlimited)
+	RateStore        string // name of StoreSource for shared counters (empty = in-memory)
+	UseResponsesAPI  bool   // use OpenAI Responses API instead of Chat Completions
+	ReasoningSummary string // "auto", "concise", "detailed" (Responses API only)
+	ReasoningEffort  string // "low", "medium", "high" (Responses API only)
 }
 
 func NewOpenAI(ds types.DataSource, attached bool) (*OpenAISource, error) {
@@ -52,11 +55,11 @@ func NewOpenAI(ds types.DataSource, attached bool) (*OpenAISource, error) {
 	}, nil
 }
 
-func (s *OpenAISource) Name() string             { return s.ds.Name }
+func (s *OpenAISource) Name() string                 { return s.ds.Name }
 func (s *OpenAISource) Definition() types.DataSource { return s.ds }
-func (s *OpenAISource) Engine() engines.Engine   { return s.engine }
-func (s *OpenAISource) IsAttached() bool         { return s.isAttached }
-func (s *OpenAISource) ReadOnly() bool           { return true }
+func (s *OpenAISource) Engine() engines.Engine       { return s.engine }
+func (s *OpenAISource) IsAttached() bool             { return s.isAttached }
+func (s *OpenAISource) ReadOnly() bool               { return true }
 
 func (s *OpenAISource) ModelInfo() sources.ModelInfo {
 	return sources.ModelInfo{
@@ -77,6 +80,11 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 		return err
 	}
 
+	path, err = sources.ResolveProviderScheme(path)
+	if err != nil {
+		return err
+	}
+
 	u, err := url.Parse(path)
 	if err != nil {
 		return err
@@ -86,7 +94,13 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 	if s.config.Model == "" {
 		return errors.New("model is required in the data source path")
 	}
+	if strings.HasPrefix(s.config.Model, "\"") && strings.HasSuffix(s.config.Model, "\"") {
+		s.config.Model = strings.Trim(s.config.Model, "\"")
+	}
 	s.config.ApiKey = u.Query().Get("api_key")
+	if strings.HasPrefix(s.config.ApiKey, "\"") && strings.HasSuffix(s.config.ApiKey, "\"") {
+		s.config.ApiKey = strings.Trim(s.config.ApiKey, "\"")
+	}
 	s.config.ApiKeyHeader = u.Query().Get("api_key_header")
 
 	if mt := u.Query().Get("max_tokens"); mt != "" {
@@ -113,6 +127,15 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 	}
 	s.config.RateStore = u.Query().Get("rate_store")
 
+	// Responses API detection
+	if u.Query().Get("use_responses_api") == "true" {
+		s.config.UseResponsesAPI = true
+	} else if strings.Contains(u.Path, "/responses") {
+		s.config.UseResponsesAPI = true
+	}
+	s.config.ReasoningSummary = u.Query().Get("reasoning_summary")
+	s.config.ReasoningEffort = u.Query().Get("reasoning_effort")
+
 	// Strip query params to get base URL
 	q := u.Query()
 	q.Del("model")
@@ -124,6 +147,9 @@ func (s *OpenAISource) Attach(_ context.Context, _ *db.Pool) error {
 	q.Del("rpm")
 	q.Del("tpm")
 	q.Del("rate_store")
+	q.Del("use_responses_api")
+	q.Del("reasoning_summary")
+	q.Del("reasoning_effort")
 	u.RawQuery = q.Encode()
 	s.config.BaseURL = u.String()
 
@@ -144,6 +170,9 @@ func (s *OpenAISource) CreateCompletion(ctx context.Context, prompt string, opts
 }
 
 func (s *OpenAISource) CreateChatCompletion(ctx context.Context, messages []sources.LLMMessage, opts sources.LLMOptions) (*sources.LLMResult, error) {
+	if s.config.UseResponsesAPI {
+		return s.createResponsesCompletion(ctx, messages, opts)
+	}
 	if !s.isAttached {
 		return nil, sources.ErrDataSourceNotAttached
 	}
@@ -162,9 +191,9 @@ func (s *OpenAISource) CreateChatCompletion(ctx context.Context, messages []sour
 
 	// Build request body
 	reqBody := map[string]any{
-		"model":      s.config.Model,
+		"model":      strings.Trim(s.config.Model, "\""),
 		"messages":   convertMessagesOpenAI(messages),
-		"max_tokens": maxTokens,
+		"max_completion_tokens": maxTokens,
 	}
 	if opts.Temperature > 0 {
 		reqBody["temperature"] = opts.Temperature
@@ -260,12 +289,20 @@ func convertMessagesOpenAI(msgs []sources.LLMMessage) []map[string]any {
 func convertToolsOpenAI(tools []sources.LLMTool) []map[string]any {
 	result := make([]map[string]any, len(tools))
 	for i, t := range tools {
+		params := t.Parameters
+		// Ensure "required" key exists in parameters — some model templates
+		// (e.g. Gemma4 in LM Studio) crash on missing "required" field.
+		if pm, ok := params.(map[string]any); ok {
+			if _, hasRequired := pm["required"]; !hasRequired {
+				pm["required"] = []string{}
+			}
+		}
 		result[i] = map[string]any{
 			"type": "function",
 			"function": map[string]any{
 				"name":        t.Name,
 				"description": t.Description,
-				"parameters":  t.Parameters,
+				"parameters":  params,
 			},
 		}
 	}
@@ -341,6 +378,9 @@ func normalizeFinishReasonOpenAI(reason string) string {
 
 func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages []sources.LLMMessage, opts sources.LLMOptions,
 	onEvent func(event *sources.LLMStreamEvent) error) error {
+	if s.config.UseResponsesAPI {
+		return s.createResponsesStream(ctx, messages, opts, onEvent)
+	}
 	if !s.isAttached {
 		return sources.ErrDataSourceNotAttached
 	}
@@ -358,10 +398,17 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 	}
 
 	reqBody := map[string]any{
-		"model":      s.config.Model,
+		"model":      strings.Trim(s.config.Model, "\""), // some providers (e.g. Ollama) require unquoted model names
 		"messages":   convertMessagesOpenAI(messages),
-		"max_tokens": maxTokens,
+		"max_completion_tokens": maxTokens,
 		"stream":     true,
+		// Ask the OpenAI-compatible endpoint to send token usage on the
+		// final SSE chunk. Without this, the streaming response carries
+		// no `usage` block (LM Studio, vLLM, llama.cpp and the official
+		// OpenAI API all gate it on this option), so the LLMStreamEvent
+		// `finish` event ends up with PromptTokens=0 / CompletionTokens=0
+		// and downstream consumers can't display per-message cost.
+		"stream_options": map[string]any{"include_usage": true},
 	}
 	if opts.Temperature > 0 {
 		reqBody["temperature"] = opts.Temperature
@@ -410,7 +457,21 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 	}
 
 	var totalPromptTokens, totalCompletionTokens int
-	var toolCallParts []string
+	// pendingToolCalls accumulates tool call fragments keyed by delta index.
+	// Each entry captures id/name from the first delta and concatenates
+	// argument JSON fragments across subsequent deltas.
+	type pendingToolCall struct {
+		ID       string
+		Name     string
+		ArgsJSON strings.Builder
+	}
+	var pendingToolCalls []*pendingToolCall
+	// finishEvent is captured when the model emits a finish_reason, but
+	// emitted only AFTER the SSE stream ends. With `stream_options.include_usage`
+	// the OpenAI-compatible server sends a trailing chunk with `choices: []`
+	// and a `usage` block — that arrives strictly after the finish chunk, so
+	// emitting the finish event eagerly would always lose the token counts.
+	var finishEvent *sources.LLMStreamEvent
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
@@ -429,6 +490,7 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 					Content          string `json:"content"`
 					ReasoningContent string `json:"reasoning_content"`
 					ToolCalls        []struct {
+						Index    int    `json:"index"`
 						ID       string `json:"id"`
 						Function struct {
 							Name      string `json:"name"`
@@ -458,11 +520,21 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 		}
 		choice := chunk.Choices[0]
 
-		// Accumulate tool call argument fragments
+		// Accumulate tool call fragments per-index.
+		// The first delta for each index carries id and function.name;
+		// subsequent deltas carry only argument fragments.
 		for _, tc := range choice.Delta.ToolCalls {
-			if tc.Function.Arguments != "" {
-				toolCallParts = append(toolCallParts, tc.Function.Arguments)
+			for tc.Index >= len(pendingToolCalls) {
+				pendingToolCalls = append(pendingToolCalls, &pendingToolCall{})
 			}
+			ptc := pendingToolCalls[tc.Index]
+			if tc.ID != "" {
+				ptc.ID = tc.ID
+			}
+			if tc.Function.Name != "" {
+				ptc.Name = tc.Function.Name
+			}
+			ptc.ArgsJSON.WriteString(tc.Function.Arguments)
 		}
 
 		if choice.Delta.ReasoningContent != "" {
@@ -486,19 +558,43 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 		}
 
 		if choice.FinishReason != nil {
-			ev := &sources.LLMStreamEvent{
-				Type:             "finish",
-				Model:            chunk.Model,
-				FinishReason:     normalizeFinishReasonOpenAI(*choice.FinishReason),
-				PromptTokens:     totalPromptTokens,
-				CompletionTokens: totalCompletionTokens,
+			// Capture the finish event but defer emitting it. The trailing
+			// usage-only chunk that follows (when include_usage is set) will
+			// update totalPromptTokens / totalCompletionTokens before we
+			// flush below.
+			finishEvent = &sources.LLMStreamEvent{
+				Type:         "finish",
+				Model:        chunk.Model,
+				FinishReason: normalizeFinishReasonOpenAI(*choice.FinishReason),
 			}
-			if len(toolCallParts) > 0 {
-				ev.ToolCalls = strings.Join(toolCallParts, "")
+			if len(pendingToolCalls) > 0 {
+				var calls []sources.LLMToolCall
+				for _, ptc := range pendingToolCalls {
+					var args any
+					if s := ptc.ArgsJSON.String(); s != "" {
+						_ = json.Unmarshal([]byte(s), &args)
+					}
+					calls = append(calls, sources.LLMToolCall{
+						ID:        ptc.ID,
+						Name:      ptc.Name,
+						Arguments: args,
+					})
+				}
+				b, _ := json.Marshal(calls)
+				finishEvent.ToolCalls = string(b)
 			}
-			if err := onEvent(ev); err != nil {
-				return err
-			}
+		}
+	}
+
+	// Flush the finish event with the final accumulated token counts
+	// (populated either from the finish chunk itself for providers that
+	// inline `usage`, or from the trailing usage-only chunk for those that
+	// honor `stream_options.include_usage`).
+	if finishEvent != nil {
+		finishEvent.PromptTokens = totalPromptTokens
+		finishEvent.CompletionTokens = totalCompletionTokens
+		if err := onEvent(finishEvent); err != nil {
+			return err
 		}
 	}
 

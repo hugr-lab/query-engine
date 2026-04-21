@@ -2,10 +2,12 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -62,6 +64,9 @@ func (s *Server) typeInfo(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 			}
 		}
 	}`, map[string]any{"name": typeName}, "core.catalog.types_by_pk", &raw)
+	if errors.Is(err, types.ErrNoData) {
+		return toolResultError(fmt.Sprintf("type %q not found", typeName)), nil
+	}
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}
@@ -336,6 +341,9 @@ func (s *Server) enumValues(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 			}
 		}
 	}`, map[string]any{"name": typeName}, "core.catalog.types_by_pk", &raw)
+	if errors.Is(err, types.ErrNoData) {
+		return toolResultError(fmt.Sprintf("type %q not found", typeName)), nil
+	}
 	if err != nil {
 		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
 	}

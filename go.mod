@@ -3,20 +3,20 @@ module github.com/hugr-lab/query-engine
 go 1.26
 
 require (
-	github.com/hugr-lab/query-engine/client v0.3.18
-	github.com/hugr-lab/query-engine/types v0.3.18
+	github.com/hugr-lab/query-engine/client v0.3.31
+	github.com/hugr-lab/query-engine/types v0.3.31
 )
 
 require (
 	github.com/andybalholm/brotli v1.2.1
 	github.com/apache/arrow-go/v18 v18.5.2
+	github.com/coder/websocket v1.8.14
 	github.com/duckdb/duckdb-go/v2 v2.10501.0
 	github.com/eko/gocache/lib/v4 v4.2.3
 	github.com/eko/gocache/store/bigcache/v4 v4.2.4
 	github.com/getkin/kin-openapi v0.134.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hugr-lab/airport-go v0.2.1
 	github.com/itchyny/gojq v0.12.19
@@ -119,9 +119,4 @@ require (
 	golang.org/x/tools v0.43.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-)
-
-replace (
-	github.com/hugr-lab/query-engine/client => ./client
-	github.com/hugr-lab/query-engine/types => ./types
 )

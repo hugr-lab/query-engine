@@ -10,3 +10,20 @@ type SalesReport @view(name: "sales_report_view", sql: "SELECT * FROM sales WHER
   total_sales: Float
   order_count: BigInt
 }
+
+# Parameterized view with [table] reference and [$auth.*] context placeholder.
+# [orders] is a database table resolved at runtime with source prefix.
+# [$auth.user_id] is a known context placeholder resolved from auth context.
+input UserOrdersArgs {
+  status: String @field_source(field: "status")
+}
+
+type UserOrders @view(
+  name: "user_orders_view",
+  sql: "SELECT * FROM [orders] WHERE user_id = [$auth.user_id] AND status = [$status]"
+) @args(name: "UserOrdersArgs") {
+  order_id: Int! @pk
+  user_id: Int
+  status: String
+  total: Float
+}

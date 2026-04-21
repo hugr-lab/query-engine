@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
 	"sync"
 
@@ -15,8 +15,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/hugr-lab/query-engine/types"
+	"github.com/coder/websocket"
 )
 
 // --- Options ---
@@ -62,12 +62,13 @@ type ipcSubMsg struct {
 
 // SubscriptionConn is a single WebSocket connection multiplexing subscriptions.
 type SubscriptionConn struct {
-	conn   *websocket.Conn
-	mu     sync.Mutex // protects conn writes
+	conn *websocket.Conn
+	mu   sync.Mutex // protects conn writes
 	subs   map[string]*activeSub
 	subsMu sync.Mutex
 	ctx    context.Context
 	cancel context.CancelFunc
+	done   chan struct{} // closed when readLoop exits
 }
 
 // activeSub tracks one subscription on the connection.
@@ -77,6 +78,7 @@ type activeSub struct {
 	eventCh chan types.SubscriptionEvent
 	pipes   map[string]*batchPipe // one pipe per path, persists across ticks
 	done    bool
+	sub     *types.Subscription // back-pointer to set Err on subscription_error
 }
 
 // Subscribe creates a subscription on this connection.
@@ -86,10 +88,22 @@ func (sc *SubscriptionConn) Subscribe(ctx context.Context, query string, vars ma
 	}
 
 	subID := uuid.NewString()
-	sub := &activeSub{eventCh: make(chan types.SubscriptionEvent, 16)}
+	as := &activeSub{eventCh: make(chan types.SubscriptionEvent, 16)}
+
+	result := &types.Subscription{
+		Events: as.eventCh,
+		Cancel: func() {
+			sc.mu.Lock()
+			data, _ := json.Marshal(ipcSubMsg{Type: "unsubscribe", SubscriptionID: subID})
+			_ = sc.conn.Write(sc.ctx, websocket.MessageText, data)
+			sc.mu.Unlock()
+			sc.removeSub(subID)
+		},
+	}
+	as.sub = result
 
 	sc.subsMu.Lock()
-	sc.subs[subID] = sub
+	sc.subs[subID] = as
 	sc.subsMu.Unlock()
 
 	msg := ipcSubMsg{
@@ -102,23 +116,20 @@ func (sc *SubscriptionConn) Subscribe(ctx context.Context, query string, vars ma
 		msg.Role = id.Role
 	}
 
+	data, err := json.Marshal(msg)
+	if err != nil {
+		sc.removeSub(subID)
+		return nil, fmt.Errorf("marshal subscribe: %w", err)
+	}
 	sc.mu.Lock()
-	err := sc.conn.WriteJSON(msg)
+	err = sc.conn.Write(sc.ctx, websocket.MessageText, data)
 	sc.mu.Unlock()
 	if err != nil {
 		sc.removeSub(subID)
 		return nil, fmt.Errorf("send subscribe: %w", err)
 	}
 
-	return &types.Subscription{
-		Events: sub.eventCh,
-		Cancel: func() {
-			sc.mu.Lock()
-			_ = sc.conn.WriteJSON(ipcSubMsg{Type: "unsubscribe", SubscriptionID: subID})
-			sc.mu.Unlock()
-			sc.removeSub(subID)
-		},
-	}, nil
+	return result, nil
 }
 
 // Count returns the number of active subscriptions.
@@ -128,24 +139,27 @@ func (sc *SubscriptionConn) Count() int {
 	return len(sc.subs)
 }
 
-// Close closes the connection and all subscriptions.
+// Close gracefully shuts down the WebSocket connection.
+// conn.Close sends the close frame; readLoop's conn.Read sees it and
+// returns, triggering deferred cancel() + closeAllSubs().
 func (sc *SubscriptionConn) Close() {
-	sc.cancel()
-	_ = sc.conn.Close()
+	sc.conn.Close(websocket.StatusNormalClosure, "shutdown")
+	<-sc.done
 }
 
 func (sc *SubscriptionConn) readLoop() {
+	defer close(sc.done)
 	defer sc.cancel()
 	defer sc.closeAllSubs()
 
 	for {
-		msgType, data, err := sc.conn.ReadMessage()
+		msgType, data, err := sc.conn.Read(sc.ctx)
 		if err != nil {
 			return
 		}
 
 		switch msgType {
-		case websocket.TextMessage:
+		case websocket.MessageText:
 			var msg ipcSubMsg
 			if err := json.Unmarshal(data, &msg); err != nil {
 				continue
@@ -159,11 +173,16 @@ func (sc *SubscriptionConn) readLoop() {
 			case "subscription_complete", "subscription_error":
 				if msg.Type == "subscription_error" {
 					log.Printf("subscription %s error: %s", msg.SubscriptionID, msg.Error)
+					sc.subsMu.Lock()
+					if as := sc.subs[msg.SubscriptionID]; as != nil && as.sub != nil {
+						as.sub.SetErr(errors.New(msg.Error))
+					}
+					sc.subsMu.Unlock()
 				}
 				sc.completeSub(msg.SubscriptionID)
 			}
 
-		case websocket.BinaryMessage:
+		case websocket.MessageBinary:
 			// Arrow IPC batch with subscription metadata in schema.
 			// Read subscription_id and path from Arrow schema metadata.
 			reader, err := ipc.NewReader(bytes.NewReader(data), ipc.WithAllocator(memory.DefaultAllocator))
@@ -439,54 +458,29 @@ func (c *Client) dialSubscriptionConn(ctx context.Context) (*SubscriptionConn, e
 	wsURL := c.url
 	wsURL = strings.TrimSuffix(wsURL, "/query")
 	wsURL = strings.TrimSuffix(wsURL, "/ipc")
-	wsURL = strings.Replace(wsURL, "http://", "ws://", 1)
-	wsURL = strings.Replace(wsURL, "https://", "wss://", 1)
 	wsURL += "/ipc"
 
-	header := http.Header{}
-	collectAuthHeaders(c.config.Transport, header)
-
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
+	// Use the request context only for the dial handshake.
+	// The connection itself must outlive the first Subscribe() call
+	// because it is shared via the pool across multiple subscriptions.
+	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+		HTTPClient: c.c,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("websocket connect: %w", err)
 	}
+	conn.SetReadLimit(64 * 1024 * 1024) // 64MB for Arrow IPC batches
 
-	connCtx, connCancel := context.WithCancel(ctx)
+	connCtx, connCancel := context.WithCancel(context.Background())
 	sc := &SubscriptionConn{
 		conn:   conn,
 		subs:   make(map[string]*activeSub),
 		ctx:    connCtx,
 		cancel: connCancel,
+		done:   make(chan struct{}),
 	}
 	go sc.readLoop()
 	return sc, nil
-}
-
-// collectAuthHeaders walks the transport chain and collects auth headers for WebSocket dial.
-func collectAuthHeaders(rt http.RoundTripper, header http.Header) {
-	if rt == nil {
-		return
-	}
-	switch t := rt.(type) {
-	case *apiKeyTransport:
-		h := t.apiKeyHeader
-		if h == "" {
-			h = "x-hugr-api-key"
-		}
-		header.Set(h, t.apiKey)
-		collectAuthHeaders(t.transport, header)
-	case *tokenTransport:
-		header.Set("Authorization", "Bearer "+t.token)
-		collectAuthHeaders(t.transport, header)
-	case *timezoneTransport:
-		collectAuthHeaders(t.transport, header)
-	case *noTimezoneTransport:
-		collectAuthHeaders(t.transport, header)
-	case *withUserRoleTransport:
-		collectAuthHeaders(t.transport, header)
-	case *withUserInfoTransport:
-		collectAuthHeaders(t.transport, header)
-	}
 }
 
 // CloseSubscriptions closes all pool connections.
