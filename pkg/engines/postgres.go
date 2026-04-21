@@ -572,6 +572,20 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 		return fmt.Sprintf("(%s)::JSON", Ident(f.Alias)), nil
 	}
 
+	// Timestamp / DateTime: apply the same RFC 3339 Nano formatting the
+	// scalar's ToOutputSQL emits on the generic fields-transform path
+	// (see pkg/catalog/types/scalar_timestamp.go). Without this, PG-
+	// sourced by_pk / function-call queries fall through this caster
+	// with a bare Ident() and DuckDB's JSON cast emits the native
+	// "YYYY-MM-DD HH:MM:SS.ffffff+HH" shape — diverging from the
+	// native-Arrow table path where RecordToJSON already emits Nano.
+	if toJSON {
+		name := f.Definition.Type.Name()
+		if transform := sdl.ToOutputSQL(name, Ident(f.Alias), false); transform != Ident(f.Alias) {
+			return transform, nil
+		}
+	}
+
 	return Ident(f.Alias), nil
 }
 
