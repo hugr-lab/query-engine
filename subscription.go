@@ -14,7 +14,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
-	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -92,7 +91,6 @@ func (s *Service) executeQueryTick(ctx context.Context, queries []base.QueryRequ
 	}
 
 	provider := s.schema.Provider()
-	ctx = planner.ContextWithRawResultsFlag(ctx)
 
 	var wg sync.WaitGroup
 	for path, q := range qm {

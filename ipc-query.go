@@ -16,7 +16,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -75,7 +74,6 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 		return writeErrorsToIPC(mw, "", gqlerror.List{gqlerror.Errorf("%v", err)})
 	}
 
-	ctx = planner.ContextWithRawResultsFlag(ctx)
 	if req.ValidateOnly {
 		ctx = types.ContextWithValidateOnly(ctx)
 	}

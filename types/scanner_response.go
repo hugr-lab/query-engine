@@ -71,6 +71,40 @@ func joinPath(prefix, k string) string {
 	return prefix + "." + k
 }
 
+// Scan is a generic dispatcher picking ScanTable vs ScanObject based on
+// T's kind: slice → ScanTable, everything else → ScanObject. The same
+// Go struct with orb.Geometry / orb.Point / time.Time fields works on
+// both paths — the underlying scanners share geometry / time handling
+// semantics.
+//
+// Returns the zero value of T plus the underlying error on failure.
+// resp == nil returns ErrNoData.
+//
+// Originally contributed as PR #102 (Dmitriy Titov / DmitriyVTitov).
+// Polished here to survive interface-valued T and to use the ErrNoData
+// sentinel for consistency with the other scanner entry points.
+func Scan[T any](resp *Response, path string) (T, error) {
+	var zero T
+	if resp == nil {
+		return zero, ErrNoData
+	}
+	// Use a typed-nil *T to derive T's reflect kind; works even when T
+	// is an interface whose zero value is nil.
+	t := reflect.TypeOf((*T)(nil)).Elem()
+	if t != nil && t.Kind() == reflect.Slice {
+		var dest T
+		if err := resp.ScanTable(path, &dest); err != nil {
+			return zero, err
+		}
+		return dest, nil
+	}
+	var dest T
+	if err := resp.ScanObject(path, &dest); err != nil {
+		return zero, err
+	}
+	return dest, nil
+}
+
 // Table returns the ArrowTable at path, or ErrWrongDataPath if the path is
 // missing or the leaf is not an ArrowTable. The returned table is still owned
 // by the response; callers must not Release it.
