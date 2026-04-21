@@ -170,7 +170,7 @@ func (r *Response) Err() error {
 // Error semantics preserved from the pre-refactor implementation:
 // missing path segments → ErrWrongDataPath, present-but-nil leaves →
 // ErrNoData.
-func (r *Response) ScanData(path string, dest interface{}) error {
+func (r *Response) ScanData(path string, dest any) error {
 	if r.Data == nil {
 		return ErrNoData
 	}
@@ -183,7 +183,7 @@ var (
 	ErrGeometryDecode = errors.New("geometry decode")
 )
 
-func scanRecursive(path string, data any, dest interface{}) error {
+func scanRecursive(path string, data any, dest any) error {
 	if data == nil {
 		return ErrNoData
 	}
