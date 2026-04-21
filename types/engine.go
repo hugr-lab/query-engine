@@ -150,6 +150,26 @@ func (r *Response) Err() error {
 	return r.Errors
 }
 
+// ScanData navigates Response.Data down a dotted path and deserialises
+// the leaf into dest. It is the legacy generic scan API, kept alongside
+// the typed Scan[T] / ScanObject / ScanTable for backwards compatibility.
+//
+// Since the unified-scan refactor, ScanData honours geometry and time
+// decoding identically to the newer helpers:
+//
+//   - Table leaves (types.ArrowTable) marshal via ArrowTable.MarshalJSON,
+//     which runs through the extension-aware RecordToJSON. Geometry
+//     emits as GeoJSON objects and timestamps as RFC3339Nano — then the
+//     geometry-aware JSON decoder in scanObject picks them up into
+//     orb.Geometry / time.Time fields on the destination struct.
+//   - Object leaves (*types.JsonValue) pass their raw bytes directly to
+//     scanObject, skipping a redundant remarshal.
+//   - Scalar / map / slice leaves marshal via stdlib json and go through
+//     the same scanObject decoder.
+//
+// Error semantics preserved from the pre-refactor implementation:
+// missing path segments → ErrWrongDataPath, present-but-nil leaves →
+// ErrNoData.
 func (r *Response) ScanData(path string, dest interface{}) error {
 	if r.Data == nil {
 		return ErrNoData
@@ -168,11 +188,15 @@ func scanRecursive(path string, data any, dest interface{}) error {
 		return ErrNoData
 	}
 	if path == "" {
+		// *JsonValue carries raw JSON bytes already — skip the remarshal.
+		if jv, ok := data.(*JsonValue); ok {
+			return scanObject([]byte(*jv), dest)
+		}
 		b, err := json.Marshal(data)
 		if err != nil {
 			return err
 		}
-		return json.Unmarshal(b, dest)
+		return scanObject(b, dest)
 	}
 	pp := strings.SplitN(path, ".", 2)
 	switch v := data.(type) {

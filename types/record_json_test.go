@@ -57,6 +57,9 @@ func TestRecordToJSON_Primitives(t *testing.T) {
 }
 
 func TestRecordToJSON_TimestampRFC3339Nano(t *testing.T) {
+	// Format = Go's time.RFC3339Nano: trailing zeros trimmed, UTC → "Z".
+	// DuckDB side emits the same shape via rtrim + CASE in
+	// scalar_timestamp.go:timestampTZSQL.
 	ts := time.Date(2024, 3, 15, 12, 30, 45, 123456789, time.UTC)
 	cases := []struct {
 		name     string
@@ -65,10 +68,10 @@ func TestRecordToJSON_TimestampRFC3339Nano(t *testing.T) {
 		val      int64
 		expected string
 	}{
-		{"second-utc", arrow.Second, "", ts.Unix(), `"2024-03-15T12:30:45Z"`},
-		{"milli-utc", arrow.Millisecond, "", ts.UnixMilli(), `"2024-03-15T12:30:45.123Z"`},
-		{"micro-utc", arrow.Microsecond, "", ts.UnixMicro(), `"2024-03-15T12:30:45.123456Z"`},
-		{"nano-utc", arrow.Nanosecond, "", ts.UnixNano(), `"2024-03-15T12:30:45.123456789Z"`},
+		{"second-utc", arrow.Second, "UTC", ts.Unix(), `"2024-03-15T12:30:45Z"`},
+		{"milli-utc", arrow.Millisecond, "UTC", ts.UnixMilli(), `"2024-03-15T12:30:45.123Z"`},
+		{"micro-utc", arrow.Microsecond, "UTC", ts.UnixMicro(), `"2024-03-15T12:30:45.123456Z"`},
+		{"nano-utc", arrow.Nanosecond, "UTC", ts.UnixNano(), `"2024-03-15T12:30:45.123456789Z"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -87,11 +90,28 @@ func TestRecordToJSON_TimestampRFC3339Nano(t *testing.T) {
 	}
 }
 
+func TestRecordToJSON_TimestampNaive(t *testing.T) {
+	// TimestampType with empty TimeZone = naive (DateTime in the GraphQL
+	// schema). Rendered as-if-UTC so the output is strict RFC 3339 Nano
+	// and parseable by Go's time.Time.UnmarshalJSON.
+	rec := recordFromFields(t, []arrow.Field{
+		{Name: "t", Type: &arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: ""}},
+	}, func(b *array.RecordBuilder) {
+		b.Field(0).(*array.TimestampBuilder).Append(arrow.Timestamp(time.Date(2024, 3, 15, 12, 30, 45, 123456000, time.UTC).UnixMicro()))
+	})
+	defer rec.Release()
+	got := recordToJSONString(t, rec, false, nil)
+	want := `{"t":"2024-03-15T12:30:45.123456Z"}`
+	if got != want {
+		t.Fatalf("got %s want %s", got, want)
+	}
+}
+
 func TestRecordToJSON_TimestampWithTimezone(t *testing.T) {
 	rec := recordFromFields(t, []arrow.Field{
 		{Name: "t", Type: &arrow.TimestampType{Unit: arrow.Second, TimeZone: "America/New_York"}},
 	}, func(b *array.RecordBuilder) {
-		// 2024-03-15T12:00:00 UTC = 2024-03-15T08:00:00-04:00.
+		// 2024-03-15T12:00:00 UTC = 2024-03-15T08:00:00-04:00 (DST).
 		b.Field(0).(*array.TimestampBuilder).Append(arrow.Timestamp(time.Date(2024, 3, 15, 12, 0, 0, 0, time.UTC).Unix()))
 	})
 	defer rec.Release()
@@ -100,7 +120,7 @@ func TestRecordToJSON_TimestampWithTimezone(t *testing.T) {
 		t.Fatalf("expected TZ-adjusted timestamp, got %s", got)
 	}
 	if !strings.Contains(got, `-04:00`) && !strings.Contains(got, `-05:00`) {
-		t.Fatalf("expected offset in output, got %s", got)
+		t.Fatalf("expected offset with colon, got %s", got)
 	}
 }
 

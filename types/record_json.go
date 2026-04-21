@@ -235,22 +235,32 @@ func emitArrayRange(w io.Writer, values arrow.Array, start, end int, path string
 	return err
 }
 
-// emitTimestamp formats an Arrow timestamp cell as an RFC3339Nano string,
-// honouring the column's unit + timezone metadata.
+// emitTimestamp formats an Arrow timestamp cell as RFC 3339 Nano — the
+// same shape the wrapped-JSON object path produces via DuckDB's
+// ToOutputSQL, so server and client emit byte-identical strings:
+//
+//   - TIMESTAMPTZ (TimeZone set, UTC) → "2024-03-15T12:30:45.123456789Z"
+//   - TIMESTAMPTZ (non-UTC)           → "…+03:00"
+//   - TIMESTAMP / DateTime (no tz)    → "2024-03-15T12:30:45.123456789Z"
+//
+// Naive timestamps (TimeZone empty) are treated as UTC and emitted with
+// a "Z" suffix so the output is parseable by Go's time.Time.UnmarshalJSON
+// and compatible with strict JSON consumers. Trailing fractional zeros
+// are trimmed (Go's RFC3339Nano layout uses "9"s which elide zeros);
+// DuckDB's emit path mirrors this via rtrim(..., '0') + rtrim('.').
 func emitTimestamp(w io.Writer, a *array.Timestamp, row int) error {
 	dt := a.DataType().(*arrow.TimestampType)
 	v := int64(a.Value(row))
 	nanos := v * unitNanos(dt.Unit)
 	t := time.Unix(0, nanos).UTC()
-	if dt.TimeZone != "" {
+	if dt.TimeZone != "" && dt.TimeZone != "UTC" {
 		loc, err := time.LoadLocation(dt.TimeZone)
 		if err != nil {
 			return fmt.Errorf("timestamp tz %q: %w", dt.TimeZone, err)
 		}
 		t = t.In(loc)
 	}
-	s := t.Format(time.RFC3339Nano)
-	return writeJSON(w, s)
+	return writeJSON(w, t.Format(time.RFC3339Nano))
 }
 
 func unitNanos(u arrow.TimeUnit) int64 {

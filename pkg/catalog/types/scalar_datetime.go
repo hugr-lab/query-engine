@@ -21,6 +21,7 @@ var (
 	_ FieldArgumentsProvider  = (*datetimeScalar)(nil)
 	_ ValueParser             = (*datetimeScalar)(nil)
 	_ ArrayParser             = (*datetimeScalar)(nil)
+	_ SQLOutputTransformer    = (*datetimeScalar)(nil)
 )
 
 type datetimeScalar struct{}
@@ -131,4 +132,37 @@ func (s *datetimeScalar) ParseArray(v any) (any, error) {
 	default:
 		return nil, fmt.Errorf("invalid DateTime array value: %v", v)
 	}
+}
+
+// ToOutputSQL emits the naive date-time in a canonical RFC 3339 form
+// without a timezone offset — the format matches what
+// RecordToJSON.emitTimestamp produces for a types.DateTime (an Arrow
+// Timestamp whose TimeZone field is empty):
+//
+//	"YYYY-MM-DDTHH:MM:SS.ffffff"
+//
+// raw=true returns the column unchanged; the native-Arrow table path
+// formats from the Arrow cell on the Go side using the same layout.
+func (s *datetimeScalar) ToOutputSQL(sql string, raw bool) string {
+	if raw {
+		return sql
+	}
+	return datetimeSQL(sql)
+}
+
+// ToStructFieldSQL applies the same RFC 3339 formatting inside a
+// STRUCT_PACK nested field.
+func (s *datetimeScalar) ToStructFieldSQL(sql string) string {
+	return datetimeSQL(sql)
+}
+
+// datetimeSQL emits a naive DateTime as RFC3339Nano-with-Z-suffix: the
+// wall-clock time is rendered as-if-UTC so the string is strictly-valid
+// RFC 3339 and parseable by Go's time.Time.UnmarshalJSON. Matches
+// record_json.go:emitTimestamp when the Arrow column has no TimeZone.
+// Trailing fractional zeros are trimmed.
+func datetimeSQL(sql string) string {
+	return fmt.Sprintf(
+		`rtrim(rtrim(strftime(%s, '%%Y-%%m-%%dT%%H:%%M:%%S.%%f'), '0'), '.') || 'Z'`,
+		sql)
 }

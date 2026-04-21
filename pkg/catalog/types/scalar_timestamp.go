@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -19,6 +20,7 @@ var (
 	_ FieldArgumentsProvider  = (*timestampScalar)(nil)
 	_ ValueParser             = (*timestampScalar)(nil)
 	_ ArrayParser             = (*timestampScalar)(nil)
+	_ SQLOutputTransformer    = (*timestampScalar)(nil)
 )
 
 type timestampScalar struct{}
@@ -135,4 +137,51 @@ func (s *timestampScalar) ParseValue(v any) (any, error) {
 
 func (s *timestampScalar) ParseArray(v any) (any, error) {
 	return ParseScalarArray[time.Time](v)
+}
+
+// ToOutputSQL emits the timestamp in a canonical RFC 3339 form so that
+// the wrapped-JSON object path (DuckDB's (_data::JSON)::TEXT) and the
+// native-Arrow table path (Go's RecordToJSON emitTimestamp) produce
+// byte-identical strings:
+//
+//	"YYYY-MM-DDTHH:MM:SS.ffffff±HH:MM"
+//
+// DuckDB's %z specifier produces "±HHMM" (no colon) — this formatter
+// splices the colon in manually.
+//
+// `raw=true` (list-typed queries on the native Arrow path) returns the
+// column unchanged — RecordToJSON on the Go side formats from the
+// native Arrow timestamp using the same layout.
+func (s *timestampScalar) ToOutputSQL(sql string, raw bool) string {
+	if raw {
+		return sql
+	}
+	return timestampTZSQL(sql)
+}
+
+// ToStructFieldSQL applies the same RFC 3339 formatting inside a
+// STRUCT_PACK field position — nested timestamps in wrapped-JSON
+// results (e.g. a struct column inside a table row) get formatted
+// identically to top-level ones.
+func (s *timestampScalar) ToStructFieldSQL(sql string) string {
+	return timestampTZSQL(sql)
+}
+
+// timestampTZSQL produces an RFC3339Nano-compatible string from a DuckDB
+// TIMESTAMP(TZ): trailing fractional zeros trimmed (so "12:30:45.000000"
+// becomes "12:30:45"), and "Z" for UTC instead of "+00:00" — byte-
+// identical to Go's time.Time.Format(time.RFC3339Nano).
+//
+// DuckDB's %f always emits 6 microsecond digits; rtrim(..., '0') strips
+// trailing zeros, a follow-up rtrim('.') drops the dangling dot when
+// the fraction is all zeros.
+//
+// DuckDB's %z emits "±HHMM"; splice in the colon and collapse "+0000"
+// to "Z".
+func timestampTZSQL(sql string) string {
+	return fmt.Sprintf(
+		`rtrim(rtrim(strftime(%[1]s, '%%Y-%%m-%%dT%%H:%%M:%%S.%%f'), '0'), '.') || `+
+			`CASE WHEN strftime(%[1]s, '%%z') = '+0000' THEN 'Z' `+
+			`ELSE substr(strftime(%[1]s, '%%z'), 1, 3) || ':' || substr(strftime(%[1]s, '%%z'), 4, 2) END`,
+		sql)
 }
