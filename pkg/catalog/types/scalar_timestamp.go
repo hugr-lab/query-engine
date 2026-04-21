@@ -172,16 +172,17 @@ func (s *timestampScalar) ToStructFieldSQL(sql string) string {
 // becomes "12:30:45"), and "Z" for UTC instead of "+00:00" — byte-
 // identical to Go's time.Time.Format(time.RFC3339Nano).
 //
-// DuckDB's %f always emits 6 microsecond digits; rtrim(..., '0') strips
-// trailing zeros, a follow-up rtrim('.') drops the dangling dot when
-// the fraction is all zeros.
-//
-// DuckDB's %z emits "±HHMM"; splice in the colon and collapse "+0000"
-// to "Z".
+// The offset is composed via `extract(timezone from col)` (seconds) +
+// printf, not via strftime('%z'): DuckDB's %z emits "±HH" for whole-
+// hour offsets and "±HHMM" otherwise, which breaks naive substr-based
+// colon injection. extract() returns DOUBLE so we cast to BIGINT for
+// printf's %d specifier.
 func timestampTZSQL(sql string) string {
 	return fmt.Sprintf(
 		`rtrim(rtrim(strftime(%[1]s, '%%Y-%%m-%%dT%%H:%%M:%%S.%%f'), '0'), '.') || `+
-			`CASE WHEN strftime(%[1]s, '%%z') = '+0000' THEN 'Z' `+
-			`ELSE substr(strftime(%[1]s, '%%z'), 1, 3) || ':' || substr(strftime(%[1]s, '%%z'), 4, 2) END`,
+			`CASE WHEN extract(timezone from %[1]s) = 0 THEN 'Z' `+
+			`ELSE printf('%%+03d:%%02d', `+
+			`(extract(timezone from %[1]s) / 3600)::BIGINT, `+
+			`(abs((extract(timezone from %[1]s) %% 3600) / 60))::BIGINT) END`,
 		sql)
 }
