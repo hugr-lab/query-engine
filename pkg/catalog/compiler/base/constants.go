@@ -25,7 +25,6 @@ const (
 const (
 	WithDeletedDirectiveName = "with_deleted"
 	StatsDirectiveName       = "stats"
-	RawResultsDirectiveName  = "raw"
 	UnnestDirectiveName      = "unnest"
 	NoPushdownDirectiveName  = "no_pushdown"
 	AtDirectiveName          = "at"
