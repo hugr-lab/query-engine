@@ -13,9 +13,30 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
+// GeometryInfo describes the wire format of a single geometry field inside an
+// Arrow table or response. Same vocabulary as the IPC X-Hugr-Geometry-Fields
+// header: Format is one of "WKB", "GeoJSON", or "GeoJSONString".
+//
+// Keys in map[string]GeometryInfo are dotted field paths resolvable against
+// the Arrow schema; empty string means the whole row / value.
+type GeometryInfo struct {
+	SRID   string `json:"srid" msgpack:"srid"`
+	Format string `json:"format" msgpack:"format"`
+}
+
 type ArrowTable interface {
 	SetInfo(info string)
 	Info() string
+	// SetGeometryInfo attaches per-field geometry metadata to this table.
+	// Populated by the query planner (engine side) or the IPC client reader
+	// (client side). Idempotent — last call wins. Not safe for concurrent
+	// set + read; the contract is "populate once before handing to consumers".
+	SetGeometryInfo(info map[string]GeometryInfo)
+	// GeometryInfo returns the attached per-field geometry metadata, or an
+	// empty non-nil map if none was set. Consumers use it to decide how to
+	// render / decode nested utf8 geometry columns on the JSON path, and
+	// (optionally) to dispatch the scanner without a byte-peek heuristic.
+	GeometryInfo() map[string]GeometryInfo
 	Retain()
 	Release()
 	MarshalJSON() ([]byte, error)
@@ -31,9 +52,10 @@ type ArrowTable interface {
 var _ ArrowTable = (*ArrowTableChunked)(nil)
 
 type ArrowTableChunked struct {
-	chunks  []arrow.RecordBatch
-	wrapped bool
-	asArray bool
+	chunks   []arrow.RecordBatch
+	wrapped  bool
+	asArray  bool
+	geomInfo map[string]GeometryInfo
 }
 
 func NewArrowTable() *ArrowTableChunked {
@@ -72,6 +94,17 @@ func (t *ArrowTableChunked) Info() string {
 		info = append(info, "asArray")
 	}
 	return strings.Join(info, ",")
+}
+
+func (t *ArrowTableChunked) SetGeometryInfo(info map[string]GeometryInfo) {
+	t.geomInfo = info
+}
+
+func (t *ArrowTableChunked) GeometryInfo() map[string]GeometryInfo {
+	if t.geomInfo == nil {
+		return map[string]GeometryInfo{}
+	}
+	return t.geomInfo
 }
 
 func (t *ArrowTableChunked) Append(rec arrow.RecordBatch) {
@@ -420,6 +453,12 @@ func (t *ArrowTableChunked) DecodeMsgpack(dec *msgpack.Decoder) error {
 	if err != nil {
 		return err
 	}
+	// Optional trailing field: geometry info map. Absent on legacy payloads
+	// produced before the field was introduced — tolerate io.EOF and leave
+	// geomInfo empty.
+	if err := dec.Decode(&t.geomInfo); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
 	if len(encoded) == 0 {
 		return nil
 	}
@@ -471,7 +510,10 @@ func (t *ArrowTableChunked) EncodeMsgpack(enc *msgpack.Encoder) error {
 	if err != nil {
 		return err
 	}
-	return enc.Encode(encoded)
+	if err := enc.Encode(encoded); err != nil {
+		return err
+	}
+	return enc.Encode(t.geomInfo)
 }
 
 func encodeRecordsToIPC(rr []arrow.RecordBatch) ([]byte, error) {
@@ -505,9 +547,10 @@ func (v *JsonValue) MarshalJSON() ([]byte, error) {
 var _ ArrowTable = (*ArrowTableStream)(nil)
 
 type ArrowTableStream struct {
-	reader  array.RecordReader
-	wrapped bool
-	asArray bool
+	reader   array.RecordReader
+	wrapped  bool
+	asArray  bool
+	geomInfo map[string]GeometryInfo
 }
 
 func NewArrowTableStream(reader array.RecordReader) *ArrowTableStream {
@@ -530,6 +573,17 @@ func (t *ArrowTableStream) Info() string {
 func (t *ArrowTableStream) SetInfo(info string) {
 	t.wrapped = strings.Contains(info, "wrapped")
 	t.asArray = strings.Contains(info, "asArray")
+}
+
+func (t *ArrowTableStream) SetGeometryInfo(info map[string]GeometryInfo) {
+	t.geomInfo = info
+}
+
+func (t *ArrowTableStream) GeometryInfo() map[string]GeometryInfo {
+	if t.geomInfo == nil {
+		return map[string]GeometryInfo{}
+	}
+	return t.geomInfo
 }
 
 func (t *ArrowTableStream) Release() {
@@ -701,6 +755,11 @@ func (t *ArrowTableStream) DecodeMsgpack(dec *msgpack.Decoder) error {
 	if err != nil {
 		return err
 	}
+	// Optional trailing field: geometry info map. Tolerate io.EOF for
+	// legacy payloads.
+	if err := dec.Decode(&t.geomInfo); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
 	if len(encoded) == 0 {
 		return nil
 	}
@@ -755,7 +814,10 @@ func (t *ArrowTableStream) EncodeMsgpack(enc *msgpack.Encoder) error {
 	if err != nil {
 		return err
 	}
-	return enc.Encode(encoded)
+	if err := enc.Encode(encoded); err != nil {
+		return err
+	}
+	return enc.Encode(t.geomInfo)
 }
 
 func RecordsColNums(rr []arrow.RecordBatch) int64 {

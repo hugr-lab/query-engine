@@ -89,8 +89,13 @@ func (r *Response) Table(path string) (ArrowTable, error) {
 	return t, nil
 }
 
-// ScanObject behaves like ScanData for non-table paths; returns
+// ScanObject decodes a non-table leaf at `path` into `dest`. Returns
 // ErrWrongDataPath if the path refers to an ArrowTable.
+//
+// Destinations containing orb.Geometry / orb.Point / … fields are decoded
+// via the reflect-plan-backed geometry-aware decoder (see scanner_object.go).
+// Destinations without such fields fall through to stdlib json.Unmarshal
+// as before — no performance change for plain structs.
 func (r *Response) ScanObject(path string, dest any) error {
 	if r == nil || r.Data == nil {
 		return ErrNoData
@@ -102,11 +107,18 @@ func (r *Response) ScanObject(path string, dest any) error {
 	if _, isTable := v.(ArrowTable); isTable {
 		return ErrWrongDataPath
 	}
+	// *JsonValue already holds raw JSON bytes — skip the remarshal step.
+	if jv, ok := v.(*JsonValue); ok {
+		if jv == nil {
+			return ErrNoData
+		}
+		return scanObject([]byte(*jv), dest)
+	}
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(b, dest)
+	return scanObject(b, dest)
 }
 
 // ScanTable reads every row of the ArrowTable at path into dest. dest MUST be
