@@ -135,7 +135,15 @@ func ParseIntervalValue(v any) (time.Duration, error) {
 var intervalRegex = regexp.MustCompile(`(?i)(\d+)\s*(day|hour|minute|second)s?`)
 
 func ParseSQLInterval(s string) (time.Duration, error) {
-	// Try Go duration format first: "10m", "1h30m", "5s", "10m2s"
+	// Try ISO 8601 duration first (what RecordToJSON emits for intervals):
+	// "PT2H", "P1D", "P1M2DT3H4M5.6S", "-PT1H", "PT-1H", "PT0S".
+	if len(s) > 0 && (s[0] == 'P' || (len(s) > 1 && s[0] == '-' && s[1] == 'P')) {
+		if d, err := parseISO8601Duration(s); err == nil {
+			return d, nil
+		}
+	}
+
+	// Try Go duration format: "10m", "1h30m", "5s", "10m2s"
 	if d, err := time.ParseDuration(s); err == nil {
 		return d, nil
 	}
@@ -172,6 +180,77 @@ func ParseSQLInterval(s string) (time.Duration, error) {
 	}
 
 	return 0, fmt.Errorf("invalid interval format: %s", s)
+}
+
+// isoDurationRegex matches ISO 8601 durations. Canonical form is
+// P[nY][nM][nD][T[nH][nM][nS]] with at least one component. Fractional
+// seconds are allowed (dot-separated). A leading "-" negates the whole
+// duration; a "-" immediately after "T" negates only the time portion
+// (our emitter uses this form for negative MonthDayNano intervals).
+//
+// Years and months have no exact duration; we approximate Y = 365d and
+// M = 30d so roundtripping through time.Duration is lossy across those
+// calendar units. Days, hours, minutes, and seconds are exact.
+var isoDurationRegex = regexp.MustCompile(
+	`^(-)?P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)D)?(?:T(-)?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$`,
+)
+
+func parseISO8601Duration(s string) (time.Duration, error) {
+	m := isoDurationRegex.FindStringSubmatch(s)
+	if m == nil {
+		return 0, fmt.Errorf("invalid ISO 8601 duration: %s", s)
+	}
+	// m[1]=whole-sign, m[2]=years, m[3]=months, m[4]=days,
+	// m[5]=time-sign, m[6]=hours, m[7]=minutes, m[8]=seconds(frac).
+	hasAny := false
+	for _, g := range m[2:] {
+		if g != "" && g != "-" {
+			hasAny = true
+			break
+		}
+	}
+	if !hasAny {
+		return 0, fmt.Errorf("invalid ISO 8601 duration: %s", s)
+	}
+
+	const day = 24 * time.Hour
+	var d time.Duration
+	if m[2] != "" {
+		n, _ := strconv.ParseInt(m[2], 10, 64)
+		d += time.Duration(n) * 365 * day
+	}
+	if m[3] != "" {
+		n, _ := strconv.ParseInt(m[3], 10, 64)
+		d += time.Duration(n) * 30 * day
+	}
+	if m[4] != "" {
+		n, _ := strconv.ParseInt(m[4], 10, 64)
+		d += time.Duration(n) * day
+	}
+	var t time.Duration
+	if m[6] != "" {
+		n, _ := strconv.ParseInt(m[6], 10, 64)
+		t += time.Duration(n) * time.Hour
+	}
+	if m[7] != "" {
+		n, _ := strconv.ParseInt(m[7], 10, 64)
+		t += time.Duration(n) * time.Minute
+	}
+	if m[8] != "" {
+		secs, err := strconv.ParseFloat(m[8], 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid seconds in duration %q: %w", s, err)
+		}
+		t += time.Duration(secs * float64(time.Second))
+	}
+	if m[5] == "-" {
+		t = -t
+	}
+	d += t
+	if m[1] == "-" {
+		d = -d
+	}
+	return d, nil
 }
 
 func IntervalToSQLValue(v any) (string, error) {
