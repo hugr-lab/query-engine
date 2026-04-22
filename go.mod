@@ -120,7 +120,3 @@ require (
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
-
-// Local development replace — use in-tree types sub-module.
-// MUST be removed before release.
-replace github.com/hugr-lab/query-engine/types => ./types

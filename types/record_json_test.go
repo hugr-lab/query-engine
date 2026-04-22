@@ -159,6 +159,40 @@ func TestRecordToJSON_Date(t *testing.T) {
 	}
 }
 
+func TestComposeISODuration(t *testing.T) {
+	// Human-readable normalised ISO 8601. Round-trip equivalent to the
+	// un-normalised form but much easier to skim.
+	cases := []struct {
+		name   string
+		months int32
+		days   int32
+		nanos  int64
+		want   string
+	}{
+		{"zero", 0, 0, 0, "PT0S"},
+		{"2 hours", 0, 0, 7200 * int64(time.Second), "PT2H"},
+		{"1h30m", 0, 0, 5400 * int64(time.Second), "PT1H30M"},
+		{"1m30s", 0, 0, 90 * int64(time.Second), "PT1M30S"},
+		{"90 seconds", 0, 0, 90 * int64(time.Second), "PT1M30S"},
+		{"1.5 seconds", 0, 0, 1_500_000_000, "PT1.5S"},
+		{"0.5 seconds", 0, 0, 500_000_000, "PT0.5S"},
+		{"123 nanos", 0, 0, 123, "PT0.000000123S"},
+		{"1 day", 0, 1, 0, "P1D"},
+		{"1 day 2 hours", 0, 1, 7200 * int64(time.Second), "P1DT2H"},
+		{"2 months", 2, 0, 0, "P2M"},
+		{"year-style", 12, 15, 3600 * int64(time.Second), "P12M15DT1H"},
+		{"negative", 0, 0, -7200 * int64(time.Second), "PT-2H"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := composeISODuration(tc.months, tc.days, tc.nanos)
+			if got != tc.want {
+				t.Fatalf("got %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRecordToJSON_Decimal128(t *testing.T) {
 	dt := &arrow.Decimal128Type{Precision: 12, Scale: 3}
 	rec := recordFromFields(t, []arrow.Field{

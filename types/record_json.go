@@ -300,24 +300,98 @@ func emitTime(w io.Writer, v int64, unit arrow.TimeUnit) error {
 	return writeJSON(w, t.Format("15:04:05.000000000"))
 }
 
-// emitMonthInterval emits ISO 8601 duration like "P2M".
+// emitMonthInterval emits ISO 8601 duration like "P2M", or "PT0S" for
+// a zero-month interval (ISO requires at least one component).
 func emitMonthInterval(w io.Writer, months int32) error {
+	if months == 0 {
+		return writeJSON(w, "PT0S")
+	}
 	return writeJSON(w, fmt.Sprintf("P%dM", months))
 }
 
-// emitDayTimeInterval emits ISO 8601 duration "P{days}DT{ms}MS".
+// emitDayTimeInterval emits ISO 8601 duration, skipping zero components.
 // Arrow's DayTime interval carries days and milliseconds independently.
 func emitDayTimeInterval(w io.Writer, days, millis int32) error {
-	if millis == 0 {
-		return writeJSON(w, fmt.Sprintf("P%dD", days))
-	}
-	return writeJSON(w, fmt.Sprintf("P%dDT%d.%03dS", days, millis/1000, millis%1000))
+	return writeJSON(w, composeISODuration(0, days, int64(millis)*int64(time.Millisecond)))
 }
 
-// emitMonthDayNanoInterval — ISO 8601 with months, days, nanoseconds.
+// emitMonthDayNanoInterval emits ISO 8601 duration with months, days,
+// and sub-second nanoseconds, skipping zero components.
 func emitMonthDayNanoInterval(w io.Writer, months, days int32, nanos int64) error {
-	// Composed form: PnMnDTnS (with fractional seconds as needed).
-	return writeJSON(w, fmt.Sprintf("P%dM%dDT%d.%09dS", months, days, nanos/1e9, nanos%1e9))
+	return writeJSON(w, composeISODuration(months, days, nanos))
+}
+
+// composeISODuration builds an ISO 8601 duration string from months,
+// days, and a nanosecond-granularity time component. Valid ISO 8601:
+// zero-overall returns "PT0S", otherwise components are emitted only
+// when non-zero.
+//
+// Within the T (time) portion, seconds are normalised into hours and
+// minutes where they divide evenly — "PT2H" instead of "PT7200S",
+// "PT1H30M" instead of "PT5400S". ISO 8601 treats these forms as
+// equivalent (any conforming parser — luxon, isodate, java.time
+// Duration — round-trips them as the same duration), but the
+// normalised form is much more readable.
+//
+// Days and months stay as-is: month length varies so we can't collapse
+// 30 days into 1 month, and cross-boundary normalisation would change
+// semantics.
+//
+// Sub-second nanoseconds attach as a fractional seconds component with
+// trailing zeros trimmed (mirrors Go's time.RFC3339Nano semantics).
+func composeISODuration(months, days int32, nanos int64) string {
+	if months == 0 && days == 0 && nanos == 0 {
+		return "PT0S"
+	}
+	var b strings.Builder
+	b.WriteByte('P')
+	if months != 0 {
+		fmt.Fprintf(&b, "%dM", months)
+	}
+	if days != 0 {
+		fmt.Fprintf(&b, "%dD", days)
+	}
+	if nanos != 0 {
+		b.WriteByte('T')
+		writeISOTimePart(&b, nanos)
+	}
+	return b.String()
+}
+
+// writeISOTimePart emits the T-portion of an ISO 8601 duration with
+// hour / minute / second normalisation. Precondition: nanos != 0.
+func writeISOTimePart(b *strings.Builder, nanos int64) {
+	const nsPerSec = int64(time.Second)
+	const nsPerMin = 60 * nsPerSec
+	const nsPerHour = 60 * nsPerMin
+
+	neg := nanos < 0
+	if neg {
+		nanos = -nanos
+		b.WriteByte('-') // rare but valid: DuckDB allows negative intervals.
+	}
+
+	hours := nanos / nsPerHour
+	nanos %= nsPerHour
+	minutes := nanos / nsPerMin
+	nanos %= nsPerMin
+	secs := nanos / nsPerSec
+	frac := nanos % nsPerSec
+
+	if hours != 0 {
+		fmt.Fprintf(b, "%dH", hours)
+	}
+	if minutes != 0 {
+		fmt.Fprintf(b, "%dM", minutes)
+	}
+	if secs != 0 || frac != 0 {
+		if frac == 0 {
+			fmt.Fprintf(b, "%dS", secs)
+			return
+		}
+		fs := strings.TrimRight(fmt.Sprintf("%09d", frac), "0")
+		fmt.Fprintf(b, "%d.%sS", secs, fs)
+	}
 }
 
 // emitDecimal128 / emitDecimal256 — emit as a JSON number literal,

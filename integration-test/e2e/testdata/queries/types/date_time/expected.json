@@ -4,7 +4,7 @@
       "events": [
         {
           "created_at": "2025-03-15T09:00:00Z",
-          "duration": "P0M0DT7200.000000000S",
+          "duration": "PT2H",
           "event_date": "2025-03-15",
           "event_time": "09:00:00.000000000",
           "id": 1,

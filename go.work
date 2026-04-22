@@ -1,0 +1,13 @@
+go 1.26
+
+// Workspace for local development and Docker-based tests (e.g.
+// integration-test/e2e/Dockerfile COPY . . picks this up). During
+// release, the module proxy supplies tagged types/ and client/
+// versions via go.mod — `go build` inside a release runner without
+// GOWORK=off can ignore this file by setting GOWORK=off explicitly,
+// which scripts/release.sh already does.
+use (
+	./
+	./client
+	./types
+)
