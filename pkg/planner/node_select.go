@@ -46,12 +46,17 @@ func selectDataObjectRootNode(ctx context.Context, provider catalog.Provider, pl
 	}
 	caster, isTypeCast := e.(engines.EngineTypeCaster)
 	if isTypeCast && !inGeneral {
-		node, err = castResultsNode(ctx, caster, node, !IsRawResultsQuery(ctx, query), false)
+		// SELECT handles both list<Object> (the list-path → QueryArrowTable,
+		// toJSON=false) and single-object by_pk-style selects (the scalar
+		// path → QueryJsonRow, toJSON=true). Same NamedType signal the
+		// plan.go dispatcher uses.
+		isListReturn := query.Definition.Type.NamedType == ""
+		node, err = castResultsNode(ctx, caster, node, !isListReturn, false)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return finalResultNode(ctx, provider, planner, query, node, inGeneral || !isTypeCast), nil
+	return finalResultNode(provider, planner, query, node, inGeneral || !isTypeCast), nil
 }
 
 // selectDataObjectNode creates a select statement node for data object query

@@ -3,7 +3,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 COPY types/go.mod types/go.sum ./types/
 COPY client/go.mod client/go.sum ./client/
-RUN go mod download
+RUN GOWORK=off go mod download
 COPY . .
 RUN CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow -o /test-app ./integration-test/e2e-hugrapp/test-app
 
