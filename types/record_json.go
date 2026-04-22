@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -253,12 +254,19 @@ func emitTimestamp(w io.Writer, a *array.Timestamp, row int) error {
 	v := int64(a.Value(row))
 	nanos := v * unitNanos(dt.Unit)
 	t := time.Unix(0, nanos).UTC()
-	if dt.TimeZone != "" && dt.TimeZone != "UTC" {
+	if dt.TimeZone != "" {
 		loc, err := time.LoadLocation(dt.TimeZone)
 		if err != nil {
 			return fmt.Errorf("timestamp tz %q: %w", dt.TimeZone, err)
 		}
 		t = t.In(loc)
+	}
+	// Canonicalise UTC-equivalent locations ("UTC", "Etc/UTC", "Zulu",
+	// explicit "+00:00") to Go's time.UTC so time.RFC3339Nano emits "Z"
+	// instead of "+00:00" — matches the DuckDB side which collapses
+	// extract(timezone) == 0 to "Z".
+	if _, off := t.Zone(); off == 0 {
+		t = t.UTC()
 	}
 	return writeJSON(w, t.Format(time.RFC3339Nano))
 }
@@ -349,7 +357,9 @@ func emitFloat32(w io.Writer, v float32) error {
 }
 
 func emitFloatN(w io.Writer, v float64, bitSize int) error {
-	if v != v || v > 1e308 && v > 0 || v < -1e308 {
+	// NaN / ±Inf aren't valid JSON numbers. DuckDB's JSON cast emits
+	// them as null too — match.
+	if math.IsNaN(v) || math.IsInf(v, 0) {
 		_, err := w.Write(literalNull)
 		return err
 	}

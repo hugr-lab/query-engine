@@ -90,6 +90,27 @@ func TestRecordToJSON_TimestampRFC3339Nano(t *testing.T) {
 	}
 }
 
+func TestRecordToJSON_TimestampUTCEquivalentLocations(t *testing.T) {
+	// TimeZone values that resolve to a zero offset ("UTC", "Etc/UTC",
+	// "Zulu") must emit "Z" — not "+00:00" — to match the DuckDB side
+	// which collapses extract(timezone)=0 to "Z".
+	for _, tz := range []string{"UTC", "Etc/UTC", "Zulu"} {
+		t.Run(tz, func(t *testing.T) {
+			rec := recordFromFields(t, []arrow.Field{
+				{Name: "t", Type: &arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: tz}},
+			}, func(b *array.RecordBuilder) {
+				b.Field(0).(*array.TimestampBuilder).Append(arrow.Timestamp(time.Date(2024, 3, 15, 12, 0, 0, 0, time.UTC).UnixMicro()))
+			})
+			defer rec.Release()
+			got := recordToJSONString(t, rec, false, nil)
+			want := `{"t":"2024-03-15T12:00:00Z"}`
+			if got != want {
+				t.Fatalf("tz=%q: got %s want %s", tz, got, want)
+			}
+		})
+	}
+}
+
 func TestRecordToJSON_TimestampNaive(t *testing.T) {
 	// TimestampType with empty TimeZone = naive (DateTime in the GraphQL
 	// schema). Rendered as-if-UTC so the output is strict RFC 3339 Nano
