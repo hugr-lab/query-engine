@@ -11,7 +11,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/pkg/trace"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -73,25 +72,10 @@ func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map
 
 	logger := trace.LoggerFromContext(ctx)
 	logger.Debug("stream.sql", "field", q.Field.Name, "alias", q.Field.Alias, "sql", plan.Log())
-	if s.config.Debug {
-		ai := auth.AuthInfoFromContext(ctx)
-		if ai != nil {
-		    logger.Debug("stream.user", "user", ai.UserName, "role", ai.Role, "field", q.Field.Name)
-			log.Printf("Stream: User: %s, Role: %s, Query: %s (%s), SQL: %s",
-				ai.UserName,
-				ai.Role,
-				q.Field.Alias,
-				q.Field.Name,
-				plan.Log(),
-			)
-		}
-		if auth.IsFullAccess(ctx) {
-			log.Printf("Stream: Internal query: %s (%s), SQL: %s",
-				q.Field.Alias,
-				q.Field.Name,
-				plan.Log(),
-			)
-		}
+	if ai := auth.AuthInfoFromContext(ctx); ai != nil {
+		logger.Debug("stream.user", "user", ai.UserName, "role", ai.Role, "field", q.Field.Name)
+	} else if auth.IsFullAccess(ctx) {
+		logger.Debug("stream.user", "internal", true, "field", q.Field.Name, "alias", q.Field.Alias)
 	}
 
 	return plan.ExecuteStream(ctx, s.db)
