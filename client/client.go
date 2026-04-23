@@ -579,6 +579,12 @@ func (c *Client) parseMultipartResponse(resp *http.Response) (*types.Response, e
 		case strings.HasPrefix(cp, "application/vnd.apache.arrow.stream") && format == "table":
 			t := types.NewArrowTable()
 			t.SetInfo(p.Header.Get("X-Hugr-Table-Info"))
+			// Parse X-Hugr-Geometry-Fields into structured GeometryInfo
+			// so client-side scanners see the same metadata the server's
+			// planner attaches — no byte-peek heuristic needed.
+			if gi := parseGeometryFieldsHeader(p.Header.Get("X-Hugr-Geometry-Fields")); len(gi) > 0 {
+				t.SetGeometryInfo(gi)
+			}
 			if p.Header.Get("X-Hugr-Empty") != "true" {
 				reader, err := ipc.NewReader(p, ipc.WithAllocator(pool))
 				if err != nil {
@@ -797,4 +803,22 @@ func hasTimezoneTransport(rt http.RoundTripper) bool {
 		}
 	}
 	return false
+}
+
+// parseGeometryFieldsHeader decodes the X-Hugr-Geometry-Fields multipart
+// part header that the server emits (see ipc-query.go: geometryInfo).
+// The header value is a JSON object of the shape
+//   {"field.path": {"srid":"4326","format":"WKB"}, ...}
+// which corresponds directly to types.GeometryInfo. Returns nil for an
+// empty / malformed header — scanners then fall back to the byte-peek
+// heuristic exactly as before.
+func parseGeometryFieldsHeader(hdr string) map[string]types.GeometryInfo {
+	if hdr == "" {
+		return nil
+	}
+	var out map[string]types.GeometryInfo
+	if err := json.Unmarshal([]byte(hdr), &out); err != nil {
+		return nil
+	}
+	return out
 }

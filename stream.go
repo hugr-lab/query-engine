@@ -60,7 +60,6 @@ func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map
 	}
 
 	provider := s.schema.Provider()
-	ctx = planner.ContextWithRawResultsFlag(ctx)
 
 	plan, err := s.planner.Plan(ctx, provider, q.Field, op.Variables)
 	if err != nil {
@@ -74,8 +73,25 @@ func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map
 
 	logger := trace.LoggerFromContext(ctx)
 	logger.Debug("stream.sql", "field", q.Field.Name, "alias", q.Field.Alias, "sql", plan.Log())
-	if ai := auth.AuthInfoFromContext(ctx); ai != nil {
-		logger.Debug("stream.user", "user", ai.UserName, "role", ai.Role, "field", q.Field.Name)
+	if s.config.Debug {
+		ai := auth.AuthInfoFromContext(ctx)
+		if ai != nil {
+		    logger.Debug("stream.user", "user", ai.UserName, "role", ai.Role, "field", q.Field.Name)
+			log.Printf("Stream: User: %s, Role: %s, Query: %s (%s), SQL: %s",
+				ai.UserName,
+				ai.Role,
+				q.Field.Alias,
+				q.Field.Name,
+				plan.Log(),
+			)
+		}
+		if auth.IsFullAccess(ctx) {
+			log.Printf("Stream: Internal query: %s (%s), SQL: %s",
+				q.Field.Alias,
+				q.Field.Name,
+				plan.Log(),
+			)
+		}
 	}
 
 	return plan.ExecuteStream(ctx, s.db)

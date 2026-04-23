@@ -108,6 +108,18 @@ func (s *geometryScalar) ParseValue(v any) (any, error) {
 	return ParseGeometryValue(v)
 }
 
+// ToOutputSQL toggles between native-Arrow and wrapped-JSON modes based
+// on the `raw` flag:
+//
+//   - raw=true: return sql unchanged — geometry stays as native WKB,
+//     arriving in the Arrow column tagged with the geoarrow.wkb
+//     extension, then decoded to a GeoJSON object by types.RecordToJSON
+//     on the Go side. This is the path taken by list-returning queries
+//     that go through QueryArrowTable.
+//   - raw=false: wrap with ST_AsGeoJSON so DuckDB emits GeoJSON text.
+//     Used by QueryJsonRow (scalar / object select-ones that always
+//     roundtrip through (_data::JSON)::TEXT) and by the tx table path
+//     (queryJsonTableTx, which cannot use ADBC/Arrow).
 func (s *geometryScalar) ToOutputSQL(sql string, raw bool) string {
 	if raw {
 		return sql

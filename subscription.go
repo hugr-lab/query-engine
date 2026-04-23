@@ -93,7 +93,6 @@ func (s *Service) executeQueryTick(ctx context.Context, queries []base.QueryRequ
 	}
 
 	provider := s.schema.Provider()
-	ctx = planner.ContextWithRawResultsFlag(ctx)
 
 	var wg sync.WaitGroup
 	for path, q := range qm {
@@ -108,7 +107,10 @@ func (s *Service) executeQueryTick(ctx context.Context, queries []base.QueryRequ
 
 			reader, err := s.executeStreamPath(ctx, provider, q, vars)
 			if err != nil {
-				trace.LoggerFromContext(ctx).Warn("subscription.path.error", "path", path, "error", err)
+			    trace.LoggerFromContext(ctx).Warn("subscription.path.error", "path", path, "error", err)
+				if s.config.Debug {
+					log.Printf("subscription path %s error: %v", path, err)
+				}
 				return
 			}
 			select {
@@ -131,10 +133,17 @@ func (s *Service) executeStreamPath(ctx context.Context, provider catalog.Provid
 		return nil, fmt.Errorf("compile: %w", err)
 	}
 
-	logger := trace.LoggerFromContext(ctx)
-	logger.Debug("subscription.sql", "field", q.Field.Name, "alias", q.Field.Alias, "sql", plan.Log())
-	if ai := auth.AuthInfoFromContext(ctx); ai != nil {
-		logger.Debug("subscription.user", "user", ai.UserName, "role", ai.Role, "field", q.Field.Name)
+    logger := trace.LoggerFromContext(ctx)
+    logger.Debug("subscription.sql", "field", q.Field.Name, "alias", q.Field.Alias, "sql", plan.Log())
+	if s.config.Debug {
+		if ai := auth.AuthInfoFromContext(ctx); ai != nil {
+		    logger.Debug("subscription.user", "user", ai.UserName, "role", ai.Role, "field", q.Field.Name)
+			log.Printf("Subscription stream: User: %s, Role: %s, Query: %s (%s), SQL: %s",
+				ai.UserName, ai.Role, q.Field.Alias, q.Field.Name, plan.Log())
+		} else if auth.IsFullAccess(ctx) {
+			log.Printf("Subscription stream: Internal: %s (%s), SQL: %s",
+				q.Field.Alias, q.Field.Name, plan.Log())
+		}
 	}
 
 	table, finalize, err := plan.ExecuteStream(ctx, s.db)

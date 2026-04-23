@@ -235,8 +235,8 @@ func (e DuckDB) PackFieldsToObject(prefix string, field *ast.Field) string {
 		prefix += "."
 	}
 	for _, f := range SelectedFields(field.SelectionSet) {
-		if transformed := sdl.ToStructFieldSQL(f.Field.Definition.Type.Name(), Ident(f.Field.Alias)); transformed != Ident(f.Field.Alias) {
-			fields = append(fields, Ident(f.Field.Alias)+": "+prefix+transformed)
+		if transformed := sdl.ToStructFieldSQL(f.Field.Definition.Type.Name(), prefix+Ident(f.Field.Alias)); transformed != Ident(f.Field.Alias) {
+			fields = append(fields, Ident(f.Field.Alias)+": "+transformed)
 			continue
 		}
 		/*if f.Field.Definition.Type.NamedType == compiler.GeometryTypeName {

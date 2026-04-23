@@ -4,8 +4,8 @@
       "core": {
         "db": {
           "recreate_indexes": {
-            "success": true,
-            "message": "Indexes recreated"
+            "message": "Indexes recreated",
+            "success": true
           }
         }
       }

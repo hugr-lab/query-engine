@@ -4,8 +4,8 @@
       "core": {
         "db": {
           "import_descriptions": {
-            "success": true,
-            "message": "Descriptions imported"
+            "message": "Descriptions imported",
+            "success": true
           }
         }
       }

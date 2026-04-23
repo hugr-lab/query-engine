@@ -16,7 +16,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
-	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/paulmach/orb/geojson"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -78,7 +77,7 @@ func (s *Service) queryHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ctx := planner.ContextWithRawResultsFlag(r.Context())
+	ctx := r.Context()
 	res, err := s.qe.Query(ctx, req.Query, req.Variables)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
