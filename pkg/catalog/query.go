@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/validator"
@@ -83,7 +84,21 @@ func validateQuery(ctx context.Context, p Provider, val *validator.Validator, qu
 }
 
 func parseQuery(ctx context.Context, p Provider, val *validator.Validator, vt VariableTransformer, operationName string, query string, vars map[string]any) (*Operation, error) {
-	// 1. Transform variables
+	// 1a. Normalize Go-native values to JSON shape. Engine.Query callers
+	// may pass int / time.Time / custom structs / etc.; HTTP callers
+	// arrive already JSON-decoded (map[string]any, []any, float64, string,
+	// bool, nil). Running a marshal/unmarshal round-trip only when needed
+	// gives downstream code (transformer, coercers, planner) one uniform
+	// shape regardless of caller.
+	if len(vars) > 0 {
+		normalized, err := normalizeVariables(vars)
+		if err != nil {
+			return nil, fmt.Errorf("normalize variables: %w", err)
+		}
+		vars = normalized
+	}
+
+	// 1b. Transform variables
 	if vt != nil && len(vars) > 0 {
 		transformed, err := vt.TransformVariables(ctx, vars)
 		if err != nil {
@@ -120,6 +135,49 @@ func parseQuery(ctx context.Context, p Provider, val *validator.Validator, vt Va
 		Queries:    queries,
 		QueryType:  qtt,
 	}, nil
+}
+
+// normalizeVariables returns vars unchanged when every leaf is a JSON-native
+// Go value (nil, bool, string, float64, map[string]any, []any); otherwise it
+// routes the whole map through json.Marshal / json.Unmarshal so callers from
+// pure Go (Engine.Query with int / time.Time / custom struct variables) see
+// the same shape as HTTP callers whose vars were already JSON-decoded.
+func normalizeVariables(vars map[string]any) (map[string]any, error) {
+	if isJSONShape(vars) {
+		return vars, nil
+	}
+	b, err := json.Marshal(vars)
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func isJSONShape(v any) bool {
+	switch val := v.(type) {
+	case nil, bool, string, float64:
+		return true
+	case map[string]any:
+		for _, vv := range val {
+			if !isJSONShape(vv) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		for _, vv := range val {
+			if !isJSONShape(vv) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 func selectOperation(ops ast.OperationList, name string) (*ast.OperationDefinition, error) {
