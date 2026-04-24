@@ -144,7 +144,12 @@ func (e *DuckDB) SQLValue(v any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("'%s'::JSON", b), nil
+		// Escape single-quote characters inside the serialised JSON so
+		// they don't close the surrounding SQL string literal. Without
+		// this an input like {"task":"it's broken"} produces the SQL
+		// `'{"task":"it's broken"}'::JSON` which DuckDB rejects at the
+		// parser level.
+		return fmt.Sprintf("'%s'::JSON", strings.ReplaceAll(string(b), "'", "''")), nil
 	case []any:
 		var valueStrings []string
 		for _, v := range v {
