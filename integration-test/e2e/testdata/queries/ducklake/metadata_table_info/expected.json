@@ -4,7 +4,7 @@
       "ducklake": {
         "table_stats": [
           {
-            "file_count": 2,
+            "file_count": 1,
             "table_id": 1,
             "table_name": "sensors"
           }

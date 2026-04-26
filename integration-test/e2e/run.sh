@@ -395,7 +395,7 @@ if [ "$DUCKDB_ONLY" = false ]; then
   echo ""
   echo "Building DuckLake test data with PostgreSQL metadata..."
   DUCKDB_DIR="$SCRIPT_DIR/testdata/duckdb"
-  DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.5.0"
+  DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.5.2"
   DUCKLAKE_PGMETA_DIR="$DUCKDB_DIR/ducklake_pgmeta"
   rm -rf "$DUCKLAKE_PGMETA_DIR"
   mkdir -p "$DUCKLAKE_PGMETA_DIR/data"

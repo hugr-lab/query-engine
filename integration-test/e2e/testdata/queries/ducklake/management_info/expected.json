@@ -5,7 +5,7 @@
         "ducklake": {
           "info": {
             "current_snapshot": 12,
-            "ducklake_version": "0.4",
+            "ducklake_version": "1.0",
             "metadata_backend": "__ducklake_metadata_dl_test",
             "name": "dl_test",
             "schema_count": 1,
