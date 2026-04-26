@@ -910,7 +910,7 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 		if fi.IsCalcField() {
 			extractValue = fi.SQLFieldFunc("", func(s string) string { return sql + extractStructFieldByPath(s) })
 		}
-		if fi.IsTransformed() {
+		if fi.IsTransformed() && !fi.IsCalcField() {
 			extractValue = fi.TransformSQL(extractValue)
 		}
 		if f.Field.Definition.Type.NamedType == "" && f.Field.Definition.Type.Elem == nil {
