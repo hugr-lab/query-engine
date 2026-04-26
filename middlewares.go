@@ -8,14 +8,17 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/google/uuid"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/perm"
+	"github.com/hugr-lab/query-engine/pkg/trace"
 	"github.com/hugr-lab/query-engine/types"
 )
 
@@ -56,6 +59,8 @@ func (s *Service) middlewares() func(next http.Handler) http.Handler {
 	if s.perm != nil {
 		mm = append(mm, s.checkEndpointPermissionsMW)
 	}
+	// tracing
+	mm = append(mm, traceMiddleware(s.logLevel))
 	// timezone
 	mm = append(mm, timezoneMW)
 	// compress
@@ -132,6 +137,28 @@ func timezoneMW(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func traceMiddleware(level *slog.LevelVar) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			traceID := r.Header.Get("X-Trace-Id")
+			if traceID == "" {
+				traceID = uuid.NewString()
+			}
+			w.Header().Set("X-Trace-Id", traceID)
+
+			logger := slog.Default().With("trace_id", traceID)
+			ctx := trace.ContextWithLogger(r.Context(), logger, traceID)
+
+			if level.Level() <= slog.LevelDebug {
+				info := trace.NewTraceInfo(traceID, level.Level())
+				ctx = trace.ContextWithTrace(ctx, info)
+			}
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
 }
 
 func compressMW(next http.Handler) http.Handler {

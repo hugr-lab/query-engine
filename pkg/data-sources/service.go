@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/jq"
+	"github.com/hugr-lab/query-engine/pkg/trace"
 	"github.com/hugr-lab/query-engine/types"
 
 	//lint:ignore ST1001 "github.com/hugr-lab/query-engine/pkg/data-sources/sources" is a valid package name
@@ -364,6 +366,13 @@ func NewDataSource(ctx context.Context, ds types.DataSource, attached bool) (Sou
 }
 
 func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers, params, body, jqq string) (any, error) {
+	logger := trace.LoggerFromContext(ctx)
+
+	if ti := trace.FromContext(ctx); ti != nil {
+		ctx = trace.StartSpan(ctx, "http.request", "source", source, "path", path, "method", method)
+		defer trace.EndSpan(ctx)
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ds, ok := s.dataSources[source]
@@ -379,6 +388,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 	}
 	res, err := httpDs.Request(ctx, path, method, headers, params, body)
 	if err != nil {
+		logger.Warn("http.request.error", "source", source, "path", path, "error", err)
 		return nil, err
 	}
 	defer res.Body.Close()
@@ -386,7 +396,11 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 		return nil, nil
 	}
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("request failed with status code %d:%s", res.StatusCode, res.Status)
+		preview, _ := io.ReadAll(io.LimitReader(res.Body, 512))
+		logger.Warn("http.response.error",
+			"source", source, "path", path, "method", method,
+			"status", res.StatusCode, "body_preview", string(preview))
+		return nil, fmt.Errorf("request failed with status code %d: %s", res.StatusCode, res.Status)
 	}
 	if res.Body == nil {
 		return nil, errors.New("response body is nil")
@@ -394,6 +408,7 @@ func (s *Service) HttpRequest(ctx context.Context, source, path, method, headers
 	var data any
 	err = json.NewDecoder(res.Body).Decode(&data)
 	if err != nil {
+		logger.Warn("http.decode.error", "source", source, "path", path, "error", err)
 		return nil, err
 	}
 	if jqq != "" {
