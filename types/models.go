@@ -24,10 +24,12 @@ type EmbeddingsResult struct {
 
 // LLMMessage is a single message in a chat conversation.
 type LLMMessage struct {
-	Role       string        `json:"role"`
-	Content    string        `json:"content"`
-	ToolCalls  []LLMToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string        `json:"tool_call_id,omitempty"`
+	Role             string        `json:"role"`
+	Content          string        `json:"content"`
+	ToolCalls        []LLMToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string        `json:"tool_call_id,omitempty"`
+	ThoughtSignature string        `json:"thought_signature,omitempty"` // Gemini 2.5+ / Anthropic: encrypted signature for multi-turn continuity
+	Thinking         string        `json:"thinking,omitempty"`          // Anthropic thinking text / OpenAI reasoning summary
 }
 
 // LLMTool is a tool definition provided to the model.
@@ -64,6 +66,8 @@ type LLMStreamEvent struct {
 	ToolCalls        string `json:"tool_calls"`        // JSON-encoded tool calls (tool_use only)
 	PromptTokens     int    `json:"prompt_tokens"`     // Input token count (finish only)
 	CompletionTokens int    `json:"completion_tokens"` // Output token count (finish only)
+	ThoughtSignature string `json:"thought_signature"` // Gemini 2.5+ / Anthropic: encrypted signature (finish only)
+	Thinking         string `json:"thinking"`          // Anthropic thinking text / OpenAI reasoning summary (finish only)
 }
 
 // LLMResult is the normalized response from any LLM provider.
@@ -77,4 +81,6 @@ type LLMResult struct {
 	Provider         string        `json:"provider"`
 	LatencyMs        int           `json:"latency_ms"`
 	ToolCalls        []LLMToolCall `json:"tool_calls"`
+	ThoughtSignature string        `json:"thought_signature,omitempty"` // Gemini 2.5+ / Anthropic: encrypted signature
+	Thinking         string        `json:"thinking,omitempty"`          // Anthropic thinking text / OpenAI reasoning summary
 }

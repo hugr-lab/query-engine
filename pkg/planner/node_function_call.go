@@ -28,14 +28,23 @@ func functionCallRootNode(ctx context.Context, provider catalog.Provider, planer
 	}
 	tc, isTypeCaster := e.(engines.EngineTypeCaster)
 	if !isTypeCaster {
-		return finalResultNode(ctx,
+		return finalResultNode(
 			provider, planer, query,
 			selectFromFunctionCallNode(ctx, provider, node),
 			true,
 		), nil
 	}
 	if isTypeCaster {
-		node, err = castFunctionResultsNode(ctx, provider, tc, node, !IsRawResultsQuery(ctx, query))
+		// Functions can return scalar / [scalar] / object / [list]. List
+		// shapes take the native-Arrow path (QueryJsonScalarArray /
+		// QueryArrowTable) so they skip JSON casting; non-list shapes
+		// roundtrip through QueryJsonRow / QueryScalarValue and need it.
+		// selectFromFunctionCallNode handles scalar-array by unnesting,
+		// after which the scalar element flows through
+		// castScalarResultsNode with the same toJSON=false — correct
+		// for both [scalar] and [Object] cases.
+		isListReturn := query.Definition.Type.NamedType == ""
+		node, err = castFunctionResultsNode(ctx, provider, tc, node, !isListReturn)
 		if err != nil {
 			return nil, err
 		}

@@ -20,7 +20,7 @@ func h3RootNode(ctx context.Context, provider catalog.Provider, planner Catalog,
 		return nil, err
 	}
 
-	return finalResultNode(ctx, provider, planner, query, node, true), nil
+	return finalResultNode(provider, planner, query, node, true), nil
 }
 
 // Create a node that provides SQL query for h3 analytical query.

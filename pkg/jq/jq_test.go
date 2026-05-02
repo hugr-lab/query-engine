@@ -823,13 +823,15 @@ func TestTimeFunctions(t *testing.T) {
 			Name:  "unixTime converts RFC3339 string to unix seconds",
 			Query: `unixTime`,
 			Input: refTime,
-			Want:  time.Date(2024, 6, 15, 14, 30, 45, 0, time.UTC).Unix(),
+			// unixTime returns int (not int64) so JQ arithmetic works —
+			// gojq only handles int and float64 natively.
+			Want: int(time.Date(2024, 6, 15, 14, 30, 45, 0, time.UTC).Unix()),
 		},
 		{
 			Name:  "unixTime converts time from roundTime",
 			Query: `roundTime("day"; "UTC") | unixTime`,
 			Input: refTime,
-			Want:  time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC).Unix(),
+			Want:  int(time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC).Unix()),
 		},
 		{
 			Name: "unixTime in object with other time funcs",
@@ -840,8 +842,8 @@ func TestTimeFunctions(t *testing.T) {
 			}`,
 			Input: refTime,
 			Want: map[string]any{
-				"unix":     time.Date(2024, 6, 15, 14, 30, 45, 0, time.UTC).Unix(),
-				"day_unix": time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC).Unix(),
+				"unix":     int(time.Date(2024, 6, 15, 14, 30, 45, 0, time.UTC).Unix()),
+				"day_unix": int(time.Date(2024, 6, 15, 0, 0, 0, 0, time.UTC).Unix()),
 				"hour":     14,
 			},
 		},
@@ -849,7 +851,7 @@ func TestTimeFunctions(t *testing.T) {
 			Name:  "unixTime chained with timeAdd",
 			Query: `timeAdd("1h"; "UTC") | unixTime`,
 			Input: refTime,
-			Want:  time.Date(2024, 6, 15, 15, 30, 45, 0, time.UTC).Unix(),
+			Want:  int(time.Date(2024, 6, 15, 15, 30, 45, 0, time.UTC).Unix()),
 		},
 		{
 			Name:  "fromUnixTime integer input gives UTC time",
@@ -900,13 +902,13 @@ func TestTimeFunctions(t *testing.T) {
 		tr, err := NewTransformer(context.Background(), `null | unixTime`, WithQuerier(qe))
 		require.NoError(t, err)
 
-		before := time.Now().UTC().Unix()
+		before := int(time.Now().UTC().Unix())
 		got, err := tr.Transform(context.Background(), nil, nil)
-		after := time.Now().UTC().Unix()
+		after := int(time.Now().UTC().Unix())
 		require.NoError(t, err)
 
-		unix, ok := got.(int64)
-		require.True(t, ok, "expected int64, got %T", got)
+		unix, ok := got.(int)
+		require.True(t, ok, "expected int, got %T", got)
 		assert.GreaterOrEqual(t, unix, before)
 		assert.LessOrEqual(t, unix, after)
 	})

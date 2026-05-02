@@ -4,8 +4,8 @@
       "core": {
         "db": {
           "export_database": {
-            "success": true,
-            "message": "Database exported to /tmp/e2e_coredb_roundtrip.duckdb"
+            "message": "Database exported to /tmp/e2e_coredb_roundtrip.duckdb",
+            "success": true
           }
         }
       }

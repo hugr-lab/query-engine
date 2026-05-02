@@ -154,6 +154,86 @@ func TestDBJsonTable_DecodeMsgpack_Empty(t *testing.T) {
 	}
 }
 
+func TestArrowTable_GeometryInfoRoundTrip(t *testing.T) {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int32},
+	}, nil)
+	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
+	defer b.Release()
+	b.Field(0).(*array.Int32Builder).AppendValues([]int32{1}, nil)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	table := NewArrowTable()
+	defer table.Release()
+	table.Append(rec)
+	gi := map[string]GeometryInfo{
+		"":              {SRID: "4326", Format: "GeoJSON"},
+		"objects.geom":  {SRID: "4326", Format: "GeoJSONString"},
+		"top_level_geo": {SRID: "3857", Format: "WKB"},
+	}
+	table.SetGeometryInfo(gi)
+
+	// Round-trip through msgpack.
+	var buf bytes.Buffer
+	enc := msgpack.NewEncoder(&buf)
+	if err := table.EncodeMsgpack(enc); err != nil {
+		t.Fatalf("EncodeMsgpack: %v", err)
+	}
+	decoded := NewArrowTable()
+	if err := decoded.DecodeMsgpack(msgpack.NewDecoder(&buf)); err != nil {
+		t.Fatalf("DecodeMsgpack: %v", err)
+	}
+	got := decoded.GeometryInfo()
+	if len(got) != len(gi) {
+		t.Fatalf("GeometryInfo len=%d want=%d", len(got), len(gi))
+	}
+	for k, want := range gi {
+		if got[k] != want {
+			t.Errorf("GeometryInfo[%q] = %+v, want %+v", k, got[k], want)
+		}
+	}
+}
+
+func TestArrowTable_GeometryInfoLegacyDecode(t *testing.T) {
+	// Simulate a legacy payload encoded without the trailing geomInfo field.
+	// After decoding the 3 expected values, trying to decode a 4th should
+	// produce io.EOF which DecodeMsgpack tolerates, leaving geomInfo empty.
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int32},
+	}, nil)
+	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
+	defer b.Release()
+	b.Field(0).(*array.Int32Builder).AppendValues([]int32{7}, nil)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+
+	// Hand-craft a legacy payload: wrapped, asArray, encoded-bytes — no geomInfo.
+	var buf bytes.Buffer
+	enc := msgpack.NewEncoder(&buf)
+	if err := enc.EncodeMulti(false, false); err != nil {
+		t.Fatalf("encode bools: %v", err)
+	}
+	encoded, err := encodeRecordsToIPC([]arrow.RecordBatch{rec})
+	if err != nil {
+		t.Fatalf("encodeRecordsToIPC: %v", err)
+	}
+	if err := enc.Encode(encoded); err != nil {
+		t.Fatalf("encode bytes: %v", err)
+	}
+
+	decoded := NewArrowTable()
+	if err := decoded.DecodeMsgpack(msgpack.NewDecoder(&buf)); err != nil {
+		t.Fatalf("DecodeMsgpack (legacy): %v", err)
+	}
+	if n := len(decoded.GeometryInfo()); n != 0 {
+		t.Errorf("legacy GeometryInfo len=%d, want 0", n)
+	}
+	if decoded.NumRows() != 1 {
+		t.Errorf("legacy NumRows=%d, want 1", decoded.NumRows())
+	}
+}
+
 func equalMaps(a, b map[string]any) bool {
 	if len(a) != len(b) {
 		return false

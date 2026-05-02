@@ -3,7 +3,7 @@
     "dl_test": {
       "sensors": [
         {
-          "humidity": 65.0,
+          "humidity": 65,
           "id": 1,
           "name": "sensor_a",
           "temperature": 22.5

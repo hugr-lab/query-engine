@@ -25,7 +25,13 @@ func aggregateRootNode(ctx context.Context, provider catalog.Provider, planner C
 		return nil, err
 	}
 	if caster, ok := e.(engines.EngineTypeCaster); ok && !inGeneral {
-		node, err = castResultsNode(ctx, caster, node, !IsRawResultsQuery(ctx, query), false)
+		// Regular aggregation returns a single named object and dispatches
+		// through QueryJsonRow (wrapped JSON → toJSON=true). Bucket
+		// aggregation returns list<Bucket> which goes through
+		// QueryArrowTable's native-Arrow path (toJSON=false). Use the
+		// same list-vs-scalar signal the dispatcher in plan.go uses.
+		isListReturn := query.Definition.Type.NamedType == ""
+		node, err = castResultsNode(ctx, caster, node, !isListReturn, false)
 		if err != nil {
 			return nil, err
 		}
@@ -41,7 +47,7 @@ func aggregateRootNode(ctx context.Context, provider catalog.Provider, planner C
 		}
 	}
 
-	return finalResultNode(ctx, provider, planner, query, node, inGeneral), nil
+	return finalResultNode(provider, planner, query, node, inGeneral), nil
 }
 
 func aggregateRootParamsNode(ctx context.Context, defs base.DefinitionsSource, planner Catalog, query *ast.Field, node *QueryPlanNode, vars map[string]any, inGeneral bool) (*QueryPlanNode, error) {

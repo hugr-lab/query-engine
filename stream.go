@@ -11,7 +11,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	"github.com/hugr-lab/query-engine/pkg/planner"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -59,7 +58,6 @@ func (s *Service) ProcessStreamQuery(ctx context.Context, query string, vars map
 	}
 
 	provider := s.schema.Provider()
-	ctx = planner.ContextWithRawResultsFlag(ctx)
 
 	plan, err := s.planner.Plan(ctx, provider, q.Field, op.Variables)
 	if err != nil {

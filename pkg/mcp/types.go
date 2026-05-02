@@ -29,12 +29,12 @@ type DataSourceSearchItem struct {
 // --- Discovery: Data Objects ---
 
 type DataObjectSearchItem struct {
-	Name        string               `json:"name"        jsonschema_description:"Full type name (e.g. prefix_tablename)"`
-	Module      string               `json:"module"      jsonschema_description:"Module path (e.g. sales.analytics)"`
-	Description string               `json:"description"`
-	ObjectType  string               `json:"object_type" jsonschema_description:"table or view"`
-	Score       float64              `json:"score"`
-	Queries     []DataObjectQuery    `json:"queries"     jsonschema_description:"Available query fields in module namespace"`
+	Name        string                 `json:"name"        jsonschema_description:"Full type name (e.g. prefix_tablename)"`
+	Module      string                 `json:"module"      jsonschema_description:"Module path (e.g. sales.analytics)"`
+	Description string                 `json:"description"`
+	ObjectType  string                 `json:"object_type" jsonschema_description:"table or view"`
+	Score       float64                `json:"score"`
+	Queries     []DataObjectQuery      `json:"queries"     jsonschema_description:"Available query fields in module namespace"`
 	Fields      []DataObjectFieldBrief `json:"fields,omitempty" jsonschema_description:"Top fields (scalars and relations)"`
 }
 
@@ -70,8 +70,8 @@ type FunctionArgument struct {
 }
 
 type FunctionReturnType struct {
-	TypeName string              `json:"type_name"`
-	IsList   bool               `json:"is_list"`
+	TypeName string                `json:"type_name"`
+	IsList   bool                  `json:"is_list"`
 	Fields   []FunctionReturnField `json:"fields,omitempty" jsonschema_description:"Top fields of return type (up to 10)"`
 }
 

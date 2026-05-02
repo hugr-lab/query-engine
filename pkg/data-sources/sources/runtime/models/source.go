@@ -377,6 +377,8 @@ func llmResultToMap(r *sources.LLMResult) map[string]any {
 		"provider":          r.Provider,
 		"latency_ms":        int32(r.LatencyMs),
 		"tool_calls":        toolCallsJSON,
+		"thought_signature": r.ThoughtSignature,
+		"thinking":          r.Thinking,
 	}
 }
 
@@ -392,6 +394,8 @@ var llmResultDuckDBType = runtime.DuckDBStructTypeFromSchemaMust(map[string]any{
 	"provider":          duckdb.TYPE_VARCHAR,
 	"latency_ms":        duckdb.TYPE_INTEGER,
 	"tool_calls":        duckdb.TYPE_VARCHAR,
+	"thought_signature": duckdb.TYPE_VARCHAR,
+	"thinking":          duckdb.TYPE_VARCHAR,
 })
 
 var _ sources.RuntimeSourceDataSourceUser = (*Source)(nil)

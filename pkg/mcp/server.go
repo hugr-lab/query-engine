@@ -138,7 +138,7 @@ Common enums: OrderDirection (ASC, DESC), TimeExtract (year, month, day, hour, .
 	// Data tools.
 	mcpServer.AddTool(mcp.NewTool("data-inline_graphql_result",
 		mcp.WithDescription(`Execute a GraphQL query and return JSON result with optional jq transform.
-If result is truncated (is_truncated=true), increase max_result_size (up to 5000) or use jq_transform to reduce output.
+If result is truncated (is_truncated=true), increase max_result_size (up to 10000) or use jq_transform to reduce output.
 Query rules:
 - Modules are nested fields: query { module { submodule { table(limit:10) { fields } } } }
 - order_by: [{field: "name", direction: ASC}] — direction is UPPERCASE (ASC/DESC), fields MUST be in selection set
@@ -149,7 +149,7 @@ Query rules:
 		mcp.WithString("query", mcp.Required(), mcp.Description("GraphQL query")),
 		mcp.WithObject("variables", mcp.Description("Query variables")),
 		mcp.WithString("jq_transform", mcp.Description("JQ expression to apply to result")),
-		mcp.WithNumber("max_result_size", mcp.Description("Max result bytes (100-5000). Increase if result is truncated."), mcp.DefaultNumber(1000)),
+		mcp.WithNumber("max_result_size", mcp.Description("Max result bytes (100-10000). Increase if result is truncated."), mcp.DefaultNumber(1000)),
 	), s.inlineGraphQLResult)
 
 	mcpServer.AddTool(mcp.NewTool("data-validate_graphql_query",

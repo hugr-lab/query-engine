@@ -571,6 +571,111 @@ type Query @system {
     """
     args: SalesReportArgs!
   product_id: Int!): SalesReport @query(name: "SalesReport", type: SELECT_ONE) @catalog(name: "reports", engine: "duckdb")
+  UserOrders(
+    """
+    Arguments for the view
+    """
+    args: UserOrdersArgs
+
+    """
+    Filter
+    """
+    filter: UserOrders_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [UserOrders] @query(name: "UserOrders", type: SELECT) @catalog(name: "reports", engine: "duckdb")
+  """
+  The aggregation for UserOrders
+  """
+  UserOrders_aggregation(
+    """
+    Arguments for the view
+    """
+    args: UserOrdersArgs
+
+    """
+    Filter
+    """
+    filter: UserOrders_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): _UserOrders_aggregation @aggregation_query(name: "UserOrders", is_bucket: false) @catalog(name: "reports", engine: "duckdb")
+  """
+  The aggregation for UserOrders
+  """
+  UserOrders_bucket_aggregation(
+    """
+    Arguments for the view
+    """
+    args: UserOrdersArgs
+
+    """
+    Filter
+    """
+    filter: UserOrders_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  ): [_UserOrders_aggregation_bucket] @aggregation_query(name: "UserOrders", is_bucket: true) @catalog(name: "reports", engine: "duckdb")
+  UserOrders_by_pk(
+    """
+    Arguments for the view
+    """
+    args: UserOrdersArgs
+  order_id: Int!): UserOrders @query(name: "UserOrders", type: SELECT_ONE) @catalog(name: "reports", engine: "duckdb")
   function: Function @system
   """
   H3 aggregation query
@@ -797,6 +902,28 @@ enum UniqueRuleType @system {
   EQUALS
   INTERSECTS
 }
+type UserOrders @view(name: "user_orders_view", sql: "SELECT * FROM [orders] WHERE user_id = [$auth.user_id] AND status = [$status]") @args(name: "UserOrdersArgs") @catalog(name: "reports", engine: "duckdb") @filter_input(name: "UserOrders_filter") @query(name: "UserOrders", type: SELECT) @query(name: "UserOrders_by_pk", type: SELECT_ONE) @query(name: "UserOrders_aggregation", type: AGGREGATE) @query(name: "UserOrders_bucket_aggregation", type: AGGREGATE_BUCKET) {
+  _join(fields: [String!]!): _join
+  order_id: Int! @pk
+  status: String
+  total: Float
+  user_id: Int
+}
+input UserOrdersArgs @catalog(name: "reports", engine: "duckdb") {
+  status: String @field_source(field: "status")
+}
+"""
+Filter for UserOrders objects
+"""
+input UserOrders_filter @filter_input(name: "UserOrders") @catalog(name: "reports", engine: "duckdb") {
+  _and: [UserOrders_filter]
+  _not: UserOrders_filter
+  _or: [UserOrders_filter]
+  order_id: IntFilter @pk
+  status: StringFilter
+  total: FloatFilter
+  user_id: IntFilter
+}
 """
 The `Vector` scalar type represents a fixed-length array of floating-point numbers, used for embeddings and similarity search.
 Filter operators: is_null
@@ -873,6 +1000,44 @@ type _SalesReport_aggregation_sub_aggregation @aggregation(name: "_SalesReport_a
   order_count: BigIntSubAggregation @field_aggregation(name: "order_count")
   product_id: IntSubAggregation @field_aggregation(name: "product_id")
   total_sales: FloatSubAggregation @field_aggregation(name: "total_sales")
+}
+type _UserOrders_aggregation @aggregation(name: "UserOrders", is_bucket: false, level: 1) @catalog(name: "reports", engine: "duckdb") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  order_id: IntAggregation @field_aggregation(name: "order_id")
+  status: StringAggregation @field_aggregation(name: "status")
+  total: FloatAggregation @field_aggregation(name: "total")
+  user_id: IntAggregation @field_aggregation(name: "user_id")
+}
+"""
+Bucket aggregation for UserOrders
+"""
+type _UserOrders_aggregation_bucket @aggregation(name: "UserOrders", is_bucket: true, level: 1) @catalog(name: "reports", engine: "duckdb") {
+  """
+  The aggregations of the bucket
+  """
+  aggregations(
+    """
+    Filter
+    """
+    filter: UserOrders_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _UserOrders_aggregation
+  """
+  The key of the bucket
+  """
+  key: UserOrders
+}
+type _UserOrders_aggregation_sub_aggregation @aggregation(name: "_UserOrders_aggregation", is_bucket: false, level: 2) @catalog(name: "reports", engine: "duckdb") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  order_id: IntSubAggregation @field_aggregation(name: "order_id")
+  status: StringSubAggregation @field_aggregation(name: "status")
+  total: FloatSubAggregation @field_aggregation(name: "total")
+  user_id: IntSubAggregation @field_aggregation(name: "user_id")
 }
 """
 Value distribution data type
@@ -1129,6 +1294,159 @@ type _join @system {
     """
     nested_offset: Int
   ): [_SalesReport_aggregation_bucket] @aggregation_query(is_bucket: true, name: "SalesReport") @catalog(name: "reports", engine: "duckdb")
+  UserOrders(
+    """
+    Arguments for the view
+    """
+    args: UserOrdersArgs
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: UserOrders_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [UserOrders] @query(name: "UserOrders", type: SELECT) @catalog(name: "reports", engine: "duckdb")
+  UserOrders_aggregation(
+    """
+    Arguments for the view
+    """
+    args: UserOrdersArgs
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: UserOrders_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _UserOrders_aggregation @aggregation_query(is_bucket: false, name: "UserOrders") @catalog(name: "reports", engine: "duckdb")
+  UserOrders_bucket_aggregation(
+    """
+    Arguments for the view
+    """
+    args: UserOrdersArgs
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: UserOrders_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): [_UserOrders_aggregation_bucket] @aggregation_query(is_bucket: true, name: "UserOrders") @catalog(name: "reports", engine: "duckdb")
 }
 type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
   SalesReport(
@@ -1172,6 +1490,47 @@ type _join_aggregation @aggregation(name: "_join", is_bucket: false, level: 1) {
     """
     nested_offset: Int
   ): _SalesReport_aggregation @aggregation_query(is_bucket: false, name: "SalesReport") @catalog(name: "reports", engine: "duckdb") @field_aggregation(name: "SalesReport")
+  UserOrders(
+    """
+    Arguments for the view
+    """
+    args: UserOrdersArgs
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: UserOrders_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+  ): _UserOrders_aggregation @aggregation_query(is_bucket: false, name: "UserOrders") @catalog(name: "reports", engine: "duckdb") @field_aggregation(name: "UserOrders")
 }
 type _spatial @system
 type _spatial_aggregation @aggregation(name: "_spatial", is_bucket: false, level: 1)

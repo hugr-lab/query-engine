@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/hugr-lab/query-engine/types"
 	"golang.org/x/sync/errgroup"
 )
@@ -28,10 +28,9 @@ const (
 	maxConcurrentSubscriptions = 10
 )
 
-var gqlwsUpgrader = &websocket.Upgrader{
-	Subprotocols:     []string{"graphql-transport-ws"},
-	CheckOrigin:      func(r *http.Request) bool { return true },
-	HandshakeTimeout: 10 * time.Second,
+var gqlwsAcceptOptions = &websocket.AcceptOptions{
+	Subprotocols:    []string{"graphql-transport-ws"},
+	InsecureSkipVerify: true,
 }
 
 type gqlwsMessage struct {
@@ -47,12 +46,12 @@ type gqlwsSubscribePayload struct {
 }
 
 func (s *Service) subscribeHandler(w http.ResponseWriter, r *http.Request) {
-	conn, err := gqlwsUpgrader.Upgrade(w, r, nil)
+	conn, err := websocket.Accept(w, r, gqlwsAcceptOptions)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("websocket upgrade failed: %v", err), http.StatusInternalServerError)
 		return
 	}
-	defer conn.Close()
+	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel() // Cancel first — stops all subscription goroutines before writeCh becomes unreachable
@@ -61,7 +60,7 @@ func (s *Service) subscribeHandler(w http.ResponseWriter, r *http.Request) {
 	// Not closed explicitly — GC handles it after all senders exit via ctx cancellation.
 	writeCh := make(chan gqlwsMessage, 256)
 
-	// Writer goroutine — only goroutine that touches conn.Write*
+	// Writer goroutine — only goroutine that touches conn.Write
 	go func() {
 		for {
 			select {
@@ -71,7 +70,12 @@ func (s *Service) subscribeHandler(w http.ResponseWriter, r *http.Request) {
 				if !ok {
 					return
 				}
-				if err := conn.WriteJSON(msg); err != nil {
+				data, merr := json.Marshal(msg)
+				if merr != nil {
+					cancel()
+					return
+				}
+				if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
 					cancel()
 					return
 				}
@@ -79,43 +83,23 @@ func (s *Service) subscribeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Ping goroutine
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				select {
-				case writeCh <- gqlwsMessage{Type: gqlwsPong}: // piggyback on writeCh for keepalive
-				case <-ctx.Done():
-					return
-				}
-			}
+	// Wait for connection_init (with timeout via context)
+	initCtx, initCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer initCancel()
+	_, initData, err := conn.Read(initCtx)
+	if err != nil {
+		if s.config.Debug {
+			log.Printf("graphql-ws: init read failed: %v", err)
 		}
-	}()
-
-	conn.SetCloseHandler(func(code int, text string) error {
-		cancel()
-		return nil
-	})
-	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
-
-	// Wait for connection_init
-	_ = conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+		return
+	}
 	var initMsg gqlwsMessage
-	if err := conn.ReadJSON(&initMsg); err != nil || initMsg.Type != gqlwsConnectionInit {
+	if err := json.Unmarshal(initData, &initMsg); err != nil || initMsg.Type != gqlwsConnectionInit {
 		if s.config.Debug {
 			log.Printf("graphql-ws: init failed: %v (type=%s)", err, initMsg.Type)
 		}
 		return
 	}
-	_ = conn.SetReadDeadline(time.Time{})
 	select {
 	case writeCh <- gqlwsMessage{Type: gqlwsConnectionAck}:
 	case <-ctx.Done():
@@ -137,16 +121,16 @@ func (s *Service) subscribeHandler(w http.ResponseWriter, r *http.Request) {
 		default:
 		}
 
-		var msg gqlwsMessage
-		err := conn.ReadJSON(&msg)
-		if websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
-			goto done
-		}
-		if err != nil {
-			if s.config.Debug {
-				log.Printf("graphql-ws: read error: %v", err)
+		_, data, readErr := conn.Read(ctx)
+		if readErr != nil {
+			if s.config.Debug && ctx.Err() == nil {
+				log.Printf("graphql-ws: read error: %v", readErr)
 			}
 			goto done
+		}
+		var msg gqlwsMessage
+		if err := json.Unmarshal(data, &msg); err != nil {
+			continue
 		}
 
 		switch msg.Type {

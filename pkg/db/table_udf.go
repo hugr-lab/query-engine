@@ -12,12 +12,12 @@ func RegisterTableRowFunction(ctx context.Context, db *Pool, function TableRowFu
 		return err
 	}
 	defer c.Close()
-	return duckdb.RegisterTableUDF(c.DBConn(), function.FuncName(), function.Bind(ctx))
+	return duckdb.RegisterTableUDF(c.DBConn(), function.FuncName(), function.Bind())
 }
 
 type TableRowFunction interface {
 	FuncName() string
-	Bind(ctx context.Context) duckdb.RowTableFunction
+	Bind() duckdb.RowTableFunction
 }
 
 type TableRowFunctionWithArgs[I any, O any] struct {
@@ -34,13 +34,13 @@ func (f *TableRowFunctionWithArgs[I, O]) FuncName() string {
 	return f.Name
 }
 
-func (f *TableRowFunctionWithArgs[I, O]) Bind(ctx context.Context) duckdb.RowTableFunction {
+func (f *TableRowFunctionWithArgs[I, O]) Bind() duckdb.RowTableFunction {
 	return duckdb.RowTableFunction{
 		Config: duckdb.TableFunctionConfig{
 			Arguments:      f.Arguments,
 			NamedArguments: f.NamedArguments,
 		},
-		BindArguments: func(named map[string]any, args ...any) (duckdb.RowTableSource, error) {
+		BindArgumentsContext: func(ctx context.Context, named map[string]any, args ...any) (duckdb.RowTableSource, error) {
 			input, err := f.ConvertArgs(named, args...)
 			if err != nil {
 				return nil, err
@@ -118,11 +118,10 @@ func (f *TableRowFunctionNoArgs[O]) FuncName() string {
 	return f.Name
 }
 
-func (f *TableRowFunctionNoArgs[O]) Bind(ctx context.Context) duckdb.RowTableFunction {
+func (f *TableRowFunctionNoArgs[O]) Bind() duckdb.RowTableFunction {
 	return duckdb.RowTableFunction{
 		Config: duckdb.TableFunctionConfig{},
-		BindArguments: func(named map[string]any, args ...any) (duckdb.RowTableSource, error) {
-
+		BindArgumentsContext: func(ctx context.Context, named map[string]any, args ...any) (duckdb.RowTableSource, error) {
 			return &tableRowUDFSource[any, O]{
 				ctx:      ctx,
 				colInfos: f.ColumnInfos,

@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -46,12 +46,17 @@ func selectDataObjectRootNode(ctx context.Context, provider catalog.Provider, pl
 	}
 	caster, isTypeCast := e.(engines.EngineTypeCaster)
 	if isTypeCast && !inGeneral {
-		node, err = castResultsNode(ctx, caster, node, !IsRawResultsQuery(ctx, query), false)
+		// SELECT handles both list<Object> (the list-path → QueryArrowTable,
+		// toJSON=false) and single-object by_pk-style selects (the scalar
+		// path → QueryJsonRow, toJSON=true). Same NamedType signal the
+		// plan.go dispatcher uses.
+		isListReturn := query.Definition.Type.NamedType == ""
+		node, err = castResultsNode(ctx, caster, node, !isListReturn, false)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return finalResultNode(ctx, provider, planner, query, node, inGeneral || !isTypeCast), nil
+	return finalResultNode(provider, planner, query, node, inGeneral || !isTypeCast), nil
 }
 
 // selectDataObjectNode creates a select statement node for data object query
@@ -153,7 +158,7 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 			if isInner {
 				innerGeneral = append(innerGeneral, joinNode.Name+"._selection IS NOT NULL")
 			}
-			ff, err := sourceFields(ctx, defs,dataObject, sq)
+			ff, err := sourceFields(ctx, defs, dataObject, sq)
 			if err != nil {
 				return nil, false, err
 			}
@@ -252,7 +257,7 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 		}
 		if len(generalFields) != 0 {
 			qJoinsGeneralFields[qj.Alias] = generalFields
-			ff, err := sourceFields(ctx, defs,dataObject, qj)
+			ff, err := sourceFields(ctx, defs, dataObject, qj)
 			if err != nil {
 				return nil, false, err
 			}
@@ -293,8 +298,11 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 	}
 	if info.HasArguments() {
 		arg := queryArg.ForName("args")
-		am, ok := arg.Value.(map[string]any)
-		if !ok {
+		var am map[string]any
+		if arg != nil {
+			am = arg.Value.(map[string]any)
+		}
+		if am == nil {
 			am = map[string]any{}
 		}
 		// perm.AuthVars(ctx) provides [$auth.*] and similar context placeholders
@@ -1471,7 +1479,7 @@ func splitByQueryParts(ctx context.Context, defs base.DefinitionsSource, query *
 	}
 	// add source fields for subqueries and function calls
 	for _, f := range append(qp.subQueries, append(queryTimeJoins, queryTimeSpatial...)...) {
-		sff, err := sourceFields(ctx, defs,f.ObjectDefinition, f)
+		sff, err := sourceFields(ctx, defs, f.ObjectDefinition, f)
 		if err != nil {
 			return nil, err
 		}
@@ -1942,7 +1950,7 @@ func sourceFields(ctx context.Context, defs base.DefinitionsSource, def *ast.Def
 		if aggregated == nil {
 			return nil, errors.New("aggregated field not found")
 		}
-		return sourceFields(ctx, defs,def, &ast.Field{
+		return sourceFields(ctx, defs, def, &ast.Field{
 			Alias:            query.Alias,
 			Name:             aggregated.Name,
 			Definition:       aggregated,

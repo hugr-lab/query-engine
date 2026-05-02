@@ -144,7 +144,12 @@ func (e *DuckDB) SQLValue(v any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("'%s'::JSON", b), nil
+		// Escape single-quote characters inside the serialised JSON so
+		// they don't close the surrounding SQL string literal. Without
+		// this an input like {"task":"it's broken"} produces the SQL
+		// `'{"task":"it's broken"}'::JSON` which DuckDB rejects at the
+		// parser level.
+		return fmt.Sprintf("'%s'::JSON", strings.ReplaceAll(string(b), "'", "''")), nil
 	case []any:
 		var valueStrings []string
 		for _, v := range v {
@@ -235,8 +240,8 @@ func (e DuckDB) PackFieldsToObject(prefix string, field *ast.Field) string {
 		prefix += "."
 	}
 	for _, f := range SelectedFields(field.SelectionSet) {
-		if transformed := sdl.ToStructFieldSQL(f.Field.Definition.Type.Name(), Ident(f.Field.Alias)); transformed != Ident(f.Field.Alias) {
-			fields = append(fields, Ident(f.Field.Alias)+": "+prefix+transformed)
+		if transformed := sdl.ToStructFieldSQL(f.Field.Definition.Type.Name(), prefix+Ident(f.Field.Alias)); transformed != Ident(f.Field.Alias) {
+			fields = append(fields, Ident(f.Field.Alias)+": "+transformed)
 			continue
 		}
 		/*if f.Field.Definition.Type.NamedType == compiler.GeometryTypeName {
@@ -905,7 +910,7 @@ func repackStructRecursive(sql string, field *ast.Field, path string) string {
 		if fi.IsCalcField() {
 			extractValue = fi.SQLFieldFunc("", func(s string) string { return sql + extractStructFieldByPath(s) })
 		}
-		if fi.IsTransformed() {
+		if fi.IsTransformed() && !fi.IsCalcField() {
 			extractValue = fi.TransformSQL(extractValue)
 		}
 		if f.Field.Definition.Type.NamedType == "" && f.Field.Definition.Type.Elem == nil {

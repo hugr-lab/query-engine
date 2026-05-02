@@ -6,10 +6,10 @@
           "aggregations": {
             "_rows_count": 1,
             "humidity": {
-              "avg": 68.0
+              "avg": 68
             },
             "temperature": {
-              "avg": 24.0
+              "avg": 24
             }
           },
           "key": {
@@ -48,10 +48,10 @@
           "aggregations": {
             "_rows_count": 1,
             "humidity": {
-              "avg": 60.0
+              "avg": 60
             },
             "temperature": {
-              "avg": 25.0
+              "avg": 25
             }
           },
           "key": {

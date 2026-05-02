@@ -16,8 +16,11 @@ func timeFuncs() []gojq.CompilerOption {
 			return time.Now().UTC()
 		}),
 		gojq.WithFunction("unixTime", 0, 1, func(a1 any, _ []any) any {
+			// gojq's arithmetic only handles int and float64; int64 flows
+			// through as an opaque value. Keep the explicit int() cast so
+			// downstream JQ expressions like `unixTime + 10` work.
 			if a1 == nil {
-				return time.Now().UTC().Unix()
+				return int(time.Now().UTC().Unix())
 			}
 			t, err := parseTime(a1, nil)
 			if err != nil {

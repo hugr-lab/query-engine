@@ -39,7 +39,7 @@ func TestNew(t *testing.T) {
 		for _, name := range []string{
 			"table", "view", "module", "catalog", "system",
 			"function", "pk", "join", "references", "dependency",
-			"stats", "raw", "no_cache",
+			"stats", "no_cache",
 			"feature", "wfs",
 		} {
 			if dir := p.DirectiveForName(ctx, name); dir == nil {

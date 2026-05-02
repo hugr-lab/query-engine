@@ -70,7 +70,6 @@ func QuerySideDirectives() []string {
 		InvalidateCacheDirectiveName,
 		StatsDirectiveName,
 		WithDeletedDirectiveName,
-		RawResultsDirectiveName,
 		UnnestDirectiveName,
 		AddH3DirectiveName,
 		GisFeatureDirectiveName,

@@ -140,7 +140,10 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("'%s'::JSONB", b), nil
+		// Escape single-quote characters inside the serialised JSON so
+		// they don't close the surrounding SQL string literal — same
+		// rationale as the string case above.
+		return fmt.Sprintf("'%s'::JSONB", strings.ReplaceAll(string(b), "'", "''")), nil
 	case []any:
 		var valueStrings []string
 		for _, v := range v {
@@ -570,6 +573,20 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 			return fmt.Sprintf("(%s)::JSON[]", Ident(f.Alias)), nil
 		}
 		return fmt.Sprintf("(%s)::JSON", Ident(f.Alias)), nil
+	}
+
+	// Timestamp / DateTime: apply the same RFC 3339 Nano formatting the
+	// scalar's ToOutputSQL emits on the generic fields-transform path
+	// (see pkg/catalog/types/scalar_timestamp.go). Without this, PG-
+	// sourced by_pk / function-call queries fall through this caster
+	// with a bare Ident() and DuckDB's JSON cast emits the native
+	// "YYYY-MM-DD HH:MM:SS.ffffff+HH" shape — diverging from the
+	// native-Arrow table path where RecordToJSON already emits Nano.
+	if toJSON {
+		name := f.Definition.Type.Name()
+		if transform := sdl.ToOutputSQL(name, Ident(f.Alias), false); transform != Ident(f.Alias) {
+			return transform, nil
+		}
 	}
 
 	return Ident(f.Alias), nil

@@ -48,7 +48,20 @@ func (p *QueryPlan) Execute(ctx context.Context, db *db.Pool) (data interface{},
 		p.Query.Definition.Type.NamedType == "":
 		return db.QueryJsonScalarArray(ctx, p.CompiledQuery, p.Params...)
 	case p.Query.Definition.Type.NamedType == "":
-		return db.QueryArrowTable(ctx, p.CompiledQuery, !IsRawResultsQuery(ctx, p.Query), p.Params...)
+		// List-typed fields always use the native-Arrow path (wrap=false).
+		// Attach per-field geometry metadata so RecordToJSON and the Arrow
+		// scanner know how to render / decode each column without peeking
+		// at bytes.
+		result, err := db.QueryArrowTable(ctx, p.CompiledQuery, false, p.Params...)
+		if err != nil {
+			return nil, err
+		}
+		if tbl, ok := result.(types.ArrowTable); ok {
+			if gi := GeomInfoFromField(p.Query); gi != nil {
+				tbl.SetGeometryInfo(gi)
+			}
+		}
+		return result, nil
 	case sdl.IsScalarType(p.Query.Definition.Type.Name()):
 		return db.QueryScalarValue(ctx, p.CompiledQuery, p.Params...)
 	default:
@@ -67,7 +80,16 @@ func (p *QueryPlan) ExecuteStream(ctx context.Context, db *db.Pool) (types.Arrow
 		}
 	}
 
-	return db.QueryTableStream(ctx, p.CompiledQuery, p.Params...)
+	tbl, done, err := db.QueryTableStream(ctx, p.CompiledQuery, p.Params...)
+	if err != nil {
+		return nil, nil, err
+	}
+	if tbl != nil {
+		if gi := GeomInfoFromField(p.Query); gi != nil {
+			tbl.SetGeometryInfo(gi)
+		}
+	}
+	return tbl, done, nil
 }
 
 func (p *QueryPlan) Log() string {

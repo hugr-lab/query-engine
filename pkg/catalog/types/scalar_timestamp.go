@@ -1,6 +1,7 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -19,6 +20,7 @@ var (
 	_ FieldArgumentsProvider  = (*timestampScalar)(nil)
 	_ ValueParser             = (*timestampScalar)(nil)
 	_ ArrayParser             = (*timestampScalar)(nil)
+	_ SQLOutputTransformer    = (*timestampScalar)(nil)
 )
 
 type timestampScalar struct{}
@@ -135,4 +137,54 @@ func (s *timestampScalar) ParseValue(v any) (any, error) {
 
 func (s *timestampScalar) ParseArray(v any) (any, error) {
 	return ParseScalarArray[time.Time](v)
+}
+
+// ToOutputSQL emits the timestamp in a canonical RFC 3339 form so that
+// the wrapped-JSON object path (DuckDB's (_data::JSON)::TEXT) and the
+// native-Arrow table path (Go's RecordToJSON emitTimestamp) produce
+// byte-identical strings:
+//
+//	"YYYY-MM-DDTHH:MM:SS.ffffff±HH:MM"
+//
+// DuckDB's %z specifier produces "±HHMM" (no colon) — this formatter
+// splices the colon in manually.
+//
+// `raw=true` (list-typed queries on the native Arrow path) returns the
+// column unchanged — RecordToJSON on the Go side formats from the
+// native Arrow timestamp using the same layout.
+func (s *timestampScalar) ToOutputSQL(sql string, raw bool) string {
+	if raw {
+		return sql
+	}
+	return timestampTZSQL(sql)
+}
+
+// ToStructFieldSQL applies the same RFC 3339 formatting inside a
+// STRUCT_PACK field position — nested timestamps in wrapped-JSON
+// results (e.g. a struct column inside a table row) get formatted
+// identically to top-level ones.
+func (s *timestampScalar) ToStructFieldSQL(sql string) string {
+	return timestampTZSQL(sql)
+}
+
+// timestampTZSQL produces an RFC3339Nano-compatible string from a DuckDB
+// TIMESTAMP(TZ): trailing fractional zeros trimmed (so "12:30:45.000000"
+// becomes "12:30:45"), and "Z" for UTC instead of "+00:00" — byte-
+// identical to Go's time.Time.Format(time.RFC3339Nano).
+//
+// Composition:
+//   - Body:   strftime(col::TIMESTAMP, '%Y-%m-%dT%H:%M:%S.%f') +
+//             rtrim('0') + rtrim('.') — one strftime call, session-TZ
+//             wall clock.
+//   - Offset: timezone_hour(col) + timezone_minute(col) (both INT) via
+//             printf('%+03d:%02d', h, abs(m)). Avoids strftime('%z')
+//             which emits "+HH" for whole-hour offsets and "+HHMM"
+//             otherwise, breaking naïve substr colon injection.
+//   - Z:      when hour and minute are both zero.
+func timestampTZSQL(sql string) string {
+	return fmt.Sprintf(
+		`rtrim(rtrim(strftime(%[1]s::TIMESTAMP, '%%Y-%%m-%%dT%%H:%%M:%%S.%%f'), '0'), '.') || `+
+			`CASE WHEN timezone_hour(%[1]s) = 0 AND timezone_minute(%[1]s) = 0 THEN 'Z' `+
+			`ELSE printf('%%+03d:%%02d', timezone_hour(%[1]s), abs(timezone_minute(%[1]s))) END`,
+		sql)
 }

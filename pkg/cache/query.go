@@ -2,11 +2,11 @@ package cache
 
 import (
 	"bytes"
-	"strconv"
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 )
@@ -70,8 +70,8 @@ func cacheDirectiveInfo(d *ast.Directive, vars map[string]any) Info {
 	if d == nil {
 		return Info{}
 	}
-
-	ttl, _ := strconv.Atoi(sdl.DirectiveArgValue(d, "ttl", vars))
+	ttlStr := sdl.DirectiveArgValue(d, "ttl", vars)
+	ttl, _ := types.ParseIntervalValue(ttlStr)
 
 	return Info{
 		Key:  sdl.DirectiveArgValue(d, "key", vars),

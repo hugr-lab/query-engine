@@ -144,7 +144,7 @@
                 "--secret", "secret-key",
                 "--secret-header", "x-hugr-secret-key",
                 "--provider", "custom",
-                "--model", "openai/gpt-oss-20b",
+                "--model", "google/gemma-4-26b-a4b",
                 "--base-url", "http://127.0.0.1:1234/v1",
                 "--api-key", "lm-studio",
                 "--llm-timeout", "5m",

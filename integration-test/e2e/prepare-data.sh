@@ -39,7 +39,7 @@ echo "  Created $PG_DB_FILE (copy for PG engine)"
 DUCKLAKE_DIR="$DUCKDB_DIR/ducklake"
 DUCKLAKE_META="$DUCKLAKE_DIR/meta.duckdb"
 DUCKLAKE_DATA="$DUCKLAKE_DIR/data"
-DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.5.0"
+DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.5.2"
 
 rm -f "$DUCKLAKE_META" "$DUCKLAKE_META.wal"
 rm -rf "$DUCKLAKE_DATA"
