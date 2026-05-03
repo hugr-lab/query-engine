@@ -22,7 +22,9 @@ func (s *jsonScalar) Name() string { return "JSON" }
 func (s *jsonScalar) SDL() string {
 	return `"""
 The ` + "`JSON`" + ` scalar type represents arbitrary JSON data, encoded as a JSON string.
-Filter operators: eq, has, has_all, contains, is_null
+JSONFilter: eq, has, has_all, contains, is_null, and field (filter on a value at a dot-path inside the document).
+For field: use path (dot notation, e.g. "catalog.field_name"), optional coalesce (JSON literal used when the extracted value is NULL), and exactly one typed sub-filter that matches the runtime type at that path (Int, BigInt, Float, String, Boolean, Date, Time, DateTime, Timestamp, Interval, IntRange, BigIntRange, TimestampRange, Geometry).
+Combine several path conditions with the parent object filter _and / _or / _not (same as other columns).
 Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter)
 """
 scalar JSON
@@ -33,6 +35,32 @@ input JSONFilter @system {
   has_all: [String!]
   contains: JSON
   is_null: Boolean
+  field: JSONFieldFilter
+}
+
+"""
+Filter by a nested JSON field at a given path.
+The path uses dot notation (e.g. "catalog.field_name").
+Optional coalesce replaces NULL with a default (JSON literal) before applying the typed sub-filter.
+At most one typed sub-filter should be set; the server validates this.
+"""
+input JSONFieldFilter @system {
+  path: String!
+  int: IntFilter
+  bigInt: BigIntFilter
+  float: FloatFilter
+  string: StringFilter
+  bool: BooleanFilter
+  date: DateFilter
+  time: TimeFilter
+  dateTime: DateTimeFilter
+  timestamp: TimestampFilter
+  interval: IntervalFilter
+  intRange: IntRangeFilter
+  bigIntRange: BigIntRangeFilter
+  timestampRange: TimestampRangeFilter
+  geometry: GeometryFilter
+  coalesce: JSON
 }
 
 type JSONAggregation @system {
