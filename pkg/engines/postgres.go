@@ -66,6 +66,36 @@ func (e *Postgres) FieldValueByPath(sqlName, path string) string {
 	return sqlName + extractPGJsonFieldByPath(path, false)
 }
 
+func (e *Postgres) ExtractJSONTypedValue(sqlName, path, sqlType string) string {
+	if sqlType == "GEOMETRY" {
+		extracted := sqlName
+		if path != "" {
+			extracted = sqlName + extractPGJsonFieldByPath(path, true)
+		}
+		return fmt.Sprintf("ST_GeomFromGeoJSON((%s)::text)", extracted)
+	}
+	if sqlType == "" {
+		if path == "" {
+			return sqlName
+		}
+		return sqlName + extractPGJsonFieldByPath(path, false)
+	}
+	asText := pgJSONExtractAsText(sqlType)
+	extracted := sqlName
+	if path != "" {
+		extracted = sqlName + extractPGJsonFieldByPath(path, asText)
+	}
+	return fmt.Sprintf("(%s)::%s", extracted, sqlType)
+}
+
+func pgJSONExtractAsText(sqlType string) bool {
+	switch strings.ToUpper(sqlType) {
+	case "JSON", "JSONB":
+		return false
+	}
+	return true
+}
+
 func (e *Postgres) SQLValue(v any) (string, error) {
 	if v == nil {
 		return "NULL", nil

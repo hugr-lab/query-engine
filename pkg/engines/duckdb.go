@@ -581,6 +581,8 @@ func (e DuckDB) ExtractJSONTypedValue(sql, path, t string) string {
 		sql = "json_value(" + sql + "::JSON,'$." + path + "')"
 	}
 	switch t {
+	case "":
+		return sql
 	case "number":
 		return "try_cast(" + sql + " AS FLOAT)"
 	case "string":
@@ -593,8 +595,8 @@ func (e DuckDB) ExtractJSONTypedValue(sql, path, t string) string {
 		return "try_cast(" + sql + " AS TIMESTAMP)"
 	case "h3string":
 		return fmt.Sprintf("try_cast(h3_string_to_h3(%s))", sql)
-	case "":
-		return sql
+	case "GEOMETRY":
+		return "ST_GeomFromGeoJSON(" + sql + ")"
 	}
 	return fmt.Sprintf("try_cast(%s AS %s)", sql, t)
 }

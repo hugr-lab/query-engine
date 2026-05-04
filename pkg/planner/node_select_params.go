@@ -715,6 +715,19 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 		if v == nil {
 			continue
 		}
+		if op == "field" && field.Type.Name() == base.JSONTypeName {
+			fv, ok := v.(map[string]any)
+			if !ok {
+				return "", nil, errors.New("JSONFilter.field must be an object")
+			}
+			filter, p, err := jsonFieldFilterSQL(e, sqlName, path, fv, params)
+			if err != nil {
+				return "", nil, err
+			}
+			filters = append(filters, "("+filter+")")
+			params = p
+			continue
+		}
 		filter, p, err := e.FilterOperationSQLValue(sqlName, path, op, v, params)
 		if err != nil {
 			return "", nil, err
@@ -726,6 +739,120 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 		return strings.TrimPrefix(strings.TrimSuffix(filters[0], ")"), "("), params, nil
 	}
 	return strings.Join(filters, " AND "), params, nil
+}
+
+// jsonFieldFilterSqlTypes maps JSONFieldFilter sub-filter names to engine-native SQL type names.
+// The order also defines deterministic iteration when collecting sub-filters.
+var jsonFieldFilterSubTypes = []struct {
+	name    string
+	sqlType string
+}{
+	{"int", "INTEGER"},
+	{"bigInt", "BIGINT"},
+	{"float", "DOUBLE"},
+	{"string", "VARCHAR"},
+	{"bool", "BOOLEAN"},
+	{"date", "DATE"},
+	{"time", "TIME"},
+	{"dateTime", "TIMESTAMP"},
+	{"timestamp", "TIMESTAMPTZ"},
+	{"interval", "INTERVAL"},
+	{"intRange", "JSON"},
+	{"bigIntRange", "JSON"},
+	{"timestampRange", "JSON"},
+	{"geometry", "GEOMETRY"},
+}
+
+// jsonFieldFilterSQL compiles a JSONFieldFilter input into SQL by extracting the value at
+// the given dot-path (with optional COALESCE and isNull) and applying at most one typed
+// sub-filter (IntFilter, StringFilter, ...). isNull is independent and AND-combined.
+func jsonFieldFilterSQL(e engines.Engine, sqlName, basePath string, fv map[string]any, params []any) (string, []any, error) {
+	rawPath, ok := fv["path"].(string)
+	if !ok || rawPath == "" {
+		return "", nil, errors.New("JSONFieldFilter.path is required")
+	}
+	jsonPath := rawPath
+	if basePath != "" {
+		jsonPath = basePath + "." + rawPath
+	}
+
+	var (
+		subName  string
+		subValue map[string]any
+		subType  string
+	)
+	for _, st := range jsonFieldFilterSubTypes {
+		v, present := fv[st.name]
+		if !present || v == nil {
+			continue
+		}
+		m, ok := v.(map[string]any)
+		if !ok {
+			return "", nil, fmt.Errorf("JSONFieldFilter.%s must be an object", st.name)
+		}
+		if len(m) == 0 {
+			continue
+		}
+		if subName != "" {
+			return "", nil, fmt.Errorf("JSONFieldFilter accepts at most one typed sub-filter, got both %s and %s", subName, st.name)
+		}
+		subName = st.name
+		subValue = m
+		subType = st.sqlType
+	}
+
+	isNullVal, hasIsNull := fv["isNull"]
+	coalesceVal, hasCoalesce := fv["coalesce"]
+
+	if subName == "" && !hasIsNull {
+		return "", nil, errors.New("JSONFieldFilter must specify isNull or one typed sub-filter")
+	}
+
+	var conds []string
+
+	if hasIsNull {
+		// isNull operates on the raw extracted value, before coalesce, so a defaulted value
+		// is reported as NULL when isNull: true and as NOT NULL when isNull: false.
+		rawExtracted := e.ExtractJSONTypedValue(sqlName, jsonPath, "")
+		b, _ := isNullVal.(bool)
+		if b {
+			conds = append(conds, fmt.Sprintf("(%s) IS NULL", rawExtracted))
+		} else {
+			conds = append(conds, fmt.Sprintf("(%s) IS NOT NULL", rawExtracted))
+		}
+	}
+
+	if subName != "" {
+		extracted := e.ExtractJSONTypedValue(sqlName, jsonPath, subType)
+		if hasCoalesce && coalesceVal != nil {
+			params = append(params, coalesceVal)
+			val := "$" + fmt.Sprint(len(params))
+			extracted = fmt.Sprintf("COALESCE(%s, %s)", extracted, e.ExtractJSONTypedValue(val, "", subType))
+		}
+		var subFilters []string
+		for op, v := range subValue {
+			if v == nil {
+				continue
+			}
+			s, p, err := e.FilterOperationSQLValue(extracted, "", op, v, params)
+			if err != nil {
+				return "", nil, fmt.Errorf("JSONFieldFilter.%s.%s: %w", subName, op, err)
+			}
+			params = p
+			subFilters = append(subFilters, "("+s+")")
+		}
+		if len(subFilters) > 0 {
+			conds = append(conds, strings.Join(subFilters, " AND "))
+		}
+	}
+
+	if len(conds) == 0 {
+		return "TRUE", params, nil
+	}
+	if len(conds) == 1 {
+		return conds[0], params, nil
+	}
+	return strings.Join(conds, " AND "), params, nil
 }
 
 func nestedFieldFilterSQLValue(ctx context.Context, e engines.Engine, defs base.DefinitionsSource, def *ast.Definition, sqlName, path string, value map[string]any, params []any) (string, []any, error) {

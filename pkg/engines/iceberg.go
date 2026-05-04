@@ -90,6 +90,10 @@ func (e *Iceberg) ExtractNestedTypedValue(sql, path, t string) string {
 	return e.duckdb.ExtractNestedTypedValue(sql, path, t)
 }
 
+func (e *Iceberg) ExtractJSONTypedValue(sql, path, sqlType string) string {
+	return e.duckdb.ExtractJSONTypedValue(sql, path, sqlType)
+}
+
 func (e *Iceberg) LateralJoin(sql, alias string) string {
 	return e.duckdb.LateralJoin(sql, alias)
 }

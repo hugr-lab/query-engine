@@ -44,6 +44,11 @@ type Engine interface {
 	// ExtractNestedTypedValue extracts value from nested field by path and cast it to type
 	// type can be one of: number, string, bool, "" (empty string) - for extract json as is
 	ExtractNestedTypedValue(sql, path, t string) string
+	// ExtractJSONTypedValue extracts a value from a JSON document at the given dot-path
+	// and casts it to a SQL type. sqlType is the engine-native SQL type name (e.g. "INTEGER",
+	// "VARCHAR", "TIMESTAMPTZ", "GEOMETRY"). Empty sqlType returns the raw extracted JSON value.
+	// Empty path returns the column itself (optionally cast).
+	ExtractJSONTypedValue(sql, path, sqlType string) string
 	LateralJoin(sql, alias string) string
 }
 

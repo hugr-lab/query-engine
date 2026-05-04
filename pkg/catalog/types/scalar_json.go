@@ -23,7 +23,7 @@ func (s *jsonScalar) SDL() string {
 	return `"""
 The ` + "`JSON`" + ` scalar type represents arbitrary JSON data, encoded as a JSON string.
 JSONFilter: eq, has, has_all, contains, is_null, and field (filter on a value at a dot-path inside the document).
-For field: use path (dot notation, e.g. "catalog.field_name"), optional coalesce (JSON literal used when the extracted value is NULL), and exactly one typed sub-filter that matches the runtime type at that path (Int, BigInt, Float, String, Boolean, Date, Time, DateTime, Timestamp, Interval, IntRange, BigIntRange, TimestampRange, Geometry).
+For field: use path (dot notation, e.g. "catalog.field_name"), optional coalesce (JSON literal used when the extracted value is NULL), optional isNull (true to match a missing or NULL value, false to require the value to be present), and at most one typed sub-filter that matches the runtime type at that path (Int, BigInt, Float, String, Boolean, Date, Time, DateTime, Timestamp, Interval, IntRange, BigIntRange, TimestampRange, Geometry). isNull is independent of the typed sub-filter and combines with it via AND.
 Combine several path conditions with the parent object filter _and / _or / _not (same as other columns).
 Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter)
 """
@@ -42,10 +42,12 @@ input JSONFilter @system {
 Filter by a nested JSON field at a given path.
 The path uses dot notation (e.g. "catalog.field_name").
 Optional coalesce replaces NULL with a default (JSON literal) before applying the typed sub-filter.
+Optional isNull matches missing/NULL values (true) or requires presence (false); it combines with the typed sub-filter via AND, so it is useful together with coalesce to distinguish a real value from a defaulted one.
 At most one typed sub-filter should be set; the server validates this.
 """
 input JSONFieldFilter @system {
   path: String!
+  isNull: Boolean
   int: IntFilter
   bigInt: BigIntFilter
   float: FloatFilter

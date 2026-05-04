@@ -86,6 +86,10 @@ func (e *DuckLake) ExtractNestedTypedValue(sql, path, t string) string {
 	return e.duckdb.ExtractNestedTypedValue(sql, path, t)
 }
 
+func (e *DuckLake) ExtractJSONTypedValue(sql, path, sqlType string) string {
+	return e.duckdb.ExtractJSONTypedValue(sql, path, sqlType)
+}
+
 func (e *DuckLake) LateralJoin(sql, alias string) string {
 	return e.duckdb.LateralJoin(sql, alias)
 }
