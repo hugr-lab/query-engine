@@ -715,20 +715,20 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 		if v == nil {
 			continue
 		}
+		var (
+			filter string
+			p      []any
+			err    error
+		)
 		if op == "field" && field.Type.Name() == base.JSONTypeName {
 			fv, ok := v.(map[string]any)
 			if !ok {
 				return "", nil, errors.New("JSONFilter.field must be an object")
 			}
-			filter, p, err := jsonFieldFilterSQL(e, sqlName, path, fv, params)
-			if err != nil {
-				return "", nil, err
-			}
-			filters = append(filters, "("+filter+")")
-			params = p
-			continue
+			filter, p, err = jsonFieldFilterSQL(e, sqlName, path, fv, params)
+		} else {
+			filter, p, err = e.FilterOperationSQLValue(sqlName, path, op, v, params)
 		}
-		filter, p, err := e.FilterOperationSQLValue(sqlName, path, op, v, params)
 		if err != nil {
 			return "", nil, err
 		}
@@ -749,7 +749,7 @@ var jsonFieldFilterSubTypes = []struct {
 }{
 	{"int", "INTEGER"},
 	{"bigInt", "BIGINT"},
-	{"float", "DOUBLE"},
+	{"float", "DOUBLE PRECISION"},
 	{"string", "VARCHAR"},
 	{"bool", "BOOLEAN"},
 	{"date", "DATE"},
@@ -811,15 +811,12 @@ func jsonFieldFilterSQL(e engines.Engine, sqlName, basePath string, fv map[strin
 	var conds []string
 
 	if hasIsNull {
-		// isNull operates on the raw extracted value, before coalesce, so a defaulted value
-		// is reported as NULL when isNull: true and as NOT NULL when isNull: false.
-		rawExtracted := e.ExtractJSONTypedValue(sqlName, jsonPath, "")
+		// isNull is strict: it requires the key to exist at the given path.
+		// isNull: true  -> key exists AND value is JSON null
+		// isNull: false -> key exists AND value is anything other than JSON null
+		// A missing key yields false in both cases.
 		b, _ := isNullVal.(bool)
-		if b {
-			conds = append(conds, fmt.Sprintf("(%s) IS NULL", rawExtracted))
-		} else {
-			conds = append(conds, fmt.Sprintf("(%s) IS NOT NULL", rawExtracted))
-		}
+		conds = append(conds, e.JSONPathIsNull(sqlName, jsonPath, b))
 	}
 
 	if subName != "" {

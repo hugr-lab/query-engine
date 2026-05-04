@@ -40,7 +40,7 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"path":   "a.b",
 				"isNull": true,
 			},
-			wantSQL: "(json_value(meta::JSON,'$.a.b')) IS NULL",
+			wantSQL: "json_type(meta,'$.a.b') = 'NULL'",
 		},
 		{
 			name: "isNull false alone",
@@ -48,7 +48,7 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"path":   "a.b",
 				"isNull": false,
 			},
-			wantSQL: "(json_value(meta::JSON,'$.a.b')) IS NOT NULL",
+			wantSQL: "json_type(meta,'$.a.b') <> 'NULL'",
 		},
 		{
 			name: "coalesce + int",
@@ -68,7 +68,7 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"coalesce": 0,
 				"int":      map[string]any{"gte": 18},
 			},
-			wantSQL:    "(json_value(meta::JSON,'$.user.age')) IS NOT NULL AND (COALESCE(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER), try_cast($1 AS INTEGER)) >= $2)",
+			wantSQL:    "json_type(meta,'$.user.age') <> 'NULL' AND (COALESCE(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER), try_cast($1 AS INTEGER)) >= $2)",
 			wantParams: []any{0, 18},
 		},
 		{
@@ -125,19 +125,38 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 
 func TestJsonFieldFilterSQL_Postgres(t *testing.T) {
 	e := &engines.Postgres{}
-	gotSQL, params, err := jsonFieldFilterSQL(e, "meta", "", map[string]any{
-		"path": "user.age",
-		"int":  map[string]any{"gte": 18},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
+	cases := []struct {
+		name string
+		fv   map[string]any
+		want string
+	}{
+		{
+			name: "int gte",
+			fv: map[string]any{
+				"path": "user.age",
+				"int":  map[string]any{"gte": 18},
+			},
+			want: "((meta->'user'->>'age')::INTEGER >= $1)",
+		},
+		{
+			name: "float lt uses DOUBLE PRECISION",
+			fv: map[string]any{
+				"path":  "metrics.score",
+				"float": map[string]any{"lt": 0.5},
+			},
+			want: "((meta->'metrics'->>'score')::DOUBLE PRECISION < $1)",
+		},
 	}
-	want := "((meta->'user'->>'age')::INTEGER >= $1)"
-	if gotSQL != want {
-		t.Errorf("sql:\n got %q\nwant %q", gotSQL, want)
-	}
-	if len(params) != 1 || params[0] != 18 {
-		t.Errorf("params: %v", params)
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, err := jsonFieldFilterSQL(e, "meta", "", tt.fv, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Errorf("sql:\n got %q\nwant %q", got, tt.want)
+			}
+		})
 	}
 }
 

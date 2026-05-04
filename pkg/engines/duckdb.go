@@ -576,6 +576,20 @@ func (e DuckDB) ExtractNestedTypedValue(sql, path, t string) string {
 	return fmt.Sprintf("try_cast(%s AS %s)", val, t)
 }
 
+func (e DuckDB) JSONPathIsNull(sql, path string, isNull bool) string {
+	if path == "" {
+		if isNull {
+			return fmt.Sprintf("(%s) IS NULL", sql)
+		}
+		return fmt.Sprintf("(%s) IS NOT NULL", sql)
+	}
+	op := "="
+	if !isNull {
+		op = "<>"
+	}
+	return fmt.Sprintf("json_type(%s,'$.%s') %s 'NULL'", sql, path, op)
+}
+
 func (e DuckDB) ExtractJSONTypedValue(sql, path, t string) string {
 	if path != "" {
 		sql = "json_value(" + sql + "::JSON,'$." + path + "')"

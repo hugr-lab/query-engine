@@ -94,6 +94,10 @@ func (e *Iceberg) ExtractJSONTypedValue(sql, path, sqlType string) string {
 	return e.duckdb.ExtractJSONTypedValue(sql, path, sqlType)
 }
 
+func (e *Iceberg) JSONPathIsNull(sql, path string, isNull bool) string {
+	return e.duckdb.JSONPathIsNull(sql, path, isNull)
+}
+
 func (e *Iceberg) LateralJoin(sql, alias string) string {
 	return e.duckdb.LateralJoin(sql, alias)
 }

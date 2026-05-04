@@ -49,6 +49,11 @@ type Engine interface {
 	// "VARCHAR", "TIMESTAMPTZ", "GEOMETRY"). Empty sqlType returns the raw extracted JSON value.
 	// Empty path returns the column itself (optionally cast).
 	ExtractJSONTypedValue(sql, path, sqlType string) string
+	// JSONPathIsNull returns a SQL boolean expression that is TRUE when the key at the given
+	// dot-path exists in the JSON document and its value is JSON null. When isNull is false,
+	// the expression is TRUE when the key exists and the value is anything other than JSON
+	// null. In both cases a missing key yields FALSE.
+	JSONPathIsNull(sql, path string, isNull bool) string
 	LateralJoin(sql, alias string) string
 }
 

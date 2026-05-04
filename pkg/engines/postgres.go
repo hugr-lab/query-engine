@@ -66,6 +66,20 @@ func (e *Postgres) FieldValueByPath(sqlName, path string) string {
 	return sqlName + extractPGJsonFieldByPath(path, false)
 }
 
+func (e *Postgres) JSONPathIsNull(sqlName, path string, isNull bool) string {
+	if path == "" {
+		if isNull {
+			return fmt.Sprintf("(%s) IS NULL", sqlName)
+		}
+		return fmt.Sprintf("(%s) IS NOT NULL", sqlName)
+	}
+	op := "="
+	if !isNull {
+		op = "<>"
+	}
+	return fmt.Sprintf("jsonb_typeof((%s)%s) %s 'null'", sqlName, extractPGJsonFieldByPath(path, false), op)
+}
+
 func (e *Postgres) ExtractJSONTypedValue(sqlName, path, sqlType string) string {
 	if sqlType == "GEOMETRY" {
 		extracted := sqlName
