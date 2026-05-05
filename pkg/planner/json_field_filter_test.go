@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/paulmach/orb"
 )
 
 func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
@@ -103,6 +104,15 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"path": "x",
 			},
 			wantErr: true,
+		},
+		{
+			name: "geometry intersects (json_extract for nested object)",
+			fv: map[string]any{
+				"path":     "shape",
+				"geometry": map[string]any{"intersects": orb.Point{1, 2}},
+			},
+			wantSQL:    "(ST_Intersects(ST_GeomFromGeoJSON(json_extract(meta::JSON,'$.shape')::VARCHAR),$1))",
+			wantParams: []any{orb.Point{1, 2}},
 		},
 	}
 	for _, tt := range tests {

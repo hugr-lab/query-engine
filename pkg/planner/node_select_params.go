@@ -742,8 +742,10 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 	return strings.Join(filters, " AND "), params, nil
 }
 
-// jsonFieldFilterSqlTypes maps JSONFieldFilter sub-filter names to engine-native SQL type names.
+// jsonFieldFilterSubTypes maps JSONFieldFilter sub-filter names to engine-native SQL type names.
 // The order also defines deterministic iteration when collecting sub-filters.
+// Range types (intRange, bigIntRange, timestampRange) are intentionally absent: they require
+// engine-specific reconstruction from JSON objects which is not implemented yet.
 var jsonFieldFilterSubTypes = []struct {
 	name    string
 	sqlType string
@@ -758,9 +760,6 @@ var jsonFieldFilterSubTypes = []struct {
 	{"dateTime", "TIMESTAMP"},
 	{"timestamp", "TIMESTAMPTZ"},
 	{"interval", "INTERVAL"},
-	{"intRange", "JSON"},
-	{"bigIntRange", "JSON"},
-	{"timestampRange", "JSON"},
 	{"geometry", "GEOMETRY"},
 }
 

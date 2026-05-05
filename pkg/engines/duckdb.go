@@ -591,6 +591,15 @@ func (e DuckDB) JSONPathIsNull(sql, path string, isNull bool) string {
 }
 
 func (e DuckDB) ExtractJSONTypedValue(sql, path, t string) string {
+	// GEOMETRY needs the raw JSON object (not the scalar string), because GeoJSON values
+	// are nested objects. json_extract returns JSON; json_value collapses non-scalars to NULL.
+	if t == "GEOMETRY" {
+		extracted := sql
+		if path != "" {
+			extracted = "json_extract(" + sql + "::JSON,'$." + path + "')"
+		}
+		return "ST_GeomFromGeoJSON(" + extracted + "::VARCHAR)"
+	}
 	if path != "" {
 		sql = "json_value(" + sql + "::JSON,'$." + path + "')"
 	}
@@ -609,8 +618,6 @@ func (e DuckDB) ExtractJSONTypedValue(sql, path, t string) string {
 		return "try_cast(" + sql + " AS TIMESTAMP)"
 	case "h3string":
 		return fmt.Sprintf("try_cast(h3_string_to_h3(%s))", sql)
-	case "GEOMETRY":
-		return "ST_GeomFromGeoJSON(" + sql + ")"
 	}
 	return fmt.Sprintf("try_cast(%s AS %s)", sql, t)
 }
