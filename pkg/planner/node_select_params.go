@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
@@ -827,7 +828,13 @@ func jsonFieldFilterSQL(e engines.Engine, sqlName, basePath string, fv map[strin
 			extracted = fmt.Sprintf("COALESCE(%s, %s)", extracted, e.ExtractJSONTypedValue(val, "", subType))
 		}
 		var subFilters []string
-		for op, v := range subValue {
+		ops := make([]string, 0, len(subValue))
+		for op := range subValue {
+			ops = append(ops, op)
+		}
+		sort.Strings(ops)
+		for _, op := range ops {
+			v := subValue[op]
 			if v == nil {
 				continue
 			}

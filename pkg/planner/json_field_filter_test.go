@@ -35,6 +35,16 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 			wantParams: []any{"%@x.com"},
 		},
 		{
+			name: "int gte and lt (sorted op order)",
+			fv: map[string]any{
+				"path": "user.age",
+				"int":  map[string]any{"gte": 18, "lt": 65},
+			},
+			// sort.Strings: "gte" < "lt" -> gte first, lt second
+			wantSQL:    "(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER) >= $1) AND (try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER) < $2)",
+			wantParams: []any{18, 65},
+		},
+		{
 			name: "isNull true alone",
 			fv: map[string]any{
 				"path":   "a.b",
