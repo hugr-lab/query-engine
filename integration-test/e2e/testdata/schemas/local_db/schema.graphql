@@ -33,6 +33,14 @@ type items @table(name: "items") {
     created_at: Timestamp
 }
 
+"""
+Demo dataset for JSONFieldFilter coverage: filter rows by extracting and casting nested values inside `data` (e.g. data.user.age, data.user.country, data.metrics.score, data.shape, data.event.at).
+"""
+type json_field_demo @table(name: "json_field_demo") {
+    id: BigInt! @pk
+    data: JSON
+}
+
 extend type Function {
     generate_series(start: Int!, stop: Int!, step: Int = 1): [Int]
         @function(name: "generate_series")

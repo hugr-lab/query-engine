@@ -82,11 +82,22 @@ func (e *Postgres) JSONPathIsNull(sqlName, path string, isNull bool) string {
 
 func (e *Postgres) ExtractJSONTypedValue(sqlName, path, sqlType string) string {
 	if sqlType == "GEOMETRY" {
+		// Path extraction uses `->` (asText=false), not `->>`, so the JSONB type
+		// survives the cast to text. With `->>`, a JSON-null value and a JSON
+		// string literally containing "null" both serialise to the bare text
+		// `null`, and the NULLIF below would incorrectly erase the latter.
+		// With `->`, JSON-null casts to `null` while the string "null" casts to
+		// `"null"` (with quotes), so NULLIF matches only true JSON-null.
+		// NULLIF then turns that JSONB-null literal back into SQL NULL so
+		// ST_GeomFromGeoJSON does not choke on the text "null". SetSRID(4326)
+		// aligns with how WKT literals are emitted in SQLValue and how geometry
+		// columns elsewhere in hugr are declared (WGS84), so ST_Intersects works
+		// without SRID mismatches.
 		extracted := sqlName
 		if path != "" {
-			extracted = sqlName + extractPGJsonFieldByPath(path, true)
+			extracted = sqlName + extractPGJsonFieldByPath(path, false)
 		}
-		return fmt.Sprintf("ST_GeomFromGeoJSON((%s)::text)", extracted)
+		return fmt.Sprintf("ST_SetSRID(ST_GeomFromGeoJSON(NULLIF((%s)::text, 'null')), 4326)", extracted)
 	}
 	if sqlType == "" {
 		if path == "" {
@@ -132,7 +143,10 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 		return SQLValueArrayFormatter(e, v)
 	case orb.Geometry:
 		b := wkt.Marshal(v)
-		return fmt.Sprintf("ST_GeomFromText('%s')", b), nil
+		// Tag WKT literals with SRID 4326 (WGS84) so PostGIS predicates can compare
+		// them against geometry columns and GeoJSON-derived values, which default
+		// to 4326 (per the GeoJSON spec).
+		return fmt.Sprintf("ST_GeomFromText('%s', 4326)", b), nil
 	case types.DateTime:
 		return fmt.Sprintf("'%s'::TIMESTAMP", time.Time(v).Format("2006-01-02T15:04:05")), nil
 	case time.Time:

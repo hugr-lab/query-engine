@@ -32,7 +32,7 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"path":   "owner.email",
 				"string": map[string]any{"ilike": "%@x.com"},
 			},
-			wantSQL:    "(try_cast(json_value(meta::JSON,'$.owner.email') AS VARCHAR) ILIKE $1)",
+			wantSQL:    "(json_extract_string(meta::JSON,'$.owner.email') ILIKE $1)",
 			wantParams: []any{"%@x.com"},
 		},
 		{
@@ -111,7 +111,7 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"path":     "shape",
 				"geometry": map[string]any{"intersects": orb.Point{1, 2}},
 			},
-			wantSQL:    "(ST_Intersects(ST_GeomFromGeoJSON(json_extract(meta::JSON,'$.shape')::VARCHAR),$1))",
+			wantSQL:    "(ST_Intersects(ST_GeomFromGeoJSON(NULLIF(json_extract(meta::JSON,'$.shape')::VARCHAR, 'null')),$1))",
 			wantParams: []any{orb.Point{1, 2}},
 		},
 	}

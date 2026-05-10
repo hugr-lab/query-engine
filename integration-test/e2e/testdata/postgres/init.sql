@@ -110,3 +110,21 @@ INSERT INTO price_ranges VALUES
     (3, 5, '[2000, 3000)', '[2025-01-01, 2025-12-31)');
 
 SELECT setval('price_ranges_id_seq', 3);
+
+-- json_field_demo: dataset for JSONFieldFilter coverage (path / isNull / coalesce / typed sub-filters)
+CREATE TABLE json_field_demo (
+    id INTEGER PRIMARY KEY,
+    data JSONB
+);
+
+INSERT INTO json_field_demo (id, data) VALUES
+    (1,  '{"user":{"age":31,"country":"DE"},"metrics":{"score":0.92},"shape":{"type":"Point","coordinates":[10,51]},"event":{"at":"2024-06-01T10:00:00Z"}}'),
+    (2,  '{"user":{"age":65,"country":"FR"},"metrics":{"score":0.50},"shape":{"type":"Point","coordinates":[2,48]},"event":{"at":"2024-06-02T11:00:00Z"}}'),
+    (3,  '{"user":{"age":14,"country":"DE"},"metrics":{"score":0.10},"shape":{"type":"Point","coordinates":[11,52]},"event":{"at":"2024-06-03T09:00:00Z"}}'),
+    (4,  '{"user":{"age":null,"country":"DE"},"metrics":{"score":null},"shape":null,"event":{"at":null}}'),
+    (5,  '{"user":{"country":"FR"},"metrics":{"score":0.75},"event":{"at":"2024-06-05T12:00:00Z"}}'),
+    (6,  NULL),
+    (7,  '{}'::jsonb),
+    (8,  '{"user":{"age":17,"country":"DE"},"metrics":{"score":0.65},"shape":{"type":"Point","coordinates":[10.1,51.1]},"event":{"at":"2024-06-08T08:00:00Z"}}'),
+    (9,  '{"user":{"age":40,"country":"DE"},"metrics":{"score":0.20},"shape":{"type":"Point","coordinates":[12,53]},"event":{"at":"2024-06-09T14:00:00Z"}}'),
+    (10, '{"user":{"age":18,"country":"FR"},"metrics":{"score":0.50},"shape":{"type":"Point","coordinates":[2.5,48.5]},"event":{"at":"2024-06-10T15:00:00Z"}}');

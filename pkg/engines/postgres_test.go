@@ -344,7 +344,7 @@ func Test_postgres_SQLValue(t *testing.T) {
 		{"string array with single quote", []string{"test's", "tt"}, "ARRAY['test''s','tt']", false},
 		{"time array value", []time.Time{tm, tm}, fmt.Sprintf("ARRAY['%s'::TIMESTAMPTZ,'%[1]s'::TIMESTAMPTZ]", tstr), false},
 		{"duration array value", []time.Duration{35 * time.Second, time.Second}, "ARRAY['35 seconds'::INTERVAL,'1 seconds'::INTERVAL]", false},
-		{"geometry value", orb.LineString{{32, 43}, {23, 55}}, "ST_GeomFromText('LINESTRING(32 43,23 55)')", false},
+		{"geometry value", orb.LineString{{32, 43}, {23, 55}}, "ST_GeomFromText('LINESTRING(32 43,23 55)', 4326)", false},
 		{"map value", map[string]any{"key": "value"}, "'{\"key\":\"value\"}'::JSONB", false},
 		{"unsupported value", struct{}{}, "", true},
 		// postgres specific types
