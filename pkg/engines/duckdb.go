@@ -593,9 +593,10 @@ func (e DuckDB) JSONPathIsNull(sql, path string, isNull bool) string {
 func (e DuckDB) ExtractJSONTypedValue(sql, path, t string) string {
 	// GEOMETRY needs the raw JSON object (not the scalar string), because GeoJSON values
 	// are nested objects. json_extract returns JSON; json_value collapses non-scalars to NULL.
-	// nullif(..., 'null') converts a JSON null literal back to SQL NULL so the missing /
-	// null shape paths short-circuit instead of failing in ST_GeomFromGeoJSON.
-	// DuckDB spatial does not use SRIDs for predicate matching, so no SetSRID wrapper is needed.
+	// NULLIF wraps the VARCHAR cast because json_extract preserves a JSON-null literal
+	// as the text "null", and DuckDB's ST_GeomFromGeoJSON rejects that with
+	// "Not a valid JSON object, (null)". Mapping it back to SQL NULL lets rows with a
+	// missing or explicitly-null shape filter cleanly through ST_Intersects.
 	if t == "GEOMETRY" {
 		extracted := sql
 		if path != "" {

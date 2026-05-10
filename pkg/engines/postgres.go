@@ -82,22 +82,11 @@ func (e *Postgres) JSONPathIsNull(sqlName, path string, isNull bool) string {
 
 func (e *Postgres) ExtractJSONTypedValue(sqlName, path, sqlType string) string {
 	if sqlType == "GEOMETRY" {
-		// Path extraction uses `->` (asText=false), not `->>`, so the JSONB type
-		// survives the cast to text. With `->>`, a JSON-null value and a JSON
-		// string literally containing "null" both serialise to the bare text
-		// `null`, and the NULLIF below would incorrectly erase the latter.
-		// With `->`, JSON-null casts to `null` while the string "null" casts to
-		// `"null"` (with quotes), so NULLIF matches only true JSON-null.
-		// NULLIF then turns that JSONB-null literal back into SQL NULL so
-		// ST_GeomFromGeoJSON does not choke on the text "null". SetSRID(4326)
-		// aligns with how WKT literals are emitted in SQLValue and how geometry
-		// columns elsewhere in hugr are declared (WGS84), so ST_Intersects works
-		// without SRID mismatches.
 		extracted := sqlName
 		if path != "" {
-			extracted = sqlName + extractPGJsonFieldByPath(path, false)
+			extracted = sqlName + extractPGJsonFieldByPath(path, true)
 		}
-		return fmt.Sprintf("ST_SetSRID(ST_GeomFromGeoJSON(NULLIF((%s)::text, 'null')), 4326)", extracted)
+		return fmt.Sprintf("ST_GeomFromGeoJSON((%s)::text)", extracted)
 	}
 	if sqlType == "" {
 		if path == "" {
