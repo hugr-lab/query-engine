@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/paulmach/orb"
@@ -227,15 +228,52 @@ func parseGeoJSONPoint(coords []interface{}) (orb.Point, error) {
 	if len(coords) < 2 || len(coords) > 3 {
 		return orb.Point{}, fmt.Errorf("point coordinates must have 2 elements")
 	}
-	x, ok := coords[0].(float64)
+	x, ok := coordToFloat64(coords[0])
 	if !ok {
 		return orb.Point{}, fmt.Errorf("point x is not a number")
 	}
-	y, ok := coords[1].(float64)
+	y, ok := coordToFloat64(coords[1])
 	if !ok {
 		return orb.Point{}, fmt.Errorf("point y is not a number")
 	}
 	return orb.Point{x, y}, nil
+}
+
+// coordToFloat64 accepts the numeric forms a GeoJSON coordinate can arrive as:
+// json.Unmarshal yields float64; gqlparser yields int64 for integer literals
+// (so `[5, 47]` and `[5.0, 47.0]` are equivalent at the GeoJSON level); and
+// json.Decoder with UseNumber yields json.Number.
+func coordToFloat64(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	}
+	return 0, false
 }
 
 func parseGeoJSONLineString(coords []interface{}) (orb.LineString, error) {
