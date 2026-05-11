@@ -1,16 +1,7 @@
 {
   "data": {
-    "pg_store": {
+    "local_db": {
       "json_field_demo": [
-        {
-          "id": 1
-        },
-        {
-          "id": 2
-        },
-        {
-          "id": 9
-        },
         {
           "id": 10
         },

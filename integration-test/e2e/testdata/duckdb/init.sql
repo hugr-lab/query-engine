@@ -62,4 +62,8 @@ INSERT INTO json_field_demo VALUES
     (7,  '{}'),
     (8,  '{"user":{"age":17,"country":"DE"},"metrics":{"score":0.65},"shape":{"type":"Point","coordinates":[10.1,51.1]},"event":{"at":"2024-06-08T08:00:00Z"}}'),
     (9,  '{"user":{"age":40,"country":"DE"},"metrics":{"score":0.20},"shape":{"type":"Point","coordinates":[12,53]},"event":{"at":"2024-06-09T14:00:00Z"}}'),
-    (10, '{"user":{"age":18,"country":"FR"},"metrics":{"score":0.50},"shape":{"type":"Point","coordinates":[2.5,48.5]},"event":{"at":"2024-06-10T15:00:00Z"}}');
+    (10, '{"user":{"age":18,"country":"FR"},"metrics":{"score":0.50},"shape":{"type":"Point","coordinates":[2.5,48.5]},"event":{"at":"2024-06-10T15:00:00Z"}}'),
+    -- Rows 11-12 carry extra paths for typed sub-filter coverage
+    -- (bigInt, float, bool, date, time, dateTime, interval, timestamp).
+    (11, '{"user":{"age":35,"country":"US"},"metrics":{"score":0.80},"shape":{"type":"Point","coordinates":[10.5,51.5]},"event":{"at":"2024-06-11T10:00:00Z","local_dt":"2024-06-11T10:00:00"},"account":{"balance":5000000000},"flags":{"premium":true},"signup":{"day":"2024-01-15"},"lunch":{"at_time":"12:30:00"},"subscription":{"duration":"01:30:00"}}'),
+    (12, '{"user":{"age":22,"country":"US"},"metrics":{"score":0.40},"shape":{"type":"Point","coordinates":[10.6,51.6]},"event":{"at":"2024-06-12T10:00:00Z","local_dt":"2024-06-12T10:00:00"},"account":{"balance":2500000000},"flags":{"premium":false},"signup":{"day":"2024-02-20"},"lunch":{"at_time":"13:00:00"},"subscription":{"duration":"02:00:00"}}');

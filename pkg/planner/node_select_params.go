@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -742,6 +745,68 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 	return strings.Join(filters, " AND "), params, nil
 }
 
+// jsonFieldParamRefRe matches a parameter placeholder like `$12` in a SQL
+// fragment. We need the captured digits to decide whether a particular
+// placeholder was newly added by the most recent FilterOperationSQLValue call.
+var jsonFieldParamRefRe = regexp.MustCompile(`\$(\d+)`)
+
+// coerceJSONFilterValue normalises a JSONFieldFilter sub-filter value so that
+// the bound parameter is always a portable VARCHAR. The receiving SQL side
+// wraps the placeholder with CAST(... AS sqlType), so the engine reparses the
+// typed value uniformly.
+//
+// This is the only sane shape that survives both pgx and duckdb-go: both
+// drivers bind a Go `time.Time` as TIMESTAMPTZ, which neither engine knows
+// how to cast directly to TIME (PG also rejects year 0000), and a
+// `time.Duration` as INTERVAL — fine when comparing to INTERVAL, but a foot-
+// gun when the JSON value was stored as a string like "01:30:00". Stringifying
+// here keeps both sides on a single text-based path.
+func coerceJSONFilterValue(v any, sqlType string) any {
+	switch t := v.(type) {
+	case time.Time:
+		switch sqlType {
+		case "DATE":
+			return t.Format("2006-01-02")
+		case "TIME":
+			return t.Format("15:04:05")
+		case "TIMESTAMP":
+			return t.Format("2006-01-02 15:04:05")
+		case "TIMESTAMPTZ":
+			return t.UTC().Format(time.RFC3339)
+		}
+	case time.Duration:
+		if sqlType == "INTERVAL" {
+			// Both PG and DuckDB parse "<N> seconds" into the same INTERVAL
+			// value, sidestepping the HH:MM:SS vs "1 hour" vs ISO 8601 drift.
+			secs := int64(t / time.Second)
+			return strconv.FormatInt(secs, 10) + " seconds"
+		}
+	}
+	return v
+}
+
+// wrapNewParamsWithCast wraps every `$N` placeholder in sql where N > skipBelow
+// with `CAST($N AS sqlType)`. Used so that JSONFieldFilter typed sub-filters
+// compare a bound value against the same SQL type as the JSON-extracted side,
+// regardless of how the driver chose to bind the Go value. Pre-existing
+// placeholders (e.g. the COALESCE default) are left untouched.
+//
+// GEOMETRY is intentionally skipped: the geometry comparison path wraps the
+// param with ST_GeomFromGeoJSON/ST_Intersects/etc., and there is no driver
+// type-mismatch to correct.
+func wrapNewParamsWithCast(sql, sqlType string, skipBelow int) string {
+	if sqlType == "GEOMETRY" {
+		return sql
+	}
+	return jsonFieldParamRefRe.ReplaceAllStringFunc(sql, func(m string) string {
+		idx, err := strconv.Atoi(m[1:])
+		if err != nil || idx <= skipBelow {
+			return m
+		}
+		return "CAST(" + m + " AS " + sqlType + ")"
+	})
+}
+
 // jsonFieldFilterSubTypes maps JSONFieldFilter sub-filter names to engine-native SQL type names.
 // The order also defines deterministic iteration when collecting sub-filters.
 // Range types (intRange, bigIntRange, timestampRange) are intentionally absent: they require
@@ -837,11 +902,21 @@ func jsonFieldFilterSQL(e engines.Engine, sqlName, basePath string, fv map[strin
 			if v == nil {
 				continue
 			}
+			v = coerceJSONFilterValue(v, subType)
+			paramsBefore := len(params)
 			s, p, err := e.FilterOperationSQLValue(extracted, "", op, v, params)
 			if err != nil {
 				return "", nil, fmt.Errorf("JSONFieldFilter.%s.%s: %w", subName, op, err)
 			}
 			params = p
+			// Without this, db drivers bind Go `time.Time` as TIMESTAMPTZ and
+			// `time.Duration` as INTERVAL, which the engine's extracted side
+			// (cast to DATE/TIME/TIMESTAMP/INTERVAL) cannot always compare
+			// against — Postgres refuses TIME = TIMESTAMPTZ outright, DuckDB
+			// silently mismatches some cross-type pairs. Casting the bound
+			// parameter to the same subType the extraction uses aligns both
+			// sides and lets the comparison evaluate as a typed value.
+			s = wrapNewParamsWithCast(s, subType, paramsBefore)
 			subFilters = append(subFilters, "("+s+")")
 		}
 		if len(subFilters) > 0 {

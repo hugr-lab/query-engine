@@ -1,0 +1,7 @@
+{
+  "errors": [
+    {
+      "message": "JSONFieldFilter.timestamp.gte: unsupported filter operator: gte"
+    }
+  ]
+}

@@ -3,6 +3,7 @@ package planner
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/paulmach/orb"
@@ -23,7 +24,7 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"path": "user.age",
 				"int":  map[string]any{"gte": 18},
 			},
-			wantSQL:    "(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER) >= $1)",
+			wantSQL:    "(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER) >= CAST($1 AS INTEGER))",
 			wantParams: []any{18},
 		},
 		{
@@ -32,7 +33,7 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"path":   "owner.email",
 				"string": map[string]any{"ilike": "%@x.com"},
 			},
-			wantSQL:    "(json_extract_string(meta::JSON,'$.owner.email') ILIKE $1)",
+			wantSQL:    "(json_extract_string(meta::JSON,'$.owner.email') ILIKE CAST($1 AS VARCHAR))",
 			wantParams: []any{"%@x.com"},
 		},
 		{
@@ -42,7 +43,7 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"int":  map[string]any{"gte": 18, "lt": 65},
 			},
 			// sort.Strings: "gte" < "lt" -> gte first, lt second
-			wantSQL:    "(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER) >= $1) AND (try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER) < $2)",
+			wantSQL:    "(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER) >= CAST($1 AS INTEGER)) AND (try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER) < CAST($2 AS INTEGER))",
 			wantParams: []any{18, 65},
 		},
 		{
@@ -68,7 +69,9 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"coalesce": 0,
 				"int":      map[string]any{"gte": 18},
 			},
-			wantSQL:    "(COALESCE(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER), try_cast($1 AS INTEGER)) >= $2)",
+			// $1 is the coalesce default (already wrapped by ExtractJSONTypedValue)
+			// and is intentionally NOT re-wrapped by wrapNewParamsWithCast.
+			wantSQL:    "(COALESCE(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER), try_cast($1 AS INTEGER)) >= CAST($2 AS INTEGER))",
 			wantParams: []any{0, 18},
 		},
 		{
@@ -79,7 +82,7 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"coalesce": 0,
 				"int":      map[string]any{"gte": 18},
 			},
-			wantSQL:    "json_type(meta,'$.user.age') <> 'NULL' AND (COALESCE(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER), try_cast($1 AS INTEGER)) >= $2)",
+			wantSQL:    "json_type(meta,'$.user.age') <> 'NULL' AND (COALESCE(try_cast(json_value(meta::JSON,'$.user.age') AS INTEGER), try_cast($1 AS INTEGER)) >= CAST($2 AS INTEGER))",
 			wantParams: []any{0, 18},
 		},
 		{
@@ -111,8 +114,38 @@ func TestJsonFieldFilterSQL_DuckDB(t *testing.T) {
 				"path":     "shape",
 				"geometry": map[string]any{"intersects": orb.Point{1, 2}},
 			},
+			// GEOMETRY is exempt from wrapNewParamsWithCast — the param is
+			// already consumed by ST_Intersects and a CAST(... AS GEOMETRY)
+			// would not round-trip the WKB driver binding.
 			wantSQL:    "(ST_Intersects(ST_GeomFromGeoJSON(NULLIF(json_extract(meta::JSON,'$.shape')::VARCHAR, 'null')),$1))",
 			wantParams: []any{orb.Point{1, 2}},
+		},
+		{
+			name: "date eq — value coerced to YYYY-MM-DD string, bound as VARCHAR and re-cast to DATE",
+			fv: map[string]any{
+				"path": "signup.day",
+				"date": map[string]any{"eq": time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)},
+			},
+			wantSQL:    "(try_cast(json_value(meta::JSON,'$.signup.day') AS DATE) = CAST($1 AS DATE))",
+			wantParams: []any{"2024-01-15"},
+		},
+		{
+			name: "time eq — coerced to HH:MM:SS so neither engine has to cast TIMESTAMPTZ→TIME",
+			fv: map[string]any{
+				"path": "lunch.at_time",
+				"time": map[string]any{"eq": time.Date(1, 1, 1, 12, 30, 0, 0, time.UTC)},
+			},
+			wantSQL:    "(try_cast(json_value(meta::JSON,'$.lunch.at_time') AS TIME) = CAST($1 AS TIME))",
+			wantParams: []any{"12:30:00"},
+		},
+		{
+			name: "interval eq — coerced to portable '<N> seconds' string",
+			fv: map[string]any{
+				"path":     "subscription.duration",
+				"interval": map[string]any{"eq": 90 * time.Minute},
+			},
+			wantSQL:    "(try_cast(json_value(meta::JSON,'$.subscription.duration') AS INTERVAL) = CAST($1 AS INTERVAL))",
+			wantParams: []any{"5400 seconds"},
 		},
 	}
 	for _, tt := range tests {
@@ -156,7 +189,7 @@ func TestJsonFieldFilterSQL_Postgres(t *testing.T) {
 				"path": "user.age",
 				"int":  map[string]any{"gte": 18},
 			},
-			want: "((meta->'user'->>'age')::INTEGER >= $1)",
+			want: "((meta->'user'->>'age')::INTEGER >= CAST($1 AS INTEGER))",
 		},
 		{
 			name: "float lt uses DOUBLE PRECISION",
@@ -164,7 +197,7 @@ func TestJsonFieldFilterSQL_Postgres(t *testing.T) {
 				"path":  "metrics.score",
 				"float": map[string]any{"lt": 0.5},
 			},
-			want: "((meta->'metrics'->>'score')::DOUBLE PRECISION < $1)",
+			want: "((meta->'metrics'->>'score')::DOUBLE PRECISION < CAST($1 AS DOUBLE PRECISION))",
 		},
 	}
 	for _, tt := range cases {

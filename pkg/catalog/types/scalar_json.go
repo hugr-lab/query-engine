@@ -41,8 +41,11 @@ input JSONFilter @system {
 """
 Filter by a nested JSON field at a given path.
 The path uses dot notation (e.g. "catalog.field_name").
-Optional coalesce replaces a missing or null extracted value with a default (JSON literal) before applying the typed sub-filter.
-Optional isNull is strict: isNull: true matches when the key exists at the path AND its value is JSON null; isNull: false matches when the key exists AND its value is non-null; a missing key yields false in both cases. isNull combines with the typed sub-filter via AND.
+Optional coalesce replaces a missing or null extracted value with a default (JSON literal)
+before applying the typed sub-filter.
+Optional isNull is strict: isNull: true matches when the key exists at the path AND its value is JSON null;
+isNull: false matches when the key exists AND its value is non-null;
+a missing key yields false in both cases. isNull combines with the typed sub-filter via AND.
 At most one typed sub-filter should be set; the server validates this.
 """
 input JSONFieldFilter @system {
