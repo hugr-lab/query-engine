@@ -116,9 +116,10 @@ func ParseJSONFieldFilterShape(fv map[string]any, basePath string) (*JSONFieldFi
 	return out, nil
 }
 
-// jsonFieldParamRefRe captures `$N` parameter placeholders for selective
-// rewriting after FilterOperationSQLValue returns.
-var jsonFieldParamRefRe = regexp.MustCompile(`\$(\d+)`)
+// sqlParamRegExp matches a `$N` SQL parameter placeholder. Used by
+// castParamRefsAs to rewrite a subset of placeholders after the engine's
+// FilterOperationSQLValue has returned its SQL fragment.
+var sqlParamRegExp = regexp.MustCompile(`\$(\d+)`)
 
 // CompileJSONFieldFilterSQL is the dialect-agnostic orchestration for a
 // GraphQL JSONFieldFilter input. It parses the shape, handles isNull and
@@ -171,7 +172,7 @@ func CompileJSONFieldFilterSQL(e Engine, sqlName, basePath string, fv map[string
 			}
 			params = p
 			if paramCast != "" {
-				s = wrapJSONFieldNewParams(s, paramCast, paramsBefore)
+				s = castParamRefsAs(s, paramCast, paramsBefore)
 			}
 			subFilters = append(subFilters, "("+s+")")
 		}
@@ -189,11 +190,13 @@ func CompileJSONFieldFilterSQL(e Engine, sqlName, basePath string, fv map[string
 	return strings.Join(conds, " AND "), params, nil
 }
 
-// wrapJSONFieldNewParams wraps `$N` placeholders where N > skipBelow with
-// `CAST($N AS sqlType)`. Pre-existing placeholders (e.g. the COALESCE default
-// already added before the FilterOperationSQLValue call) are not re-wrapped.
-func wrapJSONFieldNewParams(sql, sqlType string, skipBelow int) string {
-	return jsonFieldParamRefRe.ReplaceAllStringFunc(sql, func(m string) string {
+// castParamRefsAs rewrites every `$N` placeholder in sql where N > skipBelow
+// to `CAST($N AS sqlType)`. Pre-existing placeholders (e.g. the COALESCE
+// default that was bound before the FilterOperationSQLValue call) are left
+// untouched. The orchestration uses this to reconcile a freshly-bound
+// parameter with the typed extraction on the JSON side.
+func castParamRefsAs(sql, sqlType string, skipBelow int) string {
+	return sqlParamRegExp.ReplaceAllStringFunc(sql, func(m string) string {
 		idx, err := strconv.Atoi(m[1:])
 		if err != nil || idx <= skipBelow {
 			return m
