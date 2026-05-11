@@ -23,7 +23,15 @@ func (s *jsonScalar) SDL() string {
 	return `"""
 The ` + "`JSON`" + ` scalar type represents arbitrary JSON data, encoded as a JSON string.
 JSONFilter: eq, has, has_all, contains, is_null, and field (filter on a value at a dot-path inside the document).
-For field: use path (dot notation, e.g. "catalog.field_name"), optional coalesce (JSON literal used when the extracted value is missing or null), optional isNull, and at most one typed sub-filter that matches the runtime type at that path (Int, BigInt, Float, String, Boolean, Date, Time, DateTime, Timestamp, Interval, Geometry). isNull is strict and independent of the typed sub-filter: isNull: true matches when the key exists at the given path AND its value is JSON null; isNull: false matches when the key exists AND its value is anything other than JSON null; a missing key yields false in both cases. To match "key missing or null" combine isNull: true with _not on has at the parent JSONFilter via _or.
+For field: use path (dot notation, e.g. "catalog.field_name"),
+optional coalesce (JSON literal used when the extracted value is missing or null),
+optional isNull, and at most one typed sub-filter that matches the runtime type at that path
+(Int, BigInt, Float, String, Boolean, Date, Time, DateTime, Timestamp, Interval, Geometry).
+isNull is strict and independent of the typed sub-filter:
+isNull: true matches when the key exists at the given path AND its value is JSON null;
+isNull: false matches when the key exists AND its value is anything other than JSON null;
+a missing key yields false in both cases.
+To match "key missing or null" combine isNull: true with _not on has at the parent JSONFilter via _or.
 Combine several path conditions with the parent object filter _and / _or / _not (same as other columns).
 Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter)
 """

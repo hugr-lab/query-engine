@@ -54,8 +54,12 @@ func (e *DuckLake) FilterOperationSQLValue(sqlName, path, op string, value any, 
 	return e.duckdb.FilterOperationSQLValue(sqlName, path, op, value, params)
 }
 
-func (e *DuckLake) JSONFieldFilterSQL(sqlName, basePath string, fv map[string]any, params []any) (string, []any, error) {
-	return e.duckdb.JSONFieldFilterSQL(sqlName, basePath, fv, params)
+func (e *DuckLake) CoerceJSONFieldFilterValue(v any, subType string) any {
+	return e.duckdb.CoerceJSONFieldFilterValue(v, subType)
+}
+
+func (e *DuckLake) JSONFieldFilterParamCast(subType string) string {
+	return e.duckdb.JSONFieldFilterParamCast(subType)
 }
 
 func (e *DuckLake) FieldValueByPath(sqlName, path string) string {

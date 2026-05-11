@@ -2,6 +2,7 @@ package planner
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -33,6 +34,9 @@ func finalResultNode(provider catalog.Provider, planner Catalog, field *ast.Fiel
 				return "", nil, err
 			}
 			params = params[:n]
+			if strings.Contains(sql, "json_field_demo") {
+				log.Printf("DEBUG final_sql=%s", sql)
+			}
 			// List-typed queries (both list<Object> → QueryArrowTable and
 			// [scalar] → QueryJsonScalarArray) flow through the native-
 			// Arrow path; RecordToJSON decodes geometry / temporal /

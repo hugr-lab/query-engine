@@ -3,6 +3,7 @@ package engines
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
@@ -54,15 +55,17 @@ type Engine interface {
 	// the expression is TRUE when the key exists and the value is anything other than JSON
 	// null. In both cases a missing key yields FALSE.
 	JSONPathIsNull(sql, path string, isNull bool) string
-	// JSONFieldFilterSQL compiles a GraphQL JSONFieldFilter input map (path +
-	// optional isNull + optional coalesce + at most one typed sub-filter like
-	// IntFilter, DateFilter, IntervalFilter, ...) into a SQL boolean expression.
-	// Each engine owns the dialect-specific path extraction, the coercion of
-	// Go time/duration values into a form the driver and dialect can compare
-	// without a round-trip through TIMESTAMPTZ, and the per-operator emission
-	// for the chosen typed sub-filter. Callers parse the input shape with
-	// ParseJSONFieldFilterShape before reaching this method.
-	JSONFieldFilterSQL(sqlName, basePath string, fv map[string]any, params []any) (string, []any, error)
+	// CoerceJSONFieldFilterValue normalises a JSONFieldFilter sub-filter value
+	// into the form the engine's driver should bind. Engines that need to
+	// avoid a driver-side TIMESTAMPTZ binding (e.g. PG cannot compare
+	// TIMESTAMPTZ to TIME, DuckDB cannot CAST(TIMESTAMPTZ AS TIME)) reformat
+	// time.Time / time.Duration to a string here. Pure scalars pass through.
+	CoerceJSONFieldFilterValue(v any, subType string) any
+	// JSONFieldFilterParamCast returns the SQL type that the orchestration
+	// should wrap a freshly-bound parameter in as CAST($N AS <type>). Empty
+	// string means no wrap. Used to reconcile a stringified parameter with the
+	// typed extraction on the JSON side (e.g. DATE/TIME/TIMESTAMP/INTERVAL).
+	JSONFieldFilterParamCast(subType string) string
 	LateralJoin(sql, alias string) string
 }
 
@@ -179,6 +182,10 @@ func ApplyQueryParams(e Engine, query string, params []any) (string, int, error)
 			v, err = e.SQLValue(params[currentParamNum-1])
 			if err != nil {
 				return "", 0, err
+			}
+			if strings.Contains(query, "json_field_demo") {
+				p := params[currentParamNum-1]
+				log.Printf("DEBUG ApplyQueryParams engine=%T $%d: in=%v(%T) → out=%q", e, currentParamNum, p, p, v)
 			}
 			applied[currentParamNum] = v
 			sum += currentParamNum

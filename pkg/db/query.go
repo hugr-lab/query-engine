@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log"
+	"strings"
 
 	"github.com/hugr-lab/query-engine/types"
 )
@@ -37,6 +39,28 @@ func (db *Pool) QueryJsonTableArrow(ctx context.Context, q string, wrap bool, pa
 
 	if wrap {
 		q = wrapJSON(q)
+	}
+	if strings.Contains(q, "json_field_demo") {
+		log.Printf("DEBUG Arrow.QueryContext args=%v query=%s", params, q)
+		// Diagnostic pre-query: introspect each piece of the typed JSON-field
+		// comparison so we can see whether json_value / try_cast / CAST each
+		// produce the expected typed value for row 11.
+		diag := `SELECT
+			json_value(data::JSON, '$.signup.day') AS jv_raw,
+			json_type(data, '$.signup.day') AS jv_type,
+			try_cast(json_value(data::JSON, '$.signup.day') AS DATE) AS jv_as_date,
+			CAST('2024-01-15' AS DATE) AS rhs_date,
+			try_cast(json_value(data::JSON, '$.signup.day') AS DATE) = CAST('2024-01-15' AS DATE) AS cmp
+			FROM local_db.json_field_demo WHERE id = 11`
+		drow, derr := ar.QueryContext(ctx, diag)
+		if derr != nil {
+			log.Printf("DEBUG diag err: %v", derr)
+		} else {
+			dt, _ := types.NewArrowTableFromReader(drow)
+			b, _ := json.Marshal(dt)
+			log.Printf("DEBUG diag row11: %s", string(b))
+			drow.Release()
+		}
 	}
 	reader, err := ar.QueryContext(ctx, q, params...)
 	if err != nil {
@@ -97,6 +121,9 @@ func (db *Pool) QueryJsonScalarArrayArrow(ctx context.Context, q string, params 
 	}
 	defer ar.Close()
 
+	if strings.Contains(q, "json_field_demo") {
+		log.Printf("DEBUG Arrow.QueryContext args=%v query=%s", params, q)
+	}
 	reader, err := ar.QueryContext(ctx, q, params...)
 	if err != nil {
 		return nil, err
@@ -183,6 +210,9 @@ func (db *Pool) QueryTableStream(ctx context.Context, q string, params ...any) (
 	ar, err := db.Arrow(ctx)
 	if err != nil {
 		return nil, nil, err
+	}
+	if strings.Contains(q, "json_field_demo") {
+		log.Printf("DEBUG Arrow.QueryContext args=%v query=%s", params, q)
 	}
 	reader, err := ar.QueryContext(ctx, q, params...)
 	if err != nil {

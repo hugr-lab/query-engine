@@ -725,7 +725,7 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 			if !ok {
 				return "", nil, errors.New("JSONFilter.field must be an object")
 			}
-			filter, p, err = e.JSONFieldFilterSQL(sqlName, path, fv, params)
+			filter, p, err = engines.CompileJSONFieldFilterSQL(e, sqlName, path, fv, params)
 		} else {
 			filter, p, err = e.FilterOperationSQLValue(sqlName, path, op, v, params)
 		}

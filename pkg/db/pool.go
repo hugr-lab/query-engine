@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -240,6 +241,9 @@ type Connection struct {
 }
 
 func (c *Connection) Query(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if strings.Contains(query, "json_field_demo") {
+		log.Printf("DEBUG Connection.Query args=%v query=%s", args, query)
+	}
 	if c.tx != nil {
 		return c.tx.QueryContext(ctx, query, args...)
 	}
@@ -247,6 +251,9 @@ func (c *Connection) Query(ctx context.Context, query string, args ...any) (*sql
 }
 
 func (c *Connection) QueryRow(ctx context.Context, query string, args ...any) *sql.Row {
+	if strings.Contains(query, "json_field_demo") {
+		log.Printf("DEBUG Connection.QueryRow args=%v query=%s", args, query)
+	}
 	if c.tx != nil {
 		return c.tx.QueryRowContext(ctx, query, args...)
 	}
@@ -254,6 +261,9 @@ func (c *Connection) QueryRow(ctx context.Context, query string, args ...any) *s
 }
 
 func (c *Connection) Exec(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if strings.Contains(query, "json_field_demo") {
+		log.Printf("DEBUG Connection.Exec args=%v query=%s", args, query)
+	}
 	if c.tx != nil {
 		return c.tx.ExecContext(ctx, query, args...)
 	}

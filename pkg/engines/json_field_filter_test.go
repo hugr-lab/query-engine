@@ -169,7 +169,7 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSQL, gotParams, err := e.JSONFieldFilterSQL("meta", "", tt.fv, nil)
+			gotSQL, gotParams, err := CompileJSONFieldFilterSQL(e, "meta", "", tt.fv, nil)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("err: want %v got %v", tt.wantErr, err)
 			}
@@ -263,7 +263,7 @@ func TestJSONFieldFilterSQL_Postgres(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSQL, gotParams, err := e.JSONFieldFilterSQL("meta", "", tt.fv, nil)
+			gotSQL, gotParams, err := CompileJSONFieldFilterSQL(e, "meta", "", tt.fv, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
