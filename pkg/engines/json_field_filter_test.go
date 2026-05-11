@@ -127,7 +127,7 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 				"path": "signup.day",
 				"date": map[string]any{"eq": time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)},
 			},
-			wantSQL:    "(try_cast(json_value(meta::JSON,'$.signup.day') AS DATE) = CAST($1 AS DATE))",
+			wantSQL:    "(try_cast(json_extract_string(meta::JSON,'$.signup.day') AS DATE) = CAST($1 AS DATE))",
 			wantParams: []any{"2024-01-15"},
 		},
 		{
@@ -136,7 +136,7 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 				"path": "lunch.at_time",
 				"time": map[string]any{"eq": time.Date(1, 1, 1, 12, 30, 0, 0, time.UTC)},
 			},
-			wantSQL:    "(try_cast(json_value(meta::JSON,'$.lunch.at_time') AS TIME) = CAST($1 AS TIME))",
+			wantSQL:    "(try_cast(json_extract_string(meta::JSON,'$.lunch.at_time') AS TIME) = CAST($1 AS TIME))",
 			wantParams: []any{"12:30:00"},
 		},
 		{
@@ -145,7 +145,7 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 				"path":     "event.local_dt",
 				"dateTime": map[string]any{"eq": time.Date(2024, 6, 11, 10, 0, 0, 0, time.UTC)},
 			},
-			wantSQL:    "(try_cast(json_value(meta::JSON,'$.event.local_dt') AS TIMESTAMP) = CAST($1 AS TIMESTAMP))",
+			wantSQL:    "(try_cast(json_extract_string(meta::JSON,'$.event.local_dt') AS TIMESTAMP) = CAST($1 AS TIMESTAMP))",
 			wantParams: []any{"2024-06-11 10:00:00"},
 		},
 		{
@@ -154,7 +154,7 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 				"path":      "event.at",
 				"timestamp": map[string]any{"gte": time.Date(2024, 6, 9, 0, 0, 0, 0, time.UTC)},
 			},
-			wantSQL:    "(try_cast(json_value(meta::JSON,'$.event.at') AS TIMESTAMPTZ) >= $1)",
+			wantSQL:    "(try_cast(json_extract_string(meta::JSON,'$.event.at') AS TIMESTAMPTZ) >= $1)",
 			wantParams: []any{time.Date(2024, 6, 9, 0, 0, 0, 0, time.UTC)},
 		},
 		{
@@ -163,7 +163,7 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 				"path":     "subscription.duration",
 				"interval": map[string]any{"eq": 90 * time.Minute},
 			},
-			wantSQL:    "(try_cast(json_value(meta::JSON,'$.subscription.duration') AS INTERVAL) = CAST($1 AS INTERVAL))",
+			wantSQL:    "(try_cast(json_extract_string(meta::JSON,'$.subscription.duration') AS INTERVAL) = CAST($1 AS INTERVAL))",
 			wantParams: []any{"5400 seconds"},
 		},
 	}

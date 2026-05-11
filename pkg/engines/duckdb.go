@@ -592,9 +592,9 @@ func (e DuckDB) ExtractNestedTypedValue(sql, path, t string) string {
 // duckdb-go driver binds them as VARCHAR. DuckDB cannot CAST(TIMESTAMPTZ AS
 // TIME), and its DATE / TIMESTAMP coercion from a TIMESTAMPTZ-bound parameter
 // is also brittle. "<seconds> seconds" is the format DuckDB parses reliably
-// for INTERVAL and matches whatever `try_cast(json_value(...) AS INTERVAL)`
-// produces regardless of whether the JSON stored ISO 8601 or HH:MM:SS.
-// TIMESTAMPTZ binds natively, so it is intentionally not coerced.
+// for INTERVAL and matches whatever `try_cast(json_extract_string(...) AS INTERVAL)`
+// produces. ISO-8601 filter literals (e.g. "PT1H30M") are parsed and converted to
+// the same "<seconds> seconds" form. TIMESTAMPTZ binds natively, so it is not coerced.
 func (e *DuckDB) CoerceJSONFieldFilterValue(v any, subType string) any {
 	switch t := v.(type) {
 	case time.Time:
@@ -610,6 +610,12 @@ func (e *DuckDB) CoerceJSONFieldFilterValue(v any, subType string) any {
 		if subType == SQLTypeInterval {
 			secs := int64(t / time.Second)
 			return strconv.FormatInt(secs, 10) + " seconds"
+		}
+	case string:
+		if subType == SQLTypeInterval {
+			if d, err := ctypes.ParseSQLInterval(t); err == nil {
+				return strconv.FormatInt(int64(d/time.Second), 10) + " seconds"
+			}
 		}
 	}
 	return v
@@ -662,6 +668,15 @@ func (e DuckDB) ExtractJSONTypedValue(sql, path, t string) string {
 			return "try_cast(" + sql + " AS VARCHAR)"
 		}
 		return "json_extract_string(" + sql + "::JSON,'$." + path + "')"
+	}
+	// DATE/TIME/TIMESTAMP/TIMESTAMPTZ/INTERVAL scalars are JSON strings; json_value
+	// leaves surrounding quotes so try_cast fails — use json_extract_string like VARCHAR.
+	switch t {
+	case SQLTypeDate, SQLTypeTime, SQLTypeTimestamp, SQLTypeTimestampTZ, SQLTypeInterval:
+		if path == "" {
+			return "try_cast(" + sql + " AS " + t + ")"
+		}
+		return "try_cast(json_extract_string(" + sql + "::JSON,'$." + path + "') AS " + t + ")"
 	}
 	if path != "" {
 		sql = "json_value(" + sql + "::JSON,'$." + path + "')"
