@@ -3,7 +3,6 @@ package engines
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
@@ -182,10 +181,6 @@ func ApplyQueryParams(e Engine, query string, params []any) (string, int, error)
 			v, err = e.SQLValue(params[currentParamNum-1])
 			if err != nil {
 				return "", 0, err
-			}
-			if strings.Contains(query, "json_field_demo") {
-				p := params[currentParamNum-1]
-				log.Printf("DEBUG ApplyQueryParams engine=%T $%d: in=%v(%T) → out=%q", e, currentParamNum, p, p, v)
 			}
 			applied[currentParamNum] = v
 			sum += currentParamNum

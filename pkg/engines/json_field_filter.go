@@ -3,7 +3,6 @@ package engines
 import (
 	"errors"
 	"fmt"
-	"log"
 	"regexp"
 	"sort"
 	"strconv"
@@ -181,17 +180,13 @@ func CompileJSONFieldFilterSQL(e Engine, sqlName, basePath string, fv map[string
 		}
 	}
 
-	var out string
 	switch len(conds) {
 	case 0:
-		out = "TRUE"
+		return "TRUE", params, nil
 	case 1:
-		out = conds[0]
-	default:
-		out = strings.Join(conds, " AND ")
+		return conds[0], params, nil
 	}
-	log.Printf("DEBUG json_field_filter engine=%T sql=%q params=%v", e, out, params)
-	return out, params, nil
+	return strings.Join(conds, " AND "), params, nil
 }
 
 // wrapJSONFieldNewParams wraps `$N` placeholders where N > skipBelow with
