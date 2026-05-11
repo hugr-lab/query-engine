@@ -58,6 +58,10 @@ func (e *Iceberg) FilterOperationSQLValue(sqlName, path, op string, value any, p
 	return e.duckdb.FilterOperationSQLValue(sqlName, path, op, value, params)
 }
 
+func (e *Iceberg) JSONFieldFilterSQL(sqlName, basePath string, fv map[string]any, params []any) (string, []any, error) {
+	return e.duckdb.JSONFieldFilterSQL(sqlName, basePath, fv, params)
+}
+
 func (e *Iceberg) FieldValueByPath(sqlName, path string) string {
 	return e.duckdb.FieldValueByPath(sqlName, path)
 }

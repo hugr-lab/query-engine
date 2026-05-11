@@ -54,6 +54,15 @@ type Engine interface {
 	// the expression is TRUE when the key exists and the value is anything other than JSON
 	// null. In both cases a missing key yields FALSE.
 	JSONPathIsNull(sql, path string, isNull bool) string
+	// JSONFieldFilterSQL compiles a GraphQL JSONFieldFilter input map (path +
+	// optional isNull + optional coalesce + at most one typed sub-filter like
+	// IntFilter, DateFilter, IntervalFilter, ...) into a SQL boolean expression.
+	// Each engine owns the dialect-specific path extraction, the coercion of
+	// Go time/duration values into a form the driver and dialect can compare
+	// without a round-trip through TIMESTAMPTZ, and the per-operator emission
+	// for the chosen typed sub-filter. Callers parse the input shape with
+	// ParseJSONFieldFilterShape before reaching this method.
+	JSONFieldFilterSQL(sqlName, basePath string, fv map[string]any, params []any) (string, []any, error)
 	LateralJoin(sql, alias string) string
 }
 

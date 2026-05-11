@@ -4,11 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
-	"sort"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -729,7 +725,7 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 			if !ok {
 				return "", nil, errors.New("JSONFilter.field must be an object")
 			}
-			filter, p, err = jsonFieldFilterSQL(e, sqlName, path, fv, params)
+			filter, p, err = e.JSONFieldFilterSQL(sqlName, path, fv, params)
 		} else {
 			filter, p, err = e.FilterOperationSQLValue(sqlName, path, op, v, params)
 		}
@@ -743,194 +739,6 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 		return strings.TrimPrefix(strings.TrimSuffix(filters[0], ")"), "("), params, nil
 	}
 	return strings.Join(filters, " AND "), params, nil
-}
-
-// jsonFieldParamRefRe matches a parameter placeholder like `$12` in a SQL
-// fragment. We need the captured digits to decide whether a particular
-// placeholder was newly added by the most recent FilterOperationSQLValue call.
-var jsonFieldParamRefRe = regexp.MustCompile(`\$(\d+)`)
-
-// coerceJSONFilterValue normalises a JSONFieldFilter sub-filter value so that
-// the bound parameter is always a portable VARCHAR. The receiving SQL side
-// wraps the placeholder with CAST(... AS sqlType), so the engine reparses the
-// typed value uniformly.
-//
-// This is the only sane shape that survives both pgx and duckdb-go: both
-// drivers bind a Go `time.Time` as TIMESTAMPTZ, which neither engine knows
-// how to cast directly to TIME (PG also rejects year 0000), and a
-// `time.Duration` as INTERVAL — fine when comparing to INTERVAL, but a foot-
-// gun when the JSON value was stored as a string like "01:30:00". Stringifying
-// here keeps both sides on a single text-based path.
-func coerceJSONFilterValue(v any, sqlType string) any {
-	switch t := v.(type) {
-	case time.Time:
-		switch sqlType {
-		case "DATE":
-			return t.Format("2006-01-02")
-		case "TIME":
-			return t.Format("15:04:05")
-		case "TIMESTAMP":
-			return t.Format("2006-01-02 15:04:05")
-		case "TIMESTAMPTZ":
-			return t.UTC().Format(time.RFC3339)
-		}
-	case time.Duration:
-		if sqlType == "INTERVAL" {
-			// Both PG and DuckDB parse "<N> seconds" into the same INTERVAL
-			// value, sidestepping the HH:MM:SS vs "1 hour" vs ISO 8601 drift.
-			secs := int64(t / time.Second)
-			return strconv.FormatInt(secs, 10) + " seconds"
-		}
-	}
-	return v
-}
-
-// wrapNewParamsWithCast wraps every `$N` placeholder in sql where N > skipBelow
-// with `CAST($N AS sqlType)`. Used so that JSONFieldFilter typed sub-filters
-// compare a bound value against the same SQL type as the JSON-extracted side,
-// regardless of how the driver chose to bind the Go value. Pre-existing
-// placeholders (e.g. the COALESCE default) are left untouched.
-//
-// GEOMETRY is intentionally skipped: the geometry comparison path wraps the
-// param with ST_GeomFromGeoJSON/ST_Intersects/etc., and there is no driver
-// type-mismatch to correct.
-func wrapNewParamsWithCast(sql, sqlType string, skipBelow int) string {
-	if sqlType == "GEOMETRY" {
-		return sql
-	}
-	return jsonFieldParamRefRe.ReplaceAllStringFunc(sql, func(m string) string {
-		idx, err := strconv.Atoi(m[1:])
-		if err != nil || idx <= skipBelow {
-			return m
-		}
-		return "CAST(" + m + " AS " + sqlType + ")"
-	})
-}
-
-// jsonFieldFilterSubTypes maps JSONFieldFilter sub-filter names to engine-native SQL type names.
-// The order also defines deterministic iteration when collecting sub-filters.
-// Range types (intRange, bigIntRange, timestampRange) are intentionally absent: they require
-// engine-specific reconstruction from JSON objects which is not implemented yet.
-var jsonFieldFilterSubTypes = []struct {
-	name    string
-	sqlType string
-}{
-	{"int", "INTEGER"},
-	{"bigInt", "BIGINT"},
-	{"float", "DOUBLE PRECISION"},
-	{"string", "VARCHAR"},
-	{"bool", "BOOLEAN"},
-	{"date", "DATE"},
-	{"time", "TIME"},
-	{"dateTime", "TIMESTAMP"},
-	{"timestamp", "TIMESTAMPTZ"},
-	{"interval", "INTERVAL"},
-	{"geometry", "GEOMETRY"},
-}
-
-// jsonFieldFilterSQL compiles a JSONFieldFilter input into SQL by extracting the value at
-// the given dot-path (with optional COALESCE and isNull) and applying at most one typed
-// sub-filter (IntFilter, StringFilter, ...). isNull is independent and AND-combined.
-func jsonFieldFilterSQL(e engines.Engine, sqlName, basePath string, fv map[string]any, params []any) (string, []any, error) {
-	rawPath, ok := fv["path"].(string)
-	if !ok || rawPath == "" {
-		return "", nil, errors.New("JSONFieldFilter.path is required")
-	}
-	jsonPath := rawPath
-	if basePath != "" {
-		jsonPath = basePath + "." + rawPath
-	}
-
-	var (
-		subName  string
-		subValue map[string]any
-		subType  string
-	)
-	for _, st := range jsonFieldFilterSubTypes {
-		v, present := fv[st.name]
-		if !present || v == nil {
-			continue
-		}
-		m, ok := v.(map[string]any)
-		if !ok {
-			return "", nil, fmt.Errorf("JSONFieldFilter.%s must be an object", st.name)
-		}
-		if len(m) == 0 {
-			continue
-		}
-		if subName != "" {
-			return "", nil, fmt.Errorf("JSONFieldFilter accepts at most one typed sub-filter, got both %s and %s", subName, st.name)
-		}
-		subName = st.name
-		subValue = m
-		subType = st.sqlType
-	}
-
-	isNullVal, hasIsNull := fv["isNull"]
-	coalesceVal, hasCoalesce := fv["coalesce"]
-
-	if subName == "" && !hasIsNull {
-		return "", nil, errors.New("JSONFieldFilter must specify isNull or one typed sub-filter")
-	}
-
-	var conds []string
-
-	if hasIsNull {
-		// isNull is strict: it requires the key to exist at the given path.
-		// isNull: true  -> key exists AND value is JSON null
-		// isNull: false -> key exists AND value is anything other than JSON null
-		// A missing key yields false in both cases.
-		b, _ := isNullVal.(bool)
-		conds = append(conds, e.JSONPathIsNull(sqlName, jsonPath, b))
-	}
-
-	if subName != "" {
-		extracted := e.ExtractJSONTypedValue(sqlName, jsonPath, subType)
-		if hasCoalesce && coalesceVal != nil {
-			params = append(params, coalesceVal)
-			val := "$" + fmt.Sprint(len(params))
-			extracted = fmt.Sprintf("COALESCE(%s, %s)", extracted, e.ExtractJSONTypedValue(val, "", subType))
-		}
-		var subFilters []string
-		ops := make([]string, 0, len(subValue))
-		for op := range subValue {
-			ops = append(ops, op)
-		}
-		sort.Strings(ops)
-		for _, op := range ops {
-			v := subValue[op]
-			if v == nil {
-				continue
-			}
-			v = coerceJSONFilterValue(v, subType)
-			paramsBefore := len(params)
-			s, p, err := e.FilterOperationSQLValue(extracted, "", op, v, params)
-			if err != nil {
-				return "", nil, fmt.Errorf("JSONFieldFilter.%s.%s: %w", subName, op, err)
-			}
-			params = p
-			// Without this, db drivers bind Go `time.Time` as TIMESTAMPTZ and
-			// `time.Duration` as INTERVAL, which the engine's extracted side
-			// (cast to DATE/TIME/TIMESTAMP/INTERVAL) cannot always compare
-			// against — Postgres refuses TIME = TIMESTAMPTZ outright, DuckDB
-			// silently mismatches some cross-type pairs. Casting the bound
-			// parameter to the same subType the extraction uses aligns both
-			// sides and lets the comparison evaluate as a typed value.
-			s = wrapNewParamsWithCast(s, subType, paramsBefore)
-			subFilters = append(subFilters, "("+s+")")
-		}
-		if len(subFilters) > 0 {
-			conds = append(conds, strings.Join(subFilters, " AND "))
-		}
-	}
-
-	if len(conds) == 0 {
-		return "TRUE", params, nil
-	}
-	if len(conds) == 1 {
-		return conds[0], params, nil
-	}
-	return strings.Join(conds, " AND "), params, nil
 }
 
 func nestedFieldFilterSQLValue(ctx context.Context, e engines.Engine, defs base.DefinitionsSource, def *ast.Definition, sqlName, path string, value map[string]any, params []any) (string, []any, error) {

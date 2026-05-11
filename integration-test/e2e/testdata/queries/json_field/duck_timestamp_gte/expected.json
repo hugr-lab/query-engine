@@ -1,7 +1,7 @@
 {
-  "errors": [
-    {
-      "message": "JSONFieldFilter.timestamp.gte: unsupported filter operator: gte"
+  "data": {
+    "local_db": {
+      "json_field_demo": []
     }
-  ]
+  }
 }

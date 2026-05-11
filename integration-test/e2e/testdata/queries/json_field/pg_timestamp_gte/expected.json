@@ -1,7 +1,20 @@
 {
-  "errors": [
-    {
-      "message": "JSONFieldFilter.timestamp.gte: unsupported filter operator: gte"
+  "data": {
+    "pg_store": {
+      "json_field_demo": [
+        {
+          "id": 9
+        },
+        {
+          "id": 10
+        },
+        {
+          "id": 11
+        },
+        {
+          "id": 12
+        }
+      ]
     }
-  ]
+  }
 }

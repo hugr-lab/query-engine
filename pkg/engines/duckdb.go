@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -574,6 +575,136 @@ func (e DuckDB) ExtractNestedTypedValue(sql, path, t string) string {
 		return val
 	}
 	return fmt.Sprintf("try_cast(%s AS %s)", val, t)
+}
+
+// JSONFieldFilterSQL compiles a JSONFieldFilter input for DuckDB, applying
+// DuckDB-specific value coercion: time.Time is reformatted to "YYYY-MM-DD" /
+// "HH:MM:SS" / "YYYY-MM-DD HH:MM:SS" for DATE/TIME/TIMESTAMP sub-filters
+// (DuckDB cannot CAST(TIMESTAMPTZ AS TIME) and silently mismatches DATE vs
+// TIMESTAMPTZ on some versions), and time.Duration is reformatted to
+// "<seconds> seconds" for INTERVAL (so the JSON-side `try_cast(... AS INTERVAL)`
+// and the bound parameter resolve to the same DuckDB INTERVAL value regardless
+// of whether the JSON stored ISO 8601 or HH:MM:SS).
+func (e *DuckDB) JSONFieldFilterSQL(sqlName, basePath string, fv map[string]any, params []any) (string, []any, error) {
+	shape, err := ParseJSONFieldFilterShape(fv, basePath)
+	if err != nil {
+		return "", nil, err
+	}
+
+	var conds []string
+	if shape.HasIsNull {
+		conds = append(conds, e.JSONPathIsNull(sqlName, shape.JSONPath, shape.IsNullVal))
+	}
+	if shape.SubName != "" {
+		extracted := e.ExtractJSONTypedValue(sqlName, shape.JSONPath, shape.SubType)
+		if shape.HasCoalesce && shape.CoalesceVal != nil {
+			params = append(params, shape.CoalesceVal)
+			val := "$" + strconv.Itoa(len(params))
+			extracted = fmt.Sprintf("COALESCE(%s, %s)", extracted, e.ExtractJSONTypedValue(val, "", shape.SubType))
+		}
+		sub, p, err := e.jsonFieldSubFilterSQL(extracted, shape.SubName, shape.SubType, shape.SubValue, params)
+		if err != nil {
+			return "", nil, err
+		}
+		params = p
+		if sub != "" {
+			conds = append(conds, sub)
+		}
+	}
+
+	switch len(conds) {
+	case 0:
+		return "TRUE", params, nil
+	case 1:
+		return conds[0], params, nil
+	}
+	return strings.Join(conds, " AND "), params, nil
+}
+
+// jsonFieldSubFilterSQL emits DuckDB SQL for the typed sub-filter selected by
+// JSONFieldFilter. GEOMETRY and VARCHAR delegate to FilterOperationSQLValue
+// (which already handles ST_* predicates and LIKE/ILIKE/regex/has/json_exists).
+// All other types receive a typed comparison `extracted OP CAST($N AS subType)`
+// with an explicit cast — DuckDB does not coerce VARCHAR placeholders to date
+// or interval types implicitly, and CAST(TIMESTAMPTZ AS TIME) is unimplemented.
+func (e *DuckDB) jsonFieldSubFilterSQL(extracted, subName, subType string, subValue map[string]any, params []any) (string, []any, error) {
+	ops := make([]string, 0, len(subValue))
+	for op := range subValue {
+		ops = append(ops, op)
+	}
+	sort.Strings(ops)
+
+	var filters []string
+	for _, op := range ops {
+		v := subValue[op]
+		if v == nil {
+			continue
+		}
+
+		switch subType {
+		case "GEOMETRY", "VARCHAR":
+			s, p, err := e.FilterOperationSQLValue(extracted, "", op, v, params)
+			if err != nil {
+				return "", nil, fmt.Errorf("JSONFieldFilter.%s.%s: %w", subName, op, err)
+			}
+			params = p
+			filters = append(filters, "("+s+")")
+			continue
+		}
+
+		opSQL, ok := JSONFieldCompareOp(op)
+		if !ok {
+			return "", nil, fmt.Errorf("JSONFieldFilter.%s: unsupported operator: %s", subName, op)
+		}
+
+		v = e.coerceJSONFieldFilterValue(v, subType)
+		params = append(params, v)
+		valExpr := "$" + strconv.Itoa(len(params))
+		if cast := e.castJSONFieldFilterParam(subType); cast != "" {
+			valExpr = fmt.Sprintf("CAST(%s AS %s)", valExpr, cast)
+		}
+		filters = append(filters, fmt.Sprintf("(%s %s %s)", extracted, opSQL, valExpr))
+	}
+	return strings.Join(filters, " AND "), params, nil
+}
+
+// coerceJSONFieldFilterValue stringifies time.Time / time.Duration so the
+// duckdb-go driver binds them as VARCHAR. DuckDB cannot CAST(TIMESTAMPTZ AS
+// TIME), and its DATE / TIMESTAMP coercion from a TIMESTAMPTZ-bound parameter
+// is also brittle. ISO 8601 intervals (e.g. "PT1H30M") that the JSON column
+// holds parse fine on the extraction side, but driver-bound INTERVAL values
+// do not always round-trip; "<seconds> seconds" is the format DuckDB parses
+// reliably and matches whatever `try_cast(json_value(...) AS INTERVAL)` yields.
+func (e *DuckDB) coerceJSONFieldFilterValue(v any, subType string) any {
+	switch t := v.(type) {
+	case time.Time:
+		switch subType {
+		case "DATE":
+			return t.Format("2006-01-02")
+		case "TIME":
+			return t.Format("15:04:05")
+		case "TIMESTAMP":
+			return t.Format("2006-01-02 15:04:05")
+		}
+	case time.Duration:
+		if subType == "INTERVAL" {
+			secs := int64(t / time.Second)
+			return strconv.FormatInt(secs, 10) + " seconds"
+		}
+	}
+	return v
+}
+
+// castJSONFieldFilterParam decides which sub-filter types need an explicit
+// CAST on the parameter side. For DATE/TIME/TIMESTAMP/INTERVAL we coerced the
+// value to a string above, so CAST is required to recover the typed value.
+// TIMESTAMPTZ binds natively as TIMESTAMPTZ in duckdb-go.
+func (e *DuckDB) castJSONFieldFilterParam(subType string) string {
+	switch subType {
+	case "DATE", "TIME", "TIMESTAMP", "INTERVAL":
+		return subType
+	}
+	return ""
 }
 
 func (e DuckDB) JSONPathIsNull(sql, path string, isNull bool) string {

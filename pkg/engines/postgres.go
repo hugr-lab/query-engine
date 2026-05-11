@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -64,6 +65,118 @@ func (e *Postgres) FieldValueByPath(sqlName, path string) string {
 		return sqlName
 	}
 	return sqlName + extractPGJsonFieldByPath(path, false)
+}
+
+// JSONFieldFilterSQL compiles a JSONFieldFilter input for Postgres, applying
+// PG-specific value coercion: a Go time.Time bound for a TIME sub-filter is
+// reformatted to "HH:MM:SS" because pgx binds time.Time as TIMESTAMPTZ and
+// Postgres refuses to compare TIMESTAMPTZ to TIME (year-0001 is also out of
+// range). DATE/TIMESTAMP/TIMESTAMPTZ rely on PG's implicit casts; INTERVAL
+// flows through pgx as INTERVAL directly.
+func (e *Postgres) JSONFieldFilterSQL(sqlName, basePath string, fv map[string]any, params []any) (string, []any, error) {
+	shape, err := ParseJSONFieldFilterShape(fv, basePath)
+	if err != nil {
+		return "", nil, err
+	}
+
+	var conds []string
+	if shape.HasIsNull {
+		conds = append(conds, e.JSONPathIsNull(sqlName, shape.JSONPath, shape.IsNullVal))
+	}
+	if shape.SubName != "" {
+		extracted := e.ExtractJSONTypedValue(sqlName, shape.JSONPath, shape.SubType)
+		if shape.HasCoalesce && shape.CoalesceVal != nil {
+			params = append(params, shape.CoalesceVal)
+			val := "$" + strconv.Itoa(len(params))
+			extracted = fmt.Sprintf("COALESCE(%s, %s)", extracted, e.ExtractJSONTypedValue(val, "", shape.SubType))
+		}
+		sub, p, err := e.jsonFieldSubFilterSQL(extracted, shape.SubName, shape.SubType, shape.SubValue, params)
+		if err != nil {
+			return "", nil, err
+		}
+		params = p
+		if sub != "" {
+			conds = append(conds, sub)
+		}
+	}
+
+	switch len(conds) {
+	case 0:
+		return "TRUE", params, nil
+	case 1:
+		return conds[0], params, nil
+	}
+	return strings.Join(conds, " AND "), params, nil
+}
+
+// jsonFieldSubFilterSQL emits PG SQL for the typed sub-filter selected by
+// JSONFieldFilter. GEOMETRY and VARCHAR delegate to FilterOperationSQLValue
+// (which already handles ST_* predicates and LIKE/ILIKE/regex/has). All other
+// types receive a typed comparison `extracted OP $N` with an optional explicit
+// `::TIME` cast on the parameter where the driver would otherwise produce a
+// type that PG cannot compare directly.
+func (e *Postgres) jsonFieldSubFilterSQL(extracted, subName, subType string, subValue map[string]any, params []any) (string, []any, error) {
+	ops := make([]string, 0, len(subValue))
+	for op := range subValue {
+		ops = append(ops, op)
+	}
+	sort.Strings(ops)
+
+	var filters []string
+	for _, op := range ops {
+		v := subValue[op]
+		if v == nil {
+			continue
+		}
+
+		switch subType {
+		case "GEOMETRY", "VARCHAR":
+			s, p, err := e.FilterOperationSQLValue(extracted, "", op, v, params)
+			if err != nil {
+				return "", nil, fmt.Errorf("JSONFieldFilter.%s.%s: %w", subName, op, err)
+			}
+			params = p
+			filters = append(filters, "("+s+")")
+			continue
+		}
+
+		opSQL, ok := JSONFieldCompareOp(op)
+		if !ok {
+			return "", nil, fmt.Errorf("JSONFieldFilter.%s: unsupported operator: %s", subName, op)
+		}
+
+		v = e.coerceJSONFieldFilterValue(v, subType)
+		params = append(params, v)
+		valExpr := "$" + strconv.Itoa(len(params))
+		if cast := e.castJSONFieldFilterParam(subType); cast != "" {
+			valExpr = fmt.Sprintf("CAST(%s AS %s)", valExpr, cast)
+		}
+		filters = append(filters, fmt.Sprintf("(%s %s %s)", extracted, opSQL, valExpr))
+	}
+	return strings.Join(filters, " AND "), params, nil
+}
+
+// coerceJSONFieldFilterValue normalises a sub-filter value so pgx binds it as
+// the expected SQL type. Only TIME needs intervention: pgx maps time.Time to
+// TIMESTAMPTZ, which year-0001 makes invalid and PG would not implicitly cast
+// to TIME anyway. Other typed values flow through pgx's native binding paths.
+func (e *Postgres) coerceJSONFieldFilterValue(v any, subType string) any {
+	if t, ok := v.(time.Time); ok && subType == "TIME" {
+		return t.Format("15:04:05")
+	}
+	return v
+}
+
+// castJSONFieldFilterParam returns the SQL type to wrap the bound parameter
+// with, or "" if no explicit cast is needed (PG implicitly casts the rest).
+// TIME and INTERVAL get explicit casts so that text-bound coerced values and
+// driver-native bindings both resolve to the comparison type.
+func (e *Postgres) castJSONFieldFilterParam(subType string) string {
+	switch subType {
+	case "TIME", "INTERVAL":
+		return subType
+	}
+	return ""
 }
 
 func (e *Postgres) JSONPathIsNull(sqlName, path string, isNull bool) string {
