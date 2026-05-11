@@ -273,28 +273,28 @@ func (e DuckDB) AddObjectFields(sqlName string, fields map[string]string) string
 	return "struct_insert(" + sqlName + "," + strings.Join(res, ",") + ")"
 }
 
-// ExtractNestedTypedValue2 extends ExtractNestedTypedValue with the extra
-// GraphQL JSONFieldFilter types — bigInt, date, time, interval, geometry —
-// that the canonical extractor doesn't cover. The implementation collapses
-// to a single ExtractNestedTypedValue call: ExtractNestedTypedValue's default
-// branch already emits `try_cast(val AS <token>)`, which is exactly the SQL
-// JSONFieldFilter needs for every type DuckDB can cast a JSON value into.
+// extractJSONFilterValue is the JSONFieldFilter-specific typed extractor for
+// DuckDB. It is self-contained — does not delegate to ExtractNestedTypedValue —
+// because the JSONFieldFilter contract differs from the canonical extractor on
+// two points:
 //
-// Two carve-outs survive:
+//   - sqlName can be a `$N` placeholder (COALESCE wrapper, path == "") instead
+//     of a JSON column. The shared FieldValueByPath returns the placeholder
+//     as-is, so the try_cast still lands correctly, but keeping the dispatch
+//     here makes the dual-context contract explicit.
+//   - STRING with path != "" is rewritten with json_extract_string. The
+//     canonical `try_cast(meta['k'] AS VARCHAR)` keeps the surrounding JSON
+//     quotes (DuckDB's JSON→VARCHAR is a serialization, not an unwrap), so
+//     equality against a Go-bound VARCHAR would never match.
+//   - GEOMETRY routes through ST_GeomFromGeoJSON because DuckDB has no
+//     implicit JSON → GEOMETRY cast; NULLIF guards a JSON-null literal.
 //
-//  1. STRING with path != "": subscript-cast `try_cast(meta['k']::JSON AS
-//     VARCHAR)` returns the JSON serialization (keeps the surrounding quotes),
-//     so an equality against a Go-bound VARCHAR would never match.
-//     json_extract_string strips the quotes.
-//
-//  2. GEOMETRY: DuckDB has no implicit JSON → GEOMETRY cast, so the value
-//     has to flow through ST_GeomFromGeoJSON. NULLIF guards the JSON-null
-//     literal that the parser would otherwise reject.
-//
-// Both branches handle the COALESCE placeholder case (path == "") the same
-// way ExtractNestedTypedValue does: FieldValueByPath returns sqlName as-is,
-// so the cast lands directly on `$N`.
-func (e DuckDB) ExtractNestedTypedValue2(sqlName, path, gqlType string) string {
+// Every other token resolves to a single `try_cast(val AS T)` shape.
+func (e DuckDB) extractJSONFilterValue(sqlName, path, gqlType string) string {
+	val := sqlName
+	if path != "" {
+		val = sqlName + extractStructFieldByPath(path)
+	}
 	if gqlType == "geometry" {
 		raw := sqlName
 		if path != "" {
@@ -305,30 +305,27 @@ func (e DuckDB) ExtractNestedTypedValue2(sqlName, path, gqlType string) string {
 	if gqlType == "string" && path != "" {
 		return "json_extract_string(" + sqlName + "::JSON,'$." + path + "')"
 	}
-	var t string
 	switch gqlType {
 	case "int", "float":
-		t = "FLOAT"
+		return "try_cast(" + val + " AS FLOAT)"
 	case "string":
-		t = "VARCHAR"
+		return "try_cast(" + val + " AS VARCHAR)"
 	case "bool":
-		t = "BOOLEAN"
+		return "try_cast(" + val + " AS BOOLEAN)"
 	case "timestamp":
-		t = "TIMESTAMPTZ"
+		return "try_cast(" + val + " AS TIMESTAMPTZ)"
 	case "dateTime":
-		t = "TIMESTAMP"
+		return "try_cast(" + val + " AS TIMESTAMP)"
 	case "bigInt":
-		t = "BIGINT"
+		return "try_cast(" + val + " AS BIGINT)"
 	case "date":
-		t = "DATE"
+		return "try_cast(" + val + " AS DATE)"
 	case "time":
-		t = "TIME"
+		return "try_cast(" + val + " AS TIME)"
 	case "interval":
-		t = "INTERVAL"
-	default:
-		return ""
+		return "try_cast(" + val + " AS INTERVAL)"
 	}
-	return e.ExtractNestedTypedValue(sqlName, path, t)
+	return ""
 }
 
 // duckdbJSONFieldCoerce stringifies time.Time / time.Duration so the duckdb-go
@@ -556,11 +553,11 @@ func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, pa
 				case "interval":
 					coerceCastType = "INTERVAL"
 				}
-				jsonField := e.ExtractNestedTypedValue2(sqlName, pp, filterType)
+				jsonField := e.extractJSONFilterValue(sqlName, pp, filterType)
 				if hasCoalesce {
 					params = append(params, coalesceVal)
 					ph := "$" + strconv.Itoa(len(params))
-					jsonField = fmt.Sprintf("COALESCE(%s, %s)", jsonField, e.ExtractNestedTypedValue2(ph, "", filterType))
+					jsonField = fmt.Sprintf("COALESCE(%s, %s)", jsonField, e.extractJSONFilterValue(ph, "", filterType))
 				}
 				ops := make([]string, 0, len(filterValueMap))
 				for k := range filterValueMap {

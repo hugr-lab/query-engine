@@ -259,40 +259,23 @@ func escapeJsonPathString(s string) string {
 }
 
 // TODO add compiler options to enable/disable type of operations and types support
-// ExtractNestedTypedValue2 extends ExtractNestedTypedValue with the extra
-// GraphQL JSONFieldFilter types — bigInt, date, time, interval, geometry —
-// that the canonical extractor doesn't cover. Postgres' canonical default
-// branch returns "NULL" for unknown tokens, so unlike DuckDB we can't get
-// the new types via delegation alone.
+// extractJSONFilterValue is the JSONFieldFilter-specific typed extractor for
+// Postgres. Uniform shape: extract as TEXT (or pass through, for placeholders)
+// and apply a direct cast — no defensive jsonb_typeof wrappers. This is the
+// same shape JSONFieldFilter already uses for bigInt/date/time/interval and
+// matches the json-ops5 reference; consequence is that rows whose JSON value
+// at the path is of a wrong shape produce a Postgres cast error instead of
+// being filtered out as NULL. Acceptable trade-off given the alternative
+// (asymmetric defensiveness across 11 types) is more confusing than useful.
 //
-// Three groups, in priority order:
+// Two dialect carve-outs:
 //
-//  1. int / float / string / bool with path != "": ExtractNestedTypedValue
-//     already composes correct SQL from a jsonb column (with the jsonb_typeof
-//     CASE wrap), so delegate verbatim.
-//  2. path == "" (placeholder branch). sqlName is `$N`, bound by pgx as a
-//     native Go type — not jsonb. The canonical function injects
-//     jsonb_typeof on the input, which fails on a non-jsonb operand; emit
-//     a direct CAST on the placeholder.
-//  3. Everything else: `(extracted_as_text)::T` for the typed extraction,
-//     or ST_GeomFromGeoJSON for geometry. timestamp / dateTime live here
-//     because the canonical path is jsonb_path_query_first(...,'$.datetime()'),
-//     which doesn't produce a value comparable to a pgx-bound time.Time.
-//
-// Groups (2) and (3) share the same SQL shape — `(extracted)::T` — with the
-// only difference being how `extracted` is computed; the single switch below
-// keeps both paths in one place.
-func (e Postgres) ExtractNestedTypedValue2(sqlName, path, gqlType string) string {
-	if path != "" {
-		switch gqlType {
-		case "int", "float":
-			return e.ExtractNestedTypedValue(sqlName, path, "number")
-		case "string":
-			return e.ExtractNestedTypedValue(sqlName, path, "string")
-		case "bool":
-			return e.ExtractNestedTypedValue(sqlName, path, "bool")
-		}
-	}
+//   - string returns the extracted text as-is. With path != "" we use the
+//     `->>` shortcut, which strips JSON quotes at the last hop; with path == ""
+//     the placeholder is already a VARCHAR.
+//   - geometry routes through ST_GeomFromGeoJSON because there is no implicit
+//     jsonb/text → GEOMETRY cast.
+func (e Postgres) extractJSONFilterValue(sqlName, path, gqlType string) string {
 	extracted := sqlName
 	if path != "" {
 		extracted = sqlName + extractPGJsonFieldByPath(path, true)
@@ -618,11 +601,11 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 				case "interval":
 					coerceCastType = "INTERVAL"
 				}
-				jsonField := e.ExtractNestedTypedValue2(sqlName, pp, filterType)
+				jsonField := e.extractJSONFilterValue(sqlName, pp, filterType)
 				if hasCoalesce {
 					params = append(params, coalesceVal)
 					ph := "$" + strconv.Itoa(len(params))
-					jsonField = fmt.Sprintf("COALESCE(%s, %s)", jsonField, e.ExtractNestedTypedValue2(ph, "", filterType))
+					jsonField = fmt.Sprintf("COALESCE(%s, %s)", jsonField, e.extractJSONFilterValue(ph, "", filterType))
 				}
 				ops := make([]string, 0, len(filterValueMap))
 				for k := range filterValueMap {

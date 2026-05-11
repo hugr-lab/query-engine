@@ -173,33 +173,33 @@ func TestJSONFieldFilterSQL_Postgres(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name:       "int gte — number delegation: ::FLOAT outer + jsonb_typeof CASE inner",
+			name:       "int gte — direct ->>::FLOAT cast",
 			fv:         map[string]any{"path": "user.age", "int": map[string]any{"gte": 18}},
-			wantSQL:    "(((CASE WHEN jsonb_typeof(meta->'user'->'age') = 'number' THEN (meta->'user'->'age')::float ELSE NULL END))::FLOAT >= $1)",
+			wantSQL:    "((meta->'user'->>'age')::FLOAT >= $1)",
 			wantParams: []any{18},
 		},
 		{
-			name:       "bigInt eq — new inline (->>::BIGINT)",
+			name:       "bigInt eq — ->>::BIGINT",
 			fv:         map[string]any{"path": "user.id", "bigInt": map[string]any{"eq": int64(9223372036854775000)}},
 			wantSQL:    "((meta->'user'->>'id')::BIGINT = $1)",
 			wantParams: []any{int64(9223372036854775000)},
 		},
 		{
-			name:       "float lt — number delegation",
+			name:       "float lt — direct ->>::FLOAT",
 			fv:         map[string]any{"path": "metrics.score", "float": map[string]any{"lt": 0.5}},
-			wantSQL:    "(((CASE WHEN jsonb_typeof(meta->'metrics'->'score') = 'number' THEN (meta->'metrics'->'score')::float ELSE NULL END))::FLOAT < $1)",
+			wantSQL:    "((meta->'metrics'->>'score')::FLOAT < $1)",
 			wantParams: []any{0.5},
 		},
 		{
-			name:       "string ilike — Postgres ExtractNestedTypedValue returns the ->> shortcut at non-empty path",
+			name:       "string ilike — ->> shortcut returns text directly",
 			fv:         map[string]any{"path": "owner.email", "string": map[string]any{"ilike": "%@x.com"}},
 			wantSQL:    "(meta->'owner'->>'email' ILIKE $1)",
 			wantParams: []any{"%@x.com"},
 		},
 		{
-			name:       "bool eq — bool delegation: ::BOOL outer + jsonb_typeof CASE inner",
+			name:       "bool eq — direct ->>::BOOL",
 			fv:         map[string]any{"path": "flags.active", "bool": map[string]any{"eq": true}},
-			wantSQL:    "(((CASE WHEN jsonb_typeof(meta->'flags'->'active') = 'boolean' THEN (meta->'flags'->'active')::BOOL ELSE NULL END))::BOOL = $1)",
+			wantSQL:    "((meta->'flags'->>'active')::BOOL = $1)",
 			wantParams: []any{true},
 		},
 		{
@@ -244,9 +244,9 @@ func TestJSONFieldFilterSQL_Postgres(t *testing.T) {
 			wantSQL: "jsonb_typeof((meta)->'a'->'b') = 'null'",
 		},
 		{
-			name:       "coalesce + int — placeholder branch is inline ::FLOAT (delegation would call jsonb_typeof on a non-jsonb param)",
+			name:       "coalesce + int — uniform ::FLOAT cast on both column and placeholder",
 			fv:         map[string]any{"path": "user.age", "coalesce": 0, "int": map[string]any{"gte": 18}},
-			wantSQL:    "(COALESCE(((CASE WHEN jsonb_typeof(meta->'user'->'age') = 'number' THEN (meta->'user'->'age')::float ELSE NULL END))::FLOAT, ($1)::FLOAT) >= $2)",
+			wantSQL:    "(COALESCE((meta->'user'->>'age')::FLOAT, ($1)::FLOAT) >= $2)",
 			wantParams: []any{0, 18},
 		},
 		{
