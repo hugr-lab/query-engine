@@ -54,14 +54,6 @@ func (e *DuckLake) FilterOperationSQLValue(sqlName, path, op string, value any, 
 	return e.duckdb.FilterOperationSQLValue(sqlName, path, op, value, params)
 }
 
-func (e *DuckLake) CoerceJSONFieldFilterValue(v any, subType string) any {
-	return e.duckdb.CoerceJSONFieldFilterValue(v, subType)
-}
-
-func (e *DuckLake) JSONFieldFilterParamCast(subType string) string {
-	return e.duckdb.JSONFieldFilterParamCast(subType)
-}
-
 func (e *DuckLake) FieldValueByPath(sqlName, path string) string {
 	return e.duckdb.FieldValueByPath(sqlName, path)
 }
@@ -92,14 +84,6 @@ func (e *DuckLake) TimestampTransform(sql string, field *ast.Field, args sdl.Fie
 
 func (e *DuckLake) ExtractNestedTypedValue(sql, path, t string) string {
 	return e.duckdb.ExtractNestedTypedValue(sql, path, t)
-}
-
-func (e *DuckLake) ExtractJSONTypedValue(sql, path, sqlType string) string {
-	return e.duckdb.ExtractJSONTypedValue(sql, path, sqlType)
-}
-
-func (e *DuckLake) JSONPathIsNull(sql, path string, isNull bool) string {
-	return e.duckdb.JSONPathIsNull(sql, path, isNull)
 }
 
 func (e *DuckLake) LateralJoin(sql, alias string) string {

@@ -44,27 +44,6 @@ type Engine interface {
 	// ExtractNestedTypedValue extracts value from nested field by path and cast it to type
 	// type can be one of: number, string, bool, "" (empty string) - for extract json as is
 	ExtractNestedTypedValue(sql, path, t string) string
-	// ExtractJSONTypedValue extracts a value from a JSON document at the given dot-path
-	// and casts it to a SQL type. sqlType is the engine-native SQL type name (e.g. "INTEGER",
-	// "VARCHAR", "TIMESTAMPTZ", "GEOMETRY"). Empty sqlType returns the raw extracted JSON value.
-	// Empty path returns the column itself (optionally cast).
-	ExtractJSONTypedValue(sql, path, sqlType string) string
-	// JSONPathIsNull returns a SQL boolean expression that is TRUE when the key at the given
-	// dot-path exists in the JSON document and its value is JSON null. When isNull is false,
-	// the expression is TRUE when the key exists and the value is anything other than JSON
-	// null. In both cases a missing key yields FALSE.
-	JSONPathIsNull(sql, path string, isNull bool) string
-	// CoerceJSONFieldFilterValue normalises a JSONFieldFilter sub-filter value
-	// into the form the engine's driver should bind. Engines that need to
-	// avoid a driver-side TIMESTAMPTZ binding (e.g. PG cannot compare
-	// TIMESTAMPTZ to TIME, DuckDB cannot CAST(TIMESTAMPTZ AS TIME)) reformat
-	// time.Time / time.Duration to a string here. Pure scalars pass through.
-	CoerceJSONFieldFilterValue(v any, subType string) any
-	// JSONFieldFilterParamCast returns the SQL type that the orchestration
-	// should wrap a freshly-bound parameter in as CAST($N AS <type>). Empty
-	// string means no wrap. Used to reconcile a stringified parameter with the
-	// typed extraction on the JSON side (e.g. DATE/TIME/TIMESTAMP/INTERVAL).
-	JSONFieldFilterParamCast(subType string) string
 	LateralJoin(sql, alias string) string
 }
 

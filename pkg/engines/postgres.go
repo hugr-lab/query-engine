@@ -66,76 +66,6 @@ func (e *Postgres) FieldValueByPath(sqlName, path string) string {
 	return sqlName + extractPGJsonFieldByPath(path, false)
 }
 
-// CoerceJSONFieldFilterValue normalises a JSONFieldFilter sub-filter value so
-// that pgx binds it as the expected SQL type. Only TIME needs intervention:
-// pgx maps time.Time to TIMESTAMPTZ, which year-0001 makes invalid and PG
-// would not implicitly cast TIMESTAMPTZ to TIME anyway. Other typed values
-// flow through pgx's native bindings (DATE/TIMESTAMP/TIMESTAMPTZ from time.Time,
-// INTERVAL from time.Duration) and PG's implicit coercion handles the rest.
-func (e *Postgres) CoerceJSONFieldFilterValue(v any, subType string) any {
-	if t, ok := v.(time.Time); ok && subType == SQLTypeTime {
-		return t.Format(time.TimeOnly)
-	}
-	return v
-}
-
-// JSONFieldFilterParamCast returns the SQL type to wrap a freshly-bound
-// parameter with as CAST. TIME is wrapped to consume the coerced VARCHAR.
-// INTERVAL is wrapped defensively (CAST against an already-INTERVAL bind is a
-// no-op, but the cast guards against the parameter arriving as VARCHAR via a
-// future coercion). Everything else relies on PG's implicit casts.
-func (e *Postgres) JSONFieldFilterParamCast(subType string) string {
-	switch subType {
-	case SQLTypeTime, SQLTypeInterval:
-		return subType
-	}
-	return ""
-}
-
-func (e *Postgres) JSONPathIsNull(sqlName, path string, isNull bool) string {
-	if path == "" {
-		if isNull {
-			return fmt.Sprintf("(%s) IS NULL", sqlName)
-		}
-		return fmt.Sprintf("(%s) IS NOT NULL", sqlName)
-	}
-	op := "="
-	if !isNull {
-		op = "<>"
-	}
-	return fmt.Sprintf("jsonb_typeof((%s)%s) %s 'null'", sqlName, extractPGJsonFieldByPath(path, false), op)
-}
-
-func (e *Postgres) ExtractJSONTypedValue(sqlName, path, sqlType string) string {
-	if sqlType == SQLTypeGeometry {
-		extracted := sqlName
-		if path != "" {
-			extracted = sqlName + extractPGJsonFieldByPath(path, true)
-		}
-		return fmt.Sprintf("ST_GeomFromGeoJSON((%s)::text)", extracted)
-	}
-	if sqlType == "" {
-		if path == "" {
-			return sqlName
-		}
-		return sqlName + extractPGJsonFieldByPath(path, false)
-	}
-	asText := pgJSONExtractAsText(sqlType)
-	extracted := sqlName
-	if path != "" {
-		extracted = sqlName + extractPGJsonFieldByPath(path, asText)
-	}
-	return fmt.Sprintf("(%s)::%s", extracted, sqlType)
-}
-
-func pgJSONExtractAsText(sqlType string) bool {
-	switch strings.ToUpper(sqlType) {
-	case "JSON", "JSONB":
-		return false
-	}
-	return true
-}
-
 func (e *Postgres) SQLValue(v any) (string, error) {
 	if v == nil {
 		return "NULL", nil
@@ -533,6 +463,72 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 			return "", nil, fmt.Errorf("unsupported filter operator: %s", op)
 		}
 	case map[string]any: // json
+		// JSONFieldFilter — typed sub-filter on a nested JSON path:
+		// {path: "<dot.path>", <type>: { <op>: <value>, ... }}.
+		// Validate the 2-key shape, route on the type token to
+		// ExtractNestedTypedValue (the engine's canonical JSON extractor),
+		// then recurse into FilterOperationSQLValue for every operator and
+		// AND-fold the fragments.
+		if op == "field" {
+			if len(value) != 2 {
+				return "", nil, fmt.Errorf("field filter requires exactly 2 keys: path and value")
+			}
+			pp, ok := value["path"].(string)
+			if !ok {
+				return "", nil, fmt.Errorf("field filter requires string path")
+			}
+			if pp == "" {
+				return "", nil, fmt.Errorf("field filter requires non-empty path")
+			}
+			var filterType string
+			var filterValue any
+			for k, v := range value {
+				if k == "path" {
+					continue
+				}
+				filterType = k
+				filterValue = v
+				if v == nil {
+					return "", nil, fmt.Errorf("field filter requires non-nil value")
+				}
+				break
+			}
+			filterValueMap, ok := filterValue.(map[string]any)
+			if !ok {
+				return "", nil, fmt.Errorf("field filter value must be an object with operator as key")
+			}
+			ff := make([]string, 0, len(filterValueMap))
+			for sop, sv := range filterValueMap {
+				var jsonField string
+				switch filterType {
+				case "int":
+					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "number")
+				case "float":
+					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "number")
+				case "string":
+					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "string")
+				case "bool":
+					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "bool")
+				case "timestamp":
+					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "timestamp")
+				default:
+					return "", nil, fmt.Errorf("unsupported field filter type: %s", filterType)
+				}
+				f, p, err := e.FilterOperationSQLValue(jsonField, "", sop, sv, params)
+				if err != nil {
+					return "", nil, err
+				}
+				params = p
+				ff = append(ff, "("+f+")")
+			}
+			switch len(ff) {
+			case 0:
+				return "TRUE", params, nil
+			case 1:
+				return strings.TrimSuffix(strings.TrimPrefix(ff[0], "("), ")"), params, nil
+			}
+			return strings.Join(ff, " AND "), params, nil
+		}
 		params = append(params, value)
 		val := "$" + strconv.Itoa(len(params))
 		switch op {

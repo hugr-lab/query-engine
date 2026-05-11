@@ -58,14 +58,6 @@ func (e *Iceberg) FilterOperationSQLValue(sqlName, path, op string, value any, p
 	return e.duckdb.FilterOperationSQLValue(sqlName, path, op, value, params)
 }
 
-func (e *Iceberg) CoerceJSONFieldFilterValue(v any, subType string) any {
-	return e.duckdb.CoerceJSONFieldFilterValue(v, subType)
-}
-
-func (e *Iceberg) JSONFieldFilterParamCast(subType string) string {
-	return e.duckdb.JSONFieldFilterParamCast(subType)
-}
-
 func (e *Iceberg) FieldValueByPath(sqlName, path string) string {
 	return e.duckdb.FieldValueByPath(sqlName, path)
 }
@@ -96,14 +88,6 @@ func (e *Iceberg) TimestampTransform(sql string, field *ast.Field, args sdl.Fiel
 
 func (e *Iceberg) ExtractNestedTypedValue(sql, path, t string) string {
 	return e.duckdb.ExtractNestedTypedValue(sql, path, t)
-}
-
-func (e *Iceberg) ExtractJSONTypedValue(sql, path, sqlType string) string {
-	return e.duckdb.ExtractJSONTypedValue(sql, path, sqlType)
-}
-
-func (e *Iceberg) JSONPathIsNull(sql, path string, isNull bool) string {
-	return e.duckdb.JSONPathIsNull(sql, path, isNull)
 }
 
 func (e *Iceberg) LateralJoin(sql, alias string) string {

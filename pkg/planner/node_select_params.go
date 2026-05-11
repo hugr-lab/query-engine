@@ -720,15 +720,10 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 			p      []any
 			err    error
 		)
-		if op == "field" && field.Type.Name() == base.JSONTypeName {
-			fv, ok := v.(map[string]any)
-			if !ok {
-				return "", nil, errors.New("JSONFilter.field must be an object")
-			}
-			filter, p, err = engines.CompileJSONFieldFilterSQL(e, sqlName, path, fv, params)
-		} else {
-			filter, p, err = e.FilterOperationSQLValue(sqlName, path, op, v, params)
-		}
+		// JSONFieldFilter (op == "field" on a JSON column) is dispatched
+		// inside the engine's FilterOperationSQLValue via the map[string]any
+		// branch — keeping the planner dialect-agnostic.
+		filter, p, err = e.FilterOperationSQLValue(sqlName, path, op, v, params)
 		if err != nil {
 			return "", nil, err
 		}
