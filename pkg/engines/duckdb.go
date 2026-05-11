@@ -1067,8 +1067,6 @@ func (e *DuckDB) LateralJoin(sql, alias string) string {
 	return " LEFT JOIN LATERAL (" + sql + ") AS " + alias + " ON TRUE"
 }
 
-// нужна функция проверки наличия поля по пути в структуре запроса
-
 func extractStructFieldByPath(path string) string {
 	if path == "" {
 		return ""
