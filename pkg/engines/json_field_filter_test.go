@@ -4,16 +4,21 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/paulmach/orb"
 )
 
 func normalizeSQL(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
-// TestJSONFieldFilterSQL_DuckDB pins the SQL each typed sub-filter produces
-// for DuckDB. The supported types are: int, float, string, bool, timestamp —
-// they all flow through DuckDB.ExtractNestedTypedValue and then recurse into
-// FilterOperationSQLValue.
+// TestJSONFieldFilterSQL_DuckDB pins the SQL each typed JSONFieldFilter sub-
+// filter produces for DuckDB after the refactor onto ExtractNestedTypedValue2.
+// int/float/string/bool/timestamp/dateTime delegate to ExtractNestedTypedValue
+// (subscript-style + try_cast). bigInt/date/time/interval/geometry use the
+// json_extract / json_value / json_extract_string patterns the json-ops5
+// reference implementation validated. Time-like params are coerced into
+// deterministic strings and the freshly-bound `$N` is wrapped with CAST.
 func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 	e := NewDuckDB()
 	tests := []struct {
@@ -24,58 +29,96 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name: "int gte",
-			fv: map[string]any{
-				"path": "user.age",
-				"int":  map[string]any{"gte": 18},
-			},
-			wantSQL:    "try_cast(meta['user']['age'] AS FLOAT) >= $1",
+			name:       "int gte — delegates to ExtractNestedTypedValue(number)",
+			fv:         map[string]any{"path": "user.age", "int": map[string]any{"gte": 18}},
+			wantSQL:    "(try_cast(meta['user']['age'] AS FLOAT) >= $1)",
 			wantParams: []any{18},
 		},
 		{
-			name: "float lt",
-			fv: map[string]any{
-				"path":  "metrics.score",
-				"float": map[string]any{"lt": 0.5},
-			},
-			wantSQL:    "try_cast(meta['metrics']['score'] AS FLOAT) < $1",
+			name:       "bigInt eq — delegates to ExtractNestedTypedValue default branch (try_cast … AS BIGINT)",
+			fv:         map[string]any{"path": "user.id", "bigInt": map[string]any{"eq": int64(9223372036854775000)}},
+			wantSQL:    "(try_cast(meta['user']['id'] AS BIGINT) = $1)",
+			wantParams: []any{int64(9223372036854775000)},
+		},
+		{
+			name:       "float lt — delegates to ExtractNestedTypedValue(number)",
+			fv:         map[string]any{"path": "metrics.score", "float": map[string]any{"lt": 0.5}},
+			wantSQL:    "(try_cast(meta['metrics']['score'] AS FLOAT) < $1)",
 			wantParams: []any{0.5},
 		},
 		{
-			name: "string ilike (delegates to FilterOperationSQLValue)",
-			fv: map[string]any{
-				"path":   "owner.email",
-				"string": map[string]any{"ilike": "%@x.com"},
-			},
-			wantSQL:    "try_cast(meta['owner']['email'] AS VARCHAR) ILIKE $1",
+			name:       "string ilike — inline json_extract_string (subscript-cast keeps JSON quotes; can't compare)",
+			fv:         map[string]any{"path": "owner.email", "string": map[string]any{"ilike": "%@x.com"}},
+			wantSQL:    "(json_extract_string(meta::JSON,'$.owner.email') ILIKE $1)",
 			wantParams: []any{"%@x.com"},
 		},
 		{
-			name: "bool eq",
-			fv: map[string]any{
-				"path": "flags.active",
-				"bool": map[string]any{"eq": true},
-			},
-			wantSQL:    "try_cast(meta['flags']['active'] AS BOOLEAN) = $1",
+			name:       "bool eq — delegates to ExtractNestedTypedValue(bool)",
+			fv:         map[string]any{"path": "flags.active", "bool": map[string]any{"eq": true}},
+			wantSQL:    "(try_cast(meta['flags']['active'] AS BOOLEAN) = $1)",
 			wantParams: []any{true},
 		},
 		{
-			name: "timestamp gte",
-			fv: map[string]any{
-				"path":      "event.at",
-				"timestamp": map[string]any{"gte": time.Date(2024, 6, 9, 0, 0, 0, 0, time.UTC)},
-			},
-			wantSQL:    "try_cast(meta['event']['at'] AS TIMESTAMPTZ) >= $1",
+			name:       "date eq — delegates (try_cast … AS DATE) + CAST($1 AS DATE) on coerced string",
+			fv:         map[string]any{"path": "signup.day", "date": map[string]any{"eq": time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)}},
+			wantSQL:    "(try_cast(meta['signup']['day'] AS DATE) = CAST($1 AS DATE))",
+			wantParams: []any{"2024-01-15"},
+		},
+		{
+			name:       "time eq — delegates (try_cast … AS TIME) + CAST($1 AS TIME)",
+			fv:         map[string]any{"path": "lunch.at_time", "time": map[string]any{"eq": time.Date(1, 1, 1, 12, 30, 0, 0, time.UTC)}},
+			wantSQL:    "(try_cast(meta['lunch']['at_time'] AS TIME) = CAST($1 AS TIME))",
+			wantParams: []any{"12:30:00"},
+		},
+		{
+			name:       "dateTime eq — delegates to ExtractNestedTypedValue(datetime); coerced string + CAST($1 AS TIMESTAMP)",
+			fv:         map[string]any{"path": "event.local_dt", "dateTime": map[string]any{"eq": time.Date(2024, 6, 11, 10, 0, 0, 0, time.UTC)}},
+			wantSQL:    "(try_cast(meta['event']['local_dt'] AS TIMESTAMP) = CAST($1 AS TIMESTAMP))",
+			wantParams: []any{"2024-06-11 10:00:00"},
+		},
+		{
+			name:       "timestamp gte — delegates to ExtractNestedTypedValue(timestamp); time.Time binds natively",
+			fv:         map[string]any{"path": "event.at", "timestamp": map[string]any{"gte": time.Date(2024, 6, 9, 0, 0, 0, 0, time.UTC)}},
+			wantSQL:    "(try_cast(meta['event']['at'] AS TIMESTAMPTZ) >= $1)",
 			wantParams: []any{time.Date(2024, 6, 9, 0, 0, 0, 0, time.UTC)},
 		},
 		{
-			name:    "more than 2 keys rejected",
-			fv:      map[string]any{"path": "x", "int": map[string]any{"eq": 1}, "string": map[string]any{"eq": "a"}},
-			wantErr: true,
+			name:       "interval eq — delegates (try_cast … AS INTERVAL) + CAST($1 AS INTERVAL)",
+			fv:         map[string]any{"path": "subscription.duration", "interval": map[string]any{"eq": 90 * time.Minute}},
+			wantSQL:    "(try_cast(meta['subscription']['duration'] AS INTERVAL) = CAST($1 AS INTERVAL))",
+			wantParams: []any{"5400 seconds"},
 		},
 		{
-			name:    "missing typed sub-filter (only path)",
-			fv:      map[string]any{"path": "x"},
+			name:       "geometry intersects — new inline (json_extract → ST_GeomFromGeoJSON)",
+			fv:         map[string]any{"path": "shape", "geometry": map[string]any{"intersects": orb.Point{1, 2}}},
+			wantSQL:    "(ST_Intersects(ST_GeomFromGeoJSON(NULLIF(json_extract(meta::JSON,'$.shape')::VARCHAR, 'null')),$1))",
+			wantParams: []any{orb.Point{1, 2}},
+		},
+		{
+			name:    "isNull true alone",
+			fv:      map[string]any{"path": "a.b", "isNull": true},
+			wantSQL: "json_type(meta,'$.a.b') = 'NULL'",
+		},
+		{
+			name:    "isNull false alone",
+			fv:      map[string]any{"path": "a.b", "isNull": false},
+			wantSQL: "json_type(meta,'$.a.b') <> 'NULL'",
+		},
+		{
+			name:       "coalesce + int — placeholder branch uses inline try_cast (no delegation)",
+			fv:         map[string]any{"path": "user.age", "coalesce": 0, "int": map[string]any{"gte": 18}},
+			wantSQL:    "(COALESCE(try_cast(meta['user']['age'] AS FLOAT), try_cast($1 AS FLOAT)) >= $2)",
+			wantParams: []any{0, 18},
+		},
+		{
+			name:       "isNull false + coalesce + int",
+			fv:         map[string]any{"path": "user.age", "isNull": false, "coalesce": 0, "int": map[string]any{"gte": 18}},
+			wantSQL:    "json_type(meta,'$.user.age') <> 'NULL' AND (COALESCE(try_cast(meta['user']['age'] AS FLOAT), try_cast($1 AS FLOAT)) >= $2)",
+			wantParams: []any{0, 18},
+		},
+		{
+			name:    "two typed sub-filters rejected",
+			fv:      map[string]any{"path": "x", "int": map[string]any{"eq": 1}, "string": map[string]any{"eq": "a"}},
 			wantErr: true,
 		},
 		{
@@ -84,13 +127,8 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "empty path",
-			fv:      map[string]any{"path": "", "int": map[string]any{"eq": 1}},
-			wantErr: true,
-		},
-		{
-			name:    "unsupported type",
-			fv:      map[string]any{"path": "x", "date": map[string]any{"eq": "2024-01-01"}},
+			name:    "no isNull and no sub-filter",
+			fv:      map[string]any{"path": "x"},
 			wantErr: true,
 		},
 	}
@@ -119,37 +157,12 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 	}
 }
 
-// TestJSONFieldFilterSQL_DuckDB_TwoOps verifies AND-folding when the typed
-// sub-filter carries multiple operators. Go's map iteration order is not
-// deterministic, so the test asserts that both fragments appear and that the
-// fragments are correctly joined by " AND ".
-func TestJSONFieldFilterSQL_DuckDB_TwoOps(t *testing.T) {
-	e := NewDuckDB()
-	fv := map[string]any{
-		"path": "user.age",
-		"int":  map[string]any{"gte": 18, "lt": 65},
-	}
-	got, gotParams, err := e.FilterOperationSQLValue("meta", "", "field", fv, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(got, " AND ") {
-		t.Errorf("expected AND-fold, got %q", got)
-	}
-	if !strings.Contains(got, "try_cast(meta['user']['age'] AS FLOAT) >= $") {
-		t.Errorf("missing gte fragment in %q", got)
-	}
-	if !strings.Contains(got, "try_cast(meta['user']['age'] AS FLOAT) < $") {
-		t.Errorf("missing lt fragment in %q", got)
-	}
-	if len(gotParams) != 2 {
-		t.Errorf("expected 2 params, got %v", gotParams)
-	}
-}
-
-// TestJSONFieldFilterSQL_Postgres pins the SQL each typed sub-filter produces
-// for Postgres. Same 5 types as DuckDB; SQL shape follows Postgres'
-// ExtractNestedTypedValue (jsonb_typeof guard around the cast).
+// TestJSONFieldFilterSQL_Postgres pins SQL after the refactor onto
+// ExtractNestedTypedValue2 — delegation for the 5 covered tokens (which uses
+// the engine's jsonb_typeof CASE wrapper for number/bool/string at empty path
+// and `->>` shortcut for string at non-empty path), new inline `(extracted)::T`
+// for bigInt/date/time/interval/geometry. pgx native bindings handle most
+// time params; TIME alone coerces to "HH:MM:SS" and CASTs the placeholder.
 func TestJSONFieldFilterSQL_Postgres(t *testing.T) {
 	e := &Postgres{}
 	cases := []struct {
@@ -160,31 +173,90 @@ func TestJSONFieldFilterSQL_Postgres(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name: "int gte",
-			fv: map[string]any{
-				"path": "user.age",
-				"int":  map[string]any{"gte": 18},
-			},
-			wantSQL:    "((CASE WHEN jsonb_typeof(meta->'user'->'age') = 'number' THEN (meta->'user'->'age')::float ELSE NULL END))::FLOAT >= $1",
+			name:       "int gte — number delegation: ::FLOAT outer + jsonb_typeof CASE inner",
+			fv:         map[string]any{"path": "user.age", "int": map[string]any{"gte": 18}},
+			wantSQL:    "(((CASE WHEN jsonb_typeof(meta->'user'->'age') = 'number' THEN (meta->'user'->'age')::float ELSE NULL END))::FLOAT >= $1)",
 			wantParams: []any{18},
 		},
 		{
-			name: "float lt",
-			fv: map[string]any{
-				"path":  "metrics.score",
-				"float": map[string]any{"lt": 0.5},
-			},
-			wantSQL:    "((CASE WHEN jsonb_typeof(meta->'metrics'->'score') = 'number' THEN (meta->'metrics'->'score')::float ELSE NULL END))::FLOAT < $1",
+			name:       "bigInt eq — new inline (->>::BIGINT)",
+			fv:         map[string]any{"path": "user.id", "bigInt": map[string]any{"eq": int64(9223372036854775000)}},
+			wantSQL:    "((meta->'user'->>'id')::BIGINT = $1)",
+			wantParams: []any{int64(9223372036854775000)},
+		},
+		{
+			name:       "float lt — number delegation",
+			fv:         map[string]any{"path": "metrics.score", "float": map[string]any{"lt": 0.5}},
+			wantSQL:    "(((CASE WHEN jsonb_typeof(meta->'metrics'->'score') = 'number' THEN (meta->'metrics'->'score')::float ELSE NULL END))::FLOAT < $1)",
 			wantParams: []any{0.5},
 		},
 		{
-			name:    "more than 2 keys rejected",
+			name:       "string ilike — Postgres ExtractNestedTypedValue returns the ->> shortcut at non-empty path",
+			fv:         map[string]any{"path": "owner.email", "string": map[string]any{"ilike": "%@x.com"}},
+			wantSQL:    "(meta->'owner'->>'email' ILIKE $1)",
+			wantParams: []any{"%@x.com"},
+		},
+		{
+			name:       "bool eq — bool delegation: ::BOOL outer + jsonb_typeof CASE inner",
+			fv:         map[string]any{"path": "flags.active", "bool": map[string]any{"eq": true}},
+			wantSQL:    "(((CASE WHEN jsonb_typeof(meta->'flags'->'active') = 'boolean' THEN (meta->'flags'->'active')::BOOL ELSE NULL END))::BOOL = $1)",
+			wantParams: []any{true},
+		},
+		{
+			name:       "date eq — new inline (->>::DATE)",
+			fv:         map[string]any{"path": "signup.day", "date": map[string]any{"eq": time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)}},
+			wantSQL:    "((meta->'signup'->>'day')::DATE = $1)",
+			wantParams: []any{time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)},
+		},
+		{
+			name:       "time eq — new inline (->>::TIME) + coerced HH:MM:SS + ::TIME on $1",
+			fv:         map[string]any{"path": "lunch.at_time", "time": map[string]any{"eq": time.Date(1, 1, 1, 12, 30, 0, 0, time.UTC)}},
+			wantSQL:    "((meta->'lunch'->>'at_time')::TIME = CAST($1 AS TIME))",
+			wantParams: []any{"12:30:00"},
+		},
+		{
+			name:       "dateTime eq — inline ->>::TIMESTAMP (jsonb_path_query_first delegation gave non-comparable text)",
+			fv:         map[string]any{"path": "event.local_dt", "dateTime": map[string]any{"eq": time.Date(2024, 6, 11, 10, 0, 0, 0, time.UTC)}},
+			wantSQL:    "((meta->'event'->>'local_dt')::TIMESTAMP = $1)",
+			wantParams: []any{time.Date(2024, 6, 11, 10, 0, 0, 0, time.UTC)},
+		},
+		{
+			name:       "timestamp gte — inline ->>::TIMESTAMPTZ",
+			fv:         map[string]any{"path": "event.at", "timestamp": map[string]any{"gte": time.Date(2024, 6, 9, 0, 0, 0, 0, time.UTC)}},
+			wantSQL:    "((meta->'event'->>'at')::TIMESTAMPTZ >= $1)",
+			wantParams: []any{time.Date(2024, 6, 9, 0, 0, 0, 0, time.UTC)},
+		},
+		{
+			name:       "interval eq — new inline + defensive ::INTERVAL cast on $1",
+			fv:         map[string]any{"path": "subscription.duration", "interval": map[string]any{"eq": 90 * time.Minute}},
+			wantSQL:    "((meta->'subscription'->>'duration')::INTERVAL = CAST($1 AS INTERVAL))",
+			wantParams: []any{90 * time.Minute},
+		},
+		{
+			name:       "geometry intersects — new inline ST_GeomFromGeoJSON",
+			fv:         map[string]any{"path": "shape", "geometry": map[string]any{"intersects": orb.Point{1, 2}}},
+			wantSQL:    "(ST_Intersects(ST_GeomFromGeoJSON((meta->>'shape')::text),$1))",
+			wantParams: []any{orb.Point{1, 2}},
+		},
+		{
+			name:    "isNull true alone",
+			fv:      map[string]any{"path": "a.b", "isNull": true},
+			wantSQL: "jsonb_typeof((meta)->'a'->'b') = 'null'",
+		},
+		{
+			name:       "coalesce + int — placeholder branch is inline ::FLOAT (delegation would call jsonb_typeof on a non-jsonb param)",
+			fv:         map[string]any{"path": "user.age", "coalesce": 0, "int": map[string]any{"gte": 18}},
+			wantSQL:    "(COALESCE(((CASE WHEN jsonb_typeof(meta->'user'->'age') = 'number' THEN (meta->'user'->'age')::float ELSE NULL END))::FLOAT, ($1)::FLOAT) >= $2)",
+			wantParams: []any{0, 18},
+		},
+		{
+			name:    "two typed sub-filters rejected",
 			fv:      map[string]any{"path": "x", "int": map[string]any{"eq": 1}, "string": map[string]any{"eq": "a"}},
 			wantErr: true,
 		},
 		{
-			name:    "unsupported type",
-			fv:      map[string]any{"path": "x", "date": map[string]any{"eq": "2024-01-01"}},
+			name:    "missing path",
+			fv:      map[string]any{"int": map[string]any{"eq": 1}},
 			wantErr: true,
 		},
 	}

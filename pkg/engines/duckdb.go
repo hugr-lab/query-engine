@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -272,6 +273,105 @@ func (e DuckDB) AddObjectFields(sqlName string, fields map[string]string) string
 	return "struct_insert(" + sqlName + "," + strings.Join(res, ",") + ")"
 }
 
+// ExtractNestedTypedValue2 extends ExtractNestedTypedValue with the extra
+// GraphQL JSONFieldFilter types — bigInt, date, time, interval, geometry —
+// that the canonical extractor doesn't cover. The implementation collapses
+// to a single ExtractNestedTypedValue call: ExtractNestedTypedValue's default
+// branch already emits `try_cast(val AS <token>)`, which is exactly the SQL
+// JSONFieldFilter needs for every type DuckDB can cast a JSON value into.
+//
+// Two carve-outs survive:
+//
+//  1. STRING with path != "": subscript-cast `try_cast(meta['k']::JSON AS
+//     VARCHAR)` returns the JSON serialization (keeps the surrounding quotes),
+//     so an equality against a Go-bound VARCHAR would never match.
+//     json_extract_string strips the quotes.
+//
+//  2. GEOMETRY: DuckDB has no implicit JSON → GEOMETRY cast, so the value
+//     has to flow through ST_GeomFromGeoJSON. NULLIF guards the JSON-null
+//     literal that the parser would otherwise reject.
+//
+// Both branches handle the COALESCE placeholder case (path == "") the same
+// way ExtractNestedTypedValue does: FieldValueByPath returns sqlName as-is,
+// so the cast lands directly on `$N`.
+func (e DuckDB) ExtractNestedTypedValue2(sqlName, path, gqlType string) string {
+	if gqlType == "geometry" {
+		raw := sqlName
+		if path != "" {
+			raw = "json_extract(" + sqlName + "::JSON,'$." + path + "')"
+		}
+		return "ST_GeomFromGeoJSON(NULLIF(" + raw + "::VARCHAR, 'null'))"
+	}
+	if gqlType == "string" && path != "" {
+		return "json_extract_string(" + sqlName + "::JSON,'$." + path + "')"
+	}
+	var t string
+	switch gqlType {
+	case "int", "float":
+		t = "FLOAT"
+	case "string":
+		t = "VARCHAR"
+	case "bool":
+		t = "BOOLEAN"
+	case "timestamp":
+		t = "TIMESTAMPTZ"
+	case "dateTime":
+		t = "TIMESTAMP"
+	case "bigInt":
+		t = "BIGINT"
+	case "date":
+		t = "DATE"
+	case "time":
+		t = "TIME"
+	case "interval":
+		t = "INTERVAL"
+	default:
+		return ""
+	}
+	return e.ExtractNestedTypedValue(sqlName, path, t)
+}
+
+// duckdbJSONFieldCoerce stringifies time.Time / time.Duration so the duckdb-go
+// driver binds them as VARCHAR. DuckDB cannot CAST(TIMESTAMPTZ AS TIME) and its
+// DATE / TIMESTAMP coercion from a TIMESTAMPTZ-bound parameter is brittle;
+// "<seconds> seconds" is the format DuckDB parses reliably for INTERVAL.
+// TIMESTAMPTZ binds natively, so it is not coerced.
+func duckdbJSONFieldCoerce(v any, sqlType string) any {
+	switch t := v.(type) {
+	case time.Time:
+		switch sqlType {
+		case "DATE":
+			return t.Format(time.DateOnly)
+		case "TIME":
+			return t.Format(time.TimeOnly)
+		case "TIMESTAMP":
+			return t.Format(time.DateTime)
+		}
+	case time.Duration:
+		if sqlType == "INTERVAL" {
+			return strconv.FormatInt(int64(t/time.Second), 10) + " seconds"
+		}
+	case string:
+		if sqlType == "INTERVAL" {
+			if d, err := ctypes.ParseSQLInterval(t); err == nil {
+				return strconv.FormatInt(int64(d/time.Second), 10) + " seconds"
+			}
+		}
+	}
+	return v
+}
+
+// duckdbJSONPathIsNull emits a DuckDB-specific isNull guard for a JSON path.
+// json_type(...,'$.a.b') returns 'NULL' (literal text) when the key exists and
+// its value is JSON null; the equality / inequality test mirrors json-ops5.
+func duckdbJSONPathIsNull(sqlName, path string, isNull bool) string {
+	op := "="
+	if !isNull {
+		op = "<>"
+	}
+	return fmt.Sprintf("json_type(%s,'$.%s') %s 'NULL'", sqlName, path, op)
+}
+
 func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, params []any) (string, []any, error) {
 	if path != "" {
 		sqlName += extractStructFieldByPath(path)
@@ -381,70 +481,119 @@ func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, pa
 		}
 	case map[string]any: // json
 		// JSONFieldFilter — typed sub-filter on a nested JSON path:
-		// {path: "<dot.path>", <type>: { <op>: <value>, ... }}.
-		// Validate the 2-key shape, route on the type token to
-		// ExtractNestedTypedValue (the engine's canonical JSON extractor),
-		// then recurse into FilterOperationSQLValue for every operator and
-		// AND-fold the fragments.
+		// {path: "<dot.path>", isNull?: Bool, coalesce?: JSON, <type>: { <op>: <value>, ... }}.
+		// The dispatch is inline (no shared compiler) so all dialect-specific
+		// pieces live next to the rest of DuckDB's filter logic:
+		//   • duckdbJSONFieldExtract: typed JSON-extraction SQL fragment;
+		//   • duckdbJSONFieldCoerce: stringify time.Time / time.Duration for
+		//     DATE/TIME/TIMESTAMP/INTERVAL (driver brittleness);
+		//   • duckdbJSONFieldParamCast + castParamRefs: wrap freshly-bound `$N`
+		//     placeholders with the matching CAST so the bind side matches the
+		//     typed extraction side;
+		//   • duckdbJSONPathIsNull: DuckDB-specific NULL check on a JSON path.
+		// AND-folds isNull and per-operator fragments produced by recursing
+		// into FilterOperationSQLValue.
 		if op == "field" {
-			if len(value) != 2 {
-				return "", nil, fmt.Errorf("field filter requires exactly 2 keys: path and value")
-			}
-			pp, ok := value["path"].(string)
-			if !ok {
-				return "", nil, fmt.Errorf("field filter requires string path")
-			}
+			pp, _ := value["path"].(string)
 			if pp == "" {
-				return "", nil, fmt.Errorf("field filter requires non-empty path")
+				return "", nil, fmt.Errorf("JSONFieldFilter.path is required")
 			}
+			isNullVal, hasIsNull := false, false
+			if raw, ok := value["isNull"]; ok {
+				isNullVal, _ = raw.(bool)
+				hasIsNull = true
+			}
+			coalesceVal, hasCoalesce := value["coalesce"]
+			hasCoalesce = hasCoalesce && coalesceVal != nil
 			var filterType string
-			var filterValue any
+			var filterValueMap map[string]any
 			for k, v := range value {
-				if k == "path" {
+				if k == "path" || k == "isNull" || k == "coalesce" {
 					continue
 				}
-				filterType = k
-				filterValue = v
 				if v == nil {
-					return "", nil, fmt.Errorf("field filter requires non-nil value")
+					continue
 				}
-				break
+				m, ok := v.(map[string]any)
+				if !ok {
+					return "", nil, fmt.Errorf("JSONFieldFilter.%s must be an object", k)
+				}
+				if len(m) == 0 {
+					continue
+				}
+				if filterType != "" {
+					return "", nil, fmt.Errorf("JSONFieldFilter accepts at most one typed sub-filter, got both %s and %s", filterType, k)
+				}
+				filterType = k
+				filterValueMap = m
 			}
-			filterValueMap, ok := filterValue.(map[string]any)
-			if !ok {
-				return "", nil, fmt.Errorf("field filter value must be an object with operator as key")
+			if filterType == "" && !hasIsNull {
+				return "", nil, fmt.Errorf("JSONFieldFilter must specify isNull or one typed sub-filter")
 			}
-			ff := make([]string, 0, len(filterValueMap))
-			for sop, sv := range filterValueMap {
-				var jsonField string
+			var conds []string
+			if hasIsNull {
+				conds = append(conds, duckdbJSONPathIsNull(sqlName, pp, isNullVal))
+			}
+			if filterType != "" {
 				switch filterType {
-				case "int":
-					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "number")
-				case "float":
-					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "number")
-				case "string":
-					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "string")
-				case "bool":
-					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "bool")
-				case "timestamp":
-					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "timestamp")
+				case "int", "bigInt", "float", "string", "bool",
+					"date", "time", "dateTime", "timestamp", "interval", "geometry":
 				default:
-					return "", nil, fmt.Errorf("unsupported field filter type: %s", filterType)
+					return "", nil, fmt.Errorf("unsupported JSONFieldFilter type: %s", filterType)
 				}
-				f, p, err := e.FilterOperationSQLValue(jsonField, "", sop, sv, params)
-				if err != nil {
-					return "", nil, err
+				// coerceCastType is the SQL type used for value coercion +
+				// `CAST($N AS T)` wrap. Only temporal types need it because
+				// duckdb-go binds time.Time / time.Duration in a brittle way;
+				// other types flow through the driver natively.
+				var coerceCastType string
+				switch filterType {
+				case "date":
+					coerceCastType = "DATE"
+				case "time":
+					coerceCastType = "TIME"
+				case "dateTime":
+					coerceCastType = "TIMESTAMP"
+				case "interval":
+					coerceCastType = "INTERVAL"
 				}
-				params = p
-				ff = append(ff, "("+f+")")
+				jsonField := e.ExtractNestedTypedValue2(sqlName, pp, filterType)
+				if hasCoalesce {
+					params = append(params, coalesceVal)
+					ph := "$" + strconv.Itoa(len(params))
+					jsonField = fmt.Sprintf("COALESCE(%s, %s)", jsonField, e.ExtractNestedTypedValue2(ph, "", filterType))
+				}
+				ops := make([]string, 0, len(filterValueMap))
+				for k := range filterValueMap {
+					ops = append(ops, k)
+				}
+				sort.Strings(ops)
+				var ff []string
+				for _, sop := range ops {
+					sv := filterValueMap[sop]
+					if sv == nil {
+						continue
+					}
+					sv = duckdbJSONFieldCoerce(sv, coerceCastType)
+					paramsBefore := len(params)
+					f, p, err := e.FilterOperationSQLValue(jsonField, "", sop, sv, params)
+					if err != nil {
+						return "", nil, fmt.Errorf("JSONFieldFilter.%s.%s: %w", filterType, sop, err)
+					}
+					params = p
+					f = castParamRefs(f, coerceCastType, paramsBefore)
+					ff = append(ff, "("+f+")")
+				}
+				if len(ff) > 0 {
+					conds = append(conds, strings.Join(ff, " AND "))
+				}
 			}
-			switch len(ff) {
+			switch len(conds) {
 			case 0:
 				return "TRUE", params, nil
 			case 1:
-				return strings.TrimSuffix(strings.TrimPrefix(ff[0], "("), ")"), params, nil
+				return conds[0], params, nil
 			}
-			return strings.Join(ff, " AND "), params, nil
+			return strings.Join(conds, " AND "), params, nil
 		}
 		params = append(params, value)
 		val := "$" + strconv.Itoa(len(params))

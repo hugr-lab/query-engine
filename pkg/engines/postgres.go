@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -258,6 +259,93 @@ func escapeJsonPathString(s string) string {
 }
 
 // TODO add compiler options to enable/disable type of operations and types support
+// ExtractNestedTypedValue2 extends ExtractNestedTypedValue with the extra
+// GraphQL JSONFieldFilter types — bigInt, date, time, interval, geometry —
+// that the canonical extractor doesn't cover. Postgres' canonical default
+// branch returns "NULL" for unknown tokens, so unlike DuckDB we can't get
+// the new types via delegation alone.
+//
+// Three groups, in priority order:
+//
+//  1. int / float / string / bool with path != "": ExtractNestedTypedValue
+//     already composes correct SQL from a jsonb column (with the jsonb_typeof
+//     CASE wrap), so delegate verbatim.
+//  2. path == "" (placeholder branch). sqlName is `$N`, bound by pgx as a
+//     native Go type — not jsonb. The canonical function injects
+//     jsonb_typeof on the input, which fails on a non-jsonb operand; emit
+//     a direct CAST on the placeholder.
+//  3. Everything else: `(extracted_as_text)::T` for the typed extraction,
+//     or ST_GeomFromGeoJSON for geometry. timestamp / dateTime live here
+//     because the canonical path is jsonb_path_query_first(...,'$.datetime()'),
+//     which doesn't produce a value comparable to a pgx-bound time.Time.
+//
+// Groups (2) and (3) share the same SQL shape — `(extracted)::T` — with the
+// only difference being how `extracted` is computed; the single switch below
+// keeps both paths in one place.
+func (e Postgres) ExtractNestedTypedValue2(sqlName, path, gqlType string) string {
+	if path != "" {
+		switch gqlType {
+		case "int", "float":
+			return e.ExtractNestedTypedValue(sqlName, path, "number")
+		case "string":
+			return e.ExtractNestedTypedValue(sqlName, path, "string")
+		case "bool":
+			return e.ExtractNestedTypedValue(sqlName, path, "bool")
+		}
+	}
+	extracted := sqlName
+	if path != "" {
+		extracted = sqlName + extractPGJsonFieldByPath(path, true)
+	}
+	switch gqlType {
+	case "int", "float":
+		return "(" + extracted + ")::FLOAT"
+	case "string":
+		return extracted
+	case "bool":
+		return "(" + extracted + ")::BOOL"
+	case "bigInt":
+		return "(" + extracted + ")::BIGINT"
+	case "timestamp":
+		return "(" + extracted + ")::TIMESTAMPTZ"
+	case "dateTime":
+		return "(" + extracted + ")::TIMESTAMP"
+	case "date":
+		return "(" + extracted + ")::DATE"
+	case "time":
+		return "(" + extracted + ")::TIME"
+	case "interval":
+		return "(" + extracted + ")::INTERVAL"
+	case "geometry":
+		return "ST_GeomFromGeoJSON((" + extracted + ")::text)"
+	}
+	return ""
+}
+
+// postgresJSONFieldCoerce normalises a sub-filter value so that pgx binds it
+// as the expected SQL type. Only TIME needs intervention: pgx maps time.Time
+// to TIMESTAMPTZ, which year-0001 makes invalid and PG would not implicitly
+// cast TIMESTAMPTZ→TIME either. Other typed values flow through pgx's native
+// bindings (DATE/TIMESTAMP/TIMESTAMPTZ from time.Time, INTERVAL from
+// time.Duration) and PG's implicit coercion handles the rest.
+func postgresJSONFieldCoerce(v any, sqlType string) any {
+	if t, ok := v.(time.Time); ok && sqlType == "TIME" {
+		return t.Format(time.TimeOnly)
+	}
+	return v
+}
+
+// postgresJSONPathIsNull emits a Postgres-specific NULL guard for a JSON path
+// inside a jsonb column. jsonb_typeof returns 'null' (lower-case) when the key
+// exists and its value is JSON null; the equality / inequality mirrors json-ops5.
+func postgresJSONPathIsNull(sqlName, path string, isNull bool) string {
+	op := "="
+	if !isNull {
+		op = "<>"
+	}
+	return fmt.Sprintf("jsonb_typeof((%s)%s) %s 'null'", sqlName, extractPGJsonFieldByPath(path, false), op)
+}
+
 func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, params []any) (string, []any, error) {
 	if jOp, ok := jsonPathOpMap[op]; ok && path != "" { // apply json path to jsonb field
 		jsonPathTemplate := "COALESCE(" + sqlName + " @@ '$." + path + " " + jOp + " %v', false)"
@@ -464,70 +552,110 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 		}
 	case map[string]any: // json
 		// JSONFieldFilter — typed sub-filter on a nested JSON path:
-		// {path: "<dot.path>", <type>: { <op>: <value>, ... }}.
-		// Validate the 2-key shape, route on the type token to
-		// ExtractNestedTypedValue (the engine's canonical JSON extractor),
-		// then recurse into FilterOperationSQLValue for every operator and
-		// AND-fold the fragments.
+		// {path: "<dot.path>", isNull?: Bool, coalesce?: JSON, <type>: { <op>: <value>, ... }}.
+		// Inline dispatch, mirrors DuckDB: parse path/isNull/coalesce/one typed
+		// sub-filter, build the typed extraction (postgresJSONFieldExtract),
+		// recurse into FilterOperationSQLValue for each operator, then AND-fold
+		// the isNull condition with the sub-filter fragments. Engine-specific
+		// helpers handle pgx-binding quirks for TIME and INTERVAL.
 		if op == "field" {
-			if len(value) != 2 {
-				return "", nil, fmt.Errorf("field filter requires exactly 2 keys: path and value")
-			}
-			pp, ok := value["path"].(string)
-			if !ok {
-				return "", nil, fmt.Errorf("field filter requires string path")
-			}
+			pp, _ := value["path"].(string)
 			if pp == "" {
-				return "", nil, fmt.Errorf("field filter requires non-empty path")
+				return "", nil, fmt.Errorf("JSONFieldFilter.path is required")
 			}
+			isNullVal, hasIsNull := false, false
+			if raw, ok := value["isNull"]; ok {
+				isNullVal, _ = raw.(bool)
+				hasIsNull = true
+			}
+			coalesceVal, hasCoalesce := value["coalesce"]
+			hasCoalesce = hasCoalesce && coalesceVal != nil
 			var filterType string
-			var filterValue any
+			var filterValueMap map[string]any
 			for k, v := range value {
-				if k == "path" {
+				if k == "path" || k == "isNull" || k == "coalesce" {
 					continue
 				}
-				filterType = k
-				filterValue = v
 				if v == nil {
-					return "", nil, fmt.Errorf("field filter requires non-nil value")
+					continue
 				}
-				break
+				m, ok := v.(map[string]any)
+				if !ok {
+					return "", nil, fmt.Errorf("JSONFieldFilter.%s must be an object", k)
+				}
+				if len(m) == 0 {
+					continue
+				}
+				if filterType != "" {
+					return "", nil, fmt.Errorf("JSONFieldFilter accepts at most one typed sub-filter, got both %s and %s", filterType, k)
+				}
+				filterType = k
+				filterValueMap = m
 			}
-			filterValueMap, ok := filterValue.(map[string]any)
-			if !ok {
-				return "", nil, fmt.Errorf("field filter value must be an object with operator as key")
+			if filterType == "" && !hasIsNull {
+				return "", nil, fmt.Errorf("JSONFieldFilter must specify isNull or one typed sub-filter")
 			}
-			ff := make([]string, 0, len(filterValueMap))
-			for sop, sv := range filterValueMap {
-				var jsonField string
+			var conds []string
+			if hasIsNull {
+				conds = append(conds, postgresJSONPathIsNull(sqlName, pp, isNullVal))
+			}
+			if filterType != "" {
 				switch filterType {
-				case "int":
-					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "number")
-				case "float":
-					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "number")
-				case "string":
-					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "string")
-				case "bool":
-					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "bool")
-				case "timestamp":
-					jsonField = e.ExtractNestedTypedValue(sqlName, pp, "timestamp")
+				case "int", "bigInt", "float", "string", "bool",
+					"date", "time", "dateTime", "timestamp", "interval", "geometry":
 				default:
-					return "", nil, fmt.Errorf("unsupported field filter type: %s", filterType)
+					return "", nil, fmt.Errorf("unsupported JSONFieldFilter type: %s", filterType)
 				}
-				f, p, err := e.FilterOperationSQLValue(jsonField, "", sop, sv, params)
-				if err != nil {
-					return "", nil, err
+				// coerceCastType is the SQL type used for value coercion +
+				// `CAST($N AS T)` wrap. Most types ride pgx's native bindings
+				// + PG's implicit casts. TIME alone needs coerce (year-0001
+				// time.Time → "HH:MM:SS" + ::TIME) because pgx maps it to
+				// TIMESTAMPTZ. INTERVAL is wrapped defensively.
+				var coerceCastType string
+				switch filterType {
+				case "time":
+					coerceCastType = "TIME"
+				case "interval":
+					coerceCastType = "INTERVAL"
 				}
-				params = p
-				ff = append(ff, "("+f+")")
+				jsonField := e.ExtractNestedTypedValue2(sqlName, pp, filterType)
+				if hasCoalesce {
+					params = append(params, coalesceVal)
+					ph := "$" + strconv.Itoa(len(params))
+					jsonField = fmt.Sprintf("COALESCE(%s, %s)", jsonField, e.ExtractNestedTypedValue2(ph, "", filterType))
+				}
+				ops := make([]string, 0, len(filterValueMap))
+				for k := range filterValueMap {
+					ops = append(ops, k)
+				}
+				sort.Strings(ops)
+				var ff []string
+				for _, sop := range ops {
+					sv := filterValueMap[sop]
+					if sv == nil {
+						continue
+					}
+					sv = postgresJSONFieldCoerce(sv, coerceCastType)
+					paramsBefore := len(params)
+					f, p, err := e.FilterOperationSQLValue(jsonField, "", sop, sv, params)
+					if err != nil {
+						return "", nil, fmt.Errorf("JSONFieldFilter.%s.%s: %w", filterType, sop, err)
+					}
+					params = p
+					f = castParamRefs(f, coerceCastType, paramsBefore)
+					ff = append(ff, "("+f+")")
+				}
+				if len(ff) > 0 {
+					conds = append(conds, strings.Join(ff, " AND "))
+				}
 			}
-			switch len(ff) {
+			switch len(conds) {
 			case 0:
 				return "TRUE", params, nil
 			case 1:
-				return strings.TrimSuffix(strings.TrimPrefix(ff[0], "("), ")"), params, nil
+				return conds[0], params, nil
 			}
-			return strings.Join(ff, " AND "), params, nil
+			return strings.Join(conds, " AND "), params, nil
 		}
 		params = append(params, value)
 		val := "$" + strconv.Itoa(len(params))
