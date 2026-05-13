@@ -226,7 +226,7 @@ stores_aggregation {
 - String: `count`, `any`, `first`, `last`, `list`, `list(distinct: true)` — NO min/max/avg/sum
 - Timestamp/DateTime/Date: `min`, `max`, `count`
 - Boolean: `bool_and`, `bool_or`
-- General: `any`, `last`, `count`, `count(distinct: true)`
+- General: `any`, `last`, `count`
 - JSON: support `path` parameter (dot-separated, e.g. `path: "address.city"`)
 
 ### Time Bucketing in Keys

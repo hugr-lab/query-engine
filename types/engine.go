@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -70,6 +71,11 @@ type Request struct {
 type JQRequest struct {
 	JQ    string  `json:"jq"`
 	Query Request `json:"query"`
+
+	CacheTTL        time.Duration `json:"cacheTTL,omitempty"`
+	CacheKey        string        `json:"cacheKey,omitempty"`
+	CacheTags       []string      `json:"cacheTags,omitempty"`
+	InvalidateCache bool          `json:"invalidateCache,omitempty"`
 }
 
 type Response struct {

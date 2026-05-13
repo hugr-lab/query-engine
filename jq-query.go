@@ -24,12 +24,14 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var req types.JQRequest
+	err = json.Unmarshal(b, &req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	dataFunc := func() (any, error) {
-		var req types.JQRequest
-		err := json.Unmarshal(b, &req)
-		if err != nil {
-			return nil, err
-		}
 		var t *jq.Transformer
 		if req.JQ != "" {
 			t, err = jq.NewTransformer(db.ClearTxContext(r.Context()), req.JQ, jq.WithVariables(req.Query.Variables), jq.WithQuerier(s))
@@ -56,7 +58,8 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 		return json.Marshal(transformed)
 	}
 
-	info := requestCacheInfo(r)
+	info := requestCacheInfo(r, &req)
+
 	if !info.Use {
 		data, err := dataFunc()
 		defer types.DataClose(data)
@@ -98,7 +101,16 @@ func (s *Service) jqHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func requestCacheInfo(r *http.Request) cache.Info {
+func requestCacheInfo(r *http.Request, req *types.JQRequest) cache.Info {
+	if req.CacheTTL != 0 {
+		return cache.Info{
+			Use:        true,
+			Key:        req.CacheKey,
+			TTL:        req.CacheTTL,
+			Tags:       req.CacheTags,
+			Invalidate: req.InvalidateCache,
+		}
+	}
 	cached := r.Header.Get("X-Hugr-Cache")
 	if cached == "" {
 		return cache.Info{Use: false}

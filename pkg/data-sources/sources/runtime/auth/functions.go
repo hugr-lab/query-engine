@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"strings"
 
@@ -74,6 +75,62 @@ func registerFunctions(ctx context.Context, pool *db.Pool) error {
 		return err
 	}
 
+	type checkAccessInfoArgs struct {
+		TypeName string
+		Field    string
+	}
+
+	type checkAccessInfoResult struct {
+		Enabled bool           `json:"enabled"`
+		Visible bool           `json:"visible"`
+		Filter  map[string]any `json:"filter"`
+		Data    map[string]any `json:"data"`
+	}
+
+	// core_auth_check_access_info — scalar function with args
+	err = pool.RegisterScalarFunction(ctx, &db.ScalarFunctionWithArgs[checkAccessInfoArgs, checkAccessInfoResult]{
+		Name: "core_auth_check_access_info",
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		ConvertInput: func(args []driver.Value) (checkAccessInfoArgs, error) {
+			typeName := args[0].(string)
+			field := args[1].(string)
+			return checkAccessInfoArgs{
+				TypeName: typeName,
+				Field:    field,
+			}, nil
+		},
+		Execute: func(ctx context.Context, input checkAccessInfoArgs) (checkAccessInfoResult, error) {
+			rp := perm.PermissionsFromCtx(ctx)
+			if rp == nil {
+				return checkAccessInfoResult{Enabled: true, Visible: true}, nil
+			}
+			p, enabled := rp.Enabled(input.TypeName, input.Field)
+			_, visible := rp.Visible(input.TypeName, input.Field)
+			res := checkAccessInfoResult{
+				Enabled: enabled,
+				Visible: visible,
+			}
+			if p != nil {
+				res.Filter = p.Data
+				res.Data = p.Filter
+			}
+			return res, nil
+		},
+		ConvertOutput: func(out checkAccessInfoResult) (any, error) {
+			b, err := json.Marshal(out)
+			if err != nil {
+				return nil, err
+			}
+			return string(b), nil
+		},
+		OutputType:            runtime.DuckDBTypeInfoByNameMust("JSON"),
+		IsVolatile:            true,
+		IsSpecialNullHandling: true,
+	})
+
 	// core_auth_check_access — table function with args
 	// fields is a comma-separated string because DuckDB table functions don't support LIST arguments
 	err = pool.RegisterTableRowFunction(ctx, &db.TableRowFunctionWithArgs[checkAccessInput, checkAccessEntry]{
@@ -125,7 +182,10 @@ func registerFunctions(ctx context.Context, pool *db.Pool) error {
 			if err := duckdb.SetRowValue(row, 1, out.Enabled); err != nil {
 				return err
 			}
-			return duckdb.SetRowValue(row, 2, out.Visible)
+			if err := duckdb.SetRowValue(row, 2, out.Visible); err != nil {
+				return err
+			}
+			return nil
 		},
 	})
 	return err
@@ -155,6 +215,8 @@ type checkAccessEntry struct {
 	Field   string
 	Enabled bool
 	Visible bool
+	Filter  map[string]any
+	Data    map[string]any
 }
 
 func convertPermissions(rp *perm.RolePermissions) (map[string]any, error) {
