@@ -212,9 +212,12 @@ func (s *AnthropicSource) CreateChatCompletion(ctx context.Context, messages []s
 	if system != "" {
 		reqBody["system"] = system
 	}
-	if opts.Temperature > 0 {
+	if effectiveBudget > 0 {
+		reqBody["temperature"] = 1.0 // Anthropic mandates 1.0 with thinking
+	} else if opts.Temperature > 0 {
 		reqBody["temperature"] = opts.Temperature
 	}
+
 	if len(opts.Tools) > 0 {
 		tools := make([]map[string]any, len(opts.Tools))
 		for i, t := range opts.Tools {
@@ -419,7 +422,9 @@ func (s *AnthropicSource) CreateChatCompletionStream(ctx context.Context, messag
 	if system != "" {
 		reqBody["system"] = system
 	}
-	if opts.Temperature > 0 {
+	if effectiveBudget > 0 {
+		reqBody["temperature"] = 1.0 // Anthropic mandates 1.0 with thinking
+	} else if opts.Temperature > 0 {
 		reqBody["temperature"] = opts.Temperature
 	}
 	if len(opts.Tools) > 0 {

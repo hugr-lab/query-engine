@@ -1,5 +1,7 @@
 package types
 
+import "strings"
+
 // Compile-time interface assertions.
 var (
 	_ ScalarType              = (*stringScalar)(nil)
@@ -73,5 +75,8 @@ func (s *stringScalar) MeasurementAggregationTypeName() string {
 }
 
 func (s *stringScalar) ParseArray(v any) (any, error) {
+	if v, ok := v.(string); ok {
+		return strings.Split(v, ","), nil
+	}
 	return ParseScalarArray[string](v)
 }

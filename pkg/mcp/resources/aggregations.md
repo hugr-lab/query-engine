@@ -162,7 +162,7 @@ _join(fields: ["category_id"]) {
 
 - `_rows_count` — row count
 - `sum`, `avg`, `min`, `max` — numeric
-- `count`, `count(distinct)` — count
+- `count` — count
 - `stddev`, `variance` — statistical
 - `string_agg` — string concatenation
 - `list` — collect into array

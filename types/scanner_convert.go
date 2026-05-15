@@ -401,6 +401,17 @@ func durationConvertFunc(afield arrow.Field) convertFunc {
 // arrowToTime honours TimestampType.Unit + TimeZone; defaults to UTC when tz is empty.
 func arrowToTime(col arrow.Array, row int, dt arrow.DataType) (time.Time, error) {
 	switch a := col.(type) {
+	case *array.String:
+		// Assume RFC3339Nano format for string timestamps. This matches the
+		// format produced by encoding/json for time.Time values, so it's a
+		// common pattern for GraphQL JSON scalars that encode timestamps as
+		// strings over IPC.
+		s := a.Value(row)
+		t, err := time.Parse(time.RFC3339Nano, s)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("cannot parse timestamp string %q: %w", s, err)
+		}
+		return t, nil
 	case *array.Timestamp:
 		tt := dt.(*arrow.TimestampType)
 		ns := timestampToNanos(int64(a.Value(row)), tt.Unit)
