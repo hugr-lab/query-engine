@@ -7,14 +7,13 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/google/uuid v1.6.0
 	github.com/hugr-lab/airport-go v0.2.1
-	github.com/hugr-lab/query-engine/types v0.3.33
+	github.com/hugr-lab/query-engine/types v0.3.34
 	github.com/paulmach/orb v0.13.0
 	github.com/vektah/gqlparser/v2 v2.5.33
 	google.golang.org/grpc v1.80.0
 )
 
 require (
-	github.com/andybalholm/brotli v1.2.1 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
