@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
+	"strings"
 	"time"
 
 	adminui "github.com/hugr-lab/query-engine/pkg/admin-ui"
@@ -27,6 +28,7 @@ import (
 	mcpserver "github.com/hugr-lab/query-engine/pkg/mcp"
 	permissions "github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/planner"
+	"github.com/hugr-lab/query-engine/pkg/trace"
 	"github.com/hugr-lab/query-engine/types"
 
 	"github.com/vektah/gqlparser/v2/ast"
@@ -34,7 +36,8 @@ import (
 )
 
 type Service struct {
-	config Config
+	config   Config
+	logLevel *slog.LevelVar
 
 	router   *http.ServeMux
 	adminUI  http.HandlerFunc
@@ -100,11 +103,18 @@ type Info struct {
 }
 
 func New(config Config) (*Service, error) {
+	level := &slog.LevelVar{}
+	if config.Debug {
+		level.Set(slog.LevelDebug)
+	} else {
+		level.Set(slog.LevelInfo)
+	}
 	return &Service{
-		config: config,
-		router: http.NewServeMux(),
-		cache:  cache.New(config.Cache),
-		s3:     storage.New(),
+		config:   config,
+		logLevel: level,
+		router:   http.NewServeMux(),
+		cache:    cache.New(config.Cache),
+		s3:       storage.New(),
 	}, nil
 }
 
@@ -415,6 +425,8 @@ func (s *Service) endpoints() {
 		s.router.Handle("/gis/", mw(http.StripPrefix("/gis", s.gis)))
 	}
 
+	s.router.Handle("/admin/log-level", mw(http.HandlerFunc(s.logLevelHandler)))
+
 	if s.config.MCPEnabled {
 		mcpSrv := mcpserver.New(s, nil, s.config.Debug)
 		s.router.Handle("/mcp", mw(mcpSrv.Handler()))
@@ -472,11 +484,29 @@ func (s *Service) parseRequest(r *http.Request) (req types.Request, err error) {
 
 func (s *Service) ProcessQuery(ctx context.Context, req types.Request) types.Response {
 	start := time.Now()
+	logger := trace.LoggerFromContext(ctx)
+
+	if ti := trace.FromContext(ctx); ti != nil {
+		ctx = trace.StartSpan(ctx, "query.parse")
+	}
 	op, err := s.schema.ParseQuery(ctx, req.Query, req.Variables, req.OperationName)
+	trace.EndSpan(ctx)
 	if err != nil {
 		return types.ErrResponse(err)
 	}
 	parseDuration := time.Since(start)
+
+	hasTraceDirective := op.Definition.Directives.ForName(base.TraceDirectiveName) != nil
+	if hasTraceDirective {
+		d := op.Definition.Directives.ForName(base.TraceDirectiveName)
+		ti := trace.FromContext(ctx)
+		if ti == nil {
+			ti = trace.NewTraceInfo(trace.TraceIDFromContext(ctx), parseLogLevel(d))
+			ctx = trace.ContextWithTrace(ctx, ti)
+		} else {
+			ti.SetLevel(parseLogLevel(d))
+		}
+	}
 
 	if req.ValidateOnly {
 		ctx = types.ContextWithValidateOnly(ctx)
@@ -492,16 +522,28 @@ func (s *Service) ProcessQuery(ctx context.Context, req types.Request) types.Res
 	if data != nil {
 		res.Data = data
 	}
-	if ext != nil {
-		if op.Definition.Directives.ForName(base.StatsDirectiveName) != nil {
-			opStats, ok := ext["stats"].(map[string]any)
-			if !ok {
-				opStats = make(map[string]any)
-			}
-			opStats["parse_time"] = parseDuration.String()
-			opStats["total_time"] = time.Since(start).String()
-			ext["stats"] = opStats
+
+	if ext == nil {
+		ext = make(map[string]any)
+	}
+	if op.Definition.Directives.ForName(base.StatsDirectiveName) != nil {
+		opStats, ok := ext["stats"].(map[string]any)
+		if !ok {
+			opStats = make(map[string]any)
 		}
+		opStats["parse_time"] = parseDuration.String()
+		opStats["total_time"] = time.Since(start).String()
+		ext["stats"] = opStats
+	}
+
+	if ti := trace.FromContext(ctx); ti != nil {
+		logger.Debug("trace.spans", "spans", ti.Result())
+		if hasTraceDirective {
+			ext["trace"] = ti.Result()
+		}
+	}
+
+	if len(ext) > 0 {
 		res.Extensions = ext
 	}
 	return res
@@ -561,5 +603,66 @@ func (s *Service) Commit(ctx context.Context) error {
 
 func (s *Service) Rollback(ctx context.Context) error {
 	return s.db.Rollback(ctx)
+}
+
+func (s *Service) logLevelHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet:
+		json.NewEncoder(w).Encode(map[string]string{
+			"level": s.logLevel.Level().String(),
+		})
+	case http.MethodPost:
+		var body struct {
+			Level string `json:"level"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+			return
+		}
+		var lvl slog.Level
+		switch strings.ToUpper(body.Level) {
+		case "DEBUG":
+			lvl = slog.LevelDebug
+		case "INFO":
+			lvl = slog.LevelInfo
+		case "WARN":
+			lvl = slog.LevelWarn
+		case "ERROR":
+			lvl = slog.LevelError
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid level, use: DEBUG, INFO, WARN, ERROR"})
+			return
+		}
+		s.logLevel.Set(lvl)
+		slog.Info("log level changed", "level", lvl.String())
+		json.NewEncoder(w).Encode(map[string]string{
+			"level": lvl.String(),
+		})
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func parseLogLevel(d *ast.Directive) slog.Level {
+	if d == nil {
+		return slog.LevelDebug
+	}
+	arg := d.Arguments.ForName("level")
+	if arg == nil || arg.Value == nil {
+		return slog.LevelDebug
+	}
+	switch strings.ToUpper(arg.Value.Raw) {
+	case "ERROR":
+		return slog.LevelError
+	case "WARN":
+		return slog.LevelWarn
+	case "INFO":
+		return slog.LevelInfo
+	default:
+		return slog.LevelDebug
+	}
 }
 
