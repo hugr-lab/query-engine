@@ -225,23 +225,23 @@ func (t BaseRange) ToTimestampRange() (TimeRange, error) {
 var rangeRE = regexp.MustCompile(`([\[\(])\s*([^,\s]*)\s*,\s*([^,\s]*)\s*([\]\)])`)
 
 func parseStringRange(input string) (map[string]interface{}, error) {
-	// Проверяем совпадение
+	// Match bracket-literal pattern, e.g. [1,10) or ('a','z'].
 	matches := rangeRE.FindStringSubmatch(input)
 	if len(matches) != 5 {
 		return nil, fmt.Errorf("invalid format")
 	}
 
-	// Определяем тип диапазона
+	// Left/right bracket determines lower/upper inclusivity.
 	leftBracket := matches[1]
 	rightBracket := matches[4]
 
-	// Функция для обработки значений диапазона (числа или строки)
+	// Parse one bound token: empty (infinity), quoted string, float, or int.
 	parseValue := func(value string) (interface{}, error) {
 		switch {
 		case value == "":
 			return nil, nil
 		case strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'"):
-			// Убираем одинарные кавычки из строкового значения
+			// Strip surrounding single quotes from a quoted bound.
 			return strings.Trim(value, "'"), nil
 		case strings.Contains(value, "."):
 			v, err := strconv.ParseFloat(value, 64)
@@ -251,7 +251,7 @@ func parseStringRange(input string) (map[string]interface{}, error) {
 		}
 	}
 
-	// Парсим начало и конец диапазона
+	// Parse lower and upper bounds.
 	lower, err := parseValue(matches[2])
 	if err != nil {
 		return nil, fmt.Errorf("invalid start value: %w", err)
@@ -278,7 +278,6 @@ func parseStringRange(input string) (map[string]interface{}, error) {
 		rangeType = RangeEmpty
 	}
 
-	// Формируем результат
 	result := map[string]interface{}{
 		"type":  rangeType,
 		"lower": lower,

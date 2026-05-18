@@ -1,0 +1,10 @@
+{
+  pg_store {
+    json_field_demo(
+      filter: { data: { field: { path: "account.balance", bigInt: { gte: 3000000000 } } } }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}

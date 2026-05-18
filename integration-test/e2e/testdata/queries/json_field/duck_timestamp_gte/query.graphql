@@ -1,0 +1,10 @@
+{
+  local_db {
+    json_field_demo(
+      filter: { data: { field: { path: "event.at", timestamp: { gte: "2024-06-09T00:00:00Z" } } } }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}

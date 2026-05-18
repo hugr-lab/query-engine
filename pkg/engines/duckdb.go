@@ -272,6 +272,121 @@ func (e DuckDB) AddObjectFields(sqlName string, fields map[string]string) string
 	return "struct_insert(" + sqlName + "," + strings.Join(res, ",") + ")"
 }
 
+// extractJSONFilterValue is the JSONFieldFilter-specific typed extractor for
+// DuckDB. It is self-contained — does not delegate to ExtractNestedTypedValue —
+// because the JSONFieldFilter contract differs from the canonical extractor on
+// two points:
+//
+//   - sqlName can be a `$N` placeholder (COALESCE wrapper, path == "") instead
+//     of a JSON column. The shared FieldValueByPath returns the placeholder
+//     as-is, so the try_cast still lands correctly, but keeping the dispatch
+//     here makes the dual-context contract explicit.
+//   - STRING with path != "" is rewritten with json_extract_string. The
+//     canonical `try_cast(meta['k'] AS VARCHAR)` keeps the surrounding JSON
+//     quotes (DuckDB's JSON→VARCHAR is a serialization, not an unwrap), so
+//     equality against a Go-bound VARCHAR would never match.
+//   - GEOMETRY routes through ST_GeomFromGeoJSON because DuckDB has no
+//     implicit JSON → GEOMETRY cast; NULLIF guards a JSON-null literal.
+//
+// Every other token resolves to a single `try_cast(val AS T)` shape.
+func (e DuckDB) extractJSONFilterValue(sqlName, path, gqlType string) string {
+	val := sqlName
+	if path != "" {
+		val = sqlName + extractStructFieldByPath(path)
+	}
+	if gqlType == "geometry" {
+		raw := sqlName
+		if path != "" {
+			raw = "json_extract(" + sqlName + "::JSON,'$." + path + "')"
+		}
+		return "ST_GeomFromGeoJSON(NULLIF(" + raw + "::VARCHAR, 'null'))"
+	}
+	if gqlType == "string" && path != "" {
+		return "json_extract_string(" + sqlName + "::JSON,'$." + path + "')"
+	}
+	switch gqlType {
+	case "int", "float":
+		return "try_cast(" + val + " AS FLOAT)"
+	case "string":
+		return "try_cast(" + val + " AS VARCHAR)"
+	case "bool":
+		return "try_cast(" + val + " AS BOOLEAN)"
+	case "timestamp":
+		return "try_cast(" + val + " AS TIMESTAMPTZ)"
+	case "dateTime":
+		return "try_cast(" + val + " AS TIMESTAMP)"
+	case "bigInt":
+		return "try_cast(" + val + " AS BIGINT)"
+	case "date":
+		return "try_cast(" + val + " AS DATE)"
+	case "time":
+		return "try_cast(" + val + " AS TIME)"
+	case "interval":
+		return "try_cast(" + val + " AS INTERVAL)"
+	}
+	return ""
+}
+
+// jsonFieldCoerce stringifies time.Time / time.Duration so the duckdb-go
+// driver binds them as VARCHAR. DuckDB cannot CAST(TIMESTAMPTZ AS TIME) and its
+// DATE / TIMESTAMP coercion from a TIMESTAMPTZ-bound parameter is brittle;
+// "<seconds> seconds" is the format DuckDB parses reliably for INTERVAL.
+// TIMESTAMPTZ binds natively, so it is not coerced. Consumed by
+// compileJSONFieldFilter via jsonFieldFilterEngine.
+func (e DuckDB) jsonFieldCoerce(v any, sqlType string) any {
+	switch t := v.(type) {
+	case time.Time:
+		switch sqlType {
+		case "DATE":
+			return t.Format(time.DateOnly)
+		case "TIME":
+			return t.Format(time.TimeOnly)
+		case "TIMESTAMP":
+			return t.Format(time.DateTime)
+		}
+	case time.Duration:
+		if sqlType == "INTERVAL" {
+			return strconv.FormatInt(int64(t/time.Second), 10) + " seconds"
+		}
+	case string:
+		if sqlType == "INTERVAL" {
+			if d, err := ctypes.ParseSQLInterval(t); err == nil {
+				return strconv.FormatInt(int64(d/time.Second), 10) + " seconds"
+			}
+		}
+	}
+	return v
+}
+
+// jsonFieldCoerceCastType picks the SQL type used both for value coercion and
+// for the `CAST($N AS T)` wrap around freshly-bound placeholders. Only temporal
+// types need it because duckdb-go binds time.Time / time.Duration in a brittle
+// way; other types flow through the driver natively.
+func (e DuckDB) jsonFieldCoerceCastType(gqlType string) string {
+	switch gqlType {
+	case "date":
+		return "DATE"
+	case "time":
+		return "TIME"
+	case "dateTime":
+		return "TIMESTAMP"
+	case "interval":
+		return "INTERVAL"
+	}
+	return ""
+}
+
+// jsonPathIsNull emits a DuckDB-specific isNull guard for a JSON path.
+// json_type(...,'$.a.b') returns 'NULL' (literal text) when the key exists and
+// its value is JSON null; the equality / inequality test mirrors json-ops5.
+func (e DuckDB) jsonPathIsNull(sqlName, path string, isNull bool) string {
+	op := "="
+	if !isNull {
+		op = "<>"
+	}
+	return fmt.Sprintf("json_type(%s,'$.%s') %s 'NULL'", sqlName, path, op)
+}
+
 func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, params []any) (string, []any, error) {
 	if path != "" {
 		sqlName += extractStructFieldByPath(path)
@@ -326,6 +441,18 @@ func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, pa
 		switch op {
 		case "eq":
 			return fmt.Sprintf("%s = %s", sqlName, val), params, nil
+		// gt/gte/lt/lte are valid on text and stay meaningful after the
+		// JSONFieldFilter pipeline coerces a typed value (DATE/TIME/...)
+		// into a string — the orchestration adds CAST($N AS <type>) so
+		// the comparison evaluates against the JSON-extracted typed side.
+		case "gt":
+			return fmt.Sprintf("%s > %s", sqlName, val), params, nil
+		case "gte":
+			return fmt.Sprintf("%s >= %s", sqlName, val), params, nil
+		case "lt":
+			return fmt.Sprintf("%s < %s", sqlName, val), params, nil
+		case "lte":
+			return fmt.Sprintf("%s <= %s", sqlName, val), params, nil
 		case "like":
 			return fmt.Sprintf("%s LIKE %s", sqlName, val), params, nil
 		case "ilike":
@@ -368,6 +495,14 @@ func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, pa
 			return "", nil, fmt.Errorf("unsupported filter operator: %s", op)
 		}
 	case map[string]any: // json
+		// JSONFieldFilter — typed sub-filter on a nested JSON path. The parsing /
+		// validation / AND-fold loop is shared (see compileJSONFieldFilter); the
+		// dialect-specific pieces are wired through the jsonFieldFilterEngine
+		// interface implemented by *DuckDB: extractJSONFilterValue,
+		// jsonFieldCoerceCastType, jsonFieldCoerce, jsonPathIsNull.
+		if op == "field" {
+			return compileJSONFieldFilter(e, sqlName, value, params)
+		}
 		params = append(params, value)
 		val := "$" + strconv.Itoa(len(params))
 		switch op {
@@ -574,29 +709,6 @@ func (e DuckDB) ExtractNestedTypedValue(sql, path, t string) string {
 		return val
 	}
 	return fmt.Sprintf("try_cast(%s AS %s)", val, t)
-}
-
-func (e DuckDB) ExtractJSONTypedValue(sql, path, t string) string {
-	if path != "" {
-		sql = "json_value(" + sql + "::JSON,'$." + path + "')"
-	}
-	switch t {
-	case "number":
-		return "try_cast(" + sql + " AS FLOAT)"
-	case "string":
-		return "try_cast(" + sql + " AS VARCHAR)"
-	case "bool":
-		return "try_cast(" + sql + " AS BOOLEAN)"
-	case "timestamp":
-		return "try_cast(" + sql + " AS TIMESTAMPTZ)"
-	case "datetime":
-		return "try_cast(" + sql + " AS TIMESTAMP)"
-	case "h3string":
-		return fmt.Sprintf("try_cast(h3_string_to_h3(%s))", sql)
-	case "":
-		return sql
-	}
-	return fmt.Sprintf("try_cast(%s AS %s)", sql, t)
 }
 
 func (e DuckDB) AggregateFuncSQL(funcName, sql, path, factor string, field *ast.FieldDefinition, _ bool, args map[string]any, params []any) (string, []any, error) {
@@ -965,8 +1077,6 @@ func JsonToStruct(field *ast.Field, prefix string, useNativeTypes bool, byFieldF
 func (e *DuckDB) LateralJoin(sql, alias string) string {
 	return " LEFT JOIN LATERAL (" + sql + ") AS " + alias + " ON TRUE"
 }
-
-// нужна функция проверки наличия поля по пути в структуре запроса
 
 func extractStructFieldByPath(path string) string {
 	if path == "" {

@@ -85,6 +85,11 @@
           },
           {
             "database_name": "pg_store",
+            "name": "json_field_demo",
+            "schema_name": "public"
+          },
+          {
+            "database_name": "pg_store",
             "name": "layer",
             "schema_name": "topology"
           },
