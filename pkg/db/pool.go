@@ -279,6 +279,18 @@ type Arrow struct {
 	release func()
 }
 
+// Exec runs a statement on the same DuckDB driver connection that backs the
+// embedded *duckdb.Arrow. This lets callers RegisterView an Arrow stream and
+// then INSERT/UPDATE against the registered view on the same connection — the
+// view is per-connection and is not visible to other pool connections.
+func (a *Arrow) Exec(ctx context.Context, query string) (driver.Result, error) {
+	execer, ok := a.drv.(driver.ExecerContext)
+	if !ok {
+		return nil, fmt.Errorf("duckdb driver connection does not implement ExecerContext")
+	}
+	return execer.ExecContext(ctx, query, nil)
+}
+
 func (a *Arrow) Close() error {
 	defer a.release()
 	return a.drv.Close()
