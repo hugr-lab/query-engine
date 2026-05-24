@@ -393,130 +393,224 @@ func TestIngest_Postgres_Stream_Empty(t *testing.T) {
 	assert.Contains(t, err.Error(), "data_object")
 }
 
-// TestIngest_Postgres_ArrowIPCFile_StreamFormat writes an Arrow IPC stream
-// file to disk and ingests it via IngestArrowIPCFile. The file has no
-// ARROW1 magic, so the client should byte-forward it to /ipc/ingest.
+// arrowFileFormat picks between Arrow IPC stream (no magic) and Arrow IPC
+// file (ARROW1 prefix) for the writeEventsArrowFile helper.
+type arrowFileFormat int
+
+const (
+	arrowStreamFormat arrowFileFormat = iota
+	arrowFileFmt
+)
+
+func eventsArrowSchema() *arrow.Schema {
+	return arrow.NewSchema([]arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
+		{Name: "payload", Type: arrow.BinaryTypes.String, Nullable: true},
+		{Name: "created_at", Type: arrow.FixedWidthTypes.Timestamp_us, Nullable: true},
+	}, nil)
+}
+
+// writeEventsArrowFile produces an Arrow IPC file at path in the given
+// format with numBatches × rowsPerBatch synthetic events rows. namePrefix is
+// embedded in the `name` column so different tests can write to the same
+// table without colliding on uniqueness assertions.
+func writeEventsArrowFile(t *testing.T, path, namePrefix string, format arrowFileFormat, numBatches, rowsPerBatch int) {
+	t.Helper()
+	pool := memory.NewGoAllocator()
+	schema := eventsArrowSchema()
+
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	defer f.Close()
+
+	type writer interface {
+		Write(arrow.RecordBatch) error
+		Close() error
+	}
+	var w writer
+	switch format {
+	case arrowStreamFormat:
+		w = ipc.NewWriter(f, ipc.WithSchema(schema))
+	case arrowFileFmt:
+		fw, ferr := ipc.NewFileWriter(f, ipc.WithSchema(schema))
+		require.NoError(t, ferr)
+		w = fw
+	default:
+		t.Fatalf("unknown arrow file format: %d", format)
+	}
+
+	base := time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC)
+	for batchIdx := 0; batchIdx < numBatches; batchIdx++ {
+		rb := array.NewRecordBuilder(pool, schema)
+		names := rb.Field(0).(*array.StringBuilder)
+		values := rb.Field(1).(*array.Float64Builder)
+		active := rb.Field(2).(*array.BooleanBuilder)
+		payloads := rb.Field(3).(*array.StringBuilder)
+		ts := rb.Field(4).(*array.TimestampBuilder)
+		for i := 0; i < rowsPerBatch; i++ {
+			row := batchIdx*rowsPerBatch + i
+			names.Append(fmt.Sprintf("%s-%06d", namePrefix, row))
+			values.Append(float64(row) * 0.5)
+			active.Append(row%2 == 0)
+			if row%5 == 0 {
+				payloads.AppendNull()
+			} else {
+				payloads.Append(fmt.Sprintf(`{"row":%d}`, row))
+			}
+			ts.Append(arrow.Timestamp(base.Add(time.Duration(row) * time.Millisecond).UnixMicro()))
+		}
+		rec := rb.NewRecord()
+		rb.Release()
+		require.NoError(t, w.Write(rec))
+		rec.Release()
+	}
+	require.NoError(t, w.Close())
+}
+
+// TestIngest_Postgres_ArrowIPCFile_StreamFormat builds a 50×1000-row Arrow
+// IPC *stream* file on disk and ingests it via IngestArrowIPCFile. The
+// client should detect "no ARROW1 magic" and byte-forward the file body
+// straight into /ipc/ingest — the bulk path with zero re-serialisation.
 func TestIngest_Postgres_ArrowIPCFile_StreamFormat(t *testing.T) {
 	env := setupEnv(t)
 
-	pool := memory.NewGoAllocator()
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
-		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
-		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
-	}, nil)
-	mk := func(names []string, vals []float64) arrow.RecordBatch {
-		b := array.NewRecordBuilder(pool, schema)
-		defer b.Release()
-		b.Field(0).(*array.StringBuilder).AppendValues(names, nil)
-		b.Field(1).(*array.Float64Builder).AppendValues(vals, nil)
-		act := make([]bool, len(names))
-		for i := range act {
-			act[i] = true
-		}
-		b.Field(2).(*array.BooleanBuilder).AppendValues(act, nil)
-		return b.NewRecord()
-	}
-	rec1 := mk([]string{"f1", "f2"}, []float64{1, 2})
-	defer rec1.Release()
-	rec2 := mk([]string{"f3"}, []float64{3})
-	defer rec2.Release()
+	const (
+		numBatches   = 50
+		rowsPerBatch = 1000
+		totalRows    = numBatches * rowsPerBatch
+		namePrefix   = "stream"
+	)
 
-	dir := t.TempDir()
-	path := filepath.Join(dir, "events_stream.arrows")
-	f, err := os.Create(path)
+	path := filepath.Join(t.TempDir(), "events_stream.arrows")
+	writeEventsArrowFile(t, path, namePrefix, arrowStreamFormat, numBatches, rowsPerBatch)
+
+	// Sanity-check that the file is actually stream format (no ARROW1).
+	head, err := os.ReadFile(path)
 	require.NoError(t, err)
-	w := ipc.NewWriter(f, ipc.WithSchema(schema))
-	require.NoError(t, w.Write(rec1))
-	require.NoError(t, w.Write(rec2))
-	require.NoError(t, w.Close())
-	require.NoError(t, f.Close())
+	require.GreaterOrEqual(t, len(head), 6)
+	assert.NotEqual(t, "ARROW1", string(head[:6]), "test setup must produce stream format (no ARROW1 magic)")
 
+	start := time.Now()
 	res, err := env.client.IngestArrowIPCFile(context.Background(), "pg_ingest.events", path)
+	elapsed := time.Since(start)
 	require.NoError(t, err)
 	require.NotNil(t, res)
-	assert.Equal(t, int64(3), res.Inserted)
+	assert.Equal(t, int64(totalRows), res.Inserted)
 
+	// Synchronicity check: COUNT(*) must see all rows the moment POST returns.
+	countStart := time.Now()
 	var count int
 	require.NoError(t, env.pgConn.QueryRow("SELECT COUNT(*) FROM events").Scan(&count))
-	assert.Equal(t, 3, count)
+	countElapsed := time.Since(countStart)
+	assert.Equal(t, totalRows, count, "all rows must be visible immediately")
+	t.Logf("post-POST COUNT(*) visibility: %d rows in %s — no async lag", count, countElapsed)
 
-	// Verify both batches landed (ordered by name).
-	rows, err := env.pgConn.Query("SELECT name, value FROM events ORDER BY name")
+	// Spot-check the first 5 rows by content (rows produced by namePrefix-N).
+	rows, err := env.pgConn.Query(`SELECT name, value, is_active, payload IS NULL FROM events ORDER BY value LIMIT 5`)
 	require.NoError(t, err)
 	defer rows.Close()
-	var gotNames []string
-	var gotVals []float64
+	var (
+		sampleNames       []string
+		sampleValues      []float64
+		sampleActive      []bool
+		samplePayloadNull []bool
+	)
 	for rows.Next() {
 		var n string
 		var v float64
-		require.NoError(t, rows.Scan(&n, &v))
-		gotNames = append(gotNames, n)
-		gotVals = append(gotVals, v)
+		var a, pn bool
+		require.NoError(t, rows.Scan(&n, &v, &a, &pn))
+		sampleNames = append(sampleNames, n)
+		sampleValues = append(sampleValues, v)
+		sampleActive = append(sampleActive, a)
+		samplePayloadNull = append(samplePayloadNull, pn)
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, []string{"f1", "f2", "f3"}, gotNames)
-	assert.Equal(t, []float64{1, 2, 3}, gotVals)
+	assert.Equal(t, []string{namePrefix + "-000000", namePrefix + "-000001", namePrefix + "-000002", namePrefix + "-000003", namePrefix + "-000004"}, sampleNames)
+	assert.Equal(t, []float64{0, 0.5, 1.0, 1.5, 2.0}, sampleValues)
+	assert.Equal(t, []bool{true, false, true, false, true}, sampleActive)
+	assert.Equal(t, []bool{true, false, false, false, false}, samplePayloadNull)
+
+	// Active-row count guards against bit-packing artefacts across batches.
+	var activeCount int
+	require.NoError(t, env.pgConn.QueryRow("SELECT COUNT(*) FROM events WHERE is_active").Scan(&activeCount))
+	assert.Equal(t, totalRows/2, activeCount)
+
+	t.Logf("arrow ipc stream file ingest: %d rows from %d-batch file in %s (%.0f rows/s)",
+		totalRows, numBatches, elapsed, float64(totalRows)/elapsed.Seconds())
 }
 
-// TestIngest_Postgres_ArrowIPCFile_FileFormat writes an Arrow IPC *file*
-// format (.arrow with ARROW1 magic) to disk and ingests it via
-// IngestArrowIPCFile. The client should detect the magic, use FileReader,
-// and re-emit as a stream to the server.
+// TestIngest_Postgres_ArrowIPCFile_FileFormat builds a 50×1000-row Arrow IPC
+// *file* format file (ARROW1 magic + random-access footer) on disk and
+// ingests it via IngestArrowIPCFile. The client should detect the magic,
+// open the file with ipc.FileReader, and re-emit as a stream to the server.
 func TestIngest_Postgres_ArrowIPCFile_FileFormat(t *testing.T) {
 	env := setupEnv(t)
 
-	pool := memory.NewGoAllocator()
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
-		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
-		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
-	}, nil)
-	b := array.NewRecordBuilder(pool, schema)
-	b.Field(0).(*array.StringBuilder).AppendValues([]string{"file1", "file2", "file3"}, nil)
-	b.Field(1).(*array.Float64Builder).AppendValues([]float64{100, 200, 300}, nil)
-	b.Field(2).(*array.BooleanBuilder).AppendValues([]bool{true, true, false}, nil)
-	rec := b.NewRecord()
-	b.Release()
-	defer rec.Release()
+	const (
+		numBatches   = 50
+		rowsPerBatch = 1000
+		totalRows    = numBatches * rowsPerBatch
+		namePrefix   = "file"
+	)
 
-	dir := t.TempDir()
-	path := filepath.Join(dir, "events_file.arrow")
-	f, err := os.Create(path)
-	require.NoError(t, err)
-	fw, err := ipc.NewFileWriter(f, ipc.WithSchema(schema))
-	require.NoError(t, err)
-	require.NoError(t, fw.Write(rec))
-	require.NoError(t, fw.Close())
-	require.NoError(t, f.Close())
+	path := filepath.Join(t.TempDir(), "events_file.arrow")
+	writeEventsArrowFile(t, path, namePrefix, arrowFileFmt, numBatches, rowsPerBatch)
 
 	// Sanity-check that we actually wrote the file format (ARROW1 prefix).
-	prefix, err := os.ReadFile(path)
+	head, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(prefix), 6)
-	assert.Equal(t, "ARROW1", string(prefix[:6]), "test setup must produce file format with ARROW1 magic")
+	require.GreaterOrEqual(t, len(head), 6)
+	assert.Equal(t, "ARROW1", string(head[:6]), "test setup must produce file format with ARROW1 magic")
 
+	start := time.Now()
 	res, err := env.client.IngestArrowIPCFile(context.Background(), "pg_ingest.events", path)
+	elapsed := time.Since(start)
 	require.NoError(t, err)
 	require.NotNil(t, res)
-	assert.Equal(t, int64(3), res.Inserted)
+	assert.Equal(t, int64(totalRows), res.Inserted)
 
+	// Synchronicity check.
+	countStart := time.Now()
 	var count int
 	require.NoError(t, env.pgConn.QueryRow("SELECT COUNT(*) FROM events").Scan(&count))
-	assert.Equal(t, 3, count)
+	countElapsed := time.Since(countStart)
+	assert.Equal(t, totalRows, count, "all rows must be visible immediately")
+	t.Logf("post-POST COUNT(*) visibility: %d rows in %s — no async lag", count, countElapsed)
 
-	rows, err := env.pgConn.Query("SELECT name, value FROM events ORDER BY value")
+	rows, err := env.pgConn.Query(`SELECT name, value, is_active, payload IS NULL FROM events ORDER BY value LIMIT 5`)
 	require.NoError(t, err)
 	defer rows.Close()
-	var gotNames []string
+	var (
+		sampleNames       []string
+		sampleValues      []float64
+		sampleActive      []bool
+		samplePayloadNull []bool
+	)
 	for rows.Next() {
 		var n string
 		var v float64
-		require.NoError(t, rows.Scan(&n, &v))
-		gotNames = append(gotNames, n)
+		var a, pn bool
+		require.NoError(t, rows.Scan(&n, &v, &a, &pn))
+		sampleNames = append(sampleNames, n)
+		sampleValues = append(sampleValues, v)
+		sampleActive = append(sampleActive, a)
+		samplePayloadNull = append(samplePayloadNull, pn)
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, []string{"file1", "file2", "file3"}, gotNames)
+	assert.Equal(t, []string{namePrefix + "-000000", namePrefix + "-000001", namePrefix + "-000002", namePrefix + "-000003", namePrefix + "-000004"}, sampleNames)
+	assert.Equal(t, []float64{0, 0.5, 1.0, 1.5, 2.0}, sampleValues)
+	assert.Equal(t, []bool{true, false, true, false, true}, sampleActive)
+	assert.Equal(t, []bool{true, false, false, false, false}, samplePayloadNull)
+
+	var activeCount int
+	require.NoError(t, env.pgConn.QueryRow("SELECT COUNT(*) FROM events WHERE is_active").Scan(&activeCount))
+	assert.Equal(t, totalRows/2, activeCount)
+
+	t.Logf("arrow ipc file-format ingest: %d rows from %d-batch file in %s (%.0f rows/s)",
+		totalRows, numBatches, elapsed, float64(totalRows)/elapsed.Seconds())
 }
 
 // TestIngest_Postgres_ArrowIPCFile_NotFound checks that a missing file
