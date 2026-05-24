@@ -22,7 +22,7 @@ trap 'cleanup "${1:-}"' EXIT
 
 docker compose -f "$COMPOSE_FILE" up -d --wait
 
-export INGEST_POSTGRES_DSN="postgres://test:test@127.0.0.1:5435/ingestdb"
+export INGEST_POSTGRES_DSN="postgres://test:test@127.0.0.1:5437/ingestdb"
 export HUGR_INGEST_SCHEMAS_PATH="$HERE/testdata/schemas"
 
 cd "$HERE/../.."
