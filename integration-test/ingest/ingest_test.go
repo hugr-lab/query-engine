@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -367,9 +368,128 @@ func TestIngest_HTTP_Direct(t *testing.T) {
 	resp, err = http.Post(env.server.URL+"/ipc/ingest?data_object=pg_ingest.events",
 		"application/vnd.apache.arrow.stream", &buf)
 	require.NoError(t, err)
-	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var out hugrclient.IngestResult
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+	resp.Body.Close()
 	assert.Equal(t, int64(1), out.Inserted)
+
+	// --- Real-world bulk path -------------------------------------------------
+	// A producer (ETL/CDC/telemetry) streams many RecordBatches in a single
+	// Arrow IPC stream over one HTTP POST. The whole payload is never
+	// materialised in memory client-side — we pipe the writer goroutine
+	// straight into the request body. This is where /ipc/ingest pays off vs.
+	// GraphQL `insert_events(data: ...)` mutations.
+	_, err = env.pgConn.ExecContext(context.Background(), "TRUNCATE TABLE events RESTART IDENTITY")
+	require.NoError(t, err)
+
+	const (
+		numBatches   = 50
+		rowsPerBatch = 1000
+		totalRows    = numBatches * rowsPerBatch
+	)
+
+	bulkSchema := arrow.NewSchema([]arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
+		{Name: "payload", Type: arrow.BinaryTypes.String, Nullable: true},
+		{Name: "created_at", Type: arrow.FixedWidthTypes.Timestamp_us, Nullable: true},
+	}, nil)
+
+	pr, pw := io.Pipe()
+	writeErr := make(chan error, 1)
+	go func() {
+		defer close(writeErr)
+		w := ipc.NewWriter(pw, ipc.WithSchema(bulkSchema))
+		base := time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC)
+		var streamErr error
+		for batchIdx := 0; batchIdx < numBatches; batchIdx++ {
+			rb := array.NewRecordBuilder(pool, bulkSchema)
+			names := rb.Field(0).(*array.StringBuilder)
+			values := rb.Field(1).(*array.Float64Builder)
+			active := rb.Field(2).(*array.BooleanBuilder)
+			payloads := rb.Field(3).(*array.StringBuilder)
+			ts := rb.Field(4).(*array.TimestampBuilder)
+			for i := 0; i < rowsPerBatch; i++ {
+				row := batchIdx*rowsPerBatch + i
+				names.Append(fmt.Sprintf("evt-%06d", row))
+				values.Append(float64(row) * 0.5)
+				active.Append(row%2 == 0)
+				if row%5 == 0 {
+					payloads.AppendNull()
+				} else {
+					payloads.Append(fmt.Sprintf(`{"row":%d}`, row))
+				}
+				ts.Append(arrow.Timestamp(base.Add(time.Duration(row) * time.Millisecond).UnixMicro()))
+			}
+			batchRec := rb.NewRecord()
+			rb.Release()
+			if werr := w.Write(batchRec); werr != nil {
+				streamErr = fmt.Errorf("write batch %d: %w", batchIdx, werr)
+				batchRec.Release()
+				break
+			}
+			batchRec.Release()
+		}
+		if cerr := w.Close(); cerr != nil && streamErr == nil {
+			streamErr = fmt.Errorf("close arrow writer: %w", cerr)
+		}
+		_ = pw.CloseWithError(streamErr)
+		writeErr <- streamErr
+	}()
+
+	start := time.Now()
+	bulkResp, postErr := http.Post(env.server.URL+"/ipc/ingest?data_object=pg_ingest.events",
+		"application/vnd.apache.arrow.stream", pr)
+	werr := <-writeErr
+	require.NoError(t, werr, "writer goroutine failed")
+	require.NoError(t, postErr)
+	require.Equal(t, http.StatusOK, bulkResp.StatusCode)
+	var bulkResult hugrclient.IngestResult
+	require.NoError(t, json.NewDecoder(bulkResp.Body).Decode(&bulkResult))
+	bulkResp.Body.Close()
+	elapsed := time.Since(start)
+	assert.Equal(t, int64(totalRows), bulkResult.Inserted)
+	assert.ElementsMatch(t, []string{"name", "value", "is_active", "payload", "created_at"}, bulkResult.Columns)
+
+	var count int
+	require.NoError(t, env.pgConn.QueryRow("SELECT COUNT(*) FROM events").Scan(&count))
+	assert.Equal(t, totalRows, count)
+
+	// Spot-check a sample to confirm per-row fidelity end-to-end.
+	rows, err := env.pgConn.Query(`SELECT name, value, is_active, payload IS NULL FROM events ORDER BY value LIMIT 5`)
+	require.NoError(t, err)
+	defer rows.Close()
+	var (
+		sampleNames       []string
+		sampleValues      []float64
+		sampleActive      []bool
+		samplePayloadNull []bool
+	)
+	for rows.Next() {
+		var n string
+		var v float64
+		var a, pn bool
+		require.NoError(t, rows.Scan(&n, &v, &a, &pn))
+		sampleNames = append(sampleNames, n)
+		sampleValues = append(sampleValues, v)
+		sampleActive = append(sampleActive, a)
+		samplePayloadNull = append(samplePayloadNull, pn)
+	}
+	require.NoError(t, rows.Err())
+	assert.Equal(t, []string{"evt-000000", "evt-000001", "evt-000002", "evt-000003", "evt-000004"}, sampleNames)
+	assert.Equal(t, []float64{0, 0.5, 1.0, 1.5, 2.0}, sampleValues)
+	assert.Equal(t, []bool{true, false, true, false, true}, sampleActive)
+	// row%5 == 0 ⇒ payload IS NULL; in the first five rows that's just row 0.
+	assert.Equal(t, []bool{true, false, false, false, false}, samplePayloadNull)
+
+	// Cross-check the active-row count to ensure the boolean column survived
+	// without bit-packing artefacts across batch boundaries.
+	var activeCount int
+	require.NoError(t, env.pgConn.QueryRow("SELECT COUNT(*) FROM events WHERE is_active").Scan(&activeCount))
+	assert.Equal(t, totalRows/2, activeCount)
+
+	t.Logf("bulk ingest: %d rows in %d batches via one /ipc/ingest POST in %s (%.0f rows/s)",
+		totalRows, numBatches, elapsed, float64(totalRows)/elapsed.Seconds())
 }
