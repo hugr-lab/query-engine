@@ -1,0 +1,8 @@
+type events @table(name: "events") {
+    id: BigInt! @pk @default(sequence: "events_id_seq")
+    name: String!
+    value: Float!
+    is_active: Boolean! @default(value: "true")
+    payload: JSON
+    created_at: Timestamp @default(value: "now()")
+}
