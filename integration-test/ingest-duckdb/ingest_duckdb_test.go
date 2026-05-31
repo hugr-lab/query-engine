@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,23 +34,60 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 )
 
-// ingestEnv mirrors the Postgres counterpart but everything runs in-process
-// against a local .duckdb file in t.TempDir():
-//   - the .duckdb file is created and seeded (CREATE SEQUENCE + CREATE TABLE)
-//     via a direct sql.Open("duckdb", path) connection;
-//   - that connection is then CLOSED — only one process can hold the write
-//     lock, and we hand the file over to hugr next;
-//   - hugr is started in-process, registers the file as a "duckdb" data
-//     source named "duck_ingest" and ATTACHes it;
-//   - the verifier sql.DB is re-opened in READ_ONLY mode (DuckDB allows
-//     concurrent read-only connections while another writer holds the file),
-//     giving the test an independent view of the data — analogous to the
-//     pgx-based pgConn in the Postgres test suite.
+// ingestEnv is per-test state on top of a shared hugr.Service (initialised
+// once in TestMain). Each test owns a unique .duckdb file and a unique data
+// source name, so tests don't share table state. Cleanup unloads the source
+// to DETACH the file before t.TempDir() removes it.
 type ingestEnv struct {
-	service *hugr.Service
-	server  *httptest.Server
-	client  *hugrclient.Client
-	dbPath  string
+	service    *hugr.Service
+	server     *httptest.Server
+	client     *hugrclient.Client
+	dbPath     string
+	dsName     string // unique data source / catalog prefix, e.g. "duck_ingest_3"
+	dataObject string // dsName + ".events"
+}
+
+// Shared service initialised once for the whole package — see TestMain.
+// hugr.New + service.Init costs ~17s; doing it once cuts the package
+// wall-clock from 13×17s ≈ 3.5min down to one-off ~17s + ~ms/test.
+var (
+	sharedService *hugr.Service
+	sharedServer  *httptest.Server
+	sharedClient  *hugrclient.Client
+	dsCounter     atomic.Int64
+)
+
+func TestMain(m *testing.M) {
+	ctx := context.Background()
+
+	service, err := hugr.New(hugr.Config{
+		Debug:  false, // shared service runs many tests — keep logs quiet
+		DB:     db.Config{},
+		CoreDB: coredb.New(coredb.Config{}),
+		Auth: &auth.Config{
+			Providers: []auth.AuthProvider{
+				auth.NewAnonymous(auth.AnonymousConfig{
+					Allowed: true,
+					Role:    "admin",
+				}),
+			},
+		},
+	})
+	if err != nil {
+		log.Fatalf("hugr.New: %v", err)
+	}
+	if err := service.Init(ctx); err != nil {
+		log.Fatalf("service.Init: %v", err)
+	}
+	sharedService = service
+	sharedServer = httptest.NewServer(service)
+	sharedClient = hugrclient.NewClient(sharedServer.URL + "/ipc")
+
+	code := m.Run()
+
+	sharedServer.Close()
+	_ = service.Close()
+	os.Exit(code)
 }
 
 // openRO returns a fresh READ_ONLY sql.DB handle to the events database.
@@ -69,7 +107,9 @@ func setupEnv(t *testing.T) *ingestEnv {
 	t.Helper()
 	ctx := context.Background()
 
-	dbPath := filepath.Join(t.TempDir(), "test.duckdb")
+	n := dsCounter.Add(1)
+	dsName := fmt.Sprintf("duck_ingest_%d", n)
+	dbPath := filepath.Join(t.TempDir(), fmt.Sprintf("test_%d.duckdb", n))
 
 	// 1. Seed schema with a private writer; close before hugr opens it.
 	seed, err := sql.Open("duckdb", dbPath)
@@ -93,56 +133,48 @@ func setupEnv(t *testing.T) *ingestEnv {
 	require.NoError(t, err)
 	require.DirExists(t, schemaDir)
 
-	// 3. Start hugr in-process.
-	service, err := hugr.New(hugr.Config{
-		Debug:  true,
-		DB:     db.Config{},
-		CoreDB: coredb.New(coredb.Config{}),
-		Auth: &auth.Config{
-			Providers: []auth.AuthProvider{
-				auth.NewAnonymous(auth.AnonymousConfig{
-					Allowed: true,
-					Role:    "admin",
-				}),
-			},
-		},
-	})
-	require.NoError(t, err)
-	require.NoError(t, service.Init(ctx))
-
-	// 4. Register & load the duckdb data source pointed at the file.
-	mustQuery(t, ctx, service, `mutation($data: core_data_sources_mut_input_data!) {
+	// 3. Register & load this test's unique data source on the SHARED service.
+	mustQuery(t, ctx, sharedService, `mutation($data: core_data_sources_mut_input_data!) {
 		core { insert_data_sources(data: $data) { name } }
 	}`, map[string]any{
 		"data": map[string]any{
-			"name":      "duck_ingest",
+			"name":      dsName,
 			"type":      "duckdb",
-			"prefix":    "duck_ingest",
+			"prefix":    dsName,
 			"as_module": true,
 			"path":      dbPath,
 			"catalogs": []map[string]any{{
-				"name": "duck_ingest",
+				"name": dsName,
 				"type": "localFS",
 				"path": schemaDir,
 			}},
 		},
 	})
-	mustQuery(t, ctx, service, `mutation { function { core { load_data_source(name: "duck_ingest") { success message } } } }`, nil)
-
-	srv := httptest.NewServer(service)
-
-	c := hugrclient.NewClient(srv.URL + "/ipc")
+	mustQuery(t, ctx, sharedService, `mutation($name: String!) {
+		function { core { load_data_source(name: $name) { success message } } }
+	}`, map[string]any{"name": dsName})
 
 	env := &ingestEnv{
-		service: service,
-		server:  srv,
-		client:  c,
-		dbPath:  dbPath,
+		service:    sharedService,
+		server:     sharedServer,
+		client:     sharedClient,
+		dbPath:     dbPath,
+		dsName:     dsName,
+		dataObject: dsName + ".events",
 	}
+
+	// Unload on test completion so DETACH releases the .duckdb file before
+	// t.TempDir() removes it. Best-effort: ignore errors (next test uses a
+	// different name + file, so a leak is harmless within a single run).
 	t.Cleanup(func() {
-		srv.Close()
-		service.Close()
+		res, err := sharedService.Query(ctx, `mutation($name: String!, $hard: Boolean) {
+			function { core { unload_data_source(name: $name, hard: $hard) { success message } } }
+		}`, map[string]any{"name": dsName, "hard": true})
+		if err == nil {
+			res.Close()
+		}
 	})
+
 	return env
 }
 
@@ -199,10 +231,10 @@ func TestIngest_DuckDB_RoundTrip(t *testing.T) {
 	)
 	defer rec.Release()
 
-	res, err := env.client.IngestRecord(context.Background(), "duck_ingest.events", rec)
+	res, err := env.client.IngestRecord(context.Background(), env.dataObject, rec)
 	require.NoError(t, err)
 	require.NotNil(t, res)
-	assert.Equal(t, "duck_ingest.events", res.DataObject)
+	assert.Equal(t, env.dataObject, res.DataObject)
 	assert.Equal(t, int64(3), res.Inserted)
 	assert.ElementsMatch(t, []string{"name", "value", "is_active", "payload", "created_at"}, res.Columns)
 
@@ -258,7 +290,7 @@ func TestIngest_DuckDB_UnknownColumn(t *testing.T) {
 	rec := b.NewRecord()
 	defer rec.Release()
 
-	_, err := env.client.IngestRecord(context.Background(), "duck_ingest.events", rec)
+	_, err := env.client.IngestRecord(context.Background(), env.dataObject, rec)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not_a_column")
 
@@ -282,7 +314,7 @@ func TestIngest_DuckDB_UnknownDataObject(t *testing.T) {
 	rec := b.NewRecord()
 	defer rec.Release()
 
-	_, err := env.client.IngestRecord(context.Background(), "duck_ingest.does_not_exist", rec)
+	_, err := env.client.IngestRecord(context.Background(), env.dsName+".does_not_exist", rec)
 	require.Error(t, err)
 }
 
@@ -328,7 +360,7 @@ func TestIngest_DuckDB_MultipleBatches(t *testing.T) {
 	require.NoError(t, err)
 	defer rr.Release()
 
-	res, err := env.client.Ingest(context.Background(), "duck_ingest.events", rr)
+	res, err := env.client.Ingest(context.Background(), env.dataObject, rr)
 	require.NoError(t, err)
 	assert.Equal(t, int64(5), res.Inserted)
 
@@ -368,7 +400,7 @@ func TestIngest_DuckDB_Bulk(t *testing.T) {
 	defer reader.Release()
 
 	start := time.Now()
-	res, err := env.client.Ingest(context.Background(), "duck_ingest.events", reader)
+	res, err := env.client.Ingest(context.Background(), env.dataObject, reader)
 	elapsed := time.Since(start)
 	require.NoError(t, err)
 	assert.Equal(t, int64(totalRows), res.Inserted)
@@ -449,7 +481,7 @@ func TestIngest_DuckDB_Stream(t *testing.T) {
 	require.NoError(t, w.Write(rec))
 	require.NoError(t, w.Close())
 
-	res, err := env.client.IngestStream(context.Background(), "duck_ingest.events", &buf)
+	res, err := env.client.IngestStream(context.Background(), env.dataObject, &buf)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	assert.Equal(t, int64(2), res.Inserted)
@@ -463,7 +495,7 @@ func TestIngest_DuckDB_Stream(t *testing.T) {
 
 func TestIngest_DuckDB_Stream_Empty(t *testing.T) {
 	env := setupEnv(t)
-	_, err := env.client.IngestStream(context.Background(), "duck_ingest.events", nil)
+	_, err := env.client.IngestStream(context.Background(), env.dataObject, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "body is nil")
 
@@ -491,7 +523,7 @@ func TestIngest_DuckDB_ArrowIPCFile_StreamFormat(t *testing.T) {
 	assert.NotEqual(t, "ARROW1", string(head[:6]), "stream format must not start with ARROW1 magic")
 
 	start := time.Now()
-	res, err := env.client.IngestArrowIPCFile(context.Background(), "duck_ingest.events", path)
+	res, err := env.client.IngestArrowIPCFile(context.Background(), env.dataObject, path)
 	elapsed := time.Since(start)
 	require.NoError(t, err)
 	assert.Equal(t, int64(totalRows), res.Inserted)
@@ -526,7 +558,7 @@ func TestIngest_DuckDB_ArrowIPCFile_FileFormat(t *testing.T) {
 	assert.Equal(t, "ARROW1", string(head[:6]), "file format must start with ARROW1 magic")
 
 	start := time.Now()
-	res, err := env.client.IngestArrowIPCFile(context.Background(), "duck_ingest.events", path)
+	res, err := env.client.IngestArrowIPCFile(context.Background(), env.dataObject, path)
 	elapsed := time.Since(start)
 	require.NoError(t, err)
 	assert.Equal(t, int64(totalRows), res.Inserted)
@@ -543,7 +575,7 @@ func TestIngest_DuckDB_ArrowIPCFile_FileFormat(t *testing.T) {
 
 func TestIngest_DuckDB_ArrowIPCFile_NotFound(t *testing.T) {
 	env := setupEnv(t)
-	_, err := env.client.IngestArrowIPCFile(context.Background(), "duck_ingest.events",
+	_, err := env.client.IngestArrowIPCFile(context.Background(), env.dataObject,
 		filepath.Join(t.TempDir(), "does-not-exist.arrows"))
 	require.Error(t, err)
 }
@@ -577,7 +609,7 @@ func TestIngest_DuckDB_LazyReader(t *testing.T) {
 	defer reader.Release()
 
 	start := time.Now()
-	res, err := env.client.Ingest(context.Background(), "duck_ingest.events", reader)
+	res, err := env.client.Ingest(context.Background(), env.dataObject, reader)
 	elapsed := time.Since(start)
 	require.NoError(t, err)
 	assert.Equal(t, int64(totalRows), res.Inserted)
@@ -664,21 +696,21 @@ func TestIngest_HTTP_Direct_DuckDB(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "body=%s", string(b))
 
 	// Wrong method.
-	req, _ := http.NewRequest(http.MethodGet, env.server.URL+"/ipc/ingest?data_object=duck_ingest.events", nil)
+	req, _ := http.NewRequest(http.MethodGet, env.server.URL+"/ipc/ingest?data_object="+env.dataObject, nil)
 	resp, err = http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 
 	// Wrong content type.
-	resp, err = http.Post(env.server.URL+"/ipc/ingest?data_object=duck_ingest.events",
+	resp, err = http.Post(env.server.URL+"/ipc/ingest?data_object="+env.dataObject,
 		"text/plain", bytes.NewReader([]byte("hello")))
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Equal(t, http.StatusUnsupportedMediaType, resp.StatusCode)
 
 	// Body is not a valid Arrow stream.
-	resp, err = http.Post(env.server.URL+"/ipc/ingest?data_object=duck_ingest.events",
+	resp, err = http.Post(env.server.URL+"/ipc/ingest?data_object="+env.dataObject,
 		"application/vnd.apache.arrow.stream", bytes.NewReader([]byte("not arrow")))
 	require.NoError(t, err)
 	b, _ = io.ReadAll(resp.Body)
@@ -705,7 +737,7 @@ func TestIngest_HTTP_Direct_DuckDB(t *testing.T) {
 	require.NoError(t, w.Write(rec))
 	require.NoError(t, w.Close())
 
-	resp, err = http.Post(env.server.URL+"/ipc/ingest?data_object=duck_ingest.events",
+	resp, err = http.Post(env.server.URL+"/ipc/ingest?data_object="+env.dataObject,
 		"application/vnd.apache.arrow.stream", &buf)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -747,7 +779,7 @@ func TestIngest_HTTP_Direct_DuckDB(t *testing.T) {
 	}()
 
 	start := time.Now()
-	bulkResp, postErr := http.Post(env.server.URL+"/ipc/ingest?data_object=duck_ingest.events",
+	bulkResp, postErr := http.Post(env.server.URL+"/ipc/ingest?data_object="+env.dataObject,
 		"application/vnd.apache.arrow.stream", pr)
 	werr := <-writeErr
 	require.NoError(t, werr, "writer goroutine failed")
