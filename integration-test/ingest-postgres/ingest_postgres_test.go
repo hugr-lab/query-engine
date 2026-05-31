@@ -1,6 +1,6 @@
 //go:build duckdb_arrow
 
-package ingest_test
+package ingest_postgres_test
 
 import (
 	"bytes"
@@ -161,7 +161,7 @@ func TestMain(m *testing.M) {
 func setupEnv(t *testing.T) *ingestEnv {
 	t.Helper()
 	if sharedService == nil {
-		t.Skipf("%s not set — run integration-test/ingest/run.sh to spin up a postgres container", envPostgresDSN)
+		t.Skipf("%s not set — run integration-test/ingest-postgres/run.sh to spin up a postgres container", envPostgresDSN)
 	}
 
 	// Truncate before each test to guarantee determinism (single shared table).
