@@ -221,7 +221,22 @@ func (p *recordPipe) Record() arrow.RecordBatch        { return p.current }
 func (p *recordPipe) RecordBatch() arrow.RecordBatch   { return p.current }
 func (p *recordPipe) Err() error                       { return p.err }
 func (p *recordPipe) Retain()                          {}
-func (p *recordPipe) Release()                         { p.Close() }
+
+// Release is the consumer's "done reading" signal. It MUST NOT close
+// p.ch — the producer goroutine in startStream is the sole closer via
+// its deferred pipe.Close(), which runs only after the final Send. If
+// the consumer closed p.ch here (e.g. on a deadline/cancel while the
+// backend is still streaming a stalled response), an in-flight Send
+// from the producer would panic with "send on closed channel" and, as
+// an unrecovered goroutine panic, crash the whole process. Cancellation
+// is delivered via ctx: the producer observes it, stops sending, and
+// closes p.ch itself. Here we only release the last in-flight record.
+func (p *recordPipe) Release() {
+	if p.current != nil {
+		p.current.Release()
+		p.current = nil
+	}
+}
 
 func (p *recordPipe) Next() bool {
 	if p.current != nil {

@@ -637,10 +637,16 @@ func (t *ArrowTableStream) GeometryInfo() map[string]GeometryInfo {
 }
 
 func (t *ArrowTableStream) Release() {
+	if t == nil || t.reader == nil {
+		return
+	}
 	t.reader.Release()
 }
 
 func (t *ArrowTableStream) Retain() {
+	if t == nil || t.reader == nil {
+		return
+	}
 	t.reader.Retain()
 }
 

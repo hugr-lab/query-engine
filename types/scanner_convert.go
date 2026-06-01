@@ -788,13 +788,46 @@ func jsonStringConvertFunc(dstType reflect.Type) convertFunc {
 			dst.Set(reflect.Zero(dst.Type()))
 			return nil
 		}
-		target := reflect.New(dstType).Interface()
-		if err := json.Unmarshal([]byte(s), target); err != nil {
-			return fmt.Errorf("json unmarshal: %w", err)
+		// A utf8 string column reaches here for GraphQL JSON scalars
+		// (object / array / number / bool / null / quoted string) AND for
+		// plain text values (e.g. a name). The cheap first-byte sniff skips
+		// json.Unmarshal on obvious plain text; on a decode miss we fall
+		// back to the raw string for an `any` destination so non-JSON text
+		// — including non-ASCII — round-trips instead of failing. A map /
+		// slice destination genuinely needs a JSON document, so that path
+		// keeps the unmarshal error.
+		if looksLikeJSON(s) {
+			target := reflect.New(dstType).Interface()
+			if err := json.Unmarshal([]byte(s), target); err == nil {
+				dst.Set(reflect.ValueOf(target).Elem())
+				return nil
+			} else if dst.Kind() != reflect.Interface {
+				return fmt.Errorf("json unmarshal: %w", err)
+			}
 		}
-		dst.Set(reflect.ValueOf(target).Elem())
-		return nil
+		if dst.Kind() == reflect.Interface {
+			dst.Set(reflect.ValueOf(s))
+			return nil
+		}
+		return fmt.Errorf("scan string %q into %s: not a JSON document", s, dstType)
 	}
+}
+
+// looksLikeJSON reports whether s plausibly begins a JSON value (object,
+// array, string, number, bool or null), letting the scanner skip
+// json.Unmarshal on obvious plain text. False positives are harmless: the
+// caller falls back to the raw string on a decode miss.
+func looksLikeJSON(s string) bool {
+	if s == "" {
+		return false
+	}
+	switch s[0] {
+	case '{', '[', '"', '-',
+		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+		't', 'f', 'n':
+		return true
+	}
+	return false
 }
 
 // anyConvertFunc writes whatever defaultConvertValue produces into an interface{}
