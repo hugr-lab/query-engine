@@ -11,8 +11,6 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-type validateOnlyKeyType struct{}
-
 type Querier interface {
 	Query(ctx context.Context, query string, vars map[string]any) (*Response, error)
 	Subscribe(ctx context.Context, query string, vars map[string]any) (*Subscription, error)
@@ -64,7 +62,9 @@ type Request struct {
 	Query         string         `json:"query"`
 	Variables     map[string]any `json:"variables"`
 	OperationName string         `json:"operationName,omitempty"`
-	ValidateOnly  bool           `json:"validateOnly,omitempty"`
+	//hints
+	ValidateOnly bool `json:"validateOnly,omitempty"`
+	NoMutation   bool `json:"noMutation,omitempty"`
 }
 
 // JQRequest is a GraphQL query with an optional JQ transformation.
@@ -82,19 +82,6 @@ type Response struct {
 	Data       map[string]any `json:"data,omitempty"`
 	Extensions map[string]any `json:"extensions,omitempty"`
 	Errors     gqlerror.List  `json:"errors,omitempty"`
-}
-
-func ContextWithValidateOnly(ctx context.Context) context.Context {
-	return context.WithValue(ctx, validateOnlyKeyType{}, true)
-}
-
-func IsValidateOnlyContext(ctx context.Context) bool {
-	v := ctx.Value(validateOnlyKeyType{})
-	if v == nil {
-		return false
-	}
-	b, ok := v.(bool)
-	return ok && b
 }
 
 func (r *Response) Close() {

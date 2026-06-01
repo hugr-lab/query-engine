@@ -610,6 +610,9 @@ func NewArrowTableStream(reader array.RecordReader) *ArrowTableStream {
 }
 
 func (t *ArrowTableStream) Info() string {
+	if t == nil {
+		return ""
+	}
 	var info []string
 	if t.wrapped {
 		info = append(info, "wrapped")
@@ -630,22 +633,28 @@ func (t *ArrowTableStream) SetGeometryInfo(info map[string]GeometryInfo) {
 }
 
 func (t *ArrowTableStream) GeometryInfo() map[string]GeometryInfo {
-	if t.geomInfo == nil {
+	if t == nil || t.geomInfo == nil {
 		return map[string]GeometryInfo{}
 	}
 	return t.geomInfo
 }
 
 func (t *ArrowTableStream) Release() {
+	if t == nil || t.reader == nil {
+		return
+	}
 	t.reader.Release()
 }
 
 func (t *ArrowTableStream) Retain() {
+	if t == nil || t.reader == nil {
+		return
+	}
 	t.reader.Retain()
 }
 
 func (t *ArrowTableStream) Records() ([]arrow.RecordBatch, error) {
-	if t.reader == nil {
+	if t == nil || t.reader == nil {
 		return nil, nil
 	}
 	rr, err := t.readAll()
@@ -673,6 +682,9 @@ func (t *ArrowTableStream) Records() ([]arrow.RecordBatch, error) {
 }
 
 func (t *ArrowTableStream) Reader(retain bool) (array.RecordReader, error) {
+	if t == nil {
+		return nil, nil
+	}
 	if !retain || t.reader == nil {
 		return t.reader, nil
 	}
@@ -700,7 +712,7 @@ func (t *ArrowTableStream) Reader(retain bool) (array.RecordReader, error) {
 // consumes the underlying reader; callers MUST call Close on the returned
 // Rows (or let it reach end-of-stream).
 func (t *ArrowTableStream) Rows() (Rows, error) {
-	if t.reader == nil {
+	if t == nil || t.reader == nil {
 		return emptyRows{}, nil
 	}
 	// Retain ownership: the scanner assumes it can Release the reader.
@@ -773,7 +785,7 @@ func (t *ArrowTableStream) MarshalJSON() ([]byte, error) {
 }
 
 func (t *ArrowTableStream) readAll() ([]arrow.RecordBatch, error) {
-	if t.reader == nil {
+	if t == nil || t.reader == nil {
 		return nil, nil
 	}
 	var rr []arrow.RecordBatch

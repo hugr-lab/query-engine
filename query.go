@@ -213,6 +213,9 @@ func (s *Service) processQuerySequential(ctx context.Context,
 		case base.QueryTypeQuery, base.QueryTypeFunction, base.QueryTypeH3Aggregation:
 			res, ext, err = s.processDataQuery(ctx, provider, query, vars)
 		case base.QueryTypeMutation, base.QueryTypeFunctionMutation:
+			if types.IsNoMutationContext(ctx) {
+				return sdl.ErrorPosf(query.Field.Position, "mutations are not allowed in this context")
+			}
 			res, ext, err = s.processDataQuery(ctx, provider, query, vars)
 		case base.QueryTypeJQTransform:
 			res, ext, err = s.processJQTransformation(ctx, provider, query, vars)

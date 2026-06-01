@@ -7,7 +7,7 @@ require (
 	github.com/coder/websocket v1.8.14
 	github.com/google/uuid v1.6.0
 	github.com/hugr-lab/airport-go v0.2.1
-	github.com/hugr-lab/query-engine/types v0.3.34
+	github.com/hugr-lab/query-engine/types v0.3.35
 	github.com/paulmach/orb v0.13.0
 	github.com/vektah/gqlparser/v2 v2.5.33
 	google.golang.org/grpc v1.80.0
@@ -23,8 +23,8 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.1 // indirect
-	go.opentelemetry.io/otel v1.42.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.42.0 // indirect
+	go.opentelemetry.io/otel v1.43.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.53.0 // indirect
