@@ -14,3 +14,5 @@ integration-test/e2e/testdata/duckdb/ducklake*/data/
 
 .test.env
 models.test
+
+go.work.sum
