@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/jq"
 	"github.com/hugr-lab/query-engine/types"
@@ -12,6 +11,23 @@ import (
 )
 
 func (s *Server) inlineGraphQLResult(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Reject mutation operations — this tool is read-only.
+	ctx = types.ContextWithQueryHint(ctx, types.NoMutationHint())
+	return s.runGraphQLResult(ctx, req)
+}
+
+// executeMutation runs a GraphQL mutation (insert/update/delete or mutation
+// function). Unlike inlineGraphQLResult it does NOT set NoMutationHint, so
+// mutation operations are permitted. The caller's permissions still apply —
+// operations the user is not allowed to perform are rejected by the engine.
+func (s *Server) executeMutation(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return s.runGraphQLResult(ctx, req)
+}
+
+// runGraphQLResult executes a GraphQL operation from the tool request and
+// returns a truncatable JSON result, optionally shaped by a jq transform.
+// The caller sets any query hints (e.g. NoMutationHint) on ctx beforehand.
+func (s *Server) runGraphQLResult(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query := req.GetString("query", "")
 	jqTransform := req.GetString("jq_transform", "")
 	maxResultSize := req.GetInt("max_result_size", 2000)
@@ -20,11 +36,6 @@ func (s *Server) inlineGraphQLResult(ctx context.Context, req mcp.CallToolReques
 		return toolResultError("query is required"), nil
 	}
 
-	// Reject mutation operations — this tool is read-only.
-	trimmed := strings.TrimSpace(query)
-	if strings.HasPrefix(trimmed, "mutation") {
-		return toolResultError("mutations are not allowed via this tool; use the appropriate mutation endpoint"), nil
-	}
 	if maxResultSize < 100 {
 		maxResultSize = 100
 	}
@@ -105,7 +116,7 @@ func (s *Server) validateGraphQLQuery(ctx context.Context, req mcp.CallToolReque
 		}
 	}
 
-	ctx = types.ContextWithValidateOnly(ctx)
+	ctx = types.ContextWithQueryHint(ctx, types.ValidateOnlyHint())
 	res, err := s.querier.Query(ctx, query, vars)
 	if err != nil {
 		return toolResultJSON(map[string]any{

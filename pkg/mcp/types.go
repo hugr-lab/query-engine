@@ -29,37 +29,41 @@ type DataSourceSearchItem struct {
 // --- Discovery: Data Objects ---
 
 type DataObjectSearchItem struct {
-	Name        string                 `json:"name"        jsonschema_description:"Full type name (e.g. prefix_tablename)"`
-	Module      string                 `json:"module"      jsonschema_description:"Module path (e.g. sales.analytics)"`
-	Description string                 `json:"description"`
-	ObjectType  string                 `json:"object_type" jsonschema_description:"table or view"`
-	Score       float64                `json:"score"`
-	Queries     []DataObjectQuery      `json:"queries"     jsonschema_description:"Available query fields in module namespace"`
-	Fields      []DataObjectFieldBrief `json:"fields,omitempty" jsonschema_description:"Top fields (scalars and relations)"`
+	Name          string            `json:"name"          jsonschema_description:"Full type name (e.g. prefix_tablename) — call schema-type_fields on it for fields"`
+	ObjectType    string            `json:"object_type"   jsonschema_description:"table or view"`
+	Parameterized bool              `json:"parameterized" jsonschema_description:"true when this is a view that takes query parameters — describe_data_objects/describe_fields list them"`
+	HasGeometry   bool              `json:"has_geometry"  jsonschema_description:"true when the object has at least one geometry field"`
+	Module        string            `json:"module"        jsonschema_description:"Module path the object lives in — REQUIRED to nest the GraphQL query"`
+	Catalog       string            `json:"catalog"       jsonschema_description:"Data source (catalog) name the object belongs to"`
+	Description   string            `json:"description"`
+	FieldsCount   int               `json:"fields_count"  jsonschema_description:"Number of fields on the object type"`
+	Queries       []DataObjectQuery `json:"queries"       jsonschema_description:"Available query fields in the module namespace"`
+	Score         float64           `json:"score"`
 }
 
 type DataObjectQuery struct {
-	Name      string `json:"name"       jsonschema_description:"Query field name in module (e.g. orders, orders_by_pk)"`
-	QueryType string `json:"query_type" jsonschema_description:"select, select_one, aggregate, bucket_agg"`
-}
-
-type DataObjectFieldBrief struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"      jsonschema_description:"GraphQL type (e.g. String!, [prefix_orders])"`
-	HugrType string `json:"hugr_type" jsonschema_description:"empty=scalar, select=relation, aggregate, bucket_agg, extra_field, function"`
+	Name       string             `json:"name"        jsonschema_description:"Query field name in module (e.g. orders, orders_by_pk)"`
+	QueryType  string             `json:"query_type"  jsonschema_description:"select, select_one, aggregate, bucket_agg"`
+	ReturnType string             `json:"return_type" jsonschema_description:"GraphQL type this query returns — call schema-type_fields on it for the result fields"`
+	QueryRoot  string             `json:"query_root,omitempty" jsonschema_description:"GraphQL type that hosts this query field; call schema-describe_fields(query_root,[name]) for its arguments. Set by describe_data_objects only."`
+	Arguments  []FunctionArgument `json:"arguments,omitempty"   jsonschema_description:"Query field arguments (e.g. parameterized-view params). Set by describe_data_objects only."`
 }
 
 // --- Discovery: Functions ---
 
 type FunctionSearchItem struct {
-	Name        string             `json:"name"        jsonschema_description:"Function field name in module"`
-	Module      string             `json:"module"`
-	Description string             `json:"description"`
-	IsMutation  bool               `json:"is_mutation"`
-	IsList      bool               `json:"is_list"     jsonschema_description:"Returns array"`
-	Score       float64            `json:"score"`
-	Arguments   []FunctionArgument `json:"arguments"`
-	Returns     FunctionReturnType `json:"returns"`
+	Name        string `json:"name"        jsonschema_description:"Function field name in module"`
+	Module      string `json:"module"      jsonschema_description:"Module the function lives in — REQUIRED to nest the GraphQL call"`
+	Description string `json:"description,omitempty"`
+	IsMutation  bool   `json:"is_mutation"`
+	IsList      bool   `json:"is_list"     jsonschema_description:"Returns array"`
+	// Lean search fields.
+	ReturnType     string  `json:"return_type,omitempty"     jsonschema_description:"GraphQL type the function returns — call schema-type_fields on it for result fields"`
+	ArgumentsCount int     `json:"arguments_count,omitempty" jsonschema_description:"Number of call arguments; use discovery-describe_functions for their names/types"`
+	Score          float64 `json:"score,omitempty"`
+	// Full detail — set by discovery-describe_functions only.
+	Arguments []FunctionArgument  `json:"arguments,omitempty"`
+	Returns   *FunctionReturnType `json:"returns,omitempty"`
 }
 
 type FunctionArgument struct {
@@ -67,6 +71,15 @@ type FunctionArgument struct {
 	Type     string `json:"type"`
 	Required bool   `json:"required"`
 	Desc     string `json:"description,omitempty"`
+	// Fields expands an input-object argument into its input fields.
+	// Populated by describe_data_objects for the `args` argument of a
+	// parameterized view (the view's parameters); empty otherwise.
+	Fields []ArgInputField `json:"fields,omitempty" jsonschema_description:"Input fields of this argument's type (e.g. a parameterized view's parameters). Set only for input-object arguments like 'args'."`
+}
+
+type ArgInputField struct {
+	Name string `json:"name"`
+	Type string `json:"type" jsonschema_description:"GraphQL type (e.g. String!, Int)"`
 }
 
 type FunctionReturnType struct {

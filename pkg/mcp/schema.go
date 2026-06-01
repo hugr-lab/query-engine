@@ -135,7 +135,6 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	limit := req.GetInt("limit", 50)
 	offset := req.GetInt("offset", 0)
 	includeDesc := req.GetBool("include_description", false)
-	includeArgs := req.GetBool("include_arguments", false)
 
 	if typeName == "" {
 		return toolResultError("type_name is required"), nil
@@ -167,11 +166,15 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		"offset": offset,
 	}
 
-	// Build field selection based on flags.
+	// type_fields is the LEAN list surface: it never emits per-field
+	// argument trees. hugr_type already classifies the argument
+	// profile and arguments_count flags which fields carry args; the
+	// caller follows up with schema-describe_fields for the exact
+	// arguments of the specific fields it will use. Keeping the
+	// selection empty is what makes this ~80% smaller than the old
+	// include_arguments dump (the _join/_spatial operator types
+	// especially). The %s slot in the queries below stays blank.
 	argSelection := ""
-	if includeArgs {
-		argSelection = `arguments(filter: { is_arg_default: { eq: false } }) { name arg_type description }`
-	}
 
 	var fields []rawField
 	var totalCount int
@@ -290,23 +293,115 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 			item.Score = distanceToScore(f.Distance)
 		}
 
-		if includeArgs && len(f.Arguments) > 0 {
-			item.Arguments = make([]FieldArgumentInfo, 0, len(f.Arguments))
-			for _, a := range f.Arguments {
-				item.Arguments = append(item.Arguments, FieldArgumentInfo{
-					Name:     a.Name,
-					Type:     a.ArgType,
-					Required: strings.HasSuffix(strings.TrimSuffix(a.ArgType, "]"), "!"),
-					Desc:     a.Desc,
-				})
-			}
-		}
-
 		result = append(result, item)
 	}
 
 	return toolResultJSON(SearchResult[TypeFieldInfo]{
 		Total:    totalCount,
+		Returned: len(result),
+		Items:    result,
+	}), nil
+}
+
+// describeFields is the DESCRIBE half of the type_fields/describe_fields
+// split: it returns the FULL per-field detail — arguments (name, type,
+// required, description) + description — for ONLY the fields named in
+// `fields`. The caller reaches for it after schema-type_fields listed
+// the fields and their hugr_type, once it knows which field(s) it will
+// actually use and needs the exact argument names/types (filter inputs,
+// bucket args, function params, parameterized-view query params).
+// Scoping to named fields keeps the payload tiny even on the wide
+// operator types (_join / _spatial) whose full argument dump used to
+// dominate context.
+func (s *Server) describeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	typeName := req.GetString("type_name", "")
+	if typeName == "" {
+		return toolResultError("type_name is required"), nil
+	}
+	var names []string
+	for _, n := range req.GetStringSlice("fields", nil) {
+		if t := strings.TrimSpace(n); t != "" {
+			names = append(names, t)
+		}
+	}
+	if len(names) == 0 {
+		return toolResultError("fields is required — pass one or more field names from schema-type_fields"), nil
+	}
+
+	type rawArg struct {
+		Name    string `json:"name"`
+		ArgType string `json:"arg_type"`
+		Desc    string `json:"description"`
+	}
+	type rawField struct {
+		Name        string   `json:"name"`
+		FieldType   string   `json:"field_type"`
+		Description string   `json:"description"`
+		HugrType    string   `json:"hugr_type"`
+		Arguments   []rawArg `json:"arguments,omitempty"`
+		ArgsAgg     struct {
+			Count int `json:"_rows_count"`
+		} `json:"arguments_aggregation"`
+	}
+
+	var fields []rawField
+	err := s.queryScanAdmin(ctx, `query($filter: core_fields_filter, $limit: Int) {
+		core {
+			catalog {
+				fields(filter: $filter, order_by: [{field: "name", direction: ASC}], limit: $limit) {
+					name
+					field_type
+					description
+					hugr_type
+					arguments_aggregation(filter: { is_arg_default: { eq: false } }) { _rows_count }
+					arguments(filter: { is_arg_default: { eq: false } }) { name arg_type description }
+				}
+			}
+		}
+	}`, map[string]any{
+		"filter": map[string]any{
+			"type_name": map[string]any{"eq": typeName},
+			"name":      map[string]any{"in": names},
+		},
+		"limit": len(names),
+	}, "core.catalog.fields", &fields)
+	if errors.Is(err, types.ErrNoData) {
+		return toolResultError(fmt.Sprintf("no fields named %v on type %q", names, typeName)), nil
+	}
+	if err != nil {
+		return toolResultError(fmt.Sprintf("query failed: %v", err)), nil
+	}
+
+	filter := newMCPFilter(ctx)
+	result := make([]TypeFieldInfo, 0, len(fields))
+	for _, f := range fields {
+		if !filter.visibleField(typeName, f.Name) {
+			continue
+		}
+		item := TypeFieldInfo{
+			Name:        f.Name,
+			FieldType:   f.FieldType,
+			HugrType:    f.HugrType,
+			IsList:      strings.HasPrefix(f.FieldType, "["),
+			ArgsCount:   f.ArgsAgg.Count,
+			Description: f.Description,
+		}
+		for _, a := range f.Arguments {
+			item.Arguments = append(item.Arguments, FieldArgumentInfo{
+				Name:     a.Name,
+				Type:     a.ArgType,
+				Required: strings.HasSuffix(strings.TrimSuffix(a.ArgType, "]"), "!"),
+				Desc:     a.Desc,
+			})
+		}
+		result = append(result, item)
+	}
+	if len(result) == 0 {
+		return toolResultError(fmt.Sprintf("no matching visible fields on %q for %v", typeName, names)), nil
+	}
+
+	return toolResultJSON(SearchResult[TypeFieldInfo]{
+		Total:    len(result),
 		Returned: len(result),
 		Items:    result,
 	}), nil
