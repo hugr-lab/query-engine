@@ -96,6 +96,10 @@ func TestScanData_StringColumnIntoAny(t *testing.T) {
 		{"json_object", `{"a":1}`, map[string]any{"a": float64(1)}},
 		{"json_array", `[1,2]`, []any{float64(1), float64(2)}},
 		{"json_number", "42", float64(42)}, // bare JSON scalar must still parse
+		// Leading whitespace must not defeat the sniff — json.Unmarshal
+		// tolerates it, so these must parse, not fall back to a raw string.
+		{"json_object_leading_spaces", "  {\"a\":1}", map[string]any{"a": float64(1)}},
+		{"json_array_leading_tab", "\t[1,2]", []any{float64(1), float64(2)}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

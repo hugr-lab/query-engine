@@ -816,8 +816,18 @@ func jsonStringConvertFunc(dstType reflect.Type) convertFunc {
 // looksLikeJSON reports whether s plausibly begins a JSON value (object,
 // array, string, number, bool or null), letting the scanner skip
 // json.Unmarshal on obvious plain text. False positives are harmless: the
-// caller falls back to the raw string on a decode miss.
+// caller falls back to the raw string on a decode miss. Leading whitespace
+// is skipped first — json.Unmarshal tolerates it, so "  {…}" / "\t[…]" is
+// still JSON and must not be misclassified as plain text.
 func looksLikeJSON(s string) bool {
+	for len(s) > 0 {
+		switch s[0] {
+		case ' ', '\t', '\n', '\r':
+			s = s[1:]
+			continue
+		}
+		break
+	}
 	if s == "" {
 		return false
 	}

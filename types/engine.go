@@ -11,8 +11,6 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-type validateOnlyKeyType struct{}
-
 type Querier interface {
 	Query(ctx context.Context, query string, vars map[string]any) (*Response, error)
 	Subscribe(ctx context.Context, query string, vars map[string]any) (*Subscription, error)
