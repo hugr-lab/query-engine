@@ -457,4 +457,4 @@ Docker-based tests for cluster mode. Validates management + worker node coordina
 
 **Location**: `mcp/`
 
-Tests for the MCP (Model Context Protocol) endpoint. Validates the 10 MCP tools (discovery-*, schema-*, data-*), structured output schemas (`WithOutputSchema`), and correct behavior of `schema-enum_values` using catalog tables instead of introspection.
+Tests for the MCP (Model Context Protocol) endpoint. Validates the 14 MCP tools (discovery-*, schema-*, data-*), structured output schemas (`WithOutputSchema`), and correct behavior of `schema-enum_values` using catalog tables instead of introspection.
