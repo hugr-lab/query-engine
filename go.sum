@@ -103,10 +103,10 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/hugr-lab/airport-go v0.2.1 h1:fBCss0+ZrcBCs4CcF4/EBILAE9hNnS/jH0xWODz4gi0=
 github.com/hugr-lab/airport-go v0.2.1/go.mod h1:VQ+PTHpE3m9ok+JskPhzilAG+G7/f5YdplT6dTLmLNU=
-github.com/hugr-lab/query-engine/client v0.3.34 h1:guN5pdXyRJAuAfbkNdlu296KcsZpotNCA23kHK9SKdI=
-github.com/hugr-lab/query-engine/client v0.3.34/go.mod h1:KiBqOiVlRtjLJiATldnGaWRyP6TjYOxRiWbnHM0s9GI=
-github.com/hugr-lab/query-engine/types v0.3.34 h1:VK4jHWiwKWObt4xmzkqoeT/at4j939u0iVS4KTfjdxo=
-github.com/hugr-lab/query-engine/types v0.3.34/go.mod h1:uZ6DzCNyYmZXD9R3+Uc0mJsySRXyCqaHh6O32zYTLus=
+github.com/hugr-lab/query-engine/client v0.3.35 h1:g8AsXK7BKJvUOBuiPkDI1rRh+5PUbOGwzZei45OsFjk=
+github.com/hugr-lab/query-engine/client v0.3.35/go.mod h1:buhPLnmqBF+kUTCSOx6uVnI1B7uZnZy8LyFb6iJ2Oj0=
+github.com/hugr-lab/query-engine/types v0.3.35 h1:AmXorrxFQmPgsCZljaLVuMg4BEBmHKquxAOIi+5YLhI=
+github.com/hugr-lab/query-engine/types v0.3.35/go.mod h1:uZ6DzCNyYmZXD9R3+Uc0mJsySRXyCqaHh6O32zYTLus=
 github.com/itchyny/gojq v0.12.19 h1:ttXA0XCLEMoaLOz5lSeFOZ6u6Q3QxmG46vfgI4O0DEs=
 github.com/itchyny/gojq v0.12.19/go.mod h1:5galtVPDywX8SPSOrqjGxkBeDhSxEW1gSxoy7tn1iZY=
 github.com/itchyny/timefmt-go v0.1.8 h1:1YEo1JvfXeAHKdjelbYr/uCuhkybaHCeTkH8Bo791OI=
