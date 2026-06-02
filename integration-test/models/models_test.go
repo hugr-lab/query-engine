@@ -175,6 +175,116 @@ func TestModels_Embedding_NotFound(t *testing.T) {
 	assert.True(t, len(res.Errors) > 0 || err != nil, "should error for nonexistent model")
 }
 
+func TestModels_EmbeddingDistance(t *testing.T) {
+	if os.Getenv("EMBEDDER_URL") == "" {
+		t.Skip("EMBEDDER_URL not set")
+	}
+	// US1 + US2: one call returns a Float distance; identical ~0; related < unrelated.
+	res := query(t, `{ function { core { models {
+		same: embedding_distance(model: "test_embedder", text1: "hello world", text2: "hello world", distance: Cosine)
+		related: embedding_distance(model: "test_embedder", text1: "a cat sat on the mat", text2: "a feline rested on the rug", distance: Cosine)
+		unrelated: embedding_distance(model: "test_embedder", text1: "a cat sat on the mat", text2: "quarterly financial earnings report", distance: Cosine)
+		l2: embedding_distance(model: "test_embedder", text1: "hello world", text2: "hello world", distance: L2)
+		inner: embedding_distance(model: "test_embedder", text1: "hello world", text2: "goodbye", distance: Inner)
+	} } } }`, nil)
+	defer res.Close()
+
+	var r struct {
+		Same      float64 `json:"same"`
+		Related   float64 `json:"related"`
+		Unrelated float64 `json:"unrelated"`
+		L2        float64 `json:"l2"`
+		Inner     float64 `json:"inner"`
+	}
+	err := res.ScanData("function.core.models", &r)
+	require.NoError(t, err)
+
+	assert.InDelta(t, 0.0, r.Same, 1e-3, "identical strings → cosine distance ~0")
+	assert.InDelta(t, 0.0, r.L2, 1e-3, "identical strings → L2 distance ~0")
+	assert.Less(t, r.Related, r.Unrelated, "related pair should be closer than unrelated pair")
+	t.Logf("cosine: same=%g related=%g unrelated=%g; l2(same)=%g inner=%g", r.Same, r.Related, r.Unrelated, r.L2, r.Inner)
+}
+
+// US2: every metric is symmetric and in its expected range.
+func TestModels_EmbeddingDistance_Metrics(t *testing.T) {
+	if os.Getenv("EMBEDDER_URL") == "" {
+		t.Skip("EMBEDDER_URL not set")
+	}
+	res := query(t, `{ function { core { models {
+		cosine_ab: embedding_distance(model: "test_embedder", text1: "morning coffee", text2: "espresso at dawn", distance: Cosine)
+		cosine_ba: embedding_distance(model: "test_embedder", text1: "espresso at dawn", text2: "morning coffee", distance: Cosine)
+		l2_ab: embedding_distance(model: "test_embedder", text1: "morning coffee", text2: "espresso at dawn", distance: L2)
+		l2_ba: embedding_distance(model: "test_embedder", text1: "espresso at dawn", text2: "morning coffee", distance: L2)
+		inner_ab: embedding_distance(model: "test_embedder", text1: "morning coffee", text2: "espresso at dawn", distance: Inner)
+		inner_ba: embedding_distance(model: "test_embedder", text1: "espresso at dawn", text2: "morning coffee", distance: Inner)
+	} } } }`, nil)
+	defer res.Close()
+
+	var r struct {
+		CosineAB float64 `json:"cosine_ab"`
+		CosineBA float64 `json:"cosine_ba"`
+		L2AB     float64 `json:"l2_ab"`
+		L2BA     float64 `json:"l2_ba"`
+		InnerAB  float64 `json:"inner_ab"`
+		InnerBA  float64 `json:"inner_ba"`
+	}
+	require.NoError(t, res.ScanData("function.core.models", &r))
+
+	// Symmetric: d(a,b) == d(b,a) for all metrics.
+	assert.InDelta(t, r.CosineAB, r.CosineBA, 1e-6, "cosine must be symmetric")
+	assert.InDelta(t, r.L2AB, r.L2BA, 1e-6, "L2 must be symmetric")
+	assert.InDelta(t, r.InnerAB, r.InnerBA, 1e-6, "inner must be symmetric")
+	// Ranges: cosine distance in [0,2]; L2 >= 0.
+	assert.GreaterOrEqual(t, r.CosineAB, 0.0)
+	assert.LessOrEqual(t, r.CosineAB, 2.0)
+	assert.GreaterOrEqual(t, r.L2AB, 0.0)
+	t.Logf("cosine=%g l2=%g inner=%g", r.CosineAB, r.L2AB, r.InnerAB)
+}
+
+// US3: bad inputs surface clear errors, never a (wrong) value.
+func TestModels_EmbeddingDistance_Errors(t *testing.T) {
+	ctx := context.Background()
+
+	// Unknown model — fails at source resolution (no embedder needed).
+	t.Run("unknown_model", func(t *testing.T) {
+		res, err := testService.Query(ctx,
+			`{ function { core { models { embedding_distance(model: "nonexistent", text1: "a", text2: "b", distance: Cosine) } } } }`, nil)
+		if err != nil {
+			t.Logf("expected error: %v", err)
+			return
+		}
+		defer res.Close()
+		assert.True(t, len(res.Errors) > 0 || res.Err() != nil, "unknown model should error")
+	})
+
+	// Non-embedding source — calling it with an LLM source must error.
+	t.Run("non_embedding_source", func(t *testing.T) {
+		if os.Getenv("LLM_URL") == "" {
+			t.Skip("LLM_URL not set")
+		}
+		res, err := testService.Query(ctx,
+			`{ function { core { models { embedding_distance(model: "test_llm", text1: "a", text2: "b", distance: Cosine) } } } }`, nil)
+		if err != nil {
+			t.Logf("expected error: %v", err)
+			return
+		}
+		defer res.Close()
+		assert.True(t, len(res.Errors) > 0 || res.Err() != nil, "non-embedding source should error")
+	})
+
+	// Invalid metric — rejected by the GraphQL VectorDistanceType enum before execution.
+	t.Run("invalid_metric_enum", func(t *testing.T) {
+		res, err := testService.Query(ctx,
+			`{ function { core { models { embedding_distance(model: "test_embedder", text1: "a", text2: "b", distance: Nope) } } } }`, nil)
+		if err != nil {
+			t.Logf("expected validation error: %v", err)
+			return
+		}
+		defer res.Close()
+		assert.True(t, len(res.Errors) > 0 || res.Err() != nil, "invalid enum value should error")
+	})
+}
+
 // --- US2: Completion ---
 
 func TestModels_Completion(t *testing.T) {
