@@ -3,8 +3,8 @@ module github.com/hugr-lab/query-engine
 go 1.26
 
 require (
-	github.com/hugr-lab/query-engine/client v0.3.35
-	github.com/hugr-lab/query-engine/types v0.3.35
+	github.com/hugr-lab/query-engine/client v0.3.36
+	github.com/hugr-lab/query-engine/types v0.3.36
 )
 
 require (
