@@ -188,6 +188,9 @@ func TestModels_EmbeddingDistance(t *testing.T) {
 		inner: embedding_distance(model: "test_embedder", text1: "hello world", text2: "goodbye", distance: Inner)
 	} } } }`, nil)
 	defer res.Close()
+	// Without this, a field-level error would leave the (non-pointer) float fields
+	// at 0.0 and the InDelta(0.0, ...) checks below would pass green on failure.
+	require.Empty(t, res.Errors, "unexpected query errors: %v", res.Errors)
 
 	var r struct {
 		Same      float64 `json:"same"`
@@ -219,6 +222,7 @@ func TestModels_EmbeddingDistance_Metrics(t *testing.T) {
 		inner_ba: embedding_distance(model: "test_embedder", text1: "espresso at dawn", text2: "morning coffee", distance: Inner)
 	} } } }`, nil)
 	defer res.Close()
+	require.Empty(t, res.Errors, "unexpected query errors: %v", res.Errors)
 
 	var r struct {
 		CosineAB float64 `json:"cosine_ab"`
@@ -241,20 +245,28 @@ func TestModels_EmbeddingDistance_Metrics(t *testing.T) {
 	t.Logf("cosine=%g l2=%g inner=%g", r.CosineAB, r.L2AB, r.InnerAB)
 }
 
-// US3: bad inputs surface clear errors, never a (wrong) value.
+// US3: bad inputs surface clear errors carrying the documented wording, never a value.
 func TestModels_EmbeddingDistance_Errors(t *testing.T) {
 	ctx := context.Background()
+
+	// errText returns the combined error text whether it arrived as a transport
+	// error or as a GraphQL field error in the response.
+	errText := func(res *types.Response, err error) string {
+		if err != nil {
+			return err.Error()
+		}
+		if res != nil {
+			defer res.Close()
+			return fmt.Sprintf("%v %v", res.Errors, res.Err())
+		}
+		return ""
+	}
 
 	// Unknown model — fails at source resolution (no embedder needed).
 	t.Run("unknown_model", func(t *testing.T) {
 		res, err := testService.Query(ctx,
 			`{ function { core { models { embedding_distance(model: "nonexistent", text1: "a", text2: "b", distance: Cosine) } } } }`, nil)
-		if err != nil {
-			t.Logf("expected error: %v", err)
-			return
-		}
-		defer res.Close()
-		assert.True(t, len(res.Errors) > 0 || res.Err() != nil, "unknown model should error")
+		assert.Contains(t, errText(res, err), "not found", "unknown model should report 'not found'")
 	})
 
 	// Non-embedding source — calling it with an LLM source must error.
@@ -264,24 +276,16 @@ func TestModels_EmbeddingDistance_Errors(t *testing.T) {
 		}
 		res, err := testService.Query(ctx,
 			`{ function { core { models { embedding_distance(model: "test_llm", text1: "a", text2: "b", distance: Cosine) } } } }`, nil)
-		if err != nil {
-			t.Logf("expected error: %v", err)
-			return
-		}
-		defer res.Close()
-		assert.True(t, len(res.Errors) > 0 || res.Err() != nil, "non-embedding source should error")
+		assert.Contains(t, errText(res, err), "is not an embedding source")
 	})
 
-	// Invalid metric — rejected by the GraphQL VectorDistanceType enum before execution.
+	// Invalid metric — rejected by the GraphQL VectorDistanceType enum at validation
+	// (this exercises the GraphQL schema wiring, not the UDF's own metric guard, which
+	// is covered by the unit test's raw-SQL path).
 	t.Run("invalid_metric_enum", func(t *testing.T) {
 		res, err := testService.Query(ctx,
 			`{ function { core { models { embedding_distance(model: "test_embedder", text1: "a", text2: "b", distance: Nope) } } } }`, nil)
-		if err != nil {
-			t.Logf("expected validation error: %v", err)
-			return
-		}
-		defer res.Close()
-		assert.True(t, len(res.Errors) > 0 || res.Err() != nil, "invalid enum value should error")
+		assert.Contains(t, errText(res, err), "VectorDistanceType", "invalid enum value should be rejected by VectorDistanceType validation")
 	})
 }
 

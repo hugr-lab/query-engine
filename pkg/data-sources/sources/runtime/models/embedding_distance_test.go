@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -100,8 +101,9 @@ func newTestSource(t *testing.T) *db.Pool {
 		"emb": &stubEmbedder{name: "emb", vecs: map[string]types.Vector{
 			"a":    {1, 0, 0},
 			"a2":   {1, 0, 0},     // identical to "a"
-			"sim":  {0.9, 0.1, 0}, // close to "a"
+			"sim":  {0.9, 0.1, 0}, // close to "a", non-orthogonal (nonzero dot)
 			"orth": {0, 1, 0},     // orthogonal to "a"
+			"zero": {0, 0, 0},     // zero-norm (cosine undefined)
 		}},
 		"plain": &plainSource{name: "plain"},
 	}})
@@ -161,15 +163,18 @@ func TestEmbeddingDistance_ParityWithVectorSearch(t *testing.T) {
 		{"Cosine", "array_cosine_distance"},
 		{"Inner", "array_negative_inner_product"},
 	}
+	// Use non-orthogonal vectors ("a"=[1,0,0], "sim"=[0.9,0.1,0]) so every metric
+	// has a distinctive non-zero expected value — in particular Inner = -0.9, not 0
+	// (orthogonal inputs would make the Inner case a meaningless 0==0 comparison).
 	for _, c := range cases {
 		t.Run(c.metric, func(t *testing.T) {
 			got, err := scalar(t, pool,
-				fmt.Sprintf(`SELECT core_models_embedding_distance('emb','a','orth','%s')`, c.metric))
+				fmt.Sprintf(`SELECT core_models_embedding_distance('emb','a','sim','%s')`, c.metric))
 			if err != nil {
 				t.Fatalf("function: %v", err)
 			}
 			want, err := scalar(t, pool,
-				fmt.Sprintf(`SELECT %s([1,0,0]::FLOAT[3], [0,1,0]::FLOAT[3])`, c.arrFn))
+				fmt.Sprintf(`SELECT %s([1,0,0]::FLOAT[3], [0.9,0.1,0]::FLOAT[3])`, c.arrFn))
 			if err != nil {
 				t.Fatalf("direct %s: %v", c.arrFn, err)
 			}
@@ -180,17 +185,69 @@ func TestEmbeddingDistance_ParityWithVectorSearch(t *testing.T) {
 	}
 }
 
-// T008 [US3]: unknown model and non-embedding source return errors, no value.
+// T008 [US3]: bad inputs return errors carrying the documented wording, no value.
 func TestEmbeddingDistance_Errors(t *testing.T) {
 	pool := newTestSource(t)
 
-	if _, err := scalar(t, pool, `SELECT core_models_embedding_distance('missing','a','orth','Cosine')`); err == nil {
-		t.Error("unknown model: expected error, got nil")
+	cases := []struct {
+		name, query, wantSubstr string
+	}{
+		{"unknown model", `SELECT core_models_embedding_distance('missing','a','orth','Cosine')`, "not found"},
+		{"non-embedding source", `SELECT core_models_embedding_distance('plain','a','orth','Cosine')`, "is not an embedding source"},
+		{"unsupported metric", `SELECT core_models_embedding_distance('emb','a','orth','Nope')`, "unsupported distance metric"},
 	}
-	if _, err := scalar(t, pool, `SELECT core_models_embedding_distance('plain','a','orth','Cosine')`); err == nil {
-		t.Error("non-embedding source: expected error, got nil")
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := scalar(t, pool, c.query)
+			if err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), c.wantSubstr) {
+				t.Errorf("error = %q, want substring %q", err.Error(), c.wantSubstr)
+			}
+		})
 	}
-	if _, err := scalar(t, pool, `SELECT core_models_embedding_distance('emb','a','orth','Nope')`); err == nil {
-		t.Error("unsupported metric: expected error, got nil")
+}
+
+// T006 / research R6 [US2]: a zero-norm vector under Cosine. DuckDB's
+// array_cosine_distance returns the maximum distance 2.0 for an undefined
+// (zero-norm) cosine — it does not error or fabricate a small value. This test
+// locks that observed engine behavior (same value vector search would yield).
+func TestEmbeddingDistance_ZeroNormCosine(t *testing.T) {
+	pool := newTestSource(t)
+	got, err := scalar(t, pool, `SELECT core_models_embedding_distance('emb','a','zero','Cosine')`)
+	if err != nil {
+		t.Fatalf("zero-norm cosine: %v", err)
+	}
+	if math.Abs(got-2.0) > 1e-6 {
+		t.Errorf("zero-norm cosine = %g, want 2.0 (DuckDB max cosine distance)", got)
+	}
+}
+
+// US2: every metric is symmetric, and Inner self-distance of a unit vector = -1.
+func TestEmbeddingDistance_SymmetryAndSelf(t *testing.T) {
+	pool := newTestSource(t)
+
+	for _, m := range []string{"L2", "Cosine", "Inner"} {
+		ab, err := scalar(t, pool, fmt.Sprintf(`SELECT core_models_embedding_distance('emb','a','sim','%s')`, m))
+		if err != nil {
+			t.Fatalf("%s a,sim: %v", m, err)
+		}
+		ba, err := scalar(t, pool, fmt.Sprintf(`SELECT core_models_embedding_distance('emb','sim','a','%s')`, m))
+		if err != nil {
+			t.Fatalf("%s sim,a: %v", m, err)
+		}
+		if math.Abs(ab-ba) > 1e-6 {
+			t.Errorf("%s not symmetric: d(a,sim)=%g d(sim,a)=%g", m, ab, ba)
+		}
+	}
+
+	// Inner self-distance for unit vector a=[1,0,0] is -(a·a) = -1.
+	self, err := scalar(t, pool, `SELECT core_models_embedding_distance('emb','a','a2','Inner')`)
+	if err != nil {
+		t.Fatalf("inner self: %v", err)
+	}
+	if math.Abs(self-(-1.0)) > 1e-6 {
+		t.Errorf("inner self-distance = %g, want -1", self)
 	}
 }
