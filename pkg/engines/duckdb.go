@@ -69,6 +69,7 @@ func (e *DuckDB) Capabilities() *compiler.EngineCapabilities {
 		},
 		Insert: compiler.EngineInsertCapabilities{
 			Insert:           true,
+			Ingest:           true,
 			Returning:        true,
 			InsertReferences: true,
 		},
