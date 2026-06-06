@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -590,6 +591,10 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 	}
 
 	return Ident(f.Alias), nil
+}
+
+func (e *Postgres) CastArrowIngestValue(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
+	return CastArrowIngestValueToDuckDB(field, arrowField, sql)
 }
 
 func pgRangeValueToSQLValue(v any) (string, error) {

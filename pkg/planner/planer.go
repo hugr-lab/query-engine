@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -64,4 +65,19 @@ func (s *Service) Plan(ctx context.Context, provider catalog.Provider, query *as
 	node.querier = s.querier
 
 	return &QueryPlan{Query: query, RootNode: node}, nil
+}
+
+func (s *Service) PlanIngest(ctx context.Context, provider catalog.Provider, dataObject string, reader array.RecordReader) (*QueryPlan, func() error, error) {
+	node, cancel, err := ingestRootNode(ctx, provider, s.engines, dataObject, reader)
+	if err != nil {
+		if cancel != nil {
+			_ = cancel()
+		}
+		return nil, nil, err
+	}
+	node.provider = provider
+	node.engines = s.engines
+	node.querier = s.querier
+
+	return &QueryPlan{RootNode: node}, cancel, nil
 }
