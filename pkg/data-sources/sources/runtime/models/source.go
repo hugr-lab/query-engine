@@ -148,6 +148,85 @@ func (s *Source) registerUDFs(ctx context.Context) error {
 		return fmt.Errorf("register core_models_embeddings: %w", err)
 	}
 
+	// core_models_embedding_distance(model, text1, text2, distance) → DOUBLE
+	// Embeds both strings, then computes the distance with the SAME DuckDB SQL
+	// vector search uses (engine.SQLValue + VectorDistanceSQL switch).
+	type embeddingDistanceArgs struct {
+		model    string
+		text1    string
+		text2    string
+		distance string // "L2" | "Cosine" | "Inner"
+	}
+	err = db.RegisterScalarFunction(ctx, s.db, &db.ScalarFunctionWithArgs[embeddingDistanceArgs, float64]{
+		Name: "core_models_embedding_distance",
+		Execute: func(ctx context.Context, args embeddingDistanceArgs) (float64, error) {
+			ds, err := s.resolver.Resolve(args.model)
+			if err != nil {
+				return 0, fmt.Errorf("model %q not found: %w", args.model, err)
+			}
+			emb, ok := ds.(sources.EmbeddingSource)
+			if !ok {
+				return 0, fmt.Errorf("data source %q is not an embedding source", args.model)
+			}
+			res, err := emb.CreateEmbeddings(ctx, []string{args.text1, args.text2})
+			if err != nil {
+				return 0, err
+			}
+			if len(res.Vectors) != 2 {
+				return 0, fmt.Errorf("embedding source returned %d vectors, want 2", len(res.Vectors))
+			}
+			// Same distance SQL as vector search: first vector as a FLOAT[N]
+			// literal, the metric switch from the engine. The second vector is
+			// rendered into the expression as a literal via ApplyQueryParams
+			// (Vector has no driver.Valuer, so it cannot be a bound param).
+			e := s.Engine()
+			ec, ok := e.(engines.EngineVectorDistanceCalculator)
+			if !ok {
+				return 0, fmt.Errorf("engine does not support vector distance")
+			}
+			lit, err := e.SQLValue(res.Vectors[0])
+			if err != nil {
+				return 0, fmt.Errorf("render vector: %w", err)
+			}
+			expr, params, err := ec.VectorDistanceSQL(lit, args.distance, res.Vectors[1], nil)
+			if err != nil {
+				return 0, err
+			}
+			sqlExpr, _, err := engines.ApplyQueryParams(e, expr, params)
+			if err != nil {
+				return 0, fmt.Errorf("render distance sql: %w", err)
+			}
+			conn, err := s.db.Conn(ctx)
+			if err != nil {
+				return 0, err
+			}
+			defer conn.Close()
+			var dist float64
+			if err := conn.QueryRow(ctx, "SELECT "+sqlExpr).Scan(&dist); err != nil {
+				return 0, fmt.Errorf("compute distance: %w", err)
+			}
+			return dist, nil
+		},
+		ConvertInput: func(args []driver.Value) (embeddingDistanceArgs, error) {
+			return embeddingDistanceArgs{
+				model:    args[0].(string),
+				text1:    args[1].(string),
+				text2:    args[2].(string),
+				distance: args[3].(string),
+			}, nil
+		},
+		InputTypes: []duckdb.TypeInfo{
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
+		},
+		OutputType: runtime.DuckDBTypeInfoByNameMust("DOUBLE"),
+	})
+	if err != nil {
+		return fmt.Errorf("register core_models_embedding_distance: %w", err)
+	}
+
 	// core_models_completion(model, prompt, max_tokens, temperature) → llm_result struct
 	type completionArgs struct {
 		model       string
