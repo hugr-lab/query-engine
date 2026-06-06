@@ -2,13 +2,14 @@ package planner
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -19,6 +20,8 @@ type QueryPlan struct {
 
 	CompiledQuery string
 	Params        []any
+
+	exec QueryPlanExecFunc
 }
 
 func (p *QueryPlan) Compile() error {
@@ -41,6 +44,14 @@ func (p *QueryPlan) Execute(ctx context.Context, db *db.Pool) (data interface{},
 		if err != nil {
 			return nil, err
 		}
+	}
+	if p.RootNode.After != nil {
+		defer func() {
+			afterErr := p.RootNode.After(ctx, db, p.RootNode)
+			if err == nil {
+				err = afterErr
+			}
+		}()
 	}
 
 	switch {
@@ -82,6 +93,9 @@ func (p *QueryPlan) ExecuteStream(ctx context.Context, db *db.Pool) (types.Arrow
 
 	tbl, done, err := db.QueryTableStream(ctx, p.CompiledQuery, p.Params...)
 	if err != nil {
+		if p.RootNode.After != nil {
+			_ = p.RootNode.After(ctx, db, p.RootNode)
+		}
 		return nil, nil, err
 	}
 	if tbl != nil {
@@ -89,7 +103,41 @@ func (p *QueryPlan) ExecuteStream(ctx context.Context, db *db.Pool) (types.Arrow
 			tbl.SetGeometryInfo(gi)
 		}
 	}
+	if p.RootNode.After != nil {
+		originalDone := done
+		done = func() {
+			if originalDone != nil {
+				originalDone()
+			}
+			_ = p.RootNode.After(ctx, db, p.RootNode)
+		}
+	}
 	return tbl, done, nil
+}
+
+func (p *QueryPlan) ExecuteExec(ctx context.Context, db *db.Pool) (res sql.Result, err error) {
+	if p.CompiledQuery == "" {
+		return nil, errors.New("no compiled query")
+	}
+	if p.RootNode.Before != nil {
+		err = p.RootNode.Before(ctx, db, p.RootNode)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if p.RootNode.After != nil {
+		defer func() {
+			afterErr := p.RootNode.After(ctx, db, p.RootNode)
+			if err == nil {
+				err = afterErr
+			}
+		}()
+	}
+	exec := p.exec
+	if exec == nil {
+		exec = db.Exec
+	}
+	return exec(ctx, p.CompiledQuery, p.Params...)
 }
 
 func (p *QueryPlan) Log() string {
@@ -109,6 +157,7 @@ type QueryPlanNode struct {
 	Parent          *QueryPlanNode
 
 	Before NodeBeforeExecFunc
+	After  NodeAfterExecFunc
 
 	provider catalog.Provider
 	engines  Catalog
@@ -118,6 +167,8 @@ type QueryPlanNode struct {
 }
 
 type NodeBeforeExecFunc func(ctx context.Context, db *db.Pool, node *QueryPlanNode) error
+type NodeAfterExecFunc func(ctx context.Context, db *db.Pool, node *QueryPlanNode) error
+type QueryPlanExecFunc func(ctx context.Context, query string, args ...any) (sql.Result, error)
 
 type QueryPlanNodes []*QueryPlanNode
 

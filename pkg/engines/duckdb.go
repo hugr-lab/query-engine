@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -80,6 +81,65 @@ func (e *DuckDB) Capabilities() *compiler.EngineCapabilities {
 			Delete:           true,
 			DeleteWithoutPKs: true,
 		},
+	}
+}
+
+func CastArrowIngestValueToDuckDB(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
+	if field == nil || field.Definition == nil {
+		return sql, nil
+	}
+	switch field.Definition.Type.Name() {
+	case base.JSONTypeName:
+		switch arrowField.Type.ID() {
+		case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW,
+			arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
+			return "try_cast(" + sql + " AS JSON)", nil
+		case arrow.STRUCT, arrow.LIST, arrow.LARGE_LIST, arrow.FIXED_SIZE_LIST,
+			arrow.LIST_VIEW, arrow.LARGE_LIST_VIEW, arrow.MAP:
+			return "to_json(" + sql + ")", nil
+		default:
+			return sql, nil
+		}
+	case base.GeometryTypeName:
+		return castArrowGeometryToDuckDB(arrowField, sql)
+	default:
+		return sql, nil
+	}
+}
+
+func arrowExtensionName(field arrow.Field) string {
+	if ext, ok := field.Metadata.GetValue("ARROW:extension:name"); ok {
+		return strings.ToLower(ext)
+	}
+	if ext, ok := field.Metadata.GetValue("extension:name"); ok {
+		return strings.ToLower(ext)
+	}
+	return ""
+}
+
+func castArrowGeometryToDuckDB(field arrow.Field, sql string) (string, error) {
+	switch arrowExtensionName(field) {
+	case "geoarrow.wkb":
+		return "ST_GeomFromWKB(" + sql + ")", nil
+	case "geoarrow.wkt":
+		return "ST_GeomFromText(" + sql + ", true)", nil
+	case "hugr.geojson", "geoarrow.geojson", "geojson":
+		return "ST_GeomFromGeoJSON(" + sql + ")", nil
+	case "geoarrow.point", "geoarrow.linestring", "geoarrow.polygon",
+		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
+		"geoarrow.geometry", "geoarrow.geometrycollection":
+		return sql, nil
+	}
+
+	switch field.Type.ID() {
+	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
+		return "ST_GeomFromWKB(" + sql + ")", nil
+	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
+		return "CASE WHEN starts_with(trim(" + sql + "), '{') THEN ST_GeomFromGeoJSON(" + sql + ") ELSE ST_GeomFromText(" + sql + ", true) END", nil
+	case arrow.STRUCT, arrow.MAP:
+		return "ST_GeomFromGeoJSON(to_json(" + sql + ")::VARCHAR)", nil
+	default:
+		return "", fmt.Errorf("arrow column %q with type %s cannot be ingested as Geometry without geoarrow/hugr metadata", field.Name, field.Type)
 	}
 }
 

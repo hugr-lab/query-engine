@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -70,6 +71,7 @@ type EngineTypeCaster interface {
 	Engine
 	ToIntermediateType(*ast.Field) (string, error)
 	CastFromIntermediateType(field *ast.Field, toJSON bool) (string, error)
+	CastArrowIngestValue(field *ast.Field, arrowField arrow.Field, sql string) (string, error)
 }
 
 type EngineVectorDistanceCalculator interface {
