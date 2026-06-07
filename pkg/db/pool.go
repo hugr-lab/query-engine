@@ -229,7 +229,7 @@ func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
 
 // ExecWithArrowView registers reader as TempArrowViewName and executes query on
 // the same DuckDB driver connection, where the temporary Arrow view is visible.
-func (p *Pool) ExecWithArrowView(ctx context.Context, reader array.RecordReader, query string, requiresSpatial bool) (sql.Result, error) {
+func (p *Pool) ExecWithArrowView(ctx context.Context, reader array.RecordReader, query string) (sql.Result, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("missing arrow reader")
 	}
@@ -243,7 +243,7 @@ func (p *Pool) ExecWithArrowView(ctx context.Context, reader array.RecordReader,
 	if !ok {
 		return nil, fmt.Errorf("duckdb driver connection does not implement ExecerContext")
 	}
-	if requiresSpatial || arrowViewNeedsSpatial(reader) {
+	if arrowViewNeedsSpatial(reader) {
 		if _, err := execer.ExecContext(ctx, "LOAD spatial; CALL register_geoarrow_extensions()", nil); err != nil {
 			return nil, fmt.Errorf("prepare spatial arrow view: %w", err)
 		}

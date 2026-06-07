@@ -24,42 +24,42 @@ type ingestColumn struct {
 	InputDef   *ast.FieldDefinition
 }
 
-func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, dataObject string, reader array.RecordReader) (*QueryPlanNode, bool, error) {
+func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, dataObject string, reader array.RecordReader) (*QueryPlanNode, error) {
 	if dataObject == "" {
-		return nil, false, fmt.Errorf("missing data object")
+		return nil, fmt.Errorf("missing data object")
 	}
 	if reader == nil {
-		return nil, false, fmt.Errorf("missing arrow reader")
+		return nil, fmt.Errorf("missing arrow reader")
 	}
 
 	info, mutationField, err := resolveIngestTarget(ctx, provider, dataObject)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	engine, err := planner.Engine(info.Catalog)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if caps := engine.Capabilities(); caps == nil || !caps.Insert.Ingest {
-		return nil, false, fmt.Errorf("engine %q does not support IPC ingest", engine.Type())
+		return nil, fmt.Errorf("engine %q does not support IPC ingest", engine.Type())
 	}
 	mutation := sdl.MutationInfo(ctx, provider, mutationField)
 	if mutation == nil || mutation.Type != sdl.MutationTypeInsert {
-		return nil, false, fmt.Errorf("data object %q has no insert mutation defined", dataObject)
+		return nil, fmt.Errorf("data object %q has no insert mutation defined", dataObject)
 	}
 
 	columns, err := resolveIngestColumns(ctx, provider, info, mutation, reader.Schema())
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	if len(columns) == 0 {
-		return nil, false, fmt.Errorf("no insertable columns matched between arrow stream and data object")
+		return nil, fmt.Errorf("no insertable columns matched between arrow stream and data object")
 	}
 	permissionData, err := checkIngestPermissions(ctx, provider, info, mutationField, columns)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	return ingestNode(ctx, info, mutation, engine, columns, permissionData), ingestRequiresSpatial(columns, reader.Schema()), nil
+	return ingestNode(ctx, info, mutation, engine, columns, permissionData), nil
 }
 
 func resolveIngestTarget(ctx context.Context, provider catalog.Provider, dataObject string) (*sdl.Object, *ast.FieldDefinition, error) {
@@ -297,29 +297,4 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 			), params, nil
 		},
 	}
-}
-
-func ingestRequiresSpatial(columns []ingestColumn, schema *arrow.Schema) bool {
-	for _, c := range columns {
-		if c.FieldDef != nil && c.FieldDef.Type.Name() == base.GeometryTypeName {
-			return true
-		}
-	}
-	if schema == nil {
-		return false
-	}
-	for _, f := range schema.Fields() {
-		if ext, ok := f.Metadata.GetValue("ARROW:extension:name"); ok && isIngestGeometryExtension(ext) {
-			return true
-		}
-		if ext, ok := f.Metadata.GetValue("extension:name"); ok && isIngestGeometryExtension(ext) {
-			return true
-		}
-	}
-	return false
-}
-
-func isIngestGeometryExtension(ext string) bool {
-	ext = strings.ToLower(ext)
-	return strings.HasPrefix(ext, "geoarrow.") || ext == "hugr.geojson" || ext == "geojson"
 }

@@ -19,8 +19,6 @@ type QueryPlan struct {
 
 	CompiledQuery string
 	Params        []any
-
-	RequiresSpatial bool
 }
 
 func (p *QueryPlan) Compile() error {
