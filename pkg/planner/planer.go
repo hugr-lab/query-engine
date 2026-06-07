@@ -71,7 +71,7 @@ func (s *Service) Plan(ctx context.Context, provider catalog.Provider, query *as
 // The Arrow reader is part of this planning API because its schema drives column
 // resolution and ingest casting, while execution registers it as a temporary view.
 func (s *Service) PlanArrowIngest(ctx context.Context, provider catalog.Provider, dataObject string, reader array.RecordReader) (*QueryPlan, error) {
-	node, err := ingestRootNode(ctx, provider, s.engines, dataObject, reader)
+	node, requiresSpatial, err := ingestRootNode(ctx, provider, s.engines, dataObject, reader)
 	if err != nil {
 		return nil, err
 	}
@@ -79,5 +79,5 @@ func (s *Service) PlanArrowIngest(ctx context.Context, provider catalog.Provider
 	node.engines = s.engines
 	node.querier = s.querier
 
-	return &QueryPlan{RootNode: node}, nil
+	return &QueryPlan{RootNode: node, RequiresSpatial: requiresSpatial}, nil
 }

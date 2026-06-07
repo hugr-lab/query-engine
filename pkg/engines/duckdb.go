@@ -46,8 +46,9 @@ var scalarJSONInfo = map[string]jsonTypeInfo{
 }
 
 var (
-	_ Engine           = &DuckDB{}
-	_ EngineAggregator = &DuckDB{}
+	_ Engine                  = &DuckDB{}
+	_ EngineArrowIngestCaster = &DuckDB{}
+	_ EngineAggregator        = &DuckDB{}
 )
 
 type DuckDB struct {
@@ -83,6 +84,10 @@ func (e *DuckDB) Capabilities() *compiler.EngineCapabilities {
 			DeleteWithoutPKs: true,
 		},
 	}
+}
+
+func (e *DuckDB) CastArrowIngestValue(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
+	return CastArrowIngestValueToDuckDB(field, arrowField, sql)
 }
 
 func CastArrowIngestValueToDuckDB(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {

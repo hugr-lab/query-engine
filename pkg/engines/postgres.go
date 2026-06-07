@@ -21,10 +21,11 @@ import (
 )
 
 var (
-	_ Engine             = &Postgres{}
-	_ EngineQueryScanner = &Postgres{}
-	_ EngineTypeCaster   = &Postgres{}
-	_ EngineAggregator   = &Postgres{}
+	_ Engine                  = &Postgres{}
+	_ EngineQueryScanner      = &Postgres{}
+	_ EngineTypeCaster        = &Postgres{}
+	_ EngineArrowIngestCaster = &Postgres{}
+	_ EngineAggregator        = &Postgres{}
 )
 
 type Postgres struct {
@@ -595,7 +596,47 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 }
 
 func (e *Postgres) CastArrowIngestValue(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
-	return CastArrowIngestValueToDuckDB(field, arrowField, sql)
+	return CastArrowIngestValueToPostgres(field, arrowField, sql)
+}
+
+func CastArrowIngestValueToPostgres(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
+	if field == nil || field.Definition == nil {
+		return sql, nil
+	}
+	switch field.Definition.Type.Name() {
+	case base.JSONTypeName:
+		return CastArrowIngestValueToDuckDB(field, arrowField, sql)
+	case base.GeometryTypeName:
+		return castArrowGeometryToPostgres(arrowField, sql)
+	default:
+		return sql, nil
+	}
+}
+
+func castArrowGeometryToPostgres(field arrow.Field, sql string) (string, error) {
+	switch arrowExtensionName(field) {
+	case "geoarrow.wkb":
+		return "ST_AsText(ST_GeomFromWKB(" + sql + "))", nil
+	case "geoarrow.wkt":
+		return sql, nil
+	case "hugr.geojson", "geoarrow.geojson", "geojson":
+		return "ST_AsText(ST_GeomFromGeoJSON(" + sql + "))", nil
+	case "geoarrow.point", "geoarrow.linestring", "geoarrow.polygon",
+		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
+		"geoarrow.geometry", "geoarrow.geometrycollection":
+		return "ST_AsText(" + sql + ")", nil
+	}
+
+	switch field.Type.ID() {
+	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
+		return "ST_AsText(ST_GeomFromWKB(" + sql + "))", nil
+	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
+		return "CASE WHEN starts_with(trim(" + sql + "), '{') THEN ST_AsText(ST_GeomFromGeoJSON(" + sql + ")) ELSE " + sql + " END", nil
+	case arrow.STRUCT, arrow.MAP:
+		return "ST_AsText(ST_GeomFromGeoJSON(to_json(" + sql + ")::VARCHAR))", nil
+	default:
+		return "", fmt.Errorf("arrow column %q with type %s cannot be ingested as Postgres Geometry without geoarrow/hugr metadata", field.Name, field.Type)
+	}
 }
 
 func pgRangeValueToSQLValue(v any) (string, error) {
