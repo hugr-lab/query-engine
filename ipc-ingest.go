@@ -93,7 +93,7 @@ func (s *Service) ipcIngestHandler(w http.ResponseWriter, r *http.Request) {
 		writeIngestError(w, http.StatusInternalServerError, "arrow ingest plan produced SQL parameters")
 		return
 	}
-	res, err := s.db.ExecWithArrowView(ctx, reader, plan.CompiledQuery)
+	res, err := s.db.ExecWithArrowView(ctx, reader, plan.CompiledQuery, plan.RequiresSpatial)
 	if err != nil {
 		writeIngestError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -71,6 +71,10 @@ type EngineTypeCaster interface {
 	Engine
 	ToIntermediateType(*ast.Field) (string, error)
 	CastFromIntermediateType(field *ast.Field, toJSON bool) (string, error)
+}
+
+type EngineArrowIngestCaster interface {
+	Engine
 	CastArrowIngestValue(field *ast.Field, arrowField arrow.Field, sql string) (string, error)
 }
 
