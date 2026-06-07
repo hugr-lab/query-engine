@@ -75,7 +75,7 @@ func (s *Service) ipcIngestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer reader.Release()
 
-	plan, cancel, err := s.planner.PlanIngest(ctx, s.schema.Provider(), dataObject, reader)
+	plan, cancel, err := s.planner.PlanArrowIngest(ctx, s.schema.Provider(), dataObject, reader)
 	if cancel != nil {
 		defer func() { _ = cancel() }()
 	}
