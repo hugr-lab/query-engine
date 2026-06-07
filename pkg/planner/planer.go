@@ -70,17 +70,14 @@ func (s *Service) Plan(ctx context.Context, provider catalog.Provider, query *as
 // PlanArrowIngest builds an INSERT-from-Arrow-view plan for the target data object.
 // The Arrow reader is part of this planning API because its schema drives column
 // resolution and ingest casting, while execution registers it as a temporary view.
-func (s *Service) PlanArrowIngest(ctx context.Context, provider catalog.Provider, dataObject string, reader array.RecordReader) (*QueryPlan, func() error, error) {
-	node, cancel, err := ingestRootNode(ctx, provider, s.engines, dataObject, reader)
+func (s *Service) PlanArrowIngest(ctx context.Context, provider catalog.Provider, dataObject string, reader array.RecordReader) (*QueryPlan, error) {
+	node, err := ingestRootNode(ctx, provider, s.engines, dataObject, reader)
 	if err != nil {
-		if cancel != nil {
-			_ = cancel()
-		}
-		return nil, nil, err
+		return nil, err
 	}
 	node.provider = provider
 	node.engines = s.engines
 	node.querier = s.querier
 
-	return &QueryPlan{RootNode: node}, cancel, nil
+	return &QueryPlan{RootNode: node}, nil
 }

@@ -75,10 +75,7 @@ func (s *Service) ipcIngestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer reader.Release()
 
-	plan, cancel, err := s.planner.PlanArrowIngest(ctx, s.schema.Provider(), dataObject, reader)
-	if cancel != nil {
-		defer func() { _ = cancel() }()
-	}
+	plan, err := s.planner.PlanArrowIngest(ctx, s.schema.Provider(), dataObject, reader)
 	if err != nil {
 		if errors.Is(err, auth.ErrForbidden) {
 			writeIngestError(w, http.StatusForbidden, err.Error())
@@ -92,7 +89,11 @@ func (s *Service) ipcIngestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := plan.ExecuteExec(ctx, s.db)
+	if len(plan.Params) != 0 {
+		writeIngestError(w, http.StatusInternalServerError, "arrow ingest plan produced SQL parameters")
+		return
+	}
+	res, err := s.db.ExecWithArrowView(ctx, reader, plan.CompiledQuery)
 	if err != nil {
 		writeIngestError(w, http.StatusInternalServerError, err.Error())
 		return

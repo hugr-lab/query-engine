@@ -2,15 +2,11 @@ package planner
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/google/uuid"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
@@ -21,8 +17,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-const ingestViewNamePrefix = "_hugr_ingest_"
-
 type ingestColumn struct {
 	ArrowField arrow.Field
 	Field      *sdl.Field
@@ -30,57 +24,42 @@ type ingestColumn struct {
 	InputDef   *ast.FieldDefinition
 }
 
-type ingestExecState struct {
-	reader  array.RecordReader
-	view    string
-	arrow   *db.Arrow
-	release func()
-	once    sync.Once
-	err     error
-}
-
-func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, dataObject string, reader array.RecordReader) (*QueryPlanNode, func() error, error) {
+func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, dataObject string, reader array.RecordReader) (*QueryPlanNode, error) {
 	if dataObject == "" {
-		return nil, nil, fmt.Errorf("missing data object")
+		return nil, fmt.Errorf("missing data object")
 	}
 	if reader == nil {
-		return nil, nil, fmt.Errorf("missing arrow reader")
+		return nil, fmt.Errorf("missing arrow reader")
 	}
 
 	info, mutationField, err := resolveIngestTarget(ctx, provider, dataObject)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	engine, err := planner.Engine(info.Catalog)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if caps := engine.Capabilities(); caps == nil || !caps.Insert.Ingest {
-		return nil, nil, fmt.Errorf("engine %q does not support IPC ingest", engine.Type())
+		return nil, fmt.Errorf("engine %q does not support IPC ingest", engine.Type())
 	}
 	mutation := sdl.MutationInfo(ctx, provider, mutationField)
 	if mutation == nil || mutation.Type != sdl.MutationTypeInsert {
-		return nil, nil, fmt.Errorf("data object %q has no insert mutation defined", dataObject)
+		return nil, fmt.Errorf("data object %q has no insert mutation defined", dataObject)
 	}
 
 	columns, err := resolveIngestColumns(ctx, provider, info, mutation, reader.Schema())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if len(columns) == 0 {
-		return nil, nil, fmt.Errorf("no insertable columns matched between arrow stream and data object")
+		return nil, fmt.Errorf("no insertable columns matched between arrow stream and data object")
 	}
 	permissionData, err := checkIngestPermissions(ctx, provider, info, mutationField, columns)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	state := &ingestExecState{
-		reader: reader,
-		view:   ingestViewNamePrefix + strings.ReplaceAll(uuid.NewString(), "-", ""),
-	}
-	node := ingestNode(ctx, info, mutation, engine, columns, permissionData, state)
-	return node, state.cancel, nil
+	return ingestNode(ctx, info, mutation, engine, columns, permissionData), nil
 }
 
 func resolveIngestTarget(ctx context.Context, provider catalog.Provider, dataObject string) (*sdl.Object, *ast.FieldDefinition, error) {
@@ -245,43 +224,9 @@ func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info
 	return permissionData, nil
 }
 
-func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, engine engines.Engine, columns []ingestColumn, permissionData map[string]any, state *ingestExecState) *QueryPlanNode {
-	needsSpatial := ingestNeedsSpatial(columns)
+func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, engine engines.Engine, columns []ingestColumn, permissionData map[string]any) *QueryPlanNode {
 	return &QueryPlanNode{
 		Name: "ingest_" + info.Name,
-		Before: func(ctx context.Context, pool *db.Pool, node *QueryPlanNode) error {
-			ar, err := pool.Arrow(ctx)
-			if err != nil {
-				return fmt.Errorf("acquire duckdb arrow conn: %w", err)
-			}
-			if needsSpatial {
-				if _, err := ar.Exec(ctx, "LOAD spatial; CALL register_geoarrow_extensions()"); err != nil {
-					_ = ar.Close()
-					return fmt.Errorf("prepare spatial arrow ingest: %w", err)
-				}
-			}
-			release, err := ar.RegisterView(state.reader, state.view)
-			if err != nil {
-				_ = ar.Close()
-				return fmt.Errorf("register arrow view: %w", err)
-			}
-			state.arrow = ar
-			state.release = release
-			node.plan.exec = func(ctx context.Context, query string, args ...any) (sql.Result, error) {
-				if len(args) != 0 {
-					return nil, fmt.Errorf("ingest execution does not support SQL parameters")
-				}
-				res, err := ar.Exec(ctx, query)
-				if err != nil {
-					return nil, err
-				}
-				return res, nil
-			}
-			return nil
-		},
-		After: func(ctx context.Context, pool *db.Pool, node *QueryPlanNode) error {
-			return state.cancel()
-		},
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 			fieldValues := make(map[string]string, len(columns))
 			for _, c := range columns {
@@ -348,32 +293,8 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				target,
 				strings.Join(targetFields, ", "),
 				strings.Join(selectExprs, ", "),
-				engines.Ident(state.view),
+				engines.Ident(db.TempArrowViewName),
 			), params, nil
 		},
 	}
-}
-
-func ingestNeedsSpatial(columns []ingestColumn) bool {
-	for _, c := range columns {
-		if c.FieldDef != nil && c.FieldDef.Type.Name() == base.GeometryTypeName {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *ingestExecState) cancel() error {
-	s.once.Do(func() {
-		if s.release != nil {
-			s.release()
-		}
-		if s.arrow != nil {
-			s.err = s.arrow.Close()
-		}
-	})
-	if errors.Is(s.err, sql.ErrConnDone) {
-		return nil
-	}
-	return s.err
 }

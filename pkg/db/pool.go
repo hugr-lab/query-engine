@@ -8,8 +8,14 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/duckdb/duckdb-go/v2"
 )
+
+// TempArrowViewName is the fixed per-connection view name used by
+// ExecWithArrowView. DuckDB views registered from Arrow readers are scoped to
+// the driver connection, so a stable name is safe across concurrent requests.
+const TempArrowViewName = "_hugr_arrow_view"
 
 type Config struct {
 	Path         string `json:"path"`
@@ -221,6 +227,56 @@ func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
 	}, nil
 }
 
+// ExecWithArrowView registers reader as TempArrowViewName and executes query on
+// the same DuckDB driver connection, where the temporary Arrow view is visible.
+func (p *Pool) ExecWithArrowView(ctx context.Context, reader array.RecordReader, query string) (sql.Result, error) {
+	if reader == nil {
+		return nil, fmt.Errorf("missing arrow reader")
+	}
+	ar, err := p.Arrow(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer ar.Close()
+
+	execer, ok := ar.drv.(driver.ExecerContext)
+	if !ok {
+		return nil, fmt.Errorf("duckdb driver connection does not implement ExecerContext")
+	}
+	if arrowViewNeedsSpatial(reader) {
+		if _, err := execer.ExecContext(ctx, "LOAD spatial; CALL register_geoarrow_extensions()", nil); err != nil {
+			return nil, fmt.Errorf("prepare spatial arrow view: %w", err)
+		}
+	}
+	release, err := ar.RegisterView(reader, TempArrowViewName)
+	if err != nil {
+		return nil, fmt.Errorf("register arrow view: %w", err)
+	}
+	defer release()
+
+	return execer.ExecContext(ctx, query, nil)
+}
+
+func arrowViewNeedsSpatial(reader array.RecordReader) bool {
+	if reader == nil || reader.Schema() == nil {
+		return false
+	}
+	for _, f := range reader.Schema().Fields() {
+		if ext, ok := f.Metadata.GetValue("ARROW:extension:name"); ok && isGeometryArrowExtension(ext) {
+			return true
+		}
+		if ext, ok := f.Metadata.GetValue("extension:name"); ok && isGeometryArrowExtension(ext) {
+			return true
+		}
+	}
+	return false
+}
+
+func isGeometryArrowExtension(ext string) bool {
+	ext = strings.ToLower(ext)
+	return strings.HasPrefix(ext, "geoarrow.") || ext == "hugr.geojson" || ext == "geojson"
+}
+
 func (p *Pool) RegisterScalarFunction(ctx context.Context, function ScalarFunction) error {
 	return RegisterScalarFunction(ctx, p, function)
 }
@@ -277,18 +333,6 @@ type Arrow struct {
 	*duckdb.Arrow
 	drv     driver.Conn
 	release func()
-}
-
-// Exec runs a statement on the same DuckDB driver connection that backs the
-// embedded *duckdb.Arrow. This lets callers RegisterView an Arrow stream and
-// then INSERT/UPDATE against the registered view on the same connection — the
-// view is per-connection and is not visible to other pool connections.
-func (a *Arrow) Exec(ctx context.Context, query string) (driver.Result, error) {
-	execer, ok := a.drv.(driver.ExecerContext)
-	if !ok {
-		return nil, fmt.Errorf("duckdb driver connection does not implement ExecerContext")
-	}
-	return execer.ExecContext(ctx, query, nil)
 }
 
 func (a *Arrow) Close() error {
