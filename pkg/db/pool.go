@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/duckdb/duckdb-go/v2"
 )
@@ -262,6 +263,9 @@ func arrowViewNeedsSpatial(reader array.RecordReader) bool {
 		return false
 	}
 	for _, f := range reader.Schema().Fields() {
+		if extType, ok := f.Type.(arrow.ExtensionType); ok && isGeometryArrowExtension(extType.ExtensionName()) {
+			return true
+		}
 		if ext, ok := f.Metadata.GetValue("ARROW:extension:name"); ok && isGeometryArrowExtension(ext) {
 			return true
 		}
