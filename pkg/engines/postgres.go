@@ -599,6 +599,26 @@ func (e *Postgres) CastArrowIngestValue(field *ast.Field, arrowField arrow.Field
 	return CastArrowIngestValueToPostgres(field, arrowField, sql)
 }
 
+func (e *Postgres) ArrowIngestSQLValue(field *ast.Field, value any) (string, error) {
+	if value == nil {
+		return "NULL", nil
+	}
+	if field != nil && field.Definition != nil && field.Definition.Type.Name() == base.GeometryTypeName {
+		geom, err := ctypes.ParseGeometryValue(value)
+		if err != nil {
+			return "", err
+		}
+		if geom == nil {
+			return "NULL", nil
+		}
+		srid := base.FieldDefDirectiveArgString(field.Definition, base.FieldGeometryInfoDirectiveName, base.ArgSRID)
+		wktValue := strings.ReplaceAll(string(wkt.Marshal(geom)), "'", "''")
+		return postgresWKTText("'"+wktValue+"'", srid), nil
+	}
+	var duckdb DuckDB
+	return duckdb.SQLValue(value)
+}
+
 func CastArrowIngestValueToPostgres(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
 	if field == nil || field.Definition == nil {
 		return sql, nil
@@ -620,20 +640,19 @@ func castArrowGeometryToPostgres(field *ast.Field, arrowField arrow.Field, sql s
 	}
 	switch arrowExtensionName(arrowField) {
 	case "geoarrow.wkb":
-		if arrowFieldIsExtensionType(arrowField) {
-			return postgresGeometryText(sql, srid), nil
-		}
-		return postgresGeometryText("ST_GeomFromWKB("+sql+")", srid), nil
+		return postgresGeometryText(sql, srid), nil
 	case "geoarrow.wkt":
 		return postgresWKTText(sql, srid), nil
 	case "hugr.geojson", "geoarrow.geojson", "geojson":
 		return postgresGeometryText("ST_GeomFromGeoJSON("+sql+")", srid), nil
-	case "geoarrow.point":
-		return postgresGeometryText(duckDBGeoArrowPoint(sql), srid), nil
 	case "geoarrow.linestring", "geoarrow.polygon",
 		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
-		"geoarrow.geometry", "geoarrow.geometrycollection":
-		return postgresGeometryText(sql, srid), nil
+		"geoarrow.point", "geoarrow.geometry", "geoarrow.geometrycollection":
+		wkt, err := duckDBGeoArrowNativeWKT(arrowExtensionName(arrowField), sql)
+		if err != nil {
+			return "", err
+		}
+		return postgresWKTText(wkt, srid), nil
 	}
 
 	switch arrowField.Type.ID() {

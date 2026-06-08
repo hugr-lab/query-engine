@@ -26,6 +26,7 @@ func (e *AirportEngine) Type() Type {
 func (e *AirportEngine) Capabilities() *compiler.EngineCapabilities {
 	cap := e.DuckDB.Capabilities()
 	cap.General.SupportDefaultSequences = false
+	cap.Insert.Ingest = false
 	return cap
 }
 

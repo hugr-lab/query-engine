@@ -9,4 +9,9 @@ type events @table(name: "events") {
     geom_wkt: Geometry @geometry_info(srid: 4326, type: LINESTRING)
     geom_geojson: Geometry @geometry_info(srid: 4326, type: POLYGON)
     geom_wkb: Geometry @geometry_info(srid: 4326, type: POINT)
+    geom_line: Geometry @geometry_info(srid: 4326, type: LINESTRING)
+    geom_polygon_native: Geometry @geometry_info(srid: 4326, type: POLYGON)
+    geom_multipoint: Geometry @geometry_info(srid: 4326, type: MULTIPOINT)
+    geom_multiline: Geometry @geometry_info(srid: 4326, type: MULTILINESTRING)
+    geom_multipolygon: Geometry @geometry_info(srid: 4326, type: MULTIPOLYGON)
 }
