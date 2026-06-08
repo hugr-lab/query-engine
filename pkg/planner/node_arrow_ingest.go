@@ -43,6 +43,10 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if caps := engine.Capabilities(); caps == nil || !caps.Insert.Ingest {
 		return nil, fmt.Errorf("engine %q does not support IPC ingest", engine.Type())
 	}
+	ingestEngine, ok := engine.(engines.EngineArrowIngestCaster)
+	if !ok {
+		return nil, fmt.Errorf("engine %q declares IPC ingest support but does not implement Arrow ingest casting", engine.Type())
+	}
 	mutation := sdl.MutationInfo(ctx, provider, mutationField)
 	if mutation == nil || mutation.Type != sdl.MutationTypeInsert {
 		return nil, fmt.Errorf("data object %q has no insert mutation defined", dataObject)
@@ -59,7 +63,7 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if err != nil {
 		return nil, err
 	}
-	return ingestNode(ctx, info, mutation, engine, columns, permissionData), nil
+	return ingestNode(ctx, info, mutation, ingestEngine, columns, permissionData), nil
 }
 
 func resolveIngestTarget(ctx context.Context, provider catalog.Provider, dataObject string) (*sdl.Object, *ast.FieldDefinition, error) {
@@ -224,25 +228,15 @@ func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info
 	return permissionData, nil
 }
 
-func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, engine engines.Engine, columns []ingestColumn, permissionData map[string]any) *QueryPlanNode {
+func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, engine engines.EngineArrowIngestCaster, columns []ingestColumn, permissionData map[string]any) *QueryPlanNode {
 	return &QueryPlanNode{
 		Name: "ingest_" + info.Name,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 			fieldValues := make(map[string]string, len(columns))
 			for _, c := range columns {
 				value := engines.Ident(c.ArrowField.Name)
-				field := &ast.Field{
-					Name:             c.Field.Name,
-					Alias:            c.Field.Name,
-					Definition:       c.FieldDef,
-					ObjectDefinition: info.Definition(),
-				}
-				var err error
-				if caster, ok := engine.(engines.EngineArrowIngestCaster); ok {
-					value, err = caster.CastArrowIngestValue(field, c.ArrowField, value)
-				} else {
-					value, err = engines.CastArrowIngestValueToDuckDB(field, c.ArrowField, value)
-				}
+				field := ingestASTField(info, c.Field, c.FieldDef)
+				value, err := engine.CastArrowIngestValue(field, c.ArrowField, value)
 				if err != nil {
 					return "", nil, err
 				}
@@ -256,13 +250,21 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				if fieldInfo.IsReferencesSubquery() || fieldInfo.IsNotDBField() {
 					return "", nil, fmt.Errorf("permission data field %q cannot be ingested directly", name)
 				}
-				sqlValue, err := engine.SQLValue(value)
+				fieldDef := info.Definition().Fields.ForName(name)
+				if fieldDef == nil {
+					return "", nil, fmt.Errorf("permission data field %q definition not found in data object %q", name, info.Name)
+				}
+				sqlValue, err := engine.ArrowIngestSQLValue(ingestASTField(info, fieldInfo, fieldDef), value)
 				if err != nil {
 					return "", nil, err
 				}
 				fieldValues[name] = sqlValue
 			}
-			if err := mutation.AppendInsertSQLExpression(fieldValues, perm.AuthVars(ctx), engine); err != nil {
+			// Arrow ingest SELECT expressions are evaluated by DuckDB because
+			// the temporary Arrow view is registered on a DuckDB connection.
+			// Target engines shape column values above; default/auth helper
+			// expressions must still be valid in the DuckDB staging SELECT.
+			if err := mutation.AppendInsertSQLExpression(fieldValues, perm.AuthVars(ctx), engines.NewArrowIngestStagingBuilder()); err != nil {
 				return "", nil, err
 			}
 
@@ -296,5 +298,14 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				engines.Ident(db.TempArrowViewName),
 			), params, nil
 		},
+	}
+}
+
+func ingestASTField(info *sdl.Object, fieldInfo *sdl.Field, fieldDef *ast.FieldDefinition) *ast.Field {
+	return &ast.Field{
+		Name:             fieldInfo.Name,
+		Alias:            fieldInfo.Name,
+		Definition:       fieldDef,
+		ObjectDefinition: info.Definition(),
 	}
 }

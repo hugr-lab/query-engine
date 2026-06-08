@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -130,7 +131,12 @@ func setupEnv(t *testing.T) *ingestEnv {
 			geom GEOMETRY,
 			geom_wkt GEOMETRY,
 			geom_geojson GEOMETRY,
-			geom_wkb GEOMETRY
+			geom_wkb GEOMETRY,
+			geom_line GEOMETRY,
+			geom_polygon_native GEOMETRY,
+			geom_multipoint GEOMETRY,
+			geom_multiline GEOMETRY,
+			geom_multipolygon GEOMETRY
 		);
 	`)
 	require.NoError(t, err)
@@ -833,7 +839,7 @@ func TestIngest_HTTP_GeometryTypes_DuckDB(t *testing.T) {
 	var out hugrclient.IngestResult
 	require.NoError(t, json.Unmarshal(body, &out))
 	assert.Equal(t, int64(2), out.Inserted)
-	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom", "geom_wkt", "geom_geojson", "geom_wkb"}, out.Columns)
+	assert.ElementsMatch(t, geometryTypesColumns(), out.Columns)
 
 	ro := env.openRO(t)
 	defer ro.Close()
@@ -841,7 +847,10 @@ func TestIngest_HTTP_GeometryTypes_DuckDB(t *testing.T) {
 	require.NoError(t, err)
 
 	rows, err := ro.Query(`
-		SELECT name, ST_AsText(geom), ST_AsText(geom_wkt), ST_AsText(geom_geojson), ST_AsText(geom_wkb)
+		SELECT name,
+			ST_AsText(geom), ST_AsText(geom_wkt), ST_AsText(geom_geojson), ST_AsText(geom_wkb),
+			ST_AsText(geom_line), ST_AsText(geom_polygon_native), ST_AsText(geom_multipoint),
+			ST_AsText(geom_multiline), ST_AsText(geom_multipolygon)
 		FROM events
 		WHERE name LIKE 'geo-%'
 		ORDER BY name
@@ -851,14 +860,22 @@ func TestIngest_HTTP_GeometryTypes_DuckDB(t *testing.T) {
 
 	got := map[string][]string{}
 	for rows.Next() {
-		var name, point, line, polygon, wkbPoint string
-		require.NoError(t, rows.Scan(&name, &point, &line, &polygon, &wkbPoint))
-		got[name] = []string{point, line, polygon, wkbPoint}
+		var name string
+		values := make([]string, 9)
+		scanArgs := []any{&name}
+		for i := range values {
+			scanArgs = append(scanArgs, &values[i])
+		}
+		require.NoError(t, rows.Scan(scanArgs...))
+		for i := range values {
+			values[i] = compactWKT(values[i])
+		}
+		got[name] = values
 	}
 	require.NoError(t, rows.Err())
 	assert.Equal(t, map[string][]string{
-		"geo-a": []string{"POINT (30.5 50.25)", "LINESTRING (0 0, 1 1, 2 1)", "POLYGON ((0 0, 0 1, 1 1, 1 0, 0 0))", "POINT (30.5 50.25)"},
-		"geo-b": []string{"POINT (-73.935242 40.73061)", "LINESTRING (1 1, 2 2, 3 2)", "POLYGON ((1 1, 1 2, 2 2, 2 1, 1 1))", "POINT (-73.935242 40.73061)"},
+		"geo-a": geometryExpected("POINT(30.5 50.25)", "0", "0"),
+		"geo-b": geometryExpected("POINT(-73.935242 40.73061)", "1", "1"),
 	}, got)
 }
 
@@ -919,16 +936,18 @@ func TestIngest_HTTP_GeometryTypes_Bulk50k_DuckDB(t *testing.T) {
 	require.NoError(t, ro.QueryRow("SELECT COUNT(*) FROM events WHERE name LIKE 'dk-geo-bulk-%'").Scan(&count))
 	assert.Equal(t, totalRows, count)
 
-	var point, line, polygon, wkbPoint string
+	values := make([]string, 9)
 	require.NoError(t, ro.QueryRow(`
-		SELECT ST_AsText(geom), ST_AsText(geom_wkt), ST_AsText(geom_geojson), ST_AsText(geom_wkb)
+		SELECT ST_AsText(geom), ST_AsText(geom_wkt), ST_AsText(geom_geojson), ST_AsText(geom_wkb),
+			ST_AsText(geom_line), ST_AsText(geom_polygon_native), ST_AsText(geom_multipoint),
+			ST_AsText(geom_multiline), ST_AsText(geom_multipolygon)
 		FROM events
 		WHERE name = 'dk-geo-bulk-049999'
-	`).Scan(&point, &line, &polygon, &wkbPoint))
-	assert.Equal(t, "POINT (99 49)", point)
-	assert.Equal(t, "LINESTRING (99 49, 100 50, 101 50)", line)
-	assert.Equal(t, "POLYGON ((99 49, 99 50, 100 50, 100 49, 99 49))", polygon)
-	assert.Equal(t, "POINT (99 49)", wkbPoint)
+	`).Scan(&values[0], &values[1], &values[2], &values[3], &values[4], &values[5], &values[6], &values[7], &values[8]))
+	for i := range values {
+		values[i] = compactWKT(values[i])
+	}
+	assert.Equal(t, geometryExpected("POINT(99 49)", "99", "49"), values)
 
 	elapsed := time.Since(start)
 	t.Logf("geometry bulk ingest: %d rows in %d batches via one /ipc/ingest POST in %s (%.0f rows/s)",
@@ -975,6 +994,8 @@ func geometryTypesSchema() *arrow.Schema {
 		arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
 		arrow.Field{Name: "y", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
 	)
+	lineType := arrow.ListOf(pointType)
+	polygonType := arrow.ListOf(lineType)
 	return arrow.NewSchema([]arrow.Field{
 		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
 		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
@@ -983,7 +1004,53 @@ func geometryTypesSchema() *arrow.Schema {
 		{Name: "geom_wkt", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkt"})},
 		{Name: "geom_geojson", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.geojson"})},
 		{Name: "geom_wkb", Type: arrow.BinaryTypes.Binary, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkb"})},
+		{Name: "geom_line", Type: lineType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.linestring"})},
+		{Name: "geom_polygon_native", Type: polygonType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.polygon"})},
+		{Name: "geom_multipoint", Type: lineType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.multipoint"})},
+		{Name: "geom_multiline", Type: polygonType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.multilinestring"})},
+		{Name: "geom_multipolygon", Type: arrow.ListOf(polygonType), Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.multipolygon"})},
 	}, nil)
+}
+
+func geometryTypesColumns() []string {
+	return []string{
+		"name", "value", "is_active",
+		"geom", "geom_wkt", "geom_geojson", "geom_wkb",
+		"geom_line", "geom_polygon_native", "geom_multipoint",
+		"geom_multiline", "geom_multipolygon",
+	}
+}
+
+func geometryExpected(point, x, y string) []string {
+	return []string{
+		point,
+		fmt.Sprintf("LINESTRING(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 1)),
+		fmt.Sprintf("POLYGON((%s %s,%s %s,%s %s,%s %s,%s %s))", x, y, x, addCoord(y, 1), addCoord(x, 1), addCoord(y, 1), addCoord(x, 1), y, x, y),
+		point,
+		fmt.Sprintf("LINESTRING(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 1)),
+		fmt.Sprintf("POLYGON((%s %s,%s %s,%s %s,%s %s,%s %s))", x, y, x, addCoord(y, 1), addCoord(x, 1), addCoord(y, 1), addCoord(x, 1), y, x, y),
+		fmt.Sprintf("MULTIPOINT(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), y),
+		fmt.Sprintf("MULTILINESTRING((%s %s,%s %s),(%s %s,%s %s))", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 2), addCoord(x, 3), addCoord(y, 3)),
+		fmt.Sprintf("MULTIPOLYGON(((%s %s,%s %s,%s %s,%s %s,%s %s)))", x, y, x, addCoord(y, 1), addCoord(x, 1), addCoord(y, 1), addCoord(x, 1), y, x, y),
+	}
+}
+
+func addCoord(v string, delta float64) string {
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		panic(err)
+	}
+	return coord(f + delta)
+}
+
+func compactWKT(s string) string {
+	s = strings.ReplaceAll(s, ", ", ",")
+	s = strings.ReplaceAll(s, " (", "(")
+	if strings.HasPrefix(s, "MULTIPOINT((") && strings.HasSuffix(s, "))") {
+		inner := strings.TrimSuffix(strings.TrimPrefix(s, "MULTIPOINT(("), "))")
+		s = "MULTIPOINT(" + strings.ReplaceAll(inner, "),(", ",") + ")"
+	}
+	return s
 }
 
 func buildGeometryTypesBatch(pool memory.Allocator, schema *arrow.Schema, batchIdx, rowsPerBatch int, namePrefix string) arrow.RecordBatch {
@@ -1013,6 +1080,66 @@ func appendGeometryTypesRow(b *array.RecordBuilder, name string, value float64, 
 	b.Field(5).(*array.StringBuilder).Append(polygonGeoJSON(shapeX, shapeY))
 	wkbPoint, _ := wkb.Marshal(orb.Point{point[0], point[1]})
 	b.Field(6).(*array.BinaryBuilder).Append(wkbPoint)
+	appendPointList(b.Field(7).(*array.ListBuilder), linePoints(shapeX, shapeY))
+	appendPointListList(b.Field(8).(*array.ListBuilder), polygonRings(shapeX, shapeY))
+	appendPointList(b.Field(9).(*array.ListBuilder), multiPoints(shapeX, shapeY))
+	appendPointListList(b.Field(10).(*array.ListBuilder), multiLines(shapeX, shapeY))
+	appendPointListListList(b.Field(11).(*array.ListBuilder), multiPolygons(shapeX, shapeY))
+}
+
+type xyPoint [2]float64
+
+func appendPoint(sb *array.StructBuilder, point xyPoint) {
+	sb.Append(true)
+	sb.FieldBuilder(0).(*array.Float64Builder).Append(point[0])
+	sb.FieldBuilder(1).(*array.Float64Builder).Append(point[1])
+}
+
+func appendPointList(lb *array.ListBuilder, points []xyPoint) {
+	lb.Append(true)
+	sb := lb.ValueBuilder().(*array.StructBuilder)
+	for _, point := range points {
+		appendPoint(sb, point)
+	}
+}
+
+func appendPointListList(lb *array.ListBuilder, lines [][]xyPoint) {
+	lb.Append(true)
+	inner := lb.ValueBuilder().(*array.ListBuilder)
+	for _, points := range lines {
+		appendPointList(inner, points)
+	}
+}
+
+func appendPointListListList(lb *array.ListBuilder, polygons [][][]xyPoint) {
+	lb.Append(true)
+	inner := lb.ValueBuilder().(*array.ListBuilder)
+	for _, rings := range polygons {
+		appendPointListList(inner, rings)
+	}
+}
+
+func linePoints(x, y float64) []xyPoint {
+	return []xyPoint{{x, y}, {x + 1, y + 1}, {x + 2, y + 1}}
+}
+
+func polygonRings(x, y float64) [][]xyPoint {
+	return [][]xyPoint{{{x, y}, {x, y + 1}, {x + 1, y + 1}, {x + 1, y}, {x, y}}}
+}
+
+func multiPoints(x, y float64) []xyPoint {
+	return []xyPoint{{x, y}, {x + 1, y + 1}, {x + 2, y}}
+}
+
+func multiLines(x, y float64) [][]xyPoint {
+	return [][]xyPoint{
+		{{x, y}, {x + 1, y + 1}},
+		{{x + 2, y + 2}, {x + 3, y + 3}},
+	}
+}
+
+func multiPolygons(x, y float64) [][][]xyPoint {
+	return [][][]xyPoint{polygonRings(x, y)}
 }
 
 func lineWKT(x, y float64) string {

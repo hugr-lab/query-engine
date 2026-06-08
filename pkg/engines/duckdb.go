@@ -90,6 +90,10 @@ func (e *DuckDB) CastArrowIngestValue(field *ast.Field, arrowField arrow.Field, 
 	return CastArrowIngestValueToDuckDB(field, arrowField, sql)
 }
 
+func (e *DuckDB) ArrowIngestSQLValue(_ *ast.Field, value any) (string, error) {
+	return e.SQLValue(value)
+}
+
 func CastArrowIngestValueToDuckDB(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
 	if field == nil || field.Definition == nil {
 		return sql, nil
@@ -116,20 +120,19 @@ func CastArrowIngestValueToDuckDB(field *ast.Field, arrowField arrow.Field, sql 
 func castArrowGeometryToDuckDB(field arrow.Field, sql string) (string, error) {
 	switch arrowExtensionName(field) {
 	case "geoarrow.wkb":
-		if arrowFieldIsExtensionType(field) {
-			return sql, nil
-		}
-		return "ST_GeomFromWKB(" + sql + ")", nil
+		return "ST_GeomFromText(ST_AsText(" + sql + "), true)", nil
 	case "geoarrow.wkt":
 		return "ST_GeomFromText(" + sql + ", true)", nil
 	case "hugr.geojson", "geoarrow.geojson", "geojson":
 		return "ST_GeomFromGeoJSON(" + sql + ")", nil
-	case "geoarrow.point":
-		return duckDBGeoArrowPoint(sql), nil
 	case "geoarrow.linestring", "geoarrow.polygon",
 		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
-		"geoarrow.geometry", "geoarrow.geometrycollection":
-		return sql, nil
+		"geoarrow.point", "geoarrow.geometry", "geoarrow.geometrycollection":
+		wkt, err := duckDBGeoArrowNativeWKT(arrowExtensionName(field), sql)
+		if err != nil {
+			return "", err
+		}
+		return "ST_GeomFromText(" + wkt + ", true)", nil
 	}
 
 	switch field.Type.ID() {

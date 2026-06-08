@@ -15,5 +15,10 @@ CREATE TABLE events (
     geom GEOMETRY(Point, 4326),
     geom_wkt GEOMETRY(LineString, 4326),
     geom_geojson GEOMETRY(Polygon, 4326),
-    geom_wkb GEOMETRY(Point, 4326)
+    geom_wkb GEOMETRY(Point, 4326),
+    geom_line GEOMETRY(LineString, 4326),
+    geom_polygon_native GEOMETRY(Polygon, 4326),
+    geom_multipoint GEOMETRY(MultiPoint, 4326),
+    geom_multiline GEOMETRY(MultiLineString, 4326),
+    geom_multipolygon GEOMETRY(MultiPolygon, 4326)
 );
