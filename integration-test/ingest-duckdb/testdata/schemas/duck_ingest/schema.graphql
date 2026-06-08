@@ -5,4 +5,5 @@ type events @table(name: "events") {
     is_active: Boolean! @default(value: "true")
     payload: JSON
     created_at: Timestamp @default(value: "now()")
+    geom: Geometry @geometry_info(srid: 4326, type: POINT)
 }

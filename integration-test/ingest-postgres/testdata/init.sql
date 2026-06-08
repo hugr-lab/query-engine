@@ -3,11 +3,14 @@
 -- so the tests can also exercise "default value" behaviour (omitting the PK
 -- from the Arrow stream).
 
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 CREATE TABLE events (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR NOT NULL,
     value DOUBLE PRECISION NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT true,
     payload JSONB,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    geom GEOMETRY(Point, 4326)
 );

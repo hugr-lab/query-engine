@@ -115,6 +115,7 @@ func setupEnv(t *testing.T) *ingestEnv {
 	seed, err := sql.Open("duckdb", dbPath)
 	require.NoError(t, err)
 	_, err = seed.ExecContext(ctx, `
+		INSTALL spatial; LOAD spatial;
 		CREATE SEQUENCE events_id_seq;
 		CREATE TABLE events (
 			id BIGINT PRIMARY KEY DEFAULT nextval('events_id_seq'),
@@ -122,7 +123,8 @@ func setupEnv(t *testing.T) *ingestEnv {
 			value DOUBLE NOT NULL,
 			is_active BOOLEAN NOT NULL DEFAULT true,
 			payload JSON,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+			geom GEOMETRY
 		);
 	`)
 	require.NoError(t, err)
@@ -253,10 +255,10 @@ func TestIngest_DuckDB_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	defer rows.Close()
 	var (
-		gotNames    []string
-		gotValues   []float64
-		gotActive   []bool
-		gotHasJSON  []bool
+		gotNames   []string
+		gotValues  []float64
+		gotActive  []bool
+		gotHasJSON []bool
 	)
 	for rows.Next() {
 		var n string
@@ -804,6 +806,51 @@ func TestIngest_HTTP_Direct_DuckDB(t *testing.T) {
 		totalRows, numBatches, elapsed, float64(totalRows)/elapsed.Seconds())
 }
 
+func TestIngest_HTTP_GeoArrowPoint_DuckDB(t *testing.T) {
+	env := setupEnv(t)
+
+	rec, schema := makeGeoArrowPointRecord(t, []string{"geoarrow-a", "geoarrow-b"}, [][2]float64{{30.5, 50.25}, {-73.935242, 40.730610}})
+	defer rec.Release()
+
+	var buf bytes.Buffer
+	w := ipc.NewWriter(&buf, ipc.WithSchema(schema))
+	require.NoError(t, w.Write(rec))
+	require.NoError(t, w.Close())
+
+	resp, err := http.Post(env.server.URL+"/ipc/ingest?data_object="+env.dataObject,
+		"application/vnd.apache.arrow.stream", &buf)
+	require.NoError(t, err)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body=%s", string(body))
+
+	var out hugrclient.IngestResult
+	require.NoError(t, json.Unmarshal(body, &out))
+	assert.Equal(t, int64(2), out.Inserted)
+	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom"}, out.Columns)
+
+	ro := env.openRO(t)
+	defer ro.Close()
+	_, err = ro.Exec("LOAD spatial")
+	require.NoError(t, err)
+
+	rows, err := ro.Query("SELECT name, ST_AsText(geom) FROM events WHERE name LIKE 'geoarrow-%' ORDER BY name")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	got := map[string]string{}
+	for rows.Next() {
+		var name, wkt string
+		require.NoError(t, rows.Scan(&name, &wkt))
+		got[name] = wkt
+	}
+	require.NoError(t, rows.Err())
+	assert.Equal(t, map[string]string{
+		"geoarrow-a": "POINT (30.5 50.25)",
+		"geoarrow-b": "POINT (-73.935242 40.73061)",
+	}, got)
+}
+
 // --- helpers --------------------------------------------------------------
 
 type arrowFileFormat int
@@ -821,6 +868,38 @@ func eventsArrowSchema() *arrow.Schema {
 		{Name: "payload", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "created_at", Type: arrow.FixedWidthTypes.Timestamp_us, Nullable: true},
 	}, nil)
+}
+
+func makeGeoArrowPointRecord(t *testing.T, names []string, points [][2]float64) (arrow.RecordBatch, *arrow.Schema) {
+	t.Helper()
+	require.Len(t, points, len(names))
+
+	pointType := arrow.StructOf(
+		arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		arrow.Field{Name: "y", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+	)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
+		{Name: "geom", Type: pointType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.point"})},
+	}, nil)
+
+	pool := memory.NewGoAllocator()
+	b := array.NewRecordBuilder(pool, schema)
+	defer b.Release()
+
+	b.Field(0).(*array.StringBuilder).AppendValues(names, nil)
+	for i, point := range points {
+		b.Field(1).(*array.Float64Builder).Append(float64(i + 1))
+		b.Field(2).(*array.BooleanBuilder).Append(true)
+		sb := b.Field(3).(*array.StructBuilder)
+		sb.Append(true)
+		sb.FieldBuilder(0).(*array.Float64Builder).Append(point[0])
+		sb.FieldBuilder(1).(*array.Float64Builder).Append(point[1])
+	}
+
+	return b.NewRecordBatch(), schema
 }
 
 // buildEventsBatch produces one RecordBatch of `rowsPerBatch` rows for the
