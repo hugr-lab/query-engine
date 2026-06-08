@@ -238,10 +238,10 @@ func TestIngest_Postgres_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	defer rows.Close()
 	var (
-		gotNames    []string
-		gotValues   []float64
-		gotActive   []bool
-		gotHasJSON  []bool
+		gotNames   []string
+		gotValues  []float64
+		gotActive  []bool
+		gotHasJSON []bool
 	)
 	for rows.Next() {
 		var n string
@@ -450,6 +450,38 @@ func eventsArrowSchema() *arrow.Schema {
 		{Name: "payload", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "created_at", Type: arrow.FixedWidthTypes.Timestamp_us, Nullable: true},
 	}, nil)
+}
+
+func makeGeoArrowPointRecord(t *testing.T, names []string, points [][2]float64) (arrow.RecordBatch, *arrow.Schema) {
+	t.Helper()
+	require.Len(t, points, len(names))
+
+	pointType := arrow.StructOf(
+		arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		arrow.Field{Name: "y", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+	)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
+		{Name: "geom", Type: pointType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.point"})},
+	}, nil)
+
+	pool := memory.NewGoAllocator()
+	b := array.NewRecordBuilder(pool, schema)
+	defer b.Release()
+
+	b.Field(0).(*array.StringBuilder).AppendValues(names, nil)
+	for i, point := range points {
+		b.Field(1).(*array.Float64Builder).Append(float64(i + 1))
+		b.Field(2).(*array.BooleanBuilder).Append(true)
+		sb := b.Field(3).(*array.StructBuilder)
+		sb.Append(true)
+		sb.FieldBuilder(0).(*array.Float64Builder).Append(point[0])
+		sb.FieldBuilder(1).(*array.Float64Builder).Append(point[1])
+	}
+
+	return b.NewRecordBatch(), schema
 }
 
 // writeEventsArrowFile produces an Arrow IPC file at path in the given
@@ -1015,6 +1047,53 @@ func TestIngest_HTTP_Direct(t *testing.T) {
 
 	t.Logf("bulk ingest: %d rows in %d batches via one /ipc/ingest POST in %s (%.0f rows/s)",
 		totalRows, numBatches, elapsed, float64(totalRows)/elapsed.Seconds())
+}
+
+func TestIngest_HTTP_GeoArrowPoint(t *testing.T) {
+	env := setupEnv(t)
+
+	rec, schema := makeGeoArrowPointRecord(t, []string{"geoarrow-a", "geoarrow-b"}, [][2]float64{{30.5, 50.25}, {-73.935242, 40.730610}})
+	defer rec.Release()
+
+	var buf bytes.Buffer
+	w := ipc.NewWriter(&buf, ipc.WithSchema(schema))
+	require.NoError(t, w.Write(rec))
+	require.NoError(t, w.Close())
+
+	resp, err := http.Post(env.server.URL+"/ipc/ingest?data_object=pg_ingest.events",
+		"application/vnd.apache.arrow.stream", &buf)
+	require.NoError(t, err)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body=%s", string(body))
+
+	var out hugrclient.IngestResult
+	require.NoError(t, json.Unmarshal(body, &out))
+	assert.Equal(t, int64(2), out.Inserted)
+	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom"}, out.Columns)
+
+	rows, err := env.pgConn.Query("SELECT name, ST_AsText(geom), ST_SRID(geom) FROM events WHERE name LIKE 'geoarrow-%' ORDER BY name")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	got := map[string]string{}
+	gotSRID := map[string]int{}
+	for rows.Next() {
+		var name, wkt string
+		var srid int
+		require.NoError(t, rows.Scan(&name, &wkt, &srid))
+		got[name] = wkt
+		gotSRID[name] = srid
+	}
+	require.NoError(t, rows.Err())
+	assert.Equal(t, map[string]string{
+		"geoarrow-a": "POINT(30.5 50.25)",
+		"geoarrow-b": "POINT(-73.935242 40.73061)",
+	}, got)
+	assert.Equal(t, map[string]int{
+		"geoarrow-a": 4326,
+		"geoarrow-b": 4326,
+	}, gotSRID)
 }
 
 // lazyEventsReader is an array.RecordReader that generates events-table

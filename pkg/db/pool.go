@@ -244,7 +244,7 @@ func (p *Pool) ExecWithArrowView(ctx context.Context, reader array.RecordReader,
 		return nil, fmt.Errorf("duckdb driver connection does not implement ExecerContext")
 	}
 	if arrowViewNeedsSpatial(reader) {
-		if _, err := execer.ExecContext(ctx, "LOAD spatial; CALL register_geoarrow_extensions()", nil); err != nil {
+		if _, err := execer.ExecContext(ctx, "LOAD spatial", nil); err != nil {
 			return nil, fmt.Errorf("prepare spatial arrow view: %w", err)
 		}
 	}

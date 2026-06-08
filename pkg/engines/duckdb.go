@@ -131,7 +131,9 @@ func castArrowGeometryToDuckDB(field arrow.Field, sql string) (string, error) {
 		return "ST_GeomFromText(" + sql + ", true)", nil
 	case "hugr.geojson", "geoarrow.geojson", "geojson":
 		return "ST_GeomFromGeoJSON(" + sql + ")", nil
-	case "geoarrow.point", "geoarrow.linestring", "geoarrow.polygon",
+	case "geoarrow.point":
+		return duckDBGeoArrowPoint(sql), nil
+	case "geoarrow.linestring", "geoarrow.polygon",
 		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
 		"geoarrow.geometry", "geoarrow.geometrycollection":
 		return sql, nil
@@ -147,6 +149,10 @@ func castArrowGeometryToDuckDB(field arrow.Field, sql string) (string, error) {
 	default:
 		return "", fmt.Errorf("arrow column %q with type %s cannot be ingested as Geometry without geoarrow/hugr metadata", field.Name, field.Type)
 	}
+}
+
+func duckDBGeoArrowPoint(sql string) string {
+	return "ST_Point(struct_extract(" + sql + ", 'x'), struct_extract(" + sql + ", 'y'))"
 }
 
 func (e *DuckDB) FieldValueByPath(sqlName, path string) string {

@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: postgis/postgis:16-3.4
     environment:
       POSTGRES_DB: ingestdb
       POSTGRES_USER: test
