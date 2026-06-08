@@ -113,19 +113,12 @@ func CastArrowIngestValueToDuckDB(field *ast.Field, arrowField arrow.Field, sql 
 	}
 }
 
-func arrowExtensionName(field arrow.Field) string {
-	if ext, ok := field.Metadata.GetValue("ARROW:extension:name"); ok {
-		return strings.ToLower(ext)
-	}
-	if ext, ok := field.Metadata.GetValue("extension:name"); ok {
-		return strings.ToLower(ext)
-	}
-	return ""
-}
-
 func castArrowGeometryToDuckDB(field arrow.Field, sql string) (string, error) {
 	switch arrowExtensionName(field) {
 	case "geoarrow.wkb":
+		if arrowFieldIsExtensionType(field) {
+			return sql, nil
+		}
 		return "ST_GeomFromWKB(" + sql + ")", nil
 	case "geoarrow.wkt":
 		return "ST_GeomFromText(" + sql + ", true)", nil
@@ -149,10 +142,6 @@ func castArrowGeometryToDuckDB(field arrow.Field, sql string) (string, error) {
 	default:
 		return "", fmt.Errorf("arrow column %q with type %s cannot be ingested as Geometry without geoarrow/hugr metadata", field.Name, field.Type)
 	}
-}
-
-func duckDBGeoArrowPoint(sql string) string {
-	return "ST_Point(struct_extract(" + sql + ", 'x'), struct_extract(" + sql + ", 'y'))"
 }
 
 func (e *DuckDB) FieldValueByPath(sqlName, path string) string {

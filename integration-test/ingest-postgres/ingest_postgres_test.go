@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -24,6 +25,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/encoding/wkb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -452,36 +455,85 @@ func eventsArrowSchema() *arrow.Schema {
 	}, nil)
 }
 
-func makeGeoArrowPointRecord(t *testing.T, names []string, points [][2]float64) (arrow.RecordBatch, *arrow.Schema) {
+func makeGeometryTypesRecord(t *testing.T, names []string, points [][2]float64) (arrow.RecordBatch, *arrow.Schema) {
 	t.Helper()
 	require.Len(t, points, len(names))
 
-	pointType := arrow.StructOf(
-		arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
-		arrow.Field{Name: "y", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
-	)
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
-		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
-		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
-		{Name: "geom", Type: pointType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.point"})},
-	}, nil)
-
+	schema := geometryTypesSchema()
 	pool := memory.NewGoAllocator()
 	b := array.NewRecordBuilder(pool, schema)
 	defer b.Release()
 
-	b.Field(0).(*array.StringBuilder).AppendValues(names, nil)
-	for i, point := range points {
-		b.Field(1).(*array.Float64Builder).Append(float64(i + 1))
-		b.Field(2).(*array.BooleanBuilder).Append(true)
-		sb := b.Field(3).(*array.StructBuilder)
-		sb.Append(true)
-		sb.FieldBuilder(0).(*array.Float64Builder).Append(point[0])
-		sb.FieldBuilder(1).(*array.Float64Builder).Append(point[1])
+	for i, name := range names {
+		appendGeometryTypesRow(b, name, float64(i+1), true, points[i], float64(i), float64(i))
 	}
 
 	return b.NewRecordBatch(), schema
+}
+
+func geometryTypesSchema() *arrow.Schema {
+	pointType := arrow.StructOf(
+		arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		arrow.Field{Name: "y", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+	)
+	return arrow.NewSchema([]arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
+		{Name: "geom", Type: pointType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.point"})},
+		{Name: "geom_wkt", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkt"})},
+		{Name: "geom_geojson", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.geojson"})},
+		{Name: "geom_wkb", Type: arrow.BinaryTypes.Binary, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkb"})},
+	}, nil)
+}
+
+func buildGeometryTypesBatch(pool memory.Allocator, schema *arrow.Schema, batchIdx, rowsPerBatch int, namePrefix string) arrow.RecordBatch {
+	b := array.NewRecordBuilder(pool, schema)
+	defer b.Release()
+
+	for i := 0; i < rowsPerBatch; i++ {
+		row := batchIdx*rowsPerBatch + i
+		x := float64(row % 100)
+		y := float64(row / 1000)
+		appendGeometryTypesRow(b, fmt.Sprintf("%s-%06d", namePrefix, row), float64(row)*0.5, row%2 == 0, [2]float64{x, y}, x, y)
+	}
+	return b.NewRecordBatch()
+}
+
+func appendGeometryTypesRow(b *array.RecordBuilder, name string, value float64, active bool, point [2]float64, shapeX, shapeY float64) {
+	b.Field(0).(*array.StringBuilder).Append(name)
+	b.Field(1).(*array.Float64Builder).Append(value)
+	b.Field(2).(*array.BooleanBuilder).Append(active)
+
+	sb := b.Field(3).(*array.StructBuilder)
+	sb.Append(true)
+	sb.FieldBuilder(0).(*array.Float64Builder).Append(point[0])
+	sb.FieldBuilder(1).(*array.Float64Builder).Append(point[1])
+
+	b.Field(4).(*array.StringBuilder).Append(lineWKT(shapeX, shapeY))
+	b.Field(5).(*array.StringBuilder).Append(polygonGeoJSON(shapeX, shapeY))
+	wkbPoint, _ := wkb.Marshal(orb.Point{point[0], point[1]})
+	b.Field(6).(*array.BinaryBuilder).Append(wkbPoint)
+}
+
+func lineWKT(x, y float64) string {
+	return fmt.Sprintf("LINESTRING (%s %s, %s %s, %s %s)",
+		coord(x), coord(y),
+		coord(x+1), coord(y+1),
+		coord(x+2), coord(y+1))
+}
+
+func polygonGeoJSON(x, y float64) string {
+	return fmt.Sprintf(`{"type":"Polygon","coordinates":[[[%s,%s],[%s,%s],[%s,%s],[%s,%s],[%s,%s]]]}`,
+		coord(x), coord(y),
+		coord(x), coord(y+1),
+		coord(x+1), coord(y+1),
+		coord(x+1), coord(y),
+		coord(x), coord(y))
+}
+
+func coord(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
 // writeEventsArrowFile produces an Arrow IPC file at path in the given
@@ -1049,10 +1101,10 @@ func TestIngest_HTTP_Direct(t *testing.T) {
 		totalRows, numBatches, elapsed, float64(totalRows)/elapsed.Seconds())
 }
 
-func TestIngest_HTTP_GeoArrowPoint(t *testing.T) {
+func TestIngest_HTTP_GeometryTypes(t *testing.T) {
 	env := setupEnv(t)
 
-	rec, schema := makeGeoArrowPointRecord(t, []string{"geoarrow-a", "geoarrow-b"}, [][2]float64{{30.5, 50.25}, {-73.935242, 40.730610}})
+	rec, schema := makeGeometryTypesRecord(t, []string{"geo-a", "geo-b"}, [][2]float64{{30.5, 50.25}, {-73.935242, 40.730610}})
 	defer rec.Release()
 
 	var buf bytes.Buffer
@@ -1070,30 +1122,112 @@ func TestIngest_HTTP_GeoArrowPoint(t *testing.T) {
 	var out hugrclient.IngestResult
 	require.NoError(t, json.Unmarshal(body, &out))
 	assert.Equal(t, int64(2), out.Inserted)
-	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom"}, out.Columns)
+	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom", "geom_wkt", "geom_geojson", "geom_wkb"}, out.Columns)
 
-	rows, err := env.pgConn.Query("SELECT name, ST_AsText(geom), ST_SRID(geom) FROM events WHERE name LIKE 'geoarrow-%' ORDER BY name")
+	rows, err := env.pgConn.Query(`
+		SELECT name,
+			ST_AsText(geom), ST_SRID(geom),
+			ST_AsText(geom_wkt), ST_SRID(geom_wkt),
+			ST_AsText(geom_geojson), ST_SRID(geom_geojson),
+			ST_AsText(geom_wkb), ST_SRID(geom_wkb)
+		FROM events
+		WHERE name LIKE 'geo-%'
+		ORDER BY name
+	`)
 	require.NoError(t, err)
 	defer rows.Close()
 
-	got := map[string]string{}
-	gotSRID := map[string]int{}
+	got := map[string][]string{}
+	gotSRID := map[string][]int{}
 	for rows.Next() {
-		var name, wkt string
-		var srid int
-		require.NoError(t, rows.Scan(&name, &wkt, &srid))
-		got[name] = wkt
-		gotSRID[name] = srid
+		var name, point, line, polygon, wkbPoint string
+		var pointSRID, lineSRID, polygonSRID, wkbPointSRID int
+		require.NoError(t, rows.Scan(&name, &point, &pointSRID, &line, &lineSRID, &polygon, &polygonSRID, &wkbPoint, &wkbPointSRID))
+		got[name] = []string{point, line, polygon, wkbPoint}
+		gotSRID[name] = []int{pointSRID, lineSRID, polygonSRID, wkbPointSRID}
 	}
 	require.NoError(t, rows.Err())
-	assert.Equal(t, map[string]string{
-		"geoarrow-a": "POINT(30.5 50.25)",
-		"geoarrow-b": "POINT(-73.935242 40.73061)",
+	assert.Equal(t, map[string][]string{
+		"geo-a": []string{"POINT(30.5 50.25)", "LINESTRING(0 0,1 1,2 1)", "POLYGON((0 0,0 1,1 1,1 0,0 0))", "POINT(30.5 50.25)"},
+		"geo-b": []string{"POINT(-73.935242 40.73061)", "LINESTRING(1 1,2 2,3 2)", "POLYGON((1 1,1 2,2 2,2 1,1 1))", "POINT(-73.935242 40.73061)"},
 	}, got)
-	assert.Equal(t, map[string]int{
-		"geoarrow-a": 4326,
-		"geoarrow-b": 4326,
+	assert.Equal(t, map[string][]int{
+		"geo-a": []int{4326, 4326, 4326, 4326},
+		"geo-b": []int{4326, 4326, 4326, 4326},
 	}, gotSRID)
+}
+
+func TestIngest_HTTP_GeometryTypes_Bulk50k(t *testing.T) {
+	env := setupEnv(t)
+
+	const (
+		numBatches   = 50
+		rowsPerBatch = 1000
+		totalRows    = numBatches * rowsPerBatch
+		namePrefix   = "pg-geo-bulk"
+	)
+	schema := geometryTypesSchema()
+	pool := memory.NewGoAllocator()
+
+	pr, pw := io.Pipe()
+	writeErr := make(chan error, 1)
+	go func() {
+		defer close(writeErr)
+		w := ipc.NewWriter(pw, ipc.WithSchema(schema))
+		var streamErr error
+		for batchIdx := 0; batchIdx < numBatches; batchIdx++ {
+			rec := buildGeometryTypesBatch(pool, schema, batchIdx, rowsPerBatch, namePrefix)
+			if err := w.Write(rec); err != nil {
+				streamErr = fmt.Errorf("write geometry batch %d: %w", batchIdx, err)
+				rec.Release()
+				break
+			}
+			rec.Release()
+		}
+		if err := w.Close(); err != nil && streamErr == nil {
+			streamErr = fmt.Errorf("close arrow writer: %w", err)
+		}
+		_ = pw.CloseWithError(streamErr)
+		writeErr <- streamErr
+	}()
+
+	start := time.Now()
+	resp, postErr := http.Post(env.server.URL+"/ipc/ingest?data_object=pg_ingest.events",
+		"application/vnd.apache.arrow.stream", pr)
+	werr := <-writeErr
+	require.NoError(t, werr, "writer goroutine failed")
+	require.NoError(t, postErr)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body=%s", string(body))
+
+	var out hugrclient.IngestResult
+	require.NoError(t, json.Unmarshal(body, &out))
+	assert.Equal(t, int64(totalRows), out.Inserted)
+
+	var count int
+	require.NoError(t, env.pgConn.QueryRow("SELECT COUNT(*) FROM events WHERE name LIKE 'pg-geo-bulk-%'").Scan(&count))
+	assert.Equal(t, totalRows, count)
+
+	var point, line, polygon, wkbPoint string
+	var pointSRID, lineSRID, polygonSRID, wkbPointSRID int
+	require.NoError(t, env.pgConn.QueryRow(`
+		SELECT ST_AsText(geom), ST_SRID(geom),
+			ST_AsText(geom_wkt), ST_SRID(geom_wkt),
+			ST_AsText(geom_geojson), ST_SRID(geom_geojson),
+			ST_AsText(geom_wkb), ST_SRID(geom_wkb)
+		FROM events
+		WHERE name = 'pg-geo-bulk-049999'
+	`).Scan(&point, &pointSRID, &line, &lineSRID, &polygon, &polygonSRID, &wkbPoint, &wkbPointSRID))
+	assert.Equal(t, "POINT(99 49)", point)
+	assert.Equal(t, "LINESTRING(99 49,100 50,101 50)", line)
+	assert.Equal(t, "POLYGON((99 49,99 50,100 50,100 49,99 49))", polygon)
+	assert.Equal(t, "POINT(99 49)", wkbPoint)
+	assert.Equal(t, []int{4326, 4326, 4326, 4326}, []int{pointSRID, lineSRID, polygonSRID, wkbPointSRID})
+
+	elapsed := time.Since(start)
+	t.Logf("geometry bulk ingest: %d rows in %d batches via one /ipc/ingest POST in %s (%.0f rows/s)",
+		totalRows, numBatches, elapsed, float64(totalRows)/elapsed.Seconds())
 }
 
 // lazyEventsReader is an array.RecordReader that generates events-table

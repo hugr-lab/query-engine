@@ -620,6 +620,9 @@ func castArrowGeometryToPostgres(field *ast.Field, arrowField arrow.Field, sql s
 	}
 	switch arrowExtensionName(arrowField) {
 	case "geoarrow.wkb":
+		if arrowFieldIsExtensionType(arrowField) {
+			return postgresGeometryText(sql, srid), nil
+		}
 		return postgresGeometryText("ST_GeomFromWKB("+sql+")", srid), nil
 	case "geoarrow.wkt":
 		return postgresWKTText(sql, srid), nil

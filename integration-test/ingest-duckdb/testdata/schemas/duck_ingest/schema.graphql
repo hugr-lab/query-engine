@@ -6,4 +6,7 @@ type events @table(name: "events") {
     payload: JSON
     created_at: Timestamp @default(value: "now()")
     geom: Geometry @geometry_info(srid: 4326, type: POINT)
+    geom_wkt: Geometry @geometry_info(srid: 4326, type: LINESTRING)
+    geom_geojson: Geometry @geometry_info(srid: 4326, type: POLYGON)
+    geom_wkb: Geometry @geometry_info(srid: 4326, type: POINT)
 }

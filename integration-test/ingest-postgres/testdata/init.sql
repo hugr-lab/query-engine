@@ -12,5 +12,8 @@ CREATE TABLE events (
     is_active BOOLEAN NOT NULL DEFAULT true,
     payload JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    geom GEOMETRY(Point, 4326)
+    geom GEOMETRY(Point, 4326),
+    geom_wkt GEOMETRY(LineString, 4326),
+    geom_geojson GEOMETRY(Polygon, 4326),
+    geom_wkb GEOMETRY(Point, 4326)
 );
