@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -42,6 +42,7 @@ func (p *QueryPlan) Execute(ctx context.Context, db *db.Pool) (data interface{},
 			return nil, err
 		}
 	}
+
 	switch {
 	case sdl.IsScalarType(p.Query.Definition.Type.Name()) &&
 		p.Query.Definition.Type.NamedType == "":
