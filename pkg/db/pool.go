@@ -230,6 +230,7 @@ func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
 
 // ExecWithArrowView registers reader as TempArrowViewName and executes query on
 // the same DuckDB driver connection, where the temporary Arrow view is visible.
+// todo rename => ExecWithArrow / ExecArrow
 func (p *Pool) ExecWithArrowView(ctx context.Context, reader array.RecordReader, query string) (sql.Result, error) {
 	if reader == nil {
 		return nil, fmt.Errorf("missing arrow reader")

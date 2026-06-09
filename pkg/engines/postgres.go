@@ -595,11 +595,11 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 	return Ident(f.Alias), nil
 }
 
-func (e *Postgres) CastArrowIngestValue(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
-	return CastArrowIngestValueToPostgres(field, arrowField, sql)
+func (e *Postgres) ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
+	return postgresArrowIngestSelectExpr(field, arrowField, sourceExpr)
 }
 
-func (e *Postgres) ArrowIngestSQLValue(field *ast.Field, value any) (string, error) {
+func (e *Postgres) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error) {
 	if value == nil {
 		return "NULL", nil
 	}
@@ -619,56 +619,30 @@ func (e *Postgres) ArrowIngestSQLValue(field *ast.Field, value any) (string, err
 	return duckdb.SQLValue(value)
 }
 
-func CastArrowIngestValueToPostgres(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
+func postgresArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
 	if field == nil || field.Definition == nil {
-		return sql, nil
+		return sourceExpr, nil
 	}
 	switch field.Definition.Type.Name() {
 	case base.JSONTypeName:
-		return CastArrowIngestValueToDuckDB(field, arrowField, sql)
+		return duckDBArrowJSONExpr(arrowField, sourceExpr), nil
 	case base.GeometryTypeName:
-		return castArrowGeometryToPostgres(field, arrowField, sql)
+		return postgresArrowGeometryWKTExpr(field, arrowField, sourceExpr)
 	default:
-		return sql, nil
+		return sourceExpr, nil
 	}
 }
 
-func castArrowGeometryToPostgres(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
+func postgresArrowGeometryWKTExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
 	srid := ""
 	if field != nil && field.Definition != nil {
 		srid = base.FieldDefDirectiveArgString(field.Definition, base.FieldGeometryInfoDirectiveName, base.ArgSRID)
 	}
-	switch arrowExtensionName(arrowField) {
-	case "geoarrow.wkb":
-		return postgresGeometryText(sql, srid), nil
-	case "geoarrow.wkt":
-		return postgresWKTText(sql, srid), nil
-	case "hugr.geojson", "geoarrow.geojson", "geojson":
-		return postgresGeometryText("ST_GeomFromGeoJSON("+sql+")", srid), nil
-	case "geoarrow.linestring", "geoarrow.polygon",
-		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
-		"geoarrow.point", "geoarrow.geometry", "geoarrow.geometrycollection":
-		wkt, err := duckDBGeoArrowNativeWKT(arrowExtensionName(arrowField), sql)
-		if err != nil {
-			return "", err
-		}
-		return postgresWKTText(wkt, srid), nil
+	wktExpr, err := duckDBArrowGeometryWKTExpr(arrowField, sourceExpr)
+	if err != nil {
+		return "", err
 	}
-
-	switch arrowField.Type.ID() {
-	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
-		return postgresGeometryText("ST_GeomFromWKB("+sql+")", srid), nil
-	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
-		return "CASE WHEN starts_with(trim(" + sql + "), '{') THEN " + postgresGeometryText("ST_GeomFromGeoJSON("+sql+")", srid) + " ELSE " + postgresWKTText(sql, srid) + " END", nil
-	case arrow.STRUCT, arrow.MAP:
-		return postgresGeometryText("ST_GeomFromGeoJSON(to_json("+sql+")::VARCHAR)", srid), nil
-	default:
-		return "", fmt.Errorf("arrow column %q with type %s cannot be ingested as Postgres Geometry without geoarrow/hugr metadata", arrowField.Name, arrowField.Type)
-	}
-}
-
-func postgresGeometryText(sql, srid string) string {
-	return postgresWKTText("ST_AsText("+sql+")", srid)
+	return postgresWKTText(wktExpr, srid), nil
 }
 
 func postgresWKTText(sql, srid string) string {

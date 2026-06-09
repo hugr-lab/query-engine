@@ -27,6 +27,53 @@ func (b *ArrowIngestStagingBuilder) FunctionCall(name string, positional []any, 
 	return b.duckdb.FunctionCall(name, positional, named)
 }
 
+func duckDBArrowJSONExpr(arrowField arrow.Field, sourceExpr string) string {
+	switch arrowField.Type.ID() {
+	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW,
+		arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
+		return "try_cast(" + sourceExpr + " AS JSON)"
+	case arrow.STRUCT, arrow.LIST, arrow.LARGE_LIST, arrow.FIXED_SIZE_LIST,
+		arrow.LIST_VIEW, arrow.LARGE_LIST_VIEW, arrow.MAP:
+		return "to_json(" + sourceExpr + ")"
+	default:
+		return sourceExpr
+	}
+}
+
+func duckDBArrowGeometryExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
+	wktExpr, err := duckDBArrowGeometryWKTExpr(arrowField, sourceExpr)
+	if err != nil {
+		return "", err
+	}
+	return "ST_GeomFromText(" + wktExpr + ", true)", nil
+}
+
+func duckDBArrowGeometryWKTExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
+	switch arrowExtensionName(arrowField) {
+	case "geoarrow.wkb":
+		return "ST_AsText(" + sourceExpr + ")", nil
+	case "geoarrow.wkt":
+		return sourceExpr, nil
+	case "hugr.geojson", "geoarrow.geojson", "geojson":
+		return "ST_AsText(ST_GeomFromGeoJSON(" + sourceExpr + "))", nil
+	case "geoarrow.linestring", "geoarrow.polygon",
+		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
+		"geoarrow.point", "geoarrow.geometry", "geoarrow.geometrycollection":
+		return duckDBGeoArrowNativeWKT(arrowExtensionName(arrowField), sourceExpr)
+	}
+
+	switch arrowField.Type.ID() {
+	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
+		return "ST_AsText(ST_GeomFromWKB(" + sourceExpr + "))", nil
+	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
+		return "CASE WHEN starts_with(trim(" + sourceExpr + "), '{') THEN ST_AsText(ST_GeomFromGeoJSON(" + sourceExpr + ")) ELSE " + sourceExpr + " END", nil
+	case arrow.STRUCT, arrow.MAP:
+		return "ST_AsText(ST_GeomFromGeoJSON(to_json(" + sourceExpr + ")::VARCHAR))", nil
+	default:
+		return "", fmt.Errorf("arrow column %q with type %s cannot be ingested as Geometry without geoarrow/hugr metadata", arrowField.Name, arrowField.Type)
+	}
+}
+
 func arrowExtensionName(field arrow.Field) string {
 	if extType, ok := field.Type.(arrow.ExtensionType); ok {
 		return strings.ToLower(extType.ExtensionName())

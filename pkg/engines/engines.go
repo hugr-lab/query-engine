@@ -75,13 +75,12 @@ type EngineTypeCaster interface {
 
 type EngineArrowIngestCaster interface {
 	Engine
-	// CastArrowIngestValue returns a SQL expression evaluated by the DuckDB
-	// Arrow staging query and shaped for insertion into this target engine.
-	CastArrowIngestValue(field *ast.Field, arrowField arrow.Field, sql string) (string, error)
-	// ArrowIngestSQLValue returns a DuckDB-staging SQL literal shaped for this
-	// target engine. It is used for permission/default values mixed into the
-	// INSERT ... SELECT built from an Arrow view.
-	ArrowIngestSQLValue(field *ast.Field, value any) (string, error)
+	// ArrowIngestSelectExpr returns a DuckDB-compatible SELECT expression for
+	// one Arrow-view column, shaped for insertion into this target engine.
+	ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error)
+	// ArrowIngestLiteralExpr returns a DuckDB-compatible literal/expression for
+	// non-Arrow values mixed into the ingest SELECT, shaped for this target.
+	ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error)
 }
 
 type EngineVectorDistanceCalculator interface {
