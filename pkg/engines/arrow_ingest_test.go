@@ -10,7 +10,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func TestDuckDBArrowIngestCastsNativeGeoArrowExplicitly(t *testing.T) {
+func TestDuckDBArrowIngestBuildsNativeGeoArrowSelectExpr(t *testing.T) {
 	field := geometryTestField("")
 
 	tests := []struct {
@@ -27,7 +27,7 @@ func TestDuckDBArrowIngestCastsNativeGeoArrowExplicitly(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.ext, func(t *testing.T) {
-			got, err := CastArrowIngestValueToDuckDB(field, arrow.Field{
+			got, err := duckDBArrowIngestSelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     geoArrowTestType(tt.ext),
 				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext}),
@@ -45,7 +45,7 @@ func TestDuckDBArrowIngestCastsNativeGeoArrowExplicitly(t *testing.T) {
 	}
 }
 
-func TestPostgresArrowIngestCastsNativeGeoArrowAsEWKT(t *testing.T) {
+func TestPostgresArrowIngestBuildsNativeGeoArrowEWKTSelectExpr(t *testing.T) {
 	field := geometryTestField("4326")
 
 	tests := []struct {
@@ -62,7 +62,7 @@ func TestPostgresArrowIngestCastsNativeGeoArrowAsEWKT(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.ext, func(t *testing.T) {
-			got, err := CastArrowIngestValueToPostgres(field, arrow.Field{
+			got, err := postgresArrowIngestSelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     geoArrowTestType(tt.ext),
 				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext}),
@@ -84,7 +84,7 @@ func TestArrowIngestRejectsNativeGeoArrowUnionLayouts(t *testing.T) {
 	field := geometryTestField("")
 	for _, ext := range []string{"geoarrow.geometry", "geoarrow.geometrycollection"} {
 		t.Run(ext, func(t *testing.T) {
-			_, err := CastArrowIngestValueToDuckDB(field, arrow.Field{
+			_, err := duckDBArrowIngestSelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     arrow.StructOf(),
 				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": ext}),
@@ -96,10 +96,10 @@ func TestArrowIngestRejectsNativeGeoArrowUnionLayouts(t *testing.T) {
 	}
 }
 
-func TestPostgresArrowIngestSQLValueUsesDuckDBStagingLiterals(t *testing.T) {
+func TestPostgresArrowIngestLiteralExprUsesDuckDBStagingLiterals(t *testing.T) {
 	engine := &Postgres{}
 
-	jsonSQL, err := engine.ArrowIngestSQLValue(nil, map[string]any{"status": "ok"})
+	jsonSQL, err := engine.ArrowIngestLiteralExpr(nil, map[string]any{"status": "ok"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestPostgresArrowIngestSQLValueUsesDuckDBStagingLiterals(t *testing.T) {
 		t.Fatalf("expected DuckDB JSON literal, got %s", jsonSQL)
 	}
 
-	geomSQL, err := engine.ArrowIngestSQLValue(geometryTestField("4326"), orb.Point{1, 2})
+	geomSQL, err := engine.ArrowIngestLiteralExpr(geometryTestField("4326"), orb.Point{1, 2})
 	if err != nil {
 		t.Fatal(err)
 	}

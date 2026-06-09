@@ -86,64 +86,25 @@ func (e *DuckDB) Capabilities() *compiler.EngineCapabilities {
 	}
 }
 
-func (e *DuckDB) CastArrowIngestValue(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
-	return CastArrowIngestValueToDuckDB(field, arrowField, sql)
+func (e *DuckDB) ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
+	return duckDBArrowIngestSelectExpr(field, arrowField, sourceExpr)
 }
 
-func (e *DuckDB) ArrowIngestSQLValue(_ *ast.Field, value any) (string, error) {
+func (e *DuckDB) ArrowIngestLiteralExpr(_ *ast.Field, value any) (string, error) {
 	return e.SQLValue(value)
 }
 
-func CastArrowIngestValueToDuckDB(field *ast.Field, arrowField arrow.Field, sql string) (string, error) {
+func duckDBArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
 	if field == nil || field.Definition == nil {
-		return sql, nil
+		return sourceExpr, nil
 	}
 	switch field.Definition.Type.Name() {
 	case base.JSONTypeName:
-		switch arrowField.Type.ID() {
-		case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW,
-			arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
-			return "try_cast(" + sql + " AS JSON)", nil
-		case arrow.STRUCT, arrow.LIST, arrow.LARGE_LIST, arrow.FIXED_SIZE_LIST,
-			arrow.LIST_VIEW, arrow.LARGE_LIST_VIEW, arrow.MAP:
-			return "to_json(" + sql + ")", nil
-		default:
-			return sql, nil
-		}
+		return duckDBArrowJSONExpr(arrowField, sourceExpr), nil
 	case base.GeometryTypeName:
-		return castArrowGeometryToDuckDB(arrowField, sql)
+		return duckDBArrowGeometryExpr(arrowField, sourceExpr)
 	default:
-		return sql, nil
-	}
-}
-
-func castArrowGeometryToDuckDB(field arrow.Field, sql string) (string, error) {
-	switch arrowExtensionName(field) {
-	case "geoarrow.wkb":
-		return "ST_GeomFromText(ST_AsText(" + sql + "), true)", nil
-	case "geoarrow.wkt":
-		return "ST_GeomFromText(" + sql + ", true)", nil
-	case "hugr.geojson", "geoarrow.geojson", "geojson":
-		return "ST_GeomFromGeoJSON(" + sql + ")", nil
-	case "geoarrow.linestring", "geoarrow.polygon",
-		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
-		"geoarrow.point", "geoarrow.geometry", "geoarrow.geometrycollection":
-		wkt, err := duckDBGeoArrowNativeWKT(arrowExtensionName(field), sql)
-		if err != nil {
-			return "", err
-		}
-		return "ST_GeomFromText(" + wkt + ", true)", nil
-	}
-
-	switch field.Type.ID() {
-	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
-		return "ST_GeomFromWKB(" + sql + ")", nil
-	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
-		return "CASE WHEN starts_with(trim(" + sql + "), '{') THEN ST_GeomFromGeoJSON(" + sql + ") ELSE ST_GeomFromText(" + sql + ", true) END", nil
-	case arrow.STRUCT, arrow.MAP:
-		return "ST_GeomFromGeoJSON(to_json(" + sql + ")::VARCHAR)", nil
-	default:
-		return "", fmt.Errorf("arrow column %q with type %s cannot be ingested as Geometry without geoarrow/hugr metadata", field.Name, field.Type)
+		return sourceExpr, nil
 	}
 }
 
