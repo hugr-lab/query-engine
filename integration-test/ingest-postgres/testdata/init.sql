@@ -10,6 +10,7 @@ CREATE TABLE events (
     name VARCHAR NOT NULL,
     value DOUBLE PRECISION NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT true,
+    owner_id BIGINT,
     payload JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     geom GEOMETRY(Point, 4326),

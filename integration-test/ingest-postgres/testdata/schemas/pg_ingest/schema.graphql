@@ -3,6 +3,7 @@ type events @table(name: "events") {
     name: String!
     value: Float!
     is_active: Boolean! @default(value: "true")
+    owner_id: BigInt
     payload: JSON
     created_at: Timestamp @default(value: "now()")
     geom: Geometry @geometry_info(srid: 4326, type: POINT)
