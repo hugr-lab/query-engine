@@ -52,15 +52,18 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 		return nil, fmt.Errorf("data object %q has no insert mutation defined", dataObject)
 	}
 
-	columns, err := resolveIngestColumns(ctx, provider, info, mutation, reader.Schema())
+	permissionData, err := resolveIngestPermissionData(ctx, provider, info, mutationField)
+	if err != nil {
+		return nil, err
+	}
+	columns, err := resolveIngestColumns(ctx, provider, info, mutation, reader.Schema(), permissionData)
 	if err != nil {
 		return nil, err
 	}
 	if len(columns) == 0 {
 		return nil, fmt.Errorf("no insertable columns matched between arrow stream and data object")
 	}
-	permissionData, err := checkIngestPermissions(ctx, provider, info, mutationField, columns)
-	if err != nil {
+	if err := checkIngestPermissions(ctx, provider, info, columns, permissionData); err != nil {
 		return nil, err
 	}
 	return ingestNode(ctx, info, mutation, ingestEngine, columns, permissionData), nil
@@ -118,10 +121,12 @@ func resolveIngestTarget(ctx context.Context, provider catalog.Provider, dataObj
 //   - info describes the GraphQL data object and its DB table/field mapping.
 //   - mutation describes the GraphQL insert mutation and insertable fields.
 //   - schema is the Arrow IPC schema supplied by the request body.
+//   - permissionData contains fields injected by permissions; required fields
+//     can be satisfied by either Arrow columns or these injected values.
 //
 // The returned ingestColumn values keep all three names/spaces together:
 // Arrow field, GraphQL object/input field, and DB table column mapping.
-func resolveIngestColumns(ctx context.Context, provider catalog.Provider, info *sdl.Object, mutation *sdl.Mutation, schema *arrow.Schema) ([]ingestColumn, error) {
+func resolveIngestColumns(ctx context.Context, provider catalog.Provider, info *sdl.Object, mutation *sdl.Mutation, schema *arrow.Schema, permissionData map[string]any) ([]ingestColumn, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("arrow stream has no schema")
 	}
@@ -195,6 +200,9 @@ func resolveIngestColumns(ctx context.Context, provider catalog.Provider, info *
 		if _, ok := byName[fieldInfo.Name]; ok {
 			continue
 		}
+		if _, ok := permissionData[fieldInfo.Name]; ok {
+			continue
+		}
 		if !fieldInfo.IsRequired() {
 			continue
 		}
@@ -217,7 +225,7 @@ func resolveIngestColumns(ctx context.Context, provider catalog.Provider, info *
 	return columns, nil
 }
 
-func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info *sdl.Object, mutationField *ast.FieldDefinition, columns []ingestColumn) (map[string]any, error) {
+func resolveIngestPermissionData(ctx context.Context, provider catalog.Provider, info *sdl.Object, mutationField *ast.FieldDefinition) (map[string]any, error) {
 	if auth.IsFullAccess(ctx) {
 		return nil, nil
 	}
@@ -234,30 +242,46 @@ func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info
 		return nil, auth.ErrForbidden
 	}
 
-	data := make(map[string]any, len(columns))
+	arg := rp.DataArgument(ctx, parent, mutationField.Name)
+	if arg == nil {
+		return nil, nil
+	}
+	values, err := sdl.ParseDataAsInputObject(ctx, provider, &ast.Type{
+		NamedType: info.InputInsertDataName(),
+		Position:  base.CompiledPos("ingest permission data"),
+	}, arg, false)
+	if err != nil {
+		return nil, err
+	}
+	if values == nil {
+		return nil, nil
+	}
+	return values.(map[string]any), nil
+}
+
+func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info *sdl.Object, columns []ingestColumn, permissionData map[string]any) error {
+	if auth.IsFullAccess(ctx) {
+		return nil
+	}
+	rp := perm.PermissionsFromCtx(ctx)
+	if rp == nil {
+		return nil
+	}
+	if rp.Disabled {
+		return auth.ErrForbidden
+	}
+
+	data := make(map[string]any, len(columns)+len(permissionData))
 	for _, c := range columns {
 		data[c.InputDef.Name] = nil
 	}
-	var permissionData map[string]any
-	if arg := rp.DataArgument(ctx, parent, mutationField.Name); arg != nil {
-		values, err := sdl.ParseDataAsInputObject(ctx, provider, &ast.Type{
-			NamedType: info.InputInsertDataName(),
-			Position:  base.CompiledPos("ingest permission data"),
-		}, arg, false)
-		if err != nil {
-			return nil, err
-		}
-		if values != nil {
-			permissionData = values.(map[string]any)
-			for k, v := range permissionData {
-				data[k] = v
-			}
-		}
+	for k, v := range permissionData {
+		data[k] = v
 	}
 	if err := rp.CheckMutationInput(ctx, provider, info.InputInsertDataName(), data); err != nil {
-		return nil, err
+		return err
 	}
-	return permissionData, nil
+	return nil
 }
 
 // ingestNode builds the INSERT ... SELECT statement that copies rows from the
