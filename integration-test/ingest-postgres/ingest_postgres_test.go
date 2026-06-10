@@ -518,6 +518,102 @@ func geometryExpected(point, x, y string) []string {
 	}
 }
 
+func assertGeometryReadThroughHugr(t *testing.T, service *hugr.Service, dsName, filter string, expected []map[string]any) {
+	t.Helper()
+
+	query := fmt.Sprintf(`{
+		%s {
+			events(%s, order_by: [{field: "name", direction: ASC}]) {
+				name
+				geom
+				geom_wkt
+				geom_geojson
+				geom_wkb
+				geom_line
+				geom_polygon_native
+				geom_multipoint
+				geom_multiline
+				geom_multipolygon
+			}
+		}
+	}`, dsName, filter)
+
+	res, err := service.Query(context.Background(), query, nil)
+	require.NoError(t, err)
+	defer res.Close()
+	require.NoErrorf(t, res.Err(), "graphql error for query: %s", query)
+
+	body, err := json.Marshal(res)
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(body, &payload))
+	data, ok := payload["data"].(map[string]any)
+	require.True(t, ok, "response data must be an object: %s", string(body))
+	root, ok := data[dsName].(map[string]any)
+	require.True(t, ok, "response data.%s must be an object: %s", dsName, string(body))
+	rawRows, ok := root["events"].([]any)
+	require.True(t, ok, "response data.%s.events must be an array: %s", dsName, string(body))
+
+	got := make([]map[string]any, 0, len(rawRows))
+	for _, raw := range rawRows {
+		row, ok := raw.(map[string]any)
+		require.True(t, ok, "event row must be an object: %#v", raw)
+		got = append(got, row)
+	}
+	assert.Equal(t, expected, got)
+}
+
+func geometryReadExpected(name string, point [2]float64, x, y float64) map[string]any {
+	return map[string]any{
+		"name":                name,
+		"geom":                geoJSONGeometry("Point", pointCoordinate(xyPoint{point[0], point[1]})),
+		"geom_wkt":            geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
+		"geom_geojson":        geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_wkb":            geoJSONGeometry("Point", pointCoordinate(xyPoint{point[0], point[1]})),
+		"geom_line":           geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
+		"geom_polygon_native": geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_multipoint":     geoJSONGeometry("MultiPoint", pointCoordinates(multiPoints(x, y))),
+		"geom_multiline":      geoJSONGeometry("MultiLineString", nestedPointCoordinates(multiLines(x, y))),
+		"geom_multipolygon":   geoJSONGeometry("MultiPolygon", deepPointCoordinates(multiPolygons(x, y))),
+	}
+}
+
+func geoJSONGeometry(typ string, coordinates any) map[string]any {
+	return map[string]any{
+		"type":        typ,
+		"coordinates": coordinates,
+	}
+}
+
+func pointCoordinate(point xyPoint) []any {
+	return []any{point[0], point[1]}
+}
+
+func pointCoordinates(points []xyPoint) []any {
+	coords := make([]any, 0, len(points))
+	for _, point := range points {
+		coords = append(coords, pointCoordinate(point))
+	}
+	return coords
+}
+
+func nestedPointCoordinates(lines [][]xyPoint) []any {
+	coords := make([]any, 0, len(lines))
+	for _, line := range lines {
+		coords = append(coords, pointCoordinates(line))
+	}
+	return coords
+}
+
+func deepPointCoordinates(polygons [][][]xyPoint) []any {
+	coords := make([]any, 0, len(polygons))
+	for _, polygon := range polygons {
+		coords = append(coords, nestedPointCoordinates(polygon))
+	}
+	return coords
+}
+
 func addCoord(v string, delta float64) string {
 	f, err := strconv.ParseFloat(v, 64)
 	if err != nil {
@@ -1279,6 +1375,30 @@ func TestIngest_HTTP_GeometryTypes(t *testing.T) {
 	}, gotSRID)
 }
 
+func TestIngest_HTTP_GeometryTypes_ReadThroughHugr(t *testing.T) {
+	env := setupEnv(t)
+
+	rec, schema := makeGeometryTypesRecord(t, []string{"geo-read-a", "geo-read-b"}, [][2]float64{{30.5, 50.25}, {-73.935242, 40.730610}})
+	defer rec.Release()
+
+	var buf bytes.Buffer
+	w := ipc.NewWriter(&buf, ipc.WithSchema(schema))
+	require.NoError(t, w.Write(rec))
+	require.NoError(t, w.Close())
+
+	resp, err := http.Post(env.server.URL+"/ipc/ingest?data_object=pg_ingest.events",
+		"application/vnd.apache.arrow.stream", &buf)
+	require.NoError(t, err)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body=%s", string(body))
+
+	assertGeometryReadThroughHugr(t, env.service, env.dsName, `filter: { name: { like: "geo-read-%" } }`, []map[string]any{
+		geometryReadExpected("geo-read-a", [2]float64{30.5, 50.25}, 0, 0),
+		geometryReadExpected("geo-read-b", [2]float64{-73.935242, 40.730610}, 1, 1),
+	})
+}
+
 func TestIngest_HTTP_GeometryTypes_Bulk50k(t *testing.T) {
 	env := setupEnv(t)
 
@@ -1355,6 +1475,9 @@ func TestIngest_HTTP_GeometryTypes_Bulk50k(t *testing.T) {
 	}
 	assert.Equal(t, geometryExpected("POINT(99 49)", "99", "49"), values)
 	assert.Equal(t, []int{4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326}, srids)
+	assertGeometryReadThroughHugr(t, env.service, env.dsName, `filter: { name: { eq: "pg-geo-bulk-049999" } }`, []map[string]any{
+		geometryReadExpected("pg-geo-bulk-049999", [2]float64{99, 49}, 99, 49),
+	})
 
 	elapsed := time.Since(start)
 	t.Logf("geometry bulk ingest: %d rows in %d batches via one /ipc/ingest POST in %s (%.0f rows/s)",
