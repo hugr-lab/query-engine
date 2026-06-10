@@ -39,8 +39,9 @@ import (
 )
 
 const (
-	envPostgresDSN = "INGEST_POSTGRES_DSN"
-	envSchemasPath = "HUGR_INGEST_SCHEMAS_PATH"
+	envPostgresDSN   = "INGEST_POSTGRES_DSN"
+	envSchemasPath   = "HUGR_INGEST_SCHEMAS_PATH"
+	ingestTestAPIKey = "ingest-test-api-key"
 )
 
 // ingestEnv is per-test view on top of a shared hugr.Service (initialised
@@ -91,6 +92,10 @@ func TestMain(m *testing.M) {
 		CoreDB: coredb.New(coredb.Config{}),
 		Auth: &auth.Config{
 			Providers: []auth.AuthProvider{
+				auth.NewApiKey("ingest-test", auth.ApiKeyConfig{
+					Key:         ingestTestAPIKey,
+					DefaultRole: "admin",
+				}),
 				auth.NewAnonymous(auth.AnonymousConfig{
 					Allowed: true,
 					Role:    "admin",
@@ -181,6 +186,50 @@ func setupEnv(t *testing.T) *ingestEnv {
 	}
 }
 
+func mustQuery(t *testing.T, ctx context.Context, s *hugr.Service, q string, vars map[string]any) {
+	t.Helper()
+	res, err := s.Query(ctx, q, vars)
+	require.NoError(t, err)
+	if res.Err() != nil {
+		require.NoErrorf(t, res.Err(), "graphql error for query: %s", q)
+	}
+	res.Close()
+}
+
+func registerIngestPermissionRole(t *testing.T, service *hugr.Service, role, mutationModule string) {
+	t.Helper()
+	ctx := context.Background()
+	mustQuery(t, ctx, service, `mutation($role: core_roles_mut_input_data!, $allowAll: core_role_permissions_mut_input_data!, $inject: core_role_permissions_mut_input_data!) {
+		core {
+			insert_roles(data: $role) { name }
+			allow_all: insert_role_permissions(data: $allowAll) { role type_name field_name }
+			inject_owner: insert_role_permissions(data: $inject) { role type_name field_name }
+		}
+	}`, map[string]any{
+		"role": map[string]any{
+			"name":        role,
+			"description": "IPC ingest permission data integration test role",
+		},
+		"allowAll": map[string]any{
+			"role":       role,
+			"type_name":  "*",
+			"field_name": "*",
+		},
+		"inject": map[string]any{
+			"role":       role,
+			"type_name":  mutationModule,
+			"field_name": "insert_events",
+			"data": map[string]any{
+				"owner_id": "[$auth.user_id_int]",
+			},
+		},
+	})
+}
+
+func moduleMutationName(module string) string {
+	return "_module_" + strings.ReplaceAll(module, ".", "_") + "_mutation"
+}
+
 // makeEventsRecord builds a single Arrow RecordBatch with the columns of the
 // pg_ingest.events table (excluding id, which is autogen).
 func makeEventsRecord(t *testing.T, names []string, values []float64, active []bool, payload []string, created []arrow.Timestamp) arrow.RecordBatch {
@@ -262,6 +311,54 @@ func TestIngest_Postgres_RoundTrip(t *testing.T) {
 	assert.Equal(t, []float64{1.5, 2.5, 3.5}, gotValues)
 	assert.Equal(t, []bool{true, false, true}, gotActive)
 	assert.Equal(t, []bool{true, false, true}, gotHasJSON) // beta has NULL payload
+}
+
+func TestIngest_Postgres_PermissionData(t *testing.T) {
+	env := setupEnv(t)
+
+	const ownerID = 4343
+	role := "ingest_perm_pg"
+	registerIngestPermissionRole(t, env.service, role, moduleMutationName(env.dsName))
+
+	now := arrow.Timestamp(time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC).UnixMicro())
+	rec := makeEventsRecord(t,
+		[]string{"perm-alpha", "perm-beta"},
+		[]float64{11.5, 12.5},
+		[]bool{true, true},
+		[]string{"", ""},
+		[]arrow.Timestamp{now, now},
+	)
+	defer rec.Release()
+
+	permClient := hugrclient.NewClient(env.server.URL+"/ipc",
+		hugrclient.WithApiKey(ingestTestAPIKey),
+		hugrclient.WithUserRole(role),
+		hugrclient.WithUserInfo(strconv.Itoa(ownerID), "permission-user"),
+	)
+	res, err := permClient.IngestRecord(context.Background(), "pg_ingest.events", rec)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Equal(t, int64(2), res.Inserted)
+	assert.NotContains(t, res.Columns, "owner_id", "owner_id must be injected by permissions, not sent in Arrow")
+
+	rows, err := env.pgConn.Query("SELECT name, owner_id FROM events ORDER BY name")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	got := map[string]int64{}
+	for rows.Next() {
+		var (
+			name    string
+			ownerID int64
+		)
+		require.NoError(t, rows.Scan(&name, &ownerID))
+		got[name] = ownerID
+	}
+	require.NoError(t, rows.Err())
+	assert.Equal(t, map[string]int64{
+		"perm-alpha": ownerID,
+		"perm-beta":  ownerID,
+	}, got)
 }
 
 func TestIngest_Postgres_MultipleBatches(t *testing.T) {
