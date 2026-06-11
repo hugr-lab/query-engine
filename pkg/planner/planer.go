@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/apache/arrow-go/v18/arrow/array"
+	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -68,10 +68,11 @@ func (s *Service) Plan(ctx context.Context, provider catalog.Provider, query *as
 }
 
 // PlanArrowIngest builds an INSERT-from-Arrow-view plan for the target data object.
-// The Arrow reader is part of this planning API because its schema drives column
-// resolution and ingest casting, while execution registers it as a temporary view.
-func (s *Service) PlanArrowIngest(ctx context.Context, provider catalog.Provider, dataObject string, reader array.RecordReader) (*QueryPlan, error) {
-	node, err := ingestRootNode(ctx, provider, s.engines, dataObject, reader)
+// The Arrow source is part of this planning API because its schema drives column
+// resolution and ingest casting, while its view name is the staging relation used
+// in the generated INSERT ... SELECT.
+func (s *Service) PlanArrowIngest(ctx context.Context, provider catalog.Provider, dataObject string, source arrowingest.Source) (*QueryPlan, error) {
+	node, err := ingestRootNode(ctx, provider, s.engines, dataObject, source)
 	if err != nil {
 		return nil, err
 	}

@@ -10,6 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/perm"
 )
@@ -74,8 +75,9 @@ func (s *Service) ipcIngestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer reader.Release()
+	source := arrowingest.NewSource(reader)
 
-	plan, err := s.planner.PlanArrowIngest(ctx, s.schema.Provider(), dataObject, reader)
+	plan, err := s.planner.PlanArrowIngest(ctx, s.schema.Provider(), dataObject, source)
 	if err != nil {
 		if errors.Is(err, auth.ErrForbidden) {
 			writeIngestError(w, http.StatusForbidden, err.Error())
@@ -93,7 +95,7 @@ func (s *Service) ipcIngestHandler(w http.ResponseWriter, r *http.Request) {
 		writeIngestError(w, http.StatusInternalServerError, "arrow ingest plan produced SQL parameters")
 		return
 	}
-	res, err := s.db.ExecWithArrowView(ctx, reader, plan.CompiledQuery)
+	res, err := s.db.ExecArrowIngest(ctx, source, plan.CompiledQuery)
 	if err != nil {
 		writeIngestError(w, http.StatusInternalServerError, err.Error())
 		return

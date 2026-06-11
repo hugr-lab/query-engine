@@ -6,12 +6,11 @@ import (
 	"strings"
 
 	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
+	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
-	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -24,11 +23,11 @@ type ingestColumn struct {
 	InputDef   *ast.FieldDefinition
 }
 
-func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, dataObject string, reader array.RecordReader) (*QueryPlanNode, error) {
+func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, dataObject string, source arrowingest.Source) (*QueryPlanNode, error) {
 	if dataObject == "" {
 		return nil, fmt.Errorf("missing data object")
 	}
-	if reader == nil {
+	if source.Reader == nil {
 		return nil, fmt.Errorf("missing arrow reader")
 	}
 
@@ -56,7 +55,7 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if err != nil {
 		return nil, err
 	}
-	columns, err := resolveIngestColumns(ctx, provider, info, mutation, reader.Schema(), permissionData)
+	columns, err := resolveIngestColumns(ctx, provider, info, mutation, source.Reader.Schema(), permissionData)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +65,7 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if err := checkIngestPermissions(ctx, provider, info, columns, permissionData); err != nil {
 		return nil, err
 	}
-	return ingestNode(ctx, info, mutation, ingestEngine, columns, permissionData), nil
+	return ingestNode(ctx, info, mutation, ingestEngine, columns, permissionData, source.View()), nil
 }
 
 func resolveIngestTarget(ctx context.Context, provider catalog.Provider, dataObject string) (*sdl.Object, *ast.FieldDefinition, error) {
@@ -295,7 +294,9 @@ func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info
 //     columns by resolveIngestColumns.
 //   - permissionData contains extra GraphQL input values injected by the
 //     permission layer; they do not come from the Arrow stream.
-func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, engine engines.EngineArrowIngestCaster, columns []ingestColumn, permissionData map[string]any) *QueryPlanNode {
+//   - arrowViewName is the per-connection DuckDB view registered from the
+//     Arrow reader during execution.
+func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, engine engines.EngineArrowIngestCaster, columns []ingestColumn, permissionData map[string]any, arrowViewName string) *QueryPlanNode {
 	return &QueryPlanNode{
 		Name: "ingest_" + info.Name,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
@@ -387,7 +388,7 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				target,
 				strings.Join(targetFields, ", "),
 				strings.Join(selectExprs, ", "),
-				engines.Ident(db.TempArrowViewName),
+				engines.Ident(arrowViewName),
 			), params, nil
 		},
 	}

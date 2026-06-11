@@ -8,15 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/duckdb/duckdb-go/v2"
+	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 )
-
-// TempArrowViewName is the fixed per-connection view name used by
-// ExecWithArrowView. DuckDB views registered from Arrow readers are scoped to
-// the driver connection, so a stable name is safe across concurrent requests.
-const TempArrowViewName = "_hugr_arrow_view"
 
 type Config struct {
 	Path         string `json:"path"`
@@ -228,11 +222,10 @@ func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
 	}, nil
 }
 
-// ExecWithArrowView registers reader as TempArrowViewName and executes query on
-// the same DuckDB driver connection, where the temporary Arrow view is visible.
-// todo rename => ExecWithArrow / ExecArrow
-func (p *Pool) ExecWithArrowView(ctx context.Context, reader array.RecordReader, query string) (sql.Result, error) {
-	if reader == nil {
+// ExecArrowIngest registers source.Reader as source.ViewName and executes query
+// on the same DuckDB driver connection, where the temporary Arrow view is visible.
+func (p *Pool) ExecArrowIngest(ctx context.Context, source arrowingest.Source, query string) (sql.Result, error) {
+	if source.Reader == nil {
 		return nil, fmt.Errorf("missing arrow reader")
 	}
 	ar, err := p.Arrow(ctx)
@@ -245,41 +238,18 @@ func (p *Pool) ExecWithArrowView(ctx context.Context, reader array.RecordReader,
 	if !ok {
 		return nil, fmt.Errorf("duckdb driver connection does not implement ExecerContext")
 	}
-	if arrowViewNeedsSpatial(reader) {
+	if source.NeedsSpatial() {
 		if _, err := execer.ExecContext(ctx, "LOAD spatial", nil); err != nil {
 			return nil, fmt.Errorf("prepare spatial arrow view: %w", err)
 		}
 	}
-	release, err := ar.RegisterView(reader, TempArrowViewName)
+	release, err := source.RegisterView(ar)
 	if err != nil {
 		return nil, fmt.Errorf("register arrow view: %w", err)
 	}
 	defer release()
 
 	return execer.ExecContext(ctx, query, nil)
-}
-
-func arrowViewNeedsSpatial(reader array.RecordReader) bool {
-	if reader == nil || reader.Schema() == nil {
-		return false
-	}
-	for _, f := range reader.Schema().Fields() {
-		if extType, ok := f.Type.(arrow.ExtensionType); ok && isGeometryArrowExtension(extType.ExtensionName()) {
-			return true
-		}
-		if ext, ok := f.Metadata.GetValue("ARROW:extension:name"); ok && isGeometryArrowExtension(ext) {
-			return true
-		}
-		if ext, ok := f.Metadata.GetValue("extension:name"); ok && isGeometryArrowExtension(ext) {
-			return true
-		}
-	}
-	return false
-}
-
-func isGeometryArrowExtension(ext string) bool {
-	ext = strings.ToLower(ext)
-	return strings.HasPrefix(ext, "geoarrow.") || ext == "hugr.geojson" || ext == "geojson"
 }
 
 func (p *Pool) RegisterScalarFunction(ctx context.Context, function ScalarFunction) error {
