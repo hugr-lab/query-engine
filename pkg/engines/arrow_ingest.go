@@ -49,7 +49,19 @@ func duckDBArrowGeometryExpr(arrowField arrow.Field, sourceExpr string) (string,
 }
 
 func duckDBArrowGeometryWKTExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
-	switch arrowExtensionName(arrowField) {
+	if ext := arrowExtensionName(arrowField); ext != "" {
+		return duckDBArrowGeometryWKTExprFromTrustedExtension(ext, sourceExpr)
+	}
+	return duckDBArrowGeometryWKTExprFromPhysicalType(arrowField, sourceExpr)
+}
+
+// duckDBArrowGeometryWKTExprFromTrustedExtension uses GeoArrow/Hugr extension
+// metadata as the source of truth for geometry semantics. The physical Arrow
+// storage type is intentionally not used as a fallback once extension metadata
+// is present; unsupported metadata should fail during planning instead of being
+// guessed from Type.ID().
+func duckDBArrowGeometryWKTExprFromTrustedExtension(ext, sourceExpr string) (string, error) {
+	switch ext {
 	case "geoarrow.wkb":
 		return "ST_AsText(" + sourceExpr + ")", nil
 	case "geoarrow.wkt":
@@ -59,9 +71,16 @@ func duckDBArrowGeometryWKTExpr(arrowField arrow.Field, sourceExpr string) (stri
 	case "geoarrow.linestring", "geoarrow.polygon",
 		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
 		"geoarrow.point", "geoarrow.geometry", "geoarrow.geometrycollection":
-		return duckDBGeoArrowNativeWKT(arrowExtensionName(arrowField), sourceExpr)
+		return duckDBGeoArrowNativeWKT(ext, sourceExpr)
+	default:
+		return "", fmt.Errorf("unsupported GeoArrow extension %q", ext)
 	}
+}
 
+// duckDBArrowGeometryWKTExprFromPhysicalType is the best-effort path for
+// unannotated Arrow columns. Without extension metadata we infer common
+// geometry encodings from physical Arrow storage.
+func duckDBArrowGeometryWKTExprFromPhysicalType(arrowField arrow.Field, sourceExpr string) (string, error) {
 	switch arrowField.Type.ID() {
 	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
 		return "ST_AsText(ST_GeomFromWKB(" + sourceExpr + "))", nil
