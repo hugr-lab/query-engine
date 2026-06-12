@@ -90,7 +90,20 @@ func (e *DuckDB) ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field,
 	return duckDBArrowIngestSelectExpr(field, arrowField, sourceExpr)
 }
 
-func (e *DuckDB) ArrowIngestLiteralExpr(_ *ast.Field, value any) (string, error) {
+func (e *DuckDB) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error) {
+	if value == nil {
+		return "NULL", nil
+	}
+	if field != nil && field.Definition != nil && field.Definition.Type.Name() == base.GeometryTypeName {
+		geom, err := ctypes.ParseGeometryValue(value)
+		if err != nil {
+			return "", err
+		}
+		if geom == nil {
+			return "NULL", nil
+		}
+		return e.SQLValue(geom)
+	}
 	return e.SQLValue(value)
 }
 
