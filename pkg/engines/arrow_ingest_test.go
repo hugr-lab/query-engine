@@ -96,6 +96,40 @@ func TestArrowIngestRejectsNativeGeoArrowUnionLayouts(t *testing.T) {
 	}
 }
 
+func TestArrowIngestRejectsUnsupportedGeometryExtensionMetadata(t *testing.T) {
+	field := geometryTestField("")
+	for _, tt := range []struct {
+		name string
+		typ  arrow.DataType
+		ext  string
+	}{
+		{
+			name: "string-like column does not fall back to WKT when metadata is unsupported",
+			typ:  arrow.BinaryTypes.String,
+			ext:  "geoarrow.curve",
+		},
+		{
+			name: "binary-like column does not fall back to WKB when metadata is unsupported",
+			typ:  arrow.BinaryTypes.Binary,
+			ext:  "hugr.unknown_geometry",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := duckDBArrowIngestSelectExpr(field, arrow.Field{
+				Name:     "geom",
+				Type:     tt.typ,
+				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext}),
+			}, "geom")
+			if err == nil {
+				t.Fatalf("expected unsupported extension %q to be rejected", tt.ext)
+			}
+			if !strings.Contains(err.Error(), "unsupported GeoArrow extension") {
+				t.Fatalf("unexpected error for %q: %v", tt.ext, err)
+			}
+		})
+	}
+}
+
 func TestPostgresArrowIngestLiteralExprUsesDuckDBStagingLiterals(t *testing.T) {
 	engine := &Postgres{}
 
