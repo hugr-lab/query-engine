@@ -638,7 +638,7 @@ func postgresArrowGeometryWKTExpr(field *ast.Field, arrowField arrow.Field, sour
 	if field != nil && field.Definition != nil {
 		srid = base.FieldDefDirectiveArgString(field.Definition, base.FieldGeometryInfoDirectiveName, base.ArgSRID)
 	}
-	wktExpr, err := duckDBArrowGeometryWKTExpr(arrowField, sourceExpr)
+	wktExpr, err := duckDBArrowGeometryWKTWireExpr(arrowField, sourceExpr)
 	if err != nil {
 		return "", err
 	}

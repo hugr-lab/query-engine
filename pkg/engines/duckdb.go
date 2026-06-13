@@ -2,6 +2,7 @@ package engines
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -102,7 +103,11 @@ func (e *DuckDB) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, er
 		if geom == nil {
 			return "NULL", nil
 		}
-		return e.SQLValue(geom)
+		wkbValue, err := ctypes.GeometryToSQLValue(geom)
+		if err != nil {
+			return "", err
+		}
+		return "ST_GeomFromWKB(from_hex('" + strings.ToUpper(hex.EncodeToString(wkbValue)) + "'))", nil
 	}
 	return e.SQLValue(value)
 }

@@ -17,12 +17,12 @@ func TestDuckDBArrowIngestBuildsNativeGeoArrowSelectExpr(t *testing.T) {
 		ext  string
 		want string
 	}{
-		{"geoarrow.point", "POINT"},
-		{"geoarrow.linestring", "LINESTRING"},
-		{"geoarrow.polygon", "POLYGON"},
-		{"geoarrow.multipoint", "MULTIPOINT"},
-		{"geoarrow.multilinestring", "MULTILINESTRING"},
-		{"geoarrow.multipolygon", "MULTIPOLYGON"},
+		{"geoarrow.point", "ST_Point(struct_extract(geom, 'x'), struct_extract(geom, 'y'))"},
+		{"geoarrow.linestring", "ST_MakeLine(list_transform(geom"},
+		{"geoarrow.polygon", "ST_MakePolygon(ST_MakeLine(list_transform(geom[1]"},
+		{"geoarrow.multipoint", "ST_Multi(ST_Collect(list_transform(geom"},
+		{"geoarrow.multilinestring", "ST_Multi(ST_Collect(list_transform(geom"},
+		{"geoarrow.multipolygon", "ST_Multi(ST_Collect(list_transform(geom"},
 	}
 
 	for _, tt := range tests {
@@ -38,14 +38,91 @@ func TestDuckDBArrowIngestBuildsNativeGeoArrowSelectExpr(t *testing.T) {
 			if got == "geom" {
 				t.Fatalf("expected explicit conversion, got raw column")
 			}
-			if !strings.Contains(got, "ST_GeomFromText(") || !strings.Contains(got, tt.want) {
+			if !strings.Contains(got, tt.want) ||
+				strings.Contains(got, "ST_GeomFromText(") ||
+				strings.Contains(got, "ST_AsText(") {
 				t.Fatalf("unexpected conversion for %s: %s", tt.ext, got)
 			}
 		})
 	}
 }
 
-func TestPostgresArrowIngestBuildsNativeGeoArrowEWKTSelectExpr(t *testing.T) {
+func TestDuckDBArrowIngestBuildsDirectGeometrySelectExpr(t *testing.T) {
+	field := geometryTestField("")
+
+	tests := []struct {
+		name string
+		typ  arrow.DataType
+		ext  string
+		want string
+	}{
+		{
+			name: "trusted geoarrow wkb is already materialized as geometry",
+			typ:  arrow.BinaryTypes.Binary,
+			ext:  "geoarrow.wkb",
+			want: "geom",
+		},
+		{
+			name: "trusted geoarrow wkt parses directly from text",
+			typ:  arrow.BinaryTypes.String,
+			ext:  "geoarrow.wkt",
+			want: "ST_GeomFromText(geom, true)",
+		},
+		{
+			name: "trusted geoarrow geojson parses directly from json",
+			typ:  arrow.BinaryTypes.String,
+			ext:  "geoarrow.geojson",
+			want: "ST_GeomFromGeoJSON(geom)",
+		},
+		{
+			name: "trusted hugr geojson parses directly from json",
+			typ:  arrow.BinaryTypes.String,
+			ext:  "hugr.geojson",
+			want: "ST_GeomFromGeoJSON(geom)",
+		},
+		{
+			name: "trusted plain geojson parses directly from json",
+			typ:  arrow.BinaryTypes.String,
+			ext:  "geojson",
+			want: "ST_GeomFromGeoJSON(geom)",
+		},
+		{
+			name: "unannotated binary parses directly as wkb",
+			typ:  arrow.BinaryTypes.Binary,
+			want: "ST_GeomFromWKB(geom)",
+		},
+		{
+			name: "unannotated string chooses geojson or wkt without text roundtrip",
+			typ:  arrow.BinaryTypes.String,
+			want: "CASE WHEN starts_with(trim(geom), '{') THEN ST_GeomFromGeoJSON(geom) ELSE ST_GeomFromText(geom, true) END",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := arrow.Metadata{}
+			if tt.ext != "" {
+				meta = arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext})
+			}
+			got, err := duckDBArrowIngestSelectExpr(field, arrow.Field{
+				Name:     "geom",
+				Type:     tt.typ,
+				Metadata: meta,
+			}, "geom")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("expected %s, got %s", tt.want, got)
+			}
+			if strings.Contains(got, "ST_AsText") {
+				t.Fatalf("expected direct geometry expression without ST_AsText, got %s", got)
+			}
+		})
+	}
+}
+
+func TestPostgresArrowIngestBuildsNativeGeoArrowWKTWireSelectExpr(t *testing.T) {
 	field := geometryTestField("4326")
 
 	tests := []struct {
@@ -73,8 +150,80 @@ func TestPostgresArrowIngestBuildsNativeGeoArrowEWKTSelectExpr(t *testing.T) {
 			if got == "geom" {
 				t.Fatalf("expected explicit conversion, got raw column")
 			}
-			if !strings.Contains(got, "'SRID=4326;' || ") || !strings.Contains(got, tt.want) {
+			if !strings.Contains(got, "'SRID=4326;' || ") ||
+				!strings.Contains(got, tt.want) ||
+				strings.Contains(got, "ST_AsHEXWKB(") {
 				t.Fatalf("unexpected conversion for %s: %s", tt.ext, got)
+			}
+		})
+	}
+}
+
+func TestPostgresArrowIngestBuildsWKTWireSelectExpr(t *testing.T) {
+	field := geometryTestField("4326")
+
+	tests := []struct {
+		name string
+		typ  arrow.DataType
+		ext  string
+		want string
+	}{
+		{
+			name: "trusted geoarrow wkb is converted from materialized geometry to wkt",
+			typ:  arrow.BinaryTypes.Binary,
+			ext:  "geoarrow.wkb",
+			want: "'SRID=4326;' || ST_AsText(geom)",
+		},
+		{
+			name: "trusted geoarrow wkt is passed as wkt",
+			typ:  arrow.BinaryTypes.String,
+			ext:  "geoarrow.wkt",
+			want: "'SRID=4326;' || geom",
+		},
+		{
+			name: "trusted geoarrow geojson parses to geometry then wkt",
+			typ:  arrow.BinaryTypes.String,
+			ext:  "geoarrow.geojson",
+			want: "'SRID=4326;' || ST_AsText(ST_GeomFromGeoJSON(geom))",
+		},
+		{
+			name: "trusted hugr geojson parses to geometry then wkt",
+			typ:  arrow.BinaryTypes.String,
+			ext:  "hugr.geojson",
+			want: "'SRID=4326;' || ST_AsText(ST_GeomFromGeoJSON(geom))",
+		},
+		{
+			name: "trusted plain geojson parses to geometry then wkt",
+			typ:  arrow.BinaryTypes.String,
+			ext:  "geojson",
+			want: "'SRID=4326;' || ST_AsText(ST_GeomFromGeoJSON(geom))",
+		},
+		{
+			name: "unannotated binary parses as wkb then wkt",
+			typ:  arrow.BinaryTypes.Binary,
+			want: "'SRID=4326;' || ST_AsText(ST_GeomFromWKB(geom))",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := arrow.Metadata{}
+			if tt.ext != "" {
+				meta = arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext})
+			}
+			got, err := postgresArrowIngestSelectExpr(field, arrow.Field{
+				Name:     "geom",
+				Type:     tt.typ,
+				Metadata: meta,
+			}, "geom")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Fatalf("expected %s, got %s", tt.want, got)
+			}
+			if strings.Contains(got, "ST_AsHEXWKB(") {
+				t.Fatalf("expected WKT wire expression without HEXWKB, got %s", got)
 			}
 		})
 	}
@@ -145,8 +294,24 @@ func TestPostgresArrowIngestLiteralExprUsesDuckDBStagingLiterals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(geomSQL, "'SRID=4326;' || ") || !strings.Contains(geomSQL, "POINT") {
-		t.Fatalf("expected Postgres EWKT literal, got %s", geomSQL)
+	if !strings.Contains(geomSQL, "'SRID=4326;'") ||
+		!strings.Contains(geomSQL, "POINT") ||
+		strings.Contains(geomSQL, "0101000000") {
+		t.Fatalf("expected Postgres WKT wire literal, got %s", geomSQL)
+	}
+}
+
+func TestDuckDBArrowIngestLiteralExprUsesWKBStagingGeometry(t *testing.T) {
+	engine := &DuckDB{}
+
+	geomSQL, err := engine.ArrowIngestLiteralExpr(geometryTestField(""), orb.Point{1, 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(geomSQL, "ST_GeomFromWKB(from_hex('0101000000") ||
+		strings.Contains(geomSQL, "ST_GeomFromText") ||
+		strings.Contains(geomSQL, "POINT") {
+		t.Fatalf("expected DuckDB WKB geometry literal, got %s", geomSQL)
 	}
 }
 

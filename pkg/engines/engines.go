@@ -75,8 +75,12 @@ type EngineTypeCaster interface {
 
 type EngineArrowIngestCaster interface {
 	Engine
-	// ArrowIngestSelectExpr returns a DuckDB-compatible SELECT expression for
-	// one Arrow-view column, shaped for insertion into this target engine.
+	// ArrowIngestSelectExpr maps one Arrow-view column to a DuckDB staging SELECT
+	// expression shaped for this target engine.
+	// Example: for a Geometry field, arrowField extension "geoarrow.geojson", and
+	// sourceExpr `geom_geojson`, DuckDB returns `ST_GeomFromGeoJSON(geom_geojson)`,
+	// while Postgres returns an EWKT text expression such as
+	// `'SRID=4326;' || ST_AsText(...)`.
 	ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error)
 	// ArrowIngestLiteralExpr returns a DuckDB-compatible literal/expression for
 	// non-Arrow values mixed into the ingest SELECT, shaped for this target.

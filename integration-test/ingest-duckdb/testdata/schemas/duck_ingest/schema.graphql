@@ -9,6 +9,8 @@ type events @table(name: "events") {
     geom: Geometry @geometry_info(srid: 4326, type: POINT)
     geom_wkt: Geometry @geometry_info(srid: 4326, type: LINESTRING)
     geom_geojson: Geometry @geometry_info(srid: 4326, type: POLYGON)
+    geom_hugr_geojson: Geometry @geometry_info(srid: 4326, type: POLYGON)
+    geom_plain_geojson: Geometry @geometry_info(srid: 4326, type: POLYGON)
     geom_wkb: Geometry @geometry_info(srid: 4326, type: POINT)
     geom_line: Geometry @geometry_info(srid: 4326, type: LINESTRING)
     geom_polygon_native: Geometry @geometry_info(srid: 4326, type: POLYGON)
