@@ -27,7 +27,7 @@ func (b *ArrowIngestStagingBuilder) FunctionCall(name string, positional []any, 
 	return b.duckdb.FunctionCall(name, positional, named)
 }
 
-func duckDBArrowJSONExpr(arrowField arrow.Field, sourceExpr string) string {
+func arrowIngestJSONStagingExpr(arrowField arrow.Field, sourceExpr string) string {
 	switch arrowField.Type.ID() {
 	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW,
 		arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
@@ -40,27 +40,21 @@ func duckDBArrowJSONExpr(arrowField arrow.Field, sourceExpr string) string {
 	}
 }
 
-func duckDBArrowGeometryExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
-	wktExpr, err := duckDBArrowGeometryWKTExpr(arrowField, sourceExpr)
-	if err != nil {
-		return "", err
-	}
-	return "ST_GeomFromText(" + wktExpr + ", true)", nil
-}
-
-func duckDBArrowGeometryWKTExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
+// arrowIngestGeometryWKTStagingExpr builds a DuckDB staging expression that
+// reads an Arrow geometry column and returns WKT text.
+func arrowIngestGeometryWKTStagingExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
 	if ext := arrowExtensionName(arrowField); ext != "" {
-		return duckDBArrowGeometryWKTExprFromTrustedExtension(ext, sourceExpr)
+		return arrowIngestGeometryWKTStagingExprFromExtension(ext, sourceExpr)
 	}
-	return duckDBArrowGeometryWKTExprFromPhysicalType(arrowField, sourceExpr)
+	return arrowIngestGeometryWKTStagingExprFromType(arrowField, sourceExpr)
 }
 
-// duckDBArrowGeometryWKTExprFromTrustedExtension uses GeoArrow/Hugr extension
+// arrowIngestGeometryWKTStagingExprFromExtension uses GeoArrow/Hugr extension
 // metadata as the source of truth for geometry semantics. The physical Arrow
 // storage type is intentionally not used as a fallback once extension metadata
 // is present; unsupported metadata should fail during planning instead of being
 // guessed from Type.ID().
-func duckDBArrowGeometryWKTExprFromTrustedExtension(ext, sourceExpr string) (string, error) {
+func arrowIngestGeometryWKTStagingExprFromExtension(ext, sourceExpr string) (string, error) {
 	switch ext {
 	case "geoarrow.wkb":
 		return "ST_AsText(" + sourceExpr + ")", nil
@@ -71,16 +65,16 @@ func duckDBArrowGeometryWKTExprFromTrustedExtension(ext, sourceExpr string) (str
 	case "geoarrow.linestring", "geoarrow.polygon",
 		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
 		"geoarrow.point", "geoarrow.geometry", "geoarrow.geometrycollection":
-		return duckDBGeoArrowNativeWKT(ext, sourceExpr)
+		return geoArrowNativeWKTStagingExpr(ext, sourceExpr)
 	default:
 		return "", fmt.Errorf("unsupported GeoArrow extension %q", ext)
 	}
 }
 
-// duckDBArrowGeometryWKTExprFromPhysicalType is the best-effort path for
+// arrowIngestGeometryWKTStagingExprFromType is the best-effort path for
 // unannotated Arrow columns. Without extension metadata we infer common
 // geometry encodings from physical Arrow storage.
-func duckDBArrowGeometryWKTExprFromPhysicalType(arrowField arrow.Field, sourceExpr string) (string, error) {
+func arrowIngestGeometryWKTStagingExprFromType(arrowField arrow.Field, sourceExpr string) (string, error) {
 	switch arrowField.Type.ID() {
 	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
 		return "ST_AsText(ST_GeomFromWKB(" + sourceExpr + "))", nil
@@ -106,60 +100,62 @@ func arrowExtensionName(field arrow.Field) string {
 	return ""
 }
 
-func duckDBGeoArrowPointCoords(sql string) string {
+// The GeoArrow WKT helpers below build DuckDB staging SQL expressions, not
+// Go-side WKT strings.
+func geoArrowPointCoordWKTExpr(sql string) string {
 	return "format('{} {}', struct_extract(" + sql + ", 'x'), struct_extract(" + sql + ", 'y'))"
 }
 
-func duckDBGeoArrowPointWKT(sql string) string {
-	return "'POINT (' || " + duckDBGeoArrowPointCoords(sql) + " || ')'"
+func geoArrowPointWKTExpr(sql string) string {
+	return "'POINT (' || " + geoArrowPointCoordWKTExpr(sql) + " || ')'"
 }
 
-func duckDBGeoArrowPointListCoords(sql string) string {
-	return "array_to_string(list_transform(" + sql + ", lambda _p: " + duckDBGeoArrowPointCoords("_p") + "), ', ')"
+func geoArrowPointListCoordWKTExpr(sql string) string {
+	return "array_to_string(list_transform(" + sql + ", lambda _p: " + geoArrowPointCoordWKTExpr("_p") + "), ', ')"
 }
 
-func duckDBGeoArrowLineStringWKT(sql string) string {
-	return "'LINESTRING (' || " + duckDBGeoArrowPointListCoords(sql) + " || ')'"
+func geoArrowLineStringWKTExpr(sql string) string {
+	return "'LINESTRING (' || " + geoArrowPointListCoordWKTExpr(sql) + " || ')'"
 }
 
-func duckDBGeoArrowRingWKT(sql string) string {
-	return "'(' || " + duckDBGeoArrowPointListCoords(sql) + " || ')'"
+func geoArrowRingWKTExpr(sql string) string {
+	return "'(' || " + geoArrowPointListCoordWKTExpr(sql) + " || ')'"
 }
 
-func duckDBGeoArrowPolygonWKT(sql string) string {
+func geoArrowPolygonWKTExpr(sql string) string {
 	return "'POLYGON (' || array_to_string(list_transform(" + sql + ", lambda _r: " +
-		duckDBGeoArrowRingWKT("_r") + "), ', ') || ')'"
+		geoArrowRingWKTExpr("_r") + "), ', ') || ')'"
 }
 
-func duckDBGeoArrowMultiPointWKT(sql string) string {
-	return "'MULTIPOINT (' || " + duckDBGeoArrowPointListCoords(sql) + " || ')'"
+func geoArrowMultiPointWKTExpr(sql string) string {
+	return "'MULTIPOINT (' || " + geoArrowPointListCoordWKTExpr(sql) + " || ')'"
 }
 
-func duckDBGeoArrowMultiLineStringWKT(sql string) string {
+func geoArrowMultiLineStringWKTExpr(sql string) string {
 	return "'MULTILINESTRING (' || array_to_string(list_transform(" + sql + ", lambda _ls: " +
-		duckDBGeoArrowRingWKT("_ls") + "), ', ') || ')'"
+		geoArrowRingWKTExpr("_ls") + "), ', ') || ')'"
 }
 
-func duckDBGeoArrowMultiPolygonWKT(sql string) string {
+func geoArrowMultiPolygonWKTExpr(sql string) string {
 	return "'MULTIPOLYGON (' || array_to_string(list_transform(" + sql + ", lambda _poly: '(' || " +
-		"array_to_string(list_transform(_poly, lambda _r: " + duckDBGeoArrowRingWKT("_r") +
+		"array_to_string(list_transform(_poly, lambda _r: " + geoArrowRingWKTExpr("_r") +
 		"), ', ') || ')'), ', ') || ')'"
 }
 
-func duckDBGeoArrowNativeWKT(ext, sql string) (string, error) {
+func geoArrowNativeWKTStagingExpr(ext, sql string) (string, error) {
 	switch ext {
 	case "geoarrow.point":
-		return duckDBGeoArrowPointWKT(sql), nil
+		return geoArrowPointWKTExpr(sql), nil
 	case "geoarrow.linestring":
-		return duckDBGeoArrowLineStringWKT(sql), nil
+		return geoArrowLineStringWKTExpr(sql), nil
 	case "geoarrow.polygon":
-		return duckDBGeoArrowPolygonWKT(sql), nil
+		return geoArrowPolygonWKTExpr(sql), nil
 	case "geoarrow.multipoint":
-		return duckDBGeoArrowMultiPointWKT(sql), nil
+		return geoArrowMultiPointWKTExpr(sql), nil
 	case "geoarrow.multilinestring":
-		return duckDBGeoArrowMultiLineStringWKT(sql), nil
+		return geoArrowMultiLineStringWKTExpr(sql), nil
 	case "geoarrow.multipolygon":
-		return duckDBGeoArrowMultiPolygonWKT(sql), nil
+		return geoArrowMultiPolygonWKTExpr(sql), nil
 	case "geoarrow.geometry", "geoarrow.geometrycollection":
 		return "", fmt.Errorf("%s ingest is not supported from native union storage; send geoarrow.wkb, geoarrow.wkt, geoarrow.geojson, or a concrete GeoArrow coordinate layout", ext)
 	default:

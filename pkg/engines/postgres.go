@@ -625,7 +625,7 @@ func postgresArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sou
 	}
 	switch field.Definition.Type.Name() {
 	case base.JSONTypeName:
-		return duckDBArrowJSONExpr(arrowField, sourceExpr), nil
+		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
 	case base.GeometryTypeName:
 		return postgresArrowGeometryWKTExpr(field, arrowField, sourceExpr)
 	default:
@@ -638,7 +638,7 @@ func postgresArrowGeometryWKTExpr(field *ast.Field, arrowField arrow.Field, sour
 	if field != nil && field.Definition != nil {
 		srid = base.FieldDefDirectiveArgString(field.Definition, base.FieldGeometryInfoDirectiveName, base.ArgSRID)
 	}
-	wktExpr, err := duckDBArrowGeometryWKTExpr(arrowField, sourceExpr)
+	wktExpr, err := arrowIngestGeometryWKTStagingExpr(arrowField, sourceExpr)
 	if err != nil {
 		return "", err
 	}

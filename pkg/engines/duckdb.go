@@ -113,12 +113,20 @@ func duckDBArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourc
 	}
 	switch field.Definition.Type.Name() {
 	case base.JSONTypeName:
-		return duckDBArrowJSONExpr(arrowField, sourceExpr), nil
+		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
 	case base.GeometryTypeName:
 		return duckDBArrowGeometryExpr(arrowField, sourceExpr)
 	default:
 		return sourceExpr, nil
 	}
+}
+
+func duckDBArrowGeometryExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
+	wktExpr, err := arrowIngestGeometryWKTStagingExpr(arrowField, sourceExpr)
+	if err != nil {
+		return "", err
+	}
+	return "ST_GeomFromText(" + wktExpr + ", true)", nil
 }
 
 func (e *DuckDB) FieldValueByPath(sqlName, path string) string {
