@@ -1,6 +1,7 @@
 .DS*
 .local
 .claude/
+.idea/
 .specify/
 specs/
 design/

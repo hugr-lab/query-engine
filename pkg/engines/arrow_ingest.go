@@ -41,26 +41,63 @@ func duckDBArrowJSONExpr(arrowField arrow.Field, sourceExpr string) string {
 }
 
 func duckDBArrowGeometryExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
-	wktExpr, err := duckDBArrowGeometryWKTExpr(arrowField, sourceExpr)
-	if err != nil {
-		return "", err
-	}
-	return "ST_GeomFromText(" + wktExpr + ", true)", nil
-}
-
-func duckDBArrowGeometryWKTExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
 	if ext := arrowExtensionName(arrowField); ext != "" {
-		return duckDBArrowGeometryWKTExprFromTrustedExtension(ext, sourceExpr)
+		return duckDBArrowGeometryExprFromTrustedExtension(ext, sourceExpr)
 	}
-	return duckDBArrowGeometryWKTExprFromPhysicalType(arrowField, sourceExpr)
+	return duckDBArrowGeometryExprFromPhysicalType(arrowField, sourceExpr)
 }
 
-// duckDBArrowGeometryWKTExprFromTrustedExtension uses GeoArrow/Hugr extension
+// duckDBArrowGeometryExprFromTrustedExtension uses GeoArrow/Hugr extension
 // metadata as the source of truth for geometry semantics. The physical Arrow
 // storage type is intentionally not used as a fallback once extension metadata
 // is present; unsupported metadata should fail during planning instead of being
 // guessed from Type.ID().
-func duckDBArrowGeometryWKTExprFromTrustedExtension(ext, sourceExpr string) (string, error) {
+func duckDBArrowGeometryExprFromTrustedExtension(ext, sourceExpr string) (string, error) {
+	switch ext {
+	case "geoarrow.wkb":
+		return sourceExpr, nil
+	case "geoarrow.wkt":
+		return "ST_GeomFromText(" + sourceExpr + ", true)", nil
+	case "hugr.geojson", "geoarrow.geojson", "geojson":
+		return "ST_GeomFromGeoJSON(" + sourceExpr + ")", nil
+	case "geoarrow.linestring", "geoarrow.polygon",
+		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
+		"geoarrow.point", "geoarrow.geometry", "geoarrow.geometrycollection":
+		return duckDBGeoArrowNativeGeometryExpr(ext, sourceExpr)
+	default:
+		return "", fmt.Errorf("unsupported GeoArrow extension %q", ext)
+	}
+}
+
+// duckDBArrowGeometryExprFromPhysicalType is the best-effort path for
+// unannotated Arrow columns. Without extension metadata we infer common
+// geometry encodings from physical Arrow storage.
+func duckDBArrowGeometryExprFromPhysicalType(arrowField arrow.Field, sourceExpr string) (string, error) {
+	switch arrowField.Type.ID() {
+	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
+		return "ST_GeomFromWKB(" + sourceExpr + ")", nil
+	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
+		return "CASE WHEN starts_with(trim(" + sourceExpr + "), '{') THEN ST_GeomFromGeoJSON(" + sourceExpr + ") ELSE ST_GeomFromText(" + sourceExpr + ", true) END", nil
+	case arrow.STRUCT, arrow.MAP:
+		return "ST_GeomFromGeoJSON(to_json(" + sourceExpr + ")::VARCHAR)", nil
+	default:
+		return "", fmt.Errorf("arrow column %q with type %s cannot be ingested as Geometry without geoarrow/hugr metadata", arrowField.Name, arrowField.Type)
+	}
+}
+
+func duckDBArrowGeometryWKTWireExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
+	if ext := arrowExtensionName(arrowField); ext != "" {
+		return duckDBArrowGeometryWKTWireExprFromTrustedExtension(ext, sourceExpr)
+	}
+	return duckDBArrowGeometryWKTWireExprFromPhysicalType(arrowField, sourceExpr)
+}
+
+// duckDBArrowGeometryWKTWireExprFromTrustedExtension builds a DuckDB expression
+// returning WKT text for engines whose insert path cannot accept DuckDB
+// GEOMETRY/WKB values directly. This is currently needed for Postgres attached
+// tables: DuckDB's postgres extension COPY path accepts WKT/EWKT text for
+// PostGIS geometry columns, but rejects WKB_BLOB/HEXWKB expressions.
+func duckDBArrowGeometryWKTWireExprFromTrustedExtension(ext, sourceExpr string) (string, error) {
 	switch ext {
 	case "geoarrow.wkb":
 		return "ST_AsText(" + sourceExpr + ")", nil
@@ -77,10 +114,7 @@ func duckDBArrowGeometryWKTExprFromTrustedExtension(ext, sourceExpr string) (str
 	}
 }
 
-// duckDBArrowGeometryWKTExprFromPhysicalType is the best-effort path for
-// unannotated Arrow columns. Without extension metadata we infer common
-// geometry encodings from physical Arrow storage.
-func duckDBArrowGeometryWKTExprFromPhysicalType(arrowField arrow.Field, sourceExpr string) (string, error) {
+func duckDBArrowGeometryWKTWireExprFromPhysicalType(arrowField arrow.Field, sourceExpr string) (string, error) {
 	switch arrowField.Type.ID() {
 	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
 		return "ST_AsText(ST_GeomFromWKB(" + sourceExpr + "))", nil
@@ -110,8 +144,34 @@ func duckDBGeoArrowPointCoords(sql string) string {
 	return "format('{} {}', struct_extract(" + sql + ", 'x'), struct_extract(" + sql + ", 'y'))"
 }
 
+func duckDBGeoArrowPointGeometryExpr(sql string) string {
+	return "ST_Point(struct_extract(" + sql + ", 'x'), struct_extract(" + sql + ", 'y'))"
+}
+
 func duckDBGeoArrowPointWKT(sql string) string {
 	return "'POINT (' || " + duckDBGeoArrowPointCoords(sql) + " || ')'"
+}
+
+func duckDBGeoArrowLineStringGeometryExpr(sql string) string {
+	return "ST_MakeLine(list_transform(" + sql + ", lambda _p: " + duckDBGeoArrowPointGeometryExpr("_p") + "))"
+}
+
+func duckDBGeoArrowPolygonGeometryExpr(sql string) string {
+	shell := duckDBGeoArrowLineStringGeometryExpr(sql + "[1]")
+	holes := "list_transform(" + sql + "[2:], lambda _r: " + duckDBGeoArrowLineStringGeometryExpr("_r") + ")"
+	return "ST_MakePolygon(" + shell + ", " + holes + ")"
+}
+
+func duckDBGeoArrowMultiPointGeometryExpr(sql string) string {
+	return "ST_Multi(ST_Collect(list_transform(" + sql + ", lambda _p: " + duckDBGeoArrowPointGeometryExpr("_p") + ")))"
+}
+
+func duckDBGeoArrowMultiLineStringGeometryExpr(sql string) string {
+	return "ST_Multi(ST_Collect(list_transform(" + sql + ", lambda _ls: " + duckDBGeoArrowLineStringGeometryExpr("_ls") + ")))"
+}
+
+func duckDBGeoArrowMultiPolygonGeometryExpr(sql string) string {
+	return "ST_Multi(ST_Collect(list_transform(" + sql + ", lambda _poly: " + duckDBGeoArrowPolygonGeometryExpr("_poly") + ")))"
 }
 
 func duckDBGeoArrowPointListCoords(sql string) string {
@@ -160,6 +220,27 @@ func duckDBGeoArrowNativeWKT(ext, sql string) (string, error) {
 		return duckDBGeoArrowMultiLineStringWKT(sql), nil
 	case "geoarrow.multipolygon":
 		return duckDBGeoArrowMultiPolygonWKT(sql), nil
+	case "geoarrow.geometry", "geoarrow.geometrycollection":
+		return "", fmt.Errorf("%s ingest is not supported from native union storage; send geoarrow.wkb, geoarrow.wkt, geoarrow.geojson, or a concrete GeoArrow coordinate layout", ext)
+	default:
+		return "", fmt.Errorf("unsupported GeoArrow extension %q", ext)
+	}
+}
+
+func duckDBGeoArrowNativeGeometryExpr(ext, sql string) (string, error) {
+	switch ext {
+	case "geoarrow.point":
+		return duckDBGeoArrowPointGeometryExpr(sql), nil
+	case "geoarrow.linestring":
+		return duckDBGeoArrowLineStringGeometryExpr(sql), nil
+	case "geoarrow.polygon":
+		return duckDBGeoArrowPolygonGeometryExpr(sql), nil
+	case "geoarrow.multipoint":
+		return duckDBGeoArrowMultiPointGeometryExpr(sql), nil
+	case "geoarrow.multilinestring":
+		return duckDBGeoArrowMultiLineStringGeometryExpr(sql), nil
+	case "geoarrow.multipolygon":
+		return duckDBGeoArrowMultiPolygonGeometryExpr(sql), nil
 	case "geoarrow.geometry", "geoarrow.geometrycollection":
 		return "", fmt.Errorf("%s ingest is not supported from native union storage; send geoarrow.wkb, geoarrow.wkt, geoarrow.geojson, or a concrete GeoArrow coordinate layout", ext)
 	default:

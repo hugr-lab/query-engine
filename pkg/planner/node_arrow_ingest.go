@@ -315,8 +315,8 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				field := ingestASTField(info, c.Field, c.FieldDef)
 				// Build the Arrow ingest SELECT expression for the target
 				// GraphQL/DB field.
-				// Examples: JSON to_json(...), Geometry ST_GeomFromText(...),
-				// or Postgres EWKT text for PostGIS columns.
+				// Examples: JSON to_json(...), DuckDB geometry expressions,
+				// or Postgres HEXWKB text for PostGIS columns.
 				value, err := engine.ArrowIngestSelectExpr(field, c.ArrowField, value)
 				if err != nil {
 					return "", nil, err
