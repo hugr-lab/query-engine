@@ -45,6 +45,27 @@ func TestDuckDBArrowIngestBuildsNativeGeoArrowSelectExpr(t *testing.T) {
 	}
 }
 
+func TestDuckDBArrowIngestBuildsGeoJSONAliasSelectExpr(t *testing.T) {
+	field := geometryTestField("")
+
+	for _, ext := range []string{"geoarrow.geojson", "hugr.geojson", "geojson"} {
+		t.Run(ext, func(t *testing.T) {
+			got, err := duckDBArrowIngestSelectExpr(field, arrow.Field{
+				Name:     "geom_geojson",
+				Type:     arrow.BinaryTypes.String,
+				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": ext}),
+			}, "geom_geojson")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "ST_GeomFromText(ST_AsText(ST_GeomFromGeoJSON(geom_geojson)), true)"
+			if got != want {
+				t.Fatalf("expected %s, got %s", want, got)
+			}
+		})
+	}
+}
+
 func TestPostgresArrowIngestBuildsNativeGeoArrowEWKTSelectExpr(t *testing.T) {
 	field := geometryTestField("4326")
 
@@ -75,6 +96,27 @@ func TestPostgresArrowIngestBuildsNativeGeoArrowEWKTSelectExpr(t *testing.T) {
 			}
 			if !strings.Contains(got, "'SRID=4326;' || ") || !strings.Contains(got, tt.want) {
 				t.Fatalf("unexpected conversion for %s: %s", tt.ext, got)
+			}
+		})
+	}
+}
+
+func TestPostgresArrowIngestBuildsGeoJSONAliasEWKTSelectExpr(t *testing.T) {
+	field := geometryTestField("4326")
+
+	for _, ext := range []string{"geoarrow.geojson", "hugr.geojson", "geojson"} {
+		t.Run(ext, func(t *testing.T) {
+			got, err := postgresArrowIngestSelectExpr(field, arrow.Field{
+				Name:     "geom_geojson",
+				Type:     arrow.BinaryTypes.String,
+				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": ext}),
+			}, "geom_geojson")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "'SRID=4326;' || ST_AsText(ST_GeomFromGeoJSON(geom_geojson))"
+			if got != want {
+				t.Fatalf("expected %s, got %s", want, got)
 			}
 		})
 	}
