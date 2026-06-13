@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: ingestdb
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports: ["5437:5432"]
+    volumes:
+      - ./testdata/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d ingestdb"]
+      interval: 2s
+      timeout: 5s
+      retries: 15

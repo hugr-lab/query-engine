@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -70,6 +71,21 @@ type EngineTypeCaster interface {
 	Engine
 	ToIntermediateType(*ast.Field) (string, error)
 	CastFromIntermediateType(field *ast.Field, toJSON bool) (string, error)
+}
+
+type EngineArrowIngestCaster interface {
+	Engine
+	// ArrowIngestSelectExpr maps one Arrow-view column to a DuckDB staging SELECT
+	// expression shaped for this target engine.
+	// Example: for a Geometry field, arrowField extension "geoarrow.geojson", and
+	// sourceExpr `geom_geojson`, DuckDB returns
+	// `ST_GeomFromText(ST_AsText(ST_GeomFromGeoJSON(geom_geojson)), true)`, while
+	// Postgres returns an EWKT text expression such as
+	// `'SRID=4326;' || ST_AsText(...)`.
+	ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error)
+	// ArrowIngestLiteralExpr returns a DuckDB-compatible literal/expression for
+	// non-Arrow values mixed into the ingest SELECT, shaped for this target.
+	ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error)
 }
 
 type EngineVectorDistanceCalculator interface {

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -20,10 +21,11 @@ import (
 )
 
 var (
-	_ Engine             = &Postgres{}
-	_ EngineQueryScanner = &Postgres{}
-	_ EngineTypeCaster   = &Postgres{}
-	_ EngineAggregator   = &Postgres{}
+	_ Engine                  = &Postgres{}
+	_ EngineQueryScanner      = &Postgres{}
+	_ EngineTypeCaster        = &Postgres{}
+	_ EngineArrowIngestCaster = &Postgres{}
+	_ EngineAggregator        = &Postgres{}
 )
 
 type Postgres struct {
@@ -44,6 +46,7 @@ func (e *Postgres) Capabilities() *compiler.EngineCapabilities {
 		},
 		Insert: compiler.EngineInsertCapabilities{
 			Insert:           true,
+			Ingest:           true,
 			Returning:        true,
 			InsertReferences: true,
 		},
@@ -590,6 +593,63 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 	}
 
 	return Ident(f.Alias), nil
+}
+
+func (e *Postgres) ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
+	return postgresArrowIngestSelectExpr(field, arrowField, sourceExpr)
+}
+
+func (e *Postgres) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error) {
+	if value == nil {
+		return "NULL", nil
+	}
+	if field != nil && field.Definition != nil && field.Definition.Type.Name() == base.GeometryTypeName {
+		geom, err := ctypes.ParseGeometryValue(value)
+		if err != nil {
+			return "", err
+		}
+		if geom == nil {
+			return "NULL", nil
+		}
+		srid := base.FieldDefDirectiveArgString(field.Definition, base.FieldGeometryInfoDirectiveName, base.ArgSRID)
+		wktValue := strings.ReplaceAll(string(wkt.Marshal(geom)), "'", "''")
+		return postgresWKTText("'"+wktValue+"'", srid), nil
+	}
+	var duckdb DuckDB
+	return duckdb.SQLValue(value)
+}
+
+func postgresArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
+	if field == nil || field.Definition == nil {
+		return sourceExpr, nil
+	}
+	switch field.Definition.Type.Name() {
+	case base.JSONTypeName:
+		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
+	case base.GeometryTypeName:
+		return postgresArrowGeometryWKTExpr(field, arrowField, sourceExpr)
+	default:
+		return sourceExpr, nil
+	}
+}
+
+func postgresArrowGeometryWKTExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
+	srid := ""
+	if field != nil && field.Definition != nil {
+		srid = base.FieldDefDirectiveArgString(field.Definition, base.FieldGeometryInfoDirectiveName, base.ArgSRID)
+	}
+	wktExpr, err := arrowIngestGeometryWKTStagingExpr(arrowField, sourceExpr)
+	if err != nil {
+		return "", err
+	}
+	return postgresWKTText(wktExpr, srid), nil
+}
+
+func postgresWKTText(sql, srid string) string {
+	if srid == "" || srid == "0" {
+		return sql
+	}
+	return "'SRID=" + srid + ";' || " + sql
 }
 
 func pgRangeValueToSQLValue(v any) (string, error) {

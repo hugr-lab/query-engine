@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/duckdb/duckdb-go/v2"
+	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 )
 
 type Config struct {
@@ -219,6 +220,36 @@ func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
 		drv:     conn,
 		release: p.release,
 	}, nil
+}
+
+// ExecArrowIngest registers source.Reader as source.ViewName and executes query
+// on the same DuckDB driver connection, where the temporary Arrow view is visible.
+func (p *Pool) ExecArrowIngest(ctx context.Context, source arrowingest.Source, query string) (sql.Result, error) {
+	if source.Reader == nil {
+		return nil, fmt.Errorf("missing arrow reader")
+	}
+	ar, err := p.Arrow(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer ar.Close()
+
+	execer, ok := ar.drv.(driver.ExecerContext)
+	if !ok {
+		return nil, fmt.Errorf("duckdb driver connection does not implement ExecerContext")
+	}
+	if source.NeedsSpatial() {
+		if _, err := execer.ExecContext(ctx, "LOAD spatial", nil); err != nil {
+			return nil, fmt.Errorf("prepare spatial arrow view: %w", err)
+		}
+	}
+	release, err := source.RegisterView(ar)
+	if err != nil {
+		return nil, fmt.Errorf("register arrow view: %w", err)
+	}
+	defer release()
+
+	return execer.ExecContext(ctx, query, nil)
 }
 
 func (p *Pool) RegisterScalarFunction(ctx context.Context, function ScalarFunction) error {

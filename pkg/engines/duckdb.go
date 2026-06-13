@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -45,8 +46,9 @@ var scalarJSONInfo = map[string]jsonTypeInfo{
 }
 
 var (
-	_ Engine           = &DuckDB{}
-	_ EngineAggregator = &DuckDB{}
+	_ Engine                  = &DuckDB{}
+	_ EngineArrowIngestCaster = &DuckDB{}
+	_ EngineAggregator        = &DuckDB{}
 )
 
 type DuckDB struct {
@@ -68,6 +70,7 @@ func (e *DuckDB) Capabilities() *compiler.EngineCapabilities {
 		},
 		Insert: compiler.EngineInsertCapabilities{
 			Insert:           true,
+			Ingest:           true,
 			Returning:        true,
 			InsertReferences: true,
 		},
@@ -81,6 +84,49 @@ func (e *DuckDB) Capabilities() *compiler.EngineCapabilities {
 			DeleteWithoutPKs: true,
 		},
 	}
+}
+
+func (e *DuckDB) ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
+	return duckDBArrowIngestSelectExpr(field, arrowField, sourceExpr)
+}
+
+func (e *DuckDB) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error) {
+	if value == nil {
+		return "NULL", nil
+	}
+	if field != nil && field.Definition != nil && field.Definition.Type.Name() == base.GeometryTypeName {
+		geom, err := ctypes.ParseGeometryValue(value)
+		if err != nil {
+			return "", err
+		}
+		if geom == nil {
+			return "NULL", nil
+		}
+		return e.SQLValue(geom)
+	}
+	return e.SQLValue(value)
+}
+
+func duckDBArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
+	if field == nil || field.Definition == nil {
+		return sourceExpr, nil
+	}
+	switch field.Definition.Type.Name() {
+	case base.JSONTypeName:
+		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
+	case base.GeometryTypeName:
+		return duckDBArrowGeometryExpr(arrowField, sourceExpr)
+	default:
+		return sourceExpr, nil
+	}
+}
+
+func duckDBArrowGeometryExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
+	wktExpr, err := arrowIngestGeometryWKTStagingExpr(arrowField, sourceExpr)
+	if err != nil {
+		return "", err
+	}
+	return "ST_GeomFromText(" + wktExpr + ", true)", nil
 }
 
 func (e *DuckDB) FieldValueByPath(sqlName, path string) string {

@@ -8,9 +8,9 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/engines"
 )
 
 type RolePermissions struct {
@@ -53,7 +53,6 @@ func (r *RolePermissions) CheckQuery(query *ast.Field) error {
 
 	return nil
 }
-
 
 func (r *RolePermissions) CheckMutationInput(ctx context.Context, defs base.DefinitionsSource, inputName string, data map[string]any) error {
 	if r.Disabled {
@@ -153,11 +152,15 @@ func applyContextVariable(ctx context.Context, data map[string]any, vars map[str
 					v[i] = applyContextVariable(ctx, vv, vars)
 				}
 			}
+			res[k] = v
 		case string:
 			if val, ok := vars[v]; ok {
 				res[k] = val
 				continue
 			}
+			res[k] = v
+		default:
+			res[k] = v
 		}
 	}
 

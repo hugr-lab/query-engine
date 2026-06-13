@@ -91,6 +91,7 @@ type EngineCapabilities struct {
 
 type EngineInsertCapabilities struct {
 	Insert           bool
+	Ingest           bool
 	Returning        bool
 	InsertReferences bool
 }
