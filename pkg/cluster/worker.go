@@ -11,6 +11,7 @@ import (
 	"github.com/hugr-lab/query-engine/client"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/pkg/trace"
 	"github.com/hugr-lab/query-engine/types"
 )
 
@@ -35,11 +36,13 @@ func NewWorkerClient(config ClusterConfig, qe types.Querier, pool *db.Pool) *Wor
 	}
 }
 
-func (w *WorkerClient) newClient(url string) *client.Client {
-	return client.NewClient(url,
+func (w *WorkerClient) newClient(url string, opts ...client.Option) *client.Client {
+	baseOpts := []client.Option{
 		client.WithApiKeyCustomHeader(w.config.Secret, "x-hugr-secret"),
 		client.WithTimeout(w.config.Heartbeat),
-	)
+	}
+	baseOpts = append(baseOpts, opts...)
+	return client.NewClient(url, baseOpts...)
 }
 
 // ManagementURL discovers and caches the management node URL via GraphQL.
@@ -83,7 +86,8 @@ func (w *WorkerClient) ForwardToManagement(ctx context.Context, query string, va
 		return types.ErrResult(fmt.Errorf("cannot find management node: %w", err)), nil
 	}
 
-	c := w.newClient(mgmtURL)
+	traceID := trace.TraceIDFromContext(ctx)
+	c := w.newClient(mgmtURL, client.WithTraceID(traceID))
 	res, err := c.Query(ctx, query, vars)
 	if err != nil {
 		return types.ErrResult(fmt.Errorf("forward to management: %w", err)), nil

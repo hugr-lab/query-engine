@@ -15,6 +15,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/hugr-lab/query-engine/pkg/jq"
+	"github.com/hugr-lab/query-engine/pkg/trace"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 )
@@ -636,18 +637,23 @@ func customTokenRequest(ctx context.Context, tokenUrl string, data any, param *t
 		req.Header.Set("Content-Type", "application/json")
 	}
 
+	logger := trace.LoggerFromContext(ctx)
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
+		logger.Warn("oauth.token.request.error", "url", tokenUrl, "error", err)
 		return nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode == http.StatusUnauthorized {
+		logger.Warn("oauth.token.unauthorized", "url", tokenUrl, "status", res.Status)
 		e := ErrUnauthorizedTokenRequest(res.Status)
 		return nil, &e
 	}
 	if res.StatusCode != http.StatusOK {
 		msg, err := io.ReadAll(res.Body)
 		if err == nil {
+			logger.Warn("oauth.token.error", "url", tokenUrl, "status", res.StatusCode,
+				"body_preview", string(msg))
 			return nil, fmt.Errorf("unexpected status code %d: %s", res.StatusCode, msg)
 		}
 		return nil, fmt.Errorf("unexpected status code %d", res.StatusCode)

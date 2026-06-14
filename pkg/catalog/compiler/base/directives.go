@@ -75,6 +75,7 @@ func QuerySideDirectives() []string {
 		GisFeatureDirectiveName,
 		NoPushdownDirectiveName,
 		AtDirectiveName,
+		TraceDirectiveName,
 	}
 }
 
