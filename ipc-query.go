@@ -74,9 +74,14 @@ func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.
 		return writeErrorsToIPC(mw, "", gqlerror.List{gqlerror.Errorf("%v", err)})
 	}
 
+	var hints []types.QueryHint
 	if req.ValidateOnly {
-		ctx = types.ContextWithValidateOnly(ctx)
+		hints = append(hints, types.ValidateOnlyHint())
 	}
+	if req.NoMutation {
+		hints = append(hints, types.NoMutationHint())
+	}
+	ctx = types.ContextWithQueryHint(ctx, hints...)
 
 	qm := sdl.FlatQuery(op.Queries)
 	if len(qm) == 0 {

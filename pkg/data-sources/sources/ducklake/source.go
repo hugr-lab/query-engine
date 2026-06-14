@@ -76,13 +76,15 @@ func (s *Source) prefix() string {
 //   - metadata_secret:      Name of existing DuckDB secret for remote metadata credentials
 //   - schema_filter:        Regexp to filter schemas for self-describe (e.g. "^(public|analytics)$")
 //   - table_filter:         Regexp to filter tables for self-describe (e.g. "^(users|orders)$")
-//   - automatic_migration:  Set to "true" to enable automatic DuckLake catalog version migration
+//   - skip_auto_migrate:    Set to "true" to disable AUTOMATIC_MIGRATION on ATTACH
+//     (default: AUTOMATIC_MIGRATION TRUE — older DuckLake catalogs are migrated
+//     transparently when the engine ducklake-extension version moves forward).
 type ducklakeParams struct {
 	MetadataPath       string          // DuckDB file path or empty (for PG via secret)
 	DataPath           string          // DATA_PATH for file storage
 	MetadataType       string          // Remote metadata backend type: "postgres", "mysql", "sqlite"
 	MetadataSecret     string          // DuckDB secret name for remote metadata credentials
-	AutomaticMigration bool            // Enable automatic DuckLake catalog version migration
+	AutomaticMigration bool            // Emit AUTOMATIC_MIGRATION TRUE on ATTACH (default true; opt-out via skip_auto_migrate=true)
 	EnsureDB           bool            // If true, auto-create PostgreSQL database if it doesn't exist
 	IsSecretRef        bool            // true if path references an existing DuckLake secret
 	PgConnStr          string          // PostgreSQL connection string for logging (parsed from postgres:// URI)
@@ -94,7 +96,7 @@ type ducklakeParams struct {
 func parsePath(raw string) (*ducklakeParams, error) {
 	raw = strings.TrimPrefix(raw, "ducklake:")
 
-	p := &ducklakeParams{}
+	p := &ducklakeParams{AutomaticMigration: true}
 
 	// Check for PostgreSQL URI: postgres://...
 	if strings.HasPrefix(raw, "postgres://") || strings.HasPrefix(raw, "postgresql://") {
@@ -113,7 +115,9 @@ func parsePath(raw string) (*ducklakeParams, error) {
 		p.MetadataSecret = query.Get("metadata_secret")
 		p.SchemaFilter = query.Get("schema_filter")
 		p.TableFilter = query.Get("table_filter")
-		p.AutomaticMigration = strings.EqualFold(query.Get("automatic_migration"), "true")
+		if strings.EqualFold(query.Get("skip_auto_migrate"), "true") {
+			p.AutomaticMigration = false
+		}
 		p.EnsureDB = strings.EqualFold(query.Get("ensure_db"), "true")
 	} else {
 		p.MetadataPath = raw
@@ -147,7 +151,8 @@ func parsePgPath(raw string) (*ducklakeParams, error) {
 	}
 
 	p := &ducklakeParams{
-		MetadataType: "postgres",
+		MetadataType:       "postgres",
+		AutomaticMigration: true,
 	}
 
 	// Extract query params that are hugr-specific (not PG connection params)
@@ -159,7 +164,9 @@ func parsePgPath(raw string) (*ducklakeParams, error) {
 	}
 	p.SchemaFilter = u.Query().Get("schema_filter")
 	p.TableFilter = u.Query().Get("table_filter")
-	p.AutomaticMigration = strings.EqualFold(u.Query().Get("automatic_migration"), "true")
+	if strings.EqualFold(u.Query().Get("skip_auto_migrate"), "true") {
+		p.AutomaticMigration = false
+	}
 	p.EnsureDB = strings.EqualFold(u.Query().Get("ensure_db"), "true")
 
 	// Parse PostgreSQL connection fields from URI

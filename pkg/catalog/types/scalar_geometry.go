@@ -257,7 +257,7 @@ func parseGeoJSONLineString(coords []interface{}) (orb.LineString, error) {
 func parseGeoJSONPolygon(coords []interface{}) (orb.Polygon, error) {
 	p := make(orb.Polygon, len(coords))
 	for i, c := range coords {
-		cs, ok := c.([]interface{})
+		cs, ok := c.([]any)
 		if !ok {
 			return nil, fmt.Errorf("polygon ring is not an array")
 		}
@@ -274,7 +274,7 @@ func parseGeoJSONMultiPoint(coords []interface{}) (orb.MultiPoint, error) {
 	mp := make(orb.MultiPoint, len(coords))
 	var err error
 	for i, c := range coords {
-		cs, ok := c.([]interface{})
+		cs, ok := c.([]any)
 		if !ok {
 			return nil, fmt.Errorf("multi point coordinate is not an array")
 		}
@@ -286,11 +286,11 @@ func parseGeoJSONMultiPoint(coords []interface{}) (orb.MultiPoint, error) {
 	return mp, nil
 }
 
-func parseGeoJSONMultiLineString(coords []interface{}) (orb.MultiLineString, error) {
+func parseGeoJSONMultiLineString(coords []any) (orb.MultiLineString, error) {
 	mls := make(orb.MultiLineString, len(coords))
 	var err error
 	for i, c := range coords {
-		cs, ok := c.([]interface{})
+		cs, ok := c.([]any)
 		if !ok {
 			return nil, fmt.Errorf("multi line string coordinate is not an array")
 		}
@@ -302,11 +302,11 @@ func parseGeoJSONMultiLineString(coords []interface{}) (orb.MultiLineString, err
 	return mls, nil
 }
 
-func parseGeoJSONMultiPolygon(coords []interface{}) (orb.MultiPolygon, error) {
+func parseGeoJSONMultiPolygon(coords []any) (orb.MultiPolygon, error) {
 	mp := make(orb.MultiPolygon, len(coords))
 	var err error
 	for i, c := range coords {
-		cs, ok := c.([]interface{})
+		cs, ok := c.([]any)
 		if !ok {
 			return nil, fmt.Errorf("multi polygon ring is not an array")
 		}
@@ -322,7 +322,7 @@ func parseGeoJSONGeometryCollection(geoms []any) (orb.Collection, error) {
 	gc := make(orb.Collection, len(geoms))
 	var err error
 	for i, c := range geoms {
-		cs, ok := c.(map[string]interface{})
+		cs, ok := c.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("geometry collection geometry is not a map")
 		}

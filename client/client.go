@@ -473,9 +473,11 @@ func (c *Client) Subscribe(ctx context.Context, query string, vars map[string]an
 func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (*types.Response, error) {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(map[string]any{
-		"query":         query,
-		"variables":     vars,
-		"validate_only": types.IsValidateOnlyContext(ctx),
+		"query":     query,
+		"variables": vars,
+		// Pass hints
+		"validateOnly": types.IsValidateOnlyContext(ctx),
+		"noMutation":   types.IsNoMutationContext(ctx),
 	})
 	if err != nil {
 		return nil, err
@@ -504,7 +506,9 @@ func (c *Client) Query(ctx context.Context, query string, vars map[string]any) (
 }
 
 func (c *Client) ValidateQuery(ctx context.Context, query string, vars map[string]any) error {
-	_, err := c.Query(types.ContextWithValidateOnly(ctx), query, vars)
+	_, err := c.Query(
+		types.ContextWithQueryHint(ctx, types.ValidateOnlyHint()),
+		query, vars)
 	return err
 }
 
@@ -808,7 +812,9 @@ func hasTimezoneTransport(rt http.RoundTripper) bool {
 // parseGeometryFieldsHeader decodes the X-Hugr-Geometry-Fields multipart
 // part header that the server emits (see ipc-query.go: geometryInfo).
 // The header value is a JSON object of the shape
-//   {"field.path": {"srid":"4326","format":"WKB"}, ...}
+//
+//	{"field.path": {"srid":"4326","format":"WKB"}, ...}
+//
 // which corresponds directly to types.GeometryInfo. Returns nil for an
 // empty / malformed header — scanners then fall back to the byte-peek
 // heuristic exactly as before.

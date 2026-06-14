@@ -1,6 +1,7 @@
 package types
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -165,6 +166,94 @@ func TestScanData_NilResponse_ReturnsErrNoData(t *testing.T) {
 	err := r.ScanData("anything", &dest)
 	if !errors.Is(err, ErrNoData) {
 		t.Fatalf("err=%v, want ErrNoData", err)
+	}
+}
+
+// ScanDataJSON routes ArrowTable leaves through MarshalJSON →
+// scanObject, enabling stdlib-json features that the native row
+// scanner skips (no-tag field matching, json.RawMessage, custom
+// UnmarshalJSON). These tests pin that contract.
+
+func TestScanDataJSON_Table_UntaggedField_MatchedByGoName(t *testing.T) {
+	// Native Arrow scanner skips fields without a json tag. The JSON
+	// path matches by Go field name — this is the diagnostic feature.
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "Name", Type: arrow.BinaryTypes.String},
+	}, nil)
+	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
+	defer b.Release()
+	b.Field(0).(*array.StringBuilder).Append("alice")
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+	tbl := NewArrowTable()
+	defer tbl.Release()
+	tbl.Append(rec)
+
+	r := &Response{Data: map[string]any{"rows": tbl}}
+	type row struct{ Name string } // no json tag
+	var dest []row
+	if err := r.ScanDataJSON("rows", &dest); err != nil {
+		t.Fatalf("ScanDataJSON: %v", err)
+	}
+	if len(dest) != 1 || dest[0].Name != "alice" {
+		t.Errorf("dest=%+v", dest)
+	}
+
+	// Same call with ScanData (native path) should leave Name zero
+	// because the field has no json tag.
+	var destNative []row
+	if err := r.ScanData("rows", &destNative); err != nil {
+		t.Fatalf("ScanData: %v", err)
+	}
+	if len(destNative) != 1 || destNative[0].Name != "" {
+		t.Errorf("native destNative=%+v, want Name empty (no tag)", destNative)
+	}
+}
+
+func TestScanDataJSON_Table_RawMessage(t *testing.T) {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "payload", Type: arrow.BinaryTypes.String},
+	}, nil)
+	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
+	defer b.Release()
+	b.Field(0).(*array.StringBuilder).Append(`{"k":1}`)
+	rec := b.NewRecordBatch()
+	defer rec.Release()
+	tbl := NewArrowTable()
+	defer tbl.Release()
+	tbl.Append(rec)
+
+	r := &Response{Data: map[string]any{"rows": tbl}}
+	type row struct {
+		Payload json.RawMessage `json:"payload"`
+	}
+	var dest []row
+	if err := r.ScanDataJSON("rows", &dest); err != nil {
+		t.Fatalf("ScanDataJSON: %v", err)
+	}
+	if len(dest) != 1 {
+		t.Fatalf("len=%d", len(dest))
+	}
+	// MarshalJSON emits the string literal with quotes — so the raw
+	// message contains the quoted string, not the parsed JSON.
+	if string(dest[0].Payload) != `"{\"k\":1}"` {
+		t.Errorf("Payload=%s", dest[0].Payload)
+	}
+}
+
+func TestScanDataJSON_Object_SameAsScanData(t *testing.T) {
+	// Object leaves (*JsonValue) take the same path in both ScanData
+	// and ScanDataJSON — the forceJSON flag only affects ArrowTable.
+	jv := JsonValue(`{"id":7}`)
+	r := &Response{Data: map[string]any{"o": &jv}}
+	var dest struct {
+		ID int `json:"id"`
+	}
+	if err := r.ScanDataJSON("o", &dest); err != nil {
+		t.Fatalf("ScanDataJSON: %v", err)
+	}
+	if dest.ID != 7 {
+		t.Errorf("ID=%d", dest.ID)
 	}
 }
 

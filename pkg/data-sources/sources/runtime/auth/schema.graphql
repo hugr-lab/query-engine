@@ -54,11 +54,31 @@ type auth_access_check_entry {
   visible: Boolean!
 }
 
+# Access information for a type/object, including row-level filter and per-field access results
+type auth_access_info {
+  # Whether the type/object is accessible (not disabled) for the current role
+  enabled: Boolean!
+  # Whether the type/object is visible in introspection (not hidden) for the current role
+  visible: Boolean!
+  # Row-level security filter expression for the type/object (JSON)
+  filter: JSON
+  # Per-field access check results for the input list of fields (JSON)
+  data: JSON
+}
+
 extend type Function {
   # Returns the current authenticated user's identity information
   me: auth_me @function(name: "core_auth_me")
   # Returns the current user's role name and permission entries
-  my_permissions: auth_my_permissions @function(name: "core_auth_my_permissions")
+  my_permissions: auth_my_permissions @function(name: "core_auth_my_permissions", json_cast: true)
+  # Returns access information for a given type/object, including row-level filter and per-field access results
+  check_access_info(
+    # The type/object name to check access for
+    type_name: String!
+    # Field name to check access
+    field: String!
+  ): auth_access_info @function(name: "core_auth_check_access_info", json_cast: true)
+
   # Checks per-field access for a given type and comma-separated list of field names
   check_access(
     # The type/object name to check access for

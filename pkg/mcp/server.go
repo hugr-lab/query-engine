@@ -67,20 +67,35 @@ Each module is a namespace: query { module { submodule { ... } } }.`),
 	), s.searchDataSources)
 
 	mcpServer.AddTool(mcp.NewTool("discovery-search_module_data_objects",
-		mcp.WithDescription(`Search tables/views in a module. Returns type name (for schema-type_fields) and query field names (for GraphQL queries).
+		mcp.WithDescription(`Search tables/views by natural-language query — a LEAN candidate list. Per object: type name (for schema-type_fields), object_type (table|view), parameterized (view takes query params), has_geometry, module + catalog (data source), fields_count, and the queries[] with each query's return_type. For the full per-query arguments (incl. parameterized-view params) call discovery-describe_data_objects.
 Each data object has 4 query fields: <name>, <name>_by_pk, <name>_aggregation, <name>_bucket_aggregation.
-IMPORTANT: use query field names from 'queries' array to build GraphQL, not the type name.
-NOTE: aggregation and bucket_aggregation are data object queries, NOT functions — do not use discovery-search_module_functions for them.`),
-		mcp.WithString("module", mcp.Required(), mcp.Description("Module name to search within")),
+IMPORTANT: use query field names from 'queries' array to build GraphQL, not the type name; the module is REQUIRED to nest the query.
+NOTE: aggregation and bucket_aggregation are data object queries, NOT functions — do not use discovery-search_module_functions for them.
+
+The 'module' parameter is REQUIRED but may be an empty string. Filter semantics:
+  module=""  + include_sub_modules=false → root namespace only (objects with module=="")
+  module=""  + include_sub_modules=true  → whole catalogue (no module filter)
+  module="x" + include_sub_modules=false → strict eq match on module
+  module="x" + include_sub_modules=true  → prefix match (x and its sub-modules)`),
+		mcp.WithString("module", mcp.Required(), mcp.Description("Module path to narrow the search. Empty string is allowed: combined with include_sub_modules=true searches the whole catalogue; with include_sub_modules=false matches only root-level objects.")),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Natural language query describing what tables/views you need")),
 		mcp.WithNumber("top_k", mcp.Description("Number of results (1-50)"), mcp.DefaultNumber(5)),
 		mcp.WithNumber("min_score", mcp.Description("Minimum relevance score (0-1)"), mcp.DefaultNumber(0.3)),
-		mcp.WithBoolean("include_sub_modules", mcp.Description("Include sub-module data objects"), mcp.DefaultBool(true)),
+		mcp.WithBoolean("include_sub_modules", mcp.Description("Include sub-module data objects (see filter semantics in description)"), mcp.DefaultBool(true)),
 		mcp.WithOutputSchema[SearchResult[DataObjectSearchItem]](),
 	), s.searchModuleDataObjects)
 
+	mcpServer.AddTool(mcp.NewTool("discovery-describe_data_objects",
+		mcp.WithDescription(`Return the FULL catalogue record for EXACT-name data objects — the describe half of the data-object surface. Deterministic lookup (no semantic scoring), BATCHED: pass every type name you already know in one call. Type names carry the catalog prefix and are globally unique, so no module hint is needed.
+Use this once you know which objects you'll query (from a prior search, the user's literal input, a stored reference). Beyond the search shape, each query additionally carries query_root (the GraphQL type hosting the query field) and its arguments — including a parameterized view's params (args: <view>_args) — so you can build the call directly.
+Names that don't resolve to a visible table/view are skipped; an all-miss request returns a structured not_found error.`),
+		mcp.WithArray("names", mcp.Required(), mcp.Description("Type names with the catalog prefix (e.g. prefix_tablename), as listed in DataObjectSearchItem.Name."), mcp.WithStringItems()),
+		mcp.WithOutputSchema[SearchResult[DataObjectSearchItem]](),
+	), s.describeDataObjects)
+
 	mcpServer.AddTool(mcp.NewTool("discovery-search_module_functions",
-		mcp.WithDescription(`Search custom functions in a module. Functions are separate from data objects — they are custom computed endpoints.
+		mcp.WithDescription(`Search custom functions in a module — a LEAN candidate list. Functions are separate from data objects: custom computed endpoints.
+Per function: name, module, description, is_mutation, is_list, return_type, arguments_count. For the full signature (argument names/types + return type fields) call discovery-describe_functions with the names you'll use.
 Functions are called via: query { function { module { func_name(args) { fields } } }
 NOTE: do NOT search here for aggregation/bucket_aggregation — those are data object queries found via discovery-search_module_data_objects.`),
 		mcp.WithString("module", mcp.Required(), mcp.Description("Module name to search within")),
@@ -90,6 +105,15 @@ NOTE: do NOT search here for aggregation/bucket_aggregation — those are data o
 		mcp.WithBoolean("include_sub_modules", mcp.Description("Include sub-module functions"), mcp.DefaultBool(true)),
 		mcp.WithOutputSchema[SearchResult[FunctionSearchItem]](),
 	), s.searchModuleFunctions)
+
+	mcpServer.AddTool(mcp.NewTool("discovery-describe_functions",
+		mcp.WithDescription(`Return the FULL signature — arguments (name, type, required, description) + the return type with its top fields — for the named functions in a module. The describe half of discovery-search_module_functions.
+BATCHED: pass every function name you'll call in one request. Function names are NOT globally unique, so a module is required (sub-modules are searched too); both query and mutation functions are matched.
+Call this after search, once you know which functions you'll use. Names that don't resolve are skipped; an all-miss request returns a structured not_found error.`),
+		mcp.WithString("module", mcp.Required(), mcp.Description("Module the functions live in (sub-modules included)")),
+		mcp.WithArray("names", mcp.Required(), mcp.Description("Function field names to describe (from discovery-search_module_functions output)"), mcp.WithStringItems()),
+		mcp.WithOutputSchema[SearchResult[FunctionSearchItem]](),
+	), s.describeFunctions)
 
 	mcpServer.AddTool(mcp.NewTool("discovery-field_values",
 		mcp.WithDescription(`Return top distinct values and optional stats for a scalar field. Use to understand data distribution before building filters.
@@ -114,19 +138,27 @@ Use type_name (e.g. "prefix_tablename"), NOT the module name.`),
 	), s.typeInfo)
 
 	mcpServer.AddTool(mcp.NewTool("schema-type_fields",
-		mcp.WithDescription(`Return fields of a type. MUST call before building any query — field names cannot be guessed.
+		mcp.WithDescription(`List the fields of a type — LEAN candidate list, no per-field argument trees. MUST call before building any query — field names cannot be guessed.
 Use type_name (e.g. "synthea_patients"), NOT the module name (e.g. NOT "synthea").
-Returns: hugr_type (empty=scalar, select=relation, aggregate, bucket_agg, extra_field, function), arguments_count, is_list.
-Use include_arguments=true to see field arguments (filter types, bucket args, etc.).
+Returns per field: hugr_type (empty=scalar, select=relation, aggregate, bucket_agg, extra_field, function), arguments_count, is_list.
+hugr_type already tells you the argument profile; when you need the EXACT arguments of specific fields (filter inputs, bucket args, function/view params), call schema-describe_fields with those field names.
 Rely on field descriptions to understand semantics — names are often auto-generated.`),
 		mcp.WithString("type_name", mcp.Required(), mcp.Description("Full type name (e.g. prefix_tablename, NOT the module name)")),
 		mcp.WithString("relevance_query", mcp.Description("Rank fields by semantic relevance to this query")),
 		mcp.WithNumber("limit", mcp.Description("Max fields to return (1-200)"), mcp.DefaultNumber(50)),
 		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0)),
 		mcp.WithBoolean("include_description", mcp.Description("Include field descriptions (default false to save context)"), mcp.DefaultBool(false)),
-		mcp.WithBoolean("include_arguments", mcp.Description("Include full argument details for fields with arguments"), mcp.DefaultBool(false)),
 		mcp.WithOutputSchema[SearchResult[TypeFieldInfo]](),
 	), s.typeFields)
+
+	mcpServer.AddTool(mcp.NewTool("schema-describe_fields",
+		mcp.WithDescription(`Return the FULL detail — arguments (name, type, required, description) + description — for SPECIFIC named fields of a type. The describe half of schema-type_fields.
+Call this AFTER schema-type_fields, once you know which field(s) you will use and need their exact arguments: filter inputs, aggregation/bucket args, function parameters, or a parameterized-view's query parameters.
+Scope to the few fields you actually need — this stays tiny even for the wide operator types (_join, _spatial) whose full argument set is large.`),
+		mcp.WithString("type_name", mcp.Required(), mcp.Description("Full type name (e.g. prefix_tablename, NOT the module name)")),
+		mcp.WithArray("fields", mcp.Required(), mcp.Description("Field names to describe (from schema-type_fields output)"), mcp.WithStringItems()),
+		mcp.WithOutputSchema[SearchResult[TypeFieldInfo]](),
+	), s.describeFields)
 
 	mcpServer.AddTool(mcp.NewTool("schema-enum_values",
 		mcp.WithDescription(`Return enum values for a GraphQL enum type. Use to discover valid enum values before building queries.
@@ -151,6 +183,24 @@ Query rules:
 		mcp.WithString("jq_transform", mcp.Description("JQ expression to apply to result")),
 		mcp.WithNumber("max_result_size", mcp.Description("Max result bytes (100-10000). Increase if result is truncated."), mcp.DefaultNumber(1000)),
 	), s.inlineGraphQLResult)
+
+	mcpServer.AddTool(mcp.NewTool("data-execute_mutation",
+		mcp.WithDescription(`Execute a GraphQL MUTATION (insert/update/delete a data object, or call a mutation function) and return the JSON result.
+THIS MODIFIES DATA — only call when the user explicitly asked to create, update, or delete data. Runs with the caller's permissions; operations the user is not allowed to perform are rejected by the engine.
+Mutations mirror queries — modules are nested fields, the operation MUST start with 'mutation':
+- insert returns the new row (select its fields directly):
+    mutation { module { insert_<Object>(data: {field: value}) { id ... } } }
+- update/delete return OperationResult { affected_rows }; filter is REQUIRED to scope rows:
+    mutation { module { update_<Object>(filter: {...}, data: {...}) { affected_rows } } }
+    mutation { module { delete_<Object>(filter: {...}) { affected_rows } } }
+- mutation functions are nested under 'function':
+    mutation { function { module { <mutation_func>(args) { ... } } } }
+Field names are <Object> with the catalog prefix; get the exact mutation field names, the data-input shape, and the filter shape from discovery-describe_data_objects / discovery-describe_functions (or schema-describe_fields) BEFORE calling. Prefer the 'variables' argument for the data payload. If the result is truncated, raise max_result_size or use jq_transform.`),
+		mcp.WithString("query", mcp.Required(), mcp.Description("GraphQL mutation (operation must start with 'mutation')")),
+		mcp.WithObject("variables", mcp.Description("Mutation variables (use for the data payload / filter)")),
+		mcp.WithString("jq_transform", mcp.Description("JQ expression to apply to result")),
+		mcp.WithNumber("max_result_size", mcp.Description("Max result bytes (100-10000). Increase if result is truncated."), mcp.DefaultNumber(1000)),
+	), s.executeMutation)
 
 	mcpServer.AddTool(mcp.NewTool("data-validate_graphql_query",
 		mcp.WithDescription(`Validate a GraphQL query without executing. Use before execution to catch errors early.
@@ -261,10 +311,15 @@ func (s *Server) queryScan(ctx context.Context, gql string, vars map[string]any,
 	if err != nil {
 		return err
 	}
-	defer res.Close()
-	if res.Err() != nil {
-		return res.Err()
+	// Check res.Err() BEFORE registering Close: when the engine
+	// reports an error the Response can carry a half-built Data
+	// tree (typed-nil ArrowTableStream inside the nested map) and
+	// running Close() on it panics. Return early without touching
+	// the broken response.
+	if rerr := res.Err(); rerr != nil {
+		return rerr
 	}
+	defer res.Close()
 	return res.ScanData(path, target)
 }
 

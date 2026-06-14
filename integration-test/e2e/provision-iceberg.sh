@@ -40,7 +40,7 @@ if [ -z "$E2E_NETWORK" ]; then
   E2E_NETWORK="e2e_default"
 fi
 
-DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.5.0"
+DUCKDB_DOCKER_IMAGE="datacatering/duckdb:v1.5.2"
 
 # Seed is best-effort — may fail if data already exists from a previous run
 set +e
