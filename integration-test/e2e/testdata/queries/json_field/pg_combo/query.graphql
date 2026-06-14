@@ -1,0 +1,15 @@
+{
+  pg_store {
+    json_field_demo(
+      filter: {
+        _and: [
+          { data: { field: { path: "user.country", string: { eq: "DE" } } } }
+          { data: { field: { path: "user.age", isNull: false, int: { gte: 18 } } } }
+        ]
+      }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}

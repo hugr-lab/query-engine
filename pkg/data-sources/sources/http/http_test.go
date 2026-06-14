@@ -21,7 +21,7 @@ import (
 )
 
 func generateTestToken(username string, expires time.Time) string {
-	// Создаём новый токен
+	// Create a signed JWT for test OAuth flows.
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub":  strconv.Itoa(int(time.Since(expires).Seconds())),
 		"name": username,
@@ -58,7 +58,7 @@ func (s *testServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		password := r.Form.Get("password")
 		switch grantType {
 		case "password":
-			// Проверяем логин и пароль
+			// Validate resource-owner username and password.
 			if username != "user" || password != "pass" {
 				http.Error(w, "invalid_credentials", http.StatusUnauthorized)
 				return
@@ -89,7 +89,7 @@ func (s *testServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		refreshToken := r.Form.Get("refresh_token")
 		switch grantType {
 		case "password":
-			// Проверяем логин и пароль
+			// Validate resource-owner username and password.
 			if username != "user" || password != "pass" {
 				http.Error(w, "invalid_credentials", http.StatusUnauthorized)
 				return
@@ -273,7 +273,7 @@ func (s *testServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *testServer) authRequest(r *http.Request) bool {
-	//check is request authenticated
+	// Check whether the request satisfies the configured auth mode.
 	switch s.authParam.Type {
 	case "":
 		return true

@@ -88,7 +88,10 @@ func (e *Postgres) SQLValue(v any) (string, error) {
 		return SQLValueArrayFormatter(e, v)
 	case orb.Geometry:
 		b := wkt.Marshal(v)
-		return fmt.Sprintf("ST_GeomFromText('%s')", b), nil
+		// Tag WKT literals with SRID 4326 (WGS84) so PostGIS predicates can compare
+		// them against geometry columns and GeoJSON-derived values, which default
+		// to 4326 (per the GeoJSON spec).
+		return fmt.Sprintf("ST_GeomFromText('%s', 4326)", b), nil
 	case types.DateTime:
 		return fmt.Sprintf("'%s'::TIMESTAMP", time.Time(v).Format("2006-01-02T15:04:05")), nil
 	case time.Time:
@@ -255,6 +258,92 @@ func escapeJsonPathString(s string) string {
 }
 
 // TODO add compiler options to enable/disable type of operations and types support
+// extractJSONFilterValue is the JSONFieldFilter-specific typed extractor for
+// Postgres. Uniform shape: extract as TEXT (or pass through, for placeholders)
+// and apply a direct cast — no defensive jsonb_typeof wrappers. This is the
+// same shape JSONFieldFilter already uses for bigInt/date/time/interval and
+// matches the json-ops5 reference; consequence is that rows whose JSON value
+// at the path is of a wrong shape produce a Postgres cast error instead of
+// being filtered out as NULL. Acceptable trade-off given the alternative
+// (asymmetric defensiveness across 11 types) is more confusing than useful.
+//
+// Two dialect carve-outs:
+//
+//   - string returns the extracted text as-is. With path != "" we use the
+//     `->>` shortcut, which strips JSON quotes at the last hop; with path == ""
+//     the placeholder is already a VARCHAR.
+//   - geometry routes through ST_GeomFromGeoJSON because there is no implicit
+//     jsonb/text → GEOMETRY cast.
+func (e Postgres) extractJSONFilterValue(sqlName, path, gqlType string) string {
+	extracted := sqlName
+	if path != "" {
+		extracted = sqlName + extractPGJsonFieldByPath(path, true)
+	}
+	switch gqlType {
+	case "int", "float":
+		return "(" + extracted + ")::FLOAT"
+	case "string":
+		return extracted
+	case "bool":
+		return "(" + extracted + ")::BOOL"
+	case "bigInt":
+		return "(" + extracted + ")::BIGINT"
+	case "timestamp":
+		return "(" + extracted + ")::TIMESTAMPTZ"
+	case "dateTime":
+		return "(" + extracted + ")::TIMESTAMP"
+	case "date":
+		return "(" + extracted + ")::DATE"
+	case "time":
+		return "(" + extracted + ")::TIME"
+	case "interval":
+		return "(" + extracted + ")::INTERVAL"
+	case "geometry":
+		return "ST_GeomFromGeoJSON((" + extracted + ")::text)"
+	}
+	return ""
+}
+
+// jsonFieldCoerce normalises a sub-filter value so that pgx binds it as the
+// expected SQL type. Only TIME needs intervention: pgx maps time.Time to
+// TIMESTAMPTZ, which year-0001 makes invalid and PG would not implicitly cast
+// TIMESTAMPTZ→TIME either. Other typed values flow through pgx's native
+// bindings (DATE/TIMESTAMP/TIMESTAMPTZ from time.Time, INTERVAL from
+// time.Duration) and PG's implicit coercion handles the rest. Consumed by
+// compileJSONFieldFilter via jsonFieldFilterEngine.
+func (e Postgres) jsonFieldCoerce(v any, sqlType string) any {
+	if t, ok := v.(time.Time); ok && sqlType == "TIME" {
+		return t.Format(time.TimeOnly)
+	}
+	return v
+}
+
+// jsonFieldCoerceCastType picks the SQL type used both for value coercion and
+// for the `CAST($N AS T)` wrap around freshly-bound placeholders. Most types
+// ride pgx's native bindings + PG's implicit casts. TIME alone needs coerce
+// (year-0001 time.Time → "HH:MM:SS" + ::TIME) because pgx maps it to
+// TIMESTAMPTZ. INTERVAL is wrapped defensively.
+func (e Postgres) jsonFieldCoerceCastType(gqlType string) string {
+	switch gqlType {
+	case "time":
+		return "TIME"
+	case "interval":
+		return "INTERVAL"
+	}
+	return ""
+}
+
+// jsonPathIsNull emits a Postgres-specific NULL guard for a JSON path inside a
+// jsonb column. jsonb_typeof returns 'null' (lower-case) when the key exists
+// and its value is JSON null; the equality / inequality mirrors json-ops5.
+func (e Postgres) jsonPathIsNull(sqlName, path string, isNull bool) string {
+	op := "="
+	if !isNull {
+		op = "<>"
+	}
+	return fmt.Sprintf("jsonb_typeof((%s)%s) %s 'null'", sqlName, extractPGJsonFieldByPath(path, false), op)
+}
+
 func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, params []any) (string, []any, error) {
 	if jOp, ok := jsonPathOpMap[op]; ok && path != "" { // apply json path to jsonb field
 		jsonPathTemplate := "COALESCE(" + sqlName + " @@ '$." + path + " " + jOp + " %v', false)"
@@ -388,6 +477,18 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 		switch op {
 		case "eq":
 			return fmt.Sprintf("%s = %s", sqlName, val), params, nil
+		// gt/gte/lt/lte are valid on text and stay meaningful after the
+		// JSONFieldFilter pipeline coerces a typed value (DATE/TIME/...)
+		// into a string — the orchestration adds CAST($N AS <type>) so
+		// the comparison evaluates against the JSON-extracted typed side.
+		case "gt":
+			return fmt.Sprintf("%s > %s", sqlName, val), params, nil
+		case "gte":
+			return fmt.Sprintf("%s >= %s", sqlName, val), params, nil
+		case "lt":
+			return fmt.Sprintf("%s < %s", sqlName, val), params, nil
+		case "lte":
+			return fmt.Sprintf("%s <= %s", sqlName, val), params, nil
 		case "like":
 			return fmt.Sprintf("%s LIKE %s", sqlName, val), params, nil
 		case "ilike":
@@ -448,6 +549,14 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 			return "", nil, fmt.Errorf("unsupported filter operator: %s", op)
 		}
 	case map[string]any: // json
+		// JSONFieldFilter — typed sub-filter on a nested JSON path. The parsing /
+		// validation / AND-fold loop is shared (see compileJSONFieldFilter); the
+		// dialect-specific pieces are wired through the jsonFieldFilterEngine
+		// interface implemented by *Postgres: extractJSONFilterValue,
+		// jsonFieldCoerceCastType, jsonFieldCoerce, jsonPathIsNull.
+		if op == "field" {
+			return compileJSONFieldFilter(e, sqlName, value, params)
+		}
 		params = append(params, value)
 		val := "$" + strconv.Itoa(len(params))
 		switch op {

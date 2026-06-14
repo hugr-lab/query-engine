@@ -1,0 +1,10 @@
+{
+  local_db {
+    json_field_demo(
+      filter: { data: { field: { path: "user.age", int: { gte: 18 } } } }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}

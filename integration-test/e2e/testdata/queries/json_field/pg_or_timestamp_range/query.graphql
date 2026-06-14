@@ -1,0 +1,15 @@
+{
+  pg_store {
+    json_field_demo(
+      filter: {
+        _or: [
+          { data: { field: { path: "event.at", timestamp: { eq: "2024-06-11T10:00:00Z" } } } }
+          { data: { field: { path: "event.at", timestamp: { gte: "2024-06-09T00:00:00Z", lte: "2024-06-10T23:59:59Z" } } } }
+        ]
+      }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}
