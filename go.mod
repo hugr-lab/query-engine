@@ -3,15 +3,15 @@ module github.com/hugr-lab/query-engine
 go 1.26
 
 require (
-	github.com/hugr-lab/query-engine/client v0.3.33
-	github.com/hugr-lab/query-engine/types v0.3.33
+	github.com/hugr-lab/query-engine/client v0.3.36
+	github.com/hugr-lab/query-engine/types v0.3.36
 )
 
 require (
 	github.com/andybalholm/brotli v1.2.1
 	github.com/apache/arrow-go/v18 v18.5.2
 	github.com/coder/websocket v1.8.14
-	github.com/duckdb/duckdb-go/v2 v2.10502.0
+	github.com/duckdb/duckdb-go/v2 v2.10503.1
 	github.com/eko/gocache/lib/v4 v4.2.3
 	github.com/eko/gocache/store/bigcache/v4 v4.2.4
 	github.com/getkin/kin-openapi v0.136.0
@@ -39,12 +39,12 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
-	github.com/duckdb/duckdb-go-bindings v0.10502.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10502.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.10502.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10502.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10502.0 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10502.0 // indirect
+	github.com/duckdb/duckdb-go-bindings v0.10503.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.10503.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.10503.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.10503.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.10503.0 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.10503.0 // indirect
 	github.com/go-openapi/swag/jsonname v0.26.0 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -58,6 +58,9 @@ require (
 	github.com/woodsbury/decimal128 v1.4.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.1 // indirect
+	go.opentelemetry.io/otel/metric v1.43.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
+	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect

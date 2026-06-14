@@ -174,8 +174,8 @@ func TestMCP_ToolsList(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	tools := result["tools"].([]any)
 
-	// Should have 10 tools (5 discovery + 3 schema + 2 data).
-	assert.Len(t, tools, 10, "expected 10 MCP tools")
+	// Should have 14 tools (7 discovery + 4 schema + 3 data).
+	assert.Len(t, tools, 14, "expected 14 MCP tools")
 
 	// Verify tool names.
 	toolNames := make(map[string]bool)
@@ -187,12 +187,16 @@ func TestMCP_ToolsList(t *testing.T) {
 		"discovery-search_modules",
 		"discovery-search_data_sources",
 		"discovery-search_module_data_objects",
+		"discovery-describe_data_objects",
 		"discovery-search_module_functions",
+		"discovery-describe_functions",
 		"discovery-field_values",
 		"schema-type_info",
 		"schema-type_fields",
+		"schema-describe_fields",
 		"schema-enum_values",
 		"data-inline_graphql_result",
+		"data-execute_mutation",
 		"data-validate_graphql_query",
 	}
 	for _, name := range expectedTools {

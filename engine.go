@@ -454,6 +454,7 @@ func (s *Service) parseRequest(r *http.Request) (req types.Request, err error) {
 			Variables:     make(map[string]any),
 			OperationName: query.Get("operationName"),
 			ValidateOnly:  query.Has("validate_only") && query.Get("validate_only") == "true",
+			NoMutation:    query.Has("no_mutation") && query.Get("no_mutation") == "true",
 		}
 		vars := query.Get("variables")
 		if vars != "" {
@@ -478,9 +479,14 @@ func (s *Service) ProcessQuery(ctx context.Context, req types.Request) types.Res
 	}
 	parseDuration := time.Since(start)
 
+	var hints []types.QueryHint
 	if req.ValidateOnly {
-		ctx = types.ContextWithValidateOnly(ctx)
+		hints = append(hints, types.ValidateOnlyHint())
 	}
+	if req.NoMutation {
+		hints = append(hints, types.NoMutationHint())
+	}
+	ctx = types.ContextWithQueryHint(ctx, hints...)
 
 	provider := s.schema.Provider()
 	data, ext, err := s.ProcessOperation(ctx, provider, op)
@@ -562,4 +568,3 @@ func (s *Service) Commit(ctx context.Context) error {
 func (s *Service) Rollback(ctx context.Context) error {
 	return s.db.Rollback(ctx)
 }
-

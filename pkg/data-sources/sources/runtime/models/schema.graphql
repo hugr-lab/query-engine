@@ -17,6 +17,19 @@ extend type Function {
   ): embeddings_result
     @function(name: "core_models_embeddings")
 
+  "Distance between the embeddings of two strings, using the same metrics as vector search"
+  embedding_distance(
+    "Name of the embedding data source"
+    model: String!
+    "First text to embed"
+    text1: String!
+    "Second text to embed"
+    text2: String!
+    "Distance metric (same enum as vector search): L2, Cosine, Inner"
+    distance: VectorDistanceType!
+  ): Float
+    @function(name: "core_models_embedding_distance")
+
   "Simple text completion"
   completion(
     "Name of the LLM data source"
