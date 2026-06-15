@@ -114,3 +114,11 @@ type price_ranges @table(name: "price_ranges") {
     valid_price: IntRange
     valid_period: TimestampRange
 }
+
+"""
+Demo dataset for JSONFieldFilter coverage: filter rows by extracting and casting nested values inside `data` (e.g. data.user.age, data.user.country, data.metrics.score, data.shape, data.event.at).
+"""
+type json_field_demo @table(name: "json_field_demo") {
+    id: Int! @pk
+    data: JSON
+}

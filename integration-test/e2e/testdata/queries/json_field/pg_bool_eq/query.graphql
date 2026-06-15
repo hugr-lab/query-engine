@@ -1,0 +1,10 @@
+{
+  pg_store {
+    json_field_demo(
+      filter: { data: { field: { path: "flags.premium", bool: { eq: true } } } }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}

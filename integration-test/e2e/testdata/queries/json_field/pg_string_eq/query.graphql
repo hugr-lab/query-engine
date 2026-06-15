@@ -1,0 +1,10 @@
+{
+  pg_store {
+    json_field_demo(
+      filter: { data: { field: { path: "user.country", string: { eq: "DE" } } } }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}

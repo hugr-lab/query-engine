@@ -1,0 +1,15 @@
+{
+  pg_store {
+    json_field_demo(
+      filter: {
+        _or: [
+          { data: { field: { path: "lunch.at_time", time: { eq: "12:30:00" } } } }
+          { data: { field: { path: "lunch.at_time", time: { gte: "12:45:00", lte: "13:30:00" } } } }
+        ]
+      }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}

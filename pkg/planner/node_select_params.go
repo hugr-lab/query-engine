@@ -715,6 +715,9 @@ func filterSQLValue(ctx context.Context, e engines.Engine, defs base.Definitions
 		if v == nil {
 			continue
 		}
+		// JSONFieldFilter (op == "field" on a JSON column) is dispatched
+		// inside the engine's FilterOperationSQLValue via the map[string]any
+		// branch — keeping the planner dialect-agnostic.
 		filter, p, err := e.FilterOperationSQLValue(sqlName, path, op, v, params)
 		if err != nil {
 			return "", nil, err

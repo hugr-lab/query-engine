@@ -1,0 +1,10 @@
+{
+  local_db {
+    json_field_demo(
+      filter: { data: { field: { path: "subscription.duration", interval: { eq: "PT1H30M" } } } }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}

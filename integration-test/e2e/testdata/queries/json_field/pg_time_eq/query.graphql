@@ -1,0 +1,10 @@
+{
+  pg_store {
+    json_field_demo(
+      filter: { data: { field: { path: "lunch.at_time", time: { eq: "12:30:00" } } } }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}

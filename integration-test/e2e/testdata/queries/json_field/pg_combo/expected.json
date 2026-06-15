@@ -1,0 +1,14 @@
+{
+  "data": {
+    "pg_store": {
+      "json_field_demo": [
+        {
+          "id": 1
+        },
+        {
+          "id": 9
+        }
+      ]
+    }
+  }
+}

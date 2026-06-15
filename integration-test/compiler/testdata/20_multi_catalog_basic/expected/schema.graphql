@@ -485,8 +485,7 @@ input IntervalListFilter @system {
 }
 """
 The `JSON` scalar type represents arbitrary JSON data, encoded as a JSON string.
-Filter operators: eq, has, has_all, contains, is_null
-Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter)
+Aggregation functions: count, list, any, last, sum, avg, min, max, string_agg, bool_and, bool_or (with path parameter).
 """
 scalar JSON
 type JSONAggregation @system {
@@ -502,11 +501,103 @@ type JSONAggregation @system {
   string_agg(path: String!, sep: String!, distinct: Boolean = false): String
   sum(path: String!): Float
 }
+"""
+Filter on a single value extracted from the JSON document at a dot-path.
+At most one typed sub-filter may be set; the server rejects the input otherwise.
+isNull (if set) is AND-combined with the typed sub-filter.
+"""
+input JSONFieldFilter @system {
+  """
+  Compare the extracted value as BigInt (engine cast).
+  """
+  bigInt: BigIntFilter
+  """
+  Compare the extracted value as Boolean.
+  """
+  bool: BooleanFilter
+  """
+  JSON literal used as a default when the value at `path` is missing or JSON null,
+    applied BEFORE the typed sub-filter. Lets the comparison treat absent values
+    as a known default (e.g. coalesce: 0 + int: { gte: 18 }).
+  """
+  coalesce: JSON
+  """
+  Compare the extracted value as Date.
+  """
+  date: DateFilter
+  """
+  Compare the extracted value as DateTime (naive timestamp).
+  """
+  dateTime: DateTimeFilter
+  """
+  Compare the extracted value as Float (engine cast).
+  """
+  float: FloatFilter
+  """
+  Compare the extracted GeoJSON value as Geometry.
+  """
+  geometry: GeometryFilter
+  """
+  Compare the extracted value as Int (engine cast).
+  """
+  int: IntFilter
+  """
+  Compare the extracted value as Interval.
+  """
+  interval: IntervalFilter
+  """
+  Strict null check, independent of the typed sub-filter.
+    `true` matches when the key exists at the path AND its value is JSON null;
+    `false` matches when the key exists AND its value is anything other than JSON null;
+    a missing key yields false in both cases.
+    To match "key missing or null", combine isNull: true with _not on has at the parent JSONFilter via _or.
+  """
+  isNull: Boolean
+  """
+  Dot-path to the value inside the JSON document, e.g. user.address.city. Required.
+  """
+  path: String!
+  """
+  Compare the extracted value as String.
+  """
+  string: StringFilter
+  """
+  Compare the extracted value as Time.
+  """
+  time: TimeFilter
+  """
+  Compare the extracted value as Timestamp (timezone-aware).
+  """
+  timestamp: TimestampFilter
+}
+"""
+Filter operators on a JSON document column. Combine several path conditions
+with the parent object filter via _and / _or / _not (same as other columns).
+"""
 input JSONFilter @system {
+  """
+  Document JSON-contains the given subtree (PostgreSQL @> / DuckDB structural superset).
+  """
   contains: JSON
+  """
+  Document equals the given JSON value.
+  """
   eq: JSON
+  """
+  Filter on a nested value at a dot-path inside the document. See JSONFieldFilter.
+  """
+  field: JSONFieldFilter
+  """
+  Top-level key with this name exists in the document.
+  """
   has: String
+  """
+  All of the given top-level keys exist in the document.
+  """
   has_all: [String!]
+  """
+  Matches rows where the column itself is SQL NULL (true) or NOT NULL (false).
+  """
   is_null: Boolean
 }
 type JSONSubAggregation @system {

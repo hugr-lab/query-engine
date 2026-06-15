@@ -1,0 +1,10 @@
+{
+  local_db {
+    json_field_demo(
+      filter: { data: { field: { path: "metrics.score", float: { gte: 0.5 } } } }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}
