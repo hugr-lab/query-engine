@@ -272,8 +272,8 @@ func escapeJsonPathString(s string) string {
 //   - string returns the extracted text as-is. With path != "" we use the
 //     `->>` shortcut, which strips JSON quotes at the last hop; with path == ""
 //     the placeholder is already a VARCHAR.
-//   - geometry routes through ST_GeomFromGeoJSON because there is no implicit
-//     jsonb/text → GEOMETRY cast.
+//   - geometry accepts GeoJSON objects/strings and WKT strings extracted from
+//     JSONB; there is no implicit jsonb/text → GEOMETRY cast.
 func (e Postgres) extractJSONFilterValue(sqlName, path, gqlType string) string {
 	extracted := sqlName
 	if path != "" {
@@ -299,9 +299,14 @@ func (e Postgres) extractJSONFilterValue(sqlName, path, gqlType string) string {
 	case "interval":
 		return "(" + extracted + ")::INTERVAL"
 	case "geometry":
-		return "ST_GeomFromGeoJSON((" + extracted + ")::text)"
+		return postgresJSONGeometrySQL(extracted)
 	}
 	return ""
+}
+
+func postgresJSONGeometrySQL(sqlText string) string {
+	geomText := "NULLIF(BTRIM((" + sqlText + ")::text), '')"
+	return "CASE WHEN " + jsonGeometryTextIsEWKTSQL(geomText) + " THEN ST_GeomFromEWKT(" + geomText + ") WHEN " + jsonGeometryTextIsWKTSQL(geomText) + " THEN ST_GeomFromText(" + geomText + ", 4326) ELSE ST_GeomFromGeoJSON(" + geomText + ") END"
 }
 
 // jsonFieldCoerce normalises a sub-filter value so that pgx binds it as the
@@ -345,6 +350,7 @@ func (e Postgres) jsonPathIsNull(sqlName, path string, isNull bool) string {
 }
 
 func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, params []any) (string, []any, error) {
+	baseSQLName := sqlName
 	if jOp, ok := jsonPathOpMap[op]; ok && path != "" { // apply json path to jsonb field
 		jsonPathTemplate := "COALESCE(" + sqlName + " @@ '$." + path + " " + jOp + " %v', false)"
 		switch value := value.(type) {
@@ -523,7 +529,7 @@ func (e *Postgres) FilterOperationSQLValue(sqlName, path, op string, value any, 
 		params = append(params, value)
 		val := "$" + strconv.Itoa(len(params))
 		if path != "" {
-			sqlName = fmt.Sprintf("ST_GeomFromGeoJSON((%s)::text)", sqlName)
+			sqlName = postgresJSONGeometrySQL(baseSQLName + extractPGJsonFieldByPath(path, true))
 		}
 		switch op {
 		case "eq":

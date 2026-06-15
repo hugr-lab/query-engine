@@ -1,0 +1,17 @@
+{
+  local_db {
+    json_field_demo(
+      filter: {
+        data: {
+          field: {
+            path: "shape_wkt"
+            geometry: { intersects: "POLYGON((5 47,15 47,15 55,5 55,5 47))" }
+          }
+        }
+      }
+      order_by: [{ field: "id", direction: ASC }]
+    ) {
+      id
+    }
+  }
+}

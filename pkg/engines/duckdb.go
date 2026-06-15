@@ -285,8 +285,8 @@ func (e DuckDB) AddObjectFields(sqlName string, fields map[string]string) string
 //     canonical `try_cast(meta['k'] AS VARCHAR)` keeps the surrounding JSON
 //     quotes (DuckDB's JSON→VARCHAR is a serialization, not an unwrap), so
 //     equality against a Go-bound VARCHAR would never match.
-//   - GEOMETRY routes through ST_GeomFromGeoJSON because DuckDB has no
-//     implicit JSON → GEOMETRY cast; NULLIF guards a JSON-null literal.
+//   - GEOMETRY extracts JSON text and accepts both GeoJSON objects/strings and
+//     WKT strings. DuckDB has no implicit JSON/VARCHAR → GEOMETRY cast.
 //
 // Every other token resolves to a single `try_cast(val AS T)` shape.
 func (e DuckDB) extractJSONFilterValue(sqlName, path, gqlType string) string {
@@ -297,9 +297,9 @@ func (e DuckDB) extractJSONFilterValue(sqlName, path, gqlType string) string {
 	if gqlType == "geometry" {
 		raw := sqlName
 		if path != "" {
-			raw = "json_extract(" + sqlName + "::JSON,'$." + path + "')"
+			raw = "json_extract_string(" + sqlName + "::JSON,'$." + path + "')"
 		}
-		return "ST_GeomFromGeoJSON(NULLIF(" + raw + "::VARCHAR, 'null'))"
+		return duckDBJSONGeometrySQL(raw)
 	}
 	if gqlType == "string" && path != "" {
 		return "json_extract_string(" + sqlName + "::JSON,'$." + path + "')"
@@ -325,6 +325,15 @@ func (e DuckDB) extractJSONFilterValue(sqlName, path, gqlType string) string {
 		return "try_cast(" + val + " AS INTERVAL)"
 	}
 	return ""
+}
+
+func duckDBJSONGeometrySQL(sqlText string) string {
+	geomText := "NULLIF(trim((" + sqlText + ")::VARCHAR), '')"
+	return "CASE WHEN " + jsonGeometryTextIsEWKTSQL(geomText) + " THEN ST_GeomFromText(" + duckDBJSONGeometryEWKTBodySQL(geomText) + ") WHEN " + jsonGeometryTextIsWKTSQL(geomText) + " THEN ST_GeomFromText(" + geomText + ") ELSE ST_GeomFromGeoJSON(" + geomText + ") END"
+}
+
+func duckDBJSONGeometryEWKTBodySQL(sqlText string) string {
+	return "regexp_replace(" + sqlText + ", '" + jsonGeometryEWKTPrefixPattern + "', '', 'i')"
 }
 
 // jsonFieldCoerce stringifies time.Time / time.Duration so the duckdb-go
@@ -388,6 +397,7 @@ func (e DuckDB) jsonPathIsNull(sqlName, path string, isNull bool) string {
 }
 
 func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, params []any) (string, []any, error) {
+	baseSQLName := sqlName
 	if path != "" {
 		sqlName += extractStructFieldByPath(path)
 	}
@@ -484,6 +494,9 @@ func (e *DuckDB) FilterOperationSQLValue(sqlName, path, op string, value any, pa
 	case orb.Geometry:
 		params = append(params, value)
 		val := "$" + strconv.Itoa(len(params))
+		if path != "" {
+			sqlName = duckDBJSONGeometrySQL("json_extract_string(" + baseSQLName + "::JSON,'$." + path + "')")
+		}
 		switch op {
 		case "eq":
 			return fmt.Sprintf("ST_Equals(%s,%s)", sqlName, val), params, nil

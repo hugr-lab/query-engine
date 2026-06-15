@@ -11,6 +11,18 @@ import (
 // sqlParamRegExp matches a `$N` SQL parameter placeholder.
 var sqlParamRegExp = regexp.MustCompile(`\$(\d+)`)
 
+var jsonGeometryWKTTypes = []string{
+	"POINT",
+	"LINESTRING",
+	"POLYGON",
+	"MULTIPOINT",
+	"MULTILINESTRING",
+	"MULTIPOLYGON",
+	"GEOMETRYCOLLECTION",
+}
+
+const jsonGeometryEWKTPrefixPattern = "^[[:space:]]*SRID[[:space:]]*=[[:space:]]*[0-9]+[[:space:]]*;[[:space:]]*"
+
 // castParamRefs rewrites every `$N` placeholder in sql whose N is strictly
 // greater than skipBelow to `CAST($N AS sqlType)`. Placeholders bound before
 // the JSONFieldFilter pipeline started (e.g. a COALESCE default that was
@@ -29,6 +41,22 @@ func castParamRefs(sql, sqlType string, skipBelow int) string {
 		}
 		return "CAST(" + m + " AS " + sqlType + ")"
 	})
+}
+
+func jsonGeometryTextIsWKTSQL(sqlText string) string {
+	normalized := "UPPER(LTRIM(" + sqlText + "))"
+	predicates := make([]string, 0, len(jsonGeometryWKTTypes)*2)
+	for _, typ := range jsonGeometryWKTTypes {
+		predicates = append(predicates,
+			normalized+" LIKE '"+typ+"(%'",
+			normalized+" LIKE '"+typ+" %'",
+		)
+	}
+	return "(" + strings.Join(predicates, " OR ") + ")"
+}
+
+func jsonGeometryTextIsEWKTSQL(sqlText string) string {
+	return "(regexp_replace(" + sqlText + ", '" + jsonGeometryEWKTPrefixPattern + "', '', 'i') <> " + sqlText + ")"
 }
 
 // jsonFieldFilterEngine bundles the dialect-specific hooks consumed by

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	catalogtypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/paulmach/orb"
 )
 
@@ -12,15 +13,60 @@ func normalizeSQL(s string) string {
 	return strings.Join(strings.Fields(s), " ")
 }
 
+func TestJSONGeometryTextIsWKTSQL(t *testing.T) {
+	got := jsonGeometryTextIsWKTSQL("geom_text")
+	for _, typ := range jsonGeometryWKTTypes {
+		if !strings.Contains(got, "LIKE '"+typ+"(%'") {
+			t.Fatalf("missing compact WKT predicate for %s in %s", typ, got)
+		}
+		if !strings.Contains(got, "LIKE '"+typ+" %'") {
+			t.Fatalf("missing spaced WKT predicate for %s in %s", typ, got)
+		}
+	}
+	if strings.Contains(got, "'{'") {
+		t.Fatalf("WKT predicate should not classify GeoJSON by object opener: %s", got)
+	}
+}
+
+func TestJSONGeometryTextIsEWKTSQL(t *testing.T) {
+	got := jsonGeometryTextIsEWKTSQL("geom_text")
+	if !strings.Contains(got, "regexp_replace") || !strings.Contains(got, "<> geom_text") {
+		t.Fatalf("EWKT predicate should be based on prefix regexp replacement: %s", got)
+	}
+	if strings.Contains(got, "LIKE 'SRID=%;%'") {
+		t.Fatalf("EWKT predicate should not require compact SRID prefix: %s", got)
+	}
+	body := duckDBJSONGeometryEWKTBodySQL("geom_text")
+	if !strings.Contains(body, "SRID") || !strings.Contains(body, "regexp_replace") {
+		t.Fatalf("missing EWKT body extraction in %s", body)
+	}
+	duckSQL := duckDBJSONGeometrySQL("geom_text")
+	if !strings.Contains(duckSQL, "ST_GeomFromText(regexp_replace") {
+		t.Fatalf("DuckDB EWKT branch should strip SRID before ST_GeomFromText: %s", duckSQL)
+	}
+	pgSQL := postgresJSONGeometrySQL("geom_text")
+	if !strings.Contains(pgSQL, "ST_GeomFromEWKT") {
+		t.Fatalf("Postgres EWKT branch should use ST_GeomFromEWKT: %s", pgSQL)
+	}
+}
+
 // TestJSONFieldFilterSQL_DuckDB pins the SQL each typed JSONFieldFilter sub-
 // filter produces for DuckDB after the refactor onto ExtractNestedTypedValue2.
 // int/float/string/bool/timestamp/dateTime delegate to ExtractNestedTypedValue
-// (subscript-style + try_cast). bigInt/date/time/interval/geometry use the
+// (subscript-style + try_cast). bigInt/date/time/interval use the
 // json_extract / json_value / json_extract_string patterns the json-ops5
-// reference implementation validated. Time-like params are coerced into
-// deterministic strings and the freshly-bound `$N` is wrapped with CAST.
+// reference implementation validated. Geometry extracts JSON text and accepts
+// both GeoJSON and WKT. Time-like params are coerced into deterministic strings
+// and the freshly-bound `$N` is wrapped with CAST.
 func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 	e := NewDuckDB()
+	shapeGeometrySQL := duckDBJSONGeometrySQL("json_extract_string(meta::JSON,'$.shape')")
+	shapeWKTGeometrySQL := duckDBJSONGeometrySQL("json_extract_string(meta::JSON,'$.shape_wkt')")
+	shapeEWKTGeometrySQL := duckDBJSONGeometrySQL("json_extract_string(meta::JSON,'$.shape_ewkt')")
+	wktPoint, err := catalogtypes.ParseValue("Geometry", "POINT(1 2)")
+	if err != nil {
+		t.Fatalf("parse WKT geometry filter value: %v", err)
+	}
 	tests := []struct {
 		name       string
 		fv         map[string]any
@@ -89,9 +135,27 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 			wantParams: []any{"5400 seconds"},
 		},
 		{
-			name:       "geometry intersects — new inline (json_extract → ST_GeomFromGeoJSON)",
+			name:       "geometry intersects — inline GeoJSON/WKT detector",
 			fv:         map[string]any{"path": "shape", "geometry": map[string]any{"intersects": orb.Point{1, 2}}},
-			wantSQL:    "(ST_Intersects(ST_GeomFromGeoJSON(NULLIF(json_extract(meta::JSON,'$.shape')::VARCHAR, 'null')),$1))",
+			wantSQL:    "(ST_Intersects(" + shapeGeometrySQL + ",$1))",
+			wantParams: []any{orb.Point{1, 2}},
+		},
+		{
+			name:       "geometry intersects — WKT filter literal parsed by Geometry scalar",
+			fv:         map[string]any{"path": "shape", "geometry": map[string]any{"intersects": wktPoint}},
+			wantSQL:    "(ST_Intersects(" + shapeGeometrySQL + ",$1))",
+			wantParams: []any{wktPoint},
+		},
+		{
+			name:       "geometry intersects — WKT string stored inside JSON",
+			fv:         map[string]any{"path": "shape_wkt", "geometry": map[string]any{"intersects": orb.Point{1, 2}}},
+			wantSQL:    "(ST_Intersects(" + shapeWKTGeometrySQL + ",$1))",
+			wantParams: []any{orb.Point{1, 2}},
+		},
+		{
+			name:       "geometry intersects — EWKT string stored inside JSON",
+			fv:         map[string]any{"path": "shape_ewkt", "geometry": map[string]any{"intersects": orb.Point{1, 2}}},
+			wantSQL:    "(ST_Intersects(" + shapeEWKTGeometrySQL + ",$1))",
 			wantParams: []any{orb.Point{1, 2}},
 		},
 		{
@@ -161,10 +225,18 @@ func TestJSONFieldFilterSQL_DuckDB(t *testing.T) {
 // ExtractNestedTypedValue2 — delegation for the 5 covered tokens (which uses
 // the engine's jsonb_typeof CASE wrapper for number/bool/string at empty path
 // and `->>` shortcut for string at non-empty path), new inline `(extracted)::T`
-// for bigInt/date/time/interval/geometry. pgx native bindings handle most
-// time params; TIME alone coerces to "HH:MM:SS" and CASTs the placeholder.
+// for bigInt/date/time/interval. Geometry extracts JSONB text and accepts both
+// GeoJSON and WKT. pgx native bindings handle most time params; TIME alone
+// coerces to "HH:MM:SS" and CASTs the placeholder.
 func TestJSONFieldFilterSQL_Postgres(t *testing.T) {
 	e := &Postgres{}
+	shapeGeometrySQL := postgresJSONGeometrySQL("meta->>'shape'")
+	shapeWKTGeometrySQL := postgresJSONGeometrySQL("meta->>'shape_wkt'")
+	shapeEWKTGeometrySQL := postgresJSONGeometrySQL("meta->>'shape_ewkt'")
+	wktPoint, err := catalogtypes.ParseValue("Geometry", "POINT(1 2)")
+	if err != nil {
+		t.Fatalf("parse WKT geometry filter value: %v", err)
+	}
 	cases := []struct {
 		name       string
 		fv         map[string]any
@@ -233,9 +305,27 @@ func TestJSONFieldFilterSQL_Postgres(t *testing.T) {
 			wantParams: []any{90 * time.Minute},
 		},
 		{
-			name:       "geometry intersects — new inline ST_GeomFromGeoJSON",
+			name:       "geometry intersects — inline GeoJSON/WKT detector",
 			fv:         map[string]any{"path": "shape", "geometry": map[string]any{"intersects": orb.Point{1, 2}}},
-			wantSQL:    "(ST_Intersects(ST_GeomFromGeoJSON((meta->>'shape')::text),$1))",
+			wantSQL:    "(ST_Intersects(" + shapeGeometrySQL + ",$1))",
+			wantParams: []any{orb.Point{1, 2}},
+		},
+		{
+			name:       "geometry intersects — WKT filter literal parsed by Geometry scalar",
+			fv:         map[string]any{"path": "shape", "geometry": map[string]any{"intersects": wktPoint}},
+			wantSQL:    "(ST_Intersects(" + shapeGeometrySQL + ",$1))",
+			wantParams: []any{wktPoint},
+		},
+		{
+			name:       "geometry intersects — WKT string stored inside JSONB",
+			fv:         map[string]any{"path": "shape_wkt", "geometry": map[string]any{"intersects": orb.Point{1, 2}}},
+			wantSQL:    "(ST_Intersects(" + shapeWKTGeometrySQL + ",$1))",
+			wantParams: []any{orb.Point{1, 2}},
+		},
+		{
+			name:       "geometry intersects — EWKT string stored inside JSONB",
+			fv:         map[string]any{"path": "shape_ewkt", "geometry": map[string]any{"intersects": orb.Point{1, 2}}},
+			wantSQL:    "(ST_Intersects(" + shapeEWKTGeometrySQL + ",$1))",
 			wantParams: []any{orb.Point{1, 2}},
 		},
 		{
