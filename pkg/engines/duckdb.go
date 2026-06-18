@@ -118,9 +118,9 @@ func duckDBArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourc
 	}
 	switch field.Definition.Type.Name() {
 	case base.JSONTypeName:
-		return duckDBArrowJSONExpr(arrowField, sourceExpr), nil
+		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
 	case base.GeometryTypeName:
-		return duckDBArrowGeometryExpr(arrowField, sourceExpr)
+		return arrowIngestGeometryStagingExpr(arrowField, sourceExpr)
 	default:
 		return sourceExpr, nil
 	}
