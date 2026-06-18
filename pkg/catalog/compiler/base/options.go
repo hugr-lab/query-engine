@@ -87,6 +87,8 @@ type EngineCapabilities struct {
 	Insert  EngineInsertCapabilities
 	Update  EngineUpdateCapabilities
 	Delete  EngineDeleteCapabilities
+	Ingest  EngineDeleteCapabilities
+	// options: only insert / merge ...
 }
 
 type EngineInsertCapabilities struct {

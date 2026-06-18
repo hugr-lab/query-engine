@@ -600,23 +600,8 @@ func (e *Postgres) ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Fiel
 }
 
 func (e *Postgres) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error) {
-	if value == nil {
-		return "NULL", nil
-	}
-	if field != nil && field.Definition != nil && field.Definition.Type.Name() == base.GeometryTypeName {
-		geom, err := ctypes.ParseGeometryValue(value)
-		if err != nil {
-			return "", err
-		}
-		if geom == nil {
-			return "NULL", nil
-		}
-		srid := base.FieldDefDirectiveArgString(field.Definition, base.FieldGeometryInfoDirectiveName, base.ArgSRID)
-		wktValue := strings.ReplaceAll(string(wkt.Marshal(geom)), "'", "''")
-		return postgresWKTText("'"+wktValue+"'", srid), nil
-	}
 	var duckdb DuckDB
-	return duckdb.SQLValue(value)
+	return duckdb.ArrowIngestLiteralExpr(field, value)
 }
 
 func postgresArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
@@ -625,31 +610,16 @@ func postgresArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sou
 	}
 	switch field.Definition.Type.Name() {
 	case base.JSONTypeName:
-		return duckDBArrowJSONExpr(arrowField, sourceExpr), nil
+		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
 	case base.GeometryTypeName:
-		return postgresArrowGeometryWKTExpr(field, arrowField, sourceExpr)
+		return postgresArrowGeometryExpr(arrowField, sourceExpr)
 	default:
 		return sourceExpr, nil
 	}
 }
 
-func postgresArrowGeometryWKTExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
-	srid := ""
-	if field != nil && field.Definition != nil {
-		srid = base.FieldDefDirectiveArgString(field.Definition, base.FieldGeometryInfoDirectiveName, base.ArgSRID)
-	}
-	wktExpr, err := duckDBArrowGeometryWKTWireExpr(arrowField, sourceExpr)
-	if err != nil {
-		return "", err
-	}
-	return postgresWKTText(wktExpr, srid), nil
-}
-
-func postgresWKTText(sql, srid string) string {
-	if srid == "" || srid == "0" {
-		return sql
-	}
-	return "'SRID=" + srid + ";' || " + sql
+func postgresArrowGeometryExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
+	return arrowIngestGeometryStagingExpr(arrowField, sourceExpr)
 }
 
 func pgRangeValueToSQLValue(v any) (string, error) {

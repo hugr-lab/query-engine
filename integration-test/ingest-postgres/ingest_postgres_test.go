@@ -414,8 +414,8 @@ func TestIngest_Postgres_PermissionDataGeometry(t *testing.T) {
 		"perm-geom-beta":  "POINT(7.25 8.5)",
 	}, got)
 	assert.Equal(t, map[string]int{
-		"perm-geom-alpha": 4326,
-		"perm-geom-beta":  4326,
+		"perm-geom-alpha": 0,
+		"perm-geom-beta":  0,
 	}, gotSRID)
 }
 
@@ -639,7 +639,9 @@ func geometryTypesSchema() *arrow.Schema {
 		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
 		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
 		{Name: "geom", Type: pointType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.point"})},
+		{Name: "geom_4326", Type: pointType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.point"})},
 		{Name: "geom_wkt", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkt"})},
+		{Name: "geom_wkt_4326", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkt"})},
 		{Name: "geom_geojson", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.geojson"})},
 		{Name: "geom_hugr_geojson", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "hugr.geojson"})},
 		{Name: "geom_plain_geojson", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geojson"})},
@@ -655,7 +657,7 @@ func geometryTypesSchema() *arrow.Schema {
 func geometryTypesColumns() []string {
 	return []string{
 		"name", "value", "is_active",
-		"geom", "geom_wkt", "geom_geojson",
+		"geom", "geom_4326", "geom_wkt", "geom_wkt_4326", "geom_geojson",
 		"geom_hugr_geojson", "geom_plain_geojson", "geom_wkb",
 		"geom_line", "geom_polygon_native", "geom_multipoint",
 		"geom_multiline", "geom_multipolygon",
@@ -663,19 +665,26 @@ func geometryTypesColumns() []string {
 }
 
 func geometryExpected(point, x, y string) []string {
+	line := fmt.Sprintf("LINESTRING(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 1))
 	return []string{
 		point,
-		fmt.Sprintf("LINESTRING(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 1)),
+		point,
+		line,
+		line,
 		polygonWKT(x, y),
 		polygonWKT(x, y),
 		polygonWKT(x, y),
 		point,
-		fmt.Sprintf("LINESTRING(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 1)),
+		line,
 		polygonWKT(x, y),
 		fmt.Sprintf("MULTIPOINT(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), y),
 		fmt.Sprintf("MULTILINESTRING((%s %s,%s %s),(%s %s,%s %s))", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 2), addCoord(x, 3), addCoord(y, 3)),
 		multiPolygonWKT(x, y),
 	}
+}
+
+func geometrySRIDExpected() []int {
+	return []int{0, 4326, 0, 4326, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 }
 
 func polygonWKT(x, y string) string {
@@ -721,11 +730,13 @@ func assertGeometryReadThroughHugr(t *testing.T, service *hugr.Service, dsName, 
 			events(%s, order_by: [{field: "name", direction: ASC}]) {
 				name
 				geom
-					geom_wkt
-					geom_geojson
-					geom_hugr_geojson
-					geom_plain_geojson
-					geom_wkb
+				geom_4326
+				geom_wkt
+				geom_wkt_4326
+				geom_geojson
+				geom_hugr_geojson
+				geom_plain_geojson
+				geom_wkb
 				geom_line
 				geom_polygon_native
 				geom_multipoint
@@ -765,7 +776,9 @@ func geometryReadExpected(name string, point [2]float64, x, y float64) map[strin
 	return map[string]any{
 		"name":                name,
 		"geom":                geoJSONGeometry("Point", pointCoordinate(xyPoint{point[0], point[1]})),
+		"geom_4326":           geoJSONGeometry("Point", pointCoordinate(xyPoint{point[0], point[1]})),
 		"geom_wkt":            geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
+		"geom_wkt_4326":       geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
 		"geom_geojson":        geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
 		"geom_hugr_geojson":   geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
 		"geom_plain_geojson":  geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
@@ -854,17 +867,23 @@ func appendGeometryTypesRow(b *array.RecordBuilder, name string, value float64, 
 	sb.FieldBuilder(0).(*array.Float64Builder).Append(point[0])
 	sb.FieldBuilder(1).(*array.Float64Builder).Append(point[1])
 
-	b.Field(4).(*array.StringBuilder).Append(lineWKT(shapeX, shapeY))
-	b.Field(5).(*array.StringBuilder).Append(polygonGeoJSON(shapeX, shapeY))
-	b.Field(6).(*array.StringBuilder).Append(polygonGeoJSON(shapeX, shapeY))
+	sb = b.Field(4).(*array.StructBuilder)
+	sb.Append(true)
+	sb.FieldBuilder(0).(*array.Float64Builder).Append(point[0])
+	sb.FieldBuilder(1).(*array.Float64Builder).Append(point[1])
+
+	b.Field(5).(*array.StringBuilder).Append(lineWKT(shapeX, shapeY))
+	b.Field(6).(*array.StringBuilder).Append(lineWKT(shapeX, shapeY))
 	b.Field(7).(*array.StringBuilder).Append(polygonGeoJSON(shapeX, shapeY))
+	b.Field(8).(*array.StringBuilder).Append(polygonGeoJSON(shapeX, shapeY))
+	b.Field(9).(*array.StringBuilder).Append(polygonGeoJSON(shapeX, shapeY))
 	wkbPoint, _ := wkb.Marshal(orb.Point{point[0], point[1]})
-	b.Field(8).(*array.BinaryBuilder).Append(wkbPoint)
-	appendPointList(b.Field(9).(*array.ListBuilder), linePoints(shapeX, shapeY))
-	appendPointListList(b.Field(10).(*array.ListBuilder), polygonRings(shapeX, shapeY))
-	appendPointList(b.Field(11).(*array.ListBuilder), multiPoints(shapeX, shapeY))
-	appendPointListList(b.Field(12).(*array.ListBuilder), multiLines(shapeX, shapeY))
-	appendPointListListList(b.Field(13).(*array.ListBuilder), multiPolygons(shapeX, shapeY))
+	b.Field(10).(*array.BinaryBuilder).Append(wkbPoint)
+	appendPointList(b.Field(11).(*array.ListBuilder), linePoints(shapeX, shapeY))
+	appendPointListList(b.Field(12).(*array.ListBuilder), polygonRings(shapeX, shapeY))
+	appendPointList(b.Field(13).(*array.ListBuilder), multiPoints(shapeX, shapeY))
+	appendPointListList(b.Field(14).(*array.ListBuilder), multiLines(shapeX, shapeY))
+	appendPointListListList(b.Field(15).(*array.ListBuilder), multiPolygons(shapeX, shapeY))
 }
 
 type xyPoint [2]float64
@@ -1544,7 +1563,9 @@ func TestIngest_HTTP_GeometryTypes(t *testing.T) {
 	rows, err := env.pgConn.Query(`
 			SELECT name,
 				ST_AsText(geom), ST_SRID(geom),
+				ST_AsText(geom_4326), ST_SRID(geom_4326),
 				ST_AsText(geom_wkt), ST_SRID(geom_wkt),
+				ST_AsText(geom_wkt_4326), ST_SRID(geom_wkt_4326),
 				ST_AsText(geom_geojson), ST_SRID(geom_geojson),
 				ST_AsText(geom_hugr_geojson), ST_SRID(geom_hugr_geojson),
 				ST_AsText(geom_plain_geojson), ST_SRID(geom_plain_geojson),
@@ -1565,8 +1586,8 @@ func TestIngest_HTTP_GeometryTypes(t *testing.T) {
 	gotSRID := map[string][]int{}
 	for rows.Next() {
 		var name string
-		values := make([]string, 11)
-		srids := make([]int, 11)
+		values := make([]string, 13)
+		srids := make([]int, 13)
 		scanArgs := []any{&name}
 		for i := range values {
 			scanArgs = append(scanArgs, &values[i], &srids[i])
@@ -1584,8 +1605,8 @@ func TestIngest_HTTP_GeometryTypes(t *testing.T) {
 		"geo-b": geometryExpected("POINT(-73.935242 40.73061)", "1", "1"),
 	}, got)
 	assert.Equal(t, map[string][]int{
-		"geo-a": []int{4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326},
-		"geo-b": []int{4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326},
+		"geo-a": geometrySRIDExpected(),
+		"geo-b": geometrySRIDExpected(),
 	}, gotSRID)
 }
 
@@ -1665,11 +1686,13 @@ func TestIngest_HTTP_GeometryTypes_Bulk50k(t *testing.T) {
 	require.NoError(t, env.pgConn.QueryRow("SELECT COUNT(*) FROM events WHERE name LIKE 'pg-geo-bulk-%'").Scan(&count))
 	assert.Equal(t, totalRows, count)
 
-	values := make([]string, 11)
-	srids := make([]int, 11)
+	values := make([]string, 13)
+	srids := make([]int, 13)
 	require.NoError(t, env.pgConn.QueryRow(`
 			SELECT ST_AsText(geom), ST_SRID(geom),
+				ST_AsText(geom_4326), ST_SRID(geom_4326),
 				ST_AsText(geom_wkt), ST_SRID(geom_wkt),
+				ST_AsText(geom_wkt_4326), ST_SRID(geom_wkt_4326),
 				ST_AsText(geom_geojson), ST_SRID(geom_geojson),
 				ST_AsText(geom_hugr_geojson), ST_SRID(geom_hugr_geojson),
 				ST_AsText(geom_plain_geojson), ST_SRID(geom_plain_geojson),
@@ -1685,13 +1708,14 @@ func TestIngest_HTTP_GeometryTypes_Bulk50k(t *testing.T) {
 		&values[0], &srids[0], &values[1], &srids[1], &values[2], &srids[2],
 		&values[3], &srids[3], &values[4], &srids[4], &values[5], &srids[5],
 		&values[6], &srids[6], &values[7], &srids[7], &values[8], &srids[8],
-		&values[9], &srids[9], &values[10], &srids[10],
+		&values[9], &srids[9], &values[10], &srids[10], &values[11], &srids[11],
+		&values[12], &srids[12],
 	))
 	for i := range values {
 		values[i] = compactWKT(values[i])
 	}
 	assert.Equal(t, geometryExpected("POINT(99 49)", "99", "49"), values)
-	assert.Equal(t, []int{4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326, 4326}, srids)
+	assert.Equal(t, geometrySRIDExpected(), srids)
 	assertGeometryReadThroughHugr(t, env.service, env.dsName, `filter: { name: { eq: "pg-geo-bulk-049999" } }`, []map[string]any{
 		geometryReadExpected("pg-geo-bulk-049999", [2]float64{99, 49}, 99, 49),
 	})
