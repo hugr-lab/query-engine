@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -71,7 +71,7 @@ func (s *Service) Plan(ctx context.Context, provider catalog.Provider, query *as
 // The Arrow source is part of this planning API because its schema drives column
 // resolution and ingest casting, while its view name is the staging relation used
 // in the generated INSERT ... SELECT.
-func (s *Service) PlanArrowIngest(ctx context.Context, provider catalog.Provider, dataObject string, source arrowingest.Source) (*QueryPlan, error) {
+func (s *Service) PlanArrowIngest(ctx context.Context, provider catalog.Provider, dataObject string, source db.ArrowIngestSource) (*QueryPlan, error) {
 	node, err := ingestRootNode(ctx, provider, s.engines, dataObject, source)
 	if err != nil {
 		return nil, err

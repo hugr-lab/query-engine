@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/apache/arrow-go/v18/arrow"
-	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -23,7 +23,7 @@ type ingestColumn struct {
 	InputDef   *ast.FieldDefinition
 }
 
-func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, dataObject string, source arrowingest.Source) (*QueryPlanNode, error) {
+func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, dataObject string, source db.ArrowIngestSource) (*QueryPlanNode, error) {
 	if dataObject == "" {
 		return nil, fmt.Errorf("missing data object")
 	}

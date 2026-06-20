@@ -10,8 +10,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/perm"
 )
 
@@ -75,7 +75,7 @@ func (s *Service) ipcIngestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer reader.Release()
-	source := arrowingest.NewSource(reader)
+	source := db.NewArrowIngestSource(reader)
 
 	plan, err := s.planner.PlanArrowIngest(ctx, s.schema.Provider(), dataObject, source)
 	if err != nil {
