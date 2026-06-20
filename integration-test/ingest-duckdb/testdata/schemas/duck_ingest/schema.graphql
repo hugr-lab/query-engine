@@ -5,6 +5,19 @@ type events @table(name: "events") {
     is_active: Boolean! @default(value: "true")
     owner_id: BigInt
     payload: JSON
+    payload_large_string: JSON
+    payload_string_view: JSON
+    payload_binary: JSON
+    payload_large_binary: JSON
+    payload_binary_view: JSON
+    payload_struct: JSON
+    payload_list: JSON
+    payload_large_list: JSON
+    payload_fixed_size_list: JSON
+    payload_list_view: JSON
+    payload_large_list_view: JSON
+    payload_map: JSON
+    payload_scalar: JSON
     created_at: Timestamp @default(value: "now()")
     geom: Geometry @geometry_info(srid: 4326, type: POINT)
     geom_wkt: Geometry @geometry_info(srid: 4326, type: LINESTRING)

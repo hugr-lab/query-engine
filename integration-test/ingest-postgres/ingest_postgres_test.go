@@ -265,6 +265,136 @@ func makeEventsRecord(t *testing.T, names []string, values []float64, active []b
 	return b.NewRecord()
 }
 
+var jsonPhysicalTypeColumns = []string{
+	"payload",
+	"payload_large_string",
+	"payload_string_view",
+	"payload_binary",
+	"payload_large_binary",
+	"payload_binary_view",
+	"payload_struct",
+	"payload_list",
+	"payload_large_list",
+	"payload_fixed_size_list",
+	"payload_list_view",
+	"payload_large_list_view",
+	"payload_map",
+	"payload_scalar",
+}
+
+func makeJSONPhysicalTypesRecord(t *testing.T) arrow.RecordBatch {
+	t.Helper()
+	pool := memory.NewGoAllocator()
+	structType := arrow.StructOf(
+		arrow.Field{Name: "kind", Type: arrow.BinaryTypes.String, Nullable: false},
+		arrow.Field{Name: "count", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
+	)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
+		{Name: "payload", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "payload_large_string", Type: arrow.BinaryTypes.LargeString, Nullable: false},
+		{Name: "payload_string_view", Type: arrow.BinaryTypes.StringView, Nullable: false},
+		{Name: "payload_binary", Type: arrow.BinaryTypes.Binary, Nullable: false},
+		{Name: "payload_large_binary", Type: arrow.BinaryTypes.LargeBinary, Nullable: false},
+		{Name: "payload_binary_view", Type: arrow.BinaryTypes.BinaryView, Nullable: false},
+		{Name: "payload_struct", Type: structType, Nullable: false},
+		{Name: "payload_list", Type: arrow.ListOf(arrow.PrimitiveTypes.Int64), Nullable: false},
+		{Name: "payload_large_list", Type: arrow.LargeListOf(arrow.PrimitiveTypes.Int64), Nullable: false},
+		{Name: "payload_fixed_size_list", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Int64), Nullable: false},
+		{Name: "payload_list_view", Type: arrow.ListViewOf(arrow.PrimitiveTypes.Int64), Nullable: false},
+		{Name: "payload_large_list_view", Type: arrow.LargeListViewOf(arrow.PrimitiveTypes.Int64), Nullable: false},
+		{Name: "payload_map", Type: arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64), Nullable: false},
+		{Name: "payload_scalar", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
+	}, nil)
+
+	b := array.NewRecordBuilder(pool, schema)
+	defer b.Release()
+	b.Field(0).(*array.StringBuilder).Append("json-physical-types")
+	b.Field(1).(*array.Float64Builder).Append(1)
+	b.Field(2).(*array.BooleanBuilder).Append(true)
+	b.Field(3).(*array.StringBuilder).Append(`{"kind":"string"}`)
+	b.Field(4).(*array.LargeStringBuilder).Append(`{"kind":"large_string"}`)
+	b.Field(5).(*array.StringViewBuilder).Append(`{"kind":"string_view"}`)
+	b.Field(6).(*array.BinaryBuilder).Append([]byte(`{"kind":"binary"}`))
+	b.Field(7).(*array.BinaryBuilder).Append([]byte(`{"kind":"large_binary"}`))
+	b.Field(8).(*array.BinaryViewBuilder).Append([]byte(`{"kind":"binary_view"}`))
+
+	structBuilder := b.Field(9).(*array.StructBuilder)
+	structBuilder.Append(true)
+	structBuilder.FieldBuilder(0).(*array.StringBuilder).Append("struct")
+	structBuilder.FieldBuilder(1).(*array.Int64Builder).Append(14)
+
+	listBuilder := b.Field(10).(*array.ListBuilder)
+	listBuilder.Append(true)
+	listBuilder.ValueBuilder().(*array.Int64Builder).AppendValues([]int64{1, 2}, nil)
+	largeListBuilder := b.Field(11).(*array.LargeListBuilder)
+	largeListBuilder.Append(true)
+	largeListBuilder.ValueBuilder().(*array.Int64Builder).AppendValues([]int64{3, 4}, nil)
+	fixedListBuilder := b.Field(12).(*array.FixedSizeListBuilder)
+	fixedListBuilder.Append(true)
+	fixedListBuilder.ValueBuilder().(*array.Int64Builder).AppendValues([]int64{5, 6}, nil)
+	listViewBuilder := b.Field(13).(*array.ListViewBuilder)
+	listViewBuilder.AppendWithSize(true, 2)
+	listViewBuilder.ValueBuilder().(*array.Int64Builder).AppendValues([]int64{7, 8}, nil)
+	largeListViewBuilder := b.Field(14).(*array.LargeListViewBuilder)
+	largeListViewBuilder.AppendWithSize(true, 2)
+	largeListViewBuilder.ValueBuilder().(*array.Int64Builder).AppendValues([]int64{9, 10}, nil)
+	mapBuilder := b.Field(15).(*array.MapBuilder)
+	mapBuilder.Append(true)
+	mapBuilder.KeyBuilder().(*array.StringBuilder).AppendValues([]string{"a", "b"}, nil)
+	mapBuilder.ItemBuilder().(*array.Int64Builder).AppendValues([]int64{11, 12}, nil)
+	b.Field(16).(*array.Int64Builder).Append(13)
+	return b.NewRecordBatch()
+}
+
+func jsonPhysicalTypesExpected() map[string]any {
+	return map[string]any{
+		"name":                    "json-physical-types",
+		"payload":                 map[string]any{"kind": "string"},
+		"payload_large_string":    map[string]any{"kind": "large_string"},
+		"payload_string_view":     map[string]any{"kind": "string_view"},
+		"payload_binary":          map[string]any{"kind": "binary"},
+		"payload_large_binary":    map[string]any{"kind": "large_binary"},
+		"payload_binary_view":     map[string]any{"kind": "binary_view"},
+		"payload_struct":          map[string]any{"kind": "struct", "count": float64(14)},
+		"payload_list":            []any{float64(1), float64(2)},
+		"payload_large_list":      []any{float64(3), float64(4)},
+		"payload_fixed_size_list": []any{float64(5), float64(6)},
+		"payload_list_view":       []any{float64(7), float64(8)},
+		"payload_large_list_view": []any{float64(9), float64(10)},
+		"payload_map":             map[string]any{"a": float64(11), "b": float64(12)},
+		"payload_scalar":          "13",
+	}
+}
+
+func assertJSONPhysicalTypesReadThroughHugr(t *testing.T, service *hugr.Service, dsName string) {
+	t.Helper()
+	query := fmt.Sprintf(`{
+		%s {
+			events(filter: {name: {eq: "json-physical-types"}}) {
+				name
+				%s
+			}
+		}
+	}`, dsName, strings.Join(jsonPhysicalTypeColumns, "\n"))
+	res, err := service.Query(context.Background(), query, nil)
+	require.NoError(t, err)
+	defer res.Close()
+	require.NoErrorf(t, res.Err(), "graphql error for query: %s", query)
+
+	body, err := json.Marshal(res)
+	require.NoError(t, err)
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(body, &payload))
+	data := payload["data"].(map[string]any)
+	root := data[dsName].(map[string]any)
+	rows := root["events"].([]any)
+	require.Len(t, rows, 1, "response: %s", string(body))
+	assert.Equal(t, jsonPhysicalTypesExpected(), rows[0])
+}
+
 // --- Tests ----------------------------------------------------------------
 
 func TestIngest_Postgres_RoundTrip(t *testing.T) {
@@ -316,6 +446,19 @@ func TestIngest_Postgres_RoundTrip(t *testing.T) {
 	assert.Equal(t, []float64{1.5, 2.5, 3.5}, gotValues)
 	assert.Equal(t, []bool{true, false, true}, gotActive)
 	assert.Equal(t, []bool{true, false, true}, gotHasJSON) // beta has NULL payload
+}
+
+func TestIngest_Postgres_JSONPhysicalTypes(t *testing.T) {
+	env := setupEnv(t)
+	rec := makeJSONPhysicalTypesRecord(t)
+	defer rec.Release()
+
+	res, err := env.client.IngestRecord(context.Background(), "pg_ingest.events", rec)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), res.Inserted)
+	expectedColumns := append([]string{"name", "value", "is_active"}, jsonPhysicalTypeColumns...)
+	assert.ElementsMatch(t, expectedColumns, res.Columns)
+	assertJSONPhysicalTypesReadThroughHugr(t, env.service, env.dsName)
 }
 
 func TestIngest_Postgres_PermissionData(t *testing.T) {

@@ -598,15 +598,6 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 }
 
 func (e *Postgres) ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
-	return postgresArrowIngestSelectExpr(field, arrowField, sourceExpr)
-}
-
-func (e *Postgres) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error) {
-	var duckdb DuckDB
-	return duckdb.ArrowIngestLiteralExpr(field, value)
-}
-
-func postgresArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
 	if field == nil || field.Definition == nil {
 		return sourceExpr, nil
 	}
@@ -614,14 +605,15 @@ func postgresArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sou
 	case base.JSONTypeName:
 		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
 	case base.GeometryTypeName:
-		return postgresArrowGeometryExpr(arrowField, sourceExpr)
+		return arrowIngestGeometryStagingExpr(arrowField, sourceExpr)
 	default:
 		return sourceExpr, nil
 	}
 }
 
-func postgresArrowGeometryExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
-	return arrowIngestGeometryStagingExpr(arrowField, sourceExpr)
+func (e *Postgres) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error) {
+	var duckdb DuckDB
+	return duckdb.ArrowIngestLiteralExpr(field, value)
 }
 
 func pgRangeValueToSQLValue(v any) (string, error) {
