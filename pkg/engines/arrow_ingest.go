@@ -29,14 +29,15 @@ func (b *ArrowIngestStagingBuilder) FunctionCall(name string, positional []any, 
 
 func arrowIngestJSONStagingExpr(arrowField arrow.Field, sourceExpr string) string {
 	switch arrowField.Type.ID() {
-	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW,
-		arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
+	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
 		return "try_cast(" + sourceExpr + " AS JSON)"
+	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
+		return "try_cast(decode(" + sourceExpr + ") AS JSON)"
 	case arrow.STRUCT, arrow.LIST, arrow.LARGE_LIST, arrow.FIXED_SIZE_LIST,
 		arrow.LIST_VIEW, arrow.LARGE_LIST_VIEW, arrow.MAP:
 		return "to_json(" + sourceExpr + ")"
 	default:
-		return sourceExpr
+		return "to_json(" + sourceExpr + ")"
 	}
 }
 

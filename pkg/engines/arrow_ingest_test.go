@@ -10,6 +10,38 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+func TestArrowIngestJSONStagingExpr(t *testing.T) {
+	tests := []struct {
+		name string
+		typ  arrow.DataType
+		want string
+	}{
+		{name: "string", typ: arrow.BinaryTypes.String, want: "try_cast(payload AS JSON)"},
+		{name: "large string", typ: arrow.BinaryTypes.LargeString, want: "try_cast(payload AS JSON)"},
+		{name: "string view", typ: arrow.BinaryTypes.StringView, want: "try_cast(payload AS JSON)"},
+		{name: "binary", typ: arrow.BinaryTypes.Binary, want: "try_cast(decode(payload) AS JSON)"},
+		{name: "large binary", typ: arrow.BinaryTypes.LargeBinary, want: "try_cast(decode(payload) AS JSON)"},
+		{name: "binary view", typ: arrow.BinaryTypes.BinaryView, want: "try_cast(decode(payload) AS JSON)"},
+		{name: "struct", typ: arrow.StructOf(), want: "to_json(payload)"},
+		{name: "list", typ: arrow.ListOf(arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
+		{name: "large list", typ: arrow.LargeListOf(arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
+		{name: "fixed size list", typ: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
+		{name: "list view", typ: arrow.ListViewOf(arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
+		{name: "large list view", typ: arrow.LargeListViewOf(arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
+		{name: "map", typ: arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
+		{name: "scalar", typ: arrow.PrimitiveTypes.Int64, want: "to_json(payload)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := arrowIngestJSONStagingExpr(arrow.Field{Name: "payload", Type: tt.typ}, "payload")
+			if got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDuckDBArrowIngestBuildsNativeGeoArrowSelectExpr(t *testing.T) {
 	field := geometryTestField("")
 
@@ -27,7 +59,7 @@ func TestDuckDBArrowIngestBuildsNativeGeoArrowSelectExpr(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.ext, func(t *testing.T) {
-			got, err := duckDBArrowIngestSelectExpr(field, arrow.Field{
+			got, err := NewDuckDB().ArrowIngestSelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     geoArrowTestType(tt.ext),
 				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext}),
@@ -104,7 +136,7 @@ func TestDuckDBArrowIngestBuildsDirectGeometrySelectExpr(t *testing.T) {
 			if tt.ext != "" {
 				meta = arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext})
 			}
-			got, err := duckDBArrowIngestSelectExpr(field, arrow.Field{
+			got, err := NewDuckDB().ArrowIngestSelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     tt.typ,
 				Metadata: meta,
@@ -139,7 +171,7 @@ func TestPostgresArrowIngestBuildsNativeGeoArrowDirectSelectExpr(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.ext, func(t *testing.T) {
-			got, err := postgresArrowIngestSelectExpr(field, arrow.Field{
+			got, err := NewPostgres().ArrowIngestSelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     geoArrowTestType(tt.ext),
 				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext}),
@@ -211,7 +243,7 @@ func TestPostgresArrowIngestBuildsDirectGeometrySelectExpr(t *testing.T) {
 			if tt.ext != "" {
 				meta = arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext})
 			}
-			got, err := postgresArrowIngestSelectExpr(field, arrow.Field{
+			got, err := NewPostgres().ArrowIngestSelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     tt.typ,
 				Metadata: meta,
@@ -233,7 +265,7 @@ func TestArrowIngestRejectsNativeGeoArrowUnionLayouts(t *testing.T) {
 	field := geometryTestField("")
 	for _, ext := range []string{"geoarrow.geometry", "geoarrow.geometrycollection"} {
 		t.Run(ext, func(t *testing.T) {
-			_, err := duckDBArrowIngestSelectExpr(field, arrow.Field{
+			_, err := NewDuckDB().ArrowIngestSelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     arrow.StructOf(),
 				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": ext}),
@@ -264,7 +296,7 @@ func TestArrowIngestRejectsUnsupportedGeometryExtensionMetadata(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := duckDBArrowIngestSelectExpr(field, arrow.Field{
+			_, err := NewDuckDB().ArrowIngestSelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     tt.typ,
 				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext}),

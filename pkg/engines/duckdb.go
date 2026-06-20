@@ -90,7 +90,17 @@ func (e *DuckDB) Capabilities() *compiler.EngineCapabilities {
 }
 
 func (e *DuckDB) ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
-	return duckDBArrowIngestSelectExpr(field, arrowField, sourceExpr)
+	if field == nil || field.Definition == nil {
+		return sourceExpr, nil
+	}
+	switch field.Definition.Type.Name() {
+	case base.JSONTypeName:
+		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
+	case base.GeometryTypeName:
+		return arrowIngestGeometryStagingExpr(arrowField, sourceExpr)
+	default:
+		return sourceExpr, nil
+	}
 }
 
 func (e *DuckDB) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error) {
@@ -112,20 +122,6 @@ func (e *DuckDB) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, er
 		return "ST_GeomFromWKB(from_hex('" + strings.ToUpper(hex.EncodeToString(wkbValue)) + "'))", nil
 	}
 	return e.SQLValue(value)
-}
-
-func duckDBArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
-	if field == nil || field.Definition == nil {
-		return sourceExpr, nil
-	}
-	switch field.Definition.Type.Name() {
-	case base.JSONTypeName:
-		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
-	case base.GeometryTypeName:
-		return arrowIngestGeometryStagingExpr(arrowField, sourceExpr)
-	default:
-		return sourceExpr, nil
-	}
 }
 
 func (e *DuckDB) FieldValueByPath(sqlName, path string) string {
