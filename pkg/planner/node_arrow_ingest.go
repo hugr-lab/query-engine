@@ -39,7 +39,14 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if err != nil {
 		return nil, err
 	}
-	if caps := engine.Capabilities(); caps == nil || !caps.Insert.Ingest {
+	caps := engine.Capabilities()
+	if caps == nil {
+		return nil, fmt.Errorf("engine %q does not support IPC ingest", engine.Type())
+	}
+	if !caps.Ingest.Valid() {
+		return nil, fmt.Errorf("engine %q has invalid ingest capabilities: merge requires insert", engine.Type())
+	}
+	if !caps.Ingest.Available() {
 		return nil, fmt.Errorf("engine %q does not support IPC ingest", engine.Type())
 	}
 	ingestEngine, ok := engine.(engines.EngineArrowIngestCaster)
@@ -315,8 +322,8 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				field := ingestASTField(info, c.Field, c.FieldDef)
 				// Build the Arrow ingest SELECT expression for the target
 				// GraphQL/DB field.
-				// Examples: JSON to_json(...), DuckDB geometry expressions,
-				// or Postgres HEXWKB text for PostGIS columns.
+				// Examples: JSON to_json(...) or DuckDB staging geometry
+				// expressions used for both DuckDB and attached Postgres targets.
 				value, err := engine.ArrowIngestSelectExpr(field, c.ArrowField, value)
 				if err != nil {
 					return "", nil, err
@@ -347,12 +354,11 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 			}
 			// Arrow ingest SELECT expressions are evaluated by DuckDB because
 			// the temporary Arrow view is registered on a DuckDB connection.
-			// Target engines shape column values above; default/auth helper
-			// expressions must still be valid in the DuckDB staging SELECT.
+			// Default/auth helper expressions must therefore use the same canonical
+			// DuckDB staging types before optional target casting is applied below.
 			if err := mutation.AppendInsertSQLExpression(fieldValues, perm.AuthVars(ctx), engines.NewArrowIngestStagingBuilder()); err != nil {
 				return "", nil, err
 			}
-
 			var targetFields, selectExprs []string
 			for _, c := range columns {
 				// targetFields are DB table columns. FieldSourceName applies the
@@ -360,7 +366,11 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				targetFields = append(targetFields, c.Field.FieldSourceName("", true))
 				// selectExprs are evaluated from the DuckDB Arrow view and must
 				// stay in the same order as targetFields.
-				selectExprs = append(selectExprs, fieldValues[c.Field.Name])
+				expr, err := castIngestValueToTarget(engine, ingestASTField(info, c.Field, c.FieldDef), fieldValues[c.Field.Name])
+				if err != nil {
+					return "", nil, err
+				}
+				selectExprs = append(selectExprs, expr)
 				delete(fieldValues, c.Field.Name)
 			}
 			for _, fieldInfo := range mutation.Fields() {
@@ -372,6 +382,14 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				}
 				if fieldInfo.FieldSourceName("", false) == "-" {
 					continue
+				}
+				fieldDef := info.Definition().Fields.ForName(fieldInfo.Name)
+				if fieldDef == nil {
+					return "", nil, fmt.Errorf("ingest field %q definition not found in data object %q", fieldInfo.Name, info.Name)
+				}
+				expr, err := castIngestValueToTarget(engine, ingestASTField(info, fieldInfo, fieldDef), expr)
+				if err != nil {
+					return "", nil, err
 				}
 				targetFields = append(targetFields, fieldInfo.FieldSourceName("", true))
 				selectExprs = append(selectExprs, expr)
@@ -392,6 +410,14 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 			), params, nil
 		},
 	}
+}
+
+func castIngestValueToTarget(engine engines.EngineArrowIngestCaster, field *ast.Field, stagingExpr string) (string, error) {
+	targetCaster, ok := engine.(engines.EngineIngestTargetCaster)
+	if !ok {
+		return stagingExpr, nil
+	}
+	return targetCaster.CastIngestValueToTarget(field, stagingExpr)
 }
 
 func ingestASTField(info *sdl.Object, fieldInfo *sdl.Field, fieldDef *ast.FieldDefinition) *ast.Field {
