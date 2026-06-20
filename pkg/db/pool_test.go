@@ -4,6 +4,11 @@ import (
 	"context"
 	"sync"
 	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 )
 
 func TestNewPool(t *testing.T) {
@@ -153,6 +158,59 @@ func TestPool_Arrow_Concurrent(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestPool_ExecArrowIngestDropsView(t *testing.T) {
+	pool, err := NewPool("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, "CREATE TABLE ingest_target (value INTEGER)"); err != nil {
+		t.Fatal(err)
+	}
+
+	schema := arrow.NewSchema([]arrow.Field{{Name: "value", Type: arrow.PrimitiveTypes.Int32}}, nil)
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	defer builder.Release()
+	builder.Field(0).(*array.Int32Builder).Append(42)
+	record := builder.NewRecordBatch()
+	defer record.Release()
+	reader, err := array.NewRecordReader(schema, []arrow.RecordBatch{record})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Release()
+
+	source := arrowingest.NewSource(reader)
+	query := "INSERT INTO ingest_target SELECT * FROM " + quoteIdentifier(source.View())
+	if _, err := pool.ExecArrowIngest(ctx, source, query); err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := pool.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	var value int
+	if err := conn.QueryRow(ctx, "SELECT value FROM ingest_target").Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	if value != 42 {
+		t.Fatalf("inserted value = %d, want 42", value)
+	}
+
+	var views int
+	if err := conn.QueryRow(ctx, "SELECT count(*) FROM duckdb_views() WHERE view_name = ?", source.View()).Scan(&views); err != nil {
+		t.Fatal(err)
+	}
+	if views != 0 {
+		t.Fatalf("Arrow ingest view %q remains in the DuckDB catalog", source.View())
+	}
 }
 
 func Test_print(t *testing.T) {

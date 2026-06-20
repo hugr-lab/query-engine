@@ -30,6 +30,9 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if source.Reader == nil {
 		return nil, fmt.Errorf("missing arrow reader")
 	}
+	if source.View() == "" {
+		return nil, fmt.Errorf("missing arrow view name")
+	}
 
 	info, mutationField, err := resolveIngestTarget(ctx, provider, dataObject)
 	if err != nil {
@@ -291,7 +294,7 @@ func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info
 }
 
 // ingestNode builds the INSERT ... SELECT statement that copies rows from the
-// temporary DuckDB Arrow view into the target DB table.
+// request-scoped DuckDB Arrow view into the target DB table.
 //
 //   - info is the GraphQL data object plus its DB table/column mapping.
 //   - mutation is the GraphQL insert mutation used for insert defaults.
@@ -301,15 +304,15 @@ func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info
 //     columns by resolveIngestColumns.
 //   - permissionData contains extra GraphQL input values injected by the
 //     permission layer; they do not come from the Arrow stream.
-//   - arrowViewName is the per-connection DuckDB view registered from the
-//     Arrow reader during execution.
+//   - arrowViewName is the globally unique DuckDB view registered from the
+//     Arrow reader for this ingest execution.
 func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, engine engines.EngineArrowIngestCaster, columns []ingestColumn, permissionData map[string]any, arrowViewName string) *QueryPlanNode {
 	return &QueryPlanNode{
 		Name: "ingest_" + info.Name,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 			// fieldValues is keyed by GraphQL field name. Each value is a SQL
 			// expression evaluated in the SELECT part of INSERT ... SELECT.
-			// The expression may reference an Arrow column from the temporary
+			// The expression may reference an Arrow column from the ingest
 			// DuckDB view, or it may be a constant/default/permission value.
 			fieldValues := make(map[string]string, len(columns))
 			for _, c := range columns {
@@ -353,7 +356,7 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				fieldValues[name] = sqlValue
 			}
 			// Arrow ingest SELECT expressions are evaluated by DuckDB because
-			// the temporary Arrow view is registered on a DuckDB connection.
+			// the Arrow view is registered in DuckDB.
 			// Default/auth helper expressions must therefore use the same canonical
 			// DuckDB staging types before optional target casting is applied below.
 			if err := mutation.AppendInsertSQLExpression(fieldValues, perm.AuthVars(ctx), engines.NewArrowIngestStagingBuilder()); err != nil {
@@ -400,8 +403,7 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 			}
 
 			target := info.SQL(ctx, engines.Ident(info.Catalog))
-			// The FROM relation is the fixed temporary Arrow view registered on
-			// the same DuckDB connection that executes this statement.
+			// The FROM relation is this ingest request's globally unique Arrow view.
 			return fmt.Sprintf("INSERT INTO %s (%s) SELECT %s FROM %s",
 				target,
 				strings.Join(targetFields, ", "),
