@@ -8,7 +8,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 )
 
 func TestNewPool(t *testing.T) {
@@ -184,7 +183,7 @@ func TestPool_ExecArrowIngestDropsView(t *testing.T) {
 	}
 	defer reader.Release()
 
-	source := arrowingest.NewSource(reader)
+	source := NewArrowIngestSource(reader)
 	query := "INSERT INTO ingest_target SELECT * FROM " + quoteIdentifier(source.View())
 	if _, err := pool.ExecArrowIngest(ctx, source, query); err != nil {
 		t.Fatal(err)

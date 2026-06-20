@@ -1,4 +1,4 @@
-package arrowingest
+package db
 
 import (
 	"fmt"
@@ -9,30 +9,29 @@ import (
 	"github.com/google/uuid"
 )
 
-const viewNamePrefix = "_hugr_arrow_view_"
+const arrowIngestViewNamePrefix = "_hugr_arrow_view_"
 
-// Source is the shared contract between the IPC ingest handler, planner, and
-// DB executor. The planner builds SQL against the source view name; the DB
-// executor registers Reader under that same globally unique DuckDB view name.
-type Source struct {
+// ArrowIngestSource binds an Arrow reader to the globally unique DuckDB view
+// name used by both the planner and the ingest executor.
+type ArrowIngestSource struct {
 	Reader   array.RecordReader
 	viewName string
 }
 
-func NewSource(reader array.RecordReader) Source {
-	return Source{
+func NewArrowIngestSource(reader array.RecordReader) ArrowIngestSource {
+	return ArrowIngestSource{
 		Reader:   reader,
-		viewName: viewNamePrefix + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		viewName: arrowIngestViewNamePrefix + strings.ReplaceAll(uuid.NewString(), "-", ""),
 	}
 }
 
-func (s Source) View() string {
+func (s ArrowIngestSource) View() string {
 	return s.viewName
 }
 
 // NeedsSpatial reports whether the Arrow source carries geometry extension
 // metadata that requires DuckDB's spatial extension before registering the view.
-func (s Source) NeedsSpatial() bool {
+func (s ArrowIngestSource) NeedsSpatial() bool {
 	if s.Reader == nil || s.Reader.Schema() == nil {
 		return false
 	}
@@ -51,7 +50,7 @@ func (s Source) NeedsSpatial() bool {
 }
 
 // RegisterView registers the source reader under the source view name.
-func (s Source) RegisterView(arrowConn interface {
+func (s ArrowIngestSource) RegisterView(arrowConn interface {
 	RegisterView(reader array.RecordReader, viewName string) (func(), error)
 }) (func(), error) {
 	if s.Reader == nil {

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/duckdb/duckdb-go/v2"
-	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
 )
 
 type Config struct {
@@ -226,7 +225,7 @@ func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
 
 // ExecArrowIngest registers source.Reader as a globally named DuckDB view,
 // executes query, then drops the view before releasing the Arrow stream.
-func (p *Pool) ExecArrowIngest(ctx context.Context, source arrowingest.Source, query string) (result sql.Result, err error) {
+func (p *Pool) ExecArrowIngest(ctx context.Context, source ArrowIngestSource, query string) (result sql.Result, err error) {
 	if source.Reader == nil {
 		return nil, fmt.Errorf("missing arrow reader")
 	}
