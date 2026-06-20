@@ -34,7 +34,7 @@ type ingestErrorBody struct {
 // ipcIngestHandler accepts an Apache Arrow IPC stream in the request body and
 // inserts it into a table data object. The planner resolves the target schema,
 // validates insert inputs/permissions, casts Arrow values, and builds the
-// INSERT FROM SELECT statement over a temporary Arrow view.
+// INSERT FROM SELECT statement over a request-scoped Arrow view.
 func (s *Service) ipcIngestHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 

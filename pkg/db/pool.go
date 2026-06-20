@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/duckdb/duckdb-go/v2"
 	arrowingest "github.com/hugr-lab/query-engine/pkg/arrow-ingest"
@@ -222,11 +224,14 @@ func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
 	}, nil
 }
 
-// ExecArrowIngest registers source.Reader as source.ViewName and executes query
-// on the same DuckDB driver connection, where the temporary Arrow view is visible.
-func (p *Pool) ExecArrowIngest(ctx context.Context, source arrowingest.Source, query string) (sql.Result, error) {
+// ExecArrowIngest registers source.Reader as a globally named DuckDB view,
+// executes query, then drops the view before releasing the Arrow stream.
+func (p *Pool) ExecArrowIngest(ctx context.Context, source arrowingest.Source, query string) (result sql.Result, err error) {
 	if source.Reader == nil {
 		return nil, fmt.Errorf("missing arrow reader")
+	}
+	if source.View() == "" {
+		return nil, fmt.Errorf("missing arrow view name")
 	}
 	ar, err := p.Arrow(ctx)
 	if err != nil {
@@ -247,9 +252,24 @@ func (p *Pool) ExecArrowIngest(ctx context.Context, source arrowingest.Source, q
 	if err != nil {
 		return nil, fmt.Errorf("register arrow view: %w", err)
 	}
-	defer release()
+	defer func() {
+		// The view created by duckdb_arrow_scan is global to the DuckDB
+		// database instance. Cleanup must outlive a canceled request context
+		// and must happen before the Arrow stream is released.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_, cleanupErr := execer.ExecContext(cleanupCtx, "DROP VIEW IF EXISTS "+quoteIdentifier(source.View()), nil)
+		release()
+		if cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("drop arrow ingest view %q: %w", source.View(), cleanupErr))
+		}
+	}()
 
 	return execer.ExecContext(ctx, query, nil)
+}
+
+func quoteIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 func (p *Pool) RegisterScalarFunction(ctx context.Context, function ScalarFunction) error {

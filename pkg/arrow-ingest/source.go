@@ -6,30 +6,28 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/google/uuid"
 )
 
-const DefaultViewName = "_hugr_arrow_view"
+const viewNamePrefix = "_hugr_arrow_view_"
 
 // Source is the shared contract between the IPC ingest handler, planner, and
-// DB executor. The planner builds SQL against ViewName; the DB executor
-// registers Reader under the same per-connection DuckDB view name.
+// DB executor. The planner builds SQL against the source view name; the DB
+// executor registers Reader under that same globally unique DuckDB view name.
 type Source struct {
 	Reader   array.RecordReader
-	ViewName string
+	viewName string
 }
 
 func NewSource(reader array.RecordReader) Source {
 	return Source{
 		Reader:   reader,
-		ViewName: DefaultViewName,
+		viewName: viewNamePrefix + strings.ReplaceAll(uuid.NewString(), "-", ""),
 	}
 }
 
 func (s Source) View() string {
-	if s.ViewName == "" {
-		return DefaultViewName
-	}
-	return s.ViewName
+	return s.viewName
 }
 
 // NeedsSpatial reports whether the Arrow source carries geometry extension
@@ -58,6 +56,9 @@ func (s Source) RegisterView(arrowConn interface {
 }) (func(), error) {
 	if s.Reader == nil {
 		return nil, fmt.Errorf("missing arrow reader")
+	}
+	if s.View() == "" {
+		return nil, fmt.Errorf("missing arrow view name")
 	}
 	return arrowConn.RegisterView(s.Reader, s.View())
 }
