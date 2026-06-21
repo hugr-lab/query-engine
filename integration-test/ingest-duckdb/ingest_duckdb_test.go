@@ -23,6 +23,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/extensions"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	_ "github.com/duckdb/duckdb-go/v2"
@@ -147,6 +148,7 @@ func setupEnv(t *testing.T) *ingestEnv {
 			payload_large_list_view JSON,
 			payload_map JSON,
 			payload_scalar JSON,
+			payload_arrow_json JSON,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 			geom GEOMETRY,
 			geom_wkt GEOMETRY,
@@ -306,6 +308,7 @@ var jsonPhysicalTypeColumns = []string{
 	"payload_large_list_view",
 	"payload_map",
 	"payload_scalar",
+	"payload_arrow_json",
 }
 
 func makeJSONPhysicalTypesRecord(t *testing.T) arrow.RecordBatch {
@@ -315,6 +318,8 @@ func makeJSONPhysicalTypesRecord(t *testing.T) arrow.RecordBatch {
 		arrow.Field{Name: "kind", Type: arrow.BinaryTypes.String, Nullable: false},
 		arrow.Field{Name: "count", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
 	)
+	arrowJSONType, err := extensions.NewJSONType(arrow.BinaryTypes.String)
+	require.NoError(t, err)
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
 		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
@@ -333,6 +338,7 @@ func makeJSONPhysicalTypesRecord(t *testing.T) arrow.RecordBatch {
 		{Name: "payload_large_list_view", Type: arrow.LargeListViewOf(arrow.PrimitiveTypes.Int64), Nullable: false},
 		{Name: "payload_map", Type: arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64), Nullable: false},
 		{Name: "payload_scalar", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
+		{Name: "payload_arrow_json", Type: arrowJSONType, Nullable: false},
 	}, nil)
 
 	b := array.NewRecordBuilder(pool, schema)
@@ -372,6 +378,8 @@ func makeJSONPhysicalTypesRecord(t *testing.T) arrow.RecordBatch {
 	mapBuilder.KeyBuilder().(*array.StringBuilder).AppendValues([]string{"a", "b"}, nil)
 	mapBuilder.ItemBuilder().(*array.Int64Builder).AppendValues([]int64{11, 12}, nil)
 	b.Field(16).(*array.Int64Builder).Append(13)
+	arrowJSONBuilder := b.Field(17).(*array.ExtensionBuilder)
+	arrowJSONBuilder.StorageBuilder().(*array.StringBuilder).Append(`{"kind":"arrow_json"}`)
 	return b.NewRecordBatch()
 }
 
@@ -392,6 +400,7 @@ func jsonPhysicalTypesExpected() map[string]any {
 		"payload_large_list_view": []any{float64(9), float64(10)},
 		"payload_map":             map[string]any{"a": float64(11), "b": float64(12)},
 		"payload_scalar":          "13",
+		"payload_arrow_json":      map[string]any{"kind": "arrow_json"},
 	}
 }
 
