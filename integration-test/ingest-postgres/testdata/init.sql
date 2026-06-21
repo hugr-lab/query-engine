@@ -25,6 +25,7 @@ CREATE TABLE events (
     payload_large_list_view JSONB,
     payload_map JSONB,
     payload_scalar JSONB,
+    payload_arrow_json JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     geom GEOMETRY(Point, 0),
     geom_4326 GEOMETRY(Point, 4326),
