@@ -293,6 +293,33 @@ func makeEventsRecord(t *testing.T, names []string, values []float64, active []b
 	return b.NewRecord()
 }
 
+func makeMalformedJSONRecord(t *testing.T, binary bool) arrow.RecordBatch {
+	t.Helper()
+	payloadType := arrow.DataType(arrow.BinaryTypes.String)
+	payloadName := "payload"
+	if binary {
+		payloadType = arrow.BinaryTypes.Binary
+		payloadName = "payload_binary"
+	}
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
+		{Name: payloadName, Type: payloadType, Nullable: false},
+	}, nil)
+	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
+	defer b.Release()
+	b.Field(0).(*array.StringBuilder).Append("malformed-json")
+	b.Field(1).(*array.Float64Builder).Append(1)
+	b.Field(2).(*array.BooleanBuilder).Append(true)
+	if binary {
+		b.Field(3).(*array.BinaryBuilder).Append([]byte(`{"unterminated":`))
+	} else {
+		b.Field(3).(*array.StringBuilder).Append(`{"unterminated":`)
+	}
+	return b.NewRecord()
+}
+
 var jsonPhysicalTypeColumns = []string{
 	"payload",
 	"payload_large_string",
@@ -500,6 +527,31 @@ func TestIngest_DuckDB_JSONPhysicalTypes(t *testing.T) {
 	expectedColumns := append([]string{"name", "value", "is_active"}, jsonPhysicalTypeColumns...)
 	assert.ElementsMatch(t, expectedColumns, res.Columns)
 	assertJSONPhysicalTypesReadThroughHugr(t, env.service, env.dsName)
+}
+
+func TestIngest_DuckDB_RejectsMalformedJSON(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		binary bool
+	}{
+		{name: "string"},
+		{name: "binary", binary: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			env := setupEnv(t)
+			rec := makeMalformedJSONRecord(t, tt.binary)
+			defer rec.Release()
+
+			_, err := env.client.IngestRecord(context.Background(), env.dataObject, rec)
+			require.Error(t, err)
+
+			ro := env.openRO(t)
+			defer ro.Close()
+			var count int
+			require.NoError(t, ro.QueryRow("SELECT COUNT(*) FROM events").Scan(&count))
+			assert.Zero(t, count, "a failed JSON cast must roll back the entire ingest")
+		})
+	}
 }
 
 func TestIngest_DuckDB_PermissionData(t *testing.T) {

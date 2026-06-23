@@ -2,14 +2,12 @@ package engines
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -47,9 +45,8 @@ var scalarJSONInfo = map[string]jsonTypeInfo{
 }
 
 var (
-	_ Engine                  = &DuckDB{}
-	_ EngineArrowIngestCaster = &DuckDB{}
-	_ EngineAggregator        = &DuckDB{}
+	_ Engine           = &DuckDB{}
+	_ EngineAggregator = &DuckDB{}
 )
 
 type DuckDB struct {
@@ -87,41 +84,6 @@ func (e *DuckDB) Capabilities() *compiler.EngineCapabilities {
 			DeleteWithoutPKs: true,
 		},
 	}
-}
-
-func (e *DuckDB) ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
-	if field == nil || field.Definition == nil {
-		return sourceExpr, nil
-	}
-	switch field.Definition.Type.Name() {
-	case base.JSONTypeName:
-		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
-	case base.GeometryTypeName:
-		return arrowIngestGeometryStagingExpr(arrowField, sourceExpr)
-	default:
-		return sourceExpr, nil
-	}
-}
-
-func (e *DuckDB) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error) {
-	if value == nil {
-		return "NULL", nil
-	}
-	if field != nil && field.Definition != nil && field.Definition.Type.Name() == base.GeometryTypeName {
-		geom, err := ctypes.ParseGeometryValue(value)
-		if err != nil {
-			return "", err
-		}
-		if geom == nil {
-			return "NULL", nil
-		}
-		wkbValue, err := ctypes.GeometryToSQLValue(geom)
-		if err != nil {
-			return "", err
-		}
-		return "ST_GeomFromWKB(from_hex('" + strings.ToUpper(hex.EncodeToString(wkbValue)) + "'))", nil
-	}
-	return e.SQLValue(value)
 }
 
 func (e *DuckDB) FieldValueByPath(sqlName, path string) string {

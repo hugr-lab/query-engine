@@ -34,3 +34,10 @@ type events @table(name: "events") {
     geom_multiline: Geometry @geometry_info(srid: 0, type: MULTILINESTRING)
     geom_multipolygon: Geometry @geometry_info(srid: 0, type: MULTIPOLYGON)
 }
+
+type binary_events @table(name: "binary_events") {
+    id: BigInt! @pk @default(sequence: "binary_events_id_seq")
+    name: String!
+    value: Float!
+    geom: Geometry @geometry_info(srid: 0, type: POINT)
+}

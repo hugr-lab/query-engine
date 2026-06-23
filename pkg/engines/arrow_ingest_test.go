@@ -16,12 +16,12 @@ func TestArrowIngestJSONStagingExpr(t *testing.T) {
 		typ  arrow.DataType
 		want string
 	}{
-		{name: "string", typ: arrow.BinaryTypes.String, want: "try_cast(payload AS JSON)"},
-		{name: "large string", typ: arrow.BinaryTypes.LargeString, want: "try_cast(payload AS JSON)"},
-		{name: "string view", typ: arrow.BinaryTypes.StringView, want: "try_cast(payload AS JSON)"},
-		{name: "binary", typ: arrow.BinaryTypes.Binary, want: "try_cast(decode(payload) AS JSON)"},
-		{name: "large binary", typ: arrow.BinaryTypes.LargeBinary, want: "try_cast(decode(payload) AS JSON)"},
-		{name: "binary view", typ: arrow.BinaryTypes.BinaryView, want: "try_cast(decode(payload) AS JSON)"},
+		{name: "string", typ: arrow.BinaryTypes.String, want: "CAST(payload AS JSON)"},
+		{name: "large string", typ: arrow.BinaryTypes.LargeString, want: "CAST(payload AS JSON)"},
+		{name: "string view", typ: arrow.BinaryTypes.StringView, want: "CAST(payload AS JSON)"},
+		{name: "binary", typ: arrow.BinaryTypes.Binary, want: "CAST(decode(payload) AS JSON)"},
+		{name: "large binary", typ: arrow.BinaryTypes.LargeBinary, want: "CAST(decode(payload) AS JSON)"},
+		{name: "binary view", typ: arrow.BinaryTypes.BinaryView, want: "CAST(decode(payload) AS JSON)"},
 		{name: "struct", typ: arrow.StructOf(), want: "to_json(payload)"},
 		{name: "list", typ: arrow.ListOf(arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
 		{name: "large list", typ: arrow.LargeListOf(arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
@@ -42,8 +42,9 @@ func TestArrowIngestJSONStagingExpr(t *testing.T) {
 	}
 }
 
-func TestDuckDBArrowIngestBuildsNativeGeoArrowSelectExpr(t *testing.T) {
+func TestArrowIngestStagingBuildsNativeGeoArrowSelectExpr(t *testing.T) {
 	field := geometryTestField("")
+	staging := NewArrowIngestStagingBuilder()
 
 	tests := []struct {
 		ext  string
@@ -59,7 +60,7 @@ func TestDuckDBArrowIngestBuildsNativeGeoArrowSelectExpr(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.ext, func(t *testing.T) {
-			got, err := NewDuckDB().ArrowIngestSelectExpr(field, arrow.Field{
+			got, err := staging.SelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     geoArrowTestType(tt.ext),
 				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext}),
@@ -79,8 +80,9 @@ func TestDuckDBArrowIngestBuildsNativeGeoArrowSelectExpr(t *testing.T) {
 	}
 }
 
-func TestDuckDBArrowIngestBuildsDirectGeometrySelectExpr(t *testing.T) {
+func TestArrowIngestStagingBuildsDirectGeometrySelectExpr(t *testing.T) {
 	field := geometryTestField("")
+	staging := NewArrowIngestStagingBuilder()
 
 	tests := []struct {
 		name string
@@ -136,7 +138,7 @@ func TestDuckDBArrowIngestBuildsDirectGeometrySelectExpr(t *testing.T) {
 			if tt.ext != "" {
 				meta = arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext})
 			}
-			got, err := NewDuckDB().ArrowIngestSelectExpr(field, arrow.Field{
+			got, err := staging.SelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     tt.typ,
 				Metadata: meta,
@@ -154,118 +156,12 @@ func TestDuckDBArrowIngestBuildsDirectGeometrySelectExpr(t *testing.T) {
 	}
 }
 
-func TestPostgresArrowIngestBuildsNativeGeoArrowDirectSelectExpr(t *testing.T) {
-	field := geometryTestField("4326")
-
-	tests := []struct {
-		ext  string
-		want string
-	}{
-		{"geoarrow.point", "ST_Point(struct_extract(geom, 'x'), struct_extract(geom, 'y'))"},
-		{"geoarrow.linestring", "ST_MakeLine(list_transform(geom"},
-		{"geoarrow.polygon", "ST_MakePolygon(ST_MakeLine(list_transform(geom[1]"},
-		{"geoarrow.multipoint", "ST_Multi(ST_Collect(list_transform(geom"},
-		{"geoarrow.multilinestring", "ST_Multi(ST_Collect(list_transform(geom"},
-		{"geoarrow.multipolygon", "ST_Multi(ST_Collect(list_transform(geom"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.ext, func(t *testing.T) {
-			got, err := NewPostgres().ArrowIngestSelectExpr(field, arrow.Field{
-				Name:     "geom",
-				Type:     geoArrowTestType(tt.ext),
-				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext}),
-			}, "geom")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got == "geom" {
-				t.Fatalf("expected explicit conversion, got raw column")
-			}
-			if !strings.Contains(got, tt.want) ||
-				strings.Contains(got, "'SRID=4326;'") ||
-				strings.Contains(got, "ST_AsText(") {
-				t.Fatalf("unexpected conversion for %s: %s", tt.ext, got)
-			}
-		})
-	}
-}
-
-func TestPostgresArrowIngestBuildsDirectGeometrySelectExpr(t *testing.T) {
-	field := geometryTestField("4326")
-
-	tests := []struct {
-		name string
-		typ  arrow.DataType
-		ext  string
-		want string
-	}{
-		{
-			name: "trusted geoarrow wkb is already materialized as geometry",
-			typ:  arrow.BinaryTypes.Binary,
-			ext:  "geoarrow.wkb",
-			want: "geom",
-		},
-		{
-			name: "trusted geoarrow wkt parses directly from text",
-			typ:  arrow.BinaryTypes.String,
-			ext:  "geoarrow.wkt",
-			want: "ST_GeomFromText(geom, true)",
-		},
-		{
-			name: "trusted geoarrow geojson parses directly from json",
-			typ:  arrow.BinaryTypes.String,
-			ext:  "geoarrow.geojson",
-			want: "ST_GeomFromGeoJSON(geom)",
-		},
-		{
-			name: "trusted hugr geojson parses directly from json",
-			typ:  arrow.BinaryTypes.String,
-			ext:  "hugr.geojson",
-			want: "ST_GeomFromGeoJSON(geom)",
-		},
-		{
-			name: "trusted plain geojson parses directly from json",
-			typ:  arrow.BinaryTypes.String,
-			ext:  "geojson",
-			want: "ST_GeomFromGeoJSON(geom)",
-		},
-		{
-			name: "unannotated binary parses directly as wkb",
-			typ:  arrow.BinaryTypes.Binary,
-			want: "ST_GeomFromWKB(geom)",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			meta := arrow.Metadata{}
-			if tt.ext != "" {
-				meta = arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext})
-			}
-			got, err := NewPostgres().ArrowIngestSelectExpr(field, arrow.Field{
-				Name:     "geom",
-				Type:     tt.typ,
-				Metadata: meta,
-			}, "geom")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != tt.want {
-				t.Fatalf("expected %s, got %s", tt.want, got)
-			}
-			if strings.Contains(got, "'SRID=4326;'") || strings.Contains(got, "ST_AsText(") {
-				t.Fatalf("expected direct geometry expression, got %s", got)
-			}
-		})
-	}
-}
-
 func TestArrowIngestRejectsNativeGeoArrowUnionLayouts(t *testing.T) {
 	field := geometryTestField("")
+	staging := NewArrowIngestStagingBuilder()
 	for _, ext := range []string{"geoarrow.geometry", "geoarrow.geometrycollection"} {
 		t.Run(ext, func(t *testing.T) {
-			_, err := NewDuckDB().ArrowIngestSelectExpr(field, arrow.Field{
+			_, err := staging.SelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     arrow.StructOf(),
 				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": ext}),
@@ -279,6 +175,7 @@ func TestArrowIngestRejectsNativeGeoArrowUnionLayouts(t *testing.T) {
 
 func TestArrowIngestRejectsUnsupportedGeometryExtensionMetadata(t *testing.T) {
 	field := geometryTestField("")
+	staging := NewArrowIngestStagingBuilder()
 	for _, tt := range []struct {
 		name string
 		typ  arrow.DataType
@@ -296,7 +193,7 @@ func TestArrowIngestRejectsUnsupportedGeometryExtensionMetadata(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewDuckDB().ArrowIngestSelectExpr(field, arrow.Field{
+			_, err := staging.SelectExpr(field, arrow.Field{
 				Name:     "geom",
 				Type:     tt.typ,
 				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext}),
@@ -311,10 +208,10 @@ func TestArrowIngestRejectsUnsupportedGeometryExtensionMetadata(t *testing.T) {
 	}
 }
 
-func TestPostgresArrowIngestLiteralExprUsesDuckDBStagingLiterals(t *testing.T) {
-	engine := &Postgres{}
+func TestArrowIngestStagingLiteralExpr(t *testing.T) {
+	staging := NewArrowIngestStagingBuilder()
 
-	jsonSQL, err := engine.ArrowIngestLiteralExpr(nil, map[string]any{"status": "ok"})
+	jsonSQL, err := staging.LiteralExpr(nil, map[string]any{"status": "ok"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +219,7 @@ func TestPostgresArrowIngestLiteralExprUsesDuckDBStagingLiterals(t *testing.T) {
 		t.Fatalf("expected DuckDB JSON literal, got %s", jsonSQL)
 	}
 
-	geomSQL, err := engine.ArrowIngestLiteralExpr(geometryTestField("4326"), orb.Point{1, 2})
+	geomSQL, err := staging.LiteralExpr(geometryTestField("4326"), orb.Point{1, 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,21 +227,7 @@ func TestPostgresArrowIngestLiteralExprUsesDuckDBStagingLiterals(t *testing.T) {
 		strings.Contains(geomSQL, "'SRID=4326;'") ||
 		strings.Contains(geomSQL, "ST_GeomFromText") ||
 		strings.Contains(geomSQL, "POINT") {
-		t.Fatalf("expected Postgres WKB geometry literal, got %s", geomSQL)
-	}
-}
-
-func TestDuckDBArrowIngestLiteralExprUsesWKBStagingGeometry(t *testing.T) {
-	engine := &DuckDB{}
-
-	geomSQL, err := engine.ArrowIngestLiteralExpr(geometryTestField(""), orb.Point{1, 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(geomSQL, "ST_GeomFromWKB(from_hex('0101000000") ||
-		strings.Contains(geomSQL, "ST_GeomFromText") ||
-		strings.Contains(geomSQL, "POINT") {
-		t.Fatalf("expected DuckDB WKB geometry literal, got %s", geomSQL)
+		t.Fatalf("expected canonical WKB geometry literal, got %s", geomSQL)
 	}
 }
 

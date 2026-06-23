@@ -52,10 +52,6 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if !caps.Ingest.Available() {
 		return nil, fmt.Errorf("engine %q does not support IPC ingest", engine.Type())
 	}
-	ingestEngine, ok := engine.(engines.EngineArrowIngestCaster)
-	if !ok {
-		return nil, fmt.Errorf("engine %q declares IPC ingest support but does not implement Arrow ingest casting", engine.Type())
-	}
 	mutation := sdl.MutationInfo(ctx, provider, mutationField)
 	if mutation == nil || mutation.Type != sdl.MutationTypeInsert {
 		return nil, fmt.Errorf("data object %q has no insert mutation defined", dataObject)
@@ -75,7 +71,7 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if err := checkIngestPermissions(ctx, provider, info, columns, permissionData); err != nil {
 		return nil, err
 	}
-	return ingestNode(ctx, info, mutation, ingestEngine, columns, permissionData, source.View()), nil
+	return ingestNode(ctx, info, mutation, engine, columns, permissionData, source.View()), nil
 }
 
 func resolveIngestTarget(ctx context.Context, provider catalog.Provider, dataObject string) (*sdl.Object, *ast.FieldDefinition, error) {
@@ -298,18 +294,19 @@ func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info
 //
 //   - info is the GraphQL data object plus its DB table/column mapping.
 //   - mutation is the GraphQL insert mutation used for insert defaults.
-//   - engine converts Arrow-view expressions into values accepted by the
-//     target engine/table.
+//   - engine describes the target and optionally adapts canonical DuckDB
+//     staging values through EngineIngestTargetCaster.
 //   - columns are Arrow columns already resolved to GraphQL fields and DB
 //     columns by resolveIngestColumns.
 //   - permissionData contains extra GraphQL input values injected by the
 //     permission layer; they do not come from the Arrow stream.
 //   - arrowViewName is the globally unique DuckDB view registered from the
 //     Arrow reader for this ingest execution.
-func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, engine engines.EngineArrowIngestCaster, columns []ingestColumn, permissionData map[string]any, arrowViewName string) *QueryPlanNode {
+func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, engine engines.Engine, columns []ingestColumn, permissionData map[string]any, arrowViewName string) *QueryPlanNode {
 	return &QueryPlanNode{
 		Name: "ingest_" + info.Name,
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+			staging := engines.NewArrowIngestStagingBuilder()
 			// fieldValues is keyed by GraphQL field name. Each value is a SQL
 			// expression evaluated in the SELECT part of INSERT ... SELECT.
 			// The expression may reference an Arrow column from the ingest
@@ -321,13 +318,11 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				// is applied later when targetFields is built.
 				value := engines.Ident(c.ArrowField.Name)
 				// Synthetic GraphQL field used only to pass type/directive
-				// metadata to the engine-specific Arrow ingest caster.
+				// metadata to the staging and optional target casters.
 				field := ingestASTField(info, c.Field, c.FieldDef)
-				// Build the Arrow ingest SELECT expression for the target
-				// GraphQL/DB field.
-				// Examples: JSON to_json(...) or DuckDB staging geometry
-				// expressions used for both DuckDB and attached Postgres targets.
-				value, err := engine.ArrowIngestSelectExpr(field, c.ArrowField, value)
+				// Normalize the Arrow value to a canonical DuckDB expression.
+				// Target-specific adaptation, if required, is applied below.
+				value, err := staging.SelectExpr(field, c.ArrowField, value)
 				if err != nil {
 					return "", nil, err
 				}
@@ -347,9 +342,9 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				if fieldDef == nil {
 					return "", nil, fmt.Errorf("permission data field %q definition not found in data object %q", name, info.Name)
 				}
-				// Unlike Arrow columns, this value has no Arrow type. The target
-				// engine still decides how to shape the literal for ingest.
-				sqlValue, err := engine.ArrowIngestLiteralExpr(ingestASTField(info, fieldInfo, fieldDef), value)
+				// Unlike Arrow columns, this value has no Arrow type. Build its
+				// canonical DuckDB literal before optional target adaptation.
+				sqlValue, err := staging.LiteralExpr(ingestASTField(info, fieldInfo, fieldDef), value)
 				if err != nil {
 					return "", nil, err
 				}
@@ -359,7 +354,7 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 			// the Arrow view is registered in DuckDB.
 			// Default/auth helper expressions must therefore use the same canonical
 			// DuckDB staging types before optional target casting is applied below.
-			if err := mutation.AppendInsertSQLExpression(fieldValues, perm.AuthVars(ctx), engines.NewArrowIngestStagingBuilder()); err != nil {
+			if err := mutation.AppendInsertSQLExpression(fieldValues, perm.AuthVars(ctx), staging); err != nil {
 				return "", nil, err
 			}
 			var targetFields, selectExprs []string
@@ -414,7 +409,7 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 	}
 }
 
-func castIngestValueToTarget(engine engines.EngineArrowIngestCaster, field *ast.Field, stagingExpr string) (string, error) {
+func castIngestValueToTarget(engine engines.Engine, field *ast.Field, stagingExpr string) (string, error) {
 	targetCaster, ok := engine.(engines.EngineIngestTargetCaster)
 	if !ok {
 		return stagingExpr, nil

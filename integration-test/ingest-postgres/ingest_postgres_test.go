@@ -174,8 +174,8 @@ func setupEnv(t *testing.T) *ingestEnv {
 		t.Skipf("%s not set — run integration-test/ingest-postgres/run.sh to spin up a postgres container", envPostgresDSN)
 	}
 
-	// Truncate before each test to guarantee determinism (single shared table).
-	_, err := sharedPgConn.ExecContext(context.Background(), "TRUNCATE TABLE events RESTART IDENTITY")
+	// Truncate before each test to guarantee determinism.
+	_, err := sharedPgConn.ExecContext(context.Background(), "TRUNCATE TABLE events, binary_events RESTART IDENTITY")
 	require.NoError(t, err)
 
 	return &ingestEnv{
@@ -263,6 +263,33 @@ func makeEventsRecord(t *testing.T, names []string, values []float64, active []b
 	}
 	tsBuilder := b.Field(4).(*array.TimestampBuilder)
 	tsBuilder.AppendValues(created, nil)
+	return b.NewRecord()
+}
+
+func makeMalformedJSONRecord(t *testing.T, binary bool) arrow.RecordBatch {
+	t.Helper()
+	payloadType := arrow.DataType(arrow.BinaryTypes.String)
+	payloadName := "payload"
+	if binary {
+		payloadType = arrow.BinaryTypes.Binary
+		payloadName = "payload_binary"
+	}
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
+		{Name: payloadName, Type: payloadType, Nullable: false},
+	}, nil)
+	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
+	defer b.Release()
+	b.Field(0).(*array.StringBuilder).Append("malformed-json")
+	b.Field(1).(*array.Float64Builder).Append(1)
+	b.Field(2).(*array.BooleanBuilder).Append(true)
+	if binary {
+		b.Field(3).(*array.BinaryBuilder).Append([]byte(`{"unterminated":`))
+	} else {
+		b.Field(3).(*array.StringBuilder).Append(`{"unterminated":`)
+	}
 	return b.NewRecord()
 }
 
@@ -467,6 +494,69 @@ func TestIngest_Postgres_JSONPhysicalTypes(t *testing.T) {
 	expectedColumns := append([]string{"name", "value", "is_active"}, jsonPhysicalTypeColumns...)
 	assert.ElementsMatch(t, expectedColumns, res.Columns)
 	assertJSONPhysicalTypesReadThroughHugr(t, env.service, env.dsName)
+}
+
+func TestIngest_Postgres_RejectsMalformedJSON(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		binary bool
+	}{
+		{name: "string"},
+		{name: "binary", binary: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			env := setupEnv(t)
+			rec := makeMalformedJSONRecord(t, tt.binary)
+			defer rec.Release()
+
+			_, err := env.client.IngestRecord(context.Background(), "pg_ingest.events", rec)
+			require.Error(t, err)
+
+			var count int
+			require.NoError(t, env.pgConn.QueryRow("SELECT COUNT(*) FROM events").Scan(&count))
+			assert.Zero(t, count, "a failed JSON cast must roll back the entire ingest")
+		})
+	}
+}
+
+func TestIngest_Postgres_UsesBinaryCopyWithoutTextOnlyTypes(t *testing.T) {
+	env := setupEnv(t)
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		{
+			Name:     "geom",
+			Type:     arrow.BinaryTypes.String,
+			Nullable: false,
+			Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkt"}),
+		},
+	}, nil)
+	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
+	b.Field(0).(*array.StringBuilder).Append("binary-copy")
+	b.Field(1).(*array.Float64Builder).Append(42)
+	b.Field(2).(*array.StringBuilder).Append("POINT (7.25 8.5)")
+	rec := b.NewRecord()
+	b.Release()
+	defer rec.Release()
+
+	res, err := env.client.IngestRecord(context.Background(), "pg_ingest.binary_events", rec)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), res.Inserted)
+
+	var name, geom string
+	require.NoError(t, env.pgConn.QueryRow(
+		"SELECT name, ST_AsText(geom) FROM binary_events",
+	).Scan(&name, &geom))
+	assert.Equal(t, "binary-copy", name)
+	assert.Equal(t, "POINT(7.25 8.5)", compactWKT(geom))
+
+	const copyPrefix = `COPY "public"."binary_events"`
+	var serverLog string
+	require.Eventually(t, func() bool {
+		err := env.pgConn.QueryRow("SELECT pg_read_file(pg_current_logfile())").Scan(&serverLog)
+		return err == nil && strings.Contains(serverLog, copyPrefix) &&
+			strings.Contains(serverLog[strings.LastIndex(serverLog, copyPrefix):], "FORMAT BINARY")
+	}, 5*time.Second, 100*time.Millisecond, "postgres log did not contain binary COPY for binary_events")
 }
 
 func TestIngest_Postgres_PermissionData(t *testing.T) {
