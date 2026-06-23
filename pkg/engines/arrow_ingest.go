@@ -1,16 +1,19 @@
 package engines
 
 import (
+	"encoding/hex"
 	"fmt"
 	"strings"
 
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// ArrowIngestStagingBuilder builds SQL fragments evaluated by DuckDB while an
-// Arrow reader is registered as a temporary view. Target engines still decide
-// how Arrow columns are shaped, but default/auth expression functions must be
-// valid in this DuckDB staging SELECT.
+// ArrowIngestStagingBuilder owns every SQL expression evaluated by DuckDB while
+// an Arrow reader is registered as a view. Target-specific conversion, when a
+// target needs one, is applied separately through EngineIngestTargetCaster.
 type ArrowIngestStagingBuilder struct {
 	duckdb DuckDB
 }
@@ -27,12 +30,51 @@ func (b *ArrowIngestStagingBuilder) FunctionCall(name string, positional []any, 
 	return b.duckdb.FunctionCall(name, positional, named)
 }
 
+// SelectExpr converts an Arrow-view column to its canonical DuckDB staging
+// representation for the target GraphQL field.
+func (b *ArrowIngestStagingBuilder) SelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
+	if field == nil || field.Definition == nil {
+		return sourceExpr, nil
+	}
+	switch field.Definition.Type.Name() {
+	case base.JSONTypeName:
+		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
+	case base.GeometryTypeName:
+		return arrowIngestGeometryStagingExpr(arrowField, sourceExpr)
+	default:
+		return sourceExpr, nil
+	}
+}
+
+// LiteralExpr converts a non-Arrow value, such as permission data, to a
+// canonical DuckDB staging expression.
+func (b *ArrowIngestStagingBuilder) LiteralExpr(field *ast.Field, value any) (string, error) {
+	if value == nil {
+		return "NULL", nil
+	}
+	if field != nil && field.Definition != nil && field.Definition.Type.Name() == base.GeometryTypeName {
+		geom, err := ctypes.ParseGeometryValue(value)
+		if err != nil {
+			return "", err
+		}
+		if geom == nil {
+			return "NULL", nil
+		}
+		wkbValue, err := ctypes.GeometryToSQLValue(geom)
+		if err != nil {
+			return "", err
+		}
+		return "ST_GeomFromWKB(from_hex('" + strings.ToUpper(hex.EncodeToString(wkbValue)) + "'))", nil
+	}
+	return b.duckdb.SQLValue(value)
+}
+
 func arrowIngestJSONStagingExpr(arrowField arrow.Field, sourceExpr string) string {
 	switch arrowField.Type.ID() {
 	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
-		return "try_cast(" + sourceExpr + " AS JSON)"
+		return "CAST(" + sourceExpr + " AS JSON)"
 	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
-		return "try_cast(decode(" + sourceExpr + ") AS JSON)"
+		return "CAST(decode(" + sourceExpr + ") AS JSON)"
 	case arrow.STRUCT, arrow.LIST, arrow.LARGE_LIST, arrow.FIXED_SIZE_LIST,
 		arrow.LIST_VIEW, arrow.LARGE_LIST_VIEW, arrow.MAP:
 		return "to_json(" + sourceExpr + ")"

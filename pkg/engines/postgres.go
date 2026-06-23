@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -21,11 +20,10 @@ import (
 )
 
 var (
-	_ Engine                  = &Postgres{}
-	_ EngineQueryScanner      = &Postgres{}
-	_ EngineTypeCaster        = &Postgres{}
-	_ EngineArrowIngestCaster = &Postgres{}
-	_ EngineAggregator        = &Postgres{}
+	_ Engine             = &Postgres{}
+	_ EngineQueryScanner = &Postgres{}
+	_ EngineTypeCaster   = &Postgres{}
+	_ EngineAggregator   = &Postgres{}
 )
 
 type Postgres struct {
@@ -595,25 +593,6 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 	}
 
 	return Ident(f.Alias), nil
-}
-
-func (e *Postgres) ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
-	if field == nil || field.Definition == nil {
-		return sourceExpr, nil
-	}
-	switch field.Definition.Type.Name() {
-	case base.JSONTypeName:
-		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
-	case base.GeometryTypeName:
-		return arrowIngestGeometryStagingExpr(arrowField, sourceExpr)
-	default:
-		return sourceExpr, nil
-	}
-}
-
-func (e *Postgres) ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error) {
-	var duckdb DuckDB
-	return duckdb.ArrowIngestLiteralExpr(field, value)
 }
 
 func pgRangeValueToSQLValue(v any) (string, error) {

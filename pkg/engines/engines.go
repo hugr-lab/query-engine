@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
@@ -73,21 +72,10 @@ type EngineTypeCaster interface {
 	CastFromIntermediateType(field *ast.Field, toJSON bool) (string, error)
 }
 
-type EngineArrowIngestCaster interface {
-	Engine
-	// ArrowIngestSelectExpr maps one Arrow-view column to a DuckDB staging SELECT
-	// expression using canonical DuckDB value types.
-	// Example: for a Geometry field, arrowField extension "geoarrow.geojson", and
-	// sourceExpr `geom_geojson`, this returns
-	// `ST_GeomFromGeoJSON(geom_geojson)` as a DuckDB GEOMETRY expression.
-	ArrowIngestSelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error)
-	// ArrowIngestLiteralExpr returns a DuckDB-compatible literal/expression for
-	// non-Arrow values mixed into the ingest SELECT.
-	ArrowIngestLiteralExpr(field *ast.Field, value any) (string, error)
-}
-
 // EngineIngestTargetCaster is implemented by engines whose ingest target
-// cannot consume canonical DuckDB staging values directly.
+// cannot consume canonical DuckDB staging values directly. Engines that do not
+// implement it explicitly accept canonical staging values as their ingest
+// contract.
 type EngineIngestTargetCaster interface {
 	Engine
 	// CastIngestValueToTarget converts a DuckDB staging SELECT expression into

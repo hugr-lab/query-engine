@@ -1,6 +1,12 @@
 services:
   postgres:
     image: postgis/postgis:16-3.4
+    command:
+      - postgres
+      - -c
+      - logging_collector=on
+      - -c
+      - log_statement=all
     environment:
       POSTGRES_DB: ingestdb
       POSTGRES_USER: test
