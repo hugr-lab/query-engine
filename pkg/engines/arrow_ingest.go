@@ -13,7 +13,7 @@ import (
 
 // ArrowIngestStagingBuilder owns every SQL expression evaluated by DuckDB while
 // an Arrow reader is registered as a view. Target-specific conversion, when a
-// target needs one, is applied separately through EngineIngestTargetCaster.
+// target needs one, is applied separately through EngineIngestValueAdapter.
 type ArrowIngestStagingBuilder struct {
 	duckdb DuckDB
 }
