@@ -295,7 +295,7 @@ func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info
 //   - info is the GraphQL data object plus its DB table/column mapping.
 //   - mutation is the GraphQL insert mutation used for insert defaults.
 //   - engine describes the target and optionally adapts canonical DuckDB
-//     staging values through EngineIngestTargetCaster.
+//     staging values through EngineIngestValueAdapter.
 //   - columns are Arrow columns already resolved to GraphQL fields and DB
 //     columns by resolveIngestColumns.
 //   - permissionData contains extra GraphQL input values injected by the
@@ -364,7 +364,7 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				targetFields = append(targetFields, c.Field.FieldSourceName("", true))
 				// selectExprs are evaluated from the DuckDB Arrow view and must
 				// stay in the same order as targetFields.
-				expr, err := castIngestValueToTarget(engine, ingestASTField(info, c.Field, c.FieldDef), fieldValues[c.Field.Name])
+				expr, err := adaptIngestValueSQL(engine, ingestASTField(info, c.Field, c.FieldDef), fieldValues[c.Field.Name])
 				if err != nil {
 					return "", nil, err
 				}
@@ -385,7 +385,7 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 				if fieldDef == nil {
 					return "", nil, fmt.Errorf("ingest field %q definition not found in data object %q", fieldInfo.Name, info.Name)
 				}
-				expr, err := castIngestValueToTarget(engine, ingestASTField(info, fieldInfo, fieldDef), expr)
+				expr, err := adaptIngestValueSQL(engine, ingestASTField(info, fieldInfo, fieldDef), expr)
 				if err != nil {
 					return "", nil, err
 				}
@@ -409,12 +409,12 @@ func ingestNode(ctx context.Context, info *sdl.Object, mutation *sdl.Mutation, e
 	}
 }
 
-func castIngestValueToTarget(engine engines.Engine, field *ast.Field, stagingExpr string) (string, error) {
-	targetCaster, ok := engine.(engines.EngineIngestTargetCaster)
+func adaptIngestValueSQL(engine engines.Engine, field *ast.Field, valueSQL string) (string, error) {
+	adapter, ok := engine.(engines.EngineIngestValueAdapter)
 	if !ok {
-		return stagingExpr, nil
+		return valueSQL, nil
 	}
-	return targetCaster.CastIngestValueToTarget(field, stagingExpr)
+	return adapter.AdaptIngestValueSQL(field, valueSQL)
 }
 
 func ingestASTField(info *sdl.Object, fieldInfo *sdl.Field, fieldDef *ast.FieldDefinition) *ast.Field {

@@ -7,17 +7,17 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-type testIngestTargetCaster struct {
+type testIngestValueAdapter struct {
 	*engines.DuckDB
 }
 
-func (e *testIngestTargetCaster) CastIngestValueToTarget(_ *ast.Field, stagingExpr string) (string, error) {
-	return "target_cast(" + stagingExpr + ")", nil
+func (e *testIngestValueAdapter) AdaptIngestValueSQL(_ *ast.Field, valueSQL string) (string, error) {
+	return "adapted(" + valueSQL + ")", nil
 }
 
-func TestCastIngestValueToTarget(t *testing.T) {
+func TestAdaptIngestValueSQL(t *testing.T) {
 	t.Run("direct target", func(t *testing.T) {
-		got, err := castIngestValueToTarget(engines.NewDuckDB(), nil, "staging_value")
+		got, err := adaptIngestValueSQL(engines.NewDuckDB(), nil, "staging_value")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -26,14 +26,14 @@ func TestCastIngestValueToTarget(t *testing.T) {
 		}
 	})
 
-	t.Run("target caster", func(t *testing.T) {
-		engine := &testIngestTargetCaster{DuckDB: engines.NewDuckDB()}
-		got, err := castIngestValueToTarget(engine, nil, "staging_value")
+	t.Run("value adapter", func(t *testing.T) {
+		engine := &testIngestValueAdapter{DuckDB: engines.NewDuckDB()}
+		got, err := adaptIngestValueSQL(engine, nil, "staging_value")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != "target_cast(staging_value)" {
-			t.Fatalf("got %q, want target cast expression", got)
+		if got != "adapted(staging_value)" {
+			t.Fatalf("got %q, want adapted ingest expression", got)
 		}
 	})
 }

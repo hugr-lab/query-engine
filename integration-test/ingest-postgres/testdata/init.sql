@@ -51,3 +51,14 @@ CREATE TABLE binary_events (
     value DOUBLE PRECISION NOT NULL,
     geom GEOMETRY(Point, 0)
 );
+
+-- Permissive geometry table for ingest edge-case coverage: NULL, 3D (Z),
+-- EMPTY and GEOMETRYCOLLECTION values. The column is a bare `geometry`
+-- (no type/SRID typmod) so it accepts whatever the native
+-- DuckDB GEOMETRY -> PostGIS bridge produces, letting the test assert
+-- whether the bridge preserves these non-trivial geometries faithfully.
+CREATE TABLE geom_edge (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    geom GEOMETRY
+);

@@ -72,15 +72,15 @@ type EngineTypeCaster interface {
 	CastFromIntermediateType(field *ast.Field, toJSON bool) (string, error)
 }
 
-// EngineIngestTargetCaster is implemented by engines whose ingest target
-// cannot consume canonical DuckDB staging values directly. Engines that do not
+// EngineIngestValueAdapter is implemented by engines whose ingest path cannot
+// consume canonical DuckDB staging values directly. Engines that do not
 // implement it explicitly accept canonical staging values as their ingest
 // contract.
-type EngineIngestTargetCaster interface {
+type EngineIngestValueAdapter interface {
 	Engine
-	// CastIngestValueToTarget converts a DuckDB staging SELECT expression into
-	// the representation accepted by the target source during ingest.
-	CastIngestValueToTarget(field *ast.Field, stagingExpr string) (string, error)
+	// AdaptIngestValueSQL adapts a DuckDB staging value SQL fragment to the
+	// representation expected by this engine/source during batch ingest.
+	AdaptIngestValueSQL(field *ast.Field, valueSQL string) (string, error)
 }
 
 type EngineVectorDistanceCalculator interface {

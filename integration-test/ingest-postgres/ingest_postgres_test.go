@@ -559,6 +559,105 @@ func TestIngest_Postgres_UsesBinaryCopyWithoutTextOnlyTypes(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "postgres log did not contain binary COPY for binary_events")
 }
 
+// TestIngest_Postgres_GeometryEdgeCases verifies that the native
+// DuckDB GEOMETRY -> PostGIS bridge faithfully carries geometries that the
+// existing suite never exercised: SQL NULL, 3D (Z) coordinates, EMPTY
+// geometries and a mixed GEOMETRYCOLLECTION. The target column is a bare
+// `geometry` (no typmod) so PostGIS accepts any type/dimension and the
+// assertions reflect exactly what crossed the bridge — not what a typmod
+// coerced. Geometry is sent as geoarrow.wkt so DuckDB staging normalises it to
+// a canonical GEOMETRY via ST_GeomFromText before the bridge writes it out.
+func TestIngest_Postgres_GeometryEdgeCases(t *testing.T) {
+	env := setupEnv(t)
+
+	_, err := env.pgConn.ExecContext(context.Background(),
+		"TRUNCATE TABLE geom_edge RESTART IDENTITY")
+	require.NoError(t, err)
+
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{
+			Name:     "geom",
+			Type:     arrow.BinaryTypes.String,
+			Nullable: true,
+			Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkt"}),
+		},
+	}, nil)
+
+	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
+	names := b.Field(0).(*array.StringBuilder)
+	geoms := b.Field(1).(*array.StringBuilder)
+
+	names.Append("a_null")
+	geoms.AppendNull()
+	names.Append("b_point_z")
+	geoms.Append("POINT Z (1 2 3)")
+	names.Append("c_empty_point")
+	geoms.Append("POINT EMPTY")
+	names.Append("d_geomcollection")
+	geoms.Append("GEOMETRYCOLLECTION(POINT(1 2),LINESTRING(0 0,1 1))")
+
+	rec := b.NewRecord()
+	b.Release()
+	defer rec.Release()
+
+	res, err := env.client.IngestRecord(context.Background(), "pg_ingest.geom_edge", rec)
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	assert.Equal(t, int64(4), res.Inserted)
+
+	type edgeRow struct {
+		isNull  bool
+		gtype   string
+		zmflag  int
+		isEmpty bool
+		numGeom int
+	}
+	rows, err := env.pgConn.Query(`
+		SELECT name,
+			geom IS NULL,
+			COALESCE(GeometryType(geom), ''),
+			COALESCE(ST_Zmflag(geom), -1),
+			COALESCE(ST_IsEmpty(geom), false),
+			COALESCE(ST_NumGeometries(geom), 0)
+		FROM geom_edge ORDER BY name`)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	got := map[string]edgeRow{}
+	for rows.Next() {
+		var name string
+		var r edgeRow
+		require.NoError(t, rows.Scan(&name, &r.isNull, &r.gtype, &r.zmflag, &r.isEmpty, &r.numGeom))
+		got[name] = r
+	}
+	require.NoError(t, rows.Err())
+	require.Len(t, got, 4)
+
+	// NULL geometry must round-trip as SQL NULL.
+	assert.True(t, got["a_null"].isNull, "NULL geometry must stay NULL through the native bridge")
+
+	// 3D point: the Z dimension must survive DuckDB GEOMETRY -> PostGIS.
+	assert.False(t, got["b_point_z"].isNull)
+	assert.Equal(t, "POINT", got["b_point_z"].gtype)
+	assert.Equal(t, 2, got["b_point_z"].zmflag, "ST_Zmflag 2 == XYZ (Z present, no M)")
+
+	// EMPTY geometry must remain an empty geometry of the right type.
+	assert.Equal(t, "POINT", got["c_empty_point"].gtype)
+	assert.True(t, got["c_empty_point"].isEmpty, "POINT EMPTY must survive as empty")
+
+	// Mixed GeometryCollection must keep its member count.
+	assert.Equal(t, "GEOMETRYCOLLECTION", got["d_geomcollection"].gtype)
+	assert.Equal(t, 2, got["d_geomcollection"].numGeom)
+
+	// Exact coordinates for the 3D point.
+	var x, y, z float64
+	require.NoError(t, env.pgConn.QueryRow(
+		"SELECT ST_X(geom), ST_Y(geom), ST_Z(geom) FROM geom_edge WHERE name = 'b_point_z'",
+	).Scan(&x, &y, &z))
+	assert.Equal(t, [3]float64{1, 2, 3}, [3]float64{x, y, z})
+}
+
 func TestIngest_Postgres_PermissionData(t *testing.T) {
 	env := setupEnv(t)
 

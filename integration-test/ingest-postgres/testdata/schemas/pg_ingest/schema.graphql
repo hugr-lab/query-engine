@@ -41,3 +41,9 @@ type binary_events @table(name: "binary_events") {
     value: Float!
     geom: Geometry @geometry_info(srid: 0, type: POINT)
 }
+
+type geom_edge @table(name: "geom_edge") {
+    id: BigInt! @pk @default(sequence: "geom_edge_id_seq")
+    name: String!
+    geom: Geometry @geometry_info(srid: 0)
+}
