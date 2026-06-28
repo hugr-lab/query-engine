@@ -38,7 +38,7 @@ func (b *ArrowIngestStagingBuilder) SelectExpr(field *ast.Field, arrowField arro
 	}
 	switch field.Definition.Type.Name() {
 	case base.JSONTypeName:
-		return arrowIngestJSONStagingExpr(arrowField, sourceExpr), nil
+		return arrowIngestJSONStagingExpr(arrowField, sourceExpr)
 	case base.GeometryTypeName:
 		return arrowIngestGeometryStagingExpr(arrowField, sourceExpr)
 	default:
@@ -69,66 +69,195 @@ func (b *ArrowIngestStagingBuilder) LiteralExpr(field *ast.Field, value any) (st
 	return b.duckdb.SQLValue(value)
 }
 
-func arrowIngestJSONStagingExpr(arrowField arrow.Field, sourceExpr string) string {
-	switch arrowField.Type.ID() {
-	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
-		return "CAST(" + sourceExpr + " AS JSON)"
-	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
-		return "CAST(decode(" + sourceExpr + ") AS JSON)"
-	case arrow.STRUCT, arrow.LIST, arrow.LARGE_LIST, arrow.FIXED_SIZE_LIST,
-		arrow.LIST_VIEW, arrow.LARGE_LIST_VIEW, arrow.MAP:
-		return "to_json(" + sourceExpr + ")"
+const (
+	arrowJSONExtension = "arrow.json"
+
+	hugrGeoJSONExtension     = "hugr.geojson"
+	geoArrowGeoJSONExtension = "geoarrow.geojson"
+	plainGeoJSONExtension    = "geojson"
+	hugrHexWKBExtension      = "hugr.hexwkb"
+	geoArrowHexWKBExtension  = "geoarrow.hexwkb"
+	plainHexWKBExtension     = "hexwkb"
+
+	geoArrowWKBExtension                = "geoarrow.wkb"
+	geoArrowWKTExtension                = "geoarrow.wkt"
+	geoArrowPointExtension              = "geoarrow.point"
+	geoArrowLineStringExtension         = "geoarrow.linestring"
+	geoArrowPolygonExtension            = "geoarrow.polygon"
+	geoArrowMultiPointExtension         = "geoarrow.multipoint"
+	geoArrowMultiLineStringExtension    = "geoarrow.multilinestring"
+	geoArrowMultiPolygonExtension       = "geoarrow.multipolygon"
+	geoArrowGeometryExtension           = "geoarrow.geometry"
+	geoArrowGeometryCollectionExtension = "geoarrow.geometrycollection"
+)
+
+func arrowIngestJSONStagingExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
+	ext := arrowExtensionNameFromTypeOrMetadata(arrowField)
+	switch {
+	case ext == "":
+		return jsonExprFromPlainArrow(arrowField, sourceExpr), nil
+	case ext == arrowJSONExtension:
+		return jsonExprFromArrowJSONExtension(arrowField, sourceExpr)
+	case isGeoJSONExtension(ext):
+		return jsonExprFromGeoJSONExtension(arrowField, sourceExpr)
+	case needsGeometryToJSON(ext):
+		geomExpr, err := geometryExprFromExtension(ext, arrowField, sourceExpr)
+		if err != nil {
+			return "", err
+		}
+		return jsonExprFromGeometryExpr(geomExpr), nil
 	default:
-		return "to_json(" + sourceExpr + ")"
+		return "", fmt.Errorf("unsupported Arrow extension %q for JSON ingest", ext)
 	}
+}
+
+func jsonExprFromPlainArrow(arrowField arrow.Field, sourceExpr string) string {
+	if expr, ok := jsonExprFromSerializedStorage(arrowField, sourceExpr); ok {
+		return expr
+	}
+	return duckDBToJSON(sourceExpr)
+}
+
+func jsonExprFromArrowJSONExtension(arrowField arrow.Field, sourceExpr string) (string, error) {
+	if expr, ok := jsonExprFromSerializedStorage(arrowField, sourceExpr); ok {
+		return expr, nil
+	}
+	return "", storageError(arrowField, arrowJSONExtension)
+}
+
+func jsonExprFromGeoJSONExtension(arrowField arrow.Field, sourceExpr string) (string, error) {
+	if expr, ok := jsonExprFromSerializedStorage(arrowField, sourceExpr); ok {
+		return expr, nil
+	}
+	if isArrowObjectStorage(arrowStorageTypeID(arrowField.Type)) {
+		return duckDBToJSON(sourceExpr), nil
+	}
+	return "", storageError(arrowField, "GeoJSON")
+}
+
+func jsonExprFromSerializedStorage(arrowField arrow.Field, sourceExpr string) (string, bool) {
+	storage := arrowStorageTypeID(arrowField.Type)
+	switch {
+	case isArrowStringStorage(storage):
+		return "CAST(" + sourceExpr + " AS JSON)", true
+	case isArrowBinaryStorage(storage):
+		return "CAST(decode(" + sourceExpr + ") AS JSON)", true
+	default:
+		return "", false
+	}
+}
+
+func jsonExprFromGeometryExpr(geometryExpr string) string {
+	return "CAST(ST_AsGeoJSON(" + geometryExpr + ") AS JSON)"
+}
+
+func duckDBToJSON(sql string) string {
+	return "to_json(" + sql + ")"
 }
 
 func arrowIngestGeometryStagingExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
-	if ext := arrowExtensionName(arrowField); ext != "" {
-		return arrowIngestGeometryStagingExprFromTrustedExtension(ext, sourceExpr)
+	ext := arrowExtensionNameFromTypeOrMetadata(arrowField)
+	if ext == "" {
+		return geometryExprFromPlainArrow(arrowField, sourceExpr)
 	}
-	return arrowIngestGeometryStagingExprFromPhysicalType(arrowField, sourceExpr)
+	return geometryExprFromExtension(ext, arrowField, sourceExpr)
 }
 
-// arrowIngestGeometryStagingExprFromTrustedExtension uses GeoArrow/Hugr extension
-// metadata as the source of truth for geometry semantics. The physical Arrow
-// storage type is intentionally not used as a fallback once extension metadata
-// is present; unsupported metadata should fail during planning instead of being
-// guessed from Type.ID().
-func arrowIngestGeometryStagingExprFromTrustedExtension(ext, sourceExpr string) (string, error) {
-	switch ext {
-	case "geoarrow.wkb":
-		return sourceExpr, nil
-	case "geoarrow.wkt":
-		return "ST_GeomFromText(" + sourceExpr + ", true)", nil
-	case "hugr.geojson", "geoarrow.geojson", "geojson":
-		return "ST_GeomFromGeoJSON(" + sourceExpr + ")", nil
-	case "geoarrow.linestring", "geoarrow.polygon",
-		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
-		"geoarrow.point", "geoarrow.geometry", "geoarrow.geometrycollection":
-		return arrowIngestGeoArrowNativeGeometryStagingExpr(ext, sourceExpr)
+// geometryExprFromExtension uses GeoArrow/Hugr extension metadata as the source
+// of truth. The physical Arrow storage type is only validated inside the
+// selected extension handler; unsupported metadata never falls back to guessing.
+func geometryExprFromExtension(ext string, arrowField arrow.Field, sourceExpr string) (string, error) {
+	switch {
+	case ext == geoArrowWKBExtension:
+		return geometryExprFromGeoArrowWKB(arrowField, sourceExpr)
+	case isHexWKBExtension(ext):
+		return geometryExprFromHexWKB(arrowField, sourceExpr)
+	case ext == geoArrowWKTExtension:
+		return geometryExprFromWKT(arrowField, sourceExpr)
+	case isGeoJSONExtension(ext):
+		return geometryExprFromGeoJSON(arrowField, sourceExpr)
+	case ext == arrowJSONExtension:
+		return geometryExprFromArrowJSON(arrowField, sourceExpr)
+	case isGeoArrowCoordinateExtension(ext):
+		return geometryExprFromGeoArrowCoordinates(ext, sourceExpr)
 	default:
 		return "", fmt.Errorf("unsupported GeoArrow extension %q", ext)
 	}
 }
 
-// arrowIngestGeometryStagingExprFromPhysicalType is the best-effort path for
-// unannotated Arrow columns. Without extension metadata we infer common
-// geometry encodings from physical Arrow storage.
-func arrowIngestGeometryStagingExprFromPhysicalType(arrowField arrow.Field, sourceExpr string) (string, error) {
-	switch arrowField.Type.ID() {
-	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
+func geometryExprFromPlainArrow(arrowField arrow.Field, sourceExpr string) (string, error) {
+	storage := arrowStorageTypeID(arrowField.Type)
+	switch {
+	case isArrowBinaryStorage(storage) || storage == arrow.FIXED_SIZE_BINARY:
 		return "ST_GeomFromWKB(" + sourceExpr + ")", nil
-	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
-		return "CASE WHEN starts_with(trim(" + sourceExpr + "), '{') THEN ST_GeomFromGeoJSON(" + sourceExpr + ") ELSE ST_GeomFromText(" + sourceExpr + ", true) END", nil
-	case arrow.STRUCT, arrow.MAP:
-		return "ST_GeomFromGeoJSON(to_json(" + sourceExpr + ")::VARCHAR)", nil
+	case isArrowStringStorage(storage):
+		return "ST_GeomFromText(" + sourceExpr + ", true)", nil
+	case isArrowObjectStorage(storage):
+		return "ST_GeomFromGeoJSON(" + duckDBJSONAsVarchar(sourceExpr) + ")", nil
 	default:
 		return "", fmt.Errorf("arrow column %q with type %s cannot be ingested as Geometry without geoarrow/hugr metadata", arrowField.Name, arrowField.Type)
 	}
 }
 
-func arrowExtensionName(field arrow.Field) string {
+func geometryExprFromGeoArrowWKB(arrowField arrow.Field, sourceExpr string) (string, error) {
+	storage := arrowStorageTypeID(arrowField.Type)
+	if isArrowBinaryStorage(storage) || storage == arrow.FIXED_SIZE_BINARY {
+		return sourceExpr, nil
+	}
+	return "", storageError(arrowField, geoArrowWKBExtension)
+}
+
+func geometryExprFromHexWKB(arrowField arrow.Field, sourceExpr string) (string, error) {
+	storage := arrowStorageTypeID(arrowField.Type)
+	if isArrowStringStorage(storage) {
+		return "ST_GeomFromWKB(from_hex(" + sourceExpr + "))", nil
+	}
+	return "", storageError(arrowField, "hexwkb")
+}
+
+func geometryExprFromWKT(arrowField arrow.Field, sourceExpr string) (string, error) {
+	storage := arrowStorageTypeID(arrowField.Type)
+	if isArrowStringStorage(storage) {
+		return "ST_GeomFromText(" + sourceExpr + ", true)", nil
+	}
+	return "", storageError(arrowField, geoArrowWKTExtension)
+}
+
+func geometryExprFromGeoJSON(arrowField arrow.Field, sourceExpr string) (string, error) {
+	textExpr, err := geoJSONTextExpr(arrowField, sourceExpr)
+	if err != nil {
+		return "", err
+	}
+	return "ST_GeomFromGeoJSON(" + textExpr + ")", nil
+}
+
+func geometryExprFromArrowJSON(arrowField arrow.Field, sourceExpr string) (string, error) {
+	storage := arrowStorageTypeID(arrowField.Type)
+	if isArrowStringStorage(storage) {
+		return "ST_GeomFromGeoJSON(CAST(" + sourceExpr + " AS VARCHAR))", nil
+	}
+	return "", storageError(arrowField, arrowJSONExtension)
+}
+
+func geoJSONTextExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
+	storage := arrowStorageTypeID(arrowField.Type)
+	switch {
+	case isArrowStringStorage(storage):
+		return sourceExpr, nil
+	case isArrowBinaryStorage(storage):
+		return "CAST(decode(" + sourceExpr + ") AS VARCHAR)", nil
+	case isArrowObjectStorage(storage):
+		return duckDBJSONAsVarchar(sourceExpr), nil
+	default:
+		return "", storageError(arrowField, "GeoJSON")
+	}
+}
+
+func duckDBJSONAsVarchar(sql string) string {
+	return duckDBToJSON(sql) + "::VARCHAR"
+}
+
+func arrowExtensionNameFromTypeOrMetadata(field arrow.Field) string {
 	if extType, ok := field.Type.(arrow.ExtensionType); ok {
 		return strings.ToLower(extType.ExtensionName())
 	}
@@ -141,47 +270,126 @@ func arrowExtensionName(field arrow.Field) string {
 	return ""
 }
 
-func arrowIngestGeoArrowPointGeometryStagingExpr(sql string) string {
+func arrowStorageTypeID(dt arrow.DataType) arrow.Type {
+	if extType, ok := dt.(arrow.ExtensionType); ok {
+		return extType.StorageType().ID()
+	}
+	return dt.ID()
+}
+
+func isArrowStringStorage(storage arrow.Type) bool {
+	switch storage {
+	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
+		return true
+	default:
+		return false
+	}
+}
+
+func isArrowBinaryStorage(storage arrow.Type) bool {
+	switch storage {
+	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
+		return true
+	default:
+		return false
+	}
+}
+
+func isArrowObjectStorage(storage arrow.Type) bool {
+	switch storage {
+	case arrow.STRUCT, arrow.MAP:
+		return true
+	default:
+		return false
+	}
+}
+
+func isGeoJSONExtension(ext string) bool {
+	switch ext {
+	case hugrGeoJSONExtension, geoArrowGeoJSONExtension, plainGeoJSONExtension:
+		return true
+	default:
+		return false
+	}
+}
+
+func isHexWKBExtension(ext string) bool {
+	switch ext {
+	case hugrHexWKBExtension, geoArrowHexWKBExtension, plainHexWKBExtension:
+		return true
+	default:
+		return false
+	}
+}
+
+func needsGeometryToJSON(ext string) bool {
+	return ext == geoArrowWKBExtension ||
+		ext == geoArrowWKTExtension ||
+		isHexWKBExtension(ext) ||
+		isGeoArrowCoordinateExtension(ext)
+}
+
+func isGeoArrowCoordinateExtension(ext string) bool {
+	switch ext {
+	case geoArrowPointExtension,
+		geoArrowLineStringExtension,
+		geoArrowPolygonExtension,
+		geoArrowMultiPointExtension,
+		geoArrowMultiLineStringExtension,
+		geoArrowMultiPolygonExtension,
+		geoArrowGeometryExtension,
+		geoArrowGeometryCollectionExtension:
+		return true
+	default:
+		return false
+	}
+}
+
+func storageError(arrowField arrow.Field, format string) error {
+	return fmt.Errorf("arrow column %q with type %s cannot use %s storage", arrowField.Name, arrowField.Type, format)
+}
+
+func geoArrowPointGeometryExpr(sql string) string {
 	return "ST_Point(struct_extract(" + sql + ", 'x'), struct_extract(" + sql + ", 'y'))"
 }
 
-func arrowIngestGeoArrowLineStringGeometryStagingExpr(sql string) string {
-	return "ST_MakeLine(list_transform(" + sql + ", lambda _p: " + arrowIngestGeoArrowPointGeometryStagingExpr("_p") + "))"
+func geoArrowLineStringGeometryExpr(sql string) string {
+	return "ST_MakeLine(list_transform(" + sql + ", lambda _p: " + geoArrowPointGeometryExpr("_p") + "))"
 }
 
-func arrowIngestGeoArrowPolygonGeometryStagingExpr(sql string) string {
-	shell := arrowIngestGeoArrowLineStringGeometryStagingExpr(sql + "[1]")
-	holes := "list_transform(" + sql + "[2:], lambda _r: " + arrowIngestGeoArrowLineStringGeometryStagingExpr("_r") + ")"
+func geoArrowPolygonGeometryExpr(sql string) string {
+	shell := geoArrowLineStringGeometryExpr(sql + "[1]")
+	holes := "list_transform(" + sql + "[2:], lambda _r: " + geoArrowLineStringGeometryExpr("_r") + ")"
 	return "ST_MakePolygon(" + shell + ", " + holes + ")"
 }
 
-func arrowIngestGeoArrowMultiPointGeometryStagingExpr(sql string) string {
-	return "ST_Multi(ST_Collect(list_transform(" + sql + ", lambda _p: " + arrowIngestGeoArrowPointGeometryStagingExpr("_p") + ")))"
+func geoArrowMultiPointGeometryExpr(sql string) string {
+	return "ST_Multi(ST_Collect(list_transform(" + sql + ", lambda _p: " + geoArrowPointGeometryExpr("_p") + ")))"
 }
 
-func arrowIngestGeoArrowMultiLineStringGeometryStagingExpr(sql string) string {
-	return "ST_Multi(ST_Collect(list_transform(" + sql + ", lambda _ls: " + arrowIngestGeoArrowLineStringGeometryStagingExpr("_ls") + ")))"
+func geoArrowMultiLineStringGeometryExpr(sql string) string {
+	return "ST_Multi(ST_Collect(list_transform(" + sql + ", lambda _ls: " + geoArrowLineStringGeometryExpr("_ls") + ")))"
 }
 
-func arrowIngestGeoArrowMultiPolygonGeometryStagingExpr(sql string) string {
-	return "ST_Multi(ST_Collect(list_transform(" + sql + ", lambda _poly: " + arrowIngestGeoArrowPolygonGeometryStagingExpr("_poly") + ")))"
+func geoArrowMultiPolygonGeometryExpr(sql string) string {
+	return "ST_Multi(ST_Collect(list_transform(" + sql + ", lambda _poly: " + geoArrowPolygonGeometryExpr("_poly") + ")))"
 }
 
-func arrowIngestGeoArrowNativeGeometryStagingExpr(ext, sql string) (string, error) {
+func geometryExprFromGeoArrowCoordinates(ext, sql string) (string, error) {
 	switch ext {
-	case "geoarrow.point":
-		return arrowIngestGeoArrowPointGeometryStagingExpr(sql), nil
-	case "geoarrow.linestring":
-		return arrowIngestGeoArrowLineStringGeometryStagingExpr(sql), nil
-	case "geoarrow.polygon":
-		return arrowIngestGeoArrowPolygonGeometryStagingExpr(sql), nil
-	case "geoarrow.multipoint":
-		return arrowIngestGeoArrowMultiPointGeometryStagingExpr(sql), nil
-	case "geoarrow.multilinestring":
-		return arrowIngestGeoArrowMultiLineStringGeometryStagingExpr(sql), nil
-	case "geoarrow.multipolygon":
-		return arrowIngestGeoArrowMultiPolygonGeometryStagingExpr(sql), nil
-	case "geoarrow.geometry", "geoarrow.geometrycollection":
+	case geoArrowPointExtension:
+		return geoArrowPointGeometryExpr(sql), nil
+	case geoArrowLineStringExtension:
+		return geoArrowLineStringGeometryExpr(sql), nil
+	case geoArrowPolygonExtension:
+		return geoArrowPolygonGeometryExpr(sql), nil
+	case geoArrowMultiPointExtension:
+		return geoArrowMultiPointGeometryExpr(sql), nil
+	case geoArrowMultiLineStringExtension:
+		return geoArrowMultiLineStringGeometryExpr(sql), nil
+	case geoArrowMultiPolygonExtension:
+		return geoArrowMultiPolygonGeometryExpr(sql), nil
+	case geoArrowGeometryExtension, geoArrowGeometryCollectionExtension:
 		return "", fmt.Errorf("%s ingest is not supported from native union storage; send geoarrow.wkb, geoarrow.wkt, geoarrow.geojson, or a concrete GeoArrow coordinate layout", ext)
 	default:
 		return "", fmt.Errorf("unsupported GeoArrow extension %q", ext)

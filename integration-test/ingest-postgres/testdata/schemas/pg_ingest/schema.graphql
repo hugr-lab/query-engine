@@ -19,6 +19,7 @@ type events @table(name: "events") {
     payload_map: JSON
     payload_scalar: JSON
     payload_arrow_json: JSON
+    payload_geo_point: JSON
     created_at: Timestamp @default(value: "now()")
     geom: Geometry @geometry_info(srid: 0, type: POINT)
     geom_4326: Geometry @geometry_info(srid: 4326, type: POINT)
@@ -27,7 +28,10 @@ type events @table(name: "events") {
     geom_geojson: Geometry @geometry_info(srid: 0, type: POLYGON)
     geom_hugr_geojson: Geometry @geometry_info(srid: 0, type: POLYGON)
     geom_plain_geojson: Geometry @geometry_info(srid: 0, type: POLYGON)
+    geom_geojson_struct: Geometry @geometry_info(srid: 0, type: POLYGON)
+    geom_geojson_arrow_json: Geometry @geometry_info(srid: 0, type: POLYGON)
     geom_wkb: Geometry @geometry_info(srid: 0, type: POINT)
+    geom_hexwkb: Geometry @geometry_info(srid: 0, type: POINT)
     geom_line: Geometry @geometry_info(srid: 0, type: LINESTRING)
     geom_polygon_native: Geometry @geometry_info(srid: 0, type: POLYGON)
     geom_multipoint: Geometry @geometry_info(srid: 0, type: MULTIPOINT)

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -149,14 +150,18 @@ func setupEnv(t *testing.T) *ingestEnv {
 			payload_map JSON,
 			payload_scalar JSON,
 			payload_arrow_json JSON,
+			payload_geo_point JSON,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 			geom GEOMETRY,
 			geom_wkt GEOMETRY,
-			geom_geojson GEOMETRY,
-			geom_hugr_geojson GEOMETRY,
-			geom_plain_geojson GEOMETRY,
-			geom_wkb GEOMETRY,
-			geom_line GEOMETRY,
+				geom_geojson GEOMETRY,
+				geom_hugr_geojson GEOMETRY,
+				geom_plain_geojson GEOMETRY,
+				geom_geojson_struct GEOMETRY,
+				geom_geojson_arrow_json GEOMETRY,
+				geom_wkb GEOMETRY,
+				geom_hexwkb GEOMETRY,
+				geom_line GEOMETRY,
 			geom_polygon_native GEOMETRY,
 			geom_multipoint GEOMETRY,
 			geom_multiline GEOMETRY,
@@ -277,10 +282,10 @@ func makeEventsRecord(t *testing.T, names []string, values []float64, active []b
 	}, nil)
 	b := array.NewRecordBuilder(pool, schema)
 	defer b.Release()
-	b.Field(0).(*array.StringBuilder).AppendValues(names, nil)
-	b.Field(1).(*array.Float64Builder).AppendValues(values, nil)
-	b.Field(2).(*array.BooleanBuilder).AppendValues(active, nil)
-	pBuilder := b.Field(3).(*array.StringBuilder)
+	recordFieldBuilder(t, b, "name").(*array.StringBuilder).AppendValues(names, nil)
+	recordFieldBuilder(t, b, "value").(*array.Float64Builder).AppendValues(values, nil)
+	recordFieldBuilder(t, b, "is_active").(*array.BooleanBuilder).AppendValues(active, nil)
+	pBuilder := recordFieldBuilder(t, b, "payload").(*array.StringBuilder)
 	for _, p := range payload {
 		if p == "" {
 			pBuilder.AppendNull()
@@ -288,9 +293,9 @@ func makeEventsRecord(t *testing.T, names []string, values []float64, active []b
 			pBuilder.Append(p)
 		}
 	}
-	tsBuilder := b.Field(4).(*array.TimestampBuilder)
+	tsBuilder := recordFieldBuilder(t, b, "created_at").(*array.TimestampBuilder)
 	tsBuilder.AppendValues(created, nil)
-	return b.NewRecord()
+	return b.NewRecordBatch()
 }
 
 func makeMalformedJSONRecord(t *testing.T, binary bool) arrow.RecordBatch {
@@ -309,126 +314,237 @@ func makeMalformedJSONRecord(t *testing.T, binary bool) arrow.RecordBatch {
 	}, nil)
 	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
 	defer b.Release()
-	b.Field(0).(*array.StringBuilder).Append("malformed-json")
-	b.Field(1).(*array.Float64Builder).Append(1)
-	b.Field(2).(*array.BooleanBuilder).Append(true)
+	recordFieldBuilder(t, b, "name").(*array.StringBuilder).Append("malformed-json")
+	recordFieldBuilder(t, b, "value").(*array.Float64Builder).Append(1)
+	recordFieldBuilder(t, b, "is_active").(*array.BooleanBuilder).Append(true)
+	payloadBuilder := recordFieldBuilder(t, b, payloadName)
 	if binary {
-		b.Field(3).(*array.BinaryBuilder).Append([]byte(`{"unterminated":`))
+		payloadBuilder.(*array.BinaryBuilder).Append([]byte(`{"unterminated":`))
 	} else {
-		b.Field(3).(*array.StringBuilder).Append(`{"unterminated":`)
+		payloadBuilder.(*array.StringBuilder).Append(`{"unterminated":`)
 	}
-	return b.NewRecord()
+	return b.NewRecordBatch()
 }
 
-var jsonPhysicalTypeColumns = []string{
-	"payload",
-	"payload_large_string",
-	"payload_string_view",
-	"payload_binary",
-	"payload_large_binary",
-	"payload_binary_view",
-	"payload_struct",
-	"payload_list",
-	"payload_large_list",
-	"payload_fixed_size_list",
-	"payload_list_view",
-	"payload_large_list_view",
-	"payload_map",
-	"payload_scalar",
-	"payload_arrow_json",
+func recordFieldBuilder(t *testing.T, b *array.RecordBuilder, name string) array.Builder {
+	t.Helper()
+	indices := b.Schema().FieldIndices(name)
+	require.Len(t, indices, 1, "arrow field %q must exist exactly once", name)
+	return b.Field(indices[0])
+}
+
+func mustRecordFieldBuilder(b *array.RecordBuilder, name string) array.Builder {
+	indices := b.Schema().FieldIndices(name)
+	if len(indices) != 1 {
+		panic(fmt.Sprintf("arrow field %q must exist exactly once", name))
+	}
+	return b.Field(indices[0])
+}
+
+type eventsRecordBuilders struct {
+	names     *array.StringBuilder
+	values    *array.Float64Builder
+	active    *array.BooleanBuilder
+	payloads  *array.StringBuilder
+	createdAt *array.TimestampBuilder
+}
+
+func eventsRecordBuildersFor(b *array.RecordBuilder) eventsRecordBuilders {
+	return eventsRecordBuilders{
+		names:     mustRecordFieldBuilder(b, "name").(*array.StringBuilder),
+		values:    mustRecordFieldBuilder(b, "value").(*array.Float64Builder),
+		active:    mustRecordFieldBuilder(b, "is_active").(*array.BooleanBuilder),
+		payloads:  mustRecordFieldBuilder(b, "payload").(*array.StringBuilder),
+		createdAt: mustRecordFieldBuilder(b, "created_at").(*array.TimestampBuilder),
+	}
+}
+
+type jsonPhysicalTypeSpec struct {
+	name           string
+	dataType       arrow.DataType
+	arrowExtension string
+	expected       any
+	appendValue    func(*testing.T, array.Builder)
+}
+
+const (
+	jsonStructKindField = iota
+	jsonStructCountField
+)
+
+func jsonPhysicalTypeSpecs(t *testing.T) []jsonPhysicalTypeSpec {
+	t.Helper()
+	structType := arrow.StructOf(
+		arrow.Field{Name: "kind", Type: arrow.BinaryTypes.String, Nullable: false},
+		arrow.Field{Name: "count", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
+	)
+	geoPointType := arrow.StructOf(
+		arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		arrow.Field{Name: "y", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+	)
+	arrowJSONType, err := extensions.NewJSONType(arrow.BinaryTypes.String)
+	require.NoError(t, err)
+
+	return []jsonPhysicalTypeSpec{
+		{name: "payload", dataType: arrow.BinaryTypes.String, expected: map[string]any{"kind": "string"}, appendValue: appendJSONText(`{"kind":"string"}`)},
+		{name: "payload_large_string", dataType: arrow.BinaryTypes.LargeString, expected: map[string]any{"kind": "large_string"}, appendValue: appendJSONText(`{"kind":"large_string"}`)},
+		{name: "payload_string_view", dataType: arrow.BinaryTypes.StringView, expected: map[string]any{"kind": "string_view"}, appendValue: appendJSONText(`{"kind":"string_view"}`)},
+		{name: "payload_binary", dataType: arrow.BinaryTypes.Binary, expected: map[string]any{"kind": "binary"}, appendValue: appendJSONText(`{"kind":"binary"}`)},
+		{name: "payload_large_binary", dataType: arrow.BinaryTypes.LargeBinary, expected: map[string]any{"kind": "large_binary"}, appendValue: appendJSONText(`{"kind":"large_binary"}`)},
+		{name: "payload_binary_view", dataType: arrow.BinaryTypes.BinaryView, expected: map[string]any{"kind": "binary_view"}, appendValue: appendJSONText(`{"kind":"binary_view"}`)},
+		{name: "payload_struct", dataType: structType, expected: map[string]any{"kind": "struct", "count": float64(14)}, appendValue: appendJSONStruct("struct", 14)},
+		{name: "payload_list", dataType: arrow.ListOf(arrow.PrimitiveTypes.Int64), expected: []any{float64(1), float64(2)}, appendValue: appendInt64JSONList(1, 2)},
+		{name: "payload_large_list", dataType: arrow.LargeListOf(arrow.PrimitiveTypes.Int64), expected: []any{float64(3), float64(4)}, appendValue: appendInt64JSONList(3, 4)},
+		{name: "payload_fixed_size_list", dataType: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Int64), expected: []any{float64(5), float64(6)}, appendValue: appendInt64JSONList(5, 6)},
+		{name: "payload_list_view", dataType: arrow.ListViewOf(arrow.PrimitiveTypes.Int64), expected: []any{float64(7), float64(8)}, appendValue: appendInt64JSONList(7, 8)},
+		{name: "payload_large_list_view", dataType: arrow.LargeListViewOf(arrow.PrimitiveTypes.Int64), expected: []any{float64(9), float64(10)}, appendValue: appendInt64JSONList(9, 10)},
+		{name: "payload_map", dataType: arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64), expected: map[string]any{"a": float64(11), "b": float64(12)}, appendValue: appendInt64JSONMap([]string{"a", "b"}, []int64{11, 12})},
+		{name: "payload_scalar", dataType: arrow.PrimitiveTypes.Int64, expected: "13", appendValue: appendInt64JSONScalar(13)},
+		{name: "payload_arrow_json", dataType: arrowJSONType, expected: map[string]any{"kind": "arrow_json"}, appendValue: appendArrowJSONText(`{"kind":"arrow_json"}`)},
+		{name: "payload_geo_point", dataType: geoPointType, arrowExtension: "geoarrow.point", expected: geoJSONGeometry("Point", pointCoordinate(xyPoint{x: 30.5, y: 50.25})), appendValue: appendGeoArrowJSONPoint(xyPoint{x: 30.5, y: 50.25})},
+	}
+}
+
+func jsonPhysicalTypeColumns(t *testing.T) []string {
+	t.Helper()
+	specs := jsonPhysicalTypeSpecs(t)
+	columns := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		columns = append(columns, spec.name)
+	}
+	return columns
 }
 
 func makeJSONPhysicalTypesRecord(t *testing.T) arrow.RecordBatch {
 	t.Helper()
 	pool := memory.NewGoAllocator()
-	structType := arrow.StructOf(
-		arrow.Field{Name: "kind", Type: arrow.BinaryTypes.String, Nullable: false},
-		arrow.Field{Name: "count", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
-	)
-	arrowJSONType, err := extensions.NewJSONType(arrow.BinaryTypes.String)
-	require.NoError(t, err)
-	schema := arrow.NewSchema([]arrow.Field{
+	specs := jsonPhysicalTypeSpecs(t)
+	fields := []arrow.Field{
 		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
 		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
 		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
-		{Name: "payload", Type: arrow.BinaryTypes.String, Nullable: false},
-		{Name: "payload_large_string", Type: arrow.BinaryTypes.LargeString, Nullable: false},
-		{Name: "payload_string_view", Type: arrow.BinaryTypes.StringView, Nullable: false},
-		{Name: "payload_binary", Type: arrow.BinaryTypes.Binary, Nullable: false},
-		{Name: "payload_large_binary", Type: arrow.BinaryTypes.LargeBinary, Nullable: false},
-		{Name: "payload_binary_view", Type: arrow.BinaryTypes.BinaryView, Nullable: false},
-		{Name: "payload_struct", Type: structType, Nullable: false},
-		{Name: "payload_list", Type: arrow.ListOf(arrow.PrimitiveTypes.Int64), Nullable: false},
-		{Name: "payload_large_list", Type: arrow.LargeListOf(arrow.PrimitiveTypes.Int64), Nullable: false},
-		{Name: "payload_fixed_size_list", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Int64), Nullable: false},
-		{Name: "payload_list_view", Type: arrow.ListViewOf(arrow.PrimitiveTypes.Int64), Nullable: false},
-		{Name: "payload_large_list_view", Type: arrow.LargeListViewOf(arrow.PrimitiveTypes.Int64), Nullable: false},
-		{Name: "payload_map", Type: arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64), Nullable: false},
-		{Name: "payload_scalar", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
-		{Name: "payload_arrow_json", Type: arrowJSONType, Nullable: false},
-	}, nil)
+	}
+	for _, spec := range specs {
+		field := arrow.Field{Name: spec.name, Type: spec.dataType, Nullable: false}
+		if spec.arrowExtension != "" {
+			field.Metadata = arrow.MetadataFrom(map[string]string{"ARROW:extension:name": spec.arrowExtension})
+		}
+		fields = append(fields, field)
+	}
+	schema := arrow.NewSchema(fields, nil)
 
 	b := array.NewRecordBuilder(pool, schema)
 	defer b.Release()
-	b.Field(0).(*array.StringBuilder).Append("json-physical-types")
-	b.Field(1).(*array.Float64Builder).Append(1)
-	b.Field(2).(*array.BooleanBuilder).Append(true)
-	b.Field(3).(*array.StringBuilder).Append(`{"kind":"string"}`)
-	b.Field(4).(*array.LargeStringBuilder).Append(`{"kind":"large_string"}`)
-	b.Field(5).(*array.StringViewBuilder).Append(`{"kind":"string_view"}`)
-	b.Field(6).(*array.BinaryBuilder).Append([]byte(`{"kind":"binary"}`))
-	b.Field(7).(*array.BinaryBuilder).Append([]byte(`{"kind":"large_binary"}`))
-	b.Field(8).(*array.BinaryViewBuilder).Append([]byte(`{"kind":"binary_view"}`))
-
-	structBuilder := b.Field(9).(*array.StructBuilder)
-	structBuilder.Append(true)
-	structBuilder.FieldBuilder(0).(*array.StringBuilder).Append("struct")
-	structBuilder.FieldBuilder(1).(*array.Int64Builder).Append(14)
-
-	listBuilder := b.Field(10).(*array.ListBuilder)
-	listBuilder.Append(true)
-	listBuilder.ValueBuilder().(*array.Int64Builder).AppendValues([]int64{1, 2}, nil)
-	largeListBuilder := b.Field(11).(*array.LargeListBuilder)
-	largeListBuilder.Append(true)
-	largeListBuilder.ValueBuilder().(*array.Int64Builder).AppendValues([]int64{3, 4}, nil)
-	fixedListBuilder := b.Field(12).(*array.FixedSizeListBuilder)
-	fixedListBuilder.Append(true)
-	fixedListBuilder.ValueBuilder().(*array.Int64Builder).AppendValues([]int64{5, 6}, nil)
-	listViewBuilder := b.Field(13).(*array.ListViewBuilder)
-	listViewBuilder.AppendWithSize(true, 2)
-	listViewBuilder.ValueBuilder().(*array.Int64Builder).AppendValues([]int64{7, 8}, nil)
-	largeListViewBuilder := b.Field(14).(*array.LargeListViewBuilder)
-	largeListViewBuilder.AppendWithSize(true, 2)
-	largeListViewBuilder.ValueBuilder().(*array.Int64Builder).AppendValues([]int64{9, 10}, nil)
-	mapBuilder := b.Field(15).(*array.MapBuilder)
-	mapBuilder.Append(true)
-	mapBuilder.KeyBuilder().(*array.StringBuilder).AppendValues([]string{"a", "b"}, nil)
-	mapBuilder.ItemBuilder().(*array.Int64Builder).AppendValues([]int64{11, 12}, nil)
-	b.Field(16).(*array.Int64Builder).Append(13)
-	arrowJSONBuilder := b.Field(17).(*array.ExtensionBuilder)
-	arrowJSONBuilder.StorageBuilder().(*array.StringBuilder).Append(`{"kind":"arrow_json"}`)
+	recordFieldBuilder(t, b, "name").(*array.StringBuilder).Append("json-physical-types")
+	recordFieldBuilder(t, b, "value").(*array.Float64Builder).Append(1)
+	recordFieldBuilder(t, b, "is_active").(*array.BooleanBuilder).Append(true)
+	for _, spec := range specs {
+		spec.appendValue(t, recordFieldBuilder(t, b, spec.name))
+	}
 	return b.NewRecordBatch()
 }
 
-func jsonPhysicalTypesExpected() map[string]any {
-	return map[string]any{
-		"name":                    "json-physical-types",
-		"payload":                 map[string]any{"kind": "string"},
-		"payload_large_string":    map[string]any{"kind": "large_string"},
-		"payload_string_view":     map[string]any{"kind": "string_view"},
-		"payload_binary":          map[string]any{"kind": "binary"},
-		"payload_large_binary":    map[string]any{"kind": "large_binary"},
-		"payload_binary_view":     map[string]any{"kind": "binary_view"},
-		"payload_struct":          map[string]any{"kind": "struct", "count": float64(14)},
-		"payload_list":            []any{float64(1), float64(2)},
-		"payload_large_list":      []any{float64(3), float64(4)},
-		"payload_fixed_size_list": []any{float64(5), float64(6)},
-		"payload_list_view":       []any{float64(7), float64(8)},
-		"payload_large_list_view": []any{float64(9), float64(10)},
-		"payload_map":             map[string]any{"a": float64(11), "b": float64(12)},
-		"payload_scalar":          "13",
-		"payload_arrow_json":      map[string]any{"kind": "arrow_json"},
+func appendJSONText(value string) func(*testing.T, array.Builder) {
+	return func(t *testing.T, builder array.Builder) {
+		t.Helper()
+		switch b := builder.(type) {
+		case *array.StringBuilder:
+			b.Append(value)
+		case *array.LargeStringBuilder:
+			b.Append(value)
+		case *array.StringViewBuilder:
+			b.Append(value)
+		case *array.BinaryBuilder:
+			b.Append([]byte(value))
+		case *array.BinaryViewBuilder:
+			b.Append([]byte(value))
+		default:
+			require.Failf(t, "unsupported JSON text builder", "got %T", builder)
+		}
 	}
+}
+
+func appendJSONStruct(kind string, count int64) func(*testing.T, array.Builder) {
+	return func(t *testing.T, builder array.Builder) {
+		t.Helper()
+		structBuilder, ok := builder.(*array.StructBuilder)
+		require.Truef(t, ok, "got %T, want *array.StructBuilder", builder)
+		structBuilder.Append(true)
+		structBuilder.FieldBuilder(jsonStructKindField).(*array.StringBuilder).Append(kind)
+		structBuilder.FieldBuilder(jsonStructCountField).(*array.Int64Builder).Append(count)
+	}
+}
+
+func appendInt64JSONList(values ...int64) func(*testing.T, array.Builder) {
+	return func(t *testing.T, builder array.Builder) {
+		t.Helper()
+		switch b := builder.(type) {
+		case *array.ListBuilder:
+			b.Append(true)
+			b.ValueBuilder().(*array.Int64Builder).AppendValues(values, nil)
+		case *array.LargeListBuilder:
+			b.Append(true)
+			b.ValueBuilder().(*array.Int64Builder).AppendValues(values, nil)
+		case *array.FixedSizeListBuilder:
+			b.Append(true)
+			b.ValueBuilder().(*array.Int64Builder).AppendValues(values, nil)
+		case *array.ListViewBuilder:
+			b.AppendWithSize(true, len(values))
+			b.ValueBuilder().(*array.Int64Builder).AppendValues(values, nil)
+		case *array.LargeListViewBuilder:
+			b.AppendWithSize(true, len(values))
+			b.ValueBuilder().(*array.Int64Builder).AppendValues(values, nil)
+		default:
+			require.Failf(t, "unsupported JSON list builder", "got %T", builder)
+		}
+	}
+}
+
+func appendInt64JSONMap(keys []string, values []int64) func(*testing.T, array.Builder) {
+	return func(t *testing.T, builder array.Builder) {
+		t.Helper()
+		mapBuilder, ok := builder.(*array.MapBuilder)
+		require.Truef(t, ok, "got %T, want *array.MapBuilder", builder)
+		mapBuilder.Append(true)
+		mapBuilder.KeyBuilder().(*array.StringBuilder).AppendValues(keys, nil)
+		mapBuilder.ItemBuilder().(*array.Int64Builder).AppendValues(values, nil)
+	}
+}
+
+func appendInt64JSONScalar(value int64) func(*testing.T, array.Builder) {
+	return func(t *testing.T, builder array.Builder) {
+		t.Helper()
+		intBuilder, ok := builder.(*array.Int64Builder)
+		require.Truef(t, ok, "got %T, want *array.Int64Builder", builder)
+		intBuilder.Append(value)
+	}
+}
+
+func appendArrowJSONText(value string) func(*testing.T, array.Builder) {
+	return func(t *testing.T, builder array.Builder) {
+		t.Helper()
+		extensionBuilder, ok := builder.(*array.ExtensionBuilder)
+		require.Truef(t, ok, "got %T, want *array.ExtensionBuilder", builder)
+		extensionBuilder.StorageBuilder().(*array.StringBuilder).Append(value)
+	}
+}
+
+func appendGeoArrowJSONPoint(point xyPoint) func(*testing.T, array.Builder) {
+	return func(t *testing.T, builder array.Builder) {
+		t.Helper()
+		structBuilder, ok := builder.(*array.StructBuilder)
+		require.Truef(t, ok, "got %T, want *array.StructBuilder", builder)
+		appendPoint(structBuilder, point)
+	}
+}
+
+func jsonPhysicalTypesExpected(t *testing.T) map[string]any {
+	t.Helper()
+	expected := map[string]any{"name": "json-physical-types"}
+	for _, spec := range jsonPhysicalTypeSpecs(t) {
+		expected[spec.name] = spec.expected
+	}
+	return expected
 }
 
 func assertJSONPhysicalTypesReadThroughHugr(t *testing.T, service *hugr.Service, dsName string) {
@@ -440,7 +556,7 @@ func assertJSONPhysicalTypesReadThroughHugr(t *testing.T, service *hugr.Service,
 				%s
 			}
 		}
-	}`, dsName, strings.Join(jsonPhysicalTypeColumns, "\n"))
+	}`, dsName, strings.Join(jsonPhysicalTypeColumns(t), "\n"))
 	res, err := service.Query(context.Background(), query, nil)
 	require.NoError(t, err)
 	defer res.Close()
@@ -454,7 +570,7 @@ func assertJSONPhysicalTypesReadThroughHugr(t *testing.T, service *hugr.Service,
 	root := data[dsName].(map[string]any)
 	rows := root["events"].([]any)
 	require.Len(t, rows, 1, "response: %s", string(body))
-	assert.Equal(t, jsonPhysicalTypesExpected(), rows[0])
+	assert.Equal(t, jsonPhysicalTypesExpected(t), rows[0])
 }
 
 // --- Core tests -----------------------------------------------------------
@@ -524,7 +640,7 @@ func TestIngest_DuckDB_JSONPhysicalTypes(t *testing.T) {
 	res, err := env.client.IngestRecord(context.Background(), env.dataObject, rec)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), res.Inserted)
-	expectedColumns := append([]string{"name", "value", "is_active"}, jsonPhysicalTypeColumns...)
+	expectedColumns := append([]string{"name", "value", "is_active"}, jsonPhysicalTypeColumns(t)...)
 	assert.ElementsMatch(t, expectedColumns, res.Columns)
 	assertJSONPhysicalTypesReadThroughHugr(t, env.service, env.dsName)
 }
@@ -665,9 +781,9 @@ func TestIngest_DuckDB_UnknownColumn(t *testing.T) {
 	}, nil)
 	b := array.NewRecordBuilder(pool, schema)
 	defer b.Release()
-	b.Field(0).(*array.StringBuilder).AppendValues([]string{"x"}, nil)
-	b.Field(1).(*array.Int32Builder).AppendValues([]int32{1}, nil)
-	rec := b.NewRecord()
+	recordFieldBuilder(t, b, "name").(*array.StringBuilder).AppendValues([]string{"x"}, nil)
+	recordFieldBuilder(t, b, "not_a_column").(*array.Int32Builder).AppendValues([]int32{1}, nil)
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	_, err := env.client.IngestRecord(context.Background(), env.dataObject, rec)
@@ -690,8 +806,8 @@ func TestIngest_DuckDB_UnknownDataObject(t *testing.T) {
 	}, nil)
 	b := array.NewRecordBuilder(pool, schema)
 	defer b.Release()
-	b.Field(0).(*array.Int32Builder).AppendValues([]int32{1}, nil)
-	rec := b.NewRecord()
+	recordFieldBuilder(t, b, "x").(*array.Int32Builder).AppendValues([]int32{1}, nil)
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	_, err := env.client.IngestRecord(context.Background(), env.dsName+".does_not_exist", rec)
@@ -712,24 +828,25 @@ func TestIngest_DuckDB_MultipleBatches(t *testing.T) {
 	mk := func(names []string) arrow.RecordBatch {
 		b := array.NewRecordBuilder(pool, schema)
 		defer b.Release()
-		b.Field(0).(*array.StringBuilder).AppendValues(names, nil)
+		fields := eventsRecordBuildersFor(b)
+		fields.names.AppendValues(names, nil)
 		vals := make([]float64, len(names))
 		for i := range vals {
 			vals[i] = float64(i)
 		}
-		b.Field(1).(*array.Float64Builder).AppendValues(vals, nil)
+		fields.values.AppendValues(vals, nil)
 		active := make([]bool, len(names))
 		for i := range active {
 			active[i] = true
 		}
-		b.Field(2).(*array.BooleanBuilder).AppendValues(active, nil)
-		b.Field(3).(*array.StringBuilder).AppendNulls(len(names))
+		fields.active.AppendValues(active, nil)
+		fields.payloads.AppendNulls(len(names))
 		ts := make([]arrow.Timestamp, len(names))
 		for i := range ts {
 			ts[i] = arrow.Timestamp(time.Now().UTC().UnixMicro())
 		}
-		b.Field(4).(*array.TimestampBuilder).AppendValues(ts, nil)
-		return b.NewRecord()
+		fields.createdAt.AppendValues(ts, nil)
+		return b.NewRecordBatch()
 	}
 	rec1 := mk([]string{"a", "b"})
 	defer rec1.Release()
@@ -849,10 +966,10 @@ func TestIngest_DuckDB_Stream(t *testing.T) {
 		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
 	}, nil)
 	b := array.NewRecordBuilder(pool, schema)
-	b.Field(0).(*array.StringBuilder).AppendValues([]string{"s1", "s2"}, nil)
-	b.Field(1).(*array.Float64Builder).AppendValues([]float64{10, 20}, nil)
-	b.Field(2).(*array.BooleanBuilder).AppendValues([]bool{true, false}, nil)
-	rec := b.NewRecord()
+	recordFieldBuilder(t, b, "name").(*array.StringBuilder).AppendValues([]string{"s1", "s2"}, nil)
+	recordFieldBuilder(t, b, "value").(*array.Float64Builder).AppendValues([]float64{10, 20}, nil)
+	recordFieldBuilder(t, b, "is_active").(*array.BooleanBuilder).AppendValues([]bool{true, false}, nil)
+	rec := b.NewRecordBatch()
 	b.Release()
 	defer rec.Release()
 
@@ -913,6 +1030,7 @@ func TestIngest_DuckDB_ArrowIPCFile_StreamFormat(t *testing.T) {
 	var count int
 	require.NoError(t, ro.QueryRow("SELECT COUNT(*) FROM events").Scan(&count))
 	assert.Equal(t, totalRows, count)
+	assertArrowIPCFileGeometry(t, env, ro, namePrefix, totalRows)
 
 	t.Logf("arrow ipc stream file ingest: %d rows from %d-batch file in %s (%.0f rows/s)",
 		totalRows, numBatches, elapsed, float64(totalRows)/elapsed.Seconds())
@@ -948,9 +1066,27 @@ func TestIngest_DuckDB_ArrowIPCFile_FileFormat(t *testing.T) {
 	var count int
 	require.NoError(t, ro.QueryRow("SELECT COUNT(*) FROM events").Scan(&count))
 	assert.Equal(t, totalRows, count)
+	assertArrowIPCFileGeometry(t, env, ro, namePrefix, totalRows)
 
 	t.Logf("arrow ipc file-format ingest: %d rows from %d-batch file in %s (%.0f rows/s)",
 		totalRows, numBatches, elapsed, float64(totalRows)/elapsed.Seconds())
+}
+
+func assertArrowIPCFileGeometry(t *testing.T, env *ingestEnv, ro *sql.DB, namePrefix string, totalRows int) {
+	t.Helper()
+	_, err := ro.Exec("LOAD spatial")
+	require.NoError(t, err)
+
+	lastName, lastPoint := geometryBatchRow(namePrefix, totalRows-1)
+	values := scanGeometryValues(t, ro.QueryRow(fmt.Sprintf(`
+		SELECT %s
+		FROM events
+		WHERE name = ?
+	`, geometrySelectList()), lastName))
+	assert.Equal(t, geometryExpected(pointWKT(lastPoint), coord(lastPoint.x), coord(lastPoint.y)), values)
+	assertGeometryReadThroughHugr(t, env.service, env.dsName, fmt.Sprintf(`filter: { name: { eq: "%s" } }`, lastName), []map[string]any{
+		geometryReadExpected(lastName, lastPoint, lastPoint.x, lastPoint.y),
+	})
 }
 
 func TestIngest_DuckDB_ArrowIPCFile_NotFound(t *testing.T) {
@@ -1015,8 +1151,8 @@ func TestIngest_LazyReader_Termination_DuckDB(t *testing.T) {
 	mk := func(v int32) arrow.RecordBatch {
 		b := array.NewRecordBuilder(pool, schema)
 		defer b.Release()
-		b.Field(0).(*array.Int32Builder).Append(v)
-		return b.NewRecord()
+		recordFieldBuilder(t, b, "x").(*array.Int32Builder).Append(v)
+		return b.NewRecordBatch()
 	}
 
 	// gen returns batches then nil → clean end-of-stream.
@@ -1105,10 +1241,10 @@ func TestIngest_HTTP_Direct_DuckDB(t *testing.T) {
 		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
 	}, nil)
 	bld := array.NewRecordBuilder(pool, schema)
-	bld.Field(0).(*array.StringBuilder).AppendValues([]string{"direct"}, nil)
-	bld.Field(1).(*array.Float64Builder).AppendValues([]float64{42}, nil)
-	bld.Field(2).(*array.BooleanBuilder).AppendValues([]bool{true}, nil)
-	rec := bld.NewRecord()
+	recordFieldBuilder(t, bld, "name").(*array.StringBuilder).AppendValues([]string{"direct"}, nil)
+	recordFieldBuilder(t, bld, "value").(*array.Float64Builder).AppendValues([]float64{42}, nil)
+	recordFieldBuilder(t, bld, "is_active").(*array.BooleanBuilder).AppendValues([]bool{true}, nil)
+	rec := bld.NewRecordBatch()
 	bld.Release()
 	defer rec.Release()
 
@@ -1187,7 +1323,10 @@ func TestIngest_HTTP_Direct_DuckDB(t *testing.T) {
 func TestIngest_HTTP_GeometryTypes_DuckDB(t *testing.T) {
 	env := setupEnv(t)
 
-	rec, schema := makeGeometryTypesRecord(t, []string{"geo-a", "geo-b"}, [][2]float64{{30.5, 50.25}, {-73.935242, 40.730610}})
+	rec, schema := makeGeometryTypesRecord(t, []geometryTypesRow{
+		{name: "geo-a", value: 1, active: true, point: xyPoint{x: 30.5, y: 50.25}, shapeOrigin: xyPoint{x: 0, y: 0}},
+		{name: "geo-b", value: 2, active: true, point: xyPoint{x: -73.935242, y: 40.730610}, shapeOrigin: xyPoint{x: 1, y: 1}},
+	})
 	defer rec.Release()
 
 	var buf bytes.Buffer
@@ -1212,32 +1351,19 @@ func TestIngest_HTTP_GeometryTypes_DuckDB(t *testing.T) {
 	_, err = ro.Exec("LOAD spatial")
 	require.NoError(t, err)
 
-	rows, err := ro.Query(`
+	rows, err := ro.Query(fmt.Sprintf(`
 			SELECT name,
-				ST_AsText(geom), ST_AsText(geom_wkt), ST_AsText(geom_geojson),
-				ST_AsText(geom_hugr_geojson), ST_AsText(geom_plain_geojson),
-				ST_AsText(geom_wkb),
-				ST_AsText(geom_line), ST_AsText(geom_polygon_native), ST_AsText(geom_multipoint),
-				ST_AsText(geom_multiline), ST_AsText(geom_multipolygon)
+				%s
 		FROM events
-		WHERE name LIKE 'geo-%'
+		WHERE name LIKE 'geo-%%'
 		ORDER BY name
-	`)
+	`, geometrySelectList()))
 	require.NoError(t, err)
 	defer rows.Close()
 
 	got := map[string][]string{}
 	for rows.Next() {
-		var name string
-		values := make([]string, 11)
-		scanArgs := []any{&name}
-		for i := range values {
-			scanArgs = append(scanArgs, &values[i])
-		}
-		require.NoError(t, rows.Scan(scanArgs...))
-		for i := range values {
-			values[i] = compactWKT(values[i])
-		}
+		name, values := scanNamedGeometryValues(t, rows)
 		got[name] = values
 	}
 	require.NoError(t, rows.Err())
@@ -1250,7 +1376,10 @@ func TestIngest_HTTP_GeometryTypes_DuckDB(t *testing.T) {
 func TestIngest_HTTP_GeometryTypes_ReadThroughHugr_DuckDB(t *testing.T) {
 	env := setupEnv(t)
 
-	rec, schema := makeGeometryTypesRecord(t, []string{"geo-read-a", "geo-read-b"}, [][2]float64{{30.5, 50.25}, {-73.935242, 40.730610}})
+	rec, schema := makeGeometryTypesRecord(t, []geometryTypesRow{
+		{name: "geo-read-a", value: 1, active: true, point: xyPoint{x: 30.5, y: 50.25}, shapeOrigin: xyPoint{x: 0, y: 0}},
+		{name: "geo-read-b", value: 2, active: true, point: xyPoint{x: -73.935242, y: 40.730610}, shapeOrigin: xyPoint{x: 1, y: 1}},
+	})
 	defer rec.Release()
 
 	var buf bytes.Buffer
@@ -1266,8 +1395,8 @@ func TestIngest_HTTP_GeometryTypes_ReadThroughHugr_DuckDB(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode, "body=%s", string(body))
 
 	assertGeometryReadThroughHugr(t, env.service, env.dsName, `filter: { name: { like: "geo-read-%" } }`, []map[string]any{
-		geometryReadExpected("geo-read-a", [2]float64{30.5, 50.25}, 0, 0),
-		geometryReadExpected("geo-read-b", [2]float64{-73.935242, 40.730610}, 1, 1),
+		geometryReadExpected("geo-read-a", xyPoint{x: 30.5, y: 50.25}, 0, 0),
+		geometryReadExpected("geo-read-b", xyPoint{x: -73.935242, y: 40.730610}, 1, 1),
 	})
 }
 
@@ -1290,7 +1419,7 @@ func TestIngest_HTTP_GeometryTypes_Bulk50k_DuckDB(t *testing.T) {
 		w := ipc.NewWriter(pw, ipc.WithSchema(schema))
 		var streamErr error
 		for batchIdx := 0; batchIdx < numBatches; batchIdx++ {
-			rec := buildGeometryTypesBatch(pool, schema, batchIdx, rowsPerBatch, namePrefix)
+			rec := buildGeometryTypesBatch(t, pool, schema, batchIdx, rowsPerBatch, namePrefix)
 			if err := w.Write(rec); err != nil {
 				streamErr = fmt.Errorf("write geometry batch %d: %w", batchIdx, err)
 				rec.Release()
@@ -1328,22 +1457,14 @@ func TestIngest_HTTP_GeometryTypes_Bulk50k_DuckDB(t *testing.T) {
 	require.NoError(t, ro.QueryRow("SELECT COUNT(*) FROM events WHERE name LIKE 'dk-geo-bulk-%'").Scan(&count))
 	assert.Equal(t, totalRows, count)
 
-	values := make([]string, 11)
-	require.NoError(t, ro.QueryRow(`
-		SELECT ST_AsText(geom), ST_AsText(geom_wkt), ST_AsText(geom_geojson),
-			ST_AsText(geom_hugr_geojson), ST_AsText(geom_plain_geojson),
-			ST_AsText(geom_wkb),
-			ST_AsText(geom_line), ST_AsText(geom_polygon_native), ST_AsText(geom_multipoint),
-			ST_AsText(geom_multiline), ST_AsText(geom_multipolygon)
+	values := scanGeometryValues(t, ro.QueryRow(fmt.Sprintf(`
+		SELECT %s
 		FROM events
 		WHERE name = 'dk-geo-bulk-049999'
-	`).Scan(&values[0], &values[1], &values[2], &values[3], &values[4], &values[5], &values[6], &values[7], &values[8], &values[9], &values[10]))
-	for i := range values {
-		values[i] = compactWKT(values[i])
-	}
+	`, geometrySelectList())))
 	assert.Equal(t, geometryExpected("POINT(99 49)", "99", "49"), values)
 	assertGeometryReadThroughHugr(t, env.service, env.dsName, `filter: { name: { eq: "dk-geo-bulk-049999" } }`, []map[string]any{
-		geometryReadExpected("dk-geo-bulk-049999", [2]float64{99, 49}, 99, 49),
+		geometryReadExpected("dk-geo-bulk-049999", xyPoint{x: 99, y: 49}, 99, 49),
 	})
 
 	elapsed := time.Since(start)
@@ -1370,71 +1491,190 @@ func eventsArrowSchema() *arrow.Schema {
 	}, nil)
 }
 
-func makeGeometryTypesRecord(t *testing.T, names []string, points [][2]float64) (arrow.RecordBatch, *arrow.Schema) {
+func eventsArrowFileSchema() *arrow.Schema {
+	fields := append([]arrow.Field{}, eventsArrowSchema().Fields()...)
+	fields = append(fields, geometryArrowFields()...)
+	return arrow.NewSchema(fields, nil)
+}
+
+type geometryTypesRow struct {
+	name        string
+	value       float64
+	active      bool
+	point       xyPoint
+	shapeOrigin xyPoint
+}
+
+func makeGeometryTypesRecord(t *testing.T, rows []geometryTypesRow) (arrow.RecordBatch, *arrow.Schema) {
 	t.Helper()
-	require.Len(t, points, len(names))
 
 	schema := geometryTypesSchema()
 	pool := memory.NewGoAllocator()
 	b := array.NewRecordBuilder(pool, schema)
 	defer b.Release()
 
-	for i, name := range names {
-		appendGeometryTypesRow(b, name, float64(i+1), true, points[i], float64(i), float64(i))
+	for _, row := range rows {
+		appendGeometryTypesRow(t, b, row)
 	}
 
 	return b.NewRecordBatch(), schema
 }
 
 func geometryTypesSchema() *arrow.Schema {
+	fields := []arrow.Field{
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
+	}
+	fields = append(fields, geometryArrowFields()...)
+	return arrow.NewSchema(fields, nil)
+}
+
+func geometryArrowFields() []arrow.Field {
 	pointType := arrow.StructOf(
 		arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
 		arrow.Field{Name: "y", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
 	)
 	lineType := arrow.ListOf(pointType)
 	polygonType := arrow.ListOf(lineType)
-	return arrow.NewSchema([]arrow.Field{
-		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
-		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
-		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
-		{Name: "geom", Type: pointType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.point"})},
-		{Name: "geom_wkt", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkt"})},
-		{Name: "geom_geojson", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.geojson"})},
-		{Name: "geom_hugr_geojson", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "hugr.geojson"})},
-		{Name: "geom_plain_geojson", Type: arrow.BinaryTypes.String, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geojson"})},
-		{Name: "geom_wkb", Type: arrow.BinaryTypes.Binary, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkb"})},
-		{Name: "geom_line", Type: lineType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.linestring"})},
-		{Name: "geom_polygon_native", Type: polygonType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.polygon"})},
-		{Name: "geom_multipoint", Type: lineType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.multipoint"})},
-		{Name: "geom_multiline", Type: polygonType, Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.multilinestring"})},
-		{Name: "geom_multipolygon", Type: arrow.ListOf(polygonType), Nullable: false, Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.multipolygon"})},
-	}, nil)
+	fields := make([]arrow.Field, 0, len(geometryValueColumns(pointType, lineType, polygonType)))
+	for _, col := range geometryValueColumns(pointType, lineType, polygonType) {
+		field := arrow.Field{
+			Name:     col.name,
+			Type:     col.arrowType,
+			Nullable: false,
+		}
+		if col.arrowExtension != "" {
+			field.Metadata = arrow.MetadataFrom(map[string]string{"ARROW:extension:name": col.arrowExtension})
+		}
+		fields = append(fields, field)
+	}
+	return fields
+}
+
+type geometryValueColumn struct {
+	name           string
+	arrowType      arrow.DataType
+	arrowExtension string
+	expectedWKT    func(point, x, y string) string
+}
+
+func geometryValueColumns(pointType, lineType, polygonType arrow.DataType) []geometryValueColumn {
+	geoJSONStructType := arrow.StructOf(
+		arrow.Field{Name: "type", Type: arrow.BinaryTypes.String, Nullable: false},
+		arrow.Field{Name: "coordinates", Type: arrow.ListOf(arrow.ListOf(arrow.ListOf(arrow.PrimitiveTypes.Float64))), Nullable: false},
+	)
+	line := func(_ string, x string, y string) string {
+		return fmt.Sprintf("LINESTRING(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 1))
+	}
+	polygon := func(_ string, x string, y string) string { return polygonWKT(x, y) }
+	point := func(point string, _ string, _ string) string { return point }
+	multiPoint := func(_ string, x string, y string) string {
+		return fmt.Sprintf("MULTIPOINT(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), y)
+	}
+	multiLine := func(_ string, x string, y string) string {
+		return fmt.Sprintf("MULTILINESTRING((%s %s,%s %s),(%s %s,%s %s))", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 2), addCoord(x, 3), addCoord(y, 3))
+	}
+	multiPolygon := func(_ string, x string, y string) string { return multiPolygonWKT(x, y) }
+
+	return []geometryValueColumn{
+		{name: "geom", arrowType: pointType, arrowExtension: "geoarrow.point", expectedWKT: point},
+		{name: "geom_wkt", arrowType: arrow.BinaryTypes.String, arrowExtension: "geoarrow.wkt", expectedWKT: line},
+		{name: "geom_geojson", arrowType: arrow.BinaryTypes.String, arrowExtension: "geoarrow.geojson", expectedWKT: polygon},
+		{name: "geom_hugr_geojson", arrowType: arrow.BinaryTypes.String, arrowExtension: "hugr.geojson", expectedWKT: polygon},
+		{name: "geom_plain_geojson", arrowType: arrow.BinaryTypes.String, arrowExtension: "geojson", expectedWKT: polygon},
+		{name: "geom_geojson_struct", arrowType: geoJSONStructType, expectedWKT: polygon},
+		{name: "geom_geojson_arrow_json", arrowType: mustArrowJSONType(), arrowExtension: "arrow.json", expectedWKT: polygon},
+		{name: "geom_wkb", arrowType: arrow.BinaryTypes.Binary, arrowExtension: "geoarrow.wkb", expectedWKT: point},
+		{name: "geom_hexwkb", arrowType: arrow.BinaryTypes.String, arrowExtension: "hugr.hexwkb", expectedWKT: point},
+		{name: "geom_line", arrowType: lineType, arrowExtension: "geoarrow.linestring", expectedWKT: line},
+		{name: "geom_polygon_native", arrowType: polygonType, arrowExtension: "geoarrow.polygon", expectedWKT: polygon},
+		{name: "geom_multipoint", arrowType: lineType, arrowExtension: "geoarrow.multipoint", expectedWKT: multiPoint},
+		{name: "geom_multiline", arrowType: polygonType, arrowExtension: "geoarrow.multilinestring", expectedWKT: multiLine},
+		{name: "geom_multipolygon", arrowType: arrow.ListOf(polygonType), arrowExtension: "geoarrow.multipolygon", expectedWKT: multiPolygon},
+	}
+}
+
+func mustArrowJSONType() arrow.DataType {
+	typ, err := extensions.NewJSONType(arrow.BinaryTypes.String)
+	if err != nil {
+		panic(err)
+	}
+	return typ
 }
 
 func geometryTypesColumns() []string {
-	return []string{
-		"name", "value", "is_active",
-		"geom", "geom_wkt", "geom_geojson",
-		"geom_hugr_geojson", "geom_plain_geojson", "geom_wkb",
-		"geom_line", "geom_polygon_native", "geom_multipoint",
-		"geom_multiline", "geom_multipolygon",
+	pointType, lineType, polygonType := geometryArrowTypes()
+	columns := []string{"name", "value", "is_active"}
+	for _, col := range geometryValueColumns(pointType, lineType, polygonType) {
+		columns = append(columns, col.name)
 	}
+	return columns
 }
 
 func geometryExpected(point, x, y string) []string {
-	return []string{
-		point,
-		fmt.Sprintf("LINESTRING(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 1)),
-		polygonWKT(x, y),
-		polygonWKT(x, y),
-		polygonWKT(x, y),
-		point,
-		fmt.Sprintf("LINESTRING(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 1)),
-		polygonWKT(x, y),
-		fmt.Sprintf("MULTIPOINT(%s %s,%s %s,%s %s)", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), y),
-		fmt.Sprintf("MULTILINESTRING((%s %s,%s %s),(%s %s,%s %s))", x, y, addCoord(x, 1), addCoord(y, 1), addCoord(x, 2), addCoord(y, 2), addCoord(x, 3), addCoord(y, 3)),
-		multiPolygonWKT(x, y),
+	pointType, lineType, polygonType := geometryArrowTypes()
+	values := make([]string, 0, len(geometryValueColumns(pointType, lineType, polygonType)))
+	for _, col := range geometryValueColumns(pointType, lineType, polygonType) {
+		values = append(values, col.expectedWKT(point, x, y))
 	}
+	return values
+}
+
+func geometryArrowTypes() (pointType, lineType, polygonType arrow.DataType) {
+	pointType = arrow.StructOf(
+		arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+		arrow.Field{Name: "y", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
+	)
+	lineType = arrow.ListOf(pointType)
+	polygonType = arrow.ListOf(lineType)
+	return pointType, lineType, polygonType
+}
+
+func geometrySelectList() string {
+	pointType, lineType, polygonType := geometryArrowTypes()
+	exprs := make([]string, 0, len(geometryValueColumns(pointType, lineType, polygonType)))
+	for _, col := range geometryValueColumns(pointType, lineType, polygonType) {
+		exprs = append(exprs, "ST_AsText("+col.name+")")
+	}
+	return strings.Join(exprs, ",\n")
+}
+
+type sqlScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanGeometryValues(t *testing.T, scanner sqlScanner) []string {
+	t.Helper()
+	pointType, lineType, polygonType := geometryArrowTypes()
+	columns := geometryValueColumns(pointType, lineType, polygonType)
+	values := make([]string, len(columns))
+	scanArgs := make([]any, 0, len(columns))
+	for i := range columns {
+		scanArgs = append(scanArgs, &values[i])
+	}
+	require.NoError(t, scanner.Scan(scanArgs...))
+	for i := range values {
+		values[i] = compactWKT(values[i])
+	}
+	return values
+}
+
+func scanNamedGeometryValues(t *testing.T, rows *sql.Rows) (string, []string) {
+	t.Helper()
+	pointType, lineType, polygonType := geometryArrowTypes()
+	columns := geometryValueColumns(pointType, lineType, polygonType)
+	var name string
+	values := make([]string, len(columns))
+	scanArgs := []any{&name}
+	for i := range columns {
+		scanArgs = append(scanArgs, &values[i])
+	}
+	require.NoError(t, rows.Scan(scanArgs...))
+	for i := range values {
+		values[i] = compactWKT(values[i])
+	}
+	return name, values
 }
 
 func polygonWKT(x, y string) string {
@@ -1484,7 +1724,10 @@ func assertGeometryReadThroughHugr(t *testing.T, service *hugr.Service, dsName, 
 					geom_geojson
 					geom_hugr_geojson
 					geom_plain_geojson
+					geom_geojson_struct
+					geom_geojson_arrow_json
 					geom_wkb
+					geom_hexwkb
 				geom_line
 				geom_polygon_native
 				geom_multipoint
@@ -1520,20 +1763,23 @@ func assertGeometryReadThroughHugr(t *testing.T, service *hugr.Service, dsName, 
 	assert.Equal(t, expected, got)
 }
 
-func geometryReadExpected(name string, point [2]float64, x, y float64) map[string]any {
+func geometryReadExpected(name string, point xyPoint, x, y float64) map[string]any {
 	return map[string]any{
-		"name":                name,
-		"geom":                geoJSONGeometry("Point", pointCoordinate(xyPoint{point[0], point[1]})),
-		"geom_wkt":            geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
-		"geom_geojson":        geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
-		"geom_hugr_geojson":   geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
-		"geom_plain_geojson":  geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
-		"geom_wkb":            geoJSONGeometry("Point", pointCoordinate(xyPoint{point[0], point[1]})),
-		"geom_line":           geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
-		"geom_polygon_native": geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
-		"geom_multipoint":     geoJSONGeometry("MultiPoint", pointCoordinates(multiPoints(x, y))),
-		"geom_multiline":      geoJSONGeometry("MultiLineString", nestedPointCoordinates(multiLines(x, y))),
-		"geom_multipolygon":   geoJSONGeometry("MultiPolygon", deepPointCoordinates(multiPolygons(x, y))),
+		"name":                    name,
+		"geom":                    geoJSONGeometry("Point", pointCoordinate(point)),
+		"geom_wkt":                geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
+		"geom_geojson":            geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_hugr_geojson":       geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_plain_geojson":      geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_geojson_struct":     geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_geojson_arrow_json": geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_wkb":                geoJSONGeometry("Point", pointCoordinate(point)),
+		"geom_hexwkb":             geoJSONGeometry("Point", pointCoordinate(point)),
+		"geom_line":               geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
+		"geom_polygon_native":     geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_multipoint":         geoJSONGeometry("MultiPoint", pointCoordinates(multiPoints(x, y))),
+		"geom_multiline":          geoJSONGeometry("MultiLineString", nestedPointCoordinates(multiLines(x, y))),
+		"geom_multipolygon":       geoJSONGeometry("MultiPolygon", deepPointCoordinates(multiPolygons(x, y))),
 	}
 }
 
@@ -1545,7 +1791,7 @@ func geoJSONGeometry(typ string, coordinates any) map[string]any {
 }
 
 func pointCoordinate(point xyPoint) []any {
-	return []any{point[0], point[1]}
+	return []any{point.x, point.y}
 }
 
 func pointCoordinates(points []xyPoint) []any {
@@ -1590,48 +1836,105 @@ func compactWKT(s string) string {
 	return s
 }
 
-func buildGeometryTypesBatch(pool memory.Allocator, schema *arrow.Schema, batchIdx, rowsPerBatch int, namePrefix string) arrow.RecordBatch {
+func buildGeometryTypesBatch(t *testing.T, pool memory.Allocator, schema *arrow.Schema, batchIdx, rowsPerBatch int, namePrefix string) arrow.RecordBatch {
+	t.Helper()
 	b := array.NewRecordBuilder(pool, schema)
 	defer b.Release()
 
 	for i := 0; i < rowsPerBatch; i++ {
 		row := batchIdx*rowsPerBatch + i
-		x := float64(row % 100)
-		y := float64(row / 1000)
-		appendGeometryTypesRow(b, fmt.Sprintf("%s-%06d", namePrefix, row), float64(row)*0.5, row%2 == 0, [2]float64{x, y}, x, y)
+		name, point := geometryBatchRow(namePrefix, row)
+		appendGeometryTypesRow(t, b, geometryTypesRow{
+			name:        name,
+			value:       float64(row) * 0.5,
+			active:      row%2 == 0,
+			point:       point,
+			shapeOrigin: point,
+		})
 	}
 	return b.NewRecordBatch()
 }
 
-func appendGeometryTypesRow(b *array.RecordBuilder, name string, value float64, active bool, point [2]float64, shapeX, shapeY float64) {
-	b.Field(0).(*array.StringBuilder).Append(name)
-	b.Field(1).(*array.Float64Builder).Append(value)
-	b.Field(2).(*array.BooleanBuilder).Append(active)
-
-	sb := b.Field(3).(*array.StructBuilder)
-	sb.Append(true)
-	sb.FieldBuilder(0).(*array.Float64Builder).Append(point[0])
-	sb.FieldBuilder(1).(*array.Float64Builder).Append(point[1])
-
-	b.Field(4).(*array.StringBuilder).Append(lineWKT(shapeX, shapeY))
-	b.Field(5).(*array.StringBuilder).Append(polygonGeoJSON(shapeX, shapeY))
-	b.Field(6).(*array.StringBuilder).Append(polygonGeoJSON(shapeX, shapeY))
-	b.Field(7).(*array.StringBuilder).Append(polygonGeoJSON(shapeX, shapeY))
-	wkbPoint, _ := wkb.Marshal(orb.Point{point[0], point[1]})
-	b.Field(8).(*array.BinaryBuilder).Append(wkbPoint)
-	appendPointList(b.Field(9).(*array.ListBuilder), linePoints(shapeX, shapeY))
-	appendPointListList(b.Field(10).(*array.ListBuilder), polygonRings(shapeX, shapeY))
-	appendPointList(b.Field(11).(*array.ListBuilder), multiPoints(shapeX, shapeY))
-	appendPointListList(b.Field(12).(*array.ListBuilder), multiLines(shapeX, shapeY))
-	appendPointListListList(b.Field(13).(*array.ListBuilder), multiPolygons(shapeX, shapeY))
+func geometryBatchRow(namePrefix string, row int) (string, xyPoint) {
+	return fmt.Sprintf("%s-%06d", namePrefix, row), xyPoint{
+		x: float64(row % 100),
+		y: float64(row / 1000),
+	}
 }
 
-type xyPoint [2]float64
+func appendGeometryTypesRow(t *testing.T, b *array.RecordBuilder, row geometryTypesRow) {
+	t.Helper()
+	recordFieldBuilder(t, b, "name").(*array.StringBuilder).Append(row.name)
+	recordFieldBuilder(t, b, "value").(*array.Float64Builder).Append(row.value)
+	recordFieldBuilder(t, b, "is_active").(*array.BooleanBuilder).Append(row.active)
+	appendGeometryValueFields(t, b, row)
+}
+
+func appendGeometryValueFields(t *testing.T, b *array.RecordBuilder, row geometryTypesRow) {
+	t.Helper()
+	x, y := row.shapeOrigin.x, row.shapeOrigin.y
+
+	appendPoint(recordFieldBuilder(t, b, "geom").(*array.StructBuilder), row.point)
+	recordFieldBuilder(t, b, "geom_wkt").(*array.StringBuilder).Append(lineWKT(x, y))
+	recordFieldBuilder(t, b, "geom_geojson").(*array.StringBuilder).Append(polygonGeoJSON(x, y))
+	recordFieldBuilder(t, b, "geom_hugr_geojson").(*array.StringBuilder).Append(polygonGeoJSON(x, y))
+	recordFieldBuilder(t, b, "geom_plain_geojson").(*array.StringBuilder).Append(polygonGeoJSON(x, y))
+	appendGeoJSONPolygonStruct(t, recordFieldBuilder(t, b, "geom_geojson_struct"), x, y)
+	recordFieldBuilder(t, b, "geom_geojson_arrow_json").(*array.ExtensionBuilder).StorageBuilder().(*array.StringBuilder).Append(polygonGeoJSON(x, y))
+
+	wkbPoint, err := wkb.Marshal(orb.Point{row.point.x, row.point.y})
+	require.NoError(t, err)
+	recordFieldBuilder(t, b, "geom_wkb").(*array.BinaryBuilder).Append(wkbPoint)
+	recordFieldBuilder(t, b, "geom_hexwkb").(*array.StringBuilder).Append(strings.ToUpper(hex.EncodeToString(wkbPoint)))
+	appendPointList(recordFieldBuilder(t, b, "geom_line").(*array.ListBuilder), linePoints(x, y))
+	appendPointListList(recordFieldBuilder(t, b, "geom_polygon_native").(*array.ListBuilder), polygonRings(x, y))
+	appendPointList(recordFieldBuilder(t, b, "geom_multipoint").(*array.ListBuilder), multiPoints(x, y))
+	appendPointListList(recordFieldBuilder(t, b, "geom_multiline").(*array.ListBuilder), multiLines(x, y))
+	appendPointListListList(recordFieldBuilder(t, b, "geom_multipolygon").(*array.ListBuilder), multiPolygons(x, y))
+}
+
+type xyPoint struct {
+	x float64
+	y float64
+}
+
+const (
+	geoArrowPointXField = iota
+	geoArrowPointYField
+)
+
+const (
+	geoJSONGeometryTypeField = iota
+	geoJSONGeometryCoordinatesField
+)
 
 func appendPoint(sb *array.StructBuilder, point xyPoint) {
 	sb.Append(true)
-	sb.FieldBuilder(0).(*array.Float64Builder).Append(point[0])
-	sb.FieldBuilder(1).(*array.Float64Builder).Append(point[1])
+	sb.FieldBuilder(geoArrowPointXField).(*array.Float64Builder).Append(point.x)
+	sb.FieldBuilder(geoArrowPointYField).(*array.Float64Builder).Append(point.y)
+}
+
+func appendGeoJSONPolygonStruct(t *testing.T, builder array.Builder, x, y float64) {
+	t.Helper()
+	sb, ok := builder.(*array.StructBuilder)
+	require.Truef(t, ok, "got %T, want *array.StructBuilder", builder)
+
+	sb.Append(true)
+	sb.FieldBuilder(geoJSONGeometryTypeField).(*array.StringBuilder).Append("Polygon")
+	appendGeoJSONPolygonCoordinates(sb.FieldBuilder(geoJSONGeometryCoordinatesField).(*array.ListBuilder), polygonRings(x, y))
+}
+
+func appendGeoJSONPolygonCoordinates(lb *array.ListBuilder, rings [][]xyPoint) {
+	lb.Append(true)
+	ringBuilder := lb.ValueBuilder().(*array.ListBuilder)
+	for _, ring := range rings {
+		ringBuilder.Append(true)
+		pointBuilder := ringBuilder.ValueBuilder().(*array.ListBuilder)
+		for _, point := range ring {
+			pointBuilder.Append(true)
+			pointBuilder.ValueBuilder().(*array.Float64Builder).AppendValues([]float64{point.x, point.y}, nil)
+		}
+	}
 }
 
 func appendPointList(lb *array.ListBuilder, points []xyPoint) {
@@ -1659,31 +1962,31 @@ func appendPointListListList(lb *array.ListBuilder, polygons [][][]xyPoint) {
 }
 
 func linePoints(x, y float64) []xyPoint {
-	return []xyPoint{{x, y}, {x + 1, y + 1}, {x + 2, y + 1}}
+	return []xyPoint{{x: x, y: y}, {x: x + 1, y: y + 1}, {x: x + 2, y: y + 1}}
 }
 
 func polygonRings(x, y float64) [][]xyPoint {
 	return [][]xyPoint{
-		{{x, y}, {x, y + 4}, {x + 4, y + 4}, {x + 4, y}, {x, y}},
-		{{x + 1, y + 1}, {x + 2, y + 1}, {x + 2, y + 2}, {x + 1, y + 2}, {x + 1, y + 1}},
+		{{x: x, y: y}, {x: x, y: y + 4}, {x: x + 4, y: y + 4}, {x: x + 4, y: y}, {x: x, y: y}},
+		{{x: x + 1, y: y + 1}, {x: x + 2, y: y + 1}, {x: x + 2, y: y + 2}, {x: x + 1, y: y + 2}, {x: x + 1, y: y + 1}},
 	}
 }
 
 func multiPoints(x, y float64) []xyPoint {
-	return []xyPoint{{x, y}, {x + 1, y + 1}, {x + 2, y}}
+	return []xyPoint{{x: x, y: y}, {x: x + 1, y: y + 1}, {x: x + 2, y: y}}
 }
 
 func multiLines(x, y float64) [][]xyPoint {
 	return [][]xyPoint{
-		{{x, y}, {x + 1, y + 1}},
-		{{x + 2, y + 2}, {x + 3, y + 3}},
+		{{x: x, y: y}, {x: x + 1, y: y + 1}},
+		{{x: x + 2, y: y + 2}, {x: x + 3, y: y + 3}},
 	}
 }
 
 func multiPolygons(x, y float64) [][][]xyPoint {
 	return [][][]xyPoint{
 		polygonRings(x, y),
-		{{{x + 10, y + 10}, {x + 10, y + 12}, {x + 12, y + 12}, {x + 12, y + 10}, {x + 10, y + 10}}},
+		{{{x: x + 10, y: y + 10}, {x: x + 10, y: y + 12}, {x: x + 12, y: y + 12}, {x: x + 12, y: y + 10}, {x: x + 10, y: y + 10}}},
 	}
 }
 
@@ -1692,6 +1995,10 @@ func lineWKT(x, y float64) string {
 		coord(x), coord(y),
 		coord(x+1), coord(y+1),
 		coord(x+2), coord(y+1))
+}
+
+func pointWKT(point xyPoint) string {
+	return fmt.Sprintf("POINT(%s %s)", coord(point.x), coord(point.y))
 }
 
 func polygonGeoJSON(x, y float64) string {
@@ -1718,24 +2025,57 @@ func coord(v float64) string {
 func buildEventsBatch(pool memory.Allocator, schema *arrow.Schema, batchIdx, rowsPerBatch int, namePrefix string, base time.Time) arrow.RecordBatch {
 	rb := array.NewRecordBuilder(pool, schema)
 	defer rb.Release()
-	names := rb.Field(0).(*array.StringBuilder)
-	values := rb.Field(1).(*array.Float64Builder)
-	active := rb.Field(2).(*array.BooleanBuilder)
-	payloads := rb.Field(3).(*array.StringBuilder)
-	ts := rb.Field(4).(*array.TimestampBuilder)
+	fields := eventsRecordBuildersFor(rb)
 	for i := 0; i < rowsPerBatch; i++ {
 		row := batchIdx*rowsPerBatch + i
-		names.Append(fmt.Sprintf("%s-%06d", namePrefix, row))
-		values.Append(float64(row) * 0.5)
-		active.Append(row%2 == 0)
+		fields.names.Append(fmt.Sprintf("%s-%06d", namePrefix, row))
+		fields.values.Append(float64(row) * 0.5)
+		fields.active.Append(row%2 == 0)
 		if row%5 == 0 {
-			payloads.AppendNull()
+			fields.payloads.AppendNull()
 		} else {
-			payloads.Append(fmt.Sprintf(`{"row":%d}`, row))
+			fields.payloads.Append(fmt.Sprintf(`{"row":%d}`, row))
 		}
-		ts.Append(arrow.Timestamp(base.Add(time.Duration(row) * time.Millisecond).UnixMicro()))
+		fields.createdAt.Append(arrow.Timestamp(base.Add(time.Duration(row) * time.Millisecond).UnixMicro()))
 	}
-	return rb.NewRecord()
+	return rb.NewRecordBatch()
+}
+
+type arrowIPCRecordWriter interface {
+	Write(arrow.RecordBatch) error
+	Close() error
+}
+
+func newArrowIPCRecordWriter(t *testing.T, f *os.File, schema *arrow.Schema, format arrowFileFormat) arrowIPCRecordWriter {
+	t.Helper()
+
+	switch format {
+	case arrowStreamFormat:
+		return ipc.NewWriter(f, ipc.WithSchema(schema))
+	case arrowFileFmt:
+		w, err := ipc.NewFileWriter(f, ipc.WithSchema(schema))
+		require.NoError(t, err)
+		return w
+	default:
+		t.Fatalf("unknown arrow file format: %d", format)
+		return nil
+	}
+}
+
+func writeArrowIPCFile(t *testing.T, path string, schema *arrow.Schema, format arrowFileFormat, numBatches int, buildBatch func(batchIdx int) arrow.RecordBatch) {
+	t.Helper()
+
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	defer f.Close()
+
+	w := newArrowIPCRecordWriter(t, f, schema, format)
+	for batchIdx := 0; batchIdx < numBatches; batchIdx++ {
+		rec := buildBatch(batchIdx)
+		require.NoError(t, w.Write(rec))
+		rec.Release()
+	}
+	require.NoError(t, w.Close())
 }
 
 // writeEventsArrowFile writes an Arrow IPC file (stream or file format) at
@@ -1743,35 +2083,29 @@ func buildEventsBatch(pool memory.Allocator, schema *arrow.Schema, batchIdx, row
 func writeEventsArrowFile(t *testing.T, path, namePrefix string, format arrowFileFormat, numBatches, rowsPerBatch int) {
 	t.Helper()
 	pool := memory.NewGoAllocator()
-	schema := eventsArrowSchema()
-
-	f, err := os.Create(path)
-	require.NoError(t, err)
-	defer f.Close()
-
-	type writer interface {
-		Write(arrow.RecordBatch) error
-		Close() error
-	}
-	var w writer
-	switch format {
-	case arrowStreamFormat:
-		w = ipc.NewWriter(f, ipc.WithSchema(schema))
-	case arrowFileFmt:
-		fw, ferr := ipc.NewFileWriter(f, ipc.WithSchema(schema))
-		require.NoError(t, ferr)
-		w = fw
-	default:
-		t.Fatalf("unknown arrow file format: %d", format)
-	}
-
+	schema := eventsArrowFileSchema()
 	base := time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC)
-	for batchIdx := 0; batchIdx < numBatches; batchIdx++ {
-		rec := buildEventsBatch(pool, schema, batchIdx, rowsPerBatch, namePrefix, base)
-		require.NoError(t, w.Write(rec))
-		rec.Release()
-	}
-	require.NoError(t, w.Close())
+
+	writeArrowIPCFile(t, path, schema, format, numBatches, func(batchIdx int) arrow.RecordBatch {
+		rb := array.NewRecordBuilder(pool, schema)
+		defer rb.Release()
+		fields := eventsRecordBuildersFor(rb)
+		for i := 0; i < rowsPerBatch; i++ {
+			row := batchIdx*rowsPerBatch + i
+			name, point := geometryBatchRow(namePrefix, row)
+			fields.names.Append(name)
+			fields.values.Append(float64(row) * 0.5)
+			fields.active.Append(row%2 == 0)
+			if row%5 == 0 {
+				fields.payloads.AppendNull()
+			} else {
+				fields.payloads.Append(fmt.Sprintf(`{"row":%d}`, row))
+			}
+			fields.createdAt.Append(arrow.Timestamp(base.Add(time.Duration(row) * time.Millisecond).UnixMicro()))
+			appendGeometryValueFields(t, rb, geometryTypesRow{point: point, shapeOrigin: point})
+		}
+		return rb.NewRecordBatch()
+	})
 }
 
 // Silence "imported and not used" if a refactor leaves a quoted ref around.
