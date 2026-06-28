@@ -64,5 +64,9 @@ func (s ArrowIngestSource) RegisterView(arrowConn interface {
 
 func isGeometryArrowExtension(ext string) bool {
 	ext = strings.ToLower(ext)
-	return strings.HasPrefix(ext, "geoarrow.") || ext == "hugr.geojson" || ext == "geojson"
+	return strings.HasPrefix(ext, "geoarrow.") ||
+		ext == "hugr.geojson" ||
+		ext == "geojson" ||
+		ext == "hugr.hexwkb" ||
+		ext == "hexwkb"
 }

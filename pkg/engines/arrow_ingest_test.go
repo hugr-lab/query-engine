@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/extensions"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/paulmach/orb"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -14,6 +15,7 @@ func TestArrowIngestJSONStagingExpr(t *testing.T) {
 	tests := []struct {
 		name string
 		typ  arrow.DataType
+		ext  string
 		want string
 	}{
 		{name: "string", typ: arrow.BinaryTypes.String, want: "CAST(payload AS JSON)"},
@@ -30,15 +32,42 @@ func TestArrowIngestJSONStagingExpr(t *testing.T) {
 		{name: "large list view", typ: arrow.LargeListViewOf(arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
 		{name: "map", typ: arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
 		{name: "scalar", typ: arrow.PrimitiveTypes.Int64, want: "to_json(payload)"},
+		{name: "arrow json extension", typ: mustTestArrowJSONType(t), want: "CAST(payload AS JSON)"},
+		{name: "geojson string extension", typ: arrow.BinaryTypes.String, ext: "geoarrow.geojson", want: "CAST(payload AS JSON)"},
+		{name: "geojson struct extension", typ: arrow.StructOf(arrow.Field{Name: "type", Type: arrow.BinaryTypes.String}), ext: "geoarrow.geojson", want: "to_json(payload)"},
+		{name: "geo wkt extension", typ: arrow.BinaryTypes.String, ext: "geoarrow.wkt", want: "CAST(ST_AsGeoJSON(ST_GeomFromText(payload, true)) AS JSON)"},
+		{name: "geo hex wkb extension", typ: arrow.BinaryTypes.String, ext: "hugr.hexwkb", want: "CAST(ST_AsGeoJSON(ST_GeomFromWKB(from_hex(payload))) AS JSON)"},
+		{name: "native geoarrow point extension", typ: geoArrowTestType("geoarrow.point"), ext: "geoarrow.point", want: "CAST(ST_AsGeoJSON(ST_Point(struct_extract(payload, 'x'), struct_extract(payload, 'y'))) AS JSON)"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := arrowIngestJSONStagingExpr(arrow.Field{Name: "payload", Type: tt.typ}, "payload")
+			meta := arrow.Metadata{}
+			if tt.ext != "" {
+				meta = arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext})
+			}
+			got, err := arrowIngestJSONStagingExpr(arrow.Field{Name: "payload", Type: tt.typ, Metadata: meta}, "payload")
+			if err != nil {
+				t.Fatal(err)
+			}
 			if got != tt.want {
 				t.Fatalf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestArrowIngestJSONRejectsUnsupportedExtensionMetadata(t *testing.T) {
+	_, err := arrowIngestJSONStagingExpr(arrow.Field{
+		Name:     "payload",
+		Type:     arrow.BinaryTypes.String,
+		Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "hugr.unknown_json"}),
+	}, "payload")
+	if err == nil {
+		t.Fatal("expected unsupported JSON extension to be rejected")
+	}
+	if !strings.Contains(err.Error(), `unsupported Arrow extension "hugr.unknown_json" for JSON ingest`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -121,14 +150,37 @@ func TestArrowIngestStagingBuildsDirectGeometrySelectExpr(t *testing.T) {
 			want: "ST_GeomFromGeoJSON(geom)",
 		},
 		{
+			name: "trusted geojson struct serializes to json text",
+			typ:  arrow.StructOf(arrow.Field{Name: "type", Type: arrow.BinaryTypes.String}),
+			ext:  "geoarrow.geojson",
+			want: "ST_GeomFromGeoJSON(to_json(geom)::VARCHAR)",
+		},
+		{
+			name: "unannotated struct serializes to geojson text",
+			typ:  arrow.StructOf(arrow.Field{Name: "type", Type: arrow.BinaryTypes.String}),
+			want: "ST_GeomFromGeoJSON(to_json(geom)::VARCHAR)",
+		},
+		{
+			name: "arrow json parses as geojson text",
+			typ:  mustTestArrowJSONType(t),
+			ext:  "arrow.json",
+			want: "ST_GeomFromGeoJSON(CAST(geom AS VARCHAR))",
+		},
+		{
+			name: "trusted hex wkb parses through from_hex",
+			typ:  arrow.BinaryTypes.String,
+			ext:  "hugr.hexwkb",
+			want: "ST_GeomFromWKB(from_hex(geom))",
+		},
+		{
 			name: "unannotated binary parses directly as wkb",
 			typ:  arrow.BinaryTypes.Binary,
 			want: "ST_GeomFromWKB(geom)",
 		},
 		{
-			name: "unannotated string chooses geojson or wkt without text roundtrip",
+			name: "unannotated string parses as wkt",
 			typ:  arrow.BinaryTypes.String,
-			want: "CASE WHEN starts_with(trim(geom), '{') THEN ST_GeomFromGeoJSON(geom) ELSE ST_GeomFromText(geom, true) END",
+			want: "ST_GeomFromText(geom, true)",
 		},
 	}
 
@@ -154,6 +206,15 @@ func TestArrowIngestStagingBuildsDirectGeometrySelectExpr(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mustTestArrowJSONType(t *testing.T) arrow.DataType {
+	t.Helper()
+	typ, err := extensions.NewJSONType(arrow.BinaryTypes.String)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return typ
 }
 
 func TestArrowIngestRejectsNativeGeoArrowUnionLayouts(t *testing.T) {
