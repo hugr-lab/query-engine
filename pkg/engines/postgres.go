@@ -47,6 +47,9 @@ func (e *Postgres) Capabilities() *compiler.EngineCapabilities {
 			Returning:        true,
 			InsertReferences: true,
 		},
+		Ingest: compiler.EngineIngestCapabilities{
+			Insert: true,
+		},
 		Update: compiler.EngineUpdateCapabilities{
 			Update:           true,
 			UpdatePKColumns:  true,

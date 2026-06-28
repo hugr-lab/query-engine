@@ -1,0 +1,38 @@
+type events @table(name: "events") {
+    id: BigInt! @pk @default(sequence: "events_id_seq")
+    name: String!
+    value: Float!
+    is_active: Boolean! @default(value: "true")
+    owner_id: BigInt
+    payload: JSON
+    payload_large_string: JSON
+    payload_string_view: JSON
+    payload_binary: JSON
+    payload_large_binary: JSON
+    payload_binary_view: JSON
+    payload_struct: JSON
+    payload_list: JSON
+    payload_large_list: JSON
+    payload_fixed_size_list: JSON
+    payload_list_view: JSON
+    payload_large_list_view: JSON
+    payload_map: JSON
+    payload_scalar: JSON
+    payload_arrow_json: JSON
+    payload_geo_point: JSON
+    created_at: Timestamp @default(value: "now()")
+    geom: Geometry @geometry_info(srid: 4326, type: POINT)
+    geom_wkt: Geometry @geometry_info(srid: 4326, type: LINESTRING)
+    geom_geojson: Geometry @geometry_info(srid: 4326, type: POLYGON)
+    geom_hugr_geojson: Geometry @geometry_info(srid: 4326, type: POLYGON)
+    geom_plain_geojson: Geometry @geometry_info(srid: 4326, type: POLYGON)
+    geom_geojson_struct: Geometry @geometry_info(srid: 4326, type: POLYGON)
+    geom_geojson_arrow_json: Geometry @geometry_info(srid: 4326, type: POLYGON)
+    geom_wkb: Geometry @geometry_info(srid: 4326, type: POINT)
+    geom_hexwkb: Geometry @geometry_info(srid: 4326, type: POINT)
+    geom_line: Geometry @geometry_info(srid: 4326, type: LINESTRING)
+    geom_polygon_native: Geometry @geometry_info(srid: 4326, type: POLYGON)
+    geom_multipoint: Geometry @geometry_info(srid: 4326, type: MULTIPOINT)
+    geom_multiline: Geometry @geometry_info(srid: 4326, type: MULTILINESTRING)
+    geom_multipolygon: Geometry @geometry_info(srid: 4326, type: MULTIPOLYGON)
+}
