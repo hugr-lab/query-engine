@@ -486,7 +486,7 @@ func (s *Source) registerInfo(ctx context.Context) error {
 					(SELECT COUNT(*) FROM %[1]s.ducklake_table WHERE end_snapshot IS NULL),
 					(SELECT COUNT(*) FROM %[1]s.ducklake_schema WHERE end_snapshot IS NULL),
 					(SELECT COALESCE(MAX(schema_version), 0) FROM %[1]s.ducklake_schema_versions),
-					(SELECT database_name FROM duckdb_databases() WHERE database_name = '%[2]s'),
+					'%[2]s', -- metadata backend name; ducklake metadata catalogs are hidden from duckdb_databases() since DuckDB 1.5.4
 					(SELECT COALESCE(value, '') FROM %[1]s.ducklake_metadata WHERE key = 'version'),
 					(SELECT COALESCE(value, '') FROM %[1]s.ducklake_metadata WHERE key = 'data_path'),
 					(SELECT COALESCE(MIN(snapshot_time)::VARCHAR, '') FROM %[1]s.ducklake_snapshot),

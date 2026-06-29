@@ -4,10 +4,6 @@
       "meta": {
         "databases": [
           {
-            "name": "__ducklake_metadata_dl_test",
-            "type": "postgres"
-          },
-          {
             "name": "core",
             "type": "postgres"
           },
