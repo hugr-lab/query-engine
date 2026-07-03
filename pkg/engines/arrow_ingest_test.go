@@ -35,9 +35,6 @@ func TestArrowIngestJSONStagingExpr(t *testing.T) {
 		{name: "arrow json extension", typ: mustTestArrowJSONType(t), want: "CAST(payload AS JSON)"},
 		{name: "geojson string extension", typ: arrow.BinaryTypes.String, ext: "geoarrow.geojson", want: "CAST(payload AS JSON)"},
 		{name: "geojson struct extension", typ: arrow.StructOf(arrow.Field{Name: "type", Type: arrow.BinaryTypes.String}), ext: "geoarrow.geojson", want: "to_json(payload)"},
-		{name: "geo wkt extension", typ: arrow.BinaryTypes.String, ext: "geoarrow.wkt", want: "CAST(ST_AsGeoJSON(ST_GeomFromText(payload, true)) AS JSON)"},
-		{name: "geo hex wkb extension", typ: arrow.BinaryTypes.String, ext: "hugr.hexwkb", want: "CAST(ST_AsGeoJSON(ST_GeomFromWKB(from_hex(payload))) AS JSON)"},
-		{name: "native geoarrow point extension", typ: geoArrowTestType("geoarrow.point"), ext: "geoarrow.point", want: "CAST(ST_AsGeoJSON(ST_Point(struct_extract(payload, 'x'), struct_extract(payload, 'y'))) AS JSON)"},
 	}
 
 	for _, tt := range tests {
@@ -58,16 +55,30 @@ func TestArrowIngestJSONStagingExpr(t *testing.T) {
 }
 
 func TestArrowIngestJSONRejectsUnsupportedExtensionMetadata(t *testing.T) {
-	_, err := arrowIngestJSONStagingExpr(arrow.Field{
-		Name:     "payload",
-		Type:     arrow.BinaryTypes.String,
-		Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "hugr.unknown_json"}),
-	}, "payload")
-	if err == nil {
-		t.Fatal("expected unsupported JSON extension to be rejected")
+	tests := []struct {
+		name string
+		typ  arrow.DataType
+		ext  string
+	}{
+		{name: "unknown extension", typ: arrow.BinaryTypes.String, ext: "hugr.unknown_json"},
+		{name: "geo wkt extension", typ: arrow.BinaryTypes.String, ext: "geoarrow.wkt"},
+		{name: "geo hex wkb extension", typ: arrow.BinaryTypes.String, ext: "hugr.hexwkb"},
+		{name: "native geoarrow point extension", typ: geoArrowTestType("geoarrow.point"), ext: "geoarrow.point"},
 	}
-	if !strings.Contains(err.Error(), `unsupported Arrow extension "hugr.unknown_json" for JSON ingest`) {
-		t.Fatalf("unexpected error: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := arrowIngestJSONStagingExpr(arrow.Field{
+				Name:     "payload",
+				Type:     tt.typ,
+				Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": tt.ext}),
+			}, "payload")
+			if err == nil {
+				t.Fatal("expected unsupported JSON extension to be rejected")
+			}
+			if !strings.Contains(err.Error(), `unsupported Arrow extension "`+tt.ext+`" for JSON ingest`) {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

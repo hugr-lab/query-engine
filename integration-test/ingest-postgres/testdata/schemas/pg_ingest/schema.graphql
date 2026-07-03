@@ -19,7 +19,6 @@ type events @table(name: "events") {
     payload_map: JSON
     payload_scalar: JSON
     payload_arrow_json: JSON
-    payload_geo_point: JSON
     created_at: Timestamp @default(value: "now()")
     geom: Geometry @geometry_info(srid: 0, type: POINT)
     geom_4326: Geometry @geometry_info(srid: 4326, type: POINT)
