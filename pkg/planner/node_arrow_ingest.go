@@ -68,6 +68,9 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if len(columns) == 0 {
 		return nil, fmt.Errorf("no insertable columns matched between arrow stream and data object")
 	}
+	if err := checkIngestSupportedTypes(engine, info, mutation, columns, permissionData); err != nil {
+		return nil, err
+	}
 	if err := checkIngestPermissions(ctx, provider, info, columns, permissionData); err != nil {
 		return nil, err
 	}
@@ -285,6 +288,60 @@ func checkIngestPermissions(ctx context.Context, provider catalog.Provider, info
 	}
 	if err := rp.CheckMutationInput(ctx, provider, info.InputInsertDataName(), data); err != nil {
 		return err
+	}
+	return nil
+}
+
+func checkIngestSupportedTypes(engine engines.Engine, info *sdl.Object, mutation *sdl.Mutation, columns []ingestColumn, permissionData map[string]any) error {
+	for _, c := range columns {
+		if err := checkIngestFieldSupportedType(engine, c.FieldDef); err != nil {
+			return err
+		}
+	}
+	if info != nil && info.Definition() != nil {
+		for name := range permissionData {
+			fieldDef := info.Definition().Fields.ForName(name)
+			if fieldDef == nil {
+				continue
+			}
+			if err := checkIngestFieldSupportedType(engine, fieldDef); err != nil {
+				return err
+			}
+		}
+	}
+	if mutation != nil && info != nil && info.Definition() != nil {
+		for _, fieldInfo := range mutation.Fields() {
+			if !mutation.FieldHasDefaultInsertExpr(fieldInfo.Name) {
+				continue
+			}
+			if fieldInfo.FieldSourceName("", false) == "-" {
+				continue
+			}
+			fieldDef := info.Definition().Fields.ForName(fieldInfo.Name)
+			if fieldDef == nil {
+				continue
+			}
+			if err := checkIngestFieldSupportedType(engine, fieldDef); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func checkIngestFieldSupportedType(engine engines.Engine, fieldDef *ast.FieldDefinition) error {
+	if fieldDef == nil || fieldDef.Type == nil {
+		return nil
+	}
+	caps := engine.Capabilities()
+	if caps == nil {
+		return nil
+	}
+	fieldType := fieldDef.Type.Name()
+	for _, unsupported := range caps.General.UnsupportedTypes {
+		if unsupported == fieldType {
+			return fmt.Errorf("engine %q does not support IPC ingest field %q of type %q", engine.Type(), fieldDef.Name, fieldType)
+		}
 	}
 	return nil
 }

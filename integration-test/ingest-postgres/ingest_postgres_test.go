@@ -347,10 +347,6 @@ func jsonPhysicalTypeSpecs(t *testing.T) []jsonPhysicalTypeSpec {
 		arrow.Field{Name: "kind", Type: arrow.BinaryTypes.String, Nullable: false},
 		arrow.Field{Name: "count", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
 	)
-	geoPointType := arrow.StructOf(
-		arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
-		arrow.Field{Name: "y", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
-	)
 	arrowJSONType, err := extensions.NewJSONType(arrow.BinaryTypes.String)
 	require.NoError(t, err)
 
@@ -370,7 +366,6 @@ func jsonPhysicalTypeSpecs(t *testing.T) []jsonPhysicalTypeSpec {
 		{name: "payload_map", dataType: arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64), expected: map[string]any{"a": float64(11), "b": float64(12)}, appendValue: appendInt64JSONMap([]string{"a", "b"}, []int64{11, 12})},
 		{name: "payload_scalar", dataType: arrow.PrimitiveTypes.Int64, expected: "13", appendValue: appendInt64JSONScalar(13)},
 		{name: "payload_arrow_json", dataType: arrowJSONType, expected: map[string]any{"kind": "arrow_json"}, appendValue: appendArrowJSONText(`{"kind":"arrow_json"}`)},
-		{name: "payload_geo_point", dataType: geoPointType, arrowExtension: "geoarrow.point", expected: geoJSONGeometry("Point", pointCoordinate(xyPoint{x: 30.5, y: 50.25})), appendValue: appendGeoArrowJSONPoint(xyPoint{x: 30.5, y: 50.25})},
 	}
 }
 
@@ -495,15 +490,6 @@ func appendArrowJSONText(value string) func(*testing.T, array.Builder) {
 		extensionBuilder, ok := builder.(*array.ExtensionBuilder)
 		require.Truef(t, ok, "got %T, want *array.ExtensionBuilder", builder)
 		extensionBuilder.StorageBuilder().(*array.StringBuilder).Append(value)
-	}
-}
-
-func appendGeoArrowJSONPoint(point xyPoint) func(*testing.T, array.Builder) {
-	return func(t *testing.T, builder array.Builder) {
-		t.Helper()
-		structBuilder, ok := builder.(*array.StructBuilder)
-		require.Truef(t, ok, "got %T, want *array.StructBuilder", builder)
-		appendPoint(structBuilder, point)
 	}
 }
 

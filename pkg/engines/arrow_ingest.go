@@ -83,11 +83,7 @@ func arrowIngestJSONStagingExprFromExtension(ext string, arrowField arrow.Field,
 	case "hugr.geojson", "geoarrow.geojson", "geojson":
 		return jsonExprFromGeoJSONExtension(arrowField, sourceExpr)
 	default:
-		geomExpr, err := arrowIngestGeometryStagingExprFromExtension(ext, arrowField, sourceExpr)
-		if err != nil {
-			return "", err
-		}
-		return "CAST(ST_AsGeoJSON(" + geomExpr + ") AS JSON)", nil
+		return "", fmt.Errorf("unsupported Arrow extension %q for JSON ingest", ext)
 	}
 }
 
