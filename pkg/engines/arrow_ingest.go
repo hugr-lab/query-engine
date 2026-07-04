@@ -100,10 +100,12 @@ func jsonExprFromPlainArrow(arrowField arrow.Field, sourceExpr string) string {
 }
 
 func jsonExprFromArrowJSONExtension(arrowField arrow.Field, sourceExpr string) (string, error) {
-	if expr, ok := jsonExprFromSerializedStorage(arrowField, sourceExpr); ok {
-		return expr, nil
+	switch arrowStorageTypeID(arrowField.Type) {
+	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
+		return "CAST(" + sourceExpr + " AS JSON)", nil
+	default:
+		return "", fmt.Errorf("arrow column %q with type %s cannot use arrow.json storage", arrowField.Name, arrowField.Type)
 	}
-	return "", fmt.Errorf("arrow column %q with type %s cannot use arrow.json storage", arrowField.Name, arrowField.Type)
 }
 
 func jsonExprFromGeoJSONExtension(arrowField arrow.Field, sourceExpr string) (string, error) {
@@ -165,7 +167,7 @@ func arrowIngestGeometryStagingExprFromExtension(ext string, arrowField arrow.Fi
 
 func arrowIngestWKBGeometryStagingExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
 	switch arrowStorageTypeID(arrowField.Type) {
-	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
+	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
 		return sourceExpr, nil
 	default:
 		return "", fmt.Errorf("arrow column %q with type %s cannot use geoarrow.wkb storage", arrowField.Name, arrowField.Type)
@@ -233,10 +235,14 @@ func arrowExtensionNameFromTypeOrMetadata(field arrow.Field) string {
 }
 
 func arrowStorageTypeID(dt arrow.DataType) arrow.Type {
+	return arrowStorageType(dt).ID()
+}
+
+func arrowStorageType(dt arrow.DataType) arrow.DataType {
 	if extType, ok := dt.(arrow.ExtensionType); ok {
-		return extType.StorageType().ID()
+		return extType.StorageType()
 	}
-	return dt.ID()
+	return dt
 }
 
 func arrowIngestGeoArrowPointGeometryStagingExpr(sql string) string {

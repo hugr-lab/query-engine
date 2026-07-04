@@ -98,6 +98,20 @@ func TestArrowIngestJSONRejectsInvalidGeoJSONStorage(t *testing.T) {
 	}
 }
 
+func TestArrowIngestJSONRejectsInvalidArrowJSONStorage(t *testing.T) {
+	_, err := arrowIngestJSONStagingExpr(arrow.Field{
+		Name:     "payload",
+		Type:     arrow.BinaryTypes.Binary,
+		Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "arrow.json"}),
+	}, "payload")
+	if err == nil {
+		t.Fatal("expected invalid arrow.json storage to be rejected")
+	}
+	if !strings.Contains(err.Error(), `cannot use arrow.json storage`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestArrowIngestStagingBuildsNativeGeoArrowSelectExpr(t *testing.T) {
 	field := geometryTestField("")
 	staging := NewArrowIngestStagingBuilder()
@@ -226,6 +240,23 @@ func TestArrowIngestStagingBuildsDirectGeometrySelectExpr(t *testing.T) {
 				t.Fatalf("expected direct geometry expression without ST_AsText, got %s", got)
 			}
 		})
+	}
+}
+
+func TestArrowIngestRejectsInvalidGeoArrowWKBStorage(t *testing.T) {
+	field := geometryTestField("")
+	staging := NewArrowIngestStagingBuilder()
+
+	_, err := staging.SelectExpr(field, arrow.Field{
+		Name:     "geom",
+		Type:     &arrow.FixedSizeBinaryType{ByteWidth: 16},
+		Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkb"}),
+	}, "geom")
+	if err == nil {
+		t.Fatal("expected invalid geoarrow.wkb storage to be rejected")
+	}
+	if !strings.Contains(err.Error(), `cannot use geoarrow.wkb storage`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
