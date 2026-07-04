@@ -35,7 +35,6 @@ CREATE TABLE events (
     geom_hugr_geojson GEOMETRY(Polygon, 0),
     geom_plain_geojson GEOMETRY(Polygon, 0),
     geom_geojson_struct GEOMETRY(Polygon, 0),
-    geom_geojson_arrow_json GEOMETRY(Polygon, 0),
     geom_wkb GEOMETRY(Point, 0),
     geom_hexwkb GEOMETRY(Point, 0),
     geom_line GEOMETRY(LineString, 0),

@@ -1146,7 +1146,6 @@ func geometryValueColumns(pointType, lineType, polygonType arrow.DataType) []geo
 		{name: "geom_hugr_geojson", arrowType: arrow.BinaryTypes.String, arrowExtension: "hugr.geojson", expectedWKT: polygon},
 		{name: "geom_plain_geojson", arrowType: arrow.BinaryTypes.String, arrowExtension: "geojson", expectedWKT: polygon},
 		{name: "geom_geojson_struct", arrowType: geoJSONStructType, expectedWKT: polygon},
-		{name: "geom_geojson_arrow_json", arrowType: mustArrowJSONType(), arrowExtension: "arrow.json", expectedWKT: polygon},
 		{name: "geom_wkb", arrowType: arrow.BinaryTypes.Binary, arrowExtension: "geoarrow.wkb", expectedWKT: point},
 		{name: "geom_hexwkb", arrowType: arrow.BinaryTypes.String, arrowExtension: "hugr.hexwkb", expectedWKT: point},
 		{name: "geom_line", arrowType: lineType, arrowExtension: "geoarrow.linestring", expectedWKT: line},
@@ -1155,14 +1154,6 @@ func geometryValueColumns(pointType, lineType, polygonType arrow.DataType) []geo
 		{name: "geom_multiline", arrowType: polygonType, arrowExtension: "geoarrow.multilinestring", expectedWKT: multiLine},
 		{name: "geom_multipolygon", arrowType: arrow.ListOf(polygonType), arrowExtension: "geoarrow.multipolygon", expectedWKT: multiPolygon},
 	}
-}
-
-func mustArrowJSONType() arrow.DataType {
-	typ, err := extensions.NewJSONType(arrow.BinaryTypes.String)
-	if err != nil {
-		panic(err)
-	}
-	return typ
 }
 
 func geometryTypesColumns() []string {
@@ -1303,7 +1294,6 @@ func assertGeometryReadThroughHugr(t *testing.T, service *hugr.Service, dsName, 
 				geom_hugr_geojson
 				geom_plain_geojson
 				geom_geojson_struct
-				geom_geojson_arrow_json
 				geom_wkb
 				geom_hexwkb
 				geom_line
@@ -1343,23 +1333,22 @@ func assertGeometryReadThroughHugr(t *testing.T, service *hugr.Service, dsName, 
 
 func geometryReadExpected(name string, point xyPoint, x, y float64) map[string]any {
 	return map[string]any{
-		"name":                    name,
-		"geom":                    geoJSONGeometry("Point", pointCoordinate(point)),
-		"geom_4326":               geoJSONGeometry("Point", pointCoordinate(point)),
-		"geom_wkt":                geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
-		"geom_wkt_4326":           geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
-		"geom_geojson":            geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
-		"geom_hugr_geojson":       geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
-		"geom_plain_geojson":      geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
-		"geom_geojson_struct":     geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
-		"geom_geojson_arrow_json": geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
-		"geom_wkb":                geoJSONGeometry("Point", pointCoordinate(point)),
-		"geom_hexwkb":             geoJSONGeometry("Point", pointCoordinate(point)),
-		"geom_line":               geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
-		"geom_polygon_native":     geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
-		"geom_multipoint":         geoJSONGeometry("MultiPoint", pointCoordinates(multiPoints(x, y))),
-		"geom_multiline":          geoJSONGeometry("MultiLineString", nestedPointCoordinates(multiLines(x, y))),
-		"geom_multipolygon":       geoJSONGeometry("MultiPolygon", deepPointCoordinates(multiPolygons(x, y))),
+		"name":                name,
+		"geom":                geoJSONGeometry("Point", pointCoordinate(point)),
+		"geom_4326":           geoJSONGeometry("Point", pointCoordinate(point)),
+		"geom_wkt":            geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
+		"geom_wkt_4326":       geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
+		"geom_geojson":        geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_hugr_geojson":   geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_plain_geojson":  geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_geojson_struct": geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_wkb":            geoJSONGeometry("Point", pointCoordinate(point)),
+		"geom_hexwkb":         geoJSONGeometry("Point", pointCoordinate(point)),
+		"geom_line":           geoJSONGeometry("LineString", pointCoordinates(linePoints(x, y))),
+		"geom_polygon_native": geoJSONGeometry("Polygon", nestedPointCoordinates(polygonRings(x, y))),
+		"geom_multipoint":     geoJSONGeometry("MultiPoint", pointCoordinates(multiPoints(x, y))),
+		"geom_multiline":      geoJSONGeometry("MultiLineString", nestedPointCoordinates(multiLines(x, y))),
+		"geom_multipolygon":   geoJSONGeometry("MultiPolygon", deepPointCoordinates(multiPolygons(x, y))),
 	}
 }
 
@@ -1462,7 +1451,6 @@ func appendGeometryValueFields(t *testing.T, b *array.RecordBuilder, row geometr
 	recordFieldBuilder(t, b, "geom_hugr_geojson").(*array.StringBuilder).Append(polygonGeoJSON(x, y))
 	recordFieldBuilder(t, b, "geom_plain_geojson").(*array.StringBuilder).Append(polygonGeoJSON(x, y))
 	appendGeoJSONPolygonStruct(t, recordFieldBuilder(t, b, "geom_geojson_struct"), x, y)
-	recordFieldBuilder(t, b, "geom_geojson_arrow_json").(*array.ExtensionBuilder).StorageBuilder().(*array.StringBuilder).Append(polygonGeoJSON(x, y))
 
 	wkbPoint, err := wkb.Marshal(orb.Point{row.point.x, row.point.y})
 	require.NoError(t, err)

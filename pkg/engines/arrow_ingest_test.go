@@ -34,7 +34,9 @@ func TestArrowIngestJSONStagingExpr(t *testing.T) {
 		{name: "scalar", typ: arrow.PrimitiveTypes.Int64, want: "to_json(payload)"},
 		{name: "arrow json extension", typ: mustTestArrowJSONType(t), want: "CAST(payload AS JSON)"},
 		{name: "geojson string extension", typ: arrow.BinaryTypes.String, ext: "geoarrow.geojson", want: "CAST(payload AS JSON)"},
-		{name: "geojson struct extension", typ: arrow.StructOf(arrow.Field{Name: "type", Type: arrow.BinaryTypes.String}), ext: "geoarrow.geojson", want: "to_json(payload)"},
+		{name: "hugr geojson binary extension", typ: arrow.BinaryTypes.Binary, ext: "hugr.geojson", want: "CAST(decode(payload) AS JSON)"},
+		{name: "plain geojson struct extension", typ: arrow.StructOf(), ext: "geojson", want: "to_json(payload)"},
+		{name: "geojson map extension", typ: arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64), ext: "geoarrow.geojson", want: "to_json(payload)"},
 	}
 
 	for _, tt := range tests {
@@ -79,6 +81,20 @@ func TestArrowIngestJSONRejectsUnsupportedExtensionMetadata(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestArrowIngestJSONRejectsInvalidGeoJSONStorage(t *testing.T) {
+	_, err := arrowIngestJSONStagingExpr(arrow.Field{
+		Name:     "payload",
+		Type:     arrow.ListOf(arrow.PrimitiveTypes.Int64),
+		Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.geojson"}),
+	}, "payload")
+	if err == nil {
+		t.Fatal("expected invalid GeoJSON storage to be rejected")
+	}
+	if !strings.Contains(err.Error(), `cannot use GeoJSON storage`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -172,12 +188,6 @@ func TestArrowIngestStagingBuildsDirectGeometrySelectExpr(t *testing.T) {
 			want: "ST_GeomFromGeoJSON(to_json(geom)::VARCHAR)",
 		},
 		{
-			name: "arrow json parses as geojson text",
-			typ:  mustTestArrowJSONType(t),
-			ext:  "arrow.json",
-			want: "ST_GeomFromGeoJSON(CAST(geom AS VARCHAR))",
-		},
-		{
 			name: "trusted hex wkb parses through from_hex",
 			typ:  arrow.BinaryTypes.String,
 			ext:  "hugr.hexwkb",
@@ -262,6 +272,11 @@ func TestArrowIngestRejectsUnsupportedGeometryExtensionMetadata(t *testing.T) {
 			name: "binary-like column does not fall back to WKB when metadata is unsupported",
 			typ:  arrow.BinaryTypes.Binary,
 			ext:  "hugr.unknown_geometry",
+		},
+		{
+			name: "arrow json is not a geometry extension",
+			typ:  mustTestArrowJSONType(t),
+			ext:  "arrow.json",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
