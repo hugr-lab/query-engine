@@ -86,10 +86,11 @@ Hugr field type decides which Arrow encodings are valid.
 | Arrow date | `Date` | `DATE` target column |
 | Arrow time | `Time` | `TIME` target column |
 | Arrow timestamp | `DateTime` or `Timestamp` | `TIMESTAMP`/`TIMESTAMPTZ` target column |
-| Arrow serialized JSON (`STRING`, `LARGE_STRING`, `STRING_VIEW`, binary variants) or `arrow.json` | `JSON` | `JSON` target column |
+| Arrow serialized JSON (`STRING`, `LARGE_STRING`, `STRING_VIEW`, binary variants) | `JSON` | `JSON` target column |
+| `arrow.json` with canonical string storage (`STRING`, `LARGE_STRING`, `STRING_VIEW`) | `JSON` | `JSON` target column |
 | Arrow nested JSON-compatible value (`STRUCT`, `LIST`, `MAP`, list-view variants) without geometry metadata | `JSON` | `JSON` target column via `to_json(...)` |
 | `geoarrow.geojson`, `hugr.geojson`, `geojson` | `JSON` | `JSON` target column; GeoJSON is preserved as JSON because the Hugr schema asked for JSON |
-| `geoarrow.wkb` | `Geometry` | `GEOMETRY`/`WKB_BLOB` target column |
+| `geoarrow.wkb` with `BINARY`, `LARGE_BINARY`, or `BINARY_VIEW` storage | `Geometry` | `GEOMETRY`/`WKB_BLOB` target column |
 | `geoarrow.wkt` | `Geometry` | `GEOMETRY` target column via `ST_GeomFromText(...)` |
 | `geoarrow.geojson`, `hugr.geojson`, `geojson` | `Geometry` | `GEOMETRY` target column; GeoJSON is parsed to native geometry via `ST_GeomFromGeoJSON(...)` |
 | concrete GeoArrow coordinate layouts (`geoarrow.point`, `geoarrow.linestring`, `geoarrow.polygon`, etc.) | `Geometry` | `GEOMETRY` target column via DuckDB spatial constructors |
@@ -106,10 +107,11 @@ Hugr field type decides which Arrow encodings are valid.
 | Arrow date | `Date` | `DATE` target column |
 | Arrow time | `Time` | `TIME` target column |
 | Arrow timestamp | `DateTime` or `Timestamp` | `TIMESTAMP`/`TIMESTAMPTZ` target column |
-| Arrow serialized JSON (`STRING`, `LARGE_STRING`, `STRING_VIEW`, binary variants) or `arrow.json` | `JSON` | `JSON`/`JSONB` target column |
+| Arrow serialized JSON (`STRING`, `LARGE_STRING`, `STRING_VIEW`, binary variants) | `JSON` | `JSON`/`JSONB` target column |
+| `arrow.json` with canonical string storage (`STRING`, `LARGE_STRING`, `STRING_VIEW`) | `JSON` | `JSON`/`JSONB` target column |
 | Arrow nested JSON-compatible value (`STRUCT`, `LIST`, `MAP`, list-view variants) without geometry metadata | `JSON` | `JSON`/`JSONB` target column via DuckDB staging JSON |
 | `geoarrow.geojson`, `hugr.geojson`, `geojson` | `JSON` | `JSON`/`JSONB` target column; GeoJSON is preserved as JSON because the Hugr schema asked for JSON |
-| `geoarrow.wkb` | `Geometry` | PostGIS `GEOMETRY`/`GEOGRAPHY` target column |
+| `geoarrow.wkb` with `BINARY`, `LARGE_BINARY`, or `BINARY_VIEW` storage | `Geometry` | PostGIS `GEOMETRY`/`GEOGRAPHY` target column |
 | `geoarrow.wkt` | `Geometry` | PostGIS `GEOMETRY`/`GEOGRAPHY` target column via DuckDB `ST_GeomFromText(...)` staging |
 | `geoarrow.geojson`, `hugr.geojson`, `geojson` | `Geometry` | PostGIS `GEOMETRY`/`GEOGRAPHY` target column; GeoJSON is parsed to DuckDB `GEOMETRY` in staging before insert |
 | concrete GeoArrow coordinate layouts (`geoarrow.point`, `geoarrow.linestring`, `geoarrow.polygon`, etc.) | `Geometry` | PostGIS `GEOMETRY`/`GEOGRAPHY` target column via canonical DuckDB `GEOMETRY` staging |
@@ -150,6 +152,10 @@ at the original physical storage boundary:
 The Hugr schema decides whether GeoJSON is inserted as `Geometry` or as `JSON`.
 This is the only geometry-related dual-use encoding: GeoJSON is both a geometry
 interchange format and a JSON document.
+
+`geoarrow.geojson` is treated as a Hugr compatibility alias, not as a canonical
+GeoArrow 0.2 extension name. The supported GeoJSON extension names are
+`hugr.geojson`, `geojson`, and `geoarrow.geojson`.
 
 Other GeoArrow encodings are geometry-only. A column such as `geoarrow.point`,
 `geoarrow.wkb`, `geoarrow.wkt`, or `geoarrow.polygon` must not be silently
