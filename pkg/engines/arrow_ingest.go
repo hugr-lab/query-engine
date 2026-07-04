@@ -32,6 +32,11 @@ func (b *ArrowIngestStagingBuilder) FunctionCall(name string, positional []any, 
 
 // SelectExpr converts an Arrow-view column to its canonical DuckDB staging
 // representation for the target GraphQL field.
+//
+// sourceExpr is the SQL expression that reads the Arrow column from the
+// temporary Arrow view. In the common case it is a quoted column identifier:
+// for Arrow field geom_geojson, sourceExpr is "geom_geojson", and a Geometry
+// target may return ST_GeomFromGeoJSON("geom_geojson").
 func (b *ArrowIngestStagingBuilder) SelectExpr(field *ast.Field, arrowField arrow.Field, sourceExpr string) (string, error) {
 	if field == nil || field.Definition == nil {
 		return sourceExpr, nil
@@ -149,8 +154,6 @@ func arrowIngestGeometryStagingExprFromExtension(ext string, arrowField arrow.Fi
 		return arrowIngestWKTGeometryStagingExpr(arrowField, sourceExpr)
 	case "hugr.geojson", "geoarrow.geojson", "geojson":
 		return arrowIngestGeoJSONGeometryStagingExpr(arrowField, sourceExpr)
-	case "arrow.json":
-		return arrowIngestArrowJSONGeometryStagingExpr(arrowField, sourceExpr)
 	case "geoarrow.linestring", "geoarrow.polygon",
 		"geoarrow.multipoint", "geoarrow.multilinestring", "geoarrow.multipolygon",
 		"geoarrow.point", "geoarrow.geometry", "geoarrow.geometrycollection":
@@ -197,15 +200,6 @@ func arrowIngestGeoJSONGeometryStagingExpr(arrowField arrow.Field, sourceExpr st
 		return "ST_GeomFromGeoJSON(to_json(" + sourceExpr + ")::VARCHAR)", nil
 	default:
 		return "", fmt.Errorf("arrow column %q with type %s cannot use GeoJSON storage", arrowField.Name, arrowField.Type)
-	}
-}
-
-func arrowIngestArrowJSONGeometryStagingExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
-	switch arrowStorageTypeID(arrowField.Type) {
-	case arrow.STRING, arrow.LARGE_STRING, arrow.STRING_VIEW:
-		return "ST_GeomFromGeoJSON(CAST(" + sourceExpr + " AS VARCHAR))", nil
-	default:
-		return "", fmt.Errorf("arrow column %q with type %s cannot use arrow.json storage", arrowField.Name, arrowField.Type)
 	}
 }
 
