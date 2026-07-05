@@ -4,14 +4,6 @@
       "meta": {
         "databases": [
           {
-            "name": "__ducklake_metadata_dl_ice_bridge",
-            "type": "postgres"
-          },
-          {
-            "name": "__ducklake_metadata_dl_test",
-            "type": "duckdb"
-          },
-          {
             "name": "core",
             "type": "duckdb"
           },
