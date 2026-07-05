@@ -11,7 +11,7 @@ CREATE TABLE events (
     value DOUBLE PRECISION NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT true,
     owner_id BIGINT,
-    payload JSONB,
+    payload JSON,
     payload_large_string JSONB,
     payload_string_view JSONB,
     payload_binary JSONB,
