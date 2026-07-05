@@ -31,7 +31,9 @@ func (e *DuckLake) Capabilities() *compiler.EngineCapabilities {
 	dbCaps := e.duckdb.Capabilities()
 	caps := *dbCaps // defensive copy
 	caps.General.SupportTimeTravel = true
-	caps.Ingest = compiler.EngineIngestCapabilities{}
+	caps.Ingest = compiler.EngineIngestCapabilities{
+		Insert: true,
+	}
 	return &caps
 }
 

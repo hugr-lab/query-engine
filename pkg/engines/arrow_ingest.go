@@ -168,6 +168,11 @@ func arrowIngestGeometryStagingExprFromExtension(ext string, arrowField arrow.Fi
 func arrowIngestWKBGeometryStagingExpr(arrowField arrow.Field, sourceExpr string) (string, error) {
 	switch arrowStorageTypeID(arrowField.Type) {
 	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW:
+		// Passthrough: WKB→GEOMETRY conversion is not done in staging SQL. After
+		// LOAD spatial, RegisterView (duckdb arrow_scan) reads ARROW:extension:name
+		// = geoarrow.wkb and exposes the column as GEOMETRY (DuckDB
+		// ArrowGeometry::GetType / ArrowToDuck). Unannotated binary columns still
+		// need ST_GeomFromWKB in arrowIngestGeometryStagingExprFromPhysicalType.
 		return sourceExpr, nil
 	default:
 		return "", fmt.Errorf("arrow column %q with type %s cannot use geoarrow.wkb storage", arrowField.Name, arrowField.Type)
