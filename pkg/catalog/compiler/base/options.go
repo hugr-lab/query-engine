@@ -103,17 +103,6 @@ type EngineIngestCapabilities struct {
 	Merge bool
 }
 
-// Available reports whether the engine supports at least one ingest mode.
-func (c EngineIngestCapabilities) Available() bool {
-	return c.Insert || c.Merge
-}
-
-// Valid reports whether the ingest modes form a supported combination.
-// Merge ingest builds on insert semantics and cannot be enabled on its own.
-func (c EngineIngestCapabilities) Valid() bool {
-	return c.Insert || !c.Merge
-}
-
 type EngineUpdateCapabilities struct {
 	Update           bool
 	UpdatePKColumns  bool

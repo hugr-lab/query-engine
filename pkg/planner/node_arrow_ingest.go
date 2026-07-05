@@ -46,10 +46,7 @@ func ingestRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if caps == nil {
 		return nil, fmt.Errorf("engine %q does not support IPC ingest", engine.Type())
 	}
-	if !caps.Ingest.Valid() {
-		return nil, fmt.Errorf("engine %q has invalid ingest capabilities: merge requires insert", engine.Type())
-	}
-	if !caps.Ingest.Available() {
+	if !caps.Ingest.Insert {
 		return nil, fmt.Errorf("engine %q does not support IPC ingest", engine.Type())
 	}
 	mutation := sdl.MutationInfo(ctx, provider, mutationField)
