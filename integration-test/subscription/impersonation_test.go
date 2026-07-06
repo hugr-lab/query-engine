@@ -194,6 +194,24 @@ func TestImpersonation_PublicRole_Query_Denied(t *testing.T) {
 	assert.Contains(t, err.Error(), "403")
 }
 
+// Regression: impersonating a role that does not exist must be denied with 403,
+// not surfaced as a "no data" / "wrong data path" error. loadRole's ScanData
+// returns ErrNoData (null leaf) or ErrWrongDataPath (missing path) when
+// roles_by_pk finds no role; both are now mapped to auth.ErrForbidden.
+func TestImpersonation_Admin_UnknownRole_Forbidden(t *testing.T) {
+	c := newAdminClient(t)
+	ctx := context.Background()
+
+	impCtx := types.AsUser(ctx, "ghost", "Ghost", "role-does-not-exist")
+	resp, err := c.Query(impCtx, meQuery, nil)
+	require.Error(t, err)
+	if resp != nil {
+		resp.Close()
+	}
+	assert.Contains(t, err.Error(), "403", "unknown role must be denied with 403, not 'no data'")
+	assert.NotContains(t, err.Error(), "no data")
+}
+
 func TestImpersonation_PublicRole_Subscribe_Denied(t *testing.T) {
 	c := newPublicClient(t)
 	defer c.CloseSubscriptions()
