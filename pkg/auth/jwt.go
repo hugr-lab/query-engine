@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -142,6 +143,24 @@ func (c CookieExtractor) ExtractToken(r *http.Request) (string, error) {
 }
 
 func parsePublicKey(key []byte) (interface{}, error) {
+	pub, err := parsePublicKeyRaw(key)
+	if err == nil {
+		return pub, nil
+	}
+	// Fallback: the key may have been delivered base64-encoded rather than as a
+	// raw PEM/SSH string. This is common in cluster deployments where the config
+	// is serialized between nodes or sourced from a Kubernetes secret / env var.
+	// Decode base64 and retry the raw parse on the decoded bytes (which may be
+	// PEM or an SSH authorized key).
+	if decoded, ok := decodeBase64(key); ok {
+		if pub, err2 := parsePublicKeyRaw(decoded); err2 == nil {
+			return pub, nil
+		}
+	}
+	return nil, err
+}
+
+func parsePublicKeyRaw(key []byte) (interface{}, error) {
 	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(key)
 	if err == nil {
 		parsedKey, ok := pubKey.(ssh.CryptoPublicKey)
@@ -166,6 +185,20 @@ func parsePublicKey(key []byte) (interface{}, error) {
 		return pubKey, nil
 	}
 	return x509.ParsePKCS1PublicKey(block.Bytes)
+}
+
+// decodeBase64 attempts to base64-decode key (tolerating surrounding whitespace
+// and both padded and unpadded encodings). It reports ok=false when the input is
+// not base64 — a raw PEM or SSH key contains '-'/spaces/newlines that are not in
+// the base64 alphabet, so it is left untouched for the caller to parse directly.
+func decodeBase64(key []byte) ([]byte, bool) {
+	s := strings.TrimSpace(string(key))
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
+		if decoded, err := enc.DecodeString(s); err == nil {
+			return decoded, true
+		}
+	}
+	return nil, false
 }
 
 func ParsePrivateKey(key []byte) (interface{}, error) {

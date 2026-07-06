@@ -2,6 +2,7 @@ package auth
 
 import (
 	_ "embed"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,6 +54,28 @@ func TestJwtConfig_YAML_PublicKeyBlockScalar(t *testing.T) {
 	}
 	if _, err := NewJwt(&cfg); err != nil {
 		t.Fatalf("NewJwt with YAML-loaded public key: %v", err)
+	}
+}
+
+// Cluster deployments may deliver the public key base64-encoded (config
+// serialized between nodes, a Kubernetes secret, an env var) rather than as a
+// raw PEM string. parsePublicKey must accept both.
+func TestJwtConfig_PublicKey_Base64Delivered(t *testing.T) {
+	cases := map[string]*base64.Encoding{
+		"std": base64.StdEncoding,
+		"raw": base64.RawStdEncoding,
+	}
+	for name, enc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := JwtConfig{Issuer: "https://issuer.example", PublicKey: enc.EncodeToString([]byte(rsaPubKey))}
+			if _, err := NewJwt(&cfg); err != nil {
+				t.Fatalf("NewJwt with %s-base64 public key: %v", name, err)
+			}
+		})
+	}
+	// Raw PEM must still work.
+	if _, err := NewJwt(&JwtConfig{Issuer: "https://issuer.example", PublicKey: rsaPubKey}); err != nil {
+		t.Fatalf("NewJwt with PEM public key: %v", err)
 	}
 }
 
