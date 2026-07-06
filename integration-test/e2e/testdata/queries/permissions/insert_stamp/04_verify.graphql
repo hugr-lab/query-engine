@@ -1,0 +1,9 @@
+{
+  pg_store {
+    products(filter: { name: { eq: "E2E Perm Product" } }) {
+      name
+      quantity
+      description
+    }
+  }
+}

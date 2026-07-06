@@ -404,6 +404,10 @@ func (m *Mutation) ReferencesMutation(name string) *Mutation {
 		return nil
 	}
 	ref := FieldReferencesInfo(m.ctx, m.defs, m.ObjectDefinition, f)
+	if ref == nil {
+		// not a reference field (plain struct/JSON object value)
+		return nil
+	}
 	rt := ref.ReferencesObjectDef(m.ctx, m.defs)
 	if rt == nil {
 		return nil

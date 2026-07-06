@@ -1,0 +1,14 @@
+# The same table-level filter must reach aggregations and _by_pk lookups.
+{
+  pg_store {
+    products_aggregation {
+      _rows_count
+    }
+    visible: products_by_pk(id: 1) {
+      id
+    }
+    filtered: products_by_pk(id: 3) {
+      id
+    }
+  }
+}

@@ -1,0 +1,8 @@
+# A disabled data-object:query row is the floor: mutations are denied too.
+mutation {
+  pg_store {
+    insert_products(data: { name: "Should Not Exist", price: 1.0, quantity: 1 }) {
+      name
+    }
+  }
+}

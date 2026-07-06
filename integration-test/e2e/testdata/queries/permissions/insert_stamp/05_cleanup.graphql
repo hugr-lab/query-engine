@@ -1,0 +1,15 @@
+mutation {
+  pg_store {
+    delete_products(filter: { name: { eq: "E2E Perm Product" } }) {
+      success
+    }
+  }
+  core {
+    delete_role_permissions(filter: { role: { eq: "e2e_perm_writer" } }) {
+      success
+    }
+    delete_roles(filter: { name: { eq: "e2e_perm_writer" } }) {
+      success
+    }
+  }
+}

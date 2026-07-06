@@ -1,0 +1,3 @@
+x-hugr-impersonated-role: e2e_perm_scoped
+x-hugr-impersonated-user-id: agent-a
+x-hugr-impersonated-user-name: Agent A

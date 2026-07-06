@@ -1,0 +1,3 @@
+x-hugr-impersonated-role: e2e_perm_writer
+x-hugr-impersonated-user-id: writer-1
+x-hugr-impersonated-user-name: Writer One

@@ -1,0 +1,9 @@
+# The built-in readonly role: queries stay open by default.
+{
+  pg_store {
+    products_by_pk(id: 1) {
+      id
+      name
+    }
+  }
+}

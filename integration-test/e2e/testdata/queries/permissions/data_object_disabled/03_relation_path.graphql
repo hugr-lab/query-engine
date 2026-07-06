@@ -1,0 +1,11 @@
+# The deny must hold when the table is reached through a relation.
+{
+  pg_store {
+    categories {
+      id
+      products {
+        id
+      }
+    }
+  }
+}

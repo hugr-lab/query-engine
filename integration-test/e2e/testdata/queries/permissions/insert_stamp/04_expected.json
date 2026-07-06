@@ -1,0 +1,13 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "description": "writer-1",
+          "name": "E2E Perm Product",
+          "quantity": 4
+        }
+      ]
+    }
+  }
+}

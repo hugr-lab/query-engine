@@ -1,0 +1,14 @@
+# Repro A (query-engine-asks item 1): the categories filter must compose
+# through the forward reference — product 2's category (id 3) is outside the
+# {id: {eq: 2}} filter and must come back null, not leak.
+{
+  pg_store {
+    products(order_by: [{field: "id", direction: ASC}]) {
+      id
+      category {
+        id
+        name
+      }
+    }
+  }
+}

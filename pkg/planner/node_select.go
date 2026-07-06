@@ -358,7 +358,7 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 		}
 	}
 
-	pn, err := permissionFilterNode(ctx, defs, info, query, "_objects", false)
+	pn, err := permissionFilterNode(ctx, defs, info, query, "_objects", false, perm.OpQuery)
 	if err != nil {
 		return nil, false, err
 	}
@@ -370,10 +370,17 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 		nodes = append(nodes, paramNodes...)
 	}
 	if len(joinCatalogNodes) != 0 || len(joinGeneralNodes) != 0 {
-		// if there are joins, we push down only where and vector search nodes
+		// if there are joins, we push down only where, permission and vector search nodes
 		whereNode := paramNodes.ForName("where")
 		if whereNode != nil {
 			nodes = append(nodes, whereNode)
+		}
+		// the permission filter must reach the base query WHERE even when the
+		// query selects joined references — dropping it here disabled row-level
+		// security on any root query with relation sub-selections
+		permNode := paramNodes.ForName("permission_filter")
+		if permNode != nil {
+			nodes = append(nodes, permNode)
 		}
 		vectorSearchNode := paramNodes.ForName(vectorDistanceNodeName)
 		if vectorSearchNode != nil {

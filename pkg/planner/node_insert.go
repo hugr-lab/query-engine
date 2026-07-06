@@ -63,6 +63,13 @@ func insertRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	if d == nil && summary == nil {
 		return nil, sdl.ErrorPosf(query.Position, "data or summary argument is not provided for mutation")
 	}
+	m := sdl.MutationInfo(ctx, provider, query.Definition)
+	if m == nil {
+		return nil, sdl.ErrorPosf(query.Position, "mutation %s is not defined", query.Alias)
+	}
+	if m.Type != sdl.MutationTypeInsert {
+		return nil, sdl.ErrorPosf(query.Position, "mutation %s type is not insert", query.Alias)
+	}
 	var data map[string]any
 	var ok bool
 	if d != nil {
@@ -70,7 +77,7 @@ func insertRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 		if !ok || len(data) == 0 {
 			return nil, sdl.ErrorPosf(query.Position, "data argument should be an object")
 		}
-		data, err = checkMutationData(ctx, provider, query, d.Type, data)
+		data, err = checkMutationData(ctx, provider, query, d.Type, m, data)
 		if err != nil {
 			return nil, err
 		}
@@ -93,14 +100,6 @@ func insertRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 	e, err := planner.Engine(catalog)
 	if err != nil {
 		return nil, err
-	}
-
-	m := sdl.MutationInfo(ctx, provider, query.Definition)
-	if m == nil {
-		return nil, sdl.ErrorPosf(query.Position, "mutation %s is not defined", query.Alias)
-	}
-	if m.Type != sdl.MutationTypeInsert {
-		return nil, sdl.ErrorPosf(query.Position, "mutation %s type is not insert", query.Alias)
 	}
 
 	node, sv, err := insertDataObjectNode(ctx, provider, e, m, data, "", sv, map[string]string{})

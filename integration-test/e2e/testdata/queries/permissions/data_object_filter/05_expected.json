@@ -1,0 +1,13 @@
+{
+  "data": {
+    "pg_store": {
+      "filtered": null,
+      "products_aggregation": {
+        "_rows_count": 2
+      },
+      "visible": {
+        "id": 1
+      }
+    }
+  }
+}

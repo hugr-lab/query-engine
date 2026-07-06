@@ -158,6 +158,10 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 					if _, ok := p.Visible(def.Name, f.Name); !ok {
 						continue
 					}
+					// hide fields returning a hidden data object (table-level rule)
+					if p.DataObjectHidden(f.Type.Name()) {
+						continue
+					}
 				}
 				data, err := fieldResolver(ctx, provider, f, field.SelectionSet, maxDepth-1)
 				if err != nil {

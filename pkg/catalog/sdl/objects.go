@@ -73,6 +73,15 @@ func DataObjectInfo(def *ast.Definition) *Object {
 	return &info
 }
 
+// TypeName returns the GraphQL type name of the data object definition —
+// the identity used to key table-level (data-object:*) permission rows.
+func (info *Object) TypeName() string {
+	if info == nil || info.def == nil {
+		return ""
+	}
+	return info.def.Name
+}
+
 func CatalogName(def *ast.Definition) string {
 	return base.DefinitionCatalog(def)
 }

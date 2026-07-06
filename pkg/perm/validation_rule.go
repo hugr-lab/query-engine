@@ -20,6 +20,12 @@ func (r *PermissionFieldRule) EnterField(ctx *validator.WalkContext, parentDef *
 	if !ok {
 		return gqlerror.List{gqlerror.WrapIfUnwrapped(auth.ErrForbidden)}
 	}
+	// Deny fields returning a disabled data object (table-level rule). This is
+	// a fast-path for plain fields; aggregation and mutation paths are enforced
+	// in the planner, where the target object is resolved.
+	if field.Definition != nil && checker.DataObjectDisabled(field.Definition.Type.Name(), OpQuery) {
+		return gqlerror.List{gqlerror.WrapIfUnwrapped(auth.ErrForbidden)}
+	}
 	return nil
 }
 

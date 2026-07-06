@@ -1,0 +1,9 @@
+# The data-object:query filter applies to the top-level list field.
+{
+  pg_store {
+    products(order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+    }
+  }
+}

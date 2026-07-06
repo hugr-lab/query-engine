@@ -7,6 +7,11 @@
 #   ./run.sh --keep       # Keep containers running after tests
 #   ./run.sh --duckdb-only  # Skip PostgreSQL CoreDB tests
 #   UPDATE_EXPECTED=1 ./run.sh  # Update expected output files
+#   ONLY=permissions ./run.sh   # Run a single test category
+#
+# A multistep test step NN_name.graphql may have a NN_name.headers file with
+# one "Header-Name: value" per line — the headers are sent with that step's
+# request (e.g. x-hugr-impersonated-* for permission tests).
 
 set -eo pipefail
 
@@ -155,9 +160,18 @@ run_multistep_test() {
 
     local query
     query=$(cat "$query_file")
+    # optional per-step headers (one "Header-Name: value" per line)
+    local header_args=()
+    local headers_file="${query_file%.graphql}.headers"
+    if [ -f "$headers_file" ]; then
+      while IFS= read -r hline || [ -n "$hline" ]; do
+        [ -n "$hline" ] && header_args+=(-H "$hline")
+      done < "$headers_file"
+    fi
     local actual
     actual=$(curl -sf -X POST "$engine_url/query" \
       -H "Content-Type: application/json" \
+      "${header_args[@]}" \
       -d "{\"query\": $(echo "$query" | jq -Rs .)}" 2>/dev/null) || {
       echo "  FAIL: $test_name (step $step_num request failed)"
       FAIL=$((FAIL + 1))
@@ -258,6 +272,10 @@ run_tests_against() {
     [ -d "$category_dir" ] || continue
     category=$(basename "$category_dir")
 
+    # Run a single category when ONLY is set
+    if [ -n "${ONLY:-}" ] && [ "$category" != "$ONLY" ]; then
+      continue
+    fi
     # Skip cluster tests — they use multi-node routing
     [ "$category" = "cluster" ] && continue
     # Skip iceberg tests for non-DuckDB engines and --duckdb-only mode
