@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hugr-lab/query-engine/types"
 	"github.com/paulmach/orb"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -336,7 +337,7 @@ func Test_extractStructFieldByPath(t *testing.T) {
 func Test_duckdb_SQLValue(t *testing.T) {
 	engine := &DuckDB{}
 	tm := time.Now().Add(-1 * time.Hour)
-	tstr := tm.Format(time.RFC3339)
+	tstr := tm.Format(time.RFC3339Nano)
 	tests := []struct {
 		name     string
 		value    any
@@ -350,6 +351,8 @@ func Test_duckdb_SQLValue(t *testing.T) {
 		{"string value", "test", "'test'", false},
 		{"string with single quote", "test's", "'test''s'", false},
 		{"time value", time.Date(2023, 10, 10, 10, 10, 10, 0, time.UTC), "'2023-10-10T10:10:10Z'::TIMESTAMPTZ", false},
+		{"time value sub-second", time.Date(2023, 10, 10, 10, 10, 10, 123456789, time.UTC), "'2023-10-10T10:10:10.123456789Z'::TIMESTAMPTZ", false},
+		{"datetime value sub-second", types.DateTime(time.Date(2023, 10, 10, 10, 10, 10, 123456789, time.UTC)), "'2023-10-10T10:10:10.123456789'::TIMESTAMP", false},
 		{"duration value", 35 * time.Second, "'35 seconds'::INTERVAL", false},
 		{"duration value", 120 * time.Second, "'2 minutes'::INTERVAL", false},
 		{"duration value", 122 * time.Second, "'2 minutes 2 seconds'::INTERVAL", false},

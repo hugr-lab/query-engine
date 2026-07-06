@@ -292,6 +292,18 @@ func TestSanitizeTimestamp(t *testing.T) {
 		}
 	})
 
+	t.Run("preserves sub-second precision", func(t *testing.T) {
+		// Regression: Format(RFC3339) silently dropped the fractional seconds
+		// the parser accepted, truncating @at timestamps to whole seconds.
+		ts, err := sanitizeTimestamp("2026-01-01T00:00:00.123456789Z")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if ts != "2026-01-01T00:00:00.123456789Z" {
+			t.Fatalf("expected sub-second precision preserved, got %q", ts)
+		}
+	})
+
 	t.Run("invalid timestamp", func(t *testing.T) {
 		_, err := sanitizeTimestamp("not-a-timestamp")
 		if err == nil {

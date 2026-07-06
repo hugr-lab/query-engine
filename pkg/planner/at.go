@@ -81,5 +81,7 @@ func sanitizeTimestamp(ts string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid timestamp %q: must be in RFC3339 format (e.g. 2024-01-15T10:30:00Z): %w", ts, err)
 	}
-	return t.Format(time.RFC3339), nil
+	// RFC3339Nano: Format(RFC3339) silently drops the fractional seconds
+	// the parser accepted.
+	return t.Format(time.RFC3339Nano), nil
 }

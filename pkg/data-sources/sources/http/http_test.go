@@ -305,6 +305,18 @@ func (s *testServer) authRequest(r *http.Request) bool {
 //go:embed open-api-test.yaml
 var testServerSpec string
 
+func TestValueToRequestParamValue_TimeSubSecond(t *testing.T) {
+	// Regression: a time value passed as an HTTP request parameter must keep
+	// its sub-second precision — RFC3339 dropped the fractional seconds.
+	res, err := valueToRequestParamValue(time.Date(2023, 10, 10, 10, 10, 10, 123456789, time.UTC))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res) != 1 || res[0] != "2023-10-10T10:10:10.123456789Z" {
+		t.Fatalf("expected [2023-10-10T10:10:10.123456789Z], got %v", res)
+	}
+}
+
 func TestHttpSource_Request(t *testing.T) {
 	testServer := &testServer{}
 	server := httptest.NewServer(testServer)

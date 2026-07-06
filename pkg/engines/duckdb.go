@@ -118,9 +118,14 @@ func (e *DuckDB) SQLValue(v any) (string, error) {
 		b := wkt.Marshal(v)
 		return fmt.Sprintf("ST_GeomFromText('%s', true)", string(b)), nil
 	case types.DateTime:
-		return fmt.Sprintf("'%s'::TIMESTAMP", time.Time(v).Format("2006-01-02T15:04:05")), nil
+		// .999999999 keeps sub-second precision (trailing zeros trimmed);
+		// the seconds-only layout silently truncated inserted timestamps.
+		return fmt.Sprintf("'%s'::TIMESTAMP", time.Time(v).Format("2006-01-02T15:04:05.999999999")), nil
 	case time.Time:
-		return fmt.Sprintf("'%s'::TIMESTAMPTZ", v.Format(time.RFC3339)), nil
+		// RFC3339Nano, not RFC3339: Format(RFC3339) DROPS fractional
+		// seconds (unlike parsing, which accepts them) — mutation inputs
+		// were stored second-truncated.
+		return fmt.Sprintf("'%s'::TIMESTAMPTZ", v.Format(time.RFC3339Nano)), nil
 	case []types.DateTime:
 		var ss []string
 		for _, dt := range v {
