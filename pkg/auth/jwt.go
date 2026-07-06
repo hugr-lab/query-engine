@@ -93,6 +93,12 @@ func (p *JwtProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 	if errors.Is(err, request.ErrNoTokenInRequest) {
 		return nil, ErrSkipAuth
 	}
+	if errors.Is(err, jwt.ErrTokenSignatureInvalid) || errors.Is(err, jwt.ErrInvalidKeyType) {
+		// The token is present but not verifiable with this provider's key
+		// (wrong signing algorithm or key) — most likely issued for a different
+		// provider. Let the middleware try the next provider instead of failing.
+		return nil, ErrInvalidKeyType
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %w", err)
 	}
