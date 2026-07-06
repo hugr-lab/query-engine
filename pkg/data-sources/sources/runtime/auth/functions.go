@@ -114,8 +114,8 @@ func registerFunctions(ctx context.Context, pool *db.Pool) error {
 				Visible: visible,
 			}
 			if p != nil {
-				res.Filter = p.Data
-				res.Data = p.Filter
+				res.Filter = p.Filter
+				res.Data = p.Data
 			}
 			return res, nil
 		},
