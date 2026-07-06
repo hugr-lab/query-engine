@@ -17,8 +17,11 @@ import (
 )
 
 type JwtConfig struct {
-	Issuer    string `json:"issuer" yaml:"issuer"`
-	PublicKey []byte `json:"public_key" yaml:"public-key"`
+	Issuer string `json:"issuer" yaml:"issuer"`
+	// PublicKey is the PEM-encoded public key. It is a string (not []byte) so
+	// it parses from a plain multi-line scalar in YAML/JSON configs; []byte
+	// would require YAML !!binary / JSON base64 encoding.
+	PublicKey string `json:"public_key" yaml:"public-key"`
 
 	CookieName string `json:"cookie_name" yaml:"cookie-name"`
 
@@ -56,7 +59,7 @@ func NewJwt(config *JwtConfig) (*JwtProvider, error) {
 		Issuer: config.Issuer,
 	}
 
-	pubKey, err := parsePublicKey(config.PublicKey)
+	pubKey, err := parsePublicKey([]byte(config.PublicKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse public key: %w", err)
 	}
