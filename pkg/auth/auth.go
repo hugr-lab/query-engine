@@ -88,8 +88,10 @@ func AuthMiddleware(c Config) func(next http.Handler) http.Handler {
 			for _, p := range c.Providers {
 				// Defer the anonymous provider to the end so real providers
 				// always get a chance first, regardless of config order.
-				if p.Type() == "anonymous" {
-					anonProvider = p
+				if _, ok := p.(*AnonymousProvider); ok {
+					if anonProvider == nil {
+						anonProvider = p // keep the first anonymous provider (config order)
+					}
 					continue
 				}
 				authInfo, err = p.Authenticate(r)

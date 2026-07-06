@@ -3,6 +3,7 @@ package auth
 import (
 	_ "embed"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,24 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	yaml "gopkg.in/yaml.v2"
 )
+
+// A validly-signed but expired token must surface as ErrTokenExpired (clear 401),
+// not a generic parse error or a fallthrough to the next provider.
+func TestJwtProvider_ExpiredToken(t *testing.T) {
+	p, err := NewJwt(&JwtConfig{Issuer: "rsa", PublicKey: rsaPubKey})
+	if err != nil {
+		t.Fatalf("NewJwt: %v", err)
+	}
+	tok, err := GenerateToken(rsaKey, jwt.MapClaims{"sub": "u", "x-hugr-role": "admin", "exp": 1})
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	if _, err := p.Authenticate(req); !errors.Is(err, ErrTokenExpired) {
+		t.Fatalf("err = %v, want ErrTokenExpired", err)
+	}
+}
 
 var (
 	//go:embed internal/fixture/rsa

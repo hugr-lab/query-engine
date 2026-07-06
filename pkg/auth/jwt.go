@@ -97,7 +97,14 @@ func (p *JwtProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 		// The token is present but not verifiable with this provider's key
 		// (wrong signing algorithm or key) — most likely issued for a different
 		// provider. Let the middleware try the next provider instead of failing.
+		// (Signature is checked before claims, so a foreign token surfaces here
+		// even if it is also expired.)
 		return nil, ErrInvalidKeyType
+	}
+	if errors.Is(err, jwt.ErrTokenExpired) {
+		// Validly-signed but expired token — it belongs to this provider, so
+		// surface a clear "token expired" 401 instead of a generic parse error.
+		return nil, ErrTokenExpired
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %w", err)
