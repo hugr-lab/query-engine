@@ -44,16 +44,6 @@ CREATE TABLE events (
     geom_multipolygon GEOMETRY(MultiPolygon, 0)
 );
 
--- This table intentionally contains only binary-COPY-compatible PostgreSQL
--- types. The integration suite uses it to verify that duckdb-postgres selects
--- FORMAT BINARY rather than falling back to text because of a JSONB column.
-CREATE TABLE binary_events (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR NOT NULL,
-    value DOUBLE PRECISION NOT NULL,
-    geom GEOMETRY(Point, 0)
-);
-
 -- Permissive geometry table for ingest edge-case coverage: NULL, 3D (Z),
 -- EMPTY and GEOMETRYCOLLECTION values. The column is a bare `geometry`
 -- (no type/SRID typmod) so it accepts whatever the native

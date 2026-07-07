@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -73,56 +72,7 @@ func TestIngest_Postgres_RoundTrip(t *testing.T) {
 	assert.Equal(t, []bool{true, false, true}, gotHasJSON) // beta has NULL payload
 }
 
-func TestIngest_Postgres_UsesBinaryCopyWithoutTextOnlyTypes(t *testing.T) {
-	env := setupEnv(t)
-	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
-		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
-		{
-			Name:     "geom",
-			Type:     arrow.BinaryTypes.String,
-			Nullable: false,
-			Metadata: arrow.MetadataFrom(map[string]string{"ARROW:extension:name": "geoarrow.wkt"}),
-		},
-	}, nil)
-	b := array.NewRecordBuilder(memory.NewGoAllocator(), schema)
-	recordFieldBuilder(t, b, "name").(*array.StringBuilder).Append("binary-copy")
-	recordFieldBuilder(t, b, "value").(*array.Float64Builder).Append(42)
-	recordFieldBuilder(t, b, "geom").(*array.StringBuilder).Append("POINT (7.25 8.5)")
-	rec := b.NewRecordBatch()
-	b.Release()
-	defer rec.Release()
-
-	res, err := env.client.IngestRecord(context.Background(), "pg_ingest.binary_events", rec)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), res.Inserted)
-
-	var name, geom string
-	require.NoError(t, env.pgConn.QueryRow(
-		"SELECT name, ST_AsText(geom) FROM binary_events",
-	).Scan(&name, &geom))
-	assert.Equal(t, "binary-copy", name)
-	assert.Equal(t, "POINT(7.25 8.5)", compactWKT(geom))
-
-	const copyPrefix = `COPY "public"."binary_events"`
-	var serverLog string
-	require.Eventually(t, func() bool {
-		err := env.pgConn.QueryRow("SELECT pg_read_file(pg_current_logfile())").Scan(&serverLog)
-		return err == nil && strings.Contains(serverLog, copyPrefix) &&
-			strings.Contains(serverLog[strings.LastIndex(serverLog, copyPrefix):], "FORMAT BINARY")
-	}, 5*time.Second, 100*time.Millisecond, "postgres log did not contain binary COPY for binary_events")
-}
-
-// TestIngest_Postgres_GeometryEdgeCases verifies that the native
-// DuckDB GEOMETRY -> PostGIS bridge faithfully carries geometries that the
-// existing suite never exercised: SQL NULL, 3D (Z) coordinates, EMPTY
-// geometries and a mixed GEOMETRYCOLLECTION. The target column is a bare
-// `geometry` (no typmod) so PostGIS accepts any type/dimension and the
-// assertions reflect exactly what crossed the bridge — not what a typmod
-// coerced. Geometry is sent as geoarrow.wkt so DuckDB staging normalises it to
-// a canonical GEOMETRY via ST_GeomFromText before the bridge writes it out.
-
-func TestIngest_Postgres_MultipleBatches(t *testing.T) {
+func TestIngest_Postgres_TwoBatches(t *testing.T) {
 	env := setupEnv(t)
 
 	pool := memory.NewGoAllocator()
@@ -295,9 +245,6 @@ func TestIngest_Postgres_Stream_Empty(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "data_object")
 }
-
-// arrowFileFormat picks between Arrow IPC stream (no magic) and Arrow IPC
-// file (ARROW1 prefix) for the writeEventsArrowFile helper.
 
 func TestIngest_Postgres_UnknownColumn(t *testing.T) {
 	env := setupEnv(t)

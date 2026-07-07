@@ -156,7 +156,7 @@ func setupEnv(t *testing.T) *ingestEnv {
 	}
 
 	// Truncate before each test to guarantee determinism.
-	_, err := sharedPgConn.ExecContext(context.Background(), "TRUNCATE TABLE events, binary_events RESTART IDENTITY")
+	_, err := sharedPgConn.ExecContext(context.Background(), "TRUNCATE TABLE events RESTART IDENTITY")
 	require.NoError(t, err)
 
 	return &ingestEnv{

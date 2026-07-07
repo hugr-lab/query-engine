@@ -22,8 +22,8 @@ type RealWorldFeature struct {
 }
 
 type RealWorldFeatureProperties struct {
-	Role string `json:"role"`
-	Name string `json:"name"`
+	GeometryKind string `json:"geometry_kind"`
+	Name         string `json:"name"`
 }
 
 type RealWorldGeometry struct {
@@ -33,7 +33,7 @@ type RealWorldGeometry struct {
 
 type RealWorldExpectedCounts struct {
 	Features      int
-	Roles         map[string]int
+	GeometryKinds map[string]int
 	GeometryTypes map[string]int
 }
 
@@ -58,7 +58,7 @@ var (
 	OSMGeometryValuesExpectedCounts = balancedRealWorldExpectedCounts(3)
 )
 
-var geometryTypeByRole = map[string]string{
+var geometryTypeByGeometryKind = map[string]string{
 	"point":        "Point",
 	"line":         "LineString",
 	"polygon":      "Polygon",
@@ -67,30 +67,30 @@ var geometryTypeByRole = map[string]string{
 	"multipolygon": "MultiPolygon",
 }
 
-func balancedRealWorldExpectedCounts(perRole int) RealWorldExpectedCounts {
-	roles := make(map[string]int, len(geometryTypeByRole))
-	for role := range geometryTypeByRole {
-		roles[role] = perRole
+func balancedRealWorldExpectedCounts(perGeometryKind int) RealWorldExpectedCounts {
+	geometryKinds := make(map[string]int, len(geometryTypeByGeometryKind))
+	for geometryKind := range geometryTypeByGeometryKind {
+		geometryKinds[geometryKind] = perGeometryKind
 	}
-	return realWorldExpectedCounts(roles)
+	return realWorldExpectedCounts(geometryKinds)
 }
 
-func realWorldExpectedCounts(roles map[string]int) RealWorldExpectedCounts {
-	roleCounts := make(map[string]int, len(roles))
-	geometryTypeCounts := make(map[string]int, len(roles))
+func realWorldExpectedCounts(geometryKinds map[string]int) RealWorldExpectedCounts {
+	geometryKindCounts := make(map[string]int, len(geometryKinds))
+	geometryTypeCounts := make(map[string]int, len(geometryKinds))
 	features := 0
-	for role, count := range roles {
-		geometryType, ok := geometryTypeByRole[role]
+	for geometryKind, count := range geometryKinds {
+		geometryType, ok := geometryTypeByGeometryKind[geometryKind]
 		if !ok {
-			panic(fmt.Sprintf("unsupported real-world geometry role %q", role))
+			panic(fmt.Sprintf("unsupported real-world geometry kind %q", geometryKind))
 		}
-		roleCounts[role] = count
+		geometryKindCounts[geometryKind] = count
 		geometryTypeCounts[geometryType] = count
 		features += count
 	}
 	return RealWorldExpectedCounts{
 		Features:      features,
-		Roles:         roleCounts,
+		GeometryKinds: geometryKindCounts,
 		GeometryTypes: geometryTypeCounts,
 	}
 }
@@ -119,51 +119,51 @@ func LoadRealWorldGeometryFeatures(t testing.TB, path string, expected RealWorld
 	require.NoError(t, json.Unmarshal(data, &fc))
 	require.Len(t, fc.Features, expected.Features, "real-world fixture %s should have expected feature count", path)
 
-	roleCounts := make(map[string]int)
+	geometryKindCounts := make(map[string]int)
 	geometryTypeCounts := make(map[string]int)
 	for i, feature := range fc.Features {
-		require.NotEmptyf(t, feature.Properties.Role, "feature %d has no role", i)
+		require.NotEmptyf(t, feature.Properties.GeometryKind, "feature %d has no geometry_kind", i)
 		require.NotEmptyf(t, feature.Properties.Name, "feature %d has no source name", i)
 		require.NotEmptyf(t, feature.Geometry.Type, "feature %d has no geometry type", i)
-		roleCounts[feature.Properties.Role]++
+		geometryKindCounts[feature.Properties.GeometryKind]++
 		geometryTypeCounts[feature.Geometry.Type]++
 	}
-	require.Equal(t, expected.Roles, roleCounts, "fixture data must match expected feature roles")
+	require.Equal(t, expected.GeometryKinds, geometryKindCounts, "fixture data must match expected feature geometry kinds")
 	require.Equal(t, expected.GeometryTypes, geometryTypeCounts, "fixture data must match expected geometry types")
-	return fc.Features, roleCounts
+	return fc.Features, geometryKindCounts
 }
 
-func FirstFeatureWithRole(t testing.TB, features []RealWorldFeature, role string) RealWorldFeature {
+func FirstFeatureWithGeometryKind(t testing.TB, features []RealWorldFeature, geometryKind string) RealWorldFeature {
 	t.Helper()
 
 	for _, feature := range features {
-		if feature.Properties.Role == role {
+		if feature.Properties.GeometryKind == geometryKind {
 			return feature
 		}
 	}
-	t.Fatalf("real-world fixture should include role %q", role)
+	t.Fatalf("real-world fixture should include geometry kind %q", geometryKind)
 	return RealWorldFeature{}
 }
 
-func FeaturesByRole(features []RealWorldFeature) map[string][]RealWorldFeature {
-	byRole := make(map[string][]RealWorldFeature)
+func FeaturesByGeometryKind(features []RealWorldFeature) map[string][]RealWorldFeature {
+	byGeometryKind := make(map[string][]RealWorldFeature)
 	for _, feature := range features {
-		byRole[feature.Properties.Role] = append(byRole[feature.Properties.Role], feature)
+		byGeometryKind[feature.Properties.GeometryKind] = append(byGeometryKind[feature.Properties.GeometryKind], feature)
 	}
-	return byRole
+	return byGeometryKind
 }
 
-func RoleOrder() []string {
+func GeometryKindOrder() []string {
 	return []string{"point", "line", "polygon", "multipoint", "multiline", "multipolygon"}
 }
 
-func ColumnsForRole(role string) []string {
+func ColumnsForGeometryKind(geometryKind string) []string {
 	columns := []string{"name", "value", "is_active"}
-	return append(columns, GeometryColumnsForRole(role)...)
+	return append(columns, GeometryColumnsForGeometryKind(geometryKind)...)
 }
 
-func GeometryColumnsForRole(role string) []string {
-	switch role {
+func GeometryColumnsForGeometryKind(geometryKind string) []string {
+	switch geometryKind {
 	case "point":
 		return []string{"geom", "geom_wkb", "geom_hexwkb"}
 	case "line":
@@ -177,44 +177,44 @@ func GeometryColumnsForRole(role string) []string {
 	case "multipolygon":
 		return []string{"geom_multipolygon"}
 	default:
-		panic(fmt.Sprintf("unsupported real-world geometry role %q", role))
+		panic(fmt.Sprintf("unsupported real-world geometry kind %q", geometryKind))
 	}
 }
 
-func ExpectedFeatureCount(roleCounts map[string]int) int {
+func ExpectedFeatureCount(geometryKindCounts map[string]int) int {
 	total := 0
-	for _, count := range roleCounts {
+	for _, count := range geometryKindCounts {
 		total += count
 	}
 	return total
 }
 
-func ExpectedDBGeometryTypeCounts(roleCounts map[string]int) map[string]int {
+func ExpectedDBGeometryTypeCounts(geometryKindCounts map[string]int) map[string]int {
 	return map[string]int{
-		"POINT":           roleCounts["point"] * 3,
-		"LINESTRING":      roleCounts["line"] * 2,
-		"POLYGON":         roleCounts["polygon"] * 5,
-		"MULTIPOINT":      roleCounts["multipoint"],
-		"MULTILINESTRING": roleCounts["multiline"],
-		"MULTIPOLYGON":    roleCounts["multipolygon"],
+		"POINT":           geometryKindCounts["point"] * 3,
+		"LINESTRING":      geometryKindCounts["line"] * 2,
+		"POLYGON":         geometryKindCounts["polygon"] * 5,
+		"MULTIPOINT":      geometryKindCounts["multipoint"],
+		"MULTILINESTRING": geometryKindCounts["multiline"],
+		"MULTIPOLYGON":    geometryKindCounts["multipolygon"],
 	}
 }
 
-func ExpectedColumnCounts(roleCounts map[string]int) map[string]int {
+func ExpectedColumnCounts(geometryKindCounts map[string]int) map[string]int {
 	return map[string]int{
-		"geom":                roleCounts["point"],
-		"geom_wkb":            roleCounts["point"],
-		"geom_hexwkb":         roleCounts["point"],
-		"geom_wkt":            roleCounts["line"],
-		"geom_line":           roleCounts["line"],
-		"geom_geojson":        roleCounts["polygon"],
-		"geom_hugr_geojson":   roleCounts["polygon"],
-		"geom_plain_geojson":  roleCounts["polygon"],
-		"geom_geojson_struct": roleCounts["polygon"],
-		"geom_polygon_native": roleCounts["polygon"],
-		"geom_multipoint":     roleCounts["multipoint"],
-		"geom_multiline":      roleCounts["multiline"],
-		"geom_multipolygon":   roleCounts["multipolygon"],
+		"geom":                geometryKindCounts["point"],
+		"geom_wkb":            geometryKindCounts["point"],
+		"geom_hexwkb":         geometryKindCounts["point"],
+		"geom_wkt":            geometryKindCounts["line"],
+		"geom_line":           geometryKindCounts["line"],
+		"geom_geojson":        geometryKindCounts["polygon"],
+		"geom_hugr_geojson":   geometryKindCounts["polygon"],
+		"geom_plain_geojson":  geometryKindCounts["polygon"],
+		"geom_geojson_struct": geometryKindCounts["polygon"],
+		"geom_polygon_native": geometryKindCounts["polygon"],
+		"geom_multipoint":     geometryKindCounts["multipoint"],
+		"geom_multiline":      geometryKindCounts["multiline"],
+		"geom_multipolygon":   geometryKindCounts["multipolygon"],
 	}
 }
 
@@ -241,21 +241,21 @@ type RealWorldSample struct {
 	Feature RealWorldFeature
 }
 
-func FirstFeatureByRole(t testing.TB, features []RealWorldFeature) map[string]RealWorldSample {
+func FirstFeatureByGeometryKind(t testing.TB, features []RealWorldFeature) map[string]RealWorldSample {
 	t.Helper()
 
 	samples := make(map[string]RealWorldSample)
-	roleRows := make(map[string]int)
+	geometryKindRows := make(map[string]int)
 	for _, feature := range features {
-		role := feature.Properties.Role
-		row := roleRows[role]
-		roleRows[role]++
-		if _, exists := samples[role]; !exists {
-			samples[role] = RealWorldSample{Row: row, Feature: feature}
+		geometryKind := feature.Properties.GeometryKind
+		row := geometryKindRows[geometryKind]
+		geometryKindRows[geometryKind]++
+		if _, exists := samples[geometryKind]; !exists {
+			samples[geometryKind] = RealWorldSample{Row: row, Feature: feature}
 		}
 	}
-	for _, role := range RoleOrder() {
-		require.Contains(t, samples, role, "real-world fixture should include %s", role)
+	for _, geometryKind := range GeometryKindOrder() {
+		require.Contains(t, samples, geometryKind, "real-world fixture should include %s", geometryKind)
 	}
 	return samples
 }
@@ -263,7 +263,7 @@ func FirstFeatureByRole(t testing.TB, features []RealWorldFeature) map[string]Re
 func ExpectedGeometryByColumn(t testing.TB, feature RealWorldFeature) map[string]string {
 	t.Helper()
 
-	switch feature.Properties.Role {
+	switch feature.Properties.GeometryKind {
 	case "point":
 		point := PointFromGeometry(t, feature.Geometry)
 		return map[string]string{
@@ -302,13 +302,13 @@ func ExpectedGeometryByColumn(t testing.TB, feature RealWorldFeature) map[string
 			"geom_multipolygon": RealWorldMultiPolygonWKT(multiPolygon),
 		}
 	default:
-		t.Fatalf("unsupported real-world geometry role %q", feature.Properties.Role)
+		t.Fatalf("unsupported real-world geometry kind %q", feature.Properties.GeometryKind)
 		return nil
 	}
 }
 
 func RowName(rowPrefix string, row int, feature RealWorldFeature) string {
-	return fmt.Sprintf("%s-%05d-%s", rowPrefix, row, feature.Properties.Role)
+	return fmt.Sprintf("%s-%05d-%s", rowPrefix, row, feature.Properties.GeometryKind)
 }
 
 func PointFromGeometry(t testing.TB, geom RealWorldGeometry) Point {

@@ -122,7 +122,7 @@ func TestIngest_DuckDB_UnknownDataObject(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestIngest_DuckDB_MultipleBatches(t *testing.T) {
+func TestIngest_DuckDB_TwoBatches(t *testing.T) {
 	env := setupEnv(t)
 
 	pool := memory.NewGoAllocator()
@@ -309,9 +309,8 @@ func TestIngest_DuckDB_Stream_Empty(t *testing.T) {
 	assert.Contains(t, err.Error(), "data_object")
 }
 
-// TestIngest_DuckDB_ArrowIPCFile_StreamFormat — 50k×1000 stream-format file
-// → IngestArrowIPCFile → byte-forwarded to /ipc/ingest.
-
+// TestIngest_DuckDB_LazyReader streams 50k rows through the typed client using
+// a lazy Arrow reader instead of materialising all batches up front.
 func TestIngest_DuckDB_LazyReader(t *testing.T) {
 	env := setupEnv(t)
 

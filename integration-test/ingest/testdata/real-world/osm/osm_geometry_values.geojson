@@ -5,11 +5,11 @@
     "source_repository": "https://www.openstreetmap.org/",
     "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
     "license": "ODbL; see https://www.openstreetmap.org/copyright",
-    "note": "Small value-check fixture with three OSM-derived features per geometry role.",
+    "note": "Small value-check fixture with three OSM-derived features per geometry kind.",
     "fixture_path": "integration-test/ingest/testdata/real-world/osm/osm_geometry_values.geojson",
     "derived_from_fixture": "integration-test/ingest/testdata/real-world/osm/osm_geometry.geojson",
     "generated_for": "Hugr Arrow IPC ingest integration tests",
-    "generation_method": "Selected three features per geometry role from the committed OSM bulk fixture for deterministic row-by-row geometry equality checks.",
+    "generation_method": "Selected three features per geometry kind from the committed OSM bulk fixture for deterministic row-by-row geometry equality checks.",
     "source_requests": [
       "No additional network request; this file is derived from integration-test/ingest/testdata/real-world/osm/osm_geometry.geojson."
     ],
@@ -31,7 +31,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "point",
+        "geometry_kind": "point",
         "name": "Trilogy",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -52,7 +52,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "point",
+        "geometry_kind": "point",
         "name": "Dubarry of Ireland",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -73,7 +73,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "point",
+        "geometry_kind": "point",
         "name": "Free People",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -94,7 +94,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "line",
+        "geometry_kind": "line",
         "name": "Bakerloo Line extension (planned, safeguarded route)",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -433,7 +433,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "line",
+        "geometry_kind": "line",
         "name": "Tyburn",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -656,7 +656,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "line",
+        "geometry_kind": "line",
         "name": "River Westbourne",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -911,7 +911,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "polygon",
+        "geometry_kind": "polygon",
         "name": "osm-way-5317913",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1012,7 +1012,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "polygon",
+        "geometry_kind": "polygon",
         "name": "osm-way-5317929",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1101,7 +1101,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "polygon",
+        "geometry_kind": "polygon",
         "name": "Saatchi Gallery",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1239,7 +1239,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipoint",
+        "geometry_kind": "multipoint",
         "name": "osm-node-3079331757",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1275,7 +1275,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipoint",
+        "geometry_kind": "multipoint",
         "name": "osm-node-3079331799",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1311,7 +1311,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipoint",
+        "geometry_kind": "multipoint",
         "name": "Good News Bear",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1347,7 +1347,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multiline",
+        "geometry_kind": "multiline",
         "name": "osm-way-530430069",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1386,7 +1386,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multiline",
+        "geometry_kind": "multiline",
         "name": "osm-way-530430079",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1425,7 +1425,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multiline",
+        "geometry_kind": "multiline",
         "name": "osm-way-530430081",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1472,7 +1472,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipolygon",
+        "geometry_kind": "multipolygon",
         "name": "osm-way-530132882",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1524,7 +1524,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipolygon",
+        "geometry_kind": "multipolygon",
         "name": "osm-way-530132883",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",
@@ -1576,7 +1576,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipolygon",
+        "geometry_kind": "multipolygon",
         "name": "osm-way-530132888",
         "source": "OpenStreetMap",
         "source_repository": "https://www.openstreetmap.org/",

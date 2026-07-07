@@ -31,30 +31,30 @@ type realWorldExpectedCounts = ingesttest.RealWorldExpectedCounts
 type naturalEarthSample = ingesttest.RealWorldSample
 
 var (
-	firstRealWorldFeatureWithRole            = ingesttest.FirstFeatureWithRole
-	firstNaturalEarthFeatureByRole           = ingesttest.FirstFeatureByRole
-	loadNaturalEarthGeometryFeatures         = ingesttest.LoadNaturalEarthGeometryFeatures
-	loadOSMGeometryFeatures                  = ingesttest.LoadOSMGeometryFeatures
-	naturalEarthColumnsForRole               = ingesttest.ColumnsForRole
-	naturalEarthCountedGeometryColumns       = ingesttest.CountedGeometryColumns
-	naturalEarthExpectedColumnCounts         = ingesttest.ExpectedColumnCounts
-	naturalEarthExpectedDBGeometryTypeCounts = ingesttest.ExpectedDBGeometryTypeCounts
-	naturalEarthExpectedGeometryByColumn     = ingesttest.ExpectedGeometryByColumn
-	naturalEarthExpectedFeatureCount         = ingesttest.ExpectedFeatureCount
-	naturalEarthFeaturesByRole               = ingesttest.FeaturesByRole
-	naturalEarthGeometryColumnsForRole       = ingesttest.GeometryColumnsForRole
-	naturalEarthGeometryExpectedCounts       = ingesttest.NaturalEarthGeometryExpectedCounts
-	naturalEarthGeometryValuesExpectedCounts = ingesttest.NaturalEarthGeometryValuesExpectedCounts
-	naturalEarthLineStringFromGeometry       = ingesttest.LineStringFromGeometry
-	naturalEarthMultiLineStringFromGeometry  = ingesttest.MultiLineStringFromGeometry
-	naturalEarthMultiPointFromGeometry       = ingesttest.MultiPointFromGeometry
-	naturalEarthMultiPolygonFromGeometry     = ingesttest.MultiPolygonFromGeometry
-	naturalEarthPointFromGeometry            = ingesttest.PointFromGeometry
-	naturalEarthPolygonFromGeometry          = ingesttest.PolygonFromGeometry
-	naturalEarthRoleOrder                    = ingesttest.RoleOrder
-	osmGeometryExpectedCounts                = ingesttest.OSMGeometryExpectedCounts
-	osmGeometryValuesExpectedCounts          = ingesttest.OSMGeometryValuesExpectedCounts
-	realWorldRowName                         = ingesttest.RowName
+	firstRealWorldFeatureWithGeometryKind      = ingesttest.FirstFeatureWithGeometryKind
+	firstNaturalEarthFeatureByGeometryKind     = ingesttest.FirstFeatureByGeometryKind
+	loadNaturalEarthGeometryFeatures           = ingesttest.LoadNaturalEarthGeometryFeatures
+	loadOSMGeometryFeatures                    = ingesttest.LoadOSMGeometryFeatures
+	naturalEarthColumnsForGeometryKind         = ingesttest.ColumnsForGeometryKind
+	naturalEarthCountedGeometryColumns         = ingesttest.CountedGeometryColumns
+	naturalEarthExpectedColumnCounts           = ingesttest.ExpectedColumnCounts
+	naturalEarthExpectedDBGeometryTypeCounts   = ingesttest.ExpectedDBGeometryTypeCounts
+	naturalEarthExpectedGeometryByColumn       = ingesttest.ExpectedGeometryByColumn
+	naturalEarthExpectedFeatureCount           = ingesttest.ExpectedFeatureCount
+	naturalEarthFeaturesByGeometryKind         = ingesttest.FeaturesByGeometryKind
+	naturalEarthGeometryColumnsForGeometryKind = ingesttest.GeometryColumnsForGeometryKind
+	naturalEarthGeometryExpectedCounts         = ingesttest.NaturalEarthGeometryExpectedCounts
+	naturalEarthGeometryValuesExpectedCounts   = ingesttest.NaturalEarthGeometryValuesExpectedCounts
+	naturalEarthLineStringFromGeometry         = ingesttest.LineStringFromGeometry
+	naturalEarthMultiLineStringFromGeometry    = ingesttest.MultiLineStringFromGeometry
+	naturalEarthMultiPointFromGeometry         = ingesttest.MultiPointFromGeometry
+	naturalEarthMultiPolygonFromGeometry       = ingesttest.MultiPolygonFromGeometry
+	naturalEarthPointFromGeometry              = ingesttest.PointFromGeometry
+	naturalEarthPolygonFromGeometry            = ingesttest.PolygonFromGeometry
+	naturalEarthGeometryKindOrder              = ingesttest.GeometryKindOrder
+	osmGeometryExpectedCounts                  = ingesttest.OSMGeometryExpectedCounts
+	osmGeometryValuesExpectedCounts            = ingesttest.OSMGeometryValuesExpectedCounts
+	realWorldRowName                           = ingesttest.RowName
 )
 
 func naturalEarthRowName(row int, feature realWorldFeature) string {
@@ -144,14 +144,14 @@ func ingestNaturalEarthGeometryFeatures(t *testing.T, env *ingestEnv, features [
 func ingestRealWorldGeometryFeatures(t *testing.T, env *ingestEnv, rowPrefix string, features []realWorldFeature) int {
 	t.Helper()
 
-	featuresByRole := naturalEarthFeaturesByRole(features)
+	featuresByGeometryKind := naturalEarthFeaturesByGeometryKind(features)
 	inserted := 0
-	for _, role := range naturalEarthRoleOrder() {
-		roleFeatures := featuresByRole[role]
-		if len(roleFeatures) == 0 {
+	for _, geometryKind := range naturalEarthGeometryKindOrder() {
+		geometryKindFeatures := featuresByGeometryKind[geometryKind]
+		if len(geometryKindFeatures) == 0 {
 			continue
 		}
-		rec, schema := makeNaturalEarthGeometryTypesRecord(t, rowPrefix, role, roleFeatures)
+		rec, schema := makeNaturalEarthGeometryTypesRecord(t, rowPrefix, geometryKind, geometryKindFeatures)
 
 		var buf bytes.Buffer
 		w := ipc.NewWriter(&buf, ipc.WithSchema(schema))
@@ -168,14 +168,14 @@ func ingestRealWorldGeometryFeatures(t *testing.T, env *ingestEnv, rowPrefix str
 
 		var out hugrclient.IngestResult
 		require.NoError(t, json.Unmarshal(body, &out))
-		assert.Equal(t, int64(len(roleFeatures)), out.Inserted)
-		assert.ElementsMatch(t, naturalEarthColumnsForRole(role), out.Columns)
-		inserted += len(roleFeatures)
+		assert.Equal(t, int64(len(geometryKindFeatures)), out.Inserted)
+		assert.ElementsMatch(t, naturalEarthColumnsForGeometryKind(geometryKind), out.Columns)
+		inserted += len(geometryKindFeatures)
 	}
 	return inserted
 }
 
-func naturalEarthGeometryTypesSchema(t *testing.T, role string) *arrow.Schema {
+func naturalEarthGeometryTypesSchema(t *testing.T, geometryKind string) *arrow.Schema {
 	t.Helper()
 
 	fields := []arrow.Field{
@@ -188,7 +188,7 @@ func naturalEarthGeometryTypesSchema(t *testing.T, role string) *arrow.Schema {
 	for _, field := range geometryArrowFields() {
 		geometryFields[field.Name] = field
 	}
-	for _, name := range naturalEarthGeometryColumnsForRole(role) {
+	for _, name := range naturalEarthGeometryColumnsForGeometryKind(geometryKind) {
 		field, ok := geometryFields[name]
 		require.Truef(t, ok, "geometry field %q must exist", name)
 		fields = append(fields, field)
@@ -196,10 +196,10 @@ func naturalEarthGeometryTypesSchema(t *testing.T, role string) *arrow.Schema {
 	return arrow.NewSchema(fields, nil)
 }
 
-func makeNaturalEarthGeometryTypesRecord(t *testing.T, rowPrefix, role string, features []realWorldFeature) (arrow.RecordBatch, *arrow.Schema) {
+func makeNaturalEarthGeometryTypesRecord(t *testing.T, rowPrefix, geometryKind string, features []realWorldFeature) (arrow.RecordBatch, *arrow.Schema) {
 	t.Helper()
 
-	schema := naturalEarthGeometryTypesSchema(t, role)
+	schema := naturalEarthGeometryTypesSchema(t, geometryKind)
 	pool := memory.NewGoAllocator()
 	b := array.NewRecordBuilder(pool, schema)
 	defer b.Release()
@@ -218,7 +218,7 @@ func appendNaturalEarthGeometryTypesRow(t *testing.T, b *array.RecordBuilder, ro
 	recordFieldBuilder(t, b, "value").(*array.Float64Builder).Append(float64(row))
 	recordFieldBuilder(t, b, "is_active").(*array.BooleanBuilder).Append(row%2 == 0)
 
-	switch feature.Properties.Role {
+	switch feature.Properties.GeometryKind {
 	case "point":
 		appendNaturalEarthPointFields(t, b, naturalEarthPointFromGeometry(t, feature.Geometry))
 	case "line":
@@ -232,7 +232,7 @@ func appendNaturalEarthGeometryTypesRow(t *testing.T, b *array.RecordBuilder, ro
 	case "multipolygon":
 		appendNaturalEarthMultiPolygonFields(t, b, naturalEarthMultiPolygonFromGeometry(t, feature.Geometry))
 	default:
-		t.Fatalf("unsupported Natural Earth role %q", feature.Properties.Role)
+		t.Fatalf("unsupported Natural Earth geometry kind %q", feature.Properties.GeometryKind)
 	}
 }
 
@@ -283,16 +283,16 @@ func appendNaturalEarthMultiPolygonFields(t *testing.T, b *array.RecordBuilder, 
 	appendPointListListList(recordFieldBuilder(t, b, "geom_multipolygon").(*array.ListBuilder), polygons)
 }
 
-func assertNaturalEarthGeometryCounts(t *testing.T, db *sql.DB, roleCounts map[string]int) {
+func assertNaturalEarthGeometryCounts(t *testing.T, db *sql.DB, geometryKindCounts map[string]int) {
 	t.Helper()
 
-	assertRealWorldGeometryCounts(t, db, "natural-earth", roleCounts)
+	assertRealWorldGeometryCounts(t, db, "natural-earth", geometryKindCounts)
 }
 
-func assertRealWorldGeometryCounts(t *testing.T, db *sql.DB, rowPrefix string, roleCounts map[string]int) {
+func assertRealWorldGeometryCounts(t *testing.T, db *sql.DB, rowPrefix string, geometryKindCounts map[string]int) {
 	t.Helper()
 
-	expected := naturalEarthExpectedColumnCounts(roleCounts)
+	expected := naturalEarthExpectedColumnCounts(geometryKindCounts)
 	columns := naturalEarthCountedGeometryColumns()
 	selects := []string{"COUNT(*)"}
 	for _, col := range columns {
@@ -312,22 +312,22 @@ func assertRealWorldGeometryCounts(t *testing.T, db *sql.DB, rowPrefix string, r
 		args = append(args, &values[i])
 	}
 	require.NoError(t, row.Scan(args...))
-	assert.Equal(t, naturalEarthExpectedFeatureCount(roleCounts), total)
+	assert.Equal(t, naturalEarthExpectedFeatureCount(geometryKindCounts), total)
 	for i, col := range columns {
 		assert.Equalf(t, expected[col], values[i], "non-null count for %s", col)
 	}
 }
 
-func assertNaturalEarthDBGeometryTypeCounts(t *testing.T, db *sql.DB, roleCounts map[string]int) {
+func assertNaturalEarthDBGeometryTypeCounts(t *testing.T, db *sql.DB, geometryKindCounts map[string]int) {
 	t.Helper()
 
-	assertRealWorldDBGeometryTypeCounts(t, db, "natural-earth", roleCounts)
+	assertRealWorldDBGeometryTypeCounts(t, db, "natural-earth", geometryKindCounts)
 }
 
-func assertRealWorldDBGeometryTypeCounts(t *testing.T, db *sql.DB, rowPrefix string, roleCounts map[string]int) {
+func assertRealWorldDBGeometryTypeCounts(t *testing.T, db *sql.DB, rowPrefix string, geometryKindCounts map[string]int) {
 	t.Helper()
 
-	expected := naturalEarthExpectedDBGeometryTypeCounts(roleCounts)
+	expected := naturalEarthExpectedDBGeometryTypeCounts(geometryKindCounts)
 	selects := make([]string, 0, len(naturalEarthCountedGeometryColumns()))
 	for _, col := range naturalEarthCountedGeometryColumns() {
 		selects = append(selects, fmt.Sprintf("SELECT ST_GeometryType(%s) AS geometry_type FROM events WHERE name LIKE '%s-%%' AND %s IS NOT NULL", col, rowPrefix, col))
@@ -360,10 +360,10 @@ func assertNaturalEarthGeometrySamples(t *testing.T, db *sql.DB, features []real
 func assertRealWorldGeometrySamples(t *testing.T, db *sql.DB, rowPrefix string, features []realWorldFeature) {
 	t.Helper()
 
-	samples := firstNaturalEarthFeatureByRole(t, features)
+	samples := firstNaturalEarthFeatureByGeometryKind(t, features)
 
-	for _, role := range naturalEarthRoleOrder() {
-		assertRealWorldFeatureEquals(t, db, rowPrefix, samples[role])
+	for _, geometryKind := range naturalEarthGeometryKindOrder() {
+		assertRealWorldFeatureEquals(t, db, rowPrefix, samples[geometryKind])
 	}
 }
 
@@ -376,11 +376,11 @@ func assertNaturalEarthGeometryValues(t *testing.T, db *sql.DB, features []realW
 func assertRealWorldGeometryValues(t *testing.T, db *sql.DB, rowPrefix string, features []realWorldFeature) {
 	t.Helper()
 
-	roleRows := make(map[string]int)
+	geometryKindRows := make(map[string]int)
 	for _, feature := range features {
-		role := feature.Properties.Role
-		row := roleRows[role]
-		roleRows[role]++
+		geometryKind := feature.Properties.GeometryKind
+		row := geometryKindRows[geometryKind]
+		geometryKindRows[geometryKind]++
 		assertRealWorldFeatureEquals(t, db, rowPrefix, naturalEarthSample{Row: row, Feature: feature})
 	}
 }

@@ -10,9 +10,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIngest_HTTP_NaturalEarthGeometryTypes_DuckDB(t *testing.T) {
+// TestIngest_HTTP_NaturalEarthGeometry10kRecords_DuckDB validates the committed
+// real-world fixture before ingesting it.
+//
+// Human fixture check with jq:
+//
+//	jq '.features | length' integration-test/ingest/testdata/real-world/natural-earth/natural_earth_geometry.geojson
+//	jq '.features[].geometry.type' integration-test/ingest/testdata/real-world/natural-earth/natural_earth_geometry.geojson | sort | uniq -c
+//
+// This bulk test verifies that all 10k rows were inserted and that non-null
+// target column counts match fixture geometry kind counts. It also checks one real
+// geometry per kind with ST_Equals; row-by-row geometry value checks live in
+// TestIngest_HTTP_NaturalEarthGeometryValues_DuckDB below.
+func TestIngest_HTTP_NaturalEarthGeometry10kRecords_DuckDB(t *testing.T) {
 	env := setupEnv(t)
-	features, roleCounts := loadNaturalEarthGeometryFeatures(t,
+	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
 		"natural_earth_geometry.geojson",
 		naturalEarthGeometryExpectedCounts,
 	)
@@ -24,14 +36,14 @@ func TestIngest_HTTP_NaturalEarthGeometryTypes_DuckDB(t *testing.T) {
 	_, err := ro.Exec("LOAD spatial")
 	require.NoError(t, err)
 
-	assertNaturalEarthGeometryCounts(t, ro, roleCounts)
-	assertNaturalEarthDBGeometryTypeCounts(t, ro, roleCounts)
+	assertNaturalEarthGeometryCounts(t, ro, geometryKindCounts)
+	assertNaturalEarthDBGeometryTypeCounts(t, ro, geometryKindCounts)
 	assertNaturalEarthGeometrySamples(t, ro, features)
 }
 
-func TestIngest_HTTP_NaturalEarthGeometryValues_DuckDB(t *testing.T) {
+func TestIngest_HTTP_NaturalEarthGeometry_DuckDB(t *testing.T) {
 	env := setupEnv(t)
-	features, roleCounts := loadNaturalEarthGeometryFeatures(t,
+	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
 		"natural_earth_geometry_values.geojson",
 		naturalEarthGeometryValuesExpectedCounts,
 	)
@@ -43,12 +55,12 @@ func TestIngest_HTTP_NaturalEarthGeometryValues_DuckDB(t *testing.T) {
 	_, err := ro.Exec("LOAD spatial")
 	require.NoError(t, err)
 
-	assertNaturalEarthGeometryCounts(t, ro, roleCounts)
-	assertNaturalEarthDBGeometryTypeCounts(t, ro, roleCounts)
+	assertNaturalEarthGeometryCounts(t, ro, geometryKindCounts)
+	assertNaturalEarthDBGeometryTypeCounts(t, ro, geometryKindCounts)
 	assertNaturalEarthGeometryValues(t, ro, features)
 }
 
-// TestIngest_HTTP_OSMGeometryTypes_DuckDB validates the committed OSM fixture
+// TestIngest_HTTP_OSMGeometry10kRecords_DuckDB validates the committed OSM fixture
 // before ingesting it.
 //
 // Human fixture check with jq:
@@ -59,9 +71,9 @@ func TestIngest_HTTP_NaturalEarthGeometryValues_DuckDB(t *testing.T) {
 // The fixture is a committed OpenStreetMap/Overpass extract; MultiPoint,
 // MultiLineString and MultiPolygon rows are derived from real OSM nodes/ways
 // so the ingest path still covers every geometry representation we support.
-func TestIngest_HTTP_OSMGeometryTypes_DuckDB(t *testing.T) {
+func TestIngest_HTTP_OSMGeometry10kRecords_DuckDB(t *testing.T) {
 	env := setupEnv(t)
-	features, roleCounts := loadOSMGeometryFeatures(t,
+	features, geometryKindCounts := loadOSMGeometryFeatures(t,
 		"osm_geometry.geojson",
 		osmGeometryExpectedCounts,
 	)
@@ -73,14 +85,14 @@ func TestIngest_HTTP_OSMGeometryTypes_DuckDB(t *testing.T) {
 	_, err := ro.Exec("LOAD spatial")
 	require.NoError(t, err)
 
-	assertRealWorldGeometryCounts(t, ro, "osm", roleCounts)
-	assertRealWorldDBGeometryTypeCounts(t, ro, "osm", roleCounts)
+	assertRealWorldGeometryCounts(t, ro, "osm", geometryKindCounts)
+	assertRealWorldDBGeometryTypeCounts(t, ro, "osm", geometryKindCounts)
 	assertRealWorldGeometrySamples(t, ro, "osm", features)
 }
 
-func TestIngest_HTTP_OSMGeometryValues_DuckDB(t *testing.T) {
+func TestIngest_HTTP_OSMGeometry_DuckDB(t *testing.T) {
 	env := setupEnv(t)
-	features, roleCounts := loadOSMGeometryFeatures(t,
+	features, geometryKindCounts := loadOSMGeometryFeatures(t,
 		"osm_geometry_values.geojson",
 		osmGeometryValuesExpectedCounts,
 	)
@@ -92,8 +104,8 @@ func TestIngest_HTTP_OSMGeometryValues_DuckDB(t *testing.T) {
 	_, err := ro.Exec("LOAD spatial")
 	require.NoError(t, err)
 
-	assertRealWorldGeometryCounts(t, ro, "osm", roleCounts)
-	assertRealWorldDBGeometryTypeCounts(t, ro, "osm", roleCounts)
+	assertRealWorldGeometryCounts(t, ro, "osm", geometryKindCounts)
+	assertRealWorldDBGeometryTypeCounts(t, ro, "osm", geometryKindCounts)
 	assertRealWorldGeometryValues(t, ro, "osm", features)
 }
 
@@ -103,7 +115,7 @@ func TestIngest_HTTP_NaturalEarthGeoJSONStructNull_DuckDB(t *testing.T) {
 		"natural_earth_geometry_values.geojson",
 		naturalEarthGeometryValuesExpectedCounts,
 	)
-	feature := firstRealWorldFeatureWithRole(t, features, "polygon")
+	feature := firstRealWorldFeatureWithGeometryKind(t, features, "polygon")
 	polygon := naturalEarthPolygonFromGeometry(t, feature.Geometry)
 	rec, expectedWKT := makeRealWorldGeoJSONStructNullRecord(t, "natural-earth-geojson-struct-null", polygon)
 	defer rec.Release()
@@ -126,7 +138,7 @@ func TestIngest_HTTP_OSMGeoJSONStructNull_DuckDB(t *testing.T) {
 		"osm_geometry_values.geojson",
 		osmGeometryValuesExpectedCounts,
 	)
-	feature := firstRealWorldFeatureWithRole(t, features, "polygon")
+	feature := firstRealWorldFeatureWithGeometryKind(t, features, "polygon")
 	polygon := naturalEarthPolygonFromGeometry(t, feature.Geometry)
 	rec, expectedWKT := makeRealWorldGeoJSONStructNullRecord(t, "osm-geojson-struct-null", polygon)
 	defer rec.Release()

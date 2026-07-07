@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestIngest_DuckDB_ArrowIPCFile_StreamFormat writes a 50k-row Arrow IPC
+// stream file and verifies IngestArrowIPCFile forwards it to /ipc/ingest.
 func TestIngest_DuckDB_ArrowIPCFile_StreamFormat(t *testing.T) {
 	env := setupEnv(t)
 
