@@ -496,7 +496,7 @@ func validateArglessViewSQL(def *ast.Definition) error {
 }
 
 // stripSQLStringLiterals blanks the contents of single-quoted SQL string
-// literals (handling '' escapes) so that bracketed [$...] tokens appearing
+// literals (handling ” escapes) so that bracketed [$...] tokens appearing
 // inside text are not mistaken for placeholders. Structure outside the literals
 // is preserved.
 func stripSQLStringLiterals(sql string) string {
