@@ -84,6 +84,7 @@ services:
       ADMIN_UI: "false"
       ALLOWED_ANONYMOUS: "true"
       ANONYMOUS_ROLE: "admin"
+      ALLOWED_DB_API_KEYS: "true"
     depends_on:
       postgres:
         condition: service_healthy
@@ -125,6 +126,7 @@ services:
       ADMIN_UI: "false"
       ALLOWED_ANONYMOUS: "true"
       ANONYMOUS_ROLE: "admin"
+      ALLOWED_DB_API_KEYS: "true"
     depends_on:
       core-postgres:
         condition: service_healthy

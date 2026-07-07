@@ -77,7 +77,11 @@ func (p *DBApiKey) Authenticate(r *http.Request) (*AuthInfo, error) {
 		IsTemporal  bool               `json:"is_temporal"`
 		ExpiresAt   string             `json:"expires_at"`
 		Headers     UserAuthInfoConfig `json:"headers"`
-		UserInfo    UserAuthInfoConfig `json:"claims"`
+		// Claims is the api_keys.claims JSON column. Its "role"/"user_id"/
+		// "user_name" keys set a static identity (as before); any other scalar
+		// keys are exposed as [$auth.<claim>] placeholders, so a managed API
+		// key can scope row-level security the same way a JWT claim does.
+		Claims map[string]any `json:"claims"`
 	}
 
 	err = res.ScanData("core.api_keys_by_key", &keyInfo)
@@ -101,12 +105,19 @@ func (p *DBApiKey) Authenticate(r *http.Request) (*AuthInfo, error) {
 			return nil, ErrForbidden
 		}
 	}
+	// identity carried directly on the key's claims (role/user_id/user_name)
+	userInfo := UserAuthInfoConfig{
+		Role:     claimString(keyInfo.Claims, "role"),
+		UserId:   claimString(keyInfo.Claims, "user_id"),
+		UserName: claimString(keyInfo.Claims, "user_name"),
+	}
+
 	role := keyInfo.DefaultRole
 	if keyInfo.Headers.Role != "" {
 		role = r.Header.Get(keyInfo.Headers.Role)
 	}
-	if keyInfo.UserInfo.Role != "" {
-		role = keyInfo.UserInfo.Role
+	if userInfo.Role != "" {
+		role = userInfo.Role
 	}
 	if keyInfo.Headers.UserId != "" {
 		keyInfo.Headers.UserId = "x-hugr-user-id"
@@ -115,16 +126,16 @@ func (p *DBApiKey) Authenticate(r *http.Request) (*AuthInfo, error) {
 		keyInfo.Headers.UserName = "x-hugr-user-name"
 	}
 	userId := r.Header.Get(keyInfo.Headers.UserId)
-	if keyInfo.UserInfo.UserId != "" {
-		userId = keyInfo.UserInfo.UserId
+	if userInfo.UserId != "" {
+		userId = userInfo.UserId
 	}
 	if userId == "" {
 		userId = "anonymous"
 	}
 
 	userName := r.Header.Get(keyInfo.Headers.UserName)
-	if keyInfo.UserInfo.UserName != "" {
-		userName = keyInfo.UserInfo.UserName
+	if userInfo.UserName != "" {
+		userName = userInfo.UserName
 	}
 	if userName == "" {
 		userName = "anonymous"
@@ -136,5 +147,12 @@ func (p *DBApiKey) Authenticate(r *http.Request) (*AuthInfo, error) {
 		Role:         role,
 		AuthType:     "db-api-key",
 		AuthProvider: p.name,
+		Claims:       ScalarClaims(keyInfo.Claims),
 	}, nil
+}
+
+// claimString returns the string value of a claim, or "" if absent/non-string.
+func claimString(m map[string]any, key string) string {
+	s, _ := m[key].(string)
+	return s
 }

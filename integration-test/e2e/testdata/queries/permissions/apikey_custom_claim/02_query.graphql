@@ -1,0 +1,13 @@
+# Authenticated with the managed API key. The key's claims column carries a
+# custom scalar claim (desc_claim); the role's data-object filter references it
+# as [$auth.desc_claim], so only the matching product is returned. Proves the
+# api_keys.claims column exposes arbitrary claims, not just role/user identity.
+{
+  pg_store {
+    products(order_by: [{ field: "id", direction: ASC }]) {
+      id
+      name
+      description
+    }
+  }
+}

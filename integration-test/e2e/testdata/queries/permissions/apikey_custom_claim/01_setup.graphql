@@ -1,0 +1,22 @@
+mutation {
+  core {
+    insert_roles(data: {
+      name: "e2e_apikey_role"
+      description: "E2E api-key custom-claim role"
+      permissions: [
+        { type_name: "data-object:query", field_name: "pg_store_products", filter: { description: { eq: "[$auth.desc_claim]" } } }
+      ]
+    }) {
+      name
+    }
+    insert_api_keys(data: {
+      name: "e2e-claim-key"
+      key: "e2e-claim-secret"
+      description: "E2E custom-claim key"
+      default_role: "e2e_apikey_role"
+      claims: { desc_claim: "High-performance laptop" }
+    }) {
+      name
+    }
+  }
+}
