@@ -4,10 +4,10 @@
     "source": "Natural Earth public domain data",
     "source_repository": "https://github.com/nvkelso/natural-earth-vector/tree/master/geojson",
     "derived_from_fixture": "integration-test/ingest/testdata/real-world/natural-earth/natural_earth_geometry.geojson",
-    "note": "Small deterministic value-check fixture: three real Natural Earth features per geometry role.",
+    "note": "Small deterministic value-check fixture: three real Natural Earth features per geometry kind.",
     "fixture_path": "integration-test/ingest/testdata/real-world/natural-earth/natural_earth_geometry_values.geojson",
     "generated_for": "Hugr Arrow IPC ingest integration tests",
-    "generation_method": "Selected three features per geometry role from the committed Natural Earth bulk fixture for deterministic row-by-row geometry equality checks.",
+    "generation_method": "Selected three features per geometry kind from the committed Natural Earth bulk fixture for deterministic row-by-row geometry equality checks.",
     "source_requests": [
       "No additional network request; this file is derived from integration-test/ingest/testdata/real-world/natural-earth/natural_earth_geometry.geojson."
     ],
@@ -23,7 +23,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "point",
+        "geometry_kind": "point",
         "name": "Colonia del Sacramento",
         "source_layer": "ne_10m_populated_places",
         "source_index": 0
@@ -39,7 +39,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "point",
+        "geometry_kind": "point",
         "name": "Trinidad",
         "source_layer": "ne_10m_populated_places",
         "source_index": 1
@@ -55,7 +55,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "point",
+        "geometry_kind": "point",
         "name": "Fray Bentos",
         "source_layer": "ne_10m_populated_places",
         "source_index": 2
@@ -71,7 +71,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "line",
+        "geometry_kind": "line",
         "name": "ne_10m_roads-0",
         "source_layer": "ne_10m_roads",
         "source_index": 0
@@ -93,7 +93,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "line",
+        "geometry_kind": "line",
         "name": "83",
         "source_layer": "ne_10m_roads",
         "source_index": 1
@@ -239,7 +239,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "line",
+        "geometry_kind": "line",
         "name": "840",
         "source_layer": "ne_10m_roads",
         "source_index": 2
@@ -309,7 +309,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multiline",
+        "geometry_kind": "multiline",
         "name": "Irrawaddy Delta",
         "source_layer": "ne_10m_rivers_lake_centerlines",
         "source_index": 0
@@ -1997,7 +1997,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multiline",
+        "geometry_kind": "multiline",
         "name": "Tonle Sap",
         "source_layer": "ne_10m_rivers_lake_centerlines",
         "source_index": 1
@@ -2135,7 +2135,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multiline",
+        "geometry_kind": "multiline",
         "name": "Tonle Sap",
         "source_layer": "ne_10m_rivers_lake_centerlines",
         "source_index": 2
@@ -2475,7 +2475,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "polygon",
+        "geometry_kind": "polygon",
         "name": "ne_10m_urban_areas-0",
         "source_layer": "ne_10m_urban_areas",
         "source_index": 0
@@ -3667,7 +3667,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "polygon",
+        "geometry_kind": "polygon",
         "name": "ne_10m_urban_areas-1",
         "source_layer": "ne_10m_urban_areas",
         "source_index": 1
@@ -4319,7 +4319,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "polygon",
+        "geometry_kind": "polygon",
         "name": "ne_10m_urban_areas-2",
         "source_layer": "ne_10m_urban_areas",
         "source_index": 2
@@ -4575,7 +4575,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipolygon",
+        "geometry_kind": "multipolygon",
         "name": "Kalimantan Timur",
         "source_layer": "ne_10m_admin_1_states_provinces",
         "source_index": 2
@@ -10253,7 +10253,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipolygon",
+        "geometry_kind": "multipolygon",
         "name": "Sabah",
         "source_layer": "ne_10m_admin_1_states_provinces",
         "source_index": 3
@@ -13971,7 +13971,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipolygon",
+        "geometry_kind": "multipolygon",
         "name": "Larnaca",
         "source_layer": "ne_10m_admin_1_states_provinces",
         "source_index": 14
@@ -14829,7 +14829,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipoint",
+        "geometry_kind": "multipoint",
         "name": "Colonia del Sacramento / Trinidad / Fray Bentos / Canelones",
         "source_layer": "ne_10m_populated_places",
         "source_index": 0,
@@ -14860,7 +14860,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipoint",
+        "geometry_kind": "multipoint",
         "name": "Florida / Bassar / Sotouboua / Medenine",
         "source_layer": "ne_10m_populated_places",
         "source_index": 1,
@@ -14891,7 +14891,7 @@
     {
       "type": "Feature",
       "properties": {
-        "role": "multipoint",
+        "geometry_kind": "multipoint",
         "name": "Kebili / Tataouine / L'Ariana / Jendouba",
         "source_layer": "ne_10m_populated_places",
         "source_index": 2,

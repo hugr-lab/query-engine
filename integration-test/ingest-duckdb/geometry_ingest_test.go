@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIngest_HTTP_GeometryTypes_DuckDB(t *testing.T) {
+func TestIngest_HTTP_GeometryPoints_DuckDB(t *testing.T) {
 	env := setupEnv(t)
 
 	rec, schema := makeGeometryTypesRecord(t, []geometryTypesRow{
@@ -71,19 +71,8 @@ func TestIngest_HTTP_GeometryTypes_DuckDB(t *testing.T) {
 	}, got)
 }
 
-// TestIngest_HTTP_NaturalEarthGeometryTypes_DuckDB validates the committed
-// real-world fixture before ingesting it.
-//
-// Human fixture check with jq:
-//
-//	jq '.features | length' integration-test/ingest/testdata/real-world/natural-earth/natural_earth_geometry.geojson
-//	jq '.features[].geometry.type' integration-test/ingest/testdata/real-world/natural-earth/natural_earth_geometry.geojson | sort | uniq -c
-//
-// This bulk test verifies that all 10k rows were inserted and that non-null
-// target column counts match fixture role counts. It also checks one real
-// geometry per role with ST_Equals; row-by-row geometry value checks live in
-// TestIngest_HTTP_NaturalEarthGeometryValues_DuckDB below.
-
+// TestIngest_HTTP_GeometryTypes_ReadThroughHugr_DuckDB verifies that geometry
+// values inserted through ipc/ingest are readable through the Hugr query path.
 func TestIngest_HTTP_GeometryTypes_ReadThroughHugr_DuckDB(t *testing.T) {
 	env := setupEnv(t)
 

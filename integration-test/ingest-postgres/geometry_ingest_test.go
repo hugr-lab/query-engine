@@ -21,6 +21,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestIngest_Postgres_GeometryEdgeCases verifies that the native
+// DuckDB GEOMETRY -> PostGIS bridge faithfully carries geometries that the
+// existing suite never exercised: SQL NULL, 3D (Z) coordinates, EMPTY
+// geometries and a mixed GEOMETRYCOLLECTION. The target column is a bare
+// `geometry` (no typmod) so PostGIS accepts any type/dimension and the
+// assertions reflect exactly what crossed the bridge — not what a typmod
+// coerced. Geometry is sent as geoarrow.wkt so DuckDB staging normalises it to
+// a canonical GEOMETRY via ST_GeomFromText before the bridge writes it out.
 func TestIngest_Postgres_GeometryEdgeCases(t *testing.T) {
 	env := setupEnv(t)
 
@@ -112,7 +120,7 @@ func TestIngest_Postgres_GeometryEdgeCases(t *testing.T) {
 	assert.Equal(t, [3]float64{1, 2, 3}, [3]float64{x, y, z})
 }
 
-func TestIngest_HTTP_GeometryTypes(t *testing.T) {
+func TestIngest_HTTP_GeometryPoints(t *testing.T) {
 	env := setupEnv(t)
 
 	rec, schema := makeGeometryTypesRecord(t, []geometryTypesRow{
@@ -199,19 +207,8 @@ func TestIngest_HTTP_RealWorldGeometryTypes(t *testing.T) {
 	assert.Equal(t, geometrySRIDExpected(), srids)
 }
 
-// TestIngest_HTTP_NaturalEarthGeometryTypes_Postgres validates the committed
-// real-world fixture before ingesting it.
-//
-// Human fixture check with jq:
-//
-//	jq '.features | length' integration-test/ingest/testdata/real-world/natural-earth/natural_earth_geometry.geojson
-//	jq '.features[].geometry.type' integration-test/ingest/testdata/real-world/natural-earth/natural_earth_geometry.geojson | sort | uniq -c
-//
-// This bulk test verifies that all 10k rows were inserted and that non-null
-// target column counts match fixture role counts. It also checks one real
-// geometry per role with ST_Equals; row-by-row geometry value checks live in
-// TestIngest_HTTP_NaturalEarthGeometryValues_Postgres below.
-
+// TestIngest_HTTP_GeometryTypes_ReadThroughHugr verifies that geometry values
+// inserted through ipc/ingest are readable through the Hugr query path.
 func TestIngest_HTTP_GeometryTypes_ReadThroughHugr(t *testing.T) {
 	env := setupEnv(t)
 
