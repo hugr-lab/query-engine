@@ -202,6 +202,13 @@ func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSou
 			}
 			placeholder := base.DirectiveArgString(d, base.ArgValue)
 			val := contextVars[placeholder]
+			// An empty server-injected value (nil/""/0 — e.g. an unauthenticated
+			// request or a non-numeric user id for [$auth.user_id_int]) becomes
+			// NULL, so "col = [$auth.*]" matches nothing instead of matching 0/''.
+			// Client-provided args below are left as-is (a client 0 means 0).
+			if IsEmptyContextValue(val) {
+				val = nil
+			}
 			if info.sql != "" {
 				sv, sverr := builder.SQLValue(val)
 				if sverr != nil {

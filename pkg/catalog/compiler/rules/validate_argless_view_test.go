@@ -44,12 +44,27 @@ func TestValidateArglessViewSQL(t *testing.T) {
 		})
 	}
 
+	// A [$...] token inside a SQL string literal is text, not a placeholder —
+	// it must not trip the validator (otherwise a whole source fails to load).
+	for _, sql := range []string{
+		"SELECT id FROM t WHERE note = 'ref [$auth.tenant_id] here'",
+		"SELECT id, 'has [$random] token' AS lbl FROM t WHERE user_id = [$auth.user_id]",
+		"SELECT id FROM t WHERE msg = 'it''s [$auth.user_ids]'",
+	} {
+		t.Run("ok/bracket in string literal", func(t *testing.T) {
+			if err := validateArglessViewSQL(viewDef("v", sql)); err != nil {
+				t.Errorf("[$...] inside a string literal must be ignored, got: %v (sql=%q)", err, sql)
+			}
+		})
+	}
+
 	invalid := []struct {
 		name, sql string
 	}{
 		{"custom claim not whitelisted", "SELECT id FROM t WHERE tenant = [$auth.tenant_id]"},
 		{"typo in placeholder", "SELECT id FROM t WHERE user_id = [$auth.user_ids]"},
 		{"unknown context var", "SELECT id FROM t WHERE x = [$some_arg]"},
+		{"real placeholder outside a nearby literal", "SELECT 'label' AS l FROM t WHERE tenant = [$auth.tenant_id]"},
 	}
 	for _, tt := range invalid {
 		t.Run("reject/"+tt.name, func(t *testing.T) {
@@ -57,5 +72,19 @@ func TestValidateArglessViewSQL(t *testing.T) {
 				t.Errorf("expected a compile error for %q, got nil", tt.sql)
 			}
 		})
+	}
+}
+
+func TestStripSQLStringLiterals(t *testing.T) {
+	cases := map[string]string{
+		"a = 'x' AND b = [$auth.user_id]":       "a = '' AND b = [$auth.user_id]",
+		"note = 'ref [$auth.tenant_id]'":        "note = ''",
+		"msg = 'it''s here' AND c = [$catalog]": "msg = '' AND c = [$catalog]",
+		"no literals here":                      "no literals here",
+	}
+	for in, want := range cases {
+		if got := stripSQLStringLiterals(in); got != want {
+			t.Errorf("stripSQLStringLiterals(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
