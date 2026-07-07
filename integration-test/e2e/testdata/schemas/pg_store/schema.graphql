@@ -64,6 +64,17 @@ type active_products @view(
     quantity: Int!
 }
 
+# Argless view whose SQL embeds an [$auth.*] placeholder — no @args. The
+# placeholder must be substituted from the request identity as a SQL literal.
+type products_for_current_user @view(
+    name: "products_for_current_user"
+    sql: "SELECT id, name, category_id FROM products WHERE category_id = [$auth.user_id_int]"
+) {
+    id: Int! @pk
+    name: String!
+    category_id: Int!
+}
+
 type products_in_price_range @view(
     name: "products_in_price_range"
     sql: "SELECT id, name, price FROM products WHERE price >= [$min_price] AND price <= [$max_price]"

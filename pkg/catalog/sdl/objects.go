@@ -168,6 +168,12 @@ type sqlBuilder interface {
 
 func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSource, args map[string]any, builder sqlBuilder, contextVars map[string]any) (err error) {
 	if !info.HasArguments() {
+		// A view without @args can still embed context placeholders
+		// ([$auth.*]) directly in its @view(sql:) template; resolve those even
+		// though there is no argument input type to iterate.
+		if info.sql != "" && sqlHasContextPlaceholder(info.sql) {
+			return info.substituteContextPlaceholders(builder, contextVars)
+		}
 		return nil
 	}
 	it := defs.ForName(ctx, info.InputArgsName)
@@ -238,23 +244,41 @@ func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSou
 		posArgs = append(posArgs, val)
 	}
 	if info.sql != "" {
-		// Substitute any remaining context placeholders ([$auth.*], [$catalog]) embedded
+		// Substitute any remaining context placeholders ([$auth.*]) embedded
 		// directly in the @view(sql:) template.
-		for placeholder, value := range contextVars {
-			if !strings.Contains(info.sql, placeholder) {
-				continue
-			}
-			sv, sverr := builder.SQLValue(value)
-			if sverr != nil {
-				return ErrorPosf(info.def.Position, "wrong context value for placeholder %s: %s", placeholder, sverr.Error())
-			}
-			info.sql = strings.ReplaceAll(info.sql, placeholder, sv)
-		}
-		return nil
+		return info.substituteContextPlaceholders(builder, contextVars)
 	}
 	info.sql, err = builder.FunctionCall(info.Name, posArgs, namedArgs)
 	info.functionCall = true
 	return err
+}
+
+// substituteContextPlaceholders replaces every whitelisted context placeholder
+// (KnownArgPlaceholders — the fixed [$auth.*] set) that appears in the view SQL
+// template with its context value rendered as an escaped SQL literal. It
+// iterates the whitelist rather than contextVars on purpose: only the strictly
+// defined placeholders are allowed in a @view(sql:) template — arbitrary custom
+// token claims are not, since they are not guaranteed to be present. An
+// unavailable value (unauthenticated request) renders as NULL.
+func (info *Object) substituteContextPlaceholders(builder sqlBuilder, contextVars map[string]any) error {
+	for placeholder := range KnownArgPlaceholders {
+		if !strings.Contains(info.sql, placeholder) {
+			continue
+		}
+		sv, sverr := builder.SQLValue(contextVars[placeholder])
+		if sverr != nil {
+			return ErrorPosf(info.def.Position, "wrong context value for placeholder %s: %s", placeholder, sverr.Error())
+		}
+		info.sql = strings.ReplaceAll(info.sql, placeholder, sv)
+	}
+	return nil
+}
+
+// SQLHasContextPlaceholder reports whether the object's SQL template embeds a
+// whitelisted context placeholder ([$auth.*]). Used by the planner to decide
+// whether a view without @args still needs argument resolution.
+func (info *Object) SQLHasContextPlaceholder() bool {
+	return info.sql != "" && sqlHasContextPlaceholder(info.sql)
 }
 
 // inputHasArgDefault returns true if any field of the input type has @arg_default.

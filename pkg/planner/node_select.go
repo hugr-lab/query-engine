@@ -296,7 +296,10 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 	if err != nil {
 		return nil, false, err
 	}
-	if info.HasArguments() {
+	// Resolve arguments for views with @args, and also for argless views whose
+	// @view(sql:) template embeds a context placeholder ([$auth.*]) — those still
+	// need substitution even though there is no argument input.
+	if info.HasArguments() || info.SQLHasContextPlaceholder() {
 		arg := queryArg.ForName("args")
 		var am map[string]any
 		if arg != nil {
