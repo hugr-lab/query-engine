@@ -1,0 +1,9 @@
+{
+  "data": {
+    "core": {
+      "insert_roles": {
+        "name": "e2e_cache_user"
+      }
+    }
+  }
+}

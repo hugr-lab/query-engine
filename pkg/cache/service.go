@@ -65,13 +65,18 @@ func (s *Service) Init(ctx context.Context) error {
 	return nil
 }
 
+// formatKey namespaces the cache key by the caller's identity. It includes
+// both the role AND the user id, so a query whose result depends on the user
+// (an RLS filter or a view/function SQL using [$auth.user_id], etc.) is never
+// served from another user's cache entry — even for users sharing a role.
+// Role is kept alongside the user id because impersonation reuses a user id
+// under a different (target) role, and anonymous requests have an empty id.
 func (s *Service) formatKey(ctx context.Context, key string) string {
 	ai := auth.AuthInfoFromContext(ctx)
-	if ai != nil {
-		key = fmt.Sprintf("%s:%s", ai.Role, key)
+	if ai == nil {
+		return key
 	}
-
-	return key
+	return fmt.Sprintf("%s:%s:%s", ai.Role, ai.UserId, key)
 }
 
 func (s *Service) Get(ctx context.Context, key string) (any, error) {

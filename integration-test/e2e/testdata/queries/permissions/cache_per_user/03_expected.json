@@ -1,0 +1,23 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "category_id": 3,
+          "id": 2,
+          "name": "Wireless Mouse"
+        },
+        {
+          "category_id": 3,
+          "id": 3,
+          "name": "USB-C Hub"
+        },
+        {
+          "category_id": 3,
+          "id": 4,
+          "name": "Old Keyboard"
+        }
+      ]
+    }
+  }
+}
