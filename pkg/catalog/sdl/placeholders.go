@@ -29,3 +29,23 @@ var KnownArgPlaceholders = map[string]bool{
 func IsKnownPlaceholder(name string) bool {
 	return KnownArgPlaceholders[name]
 }
+
+// IsEmptyContextValue reports whether a context placeholder value is "empty"
+// for the purpose of NULL substitution. Treats nil, empty string, and zero
+// integer as empty — covers the [$auth.user_id_int] case where a non-numeric
+// or absent user id resolves to 0. Used by both the function/@arg_default path
+// and the @view(sql:) substitution so the same placeholder resolves to the
+// same SQL regardless of where it is embedded.
+func IsEmptyContextValue(v any) bool {
+	switch val := v.(type) {
+	case nil:
+		return true
+	case string:
+		return val == ""
+	case int:
+		return val == 0
+	case int64:
+		return val == 0
+	}
+	return false
+}

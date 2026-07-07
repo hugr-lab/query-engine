@@ -75,25 +75,48 @@ func TestSubstituteContextPlaceholders(t *testing.T) {
 	}
 }
 
-// An unauthenticated request has no value for the placeholder — it must render
-// as NULL, not be left as a literal placeholder string.
-func TestSubstituteContextPlaceholders_MissingValueIsNull(t *testing.T) {
-	v := newView("SELECT * FROM t WHERE user_id = [$auth.user_id]")
-	if err := v.substituteContextPlaceholders(mockSQLBuilder{}, nil); err != nil {
+// An empty context value (unauthenticated request → nil, empty string, or a
+// zero user_id_int from a non-numeric id) must render as NULL, not as a literal
+// placeholder string or a bare 0 — otherwise "col = [$auth.*]" would silently
+// match col = 0. Mirrors the function/@arg_default path.
+func TestSubstituteContextPlaceholders_EmptyValueIsNull(t *testing.T) {
+	cases := []struct {
+		name string
+		vars map[string]any
+	}{
+		{"nil vars (unauthenticated)", nil},
+		{"empty string user_id", map[string]any{"[$auth.user_id]": ""}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v := newView("SELECT * FROM t WHERE user_id = [$auth.user_id]")
+			if err := v.substituteContextPlaceholders(mockSQLBuilder{}, tc.vars); err != nil {
+				t.Fatalf("substituteContextPlaceholders: %v", err)
+			}
+			if want := "SELECT * FROM t WHERE user_id = NULL"; v.sql != want {
+				t.Errorf("sql = %q, want %q", v.sql, want)
+			}
+		})
+	}
+
+	// zero user_id_int (non-numeric/absent id) must also coalesce to NULL,
+	// not render as literal 0.
+	v := newView("SELECT * FROM t WHERE category_id = [$auth.user_id_int]")
+	if err := v.substituteContextPlaceholders(mockSQLBuilder{}, map[string]any{"[$auth.user_id_int]": 0}); err != nil {
 		t.Fatalf("substituteContextPlaceholders: %v", err)
 	}
-	if want := "SELECT * FROM t WHERE user_id = NULL"; v.sql != want {
-		t.Errorf("sql = %q, want %q", v.sql, want)
+	if want := "SELECT * FROM t WHERE category_id = NULL"; v.sql != want {
+		t.Errorf("sql = %q, want %q (zero int must be NULL, not 0)", v.sql, want)
 	}
 }
 
 func TestSQLHasContextPlaceholder(t *testing.T) {
 	cases := map[string]bool{
-		"SELECT * FROM t WHERE user_id = [$auth.user_id]": true,
-		"SELECT * FROM t WHERE role = [$auth.role]":       true,
+		"SELECT * FROM t WHERE user_id = [$auth.user_id]":  true,
+		"SELECT * FROM t WHERE role = [$auth.role]":        true,
 		"SELECT * FROM t WHERE tenant = [$auth.tenant_id]": false, // custom claim
-		"SELECT * FROM t":                                  false,
-		"":                                                 false,
+		"SELECT * FROM t": false,
+		"":                false,
 	}
 	for sql, want := range cases {
 		if got := newView(sql).SQLHasContextPlaceholder(); got != want {
