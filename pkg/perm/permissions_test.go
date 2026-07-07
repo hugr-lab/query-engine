@@ -85,6 +85,45 @@ func TestApplyContextVariable_NoAuthContext(t *testing.T) {
 	}
 }
 
+// Custom token claims are exposed as [$auth.<claim>] and substituted in
+// filters, but a claim can never shadow a built-in placeholder.
+func TestAuthVars_CustomClaims(t *testing.T) {
+	ctx := auth.ContextWithAuthInfo(context.Background(), &auth.AuthInfo{
+		Role:   "agent",
+		UserId: "42",
+		Claims: map[string]any{
+			"tenant_id":     "acme",
+			"department_id": float64(7),
+			"role":          "SHOULD_NOT_WIN", // collides with the built-in
+		},
+	})
+	vars := AuthVars(ctx)
+	if got := vars["[$auth.tenant_id]"]; got != "acme" {
+		t.Errorf("[$auth.tenant_id] = %v, want acme", got)
+	}
+	if got := vars["[$auth.department_id]"]; got != float64(7) {
+		t.Errorf("[$auth.department_id] = %v, want 7", got)
+	}
+	if got := vars["[$auth.role]"]; got != "agent" {
+		t.Errorf("[$auth.role] = %v, want agent (built-in must win over claim)", got)
+	}
+}
+
+// A filter using a custom claim placeholder is substituted end-to-end.
+func TestApplyContextVariable_CustomClaim(t *testing.T) {
+	ctx := auth.ContextWithAuthInfo(context.Background(), &auth.AuthInfo{
+		Role:   "agent",
+		UserId: "42",
+		Claims: map[string]any{"tenant_id": "acme"},
+	})
+	in := map[string]any{"tenant_id": map[string]any{"eq": "[$auth.tenant_id]"}}
+	got := applyContextVariable(ctx, in, nil)
+	want := map[string]any{"tenant_id": map[string]any{"eq": "acme"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("applyContextVariable() = %#v, want %#v", got, want)
+	}
+}
+
 func deepCopyMap(m map[string]any) map[string]any {
 	res := make(map[string]any, len(m))
 	for k, v := range m {

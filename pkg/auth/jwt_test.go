@@ -98,6 +98,43 @@ func TestJwtConfig_PublicKey_Base64Delivered(t *testing.T) {
 	}
 }
 
+// The JWT provider must carry the token's scalar claims through on AuthInfo so
+// they are exposed as [$auth.<claim>] placeholders; nested/array claims are
+// dropped.
+func TestJwtProvider_CustomClaims(t *testing.T) {
+	p, err := NewJwt(&JwtConfig{Issuer: "rsa", PublicKey: rsaPubKey})
+	if err != nil {
+		t.Fatalf("NewJwt: %v", err)
+	}
+	tok, err := GenerateToken(rsaKey, jwt.MapClaims{
+		"sub":           "u",
+		"x-hugr-role":   "admin",
+		"tenant_id":     "acme",
+		"department_id": 7,
+		"nested":        map[string]any{"x": 1}, // must be dropped
+		"groups":        []any{"a", "b"},        // must be dropped
+		"exp":           time.Now().Add(time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	ai, err := p.Authenticate(req)
+	if err != nil {
+		t.Fatalf("Authenticate: %v", err)
+	}
+	if ai.Claims["tenant_id"] != "acme" {
+		t.Errorf("tenant_id claim = %v, want acme", ai.Claims["tenant_id"])
+	}
+	if _, ok := ai.Claims["nested"]; ok {
+		t.Error("nested object claim must be dropped")
+	}
+	if _, ok := ai.Claims["groups"]; ok {
+		t.Error("array claim must be dropped")
+	}
+}
+
 func TestJwtProvider_Authenticate(t *testing.T) {
 	tests := []struct {
 		name       string

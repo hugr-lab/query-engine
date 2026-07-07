@@ -142,6 +142,7 @@ func (p *JwtProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 		AuthType:     "jwt",
 		AuthProvider: p.c.Issuer,
 		Token:        t.Raw,
+		Claims:       ScalarClaims(claims),
 	}, nil
 }
 

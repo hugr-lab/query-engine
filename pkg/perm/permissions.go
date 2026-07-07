@@ -204,14 +204,19 @@ func AuthVars(ctx context.Context) map[string]any {
 
 	userIdInt, _ := strconv.Atoi(ai.UserId)
 
-	vars := map[string]any{
-		"[$auth.user_name]":   ai.UserName,
-		"[$auth.user_id]":     ai.UserId,
-		"[$auth.user_id_int]": userIdInt,
-		"[$auth.role]":        ai.Role,
-		"[$auth.auth_type]":   ai.AuthType,
-		"[$auth.provider]":    ai.AuthProvider,
+	vars := make(map[string]any, len(ai.Claims)+9)
+	// Custom token claims first, so the built-in placeholders below always win
+	// on a name collision (a token claim named "role" cannot shadow the
+	// resolved role).
+	for k, v := range ai.Claims {
+		vars["[$auth."+k+"]"] = v
 	}
+	vars["[$auth.user_name]"] = ai.UserName
+	vars["[$auth.user_id]"] = ai.UserId
+	vars["[$auth.user_id_int]"] = userIdInt
+	vars["[$auth.role]"] = ai.Role
+	vars["[$auth.auth_type]"] = ai.AuthType
+	vars["[$auth.provider]"] = ai.AuthProvider
 	if ai.ImpersonatedBy != nil {
 		vars["[$auth.impersonated_by_role]"] = ai.ImpersonatedBy.Role
 		vars["[$auth.impersonated_by_user_id]"] = ai.ImpersonatedBy.UserId
