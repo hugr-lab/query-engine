@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/paulmach/orb"
+	"github.com/paulmach/orb/encoding/wkb"
 	"github.com/stretchr/testify/require"
 )
 
@@ -84,6 +86,94 @@ func AppendPointListListList(lb *array.ListBuilder, polygons [][][]Point) {
 	for _, rings := range polygons {
 		AppendPointListList(inner, rings)
 	}
+}
+
+func WKBPoint(t testing.TB, point Point) []byte {
+	t.Helper()
+
+	data, err := wkb.Marshal(orb.Point{point.X, point.Y})
+	require.NoError(t, err)
+	return data
+}
+
+func WKBLineString(t testing.TB, points []Point) []byte {
+	t.Helper()
+
+	data, err := wkb.Marshal(orbLineString(points))
+	require.NoError(t, err)
+	return data
+}
+
+func WKBPolygon(t testing.TB, rings [][]Point) []byte {
+	t.Helper()
+
+	data, err := wkb.Marshal(orbPolygon(rings))
+	require.NoError(t, err)
+	return data
+}
+
+func WKBMultiPoint(t testing.TB, points []Point) []byte {
+	t.Helper()
+
+	data, err := wkb.Marshal(orbMultiPoint(points))
+	require.NoError(t, err)
+	return data
+}
+
+func WKBMultiLineString(t testing.TB, lines [][]Point) []byte {
+	t.Helper()
+
+	data, err := wkb.Marshal(orbMultiLineString(lines))
+	require.NoError(t, err)
+	return data
+}
+
+func WKBMultiPolygon(t testing.TB, polygons [][][]Point) []byte {
+	t.Helper()
+
+	data, err := wkb.Marshal(orbMultiPolygon(polygons))
+	require.NoError(t, err)
+	return data
+}
+
+func orbLineString(points []Point) orb.LineString {
+	line := make(orb.LineString, 0, len(points))
+	for _, point := range points {
+		line = append(line, orb.Point{point.X, point.Y})
+	}
+	return line
+}
+
+func orbPolygon(rings [][]Point) orb.Polygon {
+	polygon := make(orb.Polygon, 0, len(rings))
+	for _, points := range rings {
+		polygon = append(polygon, orb.Ring(orbLineString(points)))
+	}
+	return polygon
+}
+
+func orbMultiPoint(points []Point) orb.MultiPoint {
+	multiPoint := make(orb.MultiPoint, 0, len(points))
+	for _, point := range points {
+		multiPoint = append(multiPoint, orb.Point{point.X, point.Y})
+	}
+	return multiPoint
+}
+
+func orbMultiLineString(lines [][]Point) orb.MultiLineString {
+	multiLine := make(orb.MultiLineString, 0, len(lines))
+	for _, line := range lines {
+		multiLine = append(multiLine, orbLineString(line))
+	}
+	return multiLine
+}
+
+func orbMultiPolygon(polygons [][][]Point) orb.MultiPolygon {
+	multiPolygon := make(orb.MultiPolygon, 0, len(polygons))
+	for _, polygon := range polygons {
+		multiPolygon = append(multiPolygon, orbPolygon(polygon))
+	}
+	return multiPolygon
 }
 
 func LinePoints(x, y float64) []Point {

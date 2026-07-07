@@ -165,17 +165,17 @@ func ColumnsForGeometryKind(geometryKind string) []string {
 func GeometryColumnsForGeometryKind(geometryKind string) []string {
 	switch geometryKind {
 	case "point":
-		return []string{"geom", "geom_wkb", "geom_hexwkb"}
+		return []string{"geom_point_native", "geom_point_wkb", "geom_point_hexwkb"}
 	case "line":
-		return []string{"geom_wkt", "geom_line"}
+		return []string{"geom_line_wkt", "geom_line_native", "geom_line_wkb"}
 	case "polygon":
-		return []string{"geom_geojson", "geom_hugr_geojson", "geom_plain_geojson", "geom_geojson_struct", "geom_polygon_native"}
+		return []string{"geom_polygon_geojson", "geom_polygon_hugr_geojson", "geom_polygon_plain_geojson", "geom_polygon_geojson_struct", "geom_polygon_native", "geom_polygon_wkb"}
 	case "multipoint":
-		return []string{"geom_multipoint"}
+		return []string{"geom_multipoint_native", "geom_multipoint_wkb"}
 	case "multiline":
-		return []string{"geom_multiline"}
+		return []string{"geom_multiline_native", "geom_multiline_wkb"}
 	case "multipolygon":
-		return []string{"geom_multipolygon"}
+		return []string{"geom_multipolygon_native", "geom_multipolygon_wkb"}
 	default:
 		panic(fmt.Sprintf("unsupported real-world geometry kind %q", geometryKind))
 	}
@@ -192,47 +192,57 @@ func ExpectedFeatureCount(geometryKindCounts map[string]int) int {
 func ExpectedDBGeometryTypeCounts(geometryKindCounts map[string]int) map[string]int {
 	return map[string]int{
 		"POINT":           geometryKindCounts["point"] * 3,
-		"LINESTRING":      geometryKindCounts["line"] * 2,
-		"POLYGON":         geometryKindCounts["polygon"] * 5,
-		"MULTIPOINT":      geometryKindCounts["multipoint"],
-		"MULTILINESTRING": geometryKindCounts["multiline"],
-		"MULTIPOLYGON":    geometryKindCounts["multipolygon"],
+		"LINESTRING":      geometryKindCounts["line"] * 3,
+		"POLYGON":         geometryKindCounts["polygon"] * 6,
+		"MULTIPOINT":      geometryKindCounts["multipoint"] * 2,
+		"MULTILINESTRING": geometryKindCounts["multiline"] * 2,
+		"MULTIPOLYGON":    geometryKindCounts["multipolygon"] * 2,
 	}
 }
 
 func ExpectedColumnCounts(geometryKindCounts map[string]int) map[string]int {
 	return map[string]int{
-		"geom":                geometryKindCounts["point"],
-		"geom_wkb":            geometryKindCounts["point"],
-		"geom_hexwkb":         geometryKindCounts["point"],
-		"geom_wkt":            geometryKindCounts["line"],
-		"geom_line":           geometryKindCounts["line"],
-		"geom_geojson":        geometryKindCounts["polygon"],
-		"geom_hugr_geojson":   geometryKindCounts["polygon"],
-		"geom_plain_geojson":  geometryKindCounts["polygon"],
-		"geom_geojson_struct": geometryKindCounts["polygon"],
-		"geom_polygon_native": geometryKindCounts["polygon"],
-		"geom_multipoint":     geometryKindCounts["multipoint"],
-		"geom_multiline":      geometryKindCounts["multiline"],
-		"geom_multipolygon":   geometryKindCounts["multipolygon"],
+		"geom_point_native":           geometryKindCounts["point"],
+		"geom_point_wkb":              geometryKindCounts["point"],
+		"geom_point_hexwkb":           geometryKindCounts["point"],
+		"geom_line_wkt":               geometryKindCounts["line"],
+		"geom_line_native":            geometryKindCounts["line"],
+		"geom_line_wkb":               geometryKindCounts["line"],
+		"geom_polygon_geojson":        geometryKindCounts["polygon"],
+		"geom_polygon_hugr_geojson":   geometryKindCounts["polygon"],
+		"geom_polygon_plain_geojson":  geometryKindCounts["polygon"],
+		"geom_polygon_geojson_struct": geometryKindCounts["polygon"],
+		"geom_polygon_native":         geometryKindCounts["polygon"],
+		"geom_polygon_wkb":            geometryKindCounts["polygon"],
+		"geom_multipoint_native":      geometryKindCounts["multipoint"],
+		"geom_multipoint_wkb":         geometryKindCounts["multipoint"],
+		"geom_multiline_native":       geometryKindCounts["multiline"],
+		"geom_multiline_wkb":          geometryKindCounts["multiline"],
+		"geom_multipolygon_native":    geometryKindCounts["multipolygon"],
+		"geom_multipolygon_wkb":       geometryKindCounts["multipolygon"],
 	}
 }
 
 func CountedGeometryColumns() []string {
 	return []string{
-		"geom",
-		"geom_wkb",
-		"geom_hexwkb",
-		"geom_wkt",
-		"geom_line",
-		"geom_geojson",
-		"geom_hugr_geojson",
-		"geom_plain_geojson",
-		"geom_geojson_struct",
+		"geom_point_native",
+		"geom_point_wkb",
+		"geom_point_hexwkb",
+		"geom_line_wkt",
+		"geom_line_native",
+		"geom_line_wkb",
+		"geom_polygon_geojson",
+		"geom_polygon_hugr_geojson",
+		"geom_polygon_plain_geojson",
+		"geom_polygon_geojson_struct",
 		"geom_polygon_native",
-		"geom_multipoint",
-		"geom_multiline",
-		"geom_multipolygon",
+		"geom_polygon_wkb",
+		"geom_multipoint_native",
+		"geom_multipoint_wkb",
+		"geom_multiline_native",
+		"geom_multiline_wkb",
+		"geom_multipolygon_native",
+		"geom_multipolygon_wkb",
 	}
 }
 
@@ -267,39 +277,44 @@ func ExpectedGeometryByColumn(t testing.TB, feature RealWorldFeature) map[string
 	case "point":
 		point := PointFromGeometry(t, feature.Geometry)
 		return map[string]string{
-			"geom":        RealWorldPointWKT(point),
-			"geom_wkb":    RealWorldPointWKT(point),
-			"geom_hexwkb": RealWorldPointWKT(point),
+			"geom_point_native": RealWorldPointWKT(point),
+			"geom_point_wkb":    RealWorldPointWKT(point),
+			"geom_point_hexwkb": RealWorldPointWKT(point),
 		}
 	case "line":
 		line := LineStringFromGeometry(t, feature.Geometry)
 		return map[string]string{
-			"geom_wkt":  RealWorldLineWKT(line),
-			"geom_line": RealWorldLineWKT(line),
+			"geom_line_wkt":    RealWorldLineWKT(line),
+			"geom_line_native": RealWorldLineWKT(line),
+			"geom_line_wkb":    RealWorldLineWKT(line),
 		}
 	case "polygon":
 		polygon := PolygonFromGeometry(t, feature.Geometry)
 		return map[string]string{
-			"geom_geojson":        RealWorldPolygonWKT(polygon),
-			"geom_hugr_geojson":   RealWorldPolygonWKT(polygon),
-			"geom_plain_geojson":  RealWorldPolygonWKT(polygon),
-			"geom_geojson_struct": RealWorldPolygonWKT(polygon),
-			"geom_polygon_native": RealWorldPolygonWKT(polygon),
+			"geom_polygon_geojson":        RealWorldPolygonWKT(polygon),
+			"geom_polygon_hugr_geojson":   RealWorldPolygonWKT(polygon),
+			"geom_polygon_plain_geojson":  RealWorldPolygonWKT(polygon),
+			"geom_polygon_geojson_struct": RealWorldPolygonWKT(polygon),
+			"geom_polygon_native":         RealWorldPolygonWKT(polygon),
+			"geom_polygon_wkb":            RealWorldPolygonWKT(polygon),
 		}
 	case "multipoint":
 		multiPoint := MultiPointFromGeometry(t, feature.Geometry)
 		return map[string]string{
-			"geom_multipoint": RealWorldMultiPointWKT(multiPoint),
+			"geom_multipoint_native": RealWorldMultiPointWKT(multiPoint),
+			"geom_multipoint_wkb":    RealWorldMultiPointWKT(multiPoint),
 		}
 	case "multiline":
 		multiLine := MultiLineStringFromGeometry(t, feature.Geometry)
 		return map[string]string{
-			"geom_multiline": RealWorldMultiLineWKT(multiLine),
+			"geom_multiline_native": RealWorldMultiLineWKT(multiLine),
+			"geom_multiline_wkb":    RealWorldMultiLineWKT(multiLine),
 		}
 	case "multipolygon":
 		multiPolygon := MultiPolygonFromGeometry(t, feature.Geometry)
 		return map[string]string{
-			"geom_multipolygon": RealWorldMultiPolygonWKT(multiPolygon),
+			"geom_multipolygon_native": RealWorldMultiPolygonWKT(multiPolygon),
+			"geom_multipolygon_wkb":    RealWorldMultiPolygonWKT(multiPolygon),
 		}
 	default:
 		t.Fatalf("unsupported real-world geometry kind %q", feature.Properties.GeometryKind)

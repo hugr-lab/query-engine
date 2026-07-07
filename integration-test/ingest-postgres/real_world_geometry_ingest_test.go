@@ -36,6 +36,20 @@ func TestIngest_HTTP_NaturalEarthGeometry10kRecords_Postgres(t *testing.T) {
 	assertNaturalEarthGeometrySamples(t, env.pgConn, features)
 }
 
+func TestIngest_HTTP_NaturalEarthGeometry10kRecordsSingleStream_Postgres(t *testing.T) {
+	env := setupEnv(t)
+	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
+		"natural_earth_geometry.geojson",
+		naturalEarthGeometryExpectedCounts,
+	)
+	inserted := ingestNaturalEarthGeometrySingleStream(t, env, features)
+	assert.Equal(t, len(features), inserted)
+
+	assertNaturalEarthGeometryCounts(t, env.pgConn, geometryKindCounts)
+	assertNaturalEarthDBGeometryTypeCounts(t, env.pgConn, geometryKindCounts)
+	assertNaturalEarthGeometrySamples(t, env.pgConn, features)
+}
+
 func TestIngest_HTTP_NaturalEarthGeometry_Postgres(t *testing.T) {
 	env := setupEnv(t)
 	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
@@ -43,6 +57,20 @@ func TestIngest_HTTP_NaturalEarthGeometry_Postgres(t *testing.T) {
 		naturalEarthGeometryValuesExpectedCounts,
 	)
 	inserted := ingestNaturalEarthGeometryFeatures(t, env, features)
+	assert.Equal(t, len(features), inserted)
+
+	assertNaturalEarthGeometryCounts(t, env.pgConn, geometryKindCounts)
+	assertNaturalEarthDBGeometryTypeCounts(t, env.pgConn, geometryKindCounts)
+	assertNaturalEarthGeometryValues(t, env.pgConn, features)
+}
+
+func TestIngest_HTTP_NaturalEarthGeometrySingleStream_Postgres(t *testing.T) {
+	env := setupEnv(t)
+	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
+		"natural_earth_geometry_values.geojson",
+		naturalEarthGeometryValuesExpectedCounts,
+	)
+	inserted := ingestNaturalEarthGeometrySingleStream(t, env, features)
 	assert.Equal(t, len(features), inserted)
 
 	assertNaturalEarthGeometryCounts(t, env.pgConn, geometryKindCounts)
@@ -103,7 +131,7 @@ func TestIngest_HTTP_NaturalEarthGeoJSONStructNull_Postgres(t *testing.T) {
 	res, err := env.client.IngestRecord(context.Background(), env.dsName+".events", rec)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), res.Inserted)
-	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom_geojson_struct"}, res.Columns)
+	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom_polygon_geojson_struct"}, res.Columns)
 
 	assertGeoJSONStructNullRows(t, env.pgConn, "natural-earth-geojson-struct-null", expectedWKT)
 }
@@ -122,7 +150,7 @@ func TestIngest_HTTP_OSMGeoJSONStructNull_Postgres(t *testing.T) {
 	res, err := env.client.IngestRecord(context.Background(), env.dsName+".events", rec)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), res.Inserted)
-	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom_geojson_struct"}, res.Columns)
+	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom_polygon_geojson_struct"}, res.Columns)
 
 	assertGeoJSONStructNullRows(t, env.pgConn, "osm-geojson-struct-null", expectedWKT)
 }
