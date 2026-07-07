@@ -41,6 +41,25 @@ func TestIngest_HTTP_NaturalEarthGeometry10kRecords_DuckDB(t *testing.T) {
 	assertNaturalEarthGeometrySamples(t, ro, features)
 }
 
+func TestIngest_HTTP_NaturalEarthGeometry10kRecordsSingleStream_DuckDB(t *testing.T) {
+	env := setupEnv(t)
+	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
+		"natural_earth_geometry.geojson",
+		naturalEarthGeometryExpectedCounts,
+	)
+	inserted := ingestNaturalEarthGeometrySingleStream(t, env, features)
+	assert.Equal(t, len(features), inserted)
+
+	ro := env.openRO(t)
+	defer ro.Close()
+	_, err := ro.Exec("LOAD spatial")
+	require.NoError(t, err)
+
+	assertNaturalEarthGeometryCounts(t, ro, geometryKindCounts)
+	assertNaturalEarthDBGeometryTypeCounts(t, ro, geometryKindCounts)
+	assertNaturalEarthGeometrySamples(t, ro, features)
+}
+
 func TestIngest_HTTP_NaturalEarthGeometry_DuckDB(t *testing.T) {
 	env := setupEnv(t)
 	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
@@ -48,6 +67,25 @@ func TestIngest_HTTP_NaturalEarthGeometry_DuckDB(t *testing.T) {
 		naturalEarthGeometryValuesExpectedCounts,
 	)
 	inserted := ingestNaturalEarthGeometryFeatures(t, env, features)
+	assert.Equal(t, len(features), inserted)
+
+	ro := env.openRO(t)
+	defer ro.Close()
+	_, err := ro.Exec("LOAD spatial")
+	require.NoError(t, err)
+
+	assertNaturalEarthGeometryCounts(t, ro, geometryKindCounts)
+	assertNaturalEarthDBGeometryTypeCounts(t, ro, geometryKindCounts)
+	assertNaturalEarthGeometryValues(t, ro, features)
+}
+
+func TestIngest_HTTP_NaturalEarthGeometrySingleStream_DuckDB(t *testing.T) {
+	env := setupEnv(t)
+	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
+		"natural_earth_geometry_values.geojson",
+		naturalEarthGeometryValuesExpectedCounts,
+	)
+	inserted := ingestNaturalEarthGeometrySingleStream(t, env, features)
 	assert.Equal(t, len(features), inserted)
 
 	ro := env.openRO(t)
@@ -123,7 +161,7 @@ func TestIngest_HTTP_NaturalEarthGeoJSONStructNull_DuckDB(t *testing.T) {
 	res, err := env.client.IngestRecord(context.Background(), env.dataObject, rec)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), res.Inserted)
-	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom_geojson_struct"}, res.Columns)
+	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom_polygon_geojson_struct"}, res.Columns)
 
 	ro := env.openRO(t)
 	defer ro.Close()
@@ -146,7 +184,7 @@ func TestIngest_HTTP_OSMGeoJSONStructNull_DuckDB(t *testing.T) {
 	res, err := env.client.IngestRecord(context.Background(), env.dataObject, rec)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), res.Inserted)
-	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom_geojson_struct"}, res.Columns)
+	assert.ElementsMatch(t, []string{"name", "value", "is_active", "geom_polygon_geojson_struct"}, res.Columns)
 
 	ro := env.openRO(t)
 	defer ro.Close()

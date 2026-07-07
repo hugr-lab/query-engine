@@ -19,8 +19,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	hugrclient "github.com/hugr-lab/query-engine/client"
 	"github.com/hugr-lab/query-engine/integration-test/internal/ingesttest"
-	"github.com/paulmach/orb"
-	"github.com/paulmach/orb/encoding/wkb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -72,7 +70,7 @@ func makeRealWorldGeoJSONStructNullRecord(t *testing.T, namePrefix string, polyg
 		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
 		{Name: "value", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
 		{Name: "is_active", Type: arrow.FixedWidthTypes.Boolean, Nullable: false},
-		{Name: "geom_geojson_struct", Type: geoJSONStructType, Nullable: true},
+		{Name: "geom_polygon_geojson_struct", Type: geoJSONStructType, Nullable: true},
 	}, nil)
 
 	pool := memory.NewGoAllocator()
@@ -80,10 +78,10 @@ func makeRealWorldGeoJSONStructNullRecord(t *testing.T, namePrefix string, polyg
 	defer b.Release()
 
 	appendGeoJSONStructRow(t, b, namePrefix+"-valid", 1, true)
-	appendGeoJSONPolygonStructFromRings(t, recordFieldBuilder(t, b, "geom_geojson_struct"), polygon)
+	appendGeoJSONPolygonStructFromRings(t, recordFieldBuilder(t, b, "geom_polygon_geojson_struct"), polygon)
 
 	appendGeoJSONStructRow(t, b, namePrefix+"-null", 2, true)
-	recordFieldBuilder(t, b, "geom_geojson_struct").(*array.StructBuilder).AppendNull()
+	recordFieldBuilder(t, b, "geom_polygon_geojson_struct").(*array.StructBuilder).AppendNull()
 
 	return b.NewRecordBatch(), realWorldPolygonWKT(polygon)
 }
@@ -100,7 +98,7 @@ func assertGeoJSONStructNullRows(t *testing.T, db *sql.DB, namePrefix, expectedW
 	t.Helper()
 
 	rows, err := db.Query(`
-		SELECT name, geom_geojson_struct IS NULL, COALESCE(ST_AsText(geom_geojson_struct), '')
+		SELECT name, geom_polygon_geojson_struct IS NULL, COALESCE(ST_AsText(geom_polygon_geojson_struct), '')
 		FROM events
 		WHERE name LIKE $1
 		ORDER BY name
@@ -175,6 +173,37 @@ func ingestRealWorldGeometryFeatures(t *testing.T, env *ingestEnv, rowPrefix str
 	return inserted
 }
 
+func ingestNaturalEarthGeometrySingleStream(t *testing.T, env *ingestEnv, features []naturalEarthFeature) int {
+	t.Helper()
+
+	return ingestRealWorldGeometrySingleStream(t, env, "natural-earth", features)
+}
+
+func ingestRealWorldGeometrySingleStream(t *testing.T, env *ingestEnv, rowPrefix string, features []naturalEarthFeature) int {
+	t.Helper()
+
+	rec, schema := ingesttest.MakeRealWorldGeometrySingleStreamRecord(t, rowPrefix, features, geometryArrowFields())
+	defer rec.Release()
+
+	var buf bytes.Buffer
+	w := ipc.NewWriter(&buf, ipc.WithSchema(schema))
+	require.NoError(t, w.Write(rec))
+	require.NoError(t, w.Close())
+
+	resp, err := http.Post(env.server.URL+"/ipc/ingest?data_object="+env.dsName+".events",
+		"application/vnd.apache.arrow.stream", &buf)
+	require.NoError(t, err)
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "body=%s", string(body))
+
+	var out hugrclient.IngestResult
+	require.NoError(t, json.Unmarshal(body, &out))
+	assert.Equal(t, int64(len(features)), out.Inserted)
+	assert.ElementsMatch(t, ingesttest.RealWorldSingleStreamColumns(), out.Columns)
+	return int(out.Inserted)
+}
+
 func naturalEarthGeometryTypesSchema(t *testing.T, geometryKind string) *arrow.Schema {
 	t.Helper()
 
@@ -239,48 +268,52 @@ func appendNaturalEarthGeometryTypesRow(t *testing.T, b *array.RecordBuilder, ro
 func appendNaturalEarthPointFields(t *testing.T, b *array.RecordBuilder, point xyPoint) {
 	t.Helper()
 
-	wkbPoint, err := wkb.Marshal(orb.Point{point.X, point.Y})
-	require.NoError(t, err)
+	pointWKB := wkbPoint(t, point)
 
-	appendPoint(recordFieldBuilder(t, b, "geom").(*array.StructBuilder), point)
-	recordFieldBuilder(t, b, "geom_wkb").(*array.BinaryBuilder).Append(wkbPoint)
-	recordFieldBuilder(t, b, "geom_hexwkb").(*array.StringBuilder).Append(strings.ToUpper(hex.EncodeToString(wkbPoint)))
+	appendPoint(recordFieldBuilder(t, b, "geom_point_native").(*array.StructBuilder), point)
+	recordFieldBuilder(t, b, "geom_point_wkb").(*array.BinaryBuilder).Append(pointWKB)
+	recordFieldBuilder(t, b, "geom_point_hexwkb").(*array.StringBuilder).Append(strings.ToUpper(hex.EncodeToString(pointWKB)))
 }
 
 func appendNaturalEarthLineFields(t *testing.T, b *array.RecordBuilder, line []xyPoint) {
 	t.Helper()
 
-	recordFieldBuilder(t, b, "geom_wkt").(*array.StringBuilder).Append(realWorldLineWKT(line))
-	appendPointList(recordFieldBuilder(t, b, "geom_line").(*array.ListBuilder), line)
+	recordFieldBuilder(t, b, "geom_line_wkt").(*array.StringBuilder).Append(realWorldLineWKT(line))
+	appendPointList(recordFieldBuilder(t, b, "geom_line_native").(*array.ListBuilder), line)
+	recordFieldBuilder(t, b, "geom_line_wkb").(*array.BinaryBuilder).Append(wkbLineString(t, line))
 }
 
 func appendNaturalEarthPolygonFields(t *testing.T, b *array.RecordBuilder, polygon [][]xyPoint) {
 	t.Helper()
 
 	geoJSON := realWorldPolygonGeoJSON(polygon)
-	recordFieldBuilder(t, b, "geom_geojson").(*array.StringBuilder).Append(geoJSON)
-	recordFieldBuilder(t, b, "geom_hugr_geojson").(*array.StringBuilder).Append(geoJSON)
-	recordFieldBuilder(t, b, "geom_plain_geojson").(*array.StringBuilder).Append(geoJSON)
-	appendGeoJSONPolygonStructFromRings(t, recordFieldBuilder(t, b, "geom_geojson_struct"), polygon)
+	recordFieldBuilder(t, b, "geom_polygon_geojson").(*array.StringBuilder).Append(geoJSON)
+	recordFieldBuilder(t, b, "geom_polygon_hugr_geojson").(*array.StringBuilder).Append(geoJSON)
+	recordFieldBuilder(t, b, "geom_polygon_plain_geojson").(*array.StringBuilder).Append(geoJSON)
+	appendGeoJSONPolygonStructFromRings(t, recordFieldBuilder(t, b, "geom_polygon_geojson_struct"), polygon)
 	appendPointListList(recordFieldBuilder(t, b, "geom_polygon_native").(*array.ListBuilder), polygon)
+	recordFieldBuilder(t, b, "geom_polygon_wkb").(*array.BinaryBuilder).Append(wkbPolygon(t, polygon))
 }
 
 func appendNaturalEarthMultiPointFields(t *testing.T, b *array.RecordBuilder, points []xyPoint) {
 	t.Helper()
 
-	appendPointList(recordFieldBuilder(t, b, "geom_multipoint").(*array.ListBuilder), points)
+	appendPointList(recordFieldBuilder(t, b, "geom_multipoint_native").(*array.ListBuilder), points)
+	recordFieldBuilder(t, b, "geom_multipoint_wkb").(*array.BinaryBuilder).Append(wkbMultiPoint(t, points))
 }
 
 func appendNaturalEarthMultiLineFields(t *testing.T, b *array.RecordBuilder, lines [][]xyPoint) {
 	t.Helper()
 
-	appendPointListList(recordFieldBuilder(t, b, "geom_multiline").(*array.ListBuilder), lines)
+	appendPointListList(recordFieldBuilder(t, b, "geom_multiline_native").(*array.ListBuilder), lines)
+	recordFieldBuilder(t, b, "geom_multiline_wkb").(*array.BinaryBuilder).Append(wkbMultiLineString(t, lines))
 }
 
 func appendNaturalEarthMultiPolygonFields(t *testing.T, b *array.RecordBuilder, polygons [][][]xyPoint) {
 	t.Helper()
 
-	appendPointListListList(recordFieldBuilder(t, b, "geom_multipolygon").(*array.ListBuilder), polygons)
+	appendPointListListList(recordFieldBuilder(t, b, "geom_multipolygon_native").(*array.ListBuilder), polygons)
+	recordFieldBuilder(t, b, "geom_multipolygon_wkb").(*array.BinaryBuilder).Append(wkbMultiPolygon(t, polygons))
 }
 
 func assertNaturalEarthGeometryCounts(t *testing.T, db *sql.DB, geometryKindCounts map[string]int) {

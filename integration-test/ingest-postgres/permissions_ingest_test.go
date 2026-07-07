@@ -67,7 +67,7 @@ func TestIngest_Postgres_PermissionDataGeometry(t *testing.T) {
 
 	role := "ingest_perm_geom_pg"
 	registerIngestPermissionRoleData(t, env.service, role, moduleMutationName(env.dsName), map[string]any{
-		"geom": "POINT (7.25 8.5)",
+		"geom_point_native": "POINT (7.25 8.5)",
 	})
 
 	now := arrow.Timestamp(time.Date(2026, 5, 21, 12, 0, 0, 0, time.UTC).UnixMicro())
@@ -89,9 +89,9 @@ func TestIngest_Postgres_PermissionDataGeometry(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	assert.Equal(t, int64(2), res.Inserted)
-	assert.NotContains(t, res.Columns, "geom", "geom must be injected by permissions, not sent in Arrow")
+	assert.NotContains(t, res.Columns, "geom_point_native", "geom_point_native must be injected by permissions, not sent in Arrow")
 
-	rows, err := env.pgConn.Query("SELECT name, ST_AsText(geom), ST_SRID(geom) FROM events ORDER BY name")
+	rows, err := env.pgConn.Query("SELECT name, ST_AsText(geom_point_native), ST_SRID(geom_point_native) FROM events ORDER BY name")
 	require.NoError(t, err)
 	defer rows.Close()
 
