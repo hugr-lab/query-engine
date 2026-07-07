@@ -247,6 +247,15 @@ func insertBeforeExec(e engines.Engine, m *sdl.Mutation, query *ast.Field, data 
 }
 
 func insertDataObjectNode(ctx context.Context, provider catalog.Provider, e engines.Engine, m *sdl.Mutation, data map[string]any, path string, sv seqValues, parentSeqVal map[string]string) (*QueryPlanNode, seqValues, error) {
+	// Enforce table-level (data-object) insert rules for THIS object before it
+	// is materialised. insertDataObjectNode recurses for every nested reference
+	// object, so each is enforced exactly once here — no separate traversal to
+	// drift out of sync (m2m junction rows are enforced at their insert site
+	// below).
+	if err := enforceDataObjectMutation(ctx, provider, m.ObjectDefinition, m.DataInputType(), perm.OpInsert, data); err != nil {
+		return nil, nil, err
+	}
+
 	refs := m.ReferencesFields()
 	m2mRefs := m.M2MReferencesFields()
 	// define queries nodes of that current query is depended (references data that should be inserted before)
@@ -428,6 +437,12 @@ func insertDataObjectNode(ctx context.Context, provider catalog.Provider, e engi
 			m2mInfo := sdl.DataObjectInfo(m2m)
 			if m2mInfo == nil {
 				return nil, nil, sdl.ErrorPosf(m.ObjectDefinition.Position, "object %s is not defined", ref.M2MName)
+			}
+			// the junction table is materialised here too and must honour a
+			// data-object:insert deny (its rows are the two foreign keys, so
+			// there is no client data to force-stamp)
+			if err := checkDataObjectInsertDisabled(ctx, m2mInfo.TypeName()); err != nil {
+				return nil, nil, err
 			}
 			m2mRef := m2mInfo.M2MReferencesQueryInfo(ctx, provider, ref.Name)
 			if m2mRef == nil {

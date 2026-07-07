@@ -370,25 +370,15 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 		nodes = append(nodes, paramNodes...)
 	}
 	if len(joinCatalogNodes) != 0 || len(joinGeneralNodes) != 0 {
-		// if there are joins, we push down only where, permission and vector search nodes
-		whereNode := paramNodes.ForName("where")
-		if whereNode != nil {
-			nodes = append(nodes, whereNode)
-		}
-		// the permission filter must reach the base query WHERE even when the
-		// query selects joined references — dropping it here disabled row-level
-		// security on any root query with relation sub-selections
-		permNode := paramNodes.ForName("permission_filter")
-		if permNode != nil {
-			nodes = append(nodes, permNode)
-		}
-		vectorSearchNode := paramNodes.ForName(vectorDistanceNodeName)
-		if vectorSearchNode != nil {
-			nodes = append(nodes, vectorSearchNode)
-		}
-		vectorLimitNode := paramNodes.ForName(vectorSearchLimitNodeName)
-		if vectorLimitNode != nil {
-			nodes = append(nodes, vectorLimitNode)
+		// When the query has joins, push down to the base query only the nodes
+		// that must constrain the base rows: the WHERE, the permission filter
+		// (omitting it dropped row-level security on any root query with
+		// relation sub-selections), and vector search. All must be looked up by
+		// their shared node-name constants so a rename can't silently drop one.
+		for _, name := range []string{"where", permissionFilterNodeName, vectorDistanceNodeName, vectorSearchLimitNodeName} {
+			if n := paramNodes.ForName(name); n != nil {
+				nodes = append(nodes, n)
+			}
 		}
 	}
 

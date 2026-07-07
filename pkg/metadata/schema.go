@@ -158,8 +158,10 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 					if _, ok := p.Visible(def.Name, f.Name); !ok {
 						continue
 					}
-					// hide fields returning a hidden data object (table-level rule)
-					if p.DataObjectHidden(f.Type.Name()) {
+					// hide fields returning a hidden data object (table-level rule);
+					// scalar return types can never name a data object, so skip
+					// the permission scan for them
+					if tn := f.Type.Name(); !sdl.IsScalarType(tn) && p.DataObjectHidden(tn) {
 						continue
 					}
 				}

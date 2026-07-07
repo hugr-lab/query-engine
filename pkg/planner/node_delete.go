@@ -88,7 +88,7 @@ func deleteRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 			if where != nil {
 				whereSQL += where.Result
 			}
-			pf := children.ForName("permission_filter")
+			pf := children.ForName(permissionFilterNodeName)
 			if pf != nil {
 				if whereSQL != "" {
 					whereSQL += " AND "

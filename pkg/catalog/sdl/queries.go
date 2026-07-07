@@ -305,6 +305,21 @@ func (m *Mutation) FieldDefinition(name string) *ast.FieldDefinition {
 	return m.ObjectDefinition.Fields.ForName(name)
 }
 
+// DataInputType returns the type of the mutation's "data" argument (the input
+// object carrying the row values). Nil for mutations without a data argument
+// (e.g. delete). Used to coerce permission force-stamp values to the object's
+// field types.
+func (m *Mutation) DataInputType() *ast.Type {
+	if m.query == nil {
+		return nil
+	}
+	arg := m.query.Arguments.ForName("data")
+	if arg == nil {
+		return nil
+	}
+	return arg.Type
+}
+
 func (m *Mutation) ReferencesFields() []string {
 	var out []string
 	if m.Type == MutationTypeDelete {

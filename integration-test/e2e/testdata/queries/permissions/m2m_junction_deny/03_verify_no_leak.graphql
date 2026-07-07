@@ -1,0 +1,12 @@
+# The denied mutation must not have written the product or the tag (the plan is
+# rejected before any statement runs).
+{
+  pg_store {
+    products(filter: { name: { eq: "M2M Bypass Product" } }) {
+      id
+    }
+    tags(filter: { name: { eq: "e2e-bypass-tag" } }) {
+      id
+    }
+  }
+}

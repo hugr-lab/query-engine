@@ -1,0 +1,17 @@
+# A nested m2m insert writes a junction (pg_store_product_tags) row as a side
+# effect. With data-object:insert disabled on the junction, the whole mutation
+# must be denied — the junction is materialised inside the insert walk, not on
+# a top-level field, so this only holds because the walk enforces the rule at
+# the junction's insert site (regression guard for the m2m bypass).
+mutation {
+  pg_store {
+    insert_products(data: {
+      name: "M2M Bypass Product"
+      price: 1.0
+      quantity: 1
+      product_tags: [{ name: "e2e-bypass-tag" }]
+    }) {
+      id
+    }
+  }
+}
