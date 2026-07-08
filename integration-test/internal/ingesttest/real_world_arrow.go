@@ -84,8 +84,11 @@ func realWorldGeometryColumnAppenders(t testing.TB, b *array.RecordBuilder, feat
 		point := PointFromGeometry(t, feature.Geometry)
 		pointWKB := WKBPoint(t, point)
 		return map[string]func(){
-			"geom_point_native": func() { AppendPoint(RecordFieldBuilder(t, b, "geom_point_native").(*array.StructBuilder), point) },
-			"geom_point_wkb":    func() { RecordFieldBuilder(t, b, "geom_point_wkb").(*array.BinaryBuilder).Append(pointWKB) },
+			"geom_point_native": func() {
+				builder := RecordFieldBuilder(t, b, "geom_point_native")
+				appendNativePoint(t, builder, nativeGeometryBuilderLayout(t, builder, 0), point)
+			},
+			"geom_point_wkb": func() { RecordFieldBuilder(t, b, "geom_point_wkb").(*array.BinaryBuilder).Append(pointWKB) },
 			"geom_point_hexwkb": func() {
 				RecordFieldBuilder(t, b, "geom_point_hexwkb").(*array.StringBuilder).Append(strings.ToUpper(hex.EncodeToString(pointWKB)))
 			},
@@ -97,8 +100,11 @@ func realWorldGeometryColumnAppenders(t testing.TB, b *array.RecordBuilder, feat
 			"geom_line_wkt": func() {
 				RecordFieldBuilder(t, b, "geom_line_wkt").(*array.StringBuilder).Append(RealWorldLineWKT(line))
 			},
-			"geom_line_native": func() { AppendPointList(RecordFieldBuilder(t, b, "geom_line_native").(*array.ListBuilder), line) },
-			"geom_line_wkb":    func() { RecordFieldBuilder(t, b, "geom_line_wkb").(*array.BinaryBuilder).Append(wkbLine) },
+			"geom_line_native": func() {
+				builder := RecordFieldBuilder(t, b, "geom_line_native")
+				appendNativePointList(t, builder, nativeGeometryBuilderLayout(t, builder, 1), line)
+			},
+			"geom_line_wkb": func() { RecordFieldBuilder(t, b, "geom_line_wkb").(*array.BinaryBuilder).Append(wkbLine) },
 		}
 	case "polygon":
 		polygon := PolygonFromGeometry(t, feature.Geometry)
@@ -112,7 +118,8 @@ func realWorldGeometryColumnAppenders(t testing.TB, b *array.RecordBuilder, feat
 				AppendGeoJSONPolygonStructFromRings(t, RecordFieldBuilder(t, b, "geom_polygon_geojson_struct"), polygon)
 			},
 			"geom_polygon_native": func() {
-				AppendPointListList(RecordFieldBuilder(t, b, "geom_polygon_native").(*array.ListBuilder), polygon)
+				builder := RecordFieldBuilder(t, b, "geom_polygon_native")
+				appendNativePointListList(t, builder, nativeGeometryBuilderLayout(t, builder, 2), polygon)
 			},
 			"geom_polygon_wkb": func() { RecordFieldBuilder(t, b, "geom_polygon_wkb").(*array.BinaryBuilder).Append(wkbPolygon) },
 		}
@@ -121,7 +128,8 @@ func realWorldGeometryColumnAppenders(t testing.TB, b *array.RecordBuilder, feat
 		wkbMultiPoint := WKBMultiPoint(t, points)
 		return map[string]func(){
 			"geom_multipoint_native": func() {
-				AppendPointList(RecordFieldBuilder(t, b, "geom_multipoint_native").(*array.ListBuilder), points)
+				builder := RecordFieldBuilder(t, b, "geom_multipoint_native")
+				appendNativePointList(t, builder, nativeGeometryBuilderLayout(t, builder, 1), points)
 			},
 			"geom_multipoint_wkb": func() { RecordFieldBuilder(t, b, "geom_multipoint_wkb").(*array.BinaryBuilder).Append(wkbMultiPoint) },
 		}
@@ -130,7 +138,8 @@ func realWorldGeometryColumnAppenders(t testing.TB, b *array.RecordBuilder, feat
 		wkbMultiLine := WKBMultiLineString(t, lines)
 		return map[string]func(){
 			"geom_multiline_native": func() {
-				AppendPointListList(RecordFieldBuilder(t, b, "geom_multiline_native").(*array.ListBuilder), lines)
+				builder := RecordFieldBuilder(t, b, "geom_multiline_native")
+				appendNativePointListList(t, builder, nativeGeometryBuilderLayout(t, builder, 2), lines)
 			},
 			"geom_multiline_wkb": func() { RecordFieldBuilder(t, b, "geom_multiline_wkb").(*array.BinaryBuilder).Append(wkbMultiLine) },
 		}
@@ -139,7 +148,8 @@ func realWorldGeometryColumnAppenders(t testing.TB, b *array.RecordBuilder, feat
 		wkbMultiPolygon := WKBMultiPolygon(t, polygons)
 		return map[string]func(){
 			"geom_multipolygon_native": func() {
-				AppendPointListListList(RecordFieldBuilder(t, b, "geom_multipolygon_native").(*array.ListBuilder), polygons)
+				builder := RecordFieldBuilder(t, b, "geom_multipolygon_native")
+				appendNativePointListListList(t, builder, nativeGeometryBuilderLayout(t, builder, 3), polygons)
 			},
 			"geom_multipolygon_wkb": func() {
 				RecordFieldBuilder(t, b, "geom_multipolygon_wkb").(*array.BinaryBuilder).Append(wkbMultiPolygon)

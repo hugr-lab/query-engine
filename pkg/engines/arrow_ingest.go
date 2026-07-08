@@ -147,7 +147,7 @@ func arrowIngestGeometryStagingExpr(arrowField arrow.Field, sourceExpr string) (
 func arrowIngestGeometryStagingExprFromExtension(ext string, arrowField arrow.Field, sourceExpr string) (string, error) {
 	switch ext {
 	case "":
-		return arrowIngestGeometryStagingExprFromPhysicalType(arrowField, sourceExpr)
+		return arrowIngestGeometryStagingExprFromType(arrowField, sourceExpr)
 	case "geoarrow.wkb":
 		return arrowIngestWKBGeometryStagingExpr(arrowField, sourceExpr)
 	case "hugr.hexwkb", "geoarrow.hexwkb", "hexwkb":
@@ -172,7 +172,7 @@ func arrowIngestWKBGeometryStagingExpr(arrowField arrow.Field, sourceExpr string
 		// LOAD spatial, RegisterView (duckdb arrow_scan) reads ARROW:extension:name
 		// = geoarrow.wkb and exposes the column as GEOMETRY (DuckDB
 		// ArrowGeometry::GetType / ArrowToDuck). Unannotated binary columns still
-		// need ST_GeomFromWKB in arrowIngestGeometryStagingExprFromPhysicalType.
+		// need ST_GeomFromWKB in arrowIngestGeometryStagingExprFromType.
 		return sourceExpr, nil
 	default:
 		return "", fmt.Errorf("arrow column %q with type %s cannot use geoarrow.wkb storage", arrowField.Name, arrowField.Type)
@@ -210,10 +210,10 @@ func arrowIngestGeoJSONGeometryStagingExpr(arrowField arrow.Field, sourceExpr st
 	}
 }
 
-// arrowIngestGeometryStagingExprFromPhysicalType is the best-effort path for
+// arrowIngestGeometryStagingExprFromType is the best-effort path for
 // unannotated Arrow columns. Without extension metadata we infer common
-// geometry encodings from physical Arrow storage.
-func arrowIngestGeometryStagingExprFromPhysicalType(arrowField arrow.Field, sourceExpr string) (string, error) {
+// geometry encodings from Arrow storage.
+func arrowIngestGeometryStagingExprFromType(arrowField arrow.Field, sourceExpr string) (string, error) {
 	switch arrowField.Type.ID() {
 	case arrow.BINARY, arrow.LARGE_BINARY, arrow.BINARY_VIEW, arrow.FIXED_SIZE_BINARY:
 		return "ST_GeomFromWKB(" + sourceExpr + ")", nil
