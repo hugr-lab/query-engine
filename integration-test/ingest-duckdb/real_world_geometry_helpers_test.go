@@ -133,12 +133,6 @@ func assertGeoJSONStructNullRows(t *testing.T, db *sql.DB, namePrefix, expectedW
 	}{wkt: compactWKT(expectedWKT)}, got[namePrefix+"-valid"])
 }
 
-func ingestNaturalEarthGeometryFeatures(t *testing.T, env *ingestEnv, features []realWorldFeature) int {
-	t.Helper()
-
-	return ingestRealWorldGeometryFeatures(t, env, "natural-earth", features)
-}
-
 func ingestRealWorldGeometryFeatures(t *testing.T, env *ingestEnv, rowPrefix string, features []realWorldFeature) int {
 	t.Helper()
 
@@ -176,13 +170,20 @@ func ingestRealWorldGeometryFeatures(t *testing.T, env *ingestEnv, rowPrefix str
 func ingestNaturalEarthGeometrySingleStream(t *testing.T, env *ingestEnv, features []realWorldFeature) int {
 	t.Helper()
 
-	return ingestRealWorldGeometrySingleStream(t, env, "natural-earth", features)
+	return ingestRealWorldGeometrySingleStream(t, env, "natural-earth", features, geometryArrowFields())
 }
 
-func ingestRealWorldGeometrySingleStream(t *testing.T, env *ingestEnv, rowPrefix string, features []realWorldFeature) int {
+func ingestNaturalEarthGeometryFixedSizeListSingleStream(t *testing.T, env *ingestEnv, features []realWorldFeature) int {
 	t.Helper()
 
-	rec, schema := ingesttest.MakeRealWorldGeometrySingleStreamRecord(t, rowPrefix, features, geometryArrowFields())
+	fields := ingesttest.WithFixedSizeListNativeGeometryFields(geometryArrowFields())
+	return ingestRealWorldGeometrySingleStream(t, env, "natural-earth", features, fields)
+}
+
+func ingestRealWorldGeometrySingleStream(t *testing.T, env *ingestEnv, rowPrefix string, features []realWorldFeature, geometryFields []arrow.Field) int {
+	t.Helper()
+
+	rec, schema := ingesttest.MakeRealWorldGeometrySingleStreamRecord(t, rowPrefix, features, geometryFields)
 	defer rec.Release()
 
 	var buf bytes.Buffer

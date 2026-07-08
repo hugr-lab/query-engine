@@ -10,8 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIngest_HTTP_NaturalEarthGeometry10kRecords_DuckDB validates the committed
-// real-world fixture before ingesting it.
+// TestIngest_HTTP_NaturalEarthGeometry10kRecordsFixedSizeList_DuckDB
+// validates the committed real-world fixture before ingesting it as one Arrow
+// stream whose native GeoArrow coordinates use FixedSizeList<Float64>[2].
 //
 // Human fixture check with jq:
 //
@@ -21,14 +22,14 @@ import (
 // This bulk test verifies that all 10k rows were inserted and that non-null
 // target column counts match fixture geometry kind counts. It also checks one real
 // geometry per kind with ST_Equals; row-by-row geometry value checks live in
-// TestIngest_HTTP_NaturalEarthGeometryValues_DuckDB below.
-func TestIngest_HTTP_NaturalEarthGeometry10kRecords_DuckDB(t *testing.T) {
+// TestIngest_HTTP_NaturalEarthGeometryFixedSizeList_DuckDB below.
+func TestIngest_HTTP_NaturalEarthGeometry10kRecordsFixedSizeList_DuckDB(t *testing.T) {
 	env := setupEnv(t)
 	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
 		"natural_earth_geometry.geojson",
 		naturalEarthGeometryExpectedCounts,
 	)
-	inserted := ingestNaturalEarthGeometryFeatures(t, env, features)
+	inserted := ingestNaturalEarthGeometryFixedSizeListSingleStream(t, env, features)
 	assert.Equal(t, len(features), inserted)
 
 	ro := env.openRO(t)
@@ -41,7 +42,7 @@ func TestIngest_HTTP_NaturalEarthGeometry10kRecords_DuckDB(t *testing.T) {
 	assertNaturalEarthGeometrySamples(t, ro, features)
 }
 
-func TestIngest_HTTP_NaturalEarthGeometry10kRecordsSingleStream_DuckDB(t *testing.T) {
+func TestIngest_HTTP_NaturalEarthGeometry10kRecordsStruct_DuckDB(t *testing.T) {
 	env := setupEnv(t)
 	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
 		"natural_earth_geometry.geojson",
@@ -60,13 +61,13 @@ func TestIngest_HTTP_NaturalEarthGeometry10kRecordsSingleStream_DuckDB(t *testin
 	assertNaturalEarthGeometrySamples(t, ro, features)
 }
 
-func TestIngest_HTTP_NaturalEarthGeometry_DuckDB(t *testing.T) {
+func TestIngest_HTTP_NaturalEarthGeometryFixedSizeList_DuckDB(t *testing.T) {
 	env := setupEnv(t)
 	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
 		"natural_earth_geometry_values.geojson",
 		naturalEarthGeometryValuesExpectedCounts,
 	)
-	inserted := ingestNaturalEarthGeometryFeatures(t, env, features)
+	inserted := ingestNaturalEarthGeometryFixedSizeListSingleStream(t, env, features)
 	assert.Equal(t, len(features), inserted)
 
 	ro := env.openRO(t)
@@ -79,7 +80,7 @@ func TestIngest_HTTP_NaturalEarthGeometry_DuckDB(t *testing.T) {
 	assertNaturalEarthGeometryValues(t, ro, features)
 }
 
-func TestIngest_HTTP_NaturalEarthGeometrySingleStream_DuckDB(t *testing.T) {
+func TestIngest_HTTP_NaturalEarthGeometryStruct_DuckDB(t *testing.T) {
 	env := setupEnv(t)
 	features, geometryKindCounts := loadNaturalEarthGeometryFeatures(t,
 		"natural_earth_geometry_values.geojson",
