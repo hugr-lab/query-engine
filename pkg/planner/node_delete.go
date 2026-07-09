@@ -10,6 +10,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -65,7 +66,7 @@ func deleteRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 		nodes = append(nodes, whereNode)
 	}
 
-	pf, err := permissionFilterNode(ctx, provider, info, query, "_object", false)
+	pf, err := permissionFilterNode(ctx, provider, info, query, "_object", false, perm.OpDelete)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +88,7 @@ func deleteRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 			if where != nil {
 				whereSQL += where.Result
 			}
-			pf := children.ForName("permission_filter")
+			pf := children.ForName(permissionFilterNodeName)
 			if pf != nil {
 				if whereSQL != "" {
 					whereSQL += " AND "

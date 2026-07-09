@@ -1,0 +1,13 @@
+mutation {
+  core {
+    insert_roles(data: {
+      name: "e2e_cache_user"
+      description: "E2E per-user cache role"
+      permissions: [
+        { type_name: "data-object:query", field_name: "pg_store_products", filter: { category_id: { eq: "[$auth.user_id_int]" } } }
+      ]
+    }) {
+      name
+    }
+  }
+}

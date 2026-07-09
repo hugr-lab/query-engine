@@ -2,6 +2,7 @@ package perm
 
 import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/validator"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -12,6 +13,9 @@ import (
 type PermissionFieldRule struct{}
 
 func (r *PermissionFieldRule) EnterField(ctx *validator.WalkContext, parentDef *ast.Definition, field *ast.Field) gqlerror.List {
+	if auth.IsFullAccess(ctx.Context) {
+		return nil
+	}
 	checker := PermissionsFromCtx(ctx.Context)
 	if checker == nil || parentDef == nil {
 		return nil
@@ -19,6 +23,16 @@ func (r *PermissionFieldRule) EnterField(ctx *validator.WalkContext, parentDef *
 	_, ok := checker.Enabled(parentDef.Name, field.Name)
 	if !ok {
 		return gqlerror.List{gqlerror.WrapIfUnwrapped(auth.ErrForbidden)}
+	}
+	// Deny fields returning a disabled data object (table-level rule). This is
+	// a fast-path for plain fields; aggregation and mutation paths are enforced
+	// in the planner, where the target object is resolved. Scalar return types
+	// can never name a data object, so skip the permission scan for them (most
+	// selected fields are scalars).
+	if field.Definition != nil {
+		if rt := field.Definition.Type.Name(); !sdl.IsScalarType(rt) && checker.DataObjectDisabled(rt, OpQuery) {
+			return gqlerror.List{gqlerror.WrapIfUnwrapped(auth.ErrForbidden)}
+		}
 	}
 	return nil
 }

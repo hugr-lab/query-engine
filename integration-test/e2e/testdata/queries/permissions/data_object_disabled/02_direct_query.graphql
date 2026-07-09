@@ -1,0 +1,8 @@
+# A disabled data-object:query row denies the table on the direct path.
+{
+  pg_store {
+    products {
+      id
+    }
+  }
+}

@@ -74,6 +74,7 @@ func (s *Service) ipcStreamHandler(w http.ResponseWriter, r *http.Request) {
 		writeCh: make(chan wsMsg, 256),
 	}
 	ctx, cancel := context.WithCancel(r.Context())
+	stream.connCtx = ctx
 	stream.connCancel = cancel
 	go stream.writer(ctx)
 	if s.config.Debug {
@@ -470,6 +471,7 @@ type wsMsg struct {
 type stream struct {
 	queryId    string
 	conn       *websocket.Conn
+	connCtx    context.Context // connection lifetime; writeCh senders block on this
 	connCancel context.CancelFunc
 	writeCh    chan wsMsg // Single writer goroutine reads from here
 
@@ -536,20 +538,35 @@ func (s *stream) writeJSON(msg any) error {
 	if err != nil {
 		return fmt.Errorf("stream %s: marshal error: %w", s.queryId, err)
 	}
+	// Block until the writer drains a slot (apply backpressure) rather than
+	// dropping the message; bail out if the connection is closing so we never
+	// deadlock once the writer goroutine has stopped.
 	select {
 	case s.writeCh <- wsMsg{msgType: websocket.MessageText, data: data}:
 		return nil
-	default:
-		return fmt.Errorf("stream %s: write channel full", s.queryId)
+	case <-s.connCtx.Done():
+		return fmt.Errorf("stream %s: connection closed: %w", s.queryId, s.connCtx.Err())
 	}
 }
 
 // writeMessage sends a raw message through the write channel.
 func (s *stream) writeMessage(msgType websocket.MessageType, data []byte) error {
+	// Copy before queuing: the binary Arrow path passes buf.Bytes() from a
+	// sync.Pool buffer that the caller Reset()s and returns to the pool the
+	// instant this returns. The writer goroutine drains writeCh asynchronously,
+	// so without a copy the pooled buffer is overwritten by the next frame
+	// before it is sent — corrupting / duplicating stream tokens (garbled or
+	// doubled LLM output over the wire). writeJSON queues a fresh json.Marshal
+	// slice directly and is unaffected.
+	cp := make([]byte, len(data))
+	copy(cp, data)
+	// Block until the writer drains a slot (apply backpressure) rather than
+	// dropping the Arrow frame; bail out if the connection is closing so we
+	// never deadlock once the writer goroutine has stopped.
 	select {
-	case s.writeCh <- wsMsg{msgType: msgType, data: data}:
+	case s.writeCh <- wsMsg{msgType: msgType, data: cp}:
 		return nil
-	default:
-		return fmt.Errorf("stream %s: write channel full", s.queryId)
+	case <-s.connCtx.Done():
+		return fmt.Errorf("stream %s: connection closed: %w", s.queryId, s.connCtx.Err())
 	}
 }

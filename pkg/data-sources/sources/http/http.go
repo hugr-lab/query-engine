@@ -227,7 +227,10 @@ func valueToRequestParamValue(v any) (res []string, err error) {
 		}
 		return []string{string(b)}, nil
 	case time.Time:
-		return []string{v.Format(time.RFC3339)}, nil
+		// RFC3339Nano, not RFC3339: the latter drops fractional seconds, so a
+		// timestamp filter/argument passed to an HTTP source lost sub-second
+		// precision.
+		return []string{v.Format(time.RFC3339Nano)}, nil
 	case []any:
 		return arrayValueToRequestParamValue(v)
 	case []string:

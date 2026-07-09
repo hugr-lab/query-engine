@@ -30,9 +30,14 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 				return err
 			}
 		}
-		// Validate @view + @args consistency
-		if def.Directives.ForName(base.ObjectViewDirectiveName) != nil && def.Directives.ForName(base.ViewArgsDirectiveName) != nil {
-			if err := validateViewArgs(ctx, def); err != nil {
+		// Validate @view SQL: @args consistency when the view declares @args,
+		// otherwise the context placeholders embedded in an argless @view(sql:).
+		if def.Directives.ForName(base.ObjectViewDirectiveName) != nil {
+			if def.Directives.ForName(base.ViewArgsDirectiveName) != nil {
+				if err := validateViewArgs(ctx, def); err != nil {
+					return err
+				}
+			} else if err := validateArglessViewSQL(def); err != nil {
 				return err
 			}
 		}
@@ -48,6 +53,12 @@ func (r *DefinitionValidator) ProcessAll(ctx base.CompilationContext) error {
 		for ext := range extSrc.Extensions(ctx.Context()) {
 			if ext.Name == "Function" || ext.Name == "MutationFunction" {
 				if err := validateFunctionSQL(ext); err != nil {
+					return err
+				}
+			}
+			if ext.Directives.ForName(base.ObjectViewDirectiveName) != nil &&
+				ext.Directives.ForName(base.ViewArgsDirectiveName) == nil {
+				if err := validateArglessViewSQL(ext); err != nil {
 					return err
 				}
 			}
@@ -451,12 +462,71 @@ func validateFunctionSQL(def *ast.Definition) error {
 	return nil
 }
 
+// validateArglessViewSQL validates the placeholder references in a @view(sql:)
+// template that has no @args. Only [$catalog] and the whitelisted [$auth.*]
+// context placeholders may appear — anything else (a custom token claim, a
+// typo) would survive to runtime as an unresolved [$...] token and be mangled
+// by Object.SQL() into invalid SQL, so it is rejected at compile time with a
+// clear message. (Views with @args are validated by validateViewArgs, which
+// additionally allows the view's own argument fields.)
+//
+// [$...] tokens inside SQL string literals are ignored — they are text, not
+// placeholders.
+func validateArglessViewSQL(def *ast.Definition) error {
+	viewDir := def.Directives.ForName(base.ObjectViewDirectiveName)
+	sql := base.DirectiveArgString(viewDir, base.ArgSQL)
+	if sql == "" {
+		return nil
+	}
+	for _, ref := range extractFieldsFromSQL(stripSQLStringLiterals(sql)) {
+		if !strings.HasPrefix(ref, "$") {
+			// No $ prefix → database table/column reference (e.g. [sales]).
+			continue
+		}
+		if ref == base.CatalogSystemVariableName {
+			continue
+		}
+		if sdl.IsKnownPlaceholder("[" + ref + "]") {
+			continue
+		}
+		return gqlerror.ErrorPosf(viewDir.Position,
+			"@view on %q: sql references unknown placeholder \"[%s]\"; an argless view may only use [$catalog] and the built-in [$auth.*] placeholders", def.Name, ref)
+	}
+	return nil
+}
+
+// stripSQLStringLiterals blanks the contents of single-quoted SQL string
+// literals (handling ” escapes) so that bracketed [$...] tokens appearing
+// inside text are not mistaken for placeholders. Structure outside the literals
+// is preserved.
+func stripSQLStringLiterals(sql string) string {
+	var b strings.Builder
+	b.Grow(len(sql))
+	inStr := false
+	for i := 0; i < len(sql); i++ {
+		c := sql[i]
+		if c == '\'' {
+			if inStr && i+1 < len(sql) && sql[i+1] == '\'' {
+				i++ // escaped quote inside a literal — stay inside
+				continue
+			}
+			inStr = !inStr
+			b.WriteByte(c)
+			continue
+		}
+		if !inStr {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
+}
+
 // validateViewArgs validates @view + @args consistency:
-// - The @args input type must exist and be INPUT_OBJECT
-// - If @view has sql: argument, [$paramName] references must be either
-//   args input fields, known context placeholders ([$auth.*]), or [$catalog].
-//   Non-$-prefixed references like [table_name] are database table/view names
-//   resolved at runtime by Object.SQL() and are not validated here.
+//   - The @args input type must exist and be INPUT_OBJECT
+//   - If @view has sql: argument, [$paramName] references must be either
+//     args input fields, known context placeholders ([$auth.*]), or [$catalog].
+//     Non-$-prefixed references like [table_name] are database table/view names
+//     resolved at runtime by Object.SQL() and are not validated here.
 func validateViewArgs(ctx base.CompilationContext, def *ast.Definition) error {
 	argsDir := def.Directives.ForName(base.ViewArgsDirectiveName)
 	argInputName := base.DirectiveArgString(argsDir, base.ArgName)

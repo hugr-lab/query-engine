@@ -165,7 +165,7 @@ func selectStatementNode(query *ast.Field, nodes QueryPlanNodes, alias string, a
 				sql += " " + joins.Result
 			}
 			where := children.ForName("where")
-			perm := children.ForName("permission_filter")
+			perm := children.ForName(permissionFilterNodeName)
 			whereSQL := ""
 			if where != nil {
 				whereSQL = where.Result

@@ -1,0 +1,13 @@
+mutation {
+  core {
+    insert_roles(data: {
+      name: "e2e_perm_denied"
+      description: "E2E data-object disabled role"
+      permissions: [
+        { type_name: "data-object:query", field_name: "pg_store_products", disabled: true }
+      ]
+    }) {
+      name
+    }
+  }
+}

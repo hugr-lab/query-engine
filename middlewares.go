@@ -90,6 +90,15 @@ func (s *Service) checkEndpointPermissionsMW(next http.Handler) http.Handler {
 		}
 		perm := perm.PermissionsFromCtx(ctx)
 		if perm == nil {
+			// Currently unreachable: ContextWithPermissions above stores a
+			// non-nil *RolePermissions on success (and returns 403 when the
+			// request has no identity), and this middleware is only installed
+			// when perm enforcement is enabled. This middleware is the single
+			// source of permissions for the endpoint handlers (queryIPC,
+			// queryHandler no longer reload them), so if a future nil-perms
+			// path ever makes this branch reachable, the request would run with
+			// no permission checker — i.e. open access. Prefer failing closed
+			// (403) here if such a path is ever introduced.
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}

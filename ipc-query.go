@@ -60,12 +60,11 @@ func (s *Service) ipcMultiPartHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) queryIPC(ctx context.Context, mw *multipart.Writer, req types.Request) error {
-	// add permissions to context
-	ctx, err := s.perm.ContextWithPermissions(ctx)
-	if err != nil {
-		return err
-	}
-
+	// Permissions are already loaded into ctx by checkEndpointPermissionsMW
+	// (for the request's identity, including header-based impersonation), so we
+	// do not reload them here. The streaming path differs: it applies
+	// message-level impersonation and reloads permissions in
+	// applyMessageImpersonation.
 	op, err := s.schema.ParseQuery(ctx, req.Query, req.Variables, req.OperationName)
 	if err != nil {
 		if errs, ok := err.(gqlerror.List); ok {

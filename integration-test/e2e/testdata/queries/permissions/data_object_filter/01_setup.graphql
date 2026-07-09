@@ -1,0 +1,14 @@
+mutation {
+  core {
+    insert_roles(data: {
+      name: "e2e_perm_scoped"
+      description: "E2E data-object scoped role"
+      permissions: [
+        { type_name: "data-object:query", field_name: "pg_store_products", filter: { id: { in: [1, 2] } } }
+        { type_name: "data-object:query", field_name: "pg_store_categories", filter: { id: { eq: 2 } } }
+      ]
+    }) {
+      name
+    }
+  }
+}

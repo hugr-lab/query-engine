@@ -1,0 +1,18 @@
+# data-object:insert data must overwrite (force-stamp) the client-submitted
+# value — description becomes the impersonated user id, not "spoofed".
+mutation {
+  pg_store {
+    insert_products(data: {
+      name: "E2E Perm Product"
+      price: 9.99
+      quantity: 3
+      is_active: false
+      description: "spoofed"
+      category_id: 3
+    }) {
+      name
+      quantity
+      description
+    }
+  }
+}

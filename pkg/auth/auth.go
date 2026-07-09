@@ -50,6 +50,14 @@ var ErrForbidden = errors.New("forbidden")
 var ErrTokenExpired = errors.New("token expired")
 var ErrNeedAuth = errors.New("authentication required")
 
+// ErrInvalidKeyType is returned by a provider when a token is present but is not
+// verifiable with that provider's key (wrong signing algorithm/key) — i.e. it was
+// most likely issued for a different provider. The middleware treats it as a
+// signal to try the next provider. Unlike ErrSkipAuth (no token at all), it also
+// records that a token was rejected, so a failed authentication attempt is not
+// silently downgraded to anonymous access.
+var ErrInvalidKeyType = errors.New("invalid key type")
+
 // applyImpersonationHeaders checks for x-hugr-impersonated-* headers on the request.
 // If present, wraps the original AuthInfo as ImpersonatedBy and sets the target identity.
 func applyImpersonationHeaders(r *http.Request, original *AuthInfo) *AuthInfo {
@@ -75,10 +83,27 @@ func AuthMiddleware(c Config) func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var err error
 			var authInfo *AuthInfo
+			var anonProvider AuthProvider // anonymous fallback is always evaluated last
+			tokenRejected := false        // a token was presented but no provider could verify it
 			for _, p := range c.Providers {
+				// Defer the anonymous provider to the end so real providers
+				// always get a chance first, regardless of config order.
+				if _, ok := p.(*AnonymousProvider); ok {
+					if anonProvider == nil {
+						anonProvider = p // keep the first anonymous provider (config order)
+					}
+					continue
+				}
 				authInfo, err = p.Authenticate(r)
 				if errors.Is(err, ErrSkipAuth) {
 					// Skip authentication for this provider
+					continue
+				}
+				if errors.Is(err, ErrInvalidKeyType) {
+					// Token present but not signed for this provider — try the
+					// next one, but remember it so a rejected token is never
+					// downgraded to anonymous access.
+					tokenRejected = true
 					continue
 				}
 				if errors.Is(err, ErrTokenExpired) {
@@ -86,6 +111,7 @@ func AuthMiddleware(c Config) func(next http.Handler) http.Handler {
 					return
 				}
 				if errors.Is(err, ErrNeedAuth) {
+					tokenRejected = true
 					break
 				}
 				if err != nil {
@@ -95,6 +121,11 @@ func AuthMiddleware(c Config) func(next http.Handler) http.Handler {
 				if authInfo != nil {
 					break
 				}
+			}
+			// Anonymous fallback — evaluated last, and only when no token was
+			// rejected (a present-but-invalid token must not become anonymous).
+			if authInfo == nil && !tokenRejected && anonProvider != nil {
+				authInfo, err = anonProvider.Authenticate(r)
 			}
 			if err == nil && authInfo != nil {
 				// Check for explicit impersonation headers

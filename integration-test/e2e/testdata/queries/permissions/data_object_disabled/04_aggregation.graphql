@@ -1,0 +1,9 @@
+# The aggregation field returns a different GraphQL type, so this exercises
+# the planner-level deny (the resolved target object), not the validator.
+{
+  pg_store {
+    products_aggregation {
+      _rows_count
+    }
+  }
+}

@@ -1,0 +1,14 @@
+# User A (user_id=2). The @cache'd query is byte-identical to user B's step,
+# so under the old role-only cache key both would share one entry. The role's
+# data-object filter scopes products to category_id = [$auth.user_id_int], so
+# A must see only category-2 products — and B (next step) must NOT get A's
+# cached rows.
+{
+  pg_store {
+    products(order_by: [{ field: "id", direction: ASC }]) @cache(ttl: "300s") {
+      id
+      name
+      category_id
+    }
+  }
+}

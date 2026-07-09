@@ -75,6 +75,11 @@ func (c *AuthConfig) Configure() (*auth.Config, error) {
 		)
 	}
 
+	// Enable the managed (core-DB) API-key provider — the middleware adds it
+	// based on this flag. Without this the ALLOWED_DB_API_KEYS flag was read
+	// but never reached auth.Config, so managed keys never authenticated.
+	config.DBApiKeysEnabled = c.AllowedDBKeys
+
 	if len(config.Providers) == 0 {
 		return nil, nil
 	}

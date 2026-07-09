@@ -1,0 +1,9 @@
+{
+  "data": {
+    "pg_store": {
+      "update_products": {
+        "success": true
+      }
+    }
+  }
+}

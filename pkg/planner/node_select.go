@@ -296,7 +296,10 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 	if err != nil {
 		return nil, false, err
 	}
-	if info.HasArguments() {
+	// Resolve arguments for views with @args, and also for argless views whose
+	// @view(sql:) template embeds a context placeholder ([$auth.*]) — those still
+	// need substitution even though there is no argument input.
+	if info.HasArguments() || info.SQLHasContextPlaceholder() {
 		arg := queryArg.ForName("args")
 		var am map[string]any
 		if arg != nil {
@@ -358,7 +361,7 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 		}
 	}
 
-	pn, err := permissionFilterNode(ctx, defs, info, query, "_objects", false)
+	pn, err := permissionFilterNode(ctx, defs, info, query, "_objects", false, perm.OpQuery)
 	if err != nil {
 		return nil, false, err
 	}
@@ -370,18 +373,15 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 		nodes = append(nodes, paramNodes...)
 	}
 	if len(joinCatalogNodes) != 0 || len(joinGeneralNodes) != 0 {
-		// if there are joins, we push down only where and vector search nodes
-		whereNode := paramNodes.ForName("where")
-		if whereNode != nil {
-			nodes = append(nodes, whereNode)
-		}
-		vectorSearchNode := paramNodes.ForName(vectorDistanceNodeName)
-		if vectorSearchNode != nil {
-			nodes = append(nodes, vectorSearchNode)
-		}
-		vectorLimitNode := paramNodes.ForName(vectorSearchLimitNodeName)
-		if vectorLimitNode != nil {
-			nodes = append(nodes, vectorLimitNode)
+		// When the query has joins, push down to the base query only the nodes
+		// that must constrain the base rows: the WHERE, the permission filter
+		// (omitting it dropped row-level security on any root query with
+		// relation sub-selections), and vector search. All must be looked up by
+		// their shared node-name constants so a rename can't silently drop one.
+		for _, name := range []string{"where", permissionFilterNodeName, vectorDistanceNodeName, vectorSearchLimitNodeName} {
+			if n := paramNodes.ForName(name); n != nil {
+				nodes = append(nodes, n)
+			}
 		}
 	}
 

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -17,8 +18,11 @@ import (
 )
 
 type JwtConfig struct {
-	Issuer    string `json:"issuer" yaml:"issuer"`
-	PublicKey []byte `json:"public_key" yaml:"public-key"`
+	Issuer string `json:"issuer" yaml:"issuer"`
+	// PublicKey is the PEM-encoded public key. It is a string (not []byte) so
+	// it parses from a plain multi-line scalar in YAML/JSON configs; []byte
+	// would require YAML !!binary / JSON base64 encoding.
+	PublicKey string `json:"public_key" yaml:"public-key"`
 
 	CookieName string `json:"cookie_name" yaml:"cookie-name"`
 
@@ -56,7 +60,7 @@ func NewJwt(config *JwtConfig) (*JwtProvider, error) {
 		Issuer: config.Issuer,
 	}
 
-	pubKey, err := parsePublicKey(config.PublicKey)
+	pubKey, err := parsePublicKey([]byte(config.PublicKey))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse public key: %w", err)
 	}
@@ -88,6 +92,19 @@ func (p *JwtProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 	}, request.WithClaims(&claims))
 	if errors.Is(err, request.ErrNoTokenInRequest) {
 		return nil, ErrSkipAuth
+	}
+	if errors.Is(err, jwt.ErrTokenSignatureInvalid) || errors.Is(err, jwt.ErrInvalidKeyType) {
+		// The token is present but not verifiable with this provider's key
+		// (wrong signing algorithm or key) — most likely issued for a different
+		// provider. Let the middleware try the next provider instead of failing.
+		// (Signature is checked before claims, so a foreign token surfaces here
+		// even if it is also expired.)
+		return nil, ErrInvalidKeyType
+	}
+	if errors.Is(err, jwt.ErrTokenExpired) {
+		// Validly-signed but expired token — it belongs to this provider, so
+		// surface a clear "token expired" 401 instead of a generic parse error.
+		return nil, ErrTokenExpired
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %w", err)
@@ -125,6 +142,7 @@ func (p *JwtProvider) Authenticate(r *http.Request) (*AuthInfo, error) {
 		AuthType:     "jwt",
 		AuthProvider: p.c.Issuer,
 		Token:        t.Raw,
+		Claims:       ScalarClaims(claims),
 	}, nil
 }
 
@@ -139,6 +157,24 @@ func (c CookieExtractor) ExtractToken(r *http.Request) (string, error) {
 }
 
 func parsePublicKey(key []byte) (interface{}, error) {
+	pub, err := parsePublicKeyRaw(key)
+	if err == nil {
+		return pub, nil
+	}
+	// Fallback: the key may have been delivered base64-encoded rather than as a
+	// raw PEM/SSH string. This is common in cluster deployments where the config
+	// is serialized between nodes or sourced from a Kubernetes secret / env var.
+	// Decode base64 and retry the raw parse on the decoded bytes (which may be
+	// PEM or an SSH authorized key).
+	if decoded, ok := decodeBase64(key); ok {
+		if pub, err2 := parsePublicKeyRaw(decoded); err2 == nil {
+			return pub, nil
+		}
+	}
+	return nil, err
+}
+
+func parsePublicKeyRaw(key []byte) (interface{}, error) {
 	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(key)
 	if err == nil {
 		parsedKey, ok := pubKey.(ssh.CryptoPublicKey)
@@ -163,6 +199,20 @@ func parsePublicKey(key []byte) (interface{}, error) {
 		return pubKey, nil
 	}
 	return x509.ParsePKCS1PublicKey(block.Bytes)
+}
+
+// decodeBase64 attempts to base64-decode key (tolerating surrounding whitespace
+// and both padded and unpadded encodings). It reports ok=false when the input is
+// not base64 — a raw PEM or SSH key contains '-'/spaces/newlines that are not in
+// the base64 alphabet, so it is left untouched for the caller to parse directly.
+func decodeBase64(key []byte) ([]byte, bool) {
+	s := strings.TrimSpace(string(key))
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
+		if decoded, err := enc.DecodeString(s); err == nil {
+			return decoded, true
+		}
+	}
+	return nil, false
 }
 
 func ParsePrivateKey(key []byte) (interface{}, error) {

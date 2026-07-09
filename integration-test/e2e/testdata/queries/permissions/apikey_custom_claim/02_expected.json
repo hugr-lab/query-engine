@@ -1,0 +1,13 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "description": "High-performance laptop",
+          "id": 1,
+          "name": "Laptop Pro"
+        }
+      ]
+    }
+  }
+}

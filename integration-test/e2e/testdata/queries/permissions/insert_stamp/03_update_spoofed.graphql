@@ -1,0 +1,11 @@
+# data-object:update data must overwrite the client value on updates too.
+mutation {
+  pg_store {
+    update_products(
+      filter: { name: { eq: "E2E Perm Product" } }
+      data: { quantity: 4, description: "spoofed-again" }
+    ) {
+      success
+    }
+  }
+}

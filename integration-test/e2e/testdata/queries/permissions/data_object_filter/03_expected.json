@@ -1,0 +1,19 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "category": {
+            "id": 2,
+            "name": "Computers"
+          },
+          "id": 1
+        },
+        {
+          "category": null,
+          "id": 2
+        }
+      ]
+    }
+  }
+}

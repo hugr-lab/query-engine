@@ -86,10 +86,8 @@ func (r *RolePermissions) FilterArgument(ctx context.Context, object, field stri
 	if r.Disabled {
 		return nil
 	}
-	for _, p := range r.Permissions {
-		if p.Object == object && p.Field == field {
-			return applyContextVariable(ctx, p.Filter, nil)
-		}
+	if p := r.bestMatch(object, field); p != nil {
+		return applyContextVariable(ctx, p.Filter, nil)
 	}
 	return nil
 }
@@ -98,38 +96,67 @@ func (r *RolePermissions) DataArgument(ctx context.Context, object, field string
 	if r.Disabled {
 		return nil
 	}
-	for _, p := range r.Permissions {
-		if p.Object == object && p.Field == field {
-			return applyContextVariable(ctx, p.Data, nil)
-		}
+	if p := r.bestMatch(object, field); p != nil {
+		return applyContextVariable(ctx, p.Data, nil)
 	}
 	return nil
+}
+
+// matchRank reports the specificity with which the permission row matches
+// (object, field): 3 = exact (object, field), 2 = (object, *),
+// 1 = (*, field), 0 = (*, *), -1 = no match.
+func (p *Permission) matchRank(object, field string) int {
+	switch {
+	case p.Object == object && p.Field == field:
+		return 3
+	case p.Object == object && p.Field == "*":
+		return 2
+	case p.Object == "*" && p.Field == field:
+		return 1
+	case p.Object == "*" && p.Field == "*":
+		return 0
+	}
+	return -1
+}
+
+// bestMatch returns the most specific permission row matching (object, field):
+// exact (object, field) > (object, *) > (*, field) > (*, *). Rows of equal
+// rank keep the first one in the role's permission list. The winning row
+// decides all of its attributes (disabled/hidden/filter/data) — lower-ranked
+// rows are not consulted.
+func (r *RolePermissions) bestMatch(object, field string) *Permission {
+	best := -1
+	var match *Permission
+	for i := range r.Permissions {
+		rank := r.Permissions[i].matchRank(object, field)
+		if rank > best {
+			best = rank
+			match = &r.Permissions[i]
+		}
+	}
+	return match
 }
 
 func (r *RolePermissions) checkObjectField(object, field string, toVisible bool) (*Permission, bool) {
 	if r.Disabled {
 		return nil, false
 	}
-	allObjects := true
-	allFields := true
-	for _, p := range r.Permissions {
-		out := p.Disabled
-		if toVisible {
-			out = p.Hidden
-		}
-		switch {
-		case p.Object == "*" && p.Field == "*":
-			allObjects = !out
-			allFields = !out
-		case p.Object == "*" && p.Field == field:
-			allFields = !out
-		case p.Object == object && p.Field == field:
-			return &p, !out
-		}
+	p := r.bestMatch(object, field)
+	if p == nil {
+		// open by default: without a matching row access is allowed
+		return nil, true
 	}
-	return nil, allFields && allObjects
+	if toVisible {
+		return p, !p.Hidden
+	}
+	return p, !p.Disabled
 }
 
+// applyContextVariable rebuilds data with `[$auth.*]` placeholder strings
+// substituted from vars (AuthVars when nil). Every other leaf — literal
+// strings, booleans, numbers, nulls, arrays — is preserved as-is, so the
+// output is identical to the input except for substituted placeholders.
+// The input is never mutated.
 func applyContextVariable(ctx context.Context, data map[string]any, vars map[string]any) map[string]any {
 	if len(data) == 0 {
 		return nil
@@ -142,29 +169,30 @@ func applyContextVariable(ctx context.Context, data map[string]any, vars map[str
 	}
 	res := make(map[string]any, len(data))
 	for k, v := range data {
-		switch v := v.(type) {
-		case map[string]any:
-			res[k] = applyContextVariable(ctx, v, vars)
-		case []any:
-			for i, vv := range v {
-				switch vv := vv.(type) {
-				case map[string]any:
-					v[i] = applyContextVariable(ctx, vv, vars)
-				}
-			}
-			res[k] = v
-		case string:
-			if val, ok := vars[v]; ok {
-				res[k] = val
-				continue
-			}
-			res[k] = v
-		default:
-			res[k] = v
-		}
+		res[k] = applyContextVariableValue(ctx, v, vars)
 	}
 
 	return res
+}
+
+func applyContextVariableValue(ctx context.Context, v any, vars map[string]any) any {
+	switch v := v.(type) {
+	case map[string]any:
+		return applyContextVariable(ctx, v, vars)
+	case []any:
+		res := make([]any, len(v))
+		for i, vv := range v {
+			res[i] = applyContextVariableValue(ctx, vv, vars)
+		}
+		return res
+	case string:
+		if val, ok := vars[v]; ok {
+			return val
+		}
+		return v
+	default:
+		return v
+	}
 }
 
 func AuthVars(ctx context.Context) map[string]any {
@@ -175,14 +203,19 @@ func AuthVars(ctx context.Context) map[string]any {
 
 	userIdInt, _ := strconv.Atoi(ai.UserId)
 
-	vars := map[string]any{
-		"[$auth.user_name]":   ai.UserName,
-		"[$auth.user_id]":     ai.UserId,
-		"[$auth.user_id_int]": userIdInt,
-		"[$auth.role]":        ai.Role,
-		"[$auth.auth_type]":   ai.AuthType,
-		"[$auth.provider]":    ai.AuthProvider,
+	vars := make(map[string]any, len(ai.Claims)+9)
+	// Custom token claims first, so the built-in placeholders below always win
+	// on a name collision (a token claim named "role" cannot shadow the
+	// resolved role).
+	for k, v := range ai.Claims {
+		vars["[$auth."+k+"]"] = v
 	}
+	vars["[$auth.user_name]"] = ai.UserName
+	vars["[$auth.user_id]"] = ai.UserId
+	vars["[$auth.user_id_int]"] = userIdInt
+	vars["[$auth.role]"] = ai.Role
+	vars["[$auth.auth_type]"] = ai.AuthType
+	vars["[$auth.provider]"] = ai.AuthProvider
 	if ai.ImpersonatedBy != nil {
 		vars["[$auth.impersonated_by_role]"] = ai.ImpersonatedBy.Role
 		vars["[$auth.impersonated_by_user_id]"] = ai.ImpersonatedBy.UserId

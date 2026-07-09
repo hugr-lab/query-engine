@@ -1,0 +1,14 @@
+mutation {
+  core {
+    insert_roles(data: {
+      name: "e2e_perm_writer"
+      description: "E2E data-object force-stamp role"
+      permissions: [
+        { type_name: "data-object:insert", field_name: "pg_store_products", data: { description: "[$auth.user_id]" } }
+        { type_name: "data-object:update", field_name: "pg_store_products", data: { description: "[$auth.user_id]" } }
+      ]
+    }) {
+      name
+    }
+  }
+}

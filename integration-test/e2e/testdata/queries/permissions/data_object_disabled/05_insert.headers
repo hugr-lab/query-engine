@@ -1,0 +1,3 @@
+x-hugr-impersonated-role: e2e_perm_denied
+x-hugr-impersonated-user-id: denied-1
+x-hugr-impersonated-user-name: Denied One

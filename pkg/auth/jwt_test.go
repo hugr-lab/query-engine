@@ -2,28 +2,138 @@ package auth
 
 import (
 	_ "embed"
+	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	yaml "gopkg.in/yaml.v2"
 )
+
+// A validly-signed but expired token must surface as ErrTokenExpired (clear 401),
+// not a generic parse error or a fallthrough to the next provider.
+func TestJwtProvider_ExpiredToken(t *testing.T) {
+	p, err := NewJwt(&JwtConfig{Issuer: "rsa", PublicKey: rsaPubKey})
+	if err != nil {
+		t.Fatalf("NewJwt: %v", err)
+	}
+	tok, err := GenerateToken(rsaKey, jwt.MapClaims{"sub": "u", "x-hugr-role": "admin", "exp": 1})
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	if _, err := p.Authenticate(req); !errors.Is(err, ErrTokenExpired) {
+		t.Fatalf("err = %v, want ErrTokenExpired", err)
+	}
+}
 
 var (
 	//go:embed internal/fixture/rsa
 	rsaKey []byte
 	//go:embed internal/fixture/rsa.pub
-	rsaPubKey []byte
+	rsaPubKey string
 	//go:embed internal/fixture/ed25519
 	ed25519Key []byte
 	//go:embed internal/fixture/ed25519.pub
-	ed25519PubKey []byte
+	ed25519PubKey string
 	//go:embed internal/fixture/ecdsa
 	ecdsaKey []byte
 	//go:embed internal/fixture/ecdsa.pub
-	ecdsaPubKey []byte
+	ecdsaPubKey string
 )
+
+// Regression: a PEM public key must parse from a plain YAML block scalar.
+// PublicKey used to be []byte, which YAML cannot decode from a multi-line PEM
+// string (it would need a !!binary/base64 value), so JWT provider configs
+// failed to load. It is now a string. hugr loads this config via yaml, and a
+// string field parses identically across yaml.v2/v3 and JSON.
+func TestJwtConfig_YAML_PublicKeyBlockScalar(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("issuer: https://issuer.example\npublic-key: |\n")
+	for line := range strings.SplitSeq(strings.TrimRight(rsaPubKey, "\n"), "\n") {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+
+	var cfg JwtConfig
+	if err := yaml.Unmarshal([]byte(b.String()), &cfg); err != nil {
+		t.Fatalf("unmarshal JwtConfig from YAML: %v", err)
+	}
+	if cfg.Issuer != "https://issuer.example" {
+		t.Fatalf("issuer = %q, want https://issuer.example", cfg.Issuer)
+	}
+	if strings.TrimSpace(cfg.PublicKey) != strings.TrimSpace(rsaPubKey) {
+		t.Fatalf("public key not parsed from YAML block scalar")
+	}
+	if _, err := NewJwt(&cfg); err != nil {
+		t.Fatalf("NewJwt with YAML-loaded public key: %v", err)
+	}
+}
+
+// Cluster deployments may deliver the public key base64-encoded (config
+// serialized between nodes, a Kubernetes secret, an env var) rather than as a
+// raw PEM string. parsePublicKey must accept both.
+func TestJwtConfig_PublicKey_Base64Delivered(t *testing.T) {
+	cases := map[string]*base64.Encoding{
+		"std": base64.StdEncoding,
+		"raw": base64.RawStdEncoding,
+	}
+	for name, enc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := JwtConfig{Issuer: "https://issuer.example", PublicKey: enc.EncodeToString([]byte(rsaPubKey))}
+			if _, err := NewJwt(&cfg); err != nil {
+				t.Fatalf("NewJwt with %s-base64 public key: %v", name, err)
+			}
+		})
+	}
+	// Raw PEM must still work.
+	if _, err := NewJwt(&JwtConfig{Issuer: "https://issuer.example", PublicKey: rsaPubKey}); err != nil {
+		t.Fatalf("NewJwt with PEM public key: %v", err)
+	}
+}
+
+// The JWT provider must carry the token's scalar claims through on AuthInfo so
+// they are exposed as [$auth.<claim>] placeholders; nested/array claims are
+// dropped.
+func TestJwtProvider_CustomClaims(t *testing.T) {
+	p, err := NewJwt(&JwtConfig{Issuer: "rsa", PublicKey: rsaPubKey})
+	if err != nil {
+		t.Fatalf("NewJwt: %v", err)
+	}
+	tok, err := GenerateToken(rsaKey, jwt.MapClaims{
+		"sub":           "u",
+		"x-hugr-role":   "admin",
+		"tenant_id":     "acme",
+		"department_id": 7,
+		"nested":        map[string]any{"x": 1}, // must be dropped
+		"groups":        []any{"a", "b"},        // must be dropped
+		"exp":           time.Now().Add(time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatalf("GenerateToken: %v", err)
+	}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	ai, err := p.Authenticate(req)
+	if err != nil {
+		t.Fatalf("Authenticate: %v", err)
+	}
+	if ai.Claims["tenant_id"] != "acme" {
+		t.Errorf("tenant_id claim = %v, want acme", ai.Claims["tenant_id"])
+	}
+	if _, ok := ai.Claims["nested"]; ok {
+		t.Error("nested object claim must be dropped")
+	}
+	if _, ok := ai.Claims["groups"]; ok {
+		t.Error("array claim must be dropped")
+	}
+}
 
 func TestJwtProvider_Authenticate(t *testing.T) {
 	tests := []struct {

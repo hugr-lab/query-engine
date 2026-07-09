@@ -1,0 +1,12 @@
+# products_for_current_user is an argless view whose SQL filters by
+# [$auth.user_id_int]. Impersonating user_id=2 must substitute 2 as a literal,
+# returning only category-2 products (Laptop Pro, Gaming Desktop).
+{
+  pg_store {
+    products_for_current_user(order_by: [{ field: "id", direction: ASC }]) {
+      id
+      name
+      category_id
+    }
+  }
+}

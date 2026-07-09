@@ -84,6 +84,10 @@ services:
       ADMIN_UI: "false"
       ALLOWED_ANONYMOUS: "true"
       ANONYMOUS_ROLE: "admin"
+      ALLOWED_DB_API_KEYS: "true"
+      CACHE_L1_ENABLED: "true"
+      CACHE_L1_MAX_SIZE: "32"
+      CACHE_L1_MAX_ITEM_SIZE: "1048576"
     depends_on:
       postgres:
         condition: service_healthy
@@ -125,6 +129,10 @@ services:
       ADMIN_UI: "false"
       ALLOWED_ANONYMOUS: "true"
       ANONYMOUS_ROLE: "admin"
+      ALLOWED_DB_API_KEYS: "true"
+      CACHE_L1_ENABLED: "true"
+      CACHE_L1_MAX_SIZE: "32"
+      CACHE_L1_MAX_ITEM_SIZE: "1048576"
     depends_on:
       core-postgres:
         condition: service_healthy

@@ -1,0 +1,10 @@
+{
+  "data": {
+    "pg_store": {
+      "products_by_pk": {
+        "id": 1,
+        "name": "Laptop Pro"
+      }
+    }
+  }
+}

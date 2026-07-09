@@ -1,0 +1,12 @@
+{
+  "data": {
+    "core": {
+      "insert_api_keys": {
+        "name": "e2e-claim-key"
+      },
+      "insert_roles": {
+        "name": "e2e_apikey_role"
+      }
+    }
+  }
+}

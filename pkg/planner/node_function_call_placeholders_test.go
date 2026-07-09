@@ -139,29 +139,6 @@ func TestSubstitutePlaceholders_UserIDIntZero(t *testing.T) {
 	}
 }
 
-func TestIsEmptyContextValue(t *testing.T) {
-	cases := []struct {
-		name  string
-		value any
-		empty bool
-	}{
-		{"nil", nil, true},
-		{"empty string", "", true},
-		{"int zero", 0, true},
-		{"int64 zero", int64(0), true},
-		{"non-empty string", "alice", false},
-		{"int positive", 42, false},
-		{"int64 positive", int64(42), false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isEmptyContextValue(tc.value); got != tc.empty {
-				t.Errorf("isEmptyContextValue(%v) = %v, want %v", tc.value, got, tc.empty)
-			}
-		})
-	}
-}
-
 func TestSubstitutePlaceholders_CatalogNotInWhitelist(t *testing.T) {
 	// [$catalog] is intentionally NOT in KnownArgPlaceholders. It is resolved
 	// upstream by Function.SQL() before substitutePlaceholders runs, so the

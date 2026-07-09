@@ -73,6 +73,15 @@ func DataObjectInfo(def *ast.Definition) *Object {
 	return &info
 }
 
+// TypeName returns the GraphQL type name of the data object definition —
+// the identity used to key table-level (data-object:*) permission rows.
+func (info *Object) TypeName() string {
+	if info == nil || info.def == nil {
+		return ""
+	}
+	return info.def.Name
+}
+
 func CatalogName(def *ast.Definition) string {
 	return base.DefinitionCatalog(def)
 }
@@ -159,6 +168,13 @@ type sqlBuilder interface {
 
 func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSource, args map[string]any, builder sqlBuilder, contextVars map[string]any) (err error) {
 	if !info.HasArguments() {
+		// A view without @args can still embed context placeholders ([$auth.*])
+		// directly in its @view(sql:) template; resolve those even though there
+		// is no argument input type to iterate. For a plain table info.sql is
+		// empty, so this is a no-op.
+		if info.sql != "" {
+			return info.substituteContextPlaceholders(builder, contextVars)
+		}
 		return nil
 	}
 	it := defs.ForName(ctx, info.InputArgsName)
@@ -186,6 +202,13 @@ func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSou
 			}
 			placeholder := base.DirectiveArgString(d, base.ArgValue)
 			val := contextVars[placeholder]
+			// An empty server-injected value (nil/""/0 — e.g. an unauthenticated
+			// request or a non-numeric user id for [$auth.user_id_int]) becomes
+			// NULL, so "col = [$auth.*]" matches nothing instead of matching 0/''.
+			// Client-provided args below are left as-is (a client 0 means 0).
+			if IsEmptyContextValue(val) {
+				val = nil
+			}
 			if info.sql != "" {
 				sv, sverr := builder.SQLValue(val)
 				if sverr != nil {
@@ -229,23 +252,49 @@ func (info *Object) ApplyArguments(ctx context.Context, defs base.DefinitionsSou
 		posArgs = append(posArgs, val)
 	}
 	if info.sql != "" {
-		// Substitute any remaining context placeholders ([$auth.*], [$catalog]) embedded
+		// Substitute any remaining context placeholders ([$auth.*]) embedded
 		// directly in the @view(sql:) template.
-		for placeholder, value := range contextVars {
-			if !strings.Contains(info.sql, placeholder) {
-				continue
-			}
-			sv, sverr := builder.SQLValue(value)
-			if sverr != nil {
-				return ErrorPosf(info.def.Position, "wrong context value for placeholder %s: %s", placeholder, sverr.Error())
-			}
-			info.sql = strings.ReplaceAll(info.sql, placeholder, sv)
-		}
-		return nil
+		return info.substituteContextPlaceholders(builder, contextVars)
 	}
 	info.sql, err = builder.FunctionCall(info.Name, posArgs, namedArgs)
 	info.functionCall = true
 	return err
+}
+
+// substituteContextPlaceholders replaces every whitelisted context placeholder
+// (KnownArgPlaceholders — the fixed [$auth.*] set) that appears in the view SQL
+// template with its context value rendered as an escaped SQL literal. It
+// iterates the whitelist rather than contextVars on purpose: only the strictly
+// defined placeholders are allowed in a @view(sql:) template — arbitrary custom
+// token claims are not, since they are not guaranteed to be present. An
+// unavailable value (unauthenticated request) renders as NULL.
+func (info *Object) substituteContextPlaceholders(builder sqlBuilder, contextVars map[string]any) error {
+	for placeholder := range KnownArgPlaceholders {
+		if !strings.Contains(info.sql, placeholder) {
+			continue
+		}
+		// An empty context value (nil, "", or 0 — an unauthenticated request, or
+		// a non-numeric/absent user id for [$auth.user_id_int]) renders as NULL,
+		// so a "col = [$auth.*]" predicate matches nothing instead of silently
+		// matching col = 0. Mirrors the function/@arg_default path.
+		value := contextVars[placeholder]
+		if IsEmptyContextValue(value) {
+			value = nil
+		}
+		sv, sverr := builder.SQLValue(value)
+		if sverr != nil {
+			return ErrorPosf(info.def.Position, "wrong context value for placeholder %s: %s", placeholder, sverr.Error())
+		}
+		info.sql = strings.ReplaceAll(info.sql, placeholder, sv)
+	}
+	return nil
+}
+
+// SQLHasContextPlaceholder reports whether the object's SQL template embeds a
+// whitelisted context placeholder ([$auth.*]). Used by the planner to decide
+// whether a view without @args still needs argument resolution.
+func (info *Object) SQLHasContextPlaceholder() bool {
+	return info.sql != "" && sqlHasContextPlaceholder(info.sql)
 }
 
 // inputHasArgDefault returns true if any field of the input type has @arg_default.
@@ -259,7 +308,8 @@ func inputHasArgDefault(def *ast.Definition) bool {
 }
 
 // sqlHasContextPlaceholder returns true if the SQL string contains any known
-// context placeholder ([$auth.*], [$catalog]).
+// context placeholder (the whitelisted [$auth.*] set). [$catalog] is resolved
+// separately by Object.SQL(), so it is intentionally not detected here.
 func sqlHasContextPlaceholder(sql string) bool {
 	if sql == "" {
 		return false

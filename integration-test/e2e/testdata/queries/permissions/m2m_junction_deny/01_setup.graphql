@@ -1,0 +1,13 @@
+mutation {
+  core {
+    insert_roles(data: {
+      name: "e2e_perm_m2m"
+      description: "E2E m2m junction deny role"
+      permissions: [
+        { type_name: "data-object:insert", field_name: "pg_store_product_tags", disabled: true }
+      ]
+    }) {
+      name
+    }
+  }
+}

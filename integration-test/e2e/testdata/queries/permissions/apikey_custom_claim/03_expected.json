@@ -1,0 +1,15 @@
+{
+  "data": {
+    "core": {
+      "delete_api_keys": {
+        "success": true
+      },
+      "delete_role_permissions": {
+        "success": true
+      },
+      "delete_roles": {
+        "success": true
+      }
+    }
+  }
+}

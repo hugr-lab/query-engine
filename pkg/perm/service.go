@@ -91,6 +91,13 @@ func (s *Service) loadRole(ctx context.Context, roleName string) (RolePermission
 	}
 	var role RolePermissions
 	err = res.ScanData("core.info", &role)
+	if errors.Is(err, types.ErrNoData) || errors.Is(err, types.ErrWrongDataPath) {
+		// Role not found: roles_by_pk returned no info object — either a null
+		// leaf (ErrNoData) or a missing path (ErrWrongDataPath). Treat as
+		// forbidden so clients get an access-denied error rather than a
+		// "no data" / "wrong data path" error.
+		return RolePermissions{}, auth.ErrForbidden
+	}
 	if err != nil {
 		return RolePermissions{}, err
 	}

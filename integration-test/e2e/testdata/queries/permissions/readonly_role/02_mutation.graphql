@@ -1,0 +1,10 @@
+# The shipped seed ('readonly', 'Mutation', '*', disabled) must block every
+# mutation — the (object, *) wildcard case used to be unimplemented, so
+# readonly could mutate.
+mutation {
+  pg_store {
+    insert_products(data: { name: "Readonly Must Not Insert", price: 1.0, quantity: 1 }) {
+      name
+    }
+  }
+}

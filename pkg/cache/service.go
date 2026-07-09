@@ -65,21 +65,51 @@ func (s *Service) Init(ctx context.Context) error {
 	return nil
 }
 
+// formatKey namespaces the cache key by the caller's identity, so a cached
+// result is never served to a different identity whose result could differ:
+//
+//   - Full-access requests bypass row-level security (query.go), so their
+//     result is identity-independent; they share a single "fa" namespace. (An
+//     internal full-access query with an explicit cache key — e.g. the
+//     per-role RolePermissions query — thus stays keyed once per that key, not
+//     per user.)
+//   - Otherwise the namespace is a hash of (role, user id). Hashing rather than
+//     joining with a separator keeps the namespace collision-free even when a
+//     role or user id is attacker-controlled or contains the separator.
+//
+// Known limitation: the namespace covers role + user id only. A cached query
+// whose result depends on another auth dimension not reflected in the user id
+// — impersonated_by_*, or a custom token claim used in an RLS filter such as
+// [$auth.org_id] — is NOT distinguished, and such a query must not rely on the
+// cache for isolation on that dimension.
 func (s *Service) formatKey(ctx context.Context, key string) string {
-	ai := auth.AuthInfoFromContext(ctx)
-	if ai != nil {
-		key = fmt.Sprintf("%s:%s", ai.Role, key)
+	if auth.IsFullAccess(ctx) {
+		return "fa:" + key
 	}
+	ai := auth.AuthInfoFromContext(ctx)
+	if ai == nil {
+		return key
+	}
+	return identityNamespace(ai.Role, ai.UserId) + ":" + key
+}
 
-	return key
+// identityNamespace returns a collision-free hash of the identity components.
+// Length-prefixing before hashing guarantees distinct (role, user id) pairs
+// never map to the same namespace regardless of their contents.
+func identityNamespace(role, userID string) string {
+	return fmt.Sprintf("%x", md5.Sum(fmt.Appendf(nil, "%d:%s%d:%s", len(role), role, len(userID), userID)))
 }
 
 func (s *Service) Get(ctx context.Context, key string) (any, error) {
 	if !s.enabled {
 		return nil, ErrMissCache
 	}
+	return s.getFormatted(ctx, s.formatKey(ctx, key))
+}
+
+func (s *Service) getFormatted(ctx context.Context, formattedKey string) (any, error) {
 	var item CacheItem
-	v, err := s.cache.Get(ctx, s.formatKey(ctx, key), &item)
+	v, err := s.cache.Get(ctx, formattedKey, &item)
 	if err != nil || v == nil {
 		return nil, ErrMissCache
 	}
@@ -90,6 +120,10 @@ func (s *Service) Set(ctx context.Context, key string, data any, options ...Opti
 	if !s.enabled {
 		return nil
 	}
+	return s.setFormatted(ctx, s.formatKey(ctx, key), data, options...)
+}
+
+func (s *Service) setFormatted(ctx context.Context, formattedKey string, data any, options ...Option) error {
 	item, err := NewCacheItem(data)
 	if err != nil {
 		return err
@@ -99,22 +133,26 @@ func (s *Service) Set(ctx context.Context, key string, data any, options ...Opti
 		opt(o)
 	}
 
-	return s.cache.Set(ctx, s.formatKey(ctx, key), item, o.toStoreOptions()...)
+	return s.cache.Set(ctx, formattedKey, item, o.toStoreOptions()...)
 }
 
 func (s *Service) Load(ctx context.Context, key string, fn func() (any, error), options ...Option) (any, error) {
 	if !s.enabled {
 		return fn()
 	}
-	v, err := s.Get(ctx, key)
+	// Namespace the key by identity ONCE and use it for the singleflight group
+	// too — deduping on the bare key would coalesce concurrent identical queries
+	// from DIFFERENT identities and hand one caller another's result.
+	fk := s.formatKey(ctx, key)
+	v, err := s.getFormatted(ctx, fk)
 	if err == nil {
 		return v, nil
 	}
 	if !errors.Is(err, ErrMissCache) {
 		return nil, err
 	}
-	v, err, _ = s.group.Do(key, func() (any, error) {
-		v, err := s.Get(ctx, key)
+	v, err, _ = s.group.Do(fk, func() (any, error) {
+		v, err := s.getFormatted(ctx, fk)
 		if err == nil {
 			return v, nil
 		}
@@ -125,8 +163,7 @@ func (s *Service) Load(ctx context.Context, key string, fn func() (any, error), 
 		if err != nil {
 			return nil, err
 		}
-		err = s.Set(ctx, key, v, options...)
-		if err != nil {
+		if err = s.setFormatted(ctx, fk, v, options...); err != nil {
 			return nil, err
 		}
 		return v, nil
@@ -135,6 +172,10 @@ func (s *Service) Load(ctx context.Context, key string, fn func() (any, error), 
 	return v, err
 }
 
+// Delete removes the CALLER's cache entry for key. With per-identity
+// namespacing this clears only the acting identity's copy; cross-identity
+// invalidation (e.g. after a mutation) must use tag-based Invalidate, which is
+// identity-independent.
 func (s *Service) Delete(ctx context.Context, key string) error {
 	if !s.enabled {
 		return nil

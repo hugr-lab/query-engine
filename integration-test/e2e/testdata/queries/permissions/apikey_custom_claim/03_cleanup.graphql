@@ -1,0 +1,13 @@
+mutation {
+  core {
+    delete_api_keys(filter: { name: { eq: "e2e-claim-key" } }) {
+      success
+    }
+    delete_role_permissions(filter: { role: { eq: "e2e_apikey_role" } }) {
+      success
+    }
+    delete_roles(filter: { name: { eq: "e2e_apikey_role" } }) {
+      success
+    }
+  }
+}

@@ -59,7 +59,7 @@ func updateRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 		if !ok || len(data) == 0 && s == nil {
 			return nil, sdl.ErrorPosf(query.Position, "invalid data argument type")
 		}
-		data, err = checkMutationData(ctx, provider, query, v.Type, data)
+		data, err = checkMutationData(ctx, provider, query, v.Type, m, data)
 		if err != nil {
 			return nil, err
 		}
@@ -157,7 +157,7 @@ func updateRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 		nodes = append(nodes, whereNode)
 	}
 
-	pf, err := permissionFilterNode(ctx, provider, info, query, "objects", false)
+	pf, err := permissionFilterNode(ctx, provider, info, query, "objects", false, perm.OpUpdate)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +176,7 @@ func updateRootNode(ctx context.Context, provider catalog.Provider, planner Cata
 			if where != nil {
 				whereSQL += where.Result
 			}
-			pf := children.ForName("permission_filter")
+			pf := children.ForName(permissionFilterNodeName)
 			if pf != nil {
 				if whereSQL != "" {
 					whereSQL += " AND "

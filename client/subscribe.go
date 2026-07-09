@@ -260,7 +260,7 @@ func (sc *SubscriptionConn) completeSub(id string) {
 	if sub != nil && !sub.done {
 		sub.done = true
 		for _, pipe := range sub.pipes {
-			pipe.Close()
+			pipe.closeChan()
 		}
 		close(sub.eventCh)
 	}
@@ -306,13 +306,16 @@ type batchPipe struct {
 	ch      chan arrow.RecordBatch
 	current arrow.RecordBatch
 	ctx     context.Context
+	cancel  context.CancelFunc
 	closed  sync.Once
 }
 
-func newBatchPipe(ctx context.Context) *batchPipe {
+func newBatchPipe(parent context.Context) *batchPipe {
+	ctx, cancel := context.WithCancel(parent)
 	return &batchPipe{
-		ch:  make(chan arrow.RecordBatch, 256),
-		ctx: ctx,
+		ch:     make(chan arrow.RecordBatch, 256),
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }
 
@@ -323,14 +326,42 @@ func (p *batchPipe) Send(batch arrow.RecordBatch) {
 			batch.Release()
 		}
 	}()
+	// Block on a full channel — backpressure the wire reader instead of
+	// dropping. Dropping a RecordBatch silently corrupts the stream (e.g.
+	// lost LLM content_delta tokens → garbled output). Draining fast enough
+	// is the consumer's responsibility; if it can't keep up we wait. Only
+	// context cancellation (subscription teardown) releases the batch.
 	select {
 	case p.ch <- batch:
-	default:
+	case <-p.ctx.Done():
 		batch.Release()
 	}
 }
 
-func (p *batchPipe) Close()   { p.closed.Do(func() { close(p.ch) }) }
+// closeChan closes the batch channel. It MUST be called only from the sender
+// (readLoop) goroutine on normal end-of-stream, so the consumer can drain any
+// buffered batches before Next reports EOF. Closing from another goroutine
+// while Send is parked on a full channel would be a data race.
+func (p *batchPipe) closeChan() { p.closed.Do(func() { close(p.ch) }) }
+
+// Close tears the pipe down from the consumer/control side. It cancels the
+// pipe context — unblocking a parked Send and Next — and drains buffered
+// batches to release them. It never closes the channel itself: that would
+// race the sender goroutine.
+func (p *batchPipe) Close() {
+	p.cancel()
+	for {
+		select {
+		case b, ok := <-p.ch:
+			if !ok {
+				return // channel closed (normal EOF) and drained
+			}
+			b.Release()
+		default:
+			return // channel empty
+		}
+	}
+}
 func (p *batchPipe) Retain()  {}
 func (p *batchPipe) Release() { p.Close() }
 func (p *batchPipe) Err() error { return nil }
