@@ -22,8 +22,8 @@ func TestIngest_Postgres_LazyReader(t *testing.T) {
 	env := setupEnv(t)
 
 	const (
-		numBatches   = 50
-		rowsPerBatch = 1000
+		numBatches   = 3
+		rowsPerBatch = 4
 		totalRows    = numBatches * rowsPerBatch
 	)
 

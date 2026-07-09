@@ -310,25 +310,6 @@ func geometryReadExpected(name string, point xyPoint, x, y float64) map[string]a
 	}
 }
 
-func buildGeometryTypesBatch(t *testing.T, pool memory.Allocator, schema *arrow.Schema, batchIdx, rowsPerBatch int, namePrefix string) arrow.RecordBatch {
-	t.Helper()
-	b := array.NewRecordBuilder(pool, schema)
-	defer b.Release()
-
-	for i := 0; i < rowsPerBatch; i++ {
-		row := batchIdx*rowsPerBatch + i
-		name, point := geometryBatchRow(namePrefix, row)
-		appendGeometryTypesRow(t, b, geometryTypesRow{
-			name:        name,
-			value:       float64(row) * 0.5,
-			active:      row%2 == 0,
-			point:       point,
-			shapeOrigin: point,
-		})
-	}
-	return b.NewRecordBatch()
-}
-
 func geometryBatchRow(namePrefix string, row int) (string, xyPoint) {
 	return fmt.Sprintf("%s-%06d", namePrefix, row), xyPoint{
 		X: float64(row % 100),
