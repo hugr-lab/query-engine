@@ -13,6 +13,9 @@ import (
 type PermissionFieldRule struct{}
 
 func (r *PermissionFieldRule) EnterField(ctx *validator.WalkContext, parentDef *ast.Definition, field *ast.Field) gqlerror.List {
+	if auth.IsFullAccess(ctx.Context) {
+		return nil
+	}
 	checker := PermissionsFromCtx(ctx.Context)
 	if checker == nil || parentDef == nil {
 		return nil
