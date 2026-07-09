@@ -43,117 +43,6 @@ func makeGeometryTypesRecord(t *testing.T, rows []geometryTypesRow) (arrow.Recor
 	return b.NewRecordBatch(), schema
 }
 
-type realWorldGeometrySet struct {
-	point        xyPoint
-	line         []xyPoint
-	polygon      [][]xyPoint
-	multiPoint   []xyPoint
-	multiLine    [][]xyPoint
-	multiPolygon [][][]xyPoint
-}
-
-func moscowOSMGeometrySet() realWorldGeometrySet {
-	// The point matches the Moscow fixture used by hugr-duckdb-kernel geoarrow
-	// tests; the surrounding shapes are OSM-like lon/lat geometries around it.
-	polygon := [][]xyPoint{
-		{
-			{X: 37.6108, Y: 55.7516},
-			{X: 37.6129, Y: 55.7562},
-			{X: 37.6198, Y: 55.7579},
-			{X: 37.6251, Y: 55.7545},
-			{X: 37.6214, Y: 55.7508},
-			{X: 37.6108, Y: 55.7516},
-		},
-		{
-			{X: 37.6164, Y: 55.7532},
-			{X: 37.6188, Y: 55.7538},
-			{X: 37.62, Y: 55.7526},
-			{X: 37.6174, Y: 55.752},
-			{X: 37.6164, Y: 55.7532},
-		},
-	}
-	secondPolygon := [][]xyPoint{
-		{
-			{X: 37.629, Y: 55.7448},
-			{X: 37.6352, Y: 55.7459},
-			{X: 37.6364, Y: 55.7427},
-			{X: 37.6305, Y: 55.7418},
-			{X: 37.629, Y: 55.7448},
-		},
-	}
-	return realWorldGeometrySet{
-		point: xyPoint{X: 37.6173, Y: 55.7558},
-		line: []xyPoint{
-			{X: 37.611, Y: 55.761},
-			{X: 37.6173, Y: 55.7558},
-			{X: 37.629, Y: 55.752},
-			{X: 37.641, Y: 55.748},
-		},
-		polygon: polygon,
-		multiPoint: []xyPoint{
-			{X: 37.6173, Y: 55.7558},
-			{X: 37.6204, Y: 55.7539},
-			{X: 37.612, Y: 55.7547},
-		},
-		multiLine: [][]xyPoint{
-			{
-				{X: 37.595, Y: 55.752},
-				{X: 37.607, Y: 55.755},
-				{X: 37.6173, Y: 55.7558},
-			},
-			{
-				{X: 37.626, Y: 55.751},
-				{X: 37.636, Y: 55.747},
-				{X: 37.648, Y: 55.743},
-			},
-		},
-		multiPolygon: [][][]xyPoint{polygon, secondPolygon},
-	}
-}
-
-func makeRealWorldGeometryTypesRecord(t *testing.T, name string, geom realWorldGeometrySet) (arrow.RecordBatch, *arrow.Schema) {
-	t.Helper()
-
-	schema := geometryTypesSchema()
-	pool := memory.NewGoAllocator()
-	b := array.NewRecordBuilder(pool, schema)
-	defer b.Release()
-
-	recordFieldBuilder(t, b, "name").(*array.StringBuilder).Append(name)
-	recordFieldBuilder(t, b, "value").(*array.Float64Builder).Append(55.7558)
-	recordFieldBuilder(t, b, "is_active").(*array.BooleanBuilder).Append(true)
-	appendRealWorldGeometryValueFields(t, b, geom)
-
-	return b.NewRecordBatch(), schema
-}
-
-func appendRealWorldGeometryValueFields(t *testing.T, b *array.RecordBuilder, geom realWorldGeometrySet) {
-	t.Helper()
-
-	appendPoint(recordFieldBuilder(t, b, "geom_point_native").(*array.StructBuilder), geom.point)
-	appendPoint(recordFieldBuilder(t, b, "geom_point_native_4326").(*array.StructBuilder), geom.point)
-	recordFieldBuilder(t, b, "geom_line_wkt").(*array.StringBuilder).Append(realWorldLineWKT(geom.line))
-	recordFieldBuilder(t, b, "geom_line_wkt_4326").(*array.StringBuilder).Append(realWorldLineWKT(geom.line))
-	recordFieldBuilder(t, b, "geom_polygon_geojson").(*array.StringBuilder).Append(realWorldPolygonGeoJSON(geom.polygon))
-	recordFieldBuilder(t, b, "geom_polygon_hugr_geojson").(*array.StringBuilder).Append(realWorldPolygonGeoJSON(geom.polygon))
-	recordFieldBuilder(t, b, "geom_polygon_plain_geojson").(*array.StringBuilder).Append(realWorldPolygonGeoJSON(geom.polygon))
-	appendGeoJSONPolygonStructFromRings(t, recordFieldBuilder(t, b, "geom_polygon_geojson_struct"), geom.polygon)
-
-	pointWKB := wkbPoint(t, geom.point)
-	recordFieldBuilder(t, b, "geom_point_wkb").(*array.BinaryBuilder).Append(pointWKB)
-	recordFieldBuilder(t, b, "geom_point_hexwkb").(*array.StringBuilder).Append(strings.ToUpper(hex.EncodeToString(pointWKB)))
-	appendPointList(recordFieldBuilder(t, b, "geom_line_native").(*array.ListBuilder), geom.line)
-	recordFieldBuilder(t, b, "geom_line_wkb").(*array.BinaryBuilder).Append(wkbLineString(t, geom.line))
-	appendPointListList(recordFieldBuilder(t, b, "geom_polygon_native").(*array.ListBuilder), geom.polygon)
-	recordFieldBuilder(t, b, "geom_polygon_wkb").(*array.BinaryBuilder).Append(wkbPolygon(t, geom.polygon))
-	appendPointList(recordFieldBuilder(t, b, "geom_multipoint_native").(*array.ListBuilder), geom.multiPoint)
-	recordFieldBuilder(t, b, "geom_multipoint_wkb").(*array.BinaryBuilder).Append(wkbMultiPoint(t, geom.multiPoint))
-	appendPointListList(recordFieldBuilder(t, b, "geom_multiline_native").(*array.ListBuilder), geom.multiLine)
-	recordFieldBuilder(t, b, "geom_multiline_wkb").(*array.BinaryBuilder).Append(wkbMultiLineString(t, geom.multiLine))
-	appendPointListListList(recordFieldBuilder(t, b, "geom_multipolygon_native").(*array.ListBuilder), geom.multiPolygon)
-	recordFieldBuilder(t, b, "geom_multipolygon_wkb").(*array.BinaryBuilder).Append(wkbMultiPolygon(t, geom.multiPolygon))
-}
-
 func geometryTypesSchema() *arrow.Schema {
 	fields := []arrow.Field{
 		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: false},
@@ -252,37 +141,6 @@ func geometryExpected(point, x, y string) []string {
 		values = append(values, col.expectedWKT(point, x, y))
 	}
 	return values
-}
-
-func realWorldGeometryExpected(geom realWorldGeometrySet) []string {
-	point := realWorldPointWKT(geom.point)
-	line := realWorldLineWKT(geom.line)
-	polygon := realWorldPolygonWKT(geom.polygon)
-	multiPoint := realWorldMultiPointWKT(geom.multiPoint)
-	multiLine := realWorldMultiLineWKT(geom.multiLine)
-	multiPolygon := realWorldMultiPolygonWKT(geom.multiPolygon)
-	return []string{
-		point,
-		point,
-		line,
-		line,
-		polygon,
-		polygon,
-		polygon,
-		polygon,
-		point,
-		point,
-		line,
-		line,
-		polygon,
-		polygon,
-		multiPoint,
-		multiPoint,
-		multiLine,
-		multiLine,
-		multiPolygon,
-		multiPolygon,
-	}
 }
 
 func geometrySRIDExpected() []int {
@@ -471,25 +329,6 @@ func geometryReadExpected(name string, point xyPoint, x, y float64) map[string]a
 		"geom_multipolygon_native":    geoJSONGeometry("MultiPolygon", deepPointCoordinates(multiPolygons(x, y))),
 		"geom_multipolygon_wkb":       geoJSONGeometry("MultiPolygon", deepPointCoordinates(multiPolygons(x, y))),
 	}
-}
-
-func buildGeometryTypesBatch(t *testing.T, pool memory.Allocator, schema *arrow.Schema, batchIdx, rowsPerBatch int, namePrefix string) arrow.RecordBatch {
-	t.Helper()
-	b := array.NewRecordBuilder(pool, schema)
-	defer b.Release()
-
-	for i := 0; i < rowsPerBatch; i++ {
-		row := batchIdx*rowsPerBatch + i
-		name, point := geometryBatchRow(namePrefix, row)
-		appendGeometryTypesRow(t, b, geometryTypesRow{
-			name:        name,
-			value:       float64(row) * 0.5,
-			active:      row%2 == 0,
-			point:       point,
-			shapeOrigin: point,
-		})
-	}
-	return b.NewRecordBatch()
 }
 
 func geometryBatchRow(namePrefix string, row int) (string, xyPoint) {

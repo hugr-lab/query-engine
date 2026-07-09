@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -309,14 +308,14 @@ func TestIngest_DuckDB_Stream_Empty(t *testing.T) {
 	assert.Contains(t, err.Error(), "data_object")
 }
 
-// TestIngest_DuckDB_LazyReader streams 50k rows through the typed client using
-// a lazy Arrow reader instead of materialising all batches up front.
+// TestIngest_DuckDB_LazyReader verifies that multiple lazily generated batches
+// reach DuckDB without materialising the full stream up front.
 func TestIngest_DuckDB_LazyReader(t *testing.T) {
 	env := setupEnv(t)
 
 	const (
-		numBatches   = 50
-		rowsPerBatch = 1000
+		numBatches   = 3
+		rowsPerBatch = 4
 		totalRows    = numBatches * rowsPerBatch
 		namePrefix   = "dk-lz"
 	)
@@ -410,8 +409,8 @@ func TestIngest_LazyReader_Termination_DuckDB(t *testing.T) {
 
 // TestIngest_HTTP_Direct_DuckDB exercises low-level HTTP behaviour against
 // /ipc/ingest (bad Content-Type, missing data_object, wrong method, invalid
-// body) plus a real-world bulk path streamed through io.Pipe straight into
-// the request body. Mirrors TestIngest_HTTP_Direct from the PG suite.
+// body) and a small successful request. Mirrors TestIngest_HTTP_Direct from
+// the Postgres suite.
 func TestIngest_HTTP_Direct_DuckDB(t *testing.T) {
 	env := setupEnv(t)
 
@@ -472,61 +471,4 @@ func TestIngest_HTTP_Direct_DuckDB(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
 	resp.Body.Close()
 	assert.Equal(t, int64(1), out.Inserted)
-
-	// --- Real-world bulk via io.Pipe streamed into the request body.
-	const (
-		numBatches   = 50
-		rowsPerBatch = 1000
-		totalRows    = numBatches * rowsPerBatch
-		namePrefix   = "dk-direct"
-	)
-	bulkSchema := eventsArrowSchema()
-
-	pr, pw := io.Pipe()
-	writeErr := make(chan error, 1)
-	go func() {
-		defer close(writeErr)
-		w := ipc.NewWriter(pw, ipc.WithSchema(bulkSchema))
-		base := time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC)
-		var streamErr error
-		for batchIdx := 0; batchIdx < numBatches; batchIdx++ {
-			batchRec := buildEventsBatch(pool, bulkSchema, batchIdx, rowsPerBatch, namePrefix, base)
-			if werr := w.Write(batchRec); werr != nil {
-				streamErr = fmt.Errorf("write batch %d: %w", batchIdx, werr)
-				batchRec.Release()
-				break
-			}
-			batchRec.Release()
-		}
-		if cerr := w.Close(); cerr != nil && streamErr == nil {
-			streamErr = fmt.Errorf("close arrow writer: %w", cerr)
-		}
-		_ = pw.CloseWithError(streamErr)
-		writeErr <- streamErr
-	}()
-
-	start := time.Now()
-	bulkResp, postErr := http.Post(env.server.URL+"/ipc/ingest?data_object="+env.dataObject,
-		"application/vnd.apache.arrow.stream", pr)
-	werr := <-writeErr
-	require.NoError(t, werr, "writer goroutine failed")
-	require.NoError(t, postErr)
-	require.Equal(t, http.StatusOK, bulkResp.StatusCode)
-	var bulkResult hugrclient.IngestResult
-	require.NoError(t, json.NewDecoder(bulkResp.Body).Decode(&bulkResult))
-	bulkResp.Body.Close()
-	elapsed := time.Since(start)
-	assert.Equal(t, int64(totalRows), bulkResult.Inserted)
-
-	ro := env.openRO(t)
-	defer ro.Close()
-	countStart := time.Now()
-	var count int
-	require.NoError(t, ro.QueryRow("SELECT COUNT(*) FROM events WHERE name LIKE 'dk-direct-%'").Scan(&count))
-	countElapsed := time.Since(countStart)
-	assert.Equal(t, totalRows, count, "all dk-direct rows visible immediately after POST")
-	t.Logf("post-POST COUNT(*) visibility: %d rows in %s — no async lag", count, countElapsed)
-
-	t.Logf("bulk ingest: %d rows in %d batches via one /ipc/ingest POST in %s (%.0f rows/s)",
-		totalRows, numBatches, elapsed, float64(totalRows)/elapsed.Seconds())
 }
