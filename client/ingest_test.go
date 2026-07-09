@@ -77,7 +77,7 @@ func smallRecord(t *testing.T, pool memory.Allocator) arrow.RecordBatch {
 	defer b.Release()
 	b.Field(0).(*array.Int32Builder).AppendValues([]int32{10, 20}, nil)
 	b.Field(1).(*array.StringBuilder).AppendValues([]string{"alpha", "beta"}, nil)
-	return b.NewRecord()
+	return b.NewRecordBatch()
 }
 
 func TestBuildIngestURL(t *testing.T) {
@@ -146,7 +146,7 @@ func TestIngest_RoundTrip(t *testing.T) {
 	defer b.Release()
 	b.Field(0).(*array.Int32Builder).AppendValues([]int32{1, 2, 3}, nil)
 	b.Field(1).(*array.StringBuilder).AppendValues([]string{"a", "b", "c"}, nil)
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +202,7 @@ func TestIngest_ServerError(t *testing.T) {
 	b := array.NewRecordBuilder(pool, schema)
 	defer b.Release()
 	b.Field(0).(*array.Int32Builder).AppendValues([]int32{1}, nil)
-	rec := b.NewRecord()
+	rec := b.NewRecordBatch()
 	defer rec.Release()
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -275,7 +275,7 @@ func TestIngest_WriterErrorWinsOverHTTP(t *testing.T) {
 			b := array.NewRecordBuilder(pool, schema)
 			defer b.Release()
 			b.Field(0).(*array.Int32Builder).Append(1)
-			return b.NewRecord(), nil
+			return b.NewRecordBatch(), nil
 		}
 		return nil, errBoom
 	})
@@ -434,7 +434,7 @@ func TestNewLazyReader_CompletesOnNilNil(t *testing.T) {
 		b := array.NewRecordBuilder(pool, schema)
 		defer b.Release()
 		b.Field(0).(*array.Int32Builder).Append(int32(i))
-		return b.NewRecord(), nil
+		return b.NewRecordBatch(), nil
 	})
 	defer r.Release()
 
@@ -465,7 +465,7 @@ func TestNewLazyReader_PropagatesError(t *testing.T) {
 		b := array.NewRecordBuilder(pool, schema)
 		defer b.Release()
 		b.Field(0).(*array.Int32Builder).Append(int32(i))
-		return b.NewRecord(), nil
+		return b.NewRecordBatch(), nil
 	})
 	defer r.Release()
 	seen := 0
