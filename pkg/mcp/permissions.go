@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/perm"
@@ -40,7 +41,10 @@ func (f *mcpFilter) visibleDataSource(name string) bool {
 	return ok
 }
 
-// visibleType checks both mcp:tables:query and GraphQL type-level visibility.
+// visibleType checks mcp:tables:query, GraphQL type-level, and data-object
+// (table-level) visibility. A data object hidden or disabled via a
+// data-object:query permission row is not exposed as an MCP tool — mirroring
+// how GraphQL introspection hides it.
 func (f *mcpFilter) visibleType(typeName string) bool {
 	if f == nil {
 		return true
@@ -51,7 +55,18 @@ func (f *mcpFilter) visibleType(typeName string) bool {
 	if _, ok := f.perm.Visible(typeName, "*"); !ok {
 		return false
 	}
-	return true
+	return !f.dataObjectDenied(typeName)
+}
+
+// dataObjectDenied reports whether a data object is hidden or query-disabled by
+// a table-level (data-object:query) permission rule — either makes it invisible
+// in MCP discovery (a disabled object cannot be queried, a hidden one is meant
+// to be discovery-invisible).
+func (f *mcpFilter) dataObjectDenied(typeName string) bool {
+	if f == nil {
+		return false
+	}
+	return f.perm.DataObjectHidden(typeName) || f.perm.DataObjectDisabled(typeName, perm.OpQuery)
 }
 
 func (f *mcpFilter) visibleField(typeName, fieldName string) bool {
@@ -60,6 +75,31 @@ func (f *mcpFilter) visibleField(typeName, fieldName string) bool {
 	}
 	_, ok := f.perm.Visible(typeName, fieldName)
 	return ok
+}
+
+// visibleFieldOfType is visibleField plus a check that the field's return type
+// is not a hidden/disabled data object — so a relation to a hidden table is
+// hidden along with the table itself. fieldType is the field's GraphQL return
+// type as written (list / non-null markers are stripped here).
+func (f *mcpFilter) visibleFieldOfType(typeName, fieldName, fieldType string) bool {
+	if f == nil {
+		return true
+	}
+	if !f.visibleField(typeName, fieldName) {
+		return false
+	}
+	return !f.dataObjectDenied(baseGraphQLTypeName(fieldType))
+}
+
+// baseGraphQLTypeName strips list and non-null markers from a GraphQL type
+// reference: "[Type!]!" -> "Type".
+func baseGraphQLTypeName(t string) string {
+	t = strings.TrimSpace(t)
+	t = strings.TrimSuffix(t, "!")
+	t = strings.TrimPrefix(t, "[")
+	t = strings.TrimSuffix(t, "]")
+	t = strings.TrimSuffix(t, "!")
+	return strings.TrimSpace(t)
 }
 
 // visibleFunction checks mcp:function permission with fully qualified name.

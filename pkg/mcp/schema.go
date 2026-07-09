@@ -274,7 +274,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	filter := newMCPFilter(ctx)
 	result := make([]TypeFieldInfo, 0, len(fields))
 	for _, f := range fields {
-		if !filter.visibleField(typeName, f.Name) {
+		if !filter.visibleFieldOfType(typeName, f.Name, f.FieldType) {
 			continue
 		}
 		item := TypeFieldInfo{
@@ -375,7 +375,7 @@ func (s *Server) describeFields(ctx context.Context, req mcp.CallToolRequest) (*
 	filter := newMCPFilter(ctx)
 	result := make([]TypeFieldInfo, 0, len(fields))
 	for _, f := range fields {
-		if !filter.visibleField(typeName, f.Name) {
+		if !filter.visibleFieldOfType(typeName, f.Name, f.FieldType) {
 			continue
 		}
 		item := TypeFieldInfo{
