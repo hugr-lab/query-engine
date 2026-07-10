@@ -1,0 +1,14 @@
+mutation {
+  core {
+    insert_roles(data: {
+      name: "e2e_wildcard_struct"
+      description: "E2E wildcard data-object rule + embedded struct field"
+      permissions: [
+        { type_name: "data-object:query", field_name: "*", disabled: true }
+        { type_name: "data-object:query", field_name: "pg_store_product_details", disabled: false }
+      ]
+    }) {
+      name
+    }
+  }
+}

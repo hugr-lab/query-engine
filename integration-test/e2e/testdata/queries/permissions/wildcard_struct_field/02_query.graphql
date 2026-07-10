@@ -1,0 +1,16 @@
+# The role disables ALL data objects via a wildcard data-object:query rule and
+# re-allows only product_details. The embedded struct field `specs`
+# (ProductSpecs) is NOT a data object, so the wildcard rule must not deny it —
+# the query must return the struct, not "forbidden". (Before the IsDataObject
+# fix, the wildcard matched the struct type name and the validator denied it.)
+{
+  pg_store {
+    product_details(order_by: [{ field: "product_id", direction: ASC }]) {
+      product_id
+      specs {
+        cpu
+        ram_gb
+      }
+    }
+  }
+}

@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/perm"
-	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -159,10 +159,14 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 						continue
 					}
 					// hide fields returning a hidden data object (table-level rule);
-					// scalar return types can never name a data object, so skip
-					// the permission scan for them
-					if tn := f.Type.Name(); !sdl.IsScalarType(tn) && p.DataObjectHidden(tn) {
-						continue
+					// only actual data objects are governed by data-object rules,
+					// so resolve the return type and check IsDataObject — a wildcard
+					// data-object:query rule must not match a scalar/struct return
+					// type. The scalar pre-check skips the lookup for scalars.
+					if tn := f.Type.Name(); !sdl.IsScalarType(tn) {
+						if rd := provider.ForName(ctx, tn); rd != nil && sdl.IsDataObject(rd) && p.DataObjectHidden(tn) {
+							continue
+						}
 					}
 				}
 				data, err := fieldResolver(ctx, provider, f, field.SelectionSet, maxDepth-1)
@@ -557,7 +561,6 @@ func isPlaceholderField(name string) bool {
 func isArgServerInjected(directives ast.DirectiveList) bool {
 	return directives.ForName(base.ArgDefaultDirectiveName) != nil
 }
-
 
 func directiveResolver(ctx context.Context, provider catalog.Provider, def *ast.DirectiveDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
