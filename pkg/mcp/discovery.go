@@ -553,6 +553,11 @@ func (s *Server) searchModuleFunctions(ctx context.Context, req mcp.CallToolRequ
 		} else if !filter.visibleFunction(ri.module, f.Name) {
 			continue
 		}
+		// a function whose return type is a hidden/disabled data object is
+		// hidden too (it would otherwise leak the table's type name)
+		if filter.dataObjectDenied(f.FieldTypeName) {
+			continue
+		}
 		result = append(result, FunctionSearchItem{
 			Name:           f.Name,
 			Module:         ri.module,
@@ -682,6 +687,11 @@ func (s *Server) describeFunctions(ctx context.Context, req mcp.CallToolRequest)
 				continue
 			}
 		} else if !filter.visibleFunction(ri.module, f.Name) {
+			continue
+		}
+		// a function whose return type is a hidden/disabled data object is
+		// hidden too (it would otherwise leak the table's type name)
+		if filter.dataObjectDenied(f.FieldTypeName) {
 			continue
 		}
 		isList := strings.HasPrefix(f.FieldType, "[")

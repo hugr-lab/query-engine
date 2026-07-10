@@ -274,7 +274,7 @@ func (s *Server) typeFields(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 	filter := newMCPFilter(ctx)
 	result := make([]TypeFieldInfo, 0, len(fields))
 	for _, f := range fields {
-		if !filter.visibleFieldOfType(typeName, f.Name, f.FieldType) {
+		if !filter.visibleFieldOfType(typeName, f.Name, f.FieldTypeName) {
 			continue
 		}
 		item := TypeFieldInfo{
@@ -334,12 +334,13 @@ func (s *Server) describeFields(ctx context.Context, req mcp.CallToolRequest) (*
 		Desc    string `json:"description"`
 	}
 	type rawField struct {
-		Name        string   `json:"name"`
-		FieldType   string   `json:"field_type"`
-		Description string   `json:"description"`
-		HugrType    string   `json:"hugr_type"`
-		Arguments   []rawArg `json:"arguments,omitempty"`
-		ArgsAgg     struct {
+		Name          string   `json:"name"`
+		FieldType     string   `json:"field_type"`
+		FieldTypeName string   `json:"field_type_name"`
+		Description   string   `json:"description"`
+		HugrType      string   `json:"hugr_type"`
+		Arguments     []rawArg `json:"arguments,omitempty"`
+		ArgsAgg       struct {
 			Count int `json:"_rows_count"`
 		} `json:"arguments_aggregation"`
 	}
@@ -351,6 +352,7 @@ func (s *Server) describeFields(ctx context.Context, req mcp.CallToolRequest) (*
 				fields(filter: $filter, order_by: [{field: "name", direction: ASC}], limit: $limit) {
 					name
 					field_type
+					field_type_name
 					description
 					hugr_type
 					arguments_aggregation(filter: { is_arg_default: { eq: false } }) { _rows_count }
@@ -375,7 +377,7 @@ func (s *Server) describeFields(ctx context.Context, req mcp.CallToolRequest) (*
 	filter := newMCPFilter(ctx)
 	result := make([]TypeFieldInfo, 0, len(fields))
 	for _, f := range fields {
-		if !filter.visibleFieldOfType(typeName, f.Name, f.FieldType) {
+		if !filter.visibleFieldOfType(typeName, f.Name, f.FieldTypeName) {
 			continue
 		}
 		item := TypeFieldInfo{

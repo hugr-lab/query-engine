@@ -34,35 +34,45 @@ func TestVisibleType_DataObject(t *testing.T) {
 	}
 }
 
-// A relation field whose return type is a hidden/disabled data object must be
-// hidden along with the table.
+// A field whose return type is a hidden/disabled data object is hidden along
+// with the table. baseTypeName is the catalog's already-unwrapped type name.
 func TestVisibleFieldOfType_DataObject(t *testing.T) {
 	f := &mcpFilter{perm: dataObjectRole()}
-	for _, ft := range []string{"[hidden_table]", "hidden_table!", "[hidden_table!]!", "disabled_table"} {
-		if f.visibleFieldOfType("some_type", "rel", ft) {
-			t.Errorf("relation of type %q to a hidden/disabled data-object must be hidden", ft)
-		}
+	if f.visibleFieldOfType("some_type", "rel", "hidden_table") {
+		t.Error("relation to a hidden data-object must be hidden")
+	}
+	if f.visibleFieldOfType("some_type", "rel", "disabled_table") {
+		t.Error("relation to a disabled data-object must be hidden")
 	}
 	// scalar and normal-table relations stay visible.
 	if !f.visibleFieldOfType("some_type", "name", "String") {
 		t.Error("scalar field must be visible")
 	}
-	if !f.visibleFieldOfType("some_type", "rel2", "[normal_table]") {
+	if !f.visibleFieldOfType("some_type", "rel2", "normal_table") {
 		t.Error("relation to a normal table must be visible")
 	}
 }
 
-func TestBaseGraphQLTypeName(t *testing.T) {
-	cases := map[string]string{
-		"[Type!]!": "Type",
-		"[Type]":   "Type",
-		"Type!":    "Type",
-		"Type":     "Type",
-		" [X] ":    "X",
-	}
-	for in, want := range cases {
-		if got := baseGraphQLTypeName(in); got != want {
-			t.Errorf("baseGraphQLTypeName(%q) = %q, want %q", in, got, want)
+// Regression: a wildcard data-object:query field:"*" rule (allow-list pattern)
+// must NOT hide scalar column types — dataObjectDenied guards scalars, matching
+// the !sdl.IsScalarType guard used in the validator and introspection.
+func TestDataObjectDenied_ScalarGuard(t *testing.T) {
+	rp := &perm.RolePermissions{Permissions: []perm.Permission{
+		{Object: "data-object:query", Field: "*", Hidden: true},
+	}}
+	f := &mcpFilter{perm: rp}
+
+	for _, scalar := range []string{"String", "Int", "Boolean", "Float", "Timestamp"} {
+		if !f.visibleFieldOfType("t", "col", scalar) {
+			t.Errorf("scalar field of type %q must not be hidden by a wildcard data-object rule", scalar)
 		}
+	}
+	// A real data-object relation IS hidden by the wildcard.
+	if f.visibleFieldOfType("t", "rel", "other_table") {
+		t.Error("relation to a data-object must be hidden by the wildcard rule")
+	}
+	// Empty type name is never a data object.
+	if f.dataObjectDenied("") {
+		t.Error("empty type name must not be denied")
 	}
 }
