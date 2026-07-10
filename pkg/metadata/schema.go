@@ -158,13 +158,15 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 					if _, ok := p.Visible(def.Name, f.Name); !ok {
 						continue
 					}
-					// hide fields returning a hidden data object (table-level rule);
-					// only actual data objects are governed by data-object rules,
-					// so resolve the return type and check IsDataObject — a wildcard
-					// data-object:query rule must not match a scalar/struct return
-					// type. The scalar pre-check skips the lookup for scalars.
-					if tn := f.Type.Name(); !sdl.IsScalarType(tn) {
-						if rd := provider.ForName(ctx, tn); rd != nil && sdl.IsDataObject(rd) && p.DataObjectHidden(tn) {
+					// hide fields returning a hidden data object (table-level rule).
+					// The cheap in-memory scan gates the (possibly DB-hitting) type
+					// lookup; a rule only fires for an actual data object, so the
+					// IsDataObject check rejects a scalar/struct return type a
+					// wildcard rule would otherwise match. If the type cannot be
+					// resolved (transient error / suspended catalog), fail closed
+					// and hide rather than leak the field.
+					if tn := f.Type.Name(); !sdl.IsScalarType(tn) && p.DataObjectHidden(tn) {
+						if rd := provider.ForName(ctx, tn); rd == nil || sdl.IsDataObject(rd) {
 							continue
 						}
 					}

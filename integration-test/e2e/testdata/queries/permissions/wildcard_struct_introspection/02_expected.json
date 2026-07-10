@@ -1,0 +1,20 @@
+{
+  "data": {
+    "__type": {
+      "fields": [
+        {
+          "name": "product_id"
+        },
+        {
+          "name": "_join"
+        },
+        {
+          "name": "specs"
+        },
+        {
+          "name": "metadata"
+        }
+      ]
+    }
+  }
+}

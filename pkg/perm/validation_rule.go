@@ -25,16 +25,20 @@ func (r *PermissionFieldRule) EnterField(ctx *validator.WalkContext, parentDef *
 		return gqlerror.List{gqlerror.WrapIfUnwrapped(auth.ErrForbidden)}
 	}
 	// Deny fields returning a disabled data object (table-level rule). This is
-	// a fast-path for plain fields; aggregation and mutation paths are enforced
-	// in the planner, where the target object is resolved. Only actual data
-	// objects are governed by data-object rules — resolve the return type and
-	// check IsDataObject so a wildcard data-object:query rule cannot match a
-	// scalar or embedded-struct return type. The scalar pre-check skips the
-	// lookup for the common case (most selected fields are scalars).
+	// a fast-path for plain relation/reference fields; aggregation and mutation
+	// paths are enforced in the planner, where the target object is resolved
+	// (an aggregation field's return type is a synthetic *_aggregation type, so
+	// it is not caught here).
+	//
+	// Order matters: the cheap in-memory permission scan gates the (possibly
+	// DB-hitting) type lookup. Only a rule match triggers ForName, and a rule
+	// only fires for an actual data object — the IsDataObject check rejects a
+	// scalar/struct return type a wildcard rule would otherwise match. If the
+	// type cannot be resolved (transient error / suspended catalog), fail
+	// closed and deny rather than leak the field.
 	if field.Definition != nil {
-		if rt := field.Definition.Type.Name(); !sdl.IsScalarType(rt) {
-			if def := ctx.Provider.ForName(ctx.Context, rt); def != nil && sdl.IsDataObject(def) &&
-				checker.DataObjectDisabled(rt, OpQuery) {
+		if rt := field.Definition.Type.Name(); !sdl.IsScalarType(rt) && checker.DataObjectDisabled(rt, OpQuery) {
+			if def := ctx.Provider.ForName(ctx.Context, rt); def == nil || sdl.IsDataObject(def) {
 				return gqlerror.List{gqlerror.WrapIfUnwrapped(auth.ErrForbidden)}
 			}
 		}

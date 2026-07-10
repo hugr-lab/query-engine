@@ -1,0 +1,14 @@
+mutation {
+  core {
+    insert_roles(data: {
+      name: "e2e_ws_introspect"
+      description: "E2E wildcard hidden + introspection struct/relation"
+      permissions: [
+        { type_name: "data-object:query", field_name: "*", hidden: true }
+        { type_name: "data-object:query", field_name: "pg_store_product_details", hidden: false }
+      ]
+    }) {
+      name
+    }
+  }
+}

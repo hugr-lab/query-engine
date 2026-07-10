@@ -1,0 +1,11 @@
+# All data objects are hidden by a wildcard rule except product_details.
+# Introspecting product_details must keep its embedded struct fields (specs,
+# metadata — not data objects) but hide the `product` relation, which returns
+# the hidden `pg_store_products` data object.
+{
+  __type(name: "pg_store_product_details") {
+    fields {
+      name
+    }
+  }
+}

@@ -101,13 +101,20 @@ func (f *mcpFilter) visibleFieldOfType(typeName, fieldName, baseTypeName, fieldH
 }
 
 // isDataObjectRefField reports whether a field's hugr_type means the field's
-// return type is a data object (a forward/reverse reference, a _join, or an
-// aggregation over one). ClassifyField assigns these only to such fields, so
-// they are exactly the fields a table-level (data-object) rule should govern.
+// RETURN type is itself the base data object — a forward/reverse reference or a
+// _join. For those, the field's return type name is the data object and a
+// data-object rule keys on it directly.
+//
+// Deliberately excluded: aggregate/bucket_agg fields (return a synthetic
+// _X_aggregation type, not the base object) and @function_call fields (return
+// type may be a scalar/struct, which MCP cannot distinguish from a data object
+// without the AST). Those derived fields can still surface a hidden object's
+// NAME in discovery, but the query is blocked by the planner; hiding them here
+// would require mapping the derived type back to the base object. Same gap as
+// GraphQL introspection, which also only hides direct data-object return types.
 func isDataObjectRefField(hugrType string) bool {
 	switch base.HugrTypeField(hugrType) {
-	case base.HugrTypeFieldSelect, base.HugrTypeFieldSelectOne,
-		base.HugrTypeFieldJoin, base.HugrTypeFieldAgg, base.HugrTypeFieldBucketAgg:
+	case base.HugrTypeFieldSelect, base.HugrTypeFieldSelectOne, base.HugrTypeFieldJoin:
 		return true
 	}
 	return false

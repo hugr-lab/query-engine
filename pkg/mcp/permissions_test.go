@@ -77,13 +77,15 @@ func TestVisibleFieldOfType_WildcardSparesNonRelations(t *testing.T) {
 }
 
 func TestIsDataObjectRefField(t *testing.T) {
-	ref := []string{"select", "select_one", "join", "aggregate", "bucket_agg"}
-	for _, ht := range ref {
+	// Only fields whose RETURN type is the base data object itself.
+	for _, ht := range []string{"select", "select_one", "join"} {
 		if !isDataObjectRefField(ht) {
 			t.Errorf("%q must be a data-object reference field", ht)
 		}
 	}
-	for _, ht := range []string{"", "extra_field", "function", "mutation_insert", "scalar", "submodule"} {
+	// Aggregation fields return a synthetic _X_aggregation type; function-call
+	// fields may return a scalar/struct — both are excluded (see doc comment).
+	for _, ht := range []string{"", "extra_field", "function", "aggregate", "bucket_agg", "mutation_insert", "submodule"} {
 		if isDataObjectRefField(ht) {
 			t.Errorf("%q must NOT be a data-object reference field", ht)
 		}
