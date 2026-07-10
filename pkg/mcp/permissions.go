@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/perm"
 )
 
@@ -61,11 +61,12 @@ func (f *mcpFilter) visibleType(typeName string) bool {
 // dataObjectDenied reports whether a data object is hidden or query-disabled by
 // a table-level (data-object:query) permission rule — either makes it invisible
 // in MCP discovery (a disabled object cannot be queried, a hidden one is meant
-// to be discovery-invisible). Scalar and empty type names are never data
-// objects, so they short-circuit — this also prevents a wildcard
-// data-object:query field:"*" rule from matching scalar column types.
+// to be discovery-invisible). typeName must be a data object's GraphQL type
+// name; callers gate on that (table listings query only table/view types,
+// field checks gate on a data-object-reference field hugr_type) so a wildcard
+// data-object:query field:"*" rule never matches a scalar or struct type.
 func (f *mcpFilter) dataObjectDenied(typeName string) bool {
-	if f == nil || typeName == "" || sdl.IsScalarType(typeName) {
+	if f == nil || typeName == "" {
 		return false
 	}
 	return f.perm.DataObjectHidden(typeName) || f.perm.DataObjectDisabled(typeName, perm.OpQuery)
@@ -79,19 +80,37 @@ func (f *mcpFilter) visibleField(typeName, fieldName string) bool {
 	return ok
 }
 
-// visibleFieldOfType is visibleField plus a check that the field's return type
-// is not a hidden/disabled data object — so a relation to a hidden table is
-// hidden along with the table itself. baseTypeName is the field's base return
-// type name (the catalog's field_type_name — list/non-null markers already
-// unwrapped).
-func (f *mcpFilter) visibleFieldOfType(typeName, fieldName, baseTypeName string) bool {
+// visibleFieldOfType is visibleField plus, for fields that REFERENCE a data
+// object (relations, joins, aggregations — identified by the field's
+// hugr_type), a check that the referenced data object is not hidden/disabled.
+// A scalar or embedded-struct field is never a data-object reference, so it is
+// left to the plain field-level check and never matched by a table-level rule.
+// baseTypeName is the field's base return type name (the catalog's
+// field_type_name — list/non-null markers already unwrapped).
+func (f *mcpFilter) visibleFieldOfType(typeName, fieldName, baseTypeName, fieldHugrType string) bool {
 	if f == nil {
 		return true
 	}
 	if !f.visibleField(typeName, fieldName) {
 		return false
 	}
+	if !isDataObjectRefField(fieldHugrType) {
+		return true
+	}
 	return !f.dataObjectDenied(baseTypeName)
+}
+
+// isDataObjectRefField reports whether a field's hugr_type means the field's
+// return type is a data object (a forward/reverse reference, a _join, or an
+// aggregation over one). ClassifyField assigns these only to such fields, so
+// they are exactly the fields a table-level (data-object) rule should govern.
+func isDataObjectRefField(hugrType string) bool {
+	switch base.HugrTypeField(hugrType) {
+	case base.HugrTypeFieldSelect, base.HugrTypeFieldSelectOne,
+		base.HugrTypeFieldJoin, base.HugrTypeFieldAgg, base.HugrTypeFieldBucketAgg:
+		return true
+	}
+	return false
 }
 
 // visibleFunction checks mcp:function permission with fully qualified name.

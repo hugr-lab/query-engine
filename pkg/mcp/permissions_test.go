@@ -34,45 +34,58 @@ func TestVisibleType_DataObject(t *testing.T) {
 	}
 }
 
-// A field whose return type is a hidden/disabled data object is hidden along
-// with the table. baseTypeName is the catalog's already-unwrapped type name.
-func TestVisibleFieldOfType_DataObject(t *testing.T) {
+// A data-object-reference field (relation/join/aggregation — by hugr_type)
+// whose return type is a hidden/disabled data object is hidden along with the
+// table; a normal-table relation stays visible.
+func TestVisibleFieldOfType_DataObjectRelation(t *testing.T) {
 	f := &mcpFilter{perm: dataObjectRole()}
-	if f.visibleFieldOfType("some_type", "rel", "hidden_table") {
+	if f.visibleFieldOfType("t", "rel", "hidden_table", "select") {
 		t.Error("relation to a hidden data-object must be hidden")
 	}
-	if f.visibleFieldOfType("some_type", "rel", "disabled_table") {
-		t.Error("relation to a disabled data-object must be hidden")
+	if f.visibleFieldOfType("t", "j", "disabled_table", "join") {
+		t.Error("join to a disabled data-object must be hidden")
 	}
-	// scalar and normal-table relations stay visible.
-	if !f.visibleFieldOfType("some_type", "name", "String") {
-		t.Error("scalar field must be visible")
-	}
-	if !f.visibleFieldOfType("some_type", "rel2", "normal_table") {
+	if !f.visibleFieldOfType("t", "rel2", "normal_table", "select") {
 		t.Error("relation to a normal table must be visible")
 	}
 }
 
-// Regression: a wildcard data-object:query field:"*" rule (allow-list pattern)
-// must NOT hide scalar column types — dataObjectDenied guards scalars, matching
-// the !sdl.IsScalarType guard used in the validator and introspection.
-func TestDataObjectDenied_ScalarGuard(t *testing.T) {
+// The key regression: a scalar or embedded-STRUCT field must NOT be hidden by a
+// wildcard data-object:query rule — it is not a data-object reference (its
+// hugr_type is not a relation type), so a table-level rule must not govern it.
+func TestVisibleFieldOfType_WildcardSparesNonRelations(t *testing.T) {
 	rp := &perm.RolePermissions{Permissions: []perm.Permission{
 		{Object: "data-object:query", Field: "*", Hidden: true},
 	}}
 	f := &mcpFilter{perm: rp}
 
-	for _, scalar := range []string{"String", "Int", "Boolean", "Float", "Timestamp"} {
-		if !f.visibleFieldOfType("t", "col", scalar) {
-			t.Errorf("scalar field of type %q must not be hidden by a wildcard data-object rule", scalar)
+	// embedded struct field (e.g. specs: ProductSpecs) — hugr_type is not a
+	// relation, so it stays visible even under a hide-all-tables wildcard.
+	if !f.visibleFieldOfType("products", "specs", "ProductSpecs", "") {
+		t.Error("struct field must not be hidden by a wildcard data-object rule")
+	}
+	if !f.visibleFieldOfType("products", "meta", "ProductMetadata", "extra_field") {
+		t.Error("extra/struct field must not be hidden by a wildcard rule")
+	}
+	if !f.visibleFieldOfType("products", "name", "String", "") {
+		t.Error("scalar field must not be hidden")
+	}
+	// a genuine relation IS hidden by the wildcard.
+	if f.visibleFieldOfType("products", "tags", "tags_table", "join") {
+		t.Error("relation must be hidden by the wildcard data-object rule")
+	}
+}
+
+func TestIsDataObjectRefField(t *testing.T) {
+	ref := []string{"select", "select_one", "join", "aggregate", "bucket_agg"}
+	for _, ht := range ref {
+		if !isDataObjectRefField(ht) {
+			t.Errorf("%q must be a data-object reference field", ht)
 		}
 	}
-	// A real data-object relation IS hidden by the wildcard.
-	if f.visibleFieldOfType("t", "rel", "other_table") {
-		t.Error("relation to a data-object must be hidden by the wildcard rule")
-	}
-	// Empty type name is never a data object.
-	if f.dataObjectDenied("") {
-		t.Error("empty type name must not be denied")
+	for _, ht := range []string{"", "extra_field", "function", "mutation_insert", "scalar", "submodule"} {
+		if isDataObjectRefField(ht) {
+			t.Errorf("%q must NOT be a data-object reference field", ht)
+		}
 	}
 }
