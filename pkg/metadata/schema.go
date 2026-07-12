@@ -155,6 +155,9 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 					continue
 				}
 				if p := perm.PermissionsFromCtx(ctx); p != nil {
+					// Hidden fields are omitted from introspection but stay queryable;
+					// disabled fields are inaccessible and must also be omitted, so the
+					// introspected schema matches the role's actual access.
 					if _, ok := p.Visible(def.Name, f.Name); !ok {
 						continue
 					}
@@ -169,6 +172,9 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 						if rd := provider.ForName(ctx, tn); rd == nil || sdl.IsDataObject(rd) {
 							continue
 						}
+					}
+					if _, ok := p.Enabled(def.Name, f.Name); !ok {
+						continue
 					}
 				}
 				data, err := fieldResolver(ctx, provider, f, field.SelectionSet, maxDepth-1)

@@ -150,8 +150,8 @@ type CookieExtractor string
 
 func (c CookieExtractor) ExtractToken(r *http.Request) (string, error) {
 	cookie, err := r.Cookie(string(c))
-	if err != nil {
-		return "", err
+	if err != nil || cookie.Value == "" {
+		return "", request.ErrNoTokenInRequest
 	}
 	return cookie.Value, nil
 }

@@ -265,3 +265,22 @@ func TestJwtProvider_Authenticate(t *testing.T) {
 		})
 	}
 }
+
+func TestJwtProvider_CookieAbsentSkips(t *testing.T) {
+	config := &JwtConfig{
+		Issuer:     "test-issuer",
+		PublicKey:  rsaPubKey,
+		CookieName: "session",
+		Claims:     UserAuthInfoConfig{Role: "role", UserId: "sub", UserName: "name"},
+	}
+	provider, err := NewJwt(config)
+	if err != nil {
+		t.Fatalf("failed to create JwtProvider: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+
+	if _, err := provider.Authenticate(req); !errors.Is(err, ErrSkipAuth) {
+		t.Errorf("Authenticate() with no token and cookie configured = %v, want ErrSkipAuth", err)
+	}
+}

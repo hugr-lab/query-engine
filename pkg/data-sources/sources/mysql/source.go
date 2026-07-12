@@ -48,6 +48,18 @@ func (s *Source) IsAttached() bool {
 	return s.isAttached
 }
 
+// DefaultSchema returns the database name from the connection string.
+// MySQL exposes every database as a schema of the attached catalog, so the
+// connection database is reported as the default schema to keep its objects
+// unprefixed and module-free in self-described catalogs.
+func (s *Source) DefaultSchema() string {
+	path, err := sources.ParseDSN(s.ds.Path)
+	if err != nil {
+		return ""
+	}
+	return path.DBName
+}
+
 func (s *Source) Attach(ctx context.Context, db *db.Pool) (err error) {
 	if s.isAttached {
 		return sources.ErrDataSourceAttached

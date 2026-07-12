@@ -30,6 +30,9 @@ func (s *Service) catalogSource(ctx context.Context, ds Source, self bool) (cat 
 			if err != nil {
 				return nil, fmt.Errorf("failed to describe data source %s: %w", def.Name, err)
 			}
+			if p, ok := ds.(DefaultSchemaProvider); ok {
+				info.DefaultSchema = p.DefaultSchema()
+			}
 			if err := info.Build(ctx, ds.Engine(), opts); err != nil {
 				return nil, fmt.Errorf("failed to create catalog for data source %s: %w", def.Name, err)
 			}

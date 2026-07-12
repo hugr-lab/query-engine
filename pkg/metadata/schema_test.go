@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -693,5 +694,48 @@ func Test_typeResolver(t *testing.T) {
 				t.Errorf("typeResolver() = %v, expected %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func Test_typeResolver_permissionVisibility(t *testing.T) {
+	schema := &ast.Schema{
+		Types: map[string]*ast.Definition{
+			"String": {Kind: ast.Scalar, Name: "String"},
+			"T": {
+				Kind: ast.Object, Name: "T",
+				Fields: []*ast.FieldDefinition{
+					{Name: "visible", Type: ast.NamedType("String", &ast.Position{})},
+					{Name: "denied", Type: ast.NamedType("String", &ast.Position{})},
+					{Name: "hidden", Type: ast.NamedType("String", &ast.Position{})},
+				},
+			},
+		},
+	}
+	sel := ast.SelectionSet{&ast.Field{Name: "fields", SelectionSet: ast.SelectionSet{&ast.Field{Name: "name"}}}}
+
+	ctx := perm.CtxWithPerm(t.Context(), &perm.RolePermissions{
+		Name: "r",
+		Permissions: []perm.Permission{
+			{Object: "T", Field: "denied", Disabled: true},
+			{Object: "T", Field: "hidden", Hidden: true},
+		},
+	})
+	res, err := typeResolver(ctx, static.NewWithSchema(schema), ast.NamedType("T", &ast.Position{}), sel, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields, _ := res["fields"].([]map[string]any)
+	got := map[string]bool{}
+	for _, f := range fields {
+		got[f["name"].(string)] = true
+	}
+	if !got["visible"] {
+		t.Error("visible field should be present in introspection")
+	}
+	if got["denied"] {
+		t.Error("disabled field must be omitted from introspection")
+	}
+	if got["hidden"] {
+		t.Error("hidden field must be omitted from introspection")
 	}
 }

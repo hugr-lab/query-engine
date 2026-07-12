@@ -31,11 +31,15 @@ func permissionFilterNode(ctx context.Context, defs base.DefinitionsSource, info
 	// object, so they apply on every path the object is materialised through —
 	// top-level fields, _by_pk, relations, _join, aggregations, delete/update.
 	objType := info.TypeName()
-	if p.DataObjectDisabled(objType, op) {
+	isDataObject := info.IsDataObject()
+	if isDataObject && p.DataObjectDisabled(objType, op) {
 		return nil, auth.ErrForbidden
 	}
 	arg := p.FilterArgument(ctx, query.ObjectDefinition.Name, query.Name)
-	objArg := p.DataObjectFilter(ctx, objType, op)
+	var objArg map[string]any
+	if isDataObject {
+		objArg = p.DataObjectFilter(ctx, objType, op)
+	}
 	switch {
 	case len(arg) == 0 && len(objArg) == 0:
 		return nil, nil
