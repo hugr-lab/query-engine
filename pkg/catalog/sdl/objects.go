@@ -82,6 +82,13 @@ func (info *Object) TypeName() string {
 	return info.def.Name
 }
 
+// IsDataObject reports whether the object is a real table/view data object,
+// as opposed to a synthetic wrapper (module query type, aggregation type).
+// Table-level (data-object:*) permission rules only apply to real data objects.
+func (info *Object) IsDataObject() bool {
+	return info != nil && info.def != nil && IsDataObject(info.def)
+}
+
 func CatalogName(def *ast.Definition) string {
 	return base.DefinitionCatalog(def)
 }
