@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func TestSubstitutePlaceholders(t *testing.T) {
@@ -136,6 +137,48 @@ func TestSubstitutePlaceholders_UserIDIntZero(t *testing.T) {
 	}
 	if len(params) != 0 {
 		t.Errorf("expected empty params, got %v", params)
+	}
+}
+
+func TestEmptyArgValue(t *testing.T) {
+	// On Airport engines an @arg_default that resolves empty is bound as a
+	// typed empty value instead of SQL NULL: DuckDB registers remote scalar
+	// functions with default NULL handling, so a NULL argument short-circuits
+	// the call to NULL without ever invoking the remote handler.
+	def := &ast.FieldDefinition{
+		Name: "create_chat",
+		Arguments: ast.ArgumentDefinitionList{
+			{Name: "user_name", Type: ast.NamedType("String", nil)},
+			{Name: "user_id_int", Type: ast.NamedType("Int", nil)},
+			{Name: "big", Type: ast.NamedType("BigInt", nil)},
+			{Name: "ratio", Type: ast.NamedType("Float", nil)},
+			{Name: "flag", Type: ast.NamedType("Boolean", nil)},
+			{Name: "at", Type: ast.NamedType("Timestamp", nil)},
+		},
+	}
+
+	tests := []struct {
+		arg    string
+		want   any
+		wantOK bool
+	}{
+		{"user_name", "", true},
+		{"user_id_int", int64(0), true},
+		{"big", int64(0), true},
+		{"ratio", 0.0, true},
+		{"flag", false, true},
+		{"at", nil, false},      // no natural empty — keep NULL
+		{"missing", nil, false}, // unknown arg — keep NULL
+	}
+	for _, tt := range tests {
+		got, ok := emptyArgValue(def, tt.arg)
+		if ok != tt.wantOK || got != tt.want {
+			t.Errorf("emptyArgValue(%q) = (%v, %v), want (%v, %v)", tt.arg, got, ok, tt.want, tt.wantOK)
+		}
+	}
+
+	if _, ok := emptyArgValue(nil, "user_name"); ok {
+		t.Error("nil field definition must keep NULL substitution")
 	}
 }
 

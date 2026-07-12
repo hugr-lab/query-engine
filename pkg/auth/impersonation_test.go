@@ -35,6 +35,21 @@ func TestBuildImpersonatedAuthInfo(t *testing.T) {
 	}
 }
 
+func TestBuildImpersonatedAuthInfo_UserNameDefaultsToUserId(t *testing.T) {
+	// An omitted user name must fall back to the user id: an empty UserName
+	// resolves [$auth.user_name] to SQL NULL, which on Airport scalar
+	// functions silently short-circuits the call before the handler runs.
+	original := &AuthInfo{
+		Role: "admin", UserId: "api", UserName: "api",
+		AuthType: "apiKey", AuthProvider: "x-hugr-secret",
+	}
+	result := BuildImpersonatedAuthInfo(original, "user-123", "", "viewer")
+
+	if result.UserName != "user-123" {
+		t.Errorf("UserName = %q, want fallback to UserId %q", result.UserName, "user-123")
+	}
+}
+
 func TestIsImpersonated(t *testing.T) {
 	tests := []struct {
 		name    string

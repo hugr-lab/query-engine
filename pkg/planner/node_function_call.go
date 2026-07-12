@@ -279,9 +279,23 @@ func functionCallSQL(ctx context.Context, defs base.DefinitionsSource, e engines
 	// or user-written) which gets substituted with the resolved context value.
 	if len(info.ArgDefaults) > 0 {
 		authVars := perm.AuthVars(ctx)
+		isAirport := e.Type() == engines.TypeAirport
 		for argName, placeholder := range info.ArgDefaults {
 			value, ok := authVars[placeholder]
 			if !ok || sdl.IsEmptyContextValue(value) {
+				// On Airport sources a scalar function with any NULL argument
+				// never executes: DuckDB registers remote scalars with default
+				// NULL handling, so the row short-circuits to NULL before the
+				// Flight call is made — the handler silently never runs. Bind a
+				// typed empty value instead of NULL; app handlers already
+				// collapse nil/empty (table functions deliver "" for both).
+				if isAirport {
+					if ev, evOK := emptyArgValue(field.Definition, argName); evOK {
+						params = append(params, ev)
+						sql = strings.ReplaceAll(sql, "["+argName+"]", "$"+strconv.Itoa(len(params)))
+						continue
+					}
+				}
 				sql = strings.ReplaceAll(sql, "["+argName+"]", "NULL")
 				continue
 			}
@@ -339,6 +353,32 @@ func isComplexValue(v any) bool {
 		return false
 	}
 	return false
+}
+
+// emptyArgValue returns the typed empty value for a function argument declared
+// with @arg_default, used on Airport engines in place of SQL NULL. The known
+// context placeholders are all String plus one Int ([$auth.user_id_int]), so
+// the scalar map below covers every real case; an unmapped type keeps the NULL
+// substitution (and, on a scalar function, the pre-existing short-circuit).
+func emptyArgValue(def *ast.FieldDefinition, argName string) (any, bool) {
+	if def == nil {
+		return nil, false
+	}
+	arg := def.Arguments.ForName(argName)
+	if arg == nil {
+		return nil, false
+	}
+	switch arg.Type.Name() {
+	case "String":
+		return "", true
+	case "Int", "BigInt":
+		return int64(0), true
+	case "Float":
+		return 0.0, true
+	case "Boolean":
+		return false, true
+	}
+	return nil, false
 }
 
 // substitutePlaceholders replaces known context placeholders ([$auth.*], [$catalog])
