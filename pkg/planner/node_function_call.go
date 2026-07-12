@@ -268,33 +268,34 @@ func functionCallSQL(ctx context.Context, defs base.DefinitionsSource, e engines
 		sql = strings.ReplaceAll(sql, "["+k+"]", "["+v+"]")
 	}
 
+	// On an Airport source a *scalar* function with any NULL argument never runs:
+	// DuckDB registers remote scalars with default NULL handling, so the row
+	// short-circuits to NULL before the Flight call is made and the remote handler
+	// silently never executes. For those, an empty context placeholder must bind a
+	// typed non-NULL empty value instead of SQL NULL (app handlers collapse
+	// nil/empty). Table functions do not short-circuit on NULL, so they keep the
+	// NULL substitution — restricting this to scalars avoids changing their result
+	// sets (a NULL "no filter" arg must stay NULL, not become "" / 0).
+	airportScalar := e.Type() == engines.TypeAirport && !info.ReturnsTable
+
 	// Substitute known context placeholders ([$auth.*], [$catalog]) embedded in the
 	// SQL template. The whitelist lives in pkg/catalog/sdl/placeholders.go. Missing
 	// or empty values become NULL — auth/perm middleware already handles unauthenticated
 	// requests; the function's own logic decides how to handle a NULL identity.
-	sql, params = substitutePlaceholders(ctx, sql, params)
+	sql, params = substitutePlaceholders(ctx, sql, params, airportScalar)
 
 	// Resolve arguments declared with @arg_default before user-supplied args.
 	// Hidden args have a [arg_name] placeholder in the SQL template (auto-generated
 	// or user-written) which gets substituted with the resolved context value.
 	if len(info.ArgDefaults) > 0 {
 		authVars := perm.AuthVars(ctx)
-		isAirport := e.Type() == engines.TypeAirport
 		for argName, placeholder := range info.ArgDefaults {
 			value, ok := authVars[placeholder]
 			if !ok || sdl.IsEmptyContextValue(value) {
-				// On Airport sources a scalar function with any NULL argument
-				// never executes: DuckDB registers remote scalars with default
-				// NULL handling, so the row short-circuits to NULL before the
-				// Flight call is made — the handler silently never runs. Bind a
-				// typed empty value instead of NULL; app handlers already
-				// collapse nil/empty (table functions deliver "" for both).
-				if isAirport {
-					if ev, evOK := emptyArgValue(field.Definition, argName); evOK {
-						params = append(params, ev)
-						sql = strings.ReplaceAll(sql, "["+argName+"]", "$"+strconv.Itoa(len(params)))
-						continue
-					}
+				if airportScalar {
+					params = append(params, emptyPlaceholderValue(placeholder))
+					sql = strings.ReplaceAll(sql, "["+argName+"]", "$"+strconv.Itoa(len(params)))
+					continue
 				}
 				sql = strings.ReplaceAll(sql, "["+argName+"]", "NULL")
 				continue
@@ -355,36 +356,27 @@ func isComplexValue(v any) bool {
 	return false
 }
 
-// emptyArgValue returns the typed empty value for a function argument declared
-// with @arg_default, used on Airport engines in place of SQL NULL. The known
-// context placeholders are all String plus one Int ([$auth.user_id_int]), so
-// the scalar map below covers every real case; an unmapped type keeps the NULL
-// substitution (and, on a scalar function, the pre-existing short-circuit).
-func emptyArgValue(def *ast.FieldDefinition, argName string) (any, bool) {
-	if def == nil {
-		return nil, false
+// emptyPlaceholderValue returns the typed non-NULL empty value to bind for a
+// context placeholder whose resolved value is empty, used on Airport scalar
+// functions in place of SQL NULL (see airportScalar in functionCallSQL). The
+// type is taken from the placeholder itself, whose resolved type is fixed by
+// perm.AuthVars — so it always matches what the non-empty branch would bind:
+// [$auth.user_id_int] is the only Int placeholder; every other known
+// placeholder (and any custom claim) resolves to a string, so "" is correct.
+func emptyPlaceholderValue(placeholder string) any {
+	if placeholder == "[$auth.user_id_int]" {
+		return 0
 	}
-	arg := def.Arguments.ForName(argName)
-	if arg == nil {
-		return nil, false
-	}
-	switch arg.Type.Name() {
-	case "String":
-		return "", true
-	case "Int", "BigInt":
-		return int64(0), true
-	case "Float":
-		return 0.0, true
-	case "Boolean":
-		return false, true
-	}
-	return nil, false
+	return ""
 }
 
 // substitutePlaceholders replaces known context placeholders ([$auth.*], [$catalog])
 // in the SQL string with parameterized values resolved from the request context.
-// Missing or empty values are substituted as the literal "NULL".
-func substitutePlaceholders(ctx context.Context, sql string, params []any) (string, []any) {
+// Missing or empty values are substituted as the literal "NULL", except on Airport
+// scalar functions (airportScalar), where an empty value binds a typed non-NULL
+// empty instead — a NULL argument would short-circuit the remote scalar to NULL
+// before its handler runs.
+func substitutePlaceholders(ctx context.Context, sql string, params []any, airportScalar bool) (string, []any) {
 	authVars := perm.AuthVars(ctx)
 	for placeholder := range sdl.KnownArgPlaceholders {
 		if !strings.Contains(sql, placeholder) {
@@ -392,6 +384,11 @@ func substitutePlaceholders(ctx context.Context, sql string, params []any) (stri
 		}
 		value, ok := authVars[placeholder]
 		if !ok || sdl.IsEmptyContextValue(value) {
+			if airportScalar {
+				params = append(params, emptyPlaceholderValue(placeholder))
+				sql = strings.ReplaceAll(sql, placeholder, "$"+strconv.Itoa(len(params)))
+				continue
+			}
 			sql = strings.ReplaceAll(sql, placeholder, "NULL")
 			continue
 		}

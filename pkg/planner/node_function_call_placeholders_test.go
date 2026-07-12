@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/vektah/gqlparser/v2/ast"
 )
 
 func TestSubstitutePlaceholders(t *testing.T) {
@@ -79,7 +78,7 @@ func TestSubstitutePlaceholders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSQL, gotParams := substitutePlaceholders(tt.ctx, tt.sql, tt.params)
+			gotSQL, gotParams := substitutePlaceholders(tt.ctx, tt.sql, tt.params, false)
 
 			// For multi-placeholder cases the iteration order over the placeholder map
 			// is non-deterministic, so verify the SQL doesn't contain any raw placeholder
@@ -131,7 +130,7 @@ func TestSubstitutePlaceholders_UserIDIntZero(t *testing.T) {
 	ctx := auth.ContextWithAuthInfo(context.Background(), authInfo)
 
 	sql := "lookup([$auth.user_id_int])"
-	got, params := substitutePlaceholders(ctx, sql, nil)
+	got, params := substitutePlaceholders(ctx, sql, nil, false)
 	if got != "lookup(NULL)" {
 		t.Errorf("expected NULL substitution for zero user_id_int, got %q", got)
 	}
@@ -140,45 +139,43 @@ func TestSubstitutePlaceholders_UserIDIntZero(t *testing.T) {
 	}
 }
 
-func TestEmptyArgValue(t *testing.T) {
-	// On Airport engines an @arg_default that resolves empty is bound as a
-	// typed empty value instead of SQL NULL: DuckDB registers remote scalar
-	// functions with default NULL handling, so a NULL argument short-circuits
-	// the call to NULL without ever invoking the remote handler.
-	def := &ast.FieldDefinition{
-		Name: "create_chat",
-		Arguments: ast.ArgumentDefinitionList{
-			{Name: "user_name", Type: ast.NamedType("String", nil)},
-			{Name: "user_id_int", Type: ast.NamedType("Int", nil)},
-			{Name: "big", Type: ast.NamedType("BigInt", nil)},
-			{Name: "ratio", Type: ast.NamedType("Float", nil)},
-			{Name: "flag", Type: ast.NamedType("Boolean", nil)},
-			{Name: "at", Type: ast.NamedType("Timestamp", nil)},
-		},
+func TestSubstitutePlaceholders_AirportScalarBindsEmpty(t *testing.T) {
+	// On Airport scalar functions an empty [$auth.*] must bind a typed non-NULL
+	// empty instead of the literal NULL: DuckDB registers remote scalars with
+	// default NULL handling, so a NULL argument short-circuits the row to NULL
+	// before the Flight call runs and the remote handler never executes.
+	ctx := context.Background() // anonymous → every placeholder resolves empty
+
+	// String placeholder → "" bound as a param, not NULL.
+	got, params := substitutePlaceholders(ctx, "func([$auth.user_name])", nil, true)
+	if got != "func($1)" {
+		t.Errorf("SQL = %q, want func($1)", got)
+	}
+	if len(params) != 1 || params[0] != "" {
+		t.Errorf("params = %v, want [\"\"]", params)
 	}
 
-	tests := []struct {
-		arg    string
-		want   any
-		wantOK bool
-	}{
-		{"user_name", "", true},
-		{"user_id_int", int64(0), true},
-		{"big", int64(0), true},
-		{"ratio", 0.0, true},
-		{"flag", false, true},
-		{"at", nil, false},      // no natural empty — keep NULL
-		{"missing", nil, false}, // unknown arg — keep NULL
+	// Int placeholder ([$auth.user_id_int]) → 0, matching perm.AuthVars' Go type.
+	got, params = substitutePlaceholders(ctx, "func([$auth.user_id_int])", nil, true)
+	if got != "func($1)" {
+		t.Errorf("SQL = %q, want func($1)", got)
 	}
-	for _, tt := range tests {
-		got, ok := emptyArgValue(def, tt.arg)
-		if ok != tt.wantOK || got != tt.want {
-			t.Errorf("emptyArgValue(%q) = (%v, %v), want (%v, %v)", tt.arg, got, ok, tt.want, tt.wantOK)
+	if len(params) != 1 || params[0] != 0 {
+		t.Errorf("params = %v, want [0]", params)
+	}
+}
+
+func TestEmptyPlaceholderValue(t *testing.T) {
+	// The empty value is keyed on the placeholder itself, whose resolved type is
+	// fixed by perm.AuthVars: only [$auth.user_id_int] is an Int, everything else
+	// (built-in or custom claim) resolves to a string.
+	if got := emptyPlaceholderValue("[$auth.user_id_int]"); got != 0 {
+		t.Errorf("[$auth.user_id_int] → %v (%T), want 0 (int)", got, got)
+	}
+	for _, ph := range []string{"[$auth.user_name]", "[$auth.user_id]", "[$auth.role]", "[$auth.tenant_id]"} {
+		if got := emptyPlaceholderValue(ph); got != "" {
+			t.Errorf("%s → %v, want \"\"", ph, got)
 		}
-	}
-
-	if _, ok := emptyArgValue(nil, "user_name"); ok {
-		t.Error("nil field definition must keep NULL substitution")
 	}
 }
 
@@ -188,7 +185,7 @@ func TestSubstitutePlaceholders_CatalogNotInWhitelist(t *testing.T) {
 	// generic loop must leave it alone if it ever appears here.
 	ctx := context.Background()
 	sql := "lookup([$catalog].x)"
-	got, params := substitutePlaceholders(ctx, sql, nil)
+	got, params := substitutePlaceholders(ctx, sql, nil, false)
 	if got != sql {
 		t.Errorf("[$catalog] should be left unchanged by substitutePlaceholders, got %q", got)
 	}
