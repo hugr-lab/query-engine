@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 )
 
 func TestSubstitutePlaceholders(t *testing.T) {
@@ -78,7 +79,7 @@ func TestSubstitutePlaceholders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSQL, gotParams := substitutePlaceholders(tt.ctx, tt.sql, tt.params, false)
+			gotSQL, gotParams := substitutePlaceholders(perm.AuthVars(tt.ctx), tt.sql, tt.params, false)
 
 			// For multi-placeholder cases the iteration order over the placeholder map
 			// is non-deterministic, so verify the SQL doesn't contain any raw placeholder
@@ -130,7 +131,7 @@ func TestSubstitutePlaceholders_UserIDIntZero(t *testing.T) {
 	ctx := auth.ContextWithAuthInfo(context.Background(), authInfo)
 
 	sql := "lookup([$auth.user_id_int])"
-	got, params := substitutePlaceholders(ctx, sql, nil, false)
+	got, params := substitutePlaceholders(perm.AuthVars(ctx), sql, nil, false)
 	if got != "lookup(NULL)" {
 		t.Errorf("expected NULL substitution for zero user_id_int, got %q", got)
 	}
@@ -144,10 +145,10 @@ func TestSubstitutePlaceholders_AirportScalarBindsEmpty(t *testing.T) {
 	// empty instead of the literal NULL: DuckDB registers remote scalars with
 	// default NULL handling, so a NULL argument short-circuits the row to NULL
 	// before the Flight call runs and the remote handler never executes.
-	ctx := context.Background() // anonymous → every placeholder resolves empty
 
+	// Anonymous request → placeholder absent (nil): a typed empty is synthesized.
 	// String placeholder → "" bound as a param, not NULL.
-	got, params := substitutePlaceholders(ctx, "func([$auth.user_name])", nil, true)
+	got, params := substitutePlaceholders(perm.AuthVars(context.Background()), "func([$auth.user_name])", nil, true)
 	if got != "func($1)" {
 		t.Errorf("SQL = %q, want func($1)", got)
 	}
@@ -155,26 +156,42 @@ func TestSubstitutePlaceholders_AirportScalarBindsEmpty(t *testing.T) {
 		t.Errorf("params = %v, want [\"\"]", params)
 	}
 
-	// Int placeholder ([$auth.user_id_int]) → 0, matching perm.AuthVars' Go type.
-	got, params = substitutePlaceholders(ctx, "func([$auth.user_id_int])", nil, true)
+	// Int placeholder ([$auth.user_id_int]) → int 0, matching perm.AuthVars' type.
+	got, params = substitutePlaceholders(perm.AuthVars(context.Background()), "func([$auth.user_id_int])", nil, true)
 	if got != "func($1)" {
 		t.Errorf("SQL = %q, want func($1)", got)
 	}
 	if len(params) != 1 || params[0] != 0 {
 		t.Errorf("params = %v, want [0]", params)
 	}
+
+	// Authenticated but empty-named identity → placeholder resolves to "" (the
+	// real AuthVars value is reused): still bound, still non-NULL.
+	ctxEmptyName := auth.ContextWithAuthInfo(context.Background(),
+		&auth.AuthInfo{Role: "admin", UserId: "alice", UserName: ""})
+	got, params = substitutePlaceholders(perm.AuthVars(ctxEmptyName), "func([$auth.user_name])", nil, true)
+	if got != "func($1)" || len(params) != 1 || params[0] != "" {
+		t.Errorf("empty-name identity: SQL=%q params=%v, want func($1) [\"\"]", got, params)
+	}
 }
 
-func TestEmptyPlaceholderValue(t *testing.T) {
-	// The empty value is keyed on the placeholder itself, whose resolved type is
-	// fixed by perm.AuthVars: only [$auth.user_id_int] is an Int, everything else
-	// (built-in or custom claim) resolves to a string.
-	if got := emptyPlaceholderValue("[$auth.user_id_int]"); got != 0 {
-		t.Errorf("[$auth.user_id_int] → %v (%T), want 0 (int)", got, got)
+func TestEmptyBindValue(t *testing.T) {
+	// A non-nil resolved value is reused verbatim — it already carries the
+	// placeholder's real Go type, keeping empty and non-empty binds consistent.
+	if got := emptyBindValue("[$auth.user_id_int]", 0); got != 0 {
+		t.Errorf("reuse int 0 → %v (%T), want 0 (int)", got, got)
 	}
-	for _, ph := range []string{"[$auth.user_name]", "[$auth.user_id]", "[$auth.role]", "[$auth.tenant_id]"} {
-		if got := emptyPlaceholderValue(ph); got != "" {
-			t.Errorf("%s → %v, want \"\"", ph, got)
+	if got := emptyBindValue("[$auth.user_name]", ""); got != "" {
+		t.Errorf("reuse \"\" → %v, want \"\"", got)
+	}
+	// A nil value (identity entirely absent) synthesizes a typed empty from the
+	// placeholder: [$auth.user_id_int] is the only Int, everything else a string.
+	if got := emptyBindValue("[$auth.user_id_int]", nil); got != 0 {
+		t.Errorf("nil [$auth.user_id_int] → %v (%T), want 0 (int)", got, got)
+	}
+	for _, ph := range []string{"[$auth.user_name]", "[$auth.user_id]", "[$auth.role]"} {
+		if got := emptyBindValue(ph, nil); got != "" {
+			t.Errorf("nil %s → %v, want \"\"", ph, got)
 		}
 	}
 }
@@ -185,7 +202,7 @@ func TestSubstitutePlaceholders_CatalogNotInWhitelist(t *testing.T) {
 	// generic loop must leave it alone if it ever appears here.
 	ctx := context.Background()
 	sql := "lookup([$catalog].x)"
-	got, params := substitutePlaceholders(ctx, sql, nil, false)
+	got, params := substitutePlaceholders(perm.AuthVars(ctx), sql, nil, false)
 	if got != sql {
 		t.Errorf("[$catalog] should be left unchanged by substitutePlaceholders, got %q", got)
 	}
