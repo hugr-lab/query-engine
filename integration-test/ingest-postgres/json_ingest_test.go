@@ -11,7 +11,6 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/extensions"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	hugr "github.com/hugr-lab/query-engine"
 	"github.com/stretchr/testify/assert"
@@ -65,9 +64,6 @@ func jsonPhysicalTypeSpecs(t *testing.T) []jsonPhysicalTypeSpec {
 		arrow.Field{Name: "kind", Type: arrow.BinaryTypes.String, Nullable: false},
 		arrow.Field{Name: "count", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
 	)
-	arrowJSONType, err := extensions.NewJSONType(arrow.BinaryTypes.String)
-	require.NoError(t, err)
-
 	return []jsonPhysicalTypeSpec{
 		{name: "payload", dataType: arrow.BinaryTypes.String, expected: map[string]any{"kind": "string"}, appendValue: appendJSONText(`{"kind":"string"}`)},
 		{name: "payload_large_string", dataType: arrow.BinaryTypes.LargeString, expected: map[string]any{"kind": "large_string"}, appendValue: appendJSONText(`{"kind":"large_string"}`)},
@@ -83,7 +79,7 @@ func jsonPhysicalTypeSpecs(t *testing.T) []jsonPhysicalTypeSpec {
 		{name: "payload_large_list_view", dataType: arrow.LargeListViewOf(arrow.PrimitiveTypes.Int64), expected: []any{float64(9), float64(10)}, appendValue: appendInt64JSONList(9, 10)},
 		{name: "payload_map", dataType: arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64), expected: map[string]any{"a": float64(11), "b": float64(12)}, appendValue: appendInt64JSONMap([]string{"a", "b"}, []int64{11, 12})},
 		{name: "payload_scalar", dataType: arrow.PrimitiveTypes.Int64, expected: "13", appendValue: appendInt64JSONScalar(13)},
-		{name: "payload_arrow_json", dataType: arrowJSONType, expected: map[string]any{"kind": "arrow_json"}, appendValue: appendArrowJSONText(`{"kind":"arrow_json"}`)},
+		{name: "payload_arrow_json", dataType: arrow.BinaryTypes.String, arrowExtension: "arrow.json", expected: map[string]any{"kind": "arrow_json"}, appendValue: appendJSONText(`{"kind":"arrow_json"}`)},
 	}
 }
 
@@ -199,15 +195,6 @@ func appendInt64JSONScalar(value int64) func(*testing.T, array.Builder) {
 		intBuilder, ok := builder.(*array.Int64Builder)
 		require.Truef(t, ok, "got %T, want *array.Int64Builder", builder)
 		intBuilder.Append(value)
-	}
-}
-
-func appendArrowJSONText(value string) func(*testing.T, array.Builder) {
-	return func(t *testing.T, builder array.Builder) {
-		t.Helper()
-		extensionBuilder, ok := builder.(*array.ExtensionBuilder)
-		require.Truef(t, ok, "got %T, want *array.ExtensionBuilder", builder)
-		extensionBuilder.StorageBuilder().(*array.StringBuilder).Append(value)
 	}
 }
 

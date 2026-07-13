@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
-	"github.com/apache/arrow-go/v18/arrow/extensions"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/paulmach/orb"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -32,7 +31,7 @@ func TestArrowIngestJSONStagingExpr(t *testing.T) {
 		{name: "large list view", typ: arrow.LargeListViewOf(arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
 		{name: "map", typ: arrow.MapOf(arrow.BinaryTypes.String, arrow.PrimitiveTypes.Int64), want: "to_json(payload)"},
 		{name: "scalar", typ: arrow.PrimitiveTypes.Int64, want: "to_json(payload)"},
-		{name: "arrow json extension", typ: mustTestArrowJSONType(t), want: "CAST(payload AS JSON)"},
+		{name: "arrow json extension", typ: arrow.BinaryTypes.String, ext: "arrow.json", want: "CAST(payload AS JSON)"},
 		{name: "geojson string extension", typ: arrow.BinaryTypes.String, ext: "geoarrow.geojson", want: "CAST(payload AS JSON)"},
 		{name: "hugr geojson binary extension", typ: arrow.BinaryTypes.Binary, ext: "hugr.geojson", want: "CAST(decode(payload) AS JSON)"},
 		{name: "plain geojson struct extension", typ: arrow.StructOf(), ext: "geojson", want: "to_json(payload)"},
@@ -260,15 +259,6 @@ func TestArrowIngestRejectsInvalidGeoArrowWKBStorage(t *testing.T) {
 	}
 }
 
-func mustTestArrowJSONType(t *testing.T) arrow.DataType {
-	t.Helper()
-	typ, err := extensions.NewJSONType(arrow.BinaryTypes.String)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return typ
-}
-
 func TestArrowIngestRejectsNativeGeoArrowUnionLayouts(t *testing.T) {
 	field := geometryTestField("")
 	staging := NewArrowIngestStagingBuilder()
@@ -306,7 +296,7 @@ func TestArrowIngestRejectsUnsupportedGeometryExtensionMetadata(t *testing.T) {
 		},
 		{
 			name: "arrow json is not a geometry extension",
-			typ:  mustTestArrowJSONType(t),
+			typ:  arrow.BinaryTypes.String,
 			ext:  "arrow.json",
 		},
 	} {
