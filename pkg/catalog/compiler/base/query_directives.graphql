@@ -32,6 +32,18 @@ directive @add_h3(
     simplify: Boolean = true
 ) on FIELD
 
+"""
+Enable request-level tracing. Spans are collected and returned in extensions.trace.
+"""
+directive @trace(level: LogLevel = DEBUG) on QUERY | MUTATION
+
+enum LogLevel @system {
+    ERROR
+    WARN
+    INFO
+    DEBUG
+}
+
 enum GeometrySpatialQueryType @system {
     """
     checks if the geometries intersect

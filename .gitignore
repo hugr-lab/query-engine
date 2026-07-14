@@ -2,6 +2,7 @@
 .local
 .claude/
 .specify/
+.idea/
 specs/
 design/
 internal/airport_test_service/

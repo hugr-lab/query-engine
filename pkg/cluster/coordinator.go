@@ -8,6 +8,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/client"
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/trace"
 	"github.com/hugr-lab/query-engine/types"
 )
 
@@ -27,11 +28,13 @@ func NewCoordinator(config ClusterConfig, qe types.Querier) *Coordinator {
 	}
 }
 
-func (c *Coordinator) newClient(url string) *client.Client {
-	return client.NewClient(url,
+func (c *Coordinator) newClient(url string, opts ...client.Option) *client.Client {
+	baseOpts := []client.Option{
 		client.WithApiKeyCustomHeader(c.config.Secret, "x-hugr-secret"),
 		client.WithTimeout(c.config.Heartbeat),
-	)
+	}
+	baseOpts = append(baseOpts, opts...)
+	return client.NewClient(url, baseOpts...)
 }
 
 // ActiveWorkers reads active worker nodes via GraphQL.
@@ -76,12 +79,13 @@ func (c *Coordinator) Broadcast(ctx context.Context, query string, vars map[stri
 	results := make([]NodeResult, len(workers))
 	var wg sync.WaitGroup
 
+	traceID := trace.TraceIDFromContext(ctx)
 	for i, w := range workers {
 		wg.Add(1)
 		go func(idx int, node NodeInfo) {
 			defer wg.Done()
-			client := c.newClient(node.URL)
-			res, err := client.Query(ctx, query, vars)
+			cl := c.newClient(node.URL, client.WithTraceID(traceID))
+			res, err := cl.Query(ctx, query, vars)
 			if err != nil {
 				results[idx] = NodeResult{Node: node.Name, Error: err.Error()}
 				return
