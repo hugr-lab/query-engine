@@ -52,6 +52,15 @@ type SelfDescriber interface {
 	CatalogSource(ctx context.Context, db *db.Pool) (cs.Catalog, error)
 }
 
+// DefaultSchemaProvider is implemented by sources whose connection is scoped
+// to a specific schema/database (e.g. MySQL). During self-described catalog
+// generation the returned schema is treated like the engine default schemas
+// ("public", "main"): its objects are not wrapped into a schema module and
+// keep unprefixed GraphQL type names.
+type DefaultSchemaProvider interface {
+	DefaultSchema() string
+}
+
 // Provisioner is implemented by sources that need to provision external
 // resources (databases, schemas) after attachment. Called by the data source
 // service after Attach() succeeds. Querier provides access to hugr's GraphQL
