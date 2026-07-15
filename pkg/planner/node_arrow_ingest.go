@@ -82,7 +82,7 @@ func resolveIngestTarget(ctx context.Context, provider catalog.Provider, dataObj
 			return nil, nil, fmt.Errorf("query base type not found in schema")
 		}
 		cur := queryDef
-		for _, part := range strings.Split(dataObject, ".") {
+		for part := range strings.SplitSeq(dataObject, ".") {
 			f := cur.Fields.ForName(part)
 			if f == nil {
 				return nil, nil, fmt.Errorf("data object %q: segment %q not found", dataObject, part)

@@ -17,7 +17,78 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/hugr-lab/query-engine/types"
+	"golang.org/x/sync/errgroup"
 )
+
+func (c *Client) Ingest(ctx context.Context, table string, reader array.RecordReader, opts ...types.IngestOpt) (int64, error) {
+	if table == "" {
+		return 0, errors.New("hugr ingest: table is required")
+	}
+	if reader == nil {
+		return 0, errors.New("hugr ingest: reader is nil")
+	}
+	endpoint, err := buildIngestURL(c.url, table, opts...)
+	if err != nil {
+		return 0, err
+	}
+
+	eg, ctx := errgroup.WithContext(ctx)
+	buf := bytes.NewBuffer(nil)
+	wi := ipc.NewWriter(buf, ipc.WithSchema(reader.Schema()))
+	eg.Go(func() error {
+		defer wi.Close()
+		for reader.Next() {
+			rec := reader.RecordBatch()
+			if err := wi.Write(rec); err != nil {
+				wi.Close()
+				return err
+			}
+		}
+		return nil
+	})
+
+	var inserted int64
+	eg.Go(func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, buf)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", ingestContentType)
+		setAsUserHeaders(ctx, req)
+
+		resp, err := c.c.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			raw, _ := io.ReadAll(resp.Body)
+			var ebody struct {
+				Error string `json:"error"`
+			}
+			_ = json.Unmarshal(raw, &ebody)
+			if ebody.Error == "" {
+				ebody.Error = strings.TrimSpace(string(raw))
+			}
+			if ebody.Error == "" {
+				ebody.Error = resp.Status
+			}
+			return fmt.Errorf("hugr ingest: %s: %s", resp.Status, ebody.Error)
+		}
+		var result IngestResult
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return err
+		}
+		atomic.AddInt64(&inserted, result.Inserted)
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return 0, err
+	}
+	return inserted, nil
+}
 
 // IngestResult is the success payload returned by /ipc/ingest.
 type IngestResult struct {
@@ -97,7 +168,7 @@ func (c *Client) IngestStream(ctx context.Context, dataObject string, body io.Re
 // The reader is fully drained on success; on error the caller may inspect
 // the reader's remaining state but it should be released by the caller in
 // all cases.
-func (c *Client) Ingest(ctx context.Context, dataObject string, reader array.RecordReader) (*IngestResult, error) {
+func (c *Client) Ingest1(ctx context.Context, dataObject string, reader array.RecordReader) (*IngestResult, error) {
 	if reader == nil {
 		return nil, errors.New("hugr ingest: reader is nil")
 	}
@@ -154,7 +225,7 @@ func (c *Client) IngestRecord(ctx context.Context, dataObject string, rec arrow.
 		return nil, fmt.Errorf("build record reader: %w", err)
 	}
 	defer rr.Release()
-	return c.Ingest(ctx, dataObject, rr)
+	return c.Ingest1(ctx, dataObject, rr)
 }
 
 // IngestArrowIPCFile opens an Arrow IPC file at path and streams its
@@ -194,7 +265,7 @@ func (c *Client) IngestArrowIPCFile(ctx context.Context, dataObject, path string
 		rr := &fileReaderAsRecordReader{fr: fr}
 		rr.refCount.Add(1)
 		defer rr.Release()
-		return c.Ingest(ctx, dataObject, rr)
+		return c.Ingest1(ctx, dataObject, rr)
 	}
 
 	// Stream format — forward bytes. Prepend the bytes we already consumed
@@ -223,7 +294,7 @@ func NewLazyReader(schema *arrow.Schema, gen func() (arrow.RecordBatch, error)) 
 
 // buildIngestURL derives the /ipc/ingest endpoint from the client's base /ipc URL.
 // Accepts both ".../ipc" (canonical) and ".../ipc/" forms.
-func buildIngestURL(base, dataObject string) (string, error) {
+func buildIngestURL(base, dataObject string, opts ...types.IngestOpt) (string, error) {
 	u, err := url.Parse(base)
 	if err != nil {
 		return "", fmt.Errorf("invalid hugr url %q: %w", base, err)

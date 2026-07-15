@@ -19,6 +19,7 @@ type Querier interface {
 	UnloadDataSource(ctx context.Context, name string, opts ...UnloadOpt) error
 	DataSourceStatus(ctx context.Context, name string) (string, error)
 	DescribeDataSource(ctx context.Context, name string, self bool) (string, error)
+	Ingest(ctx context.Context, table string, reader array.RecordReader, opts ...IngestOpt) (int64, error)
 }
 
 // SubscriptionEvent is a data event in the subscription stream.
