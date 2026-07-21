@@ -1,0 +1,41 @@
+# Relations graph: FK both directions, M2M with junction, parameterized-view
+# args. pg_store: products -> categories (FK), products <-> tags through
+# product_tags (M2M), categories self-reference (parent).
+{
+  products: _dataObject(name: "pg_store_products") {
+    name
+    relations {
+      name
+      direction
+      kind
+      fieldName
+      dataObject {
+        name
+      }
+      through {
+        name
+      }
+      sourceKeys
+      destinationKeys
+    }
+  }
+  categories: _dataObject(name: "pg_store_categories") {
+    name
+    relations {
+      name
+      direction
+      kind
+      fieldName
+      dataObject {
+        name
+      }
+    }
+  }
+  view: _dataObject(name: "pg_store_products_in_price_range") {
+    name
+    type
+    args {
+      name
+    }
+  }
+}

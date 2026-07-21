@@ -1,0 +1,45 @@
+# Logical-model introspection: targeted point lookups on the multi-source
+# stack (full-tree recursion is covered by unit tests; the root module list
+# depends on which optional sources the stack enables).
+{
+  root: _catalog {
+    name
+  }
+  pg: _module(name: "pg_store") {
+    name
+    dataSources
+    dataObjects {
+      name
+      type
+      properties {
+        isM2M
+      }
+    }
+    queryType {
+      name
+    }
+    mutationType {
+      name
+    }
+  }
+  fn: _function(module: "core", name: "load_data_source") {
+    name
+    type
+    isTable
+    moduleName
+  }
+  obj: _dataObject(name: "pg_store_products") {
+    name
+    type
+    moduleName
+    dataSourceName
+    dataSources
+    primaryKey
+  }
+  missing: _module(name: "nope") {
+    name
+  }
+  missingObj: _dataObject(name: "nope") {
+    name
+  }
+}

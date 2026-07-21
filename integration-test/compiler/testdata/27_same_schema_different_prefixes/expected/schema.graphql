@@ -478,6 +478,33 @@ enum OrderDirection @system {
   DESC
 }
 type Query @system {
+  """
+  Logical-model introspection: the root module tree (name "").
+  Resolved on the metadata path, like __schema/__type.
+  """
+  _catalog: _Module @system
+  """
+  Logical-model introspection: data object by GraphQL type name;
+  null for non-data-object types.
+  """
+  _dataObject(name: String!): _DataObject @system
+  """
+  Logical-model introspection: callable member (function/mutation/subscription)
+  of a module; module "" = root-level functions.
+  """
+  _function(module: String!, name: String!): _Function @system
+  """
+  Logical-model introspection: direct module lookup; "" = the root module.
+  """
+  _module(name: String!): _Module @system
+  """
+  Logical-model introspection: GraphQL type definitions of the logical
+  model. SOURCE (default) lists the residual base types defined by data
+  sources — structural objects, inputs, enums — excluding data objects,
+  module roots and compiler-generated helper types; SYSTEM lists the
+  engine-defined types (scalars, introspection and hugr system SDL).
+  """
+  _types(scope: _TypeScope = SOURCE): [__Type!] @system
   eu_Employee(
     """
     Filter
@@ -1062,6 +1089,240 @@ input VectorSearchInput @system {
   The vector to search
   """
   vector: Vector!
+}
+"""
+A table or view as a logical entity of the hugr data model.
+"""
+type _DataObject @system {
+  """
+  Parameterized-view arguments; null when the object is not parameterized.
+  """
+  args: [__InputValue!]
+  """
+  The OWNING data source.
+  """
+  dataSourceName: String!
+  """
+  All contributing sources: owner + declarers of extension-added fields.
+  """
+  dataSources: [String!]!
+  description: String
+  """
+  The object's fields (permission-filtered, same rules as __Type.fields).
+  """
+  fields: [__Field!]
+  longDescription: String
+  """
+  Owning module (recursive back-reference, depth-budgeted).
+  """
+  module: _Module
+  """
+  Owning module's dotted name; empty string for the root module.
+  """
+  moduleName: String!
+  """
+  GraphQL type name (source-prefixed, globally unique).
+  """
+  name: String!
+  """
+  Field names carrying @pk; empty when the object has no primary key.
+  """
+  primaryKey: [String!]!
+  properties: _DataObjectProperties!
+  """
+  Logical links to other data objects (both directions; hidden endpoints excluded).
+  """
+  relations: [_Relation!]
+  type: _DataObjectType!
+}
+"""
+Extensible property flags of a data object. Adding a flag is a backward-compatible change.
+"""
+type _DataObjectProperties @system {
+  """
+  Has Vector-typed fields (semantic search capable).
+  """
+  hasVectors: Boolean!
+  """
+  Declared as an aggregation cube (@cube).
+  """
+  isCube: Boolean!
+  """
+  A hypertable (@hypertable).
+  """
+  isHypertable: Boolean!
+  """
+  A many-to-many junction table (@table(is_m2m: true)).
+  """
+  isM2M: Boolean!
+  """
+  Soft-delete semantics enabled (@table(soft_delete: true)).
+  """
+  softDelete: Boolean!
+}
+"""
+The kind of a data object.
+"""
+enum _DataObjectType @system {
+  TABLE
+  VIEW
+}
+"""
+A callable member of a module: a query function, a mutation, or a subscription.
+"""
+type _Function @system {
+  """
+  Client-facing arguments; server-injected @arg_default arguments are excluded.
+  """
+  args: [__InputValue!]
+  """
+  The owning data source.
+  """
+  dataSourceName: String
+  description: String
+  """
+  True when the function returns a row set (table function) rather than a scalar.
+  """
+  isTable: Boolean!
+  longDescription: String
+  """
+  Owning module (recursive back-reference, depth-budgeted).
+  """
+  module: _Module
+  """
+  Owning module's dotted name; empty string for root-level functions.
+  """
+  moduleName: String!
+  """
+  Field name on the module's function/mutation-function/subscription root type.
+  """
+  name: String!
+  returns: __Type
+  type: _FunctionType!
+}
+"""
+The kind of a callable module member.
+"""
+enum _FunctionType @system {
+  FUNCTION
+  MUTATION
+  SUBSCRIPTION
+}
+"""
+A node in hugr's logical module tree. The root module has name "" and owns
+everything attached directly to Query/Mutation/Subscription/Function/MutationFunction.
+"""
+type _Module @system {
+  """
+  Data objects whose @module is this module (root: objects without @module).
+  """
+  dataObjects: [_DataObject!]
+  """
+  Distinct data sources contributing this module's direct members.
+  """
+  dataSources: [String!]!
+  description: String
+  """
+  The module's generated function root type (root module: Function).
+  """
+  functionType: __Type
+  """
+  All callable members, including SUBSCRIPTION kind.
+  """
+  functions: [_Function!]
+  """
+  Curated/summarized long description.
+  """
+  longDescription: String
+  """
+  Direct child modules only; children with no visible content are omitted.
+  """
+  modules: [_Module!]
+  """
+  The module's generated mutation-function root type (root module: MutationFunction).
+  """
+  mutationFunctionType: __Type
+  """
+  The module's generated mutation root type (root module: Mutation).
+  """
+  mutationType: __Type
+  """
+  Full dotted module name; empty string for the root module.
+  """
+  name: String!
+  """
+  The module's generated query root type (root module: Query).
+  """
+  queryType: __Type
+  """
+  The module's generated subscription root type (root module: Subscription).
+  """
+  subscriptionType: __Type
+}
+"""
+One perspective on a logical edge between two data objects. Relation SQL is never exposed.
+"""
+type _Relation @system {
+  """
+  The FAR data object (for M2M: the far leg, not the junction).
+  """
+  dataObject: _DataObject
+  """
+  The data source declaring this edge (cross-source edges are visible).
+  """
+  dataSource: String
+  """
+  Per-endpoint description (same perspective rule as fieldName).
+  """
+  description: String
+  """
+  Key field mappings on the destination side (M2M: the destination junction leg).
+  """
+  destinationKeys: [String!]!
+  direction: _RelationDirection!
+  """
+  The field on the VIEWED object that materializes this edge.
+  """
+  fieldName: String
+  kind: _RelationKind!
+  """
+  Relation name (@references(name:)) or the join field name.
+  """
+  name: String!
+  """
+  Key field mappings on the source side (M2M: the source junction leg).
+  """
+  sourceKeys: [String!]!
+  """
+  M2M only: the junction data object; null otherwise.
+  """
+  through: _DataObject
+}
+"""
+The perspective of a relation entry: FORWARD — the viewed object is the source
+of the edge; BACK — the viewed object is the destination.
+"""
+enum _RelationDirection @system {
+  BACK
+  FORWARD
+}
+"""
+The nature of a relation edge. JOIN edges are one-directional (always FORWARD).
+"""
+enum _RelationKind @system {
+  FK
+  JOIN
+  M2M
+}
+"""
+The scope of logical-model type listings: SOURCE — residual base types
+defined by data sources; SYSTEM — engine-defined types. Compiler-derived
+types (filters, aggregations, mutation inputs, module roots) belong to
+neither scope.
+"""
+enum _TypeScope @system {
+  SOURCE
+  SYSTEM
 }
 """
 Value distribution data type

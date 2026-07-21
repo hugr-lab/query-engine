@@ -39,6 +39,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-21
 - N/A — the fix is entirely in-memory stream parsing. No schema migrations, no persisted state. (001-openai-responses-fc-args)
 - Go 1.26 (CGo via `duckdb-go/v2`, `duckdb_arrow` build tag — applies to engine/planner code; pure-Go constraint for `types/` and `client/` sub-modules). + stdlib (`encoding/json`, `reflect`, `sync`), `github.com/apache/arrow-go/v18`, `github.com/paulmach/orb` (+ `orb/geojson`, `orb/encoding/wkb`, `orb/encoding/wkt`), `github.com/duckdb/duckdb-go/v2` (CGo — engine layer only), `github.com/vektah/gqlparser/v2` (already present, used for AST walk in geometry-info extraction). (001-unified-scan)
 - None new. Planner schema/metadata storage unchanged. DuckDB runtime unchanged. (001-unified-scan)
+- Go 1.26 (`iter.Seq`, range-over-func), build tag `duckdb_arrow`, CGo via + `vektah/gqlparser/v2` (GraphQL AST — only dependency this feature (001-catalog-introspection)
+- N/A — reads the compiled schema through the existing `catalog.Provider` (static (001-catalog-introspection)
 
 ## Project Structure
 
@@ -55,6 +57,6 @@ Go 1.26: Follow standard conventions
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- 001-catalog-introspection: Added Go 1.26 (`iter.Seq`, range-over-func), build tag `duckdb_arrow`, CGo via + `vektah/gqlparser/v2` (GraphQL AST — only dependency this feature
 - 001-unified-scan: Added Go 1.26 (CGo via `duckdb-go/v2`, `duckdb_arrow` build tag — applies to engine/planner code; pure-Go constraint for `types/` and `client/` sub-modules). + stdlib (`encoding/json`, `reflect`, `sync`), `github.com/apache/arrow-go/v18`, `github.com/paulmach/orb` (+ `orb/geojson`, `orb/encoding/wkb`, `orb/encoding/wkt`), `github.com/duckdb/duckdb-go/v2` (CGo — engine layer only), `github.com/vektah/gqlparser/v2` (already present, used for AST walk in geometry-info extraction).
 - 001-openai-responses-fc-args: Added Go 1.26 (via `duckdb_arrow` build tag; same as rest of `pkg/data-sources/sources/llm/`) + standard library only for the fix (`encoding/json`, `bufio`, `strings`, `io`); test paths use `github.com/stretchr/testify/require`, `assert`, and the existing subscription harness in `integration-test/models`.
-- 001-arrow-scanner: Added Go 1.26 (with `iter.Seq`, range-over-func)

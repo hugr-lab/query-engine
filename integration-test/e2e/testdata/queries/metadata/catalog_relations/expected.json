@@ -1,0 +1,94 @@
+{
+  "data": {
+    "categories": {
+      "name": "pg_store_categories",
+      "relations": [
+        {
+          "dataObject": {
+            "name": "pg_store_products"
+          },
+          "direction": "BACK",
+          "fieldName": "products",
+          "kind": "FK",
+          "name": "pg_store_categories_category_id"
+        },
+        {
+          "dataObject": {
+            "name": "pg_store_categories"
+          },
+          "direction": "FORWARD",
+          "fieldName": "parent",
+          "kind": "FK",
+          "name": "pg_store_categories_parent_id"
+        }
+      ]
+    },
+    "products": {
+      "name": "pg_store_products",
+      "relations": [
+        {
+          "dataObject": {
+            "name": "local_db_items"
+          },
+          "destinationKeys": [
+            "id"
+          ],
+          "direction": "FORWARD",
+          "fieldName": "matching_items",
+          "kind": "JOIN",
+          "name": "matching_items",
+          "sourceKeys": [
+            "id"
+          ],
+          "through": null
+        },
+        {
+          "dataObject": {
+            "name": "pg_store_categories"
+          },
+          "destinationKeys": [
+            "id"
+          ],
+          "direction": "FORWARD",
+          "fieldName": "category",
+          "kind": "FK",
+          "name": "pg_store_categories_category_id",
+          "sourceKeys": [
+            "category_id"
+          ],
+          "through": null
+        },
+        {
+          "dataObject": {
+            "name": "pg_store_tags"
+          },
+          "destinationKeys": [
+            "product_id"
+          ],
+          "direction": "FORWARD",
+          "fieldName": "product_tags",
+          "kind": "M2M",
+          "name": "pg_store_products_product_id",
+          "sourceKeys": [
+            "id"
+          ],
+          "through": {
+            "name": "pg_store_product_tags"
+          }
+        }
+      ]
+    },
+    "view": {
+      "args": [
+        {
+          "name": "min_price"
+        },
+        {
+          "name": "max_price"
+        }
+      ],
+      "name": "pg_store_products_in_price_range",
+      "type": "VIEW"
+    }
+  }
+}

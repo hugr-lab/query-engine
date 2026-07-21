@@ -16,6 +16,7 @@ const (
 	ModuleMutation         = base.ModuleMutation
 	ModuleFunction         = base.ModuleFunction
 	ModuleMutationFunction = base.ModuleMutationFunction
+	ModuleSubscription     = base.ModuleSubscription
 )
 
 var ModuleRootInfo = base.ModuleRootInfo
@@ -48,7 +49,12 @@ const (
 	moduleQuerySuffix            = "_query"
 	moduleMutationSuffix         = "_mutation"
 	moduleFunctionSuffix         = "_function"
-	moduleMutationFunctionSuffix = "_function_mutation"
+	// NOTE: must match the module assembler's inline naming
+	// (compiler/rules/assemble_modules.go): mutation-function module types are
+	// "_module_<m>_mut_function", subscription module types are
+	// "_module_<m>_subscription".
+	moduleMutationFunctionSuffix = "_mut_function"
+	moduleSubscriptionSuffix     = "_subscription"
 )
 
 func ModuleTypeName(module string, objectType base.ModuleObjectType) string {
@@ -62,6 +68,8 @@ func ModuleTypeName(module string, objectType base.ModuleObjectType) string {
 			return base.FunctionTypeName
 		case base.ModuleMutationFunction:
 			return base.FunctionMutationTypeName
+		case base.ModuleSubscription:
+			return base.SubscriptionBaseName
 		}
 	}
 	suffix := ""
@@ -74,6 +82,8 @@ func ModuleTypeName(module string, objectType base.ModuleObjectType) string {
 		suffix = moduleFunctionSuffix
 	case base.ModuleMutationFunction:
 		suffix = moduleMutationFunctionSuffix
+	case base.ModuleSubscription:
+		suffix = moduleSubscriptionSuffix
 	}
 	return "_module_" + strings.ReplaceAll(module, ".", "_") + suffix
 }

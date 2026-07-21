@@ -1,0 +1,14 @@
+mutation {
+  core {
+    insert_roles(data: {
+      name: "e2e_catalog_vis"
+      description: "E2E catalog introspection visibility: hidden absent, disabled visible"
+      permissions: [
+        { type_name: "data-object:query", field_name: "pg_store_products", hidden: true }
+        { type_name: "data-object:query", field_name: "pg_store_categories", disabled: true }
+      ]
+    }) {
+      name
+    }
+  }
+}

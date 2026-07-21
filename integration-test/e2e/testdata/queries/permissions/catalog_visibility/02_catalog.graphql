@@ -1,0 +1,26 @@
+# Under the restricted role: hidden pg_store_products is absent from the
+# module listing, from direct lookup, and from other objects' relations; the
+# disabled-but-visible pg_store_categories stays listed.
+{
+  pg: _module(name: "pg_store") {
+    dataObjects {
+      name
+    }
+  }
+  hidden: _dataObject(name: "pg_store_products") {
+    name
+  }
+  disabled: _dataObject(name: "pg_store_categories") {
+    name
+    type
+  }
+  rels: _dataObject(name: "pg_store_product_details") {
+    relations {
+      name
+      kind
+      dataObject {
+        name
+      }
+    }
+  }
+}
