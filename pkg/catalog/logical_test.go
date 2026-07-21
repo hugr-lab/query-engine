@@ -250,6 +250,45 @@ func TestLogicalModelFromProvider(t *testing.T) {
 		}
 	})
 
+	t.Run("types", func(t *testing.T) {
+		if d := lm.Type(ctx, "customers"); d == nil || d.Name != "customers" {
+			t.Errorf("Type(customers) = %v, want definition", d)
+		}
+		if d := lm.Type(ctx, "_Module"); d == nil {
+			t.Error("Type(_Module) = nil, want system meta-type definition")
+		}
+		if lm.Type(ctx, "unknown_type") != nil {
+			t.Error("Type(unknown) resolved, want nil")
+		}
+
+		var source []string
+		for _, d := range lm.SourceTypes(ctx) {
+			source = append(source, d.Name)
+		}
+		slices.Sort(source)
+		// exactly the residual source-defined base types — what the future
+		// entity-storage types table will hold
+		want := []string{"order_event", "sales_by_country_args"}
+		if !slices.Equal(source, want) {
+			t.Errorf("SourceTypes() = %v, want %v", source, want)
+		}
+
+		var system []string
+		for _, d := range lm.SystemTypes(ctx) {
+			system = append(system, d.Name)
+		}
+		for _, w := range []string{"_Module", "OperationResult", "String", "Query"} {
+			if !slices.Contains(system, w) {
+				t.Errorf("SystemTypes() missing %q", w)
+			}
+		}
+		for _, absent := range []string{"order_event", "customers", "customers_filter"} {
+			if slices.Contains(system, absent) {
+				t.Errorf("SystemTypes() must not contain %q", absent)
+			}
+		}
+	})
+
 	t.Run("relations", func(t *testing.T) {
 		relsOf := func(object string) map[string]*catalog.RelationInfo {
 			t.Helper()

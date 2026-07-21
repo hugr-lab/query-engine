@@ -832,6 +832,14 @@ type Query @system {
   Logical-model introspection: direct module lookup; "" = the root module.
   """
   _module(name: String!): _Module @system
+  """
+  Logical-model introspection: GraphQL type definitions of the logical
+  model. SOURCE (default) lists the residual base types defined by data
+  sources — structural objects, inputs, enums — excluding data objects,
+  module roots and compiler-generated helper types; SYSTEM lists the
+  engine-defined types (scalars, introspection and hugr system SDL).
+  """
+  _types(scope: _TypeScope = SOURCE): [__Type!] @system
   function: Function @system
   """
   H3 aggregation query
@@ -1487,6 +1495,16 @@ type _Route_aggregation_sub_aggregation @aggregation(name: "_Route_aggregation",
   dst_airport: StringSubAggregation @field_aggregation(name: "dst_airport")
   id: IntSubAggregation @field_aggregation(name: "id")
   src_airport: StringSubAggregation @field_aggregation(name: "src_airport")
+}
+"""
+The scope of logical-model type listings: SOURCE — residual base types
+defined by data sources; SYSTEM — engine-defined types. Compiler-derived
+types (filters, aggregations, mutation inputs, module roots) belong to
+neither scope.
+"""
+enum _TypeScope @system {
+  SOURCE
+  SYSTEM
 }
 """
 Value distribution data type

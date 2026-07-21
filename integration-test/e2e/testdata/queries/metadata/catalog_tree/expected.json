@@ -24,14 +24,21 @@
     "pg": {
       "dataObjects": [
         {
-          "name": "pg_store_products_in_price_range",
+          "name": "pg_store_active_products",
           "properties": {
             "isM2M": false
           },
           "type": "VIEW"
         },
         {
-          "name": "pg_store_product_details",
+          "name": "pg_store_categories",
+          "properties": {
+            "isM2M": false
+          },
+          "type": "TABLE"
+        },
+        {
+          "name": "pg_store_locations",
           "properties": {
             "isM2M": false
           },
@@ -45,14 +52,7 @@
           "type": "TABLE"
         },
         {
-          "name": "pg_store_products",
-          "properties": {
-            "isM2M": false
-          },
-          "type": "TABLE"
-        },
-        {
-          "name": "pg_store_categories",
+          "name": "pg_store_product_details",
           "properties": {
             "isM2M": false
           },
@@ -66,21 +66,21 @@
           "type": "TABLE"
         },
         {
-          "name": "pg_store_locations",
+          "name": "pg_store_products",
           "properties": {
             "isM2M": false
           },
           "type": "TABLE"
         },
         {
-          "name": "pg_store_active_products",
+          "name": "pg_store_products_for_current_user",
           "properties": {
             "isM2M": false
           },
           "type": "VIEW"
         },
         {
-          "name": "pg_store_products_for_current_user",
+          "name": "pg_store_products_in_price_range",
           "properties": {
             "isM2M": false
           },

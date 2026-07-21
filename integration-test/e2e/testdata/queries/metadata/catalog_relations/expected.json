@@ -5,27 +5,43 @@
       "relations": [
         {
           "dataObject": {
-            "name": "pg_store_categories"
-          },
-          "direction": "FORWARD",
-          "fieldName": "parent",
-          "kind": "FK",
-          "name": "pg_store_categories_parent_id"
-        },
-        {
-          "dataObject": {
             "name": "pg_store_products"
           },
           "direction": "BACK",
           "fieldName": "products",
           "kind": "FK",
           "name": "pg_store_categories_category_id"
+        },
+        {
+          "dataObject": {
+            "name": "pg_store_categories"
+          },
+          "direction": "FORWARD",
+          "fieldName": "parent",
+          "kind": "FK",
+          "name": "pg_store_categories_parent_id"
         }
       ]
     },
     "products": {
       "name": "pg_store_products",
       "relations": [
+        {
+          "dataObject": {
+            "name": "local_db_items"
+          },
+          "destinationKeys": [
+            "id"
+          ],
+          "direction": "FORWARD",
+          "fieldName": "matching_items",
+          "kind": "JOIN",
+          "name": "matching_items",
+          "sourceKeys": [
+            "id"
+          ],
+          "through": null
+        },
         {
           "dataObject": {
             "name": "pg_store_categories"
@@ -59,22 +75,6 @@
           "through": {
             "name": "pg_store_product_tags"
           }
-        },
-        {
-          "dataObject": {
-            "name": "local_db_items"
-          },
-          "destinationKeys": [
-            "id"
-          ],
-          "direction": "FORWARD",
-          "fieldName": "matching_items",
-          "kind": "JOIN",
-          "name": "matching_items",
-          "sourceKeys": [
-            "id"
-          ],
-          "through": null
         }
       ]
     },

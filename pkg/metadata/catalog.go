@@ -77,6 +77,36 @@ func processFunctionQuery(ctx context.Context, provider catalog.Provider, field 
 	return functionResolver(ctx, lm, provider, entry, field.SelectionSet, maxDepth)
 }
 
+// processTypesQuery resolves _types — the GraphQL type definitions of the
+// logical model. scope: SOURCE (default) = residual base types defined by
+// data sources (the future entity-storage types table); SYSTEM = the
+// engine-defined types. Type-list semantics mirror __schema.types (no
+// permission filtering of the list itself; per-type fields are filtered).
+func processTypesQuery(ctx context.Context, provider catalog.Provider, field *ast.Field, maxDepth int, vars map[string]any) (any, error) {
+	scope := "SOURCE"
+	if field.Arguments.ForName("scope") != nil {
+		if args := field.ArgumentMap(vars); args != nil {
+			if s, ok := args["scope"].(string); ok && s != "" {
+				scope = s
+			}
+		}
+	}
+	lm := catalog.LogicalModelFromProvider(provider)
+	typesIter := lm.SourceTypes(ctx)
+	if scope == "SYSTEM" {
+		typesIter = lm.SystemTypes(ctx)
+	}
+	var res []map[string]any
+	for _, def := range typesIter {
+		data, err := typeResolver(ctx, provider, ast.NamedType(def.Name, &ast.Position{}), field.SelectionSet, maxDepth)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, data)
+	}
+	return res, nil
+}
+
 // metaStringArg extracts a required string argument of a meta query. An empty
 // string is a VALID value (the root module) — unlike __type(name:), absence or
 // a non-string value is the only failure.

@@ -15,6 +15,7 @@ func TestQueryRequestInfo_MetaQueries(t *testing.T) {
 		MetadataModuleQuery,
 		MetadataDataObjectQuery,
 		MetadataFunctionQuery,
+		MetadataTypesQuery,
 	}
 
 	ss := ast.SelectionSet{}

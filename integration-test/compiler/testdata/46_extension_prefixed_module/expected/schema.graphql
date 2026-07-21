@@ -493,6 +493,14 @@ type Query @system {
   """
   _module(name: String!): _Module @system
   """
+  Logical-model introspection: GraphQL type definitions of the logical
+  model. SOURCE (default) lists the residual base types defined by data
+  sources — structural objects, inputs, enums — excluding data objects,
+  module roots and compiler-generated helper types; SYSTEM lists the
+  engine-defined types (scalars, introspection and hugr system SDL).
+  """
+  _types(scope: _TypeScope = SOURCE): [__Type!] @system
+  """
   Functions
   """
   function: Function @system @module_catalog(name: "rest_api")
@@ -965,6 +973,16 @@ enum _RelationKind @system {
   FK
   JOIN
   M2M
+}
+"""
+The scope of logical-model type listings: SOURCE — residual base types
+defined by data sources; SYSTEM — engine-defined types. Compiler-derived
+types (filters, aggregations, mutation inputs, module roots) belong to
+neither scope.
+"""
+enum _TypeScope @system {
+  SOURCE
+  SYSTEM
 }
 """
 Value distribution data type

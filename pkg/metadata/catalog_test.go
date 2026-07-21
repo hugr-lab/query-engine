@@ -667,6 +667,33 @@ func TestCatalogQuery_SelfIntrospection(t *testing.T) {
 	}
 }
 
+func TestCatalogQuery_Types(t *testing.T) {
+	ss := newCatalogTestService(t)
+
+	res := runMetaQuery(t, ss, `{
+		_types { name kind }
+		sys: _types(scope: SYSTEM) { name }
+	}`)
+
+	// default scope = SOURCE: exactly the residual source-defined base types
+	names := namesOf(t, res["_types"])
+	if !slices.Equal(names, []string{"order_event", "sales_by_country_args"}) {
+		t.Errorf("_types (SOURCE) = %v, want [order_event sales_by_country_args]", names)
+	}
+
+	sys := namesOf(t, res["sys"])
+	for _, want := range []string{"_Module", "_DataObject", "OperationResult", "Query", "String"} {
+		if !slices.Contains(sys, want) {
+			t.Errorf("_types(SYSTEM) missing %q", want)
+		}
+	}
+	for _, absent := range []string{"order_event", "customers", "customers_filter", "_customers_aggregation"} {
+		if slices.Contains(sys, absent) {
+			t.Errorf("_types(SYSTEM) must not contain %q", absent)
+		}
+	}
+}
+
 func TestCatalogQuery_DepthBudget(t *testing.T) {
 	ss := newCatalogTestService(t)
 

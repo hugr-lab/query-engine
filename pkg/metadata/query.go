@@ -62,6 +62,12 @@ func ProcessQuery(ctx context.Context, provider catalog.Provider, query sdl.Quer
 			slog.Error("metadata _function query failed", "error", err)
 		}
 		return res, err
+	case sdl.MetadataTypesQuery:
+		res, err := processTypesQuery(ctx, provider, query.Field, maxDepth, vars)
+		if err != nil {
+			slog.Error("metadata _types query failed", "error", err)
+		}
+		return res, err
 	}
 
 	return nil, nil

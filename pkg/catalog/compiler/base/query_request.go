@@ -40,6 +40,7 @@ const (
 	MetadataModuleQuery     = "_module"
 	MetadataDataObjectQuery = "_dataObject"
 	MetadataFunctionQuery   = "_function"
+	MetadataTypesQuery      = "_types"
 
 	JQTransformQueryName = "jq"
 )

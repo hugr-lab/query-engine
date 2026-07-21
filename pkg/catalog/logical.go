@@ -93,12 +93,31 @@ type LogicalModel interface {
 	Functions(ctx context.Context, module string) iter.Seq[*FunctionEntry]
 	// Relations iterates the logical edges of a data object, both directions.
 	Relations(ctx context.Context, object string) iter.Seq[*RelationInfo]
+	// Type resolves a GraphQL type definition by name; nil when absent.
+	// (Entity storage: the ForName resolution chain.)
+	Type(ctx context.Context, name string) *ast.Definition
+	// SourceTypes iterates the residual base types DEFINED BY SOURCES —
+	// structural objects, inputs (incl. @args), enums, interfaces, unions
+	// that are not data objects, module roots, or compiler-generated
+	// helpers (filters, mutation inputs, aggregations). This is exactly
+	// the content of the future entity-storage types table.
+	SourceTypes(ctx context.Context) iter.Seq2[string, *ast.Definition]
+	// SystemTypes iterates engine-defined types: scalars, the introspection
+	// and hugr system SDL, scalar filter/aggregation inputs — the future
+	// binary-owned static prelude. Compiler-DERIVED types (filters,
+	// aggregations, mutation inputs, module roots) belong to neither set.
+	SystemTypes(ctx context.Context) iter.Seq2[string, *ast.Definition]
 }
 
 // LogicalModelFromProvider adapts a compiled-schema Provider to the
 // LogicalModel interface via top-down point lookups (module root types →
 // fields → base definitions) — no full-type enumeration on any path.
+// A provider that already implements LogicalModel natively (the future
+// entity-storage catalog) is returned as-is, without the walk adapter.
 func LogicalModelFromProvider(p Provider) LogicalModel {
+	if lp, ok := p.(LogicalModel); ok {
+		return lp
+	}
 	return &providerLogicalModel{p: p}
 }
 
@@ -142,6 +161,7 @@ func (m *providerLogicalModel) Module(ctx context.Context, name string) *ModuleI
 func (m *providerLogicalModel) Modules(ctx context.Context, parent string) iter.Seq[*ModuleInfo] {
 	return func(yield func(*ModuleInfo) bool) {
 		seen := map[string]struct{}{}
+		var children []string
 		for _, kind := range moduleKinds {
 			root := m.p.ForName(ctx, sdl.ModuleTypeName(parent, kind))
 			if root == nil {
@@ -156,13 +176,21 @@ func (m *providerLogicalModel) Modules(ctx context.Context, parent string) iter.
 					continue
 				}
 				seen[child] = struct{}{}
-				info := m.Module(ctx, child)
-				if info == nil {
-					continue
-				}
-				if !yield(info) {
-					return
-				}
+				children = append(children, child)
+			}
+		}
+		// Deterministic listing order: the compiled root-type field order is
+		// not stable across compilations (unsorted map iteration in the
+		// assembler), so sort by name — matching the future entity-storage
+		// ORDER BY contract.
+		slices.Sort(children)
+		for _, child := range children {
+			info := m.Module(ctx, child)
+			if info == nil {
+				continue
+			}
+			if !yield(info) {
+				return
 			}
 		}
 	}
@@ -200,6 +228,7 @@ func (m *providerLogicalModel) DataObjects(ctx context.Context, module string) i
 			return
 		}
 		seen := map[string]struct{}{}
+		var names []string
 		for _, f := range root.Fields {
 			if !sdl.IsSelectQueryDefinition(f) {
 				continue
@@ -209,6 +238,11 @@ func (m *providerLogicalModel) DataObjects(ctx context.Context, module string) i
 				continue
 			}
 			seen[tn] = struct{}{}
+			names = append(names, tn)
+		}
+		// Deterministic listing order (see Modules).
+		slices.Sort(names)
+		for _, tn := range names {
 			info := m.DataObject(ctx, tn)
 			if info == nil {
 				continue
@@ -231,11 +265,25 @@ func (m *providerLogicalModel) Function(ctx context.Context, module, name string
 
 func (m *providerLogicalModel) Functions(ctx context.Context, module string) iter.Seq[*FunctionEntry] {
 	return func(yield func(*FunctionEntry) bool) {
+		// Deterministic listing order (see Modules): fixed kind order, fields
+		// sorted by name within each kind.
+		yieldSorted := func(entries []*FunctionEntry) bool {
+			slices.SortFunc(entries, func(a, b *FunctionEntry) int {
+				return strings.Compare(a.Field.Name, b.Field.Name)
+			})
+			for _, entry := range entries {
+				if !yield(entry) {
+					return false
+				}
+			}
+			return true
+		}
 		for _, kind := range []sdl.ModuleObjectType{sdl.ModuleFunction, sdl.ModuleMutationFunction} {
 			root := m.p.ForName(ctx, sdl.ModuleTypeName(module, kind))
 			if root == nil {
 				continue
 			}
+			var entries []*FunctionEntry
 			for _, f := range root.Fields {
 				if !sdl.IsFunction(f) {
 					continue
@@ -244,37 +292,36 @@ func (m *providerLogicalModel) Functions(ctx context.Context, module string) ite
 				if err != nil {
 					continue
 				}
-				entry := &FunctionEntry{
+				entries = append(entries, &FunctionEntry{
 					Field:      f,
 					Kind:       kind,
 					Module:     module,
 					DataSource: fi.Catalog,
 					IsTable:    fi.ReturnsTable,
-				}
-				if !yield(entry) {
-					return
-				}
+				})
+			}
+			if !yieldSorted(entries) {
+				return
 			}
 		}
 		root := m.p.ForName(ctx, sdl.ModuleTypeName(module, sdl.ModuleSubscription))
 		if root == nil {
 			return
 		}
+		var entries []*FunctionEntry
 		for _, f := range root.Fields {
 			if !isSubscriptionField(f) || m.submoduleName(ctx, f) != "" {
 				continue
 			}
-			entry := &FunctionEntry{
+			entries = append(entries, &FunctionEntry{
 				Field:      f,
 				Kind:       sdl.ModuleSubscription,
 				Module:     module,
 				DataSource: base.FieldDefCatalog(f),
 				IsTable:    f.Type.NamedType == "",
-			}
-			if !yield(entry) {
-				return
-			}
+			})
 		}
+		yieldSorted(entries)
 	}
 }
 
@@ -307,6 +354,51 @@ func (m *providerLogicalModel) moduleDataSources(ctx context.Context, module str
 	return res
 }
 
+func (m *providerLogicalModel) Type(ctx context.Context, name string) *ast.Definition {
+	return m.p.ForName(ctx, name)
+}
+
+func (m *providerLogicalModel) SourceTypes(ctx context.Context) iter.Seq2[string, *ast.Definition] {
+	return func(yield func(string, *ast.Definition) bool) {
+		for name, def := range m.p.Types(ctx) {
+			if !isSourceDefinedType(def) {
+				continue
+			}
+			if !yield(name, def) {
+				return
+			}
+		}
+	}
+}
+
+func (m *providerLogicalModel) SystemTypes(ctx context.Context) iter.Seq2[string, *ast.Definition] {
+	return func(yield func(string, *ast.Definition) bool) {
+		for name, def := range m.p.Types(ctx) {
+			if !sdl.IsSystemType(def) {
+				continue
+			}
+			if !yield(name, def) {
+				return
+			}
+		}
+	}
+}
+
+// isSourceDefinedType reports whether a definition is a residual base type
+// contributed by a source — what the entity-storage types table will hold.
+// Excluded: system types (scalars, __*, roots, @system incl. the scalar
+// registry), data objects, module root types, and compiler-generated helpers
+// (filter/mutation inputs, aggregation types).
+func isSourceDefinedType(def *ast.Definition) bool {
+	if sdl.IsSystemType(def) || sdl.IsDataObject(def) || sdl.ModuleRootInfo(def) != nil {
+		return false
+	}
+	return def.Directives.ForName(base.FilterInputDirectiveName) == nil &&
+		def.Directives.ForName(base.FilterListInputDirectiveName) == nil &&
+		def.Directives.ForName(base.DataInputDirectiveName) == nil &&
+		def.Directives.ForName(base.ObjectAggregationDirectiveName) == nil
+}
+
 // Relations derives the logical edges of a data object from the compiled
 // schema:
 //   - the object's own @references directives → FORWARD FK edges (and this
@@ -327,6 +419,7 @@ func (m *providerLogicalModel) Relations(ctx context.Context, object string) ite
 		}
 		ownerSource := sdl.CatalogName(def)
 		ownRefs := map[string]struct{}{}
+		var rels []*RelationInfo
 
 		for _, d := range def.Directives.ForNames(base.ReferencesDirectiveName) {
 			ref := sdl.ReferencesInfo(d)
@@ -357,9 +450,7 @@ func (m *providerLogicalModel) Relations(ctx context.Context, object string) ite
 					}
 				}
 			}
-			if !yield(rel) {
-				return
-			}
+			rels = append(rels, rel)
 		}
 
 		for _, f := range def.Fields {
@@ -401,9 +492,7 @@ func (m *providerLogicalModel) Relations(ctx context.Context, object string) ite
 					rel.Kind = RelationM2M
 					rel.Through = ref.M2MName
 				}
-				if !yield(rel) {
-					return
-				}
+				rels = append(rels, rel)
 
 			case sdl.IsJoinSubqueryDefinition(f):
 				d := f.Directives.ForName(base.JoinDirectiveName)
@@ -423,9 +512,26 @@ func (m *providerLogicalModel) Relations(ctx context.Context, object string) ite
 					DestinationKeys: base.DirectiveArgStrings(d, base.ArgReferencesFields),
 					DataSource:      base.FieldDefCatalog(f),
 				}
-				if !yield(rel) {
-					return
-				}
+				rels = append(rels, rel)
+			}
+		}
+
+		// Deterministic listing order (see Modules).
+		slices.SortFunc(rels, func(a, b *RelationInfo) int {
+			if c := strings.Compare(a.Name, b.Name); c != 0 {
+				return c
+			}
+			if c := strings.Compare(string(a.Kind), string(b.Kind)); c != 0 {
+				return c
+			}
+			if c := strings.Compare(string(a.Direction), string(b.Direction)); c != 0 {
+				return c
+			}
+			return strings.Compare(a.FieldName, b.FieldName)
+		})
+		for _, rel := range rels {
+			if !yield(rel) {
+				return
 			}
 		}
 	}
