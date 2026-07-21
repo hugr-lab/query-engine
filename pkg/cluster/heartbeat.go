@@ -143,7 +143,9 @@ func (s *Source) cleanupGhosts(ctx context.Context) error {
 	}`, map[string]any{
 		"filter": map[string]any{
 			"last_heartbeat": map[string]any{"lt": cutoff},
-			"name":           map[string]any{"neq": s.config.NodeName},
+			"_not": map[string]any{
+				"name": map[string]any{"eq": s.config.NodeName},
+			},
 		},
 	})
 	if err != nil {
