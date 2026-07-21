@@ -38,6 +38,30 @@ func ProcessQuery(ctx context.Context, provider catalog.Provider, query sdl.Quer
 			slog.Error("metadata __type query failed", "error", err)
 		}
 		return res, err
+	case sdl.MetadataCatalogQuery:
+		res, err := processCatalogQuery(ctx, provider, query.Field, maxDepth)
+		if err != nil {
+			slog.Error("metadata _catalog query failed", "error", err)
+		}
+		return res, err
+	case sdl.MetadataModuleQuery:
+		res, err := processModuleQuery(ctx, provider, query.Field, maxDepth, vars)
+		if err != nil {
+			slog.Error("metadata _module query failed", "error", err)
+		}
+		return res, err
+	case sdl.MetadataDataObjectQuery:
+		res, err := processDataObjectQuery(ctx, provider, query.Field, maxDepth, vars)
+		if err != nil {
+			slog.Error("metadata _dataObject query failed", "error", err)
+		}
+		return res, err
+	case sdl.MetadataFunctionQuery:
+		res, err := processFunctionQuery(ctx, provider, query.Field, maxDepth, vars)
+		if err != nil {
+			slog.Error("metadata _function query failed", "error", err)
+		}
+		return res, err
 	}
 
 	return nil, nil

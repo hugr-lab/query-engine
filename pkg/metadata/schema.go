@@ -137,60 +137,7 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 			if def.Kind != ast.Object && def.Kind != ast.Interface {
 				return nil, nil
 			}
-			includeDeprecated := false
-			if a := field.Arguments.ForName("includeDeprecated"); a != nil {
-				includeDeprecated = a.Value.Raw == "true"
-			}
-			res := []map[string]any{}
-			for _, f := range def.Fields {
-				if strings.HasPrefix(f.Name, "__") {
-					continue
-				}
-				// Show _stub only when it's the sole field; hide it when real fields exist
-				if isPlaceholderField(f.Name) && len(def.Fields) > 1 {
-					continue
-				}
-				di := sdl.FieldDeprecatedInfo(f)
-				if !includeDeprecated && di.IsDeprecated {
-					continue
-				}
-				if p := perm.PermissionsFromCtx(ctx); p != nil {
-					if _, ok := p.Visible(def.Name, f.Name); !ok {
-						continue
-					}
-					// hide fields returning a hidden data object (table-level rule).
-					// The cheap in-memory scan gates the (possibly DB-hitting) type
-					// lookup; a rule only fires for an actual data object, so the
-					// IsDataObject check rejects a scalar/struct return type a
-					// wildcard rule would otherwise match. If the type cannot be
-					// resolved (transient error / suspended catalog), fail closed
-					// and hide rather than leak the field.
-					if tn := f.Type.Name(); !sdl.IsScalarType(tn) && p.DataObjectHidden(tn) {
-						if rd := provider.ForName(ctx, tn); rd == nil || sdl.IsDataObject(rd) {
-							continue
-						}
-					}
-				}
-				data, err := fieldResolver(ctx, provider, f, field.SelectionSet, maxDepth-1)
-				if err != nil {
-					return nil, err
-				}
-				res = append(res, data)
-			}
-			// GraphQL spec requires OBJECT/INTERFACE types to have at least one field.
-			// Add a placeholder when all fields were filtered out or the type is empty.
-			if len(res) == 0 {
-				placeholder := &ast.FieldDefinition{
-					Name: "_placeholder",
-					Type: ast.NamedType("Boolean", &ast.Position{}),
-				}
-				data, err := fieldResolver(ctx, provider, placeholder, field.SelectionSet, maxDepth-1)
-				if err != nil {
-					return nil, err
-				}
-				res = append(res, data)
-			}
-			return res, nil
+			return objectFieldsResolver(ctx, provider, def, field, maxDepth)
 		},
 		"interfaces": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			if typeDef.NamedType == "" || typeDef.NonNull {
@@ -549,6 +496,77 @@ func inputValueResolver(ctx context.Context, provider catalog.Provider, def *ast
 			return "", nil
 		},
 	}, "__InputValue")
+}
+
+// objectFieldsResolver resolves the permission-filtered field list of an
+// object/interface definition — shared by __Type.fields and
+// _DataObject.fields so both introspection surfaces apply identical rules.
+func objectFieldsResolver(ctx context.Context, provider catalog.Provider, def *ast.Definition, field *ast.Field, maxDepth int) (any, error) {
+	includeDeprecated := false
+	if a := field.Arguments.ForName("includeDeprecated"); a != nil {
+		includeDeprecated = a.Value.Raw == "true"
+	}
+	res := []map[string]any{}
+	for _, f := range def.Fields {
+		if strings.HasPrefix(f.Name, "__") {
+			continue
+		}
+		// Show _stub only when it's the sole field; hide it when real fields exist
+		if isPlaceholderField(f.Name) && len(def.Fields) > 1 {
+			continue
+		}
+		di := sdl.FieldDeprecatedInfo(f)
+		if !includeDeprecated && di.IsDeprecated {
+			continue
+		}
+		if !introspectionFieldVisible(ctx, provider, def, f) {
+			continue
+		}
+		data, err := fieldResolver(ctx, provider, f, field.SelectionSet, maxDepth-1)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, data)
+	}
+	// GraphQL spec requires OBJECT/INTERFACE types to have at least one field.
+	// Add a placeholder when all fields were filtered out or the type is empty.
+	if len(res) == 0 {
+		placeholder := &ast.FieldDefinition{
+			Name: "_placeholder",
+			Type: ast.NamedType("Boolean", &ast.Position{}),
+		}
+		data, err := fieldResolver(ctx, provider, placeholder, field.SelectionSet, maxDepth-1)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, data)
+	}
+	return res, nil
+}
+
+// introspectionFieldVisible applies the permission filter used by introspection
+// field listings: role field visibility plus the hidden-data-object rule.
+//
+// The hidden-data-object part hides fields returning a hidden data object
+// (table-level rule). The cheap in-memory scan gates the (possibly DB-hitting)
+// type lookup; a rule only fires for an actual data object, so the
+// IsDataObject check rejects a scalar/struct return type a wildcard rule would
+// otherwise match. If the type cannot be resolved (transient error / suspended
+// catalog), fail closed and hide rather than leak the field.
+func introspectionFieldVisible(ctx context.Context, provider catalog.Provider, def *ast.Definition, f *ast.FieldDefinition) bool {
+	p := perm.PermissionsFromCtx(ctx)
+	if p == nil {
+		return true
+	}
+	if _, ok := p.Visible(def.Name, f.Name); !ok {
+		return false
+	}
+	if tn := f.Type.Name(); !sdl.IsScalarType(tn) && p.DataObjectHidden(tn) {
+		if rd := provider.ForName(ctx, tn); rd == nil || sdl.IsDataObject(rd) {
+			return false
+		}
+	}
+	return true
 }
 
 // isPlaceholderField returns true for stub/placeholder field names used as

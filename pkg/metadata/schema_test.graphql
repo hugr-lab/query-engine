@@ -71,3 +71,62 @@ extend type Function {
   ): String @module(name: "core")
     @function(name: "data_source_status")
 }
+
+# --- logical-model introspection fixtures (_catalog family) ---
+
+type customers @module(name: "sales") @table(name: "customers") {
+  id: Int! @pk
+  name: String!
+  country: String
+}
+
+type orders @module(name: "sales")
+  @table(name: "orders")
+  @references(
+    name: "order_customer"
+    references_name: "customers"
+    source_fields: ["customer_id"]
+    references_fields: ["id"]
+    query: "customer"
+    description: "Order customer"
+    references_query: "orders"
+    references_description: "Customer orders"
+  ) {
+  id: Int! @pk
+  customer_id: Int!
+  amount: Float
+  status: String
+  source_info: [catalog_sources]
+    @join(
+      references_name: "catalog_sources"
+      source_fields: ["status"]
+      references_fields: ["name"]
+    )
+}
+
+# Parameterized view in a nested module.
+type sales_by_country @module(name: "sales.reports")
+  @view(
+    name: "sales_by_country"
+    sql: "SELECT c.country AS country, sum(o.amount) AS total FROM orders o JOIN customers c ON o.customer_id = c.id WHERE c.country = [$country] GROUP BY c.country"
+  )
+  @args(name: "sales_by_country_args") {
+  country: String @pk
+  total: Float
+}
+
+input sales_by_country_args {
+  country: String!
+}
+
+type order_event {
+  type: String
+  order_id: Int
+}
+
+extend type Subscription {
+  # subscription in a module that also has data objects
+  order_events(status: String): order_event @module(name: "sales")
+  # subscription-only module: "events" exists solely through this field
+  tick(interval: String): String @module(name: "events")
+}

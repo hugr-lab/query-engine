@@ -1,0 +1,12 @@
+{
+  "data": {
+    "core": {
+      "delete_role_permissions": {
+        "success": true
+      },
+      "delete_roles": {
+        "success": true
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "data": {
+    "disabled": {
+      "name": "pg_store_categories",
+      "type": "TABLE"
+    },
+    "hidden": null,
+    "pg": {
+      "dataObjects": [
+        {
+          "name": "pg_store_locations"
+        },
+        {
+          "name": "pg_store_products_in_price_range"
+        },
+        {
+          "name": "pg_store_product_details"
+        },
+        {
+          "name": "pg_store_price_ranges"
+        },
+        {
+          "name": "pg_store_product_tags"
+        },
+        {
+          "name": "pg_store_active_products"
+        },
+        {
+          "name": "pg_store_products_for_current_user"
+        },
+        {
+          "name": "pg_store_categories"
+        },
+        {
+          "name": "pg_store_tags"
+        }
+      ]
+    },
+    "rels": {
+      "relations": []
+    }
+  }
+}

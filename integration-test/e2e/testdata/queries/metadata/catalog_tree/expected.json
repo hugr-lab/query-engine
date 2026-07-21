@@ -1,0 +1,112 @@
+{
+  "data": {
+    "fn": {
+      "isTable": false,
+      "moduleName": "core",
+      "name": "load_data_source",
+      "type": "MUTATION"
+    },
+    "missing": null,
+    "missingObj": null,
+    "obj": {
+      "dataSourceName": "pg_store",
+      "dataSources": [
+        "local_db",
+        "pg_store"
+      ],
+      "moduleName": "pg_store",
+      "name": "pg_store_products",
+      "primaryKey": [
+        "id"
+      ],
+      "type": "TABLE"
+    },
+    "pg": {
+      "dataObjects": [
+        {
+          "name": "pg_store_products_in_price_range",
+          "properties": {
+            "isM2M": false
+          },
+          "type": "VIEW"
+        },
+        {
+          "name": "pg_store_product_details",
+          "properties": {
+            "isM2M": false
+          },
+          "type": "TABLE"
+        },
+        {
+          "name": "pg_store_price_ranges",
+          "properties": {
+            "isM2M": false
+          },
+          "type": "TABLE"
+        },
+        {
+          "name": "pg_store_products",
+          "properties": {
+            "isM2M": false
+          },
+          "type": "TABLE"
+        },
+        {
+          "name": "pg_store_categories",
+          "properties": {
+            "isM2M": false
+          },
+          "type": "TABLE"
+        },
+        {
+          "name": "pg_store_product_tags",
+          "properties": {
+            "isM2M": true
+          },
+          "type": "TABLE"
+        },
+        {
+          "name": "pg_store_locations",
+          "properties": {
+            "isM2M": false
+          },
+          "type": "TABLE"
+        },
+        {
+          "name": "pg_store_active_products",
+          "properties": {
+            "isM2M": false
+          },
+          "type": "VIEW"
+        },
+        {
+          "name": "pg_store_products_for_current_user",
+          "properties": {
+            "isM2M": false
+          },
+          "type": "VIEW"
+        },
+        {
+          "name": "pg_store_tags",
+          "properties": {
+            "isM2M": false
+          },
+          "type": "TABLE"
+        }
+      ],
+      "dataSources": [
+        "pg_store"
+      ],
+      "mutationType": {
+        "name": "_module_pg_store_mutation"
+      },
+      "name": "pg_store",
+      "queryType": {
+        "name": "_module_pg_store_query"
+      }
+    },
+    "root": {
+      "name": ""
+    }
+  }
+}

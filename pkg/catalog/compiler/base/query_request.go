@@ -32,5 +32,14 @@ const (
 	MetadataTypeQuery     = "__type"
 	MetadataTypeNameQuery = "__typename"
 
+	// Logical-model introspection (catalog) meta queries. Single "_" prefix:
+	// GraphQL hard-reserves "__" names (graphql-js rejects them even in
+	// introspection results), so these are ordinary system fields on Query —
+	// like jq/h3 — dispatched to the metadata path by name.
+	MetadataCatalogQuery    = "_catalog"
+	MetadataModuleQuery     = "_module"
+	MetadataDataObjectQuery = "_dataObject"
+	MetadataFunctionQuery   = "_function"
+
 	JQTransformQueryName = "jq"
 )
