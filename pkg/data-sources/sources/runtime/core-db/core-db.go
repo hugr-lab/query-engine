@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	Version           = "0.0.18"
+	Version           = "0.0.19"
 	dbName            = "core"
 	DefaultVectorSize = 768
 )
@@ -29,7 +29,19 @@ var (
 )
 
 //go:embed schema.sql
-var InitSchema string
+var initSchema string
+
+// hugrCatalogSchema is the templated catalog entity-namespace DDL (design
+// 034) — the live source of that schema. The hugr repo migration 0.0.19 is a
+// frozen copy of this file; keep them column-for-column in sync.
+//
+//go:embed hugr_catalog.sql
+var hugrCatalogSchema string
+
+// InitSchema is the full CoreDB bootstrap script: the legacy schema plus the
+// catalog entity namespace. Applied to NEW databases only (engine applySchema
+// / hugr migrate initDB); existing databases upgrade via hugr migrations.
+var InitSchema = initSchema + "\n" + hugrCatalogSchema
 
 //go:embed schema.graphql
 var schema string
@@ -256,6 +268,15 @@ func (s *Source) applySchema(ctx context.Context, pool *db.Pool) error {
 	_, err = pool.Exec(ctx, sql)
 	if err != nil {
 		return fmt.Errorf("core db initialization: %w", err)
+	}
+	if s.dbType == sources.Postgres {
+		// The postgres extension caches the remote schema list at ATTACH time —
+		// the catalog schema just created by InitSchema is invisible to the
+		// DuckDB context until the cache is cleared.
+		_, err = pool.Exec(ctx, `CALL pg_clear_cache();`)
+		if err != nil {
+			return fmt.Errorf("core db initialization: %w", err)
+		}
 	}
 	return nil
 }
