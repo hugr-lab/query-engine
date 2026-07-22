@@ -38,6 +38,11 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.data_s
     data_source  VARCHAR NOT NULL PRIMARY KEY,
     version      VARCHAR NOT NULL,
     capabilities {{ if isPostgres }}JSONB{{ else }}JSON{{ end }},
+    -- prefix / as_module are compile options that shape names at read time:
+    -- prefix renames source types (with @original_name preserved), as_module
+    -- makes the source a module and drives module query/mutation field naming.
+    prefix       VARCHAR,
+    as_module    BOOLEAN NOT NULL,
     loaded       BOOLEAN NOT NULL,
     disabled     BOOLEAN NOT NULL,
     suspended    BOOLEAN NOT NULL,
@@ -64,7 +69,10 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.module
 );
 
 CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.data_objects (
-    name        VARCHAR NOT NULL PRIMARY KEY,
+    -- name is the COMPILED (prefixed) GraphQL type name; original_name is the
+    -- source's unprefixed name, re-attached as @original_name on read.
+    name          VARCHAR NOT NULL PRIMARY KEY,
+    original_name VARCHAR NOT NULL,
     data_source VARCHAR NOT NULL,
     module      VARCHAR NOT NULL,
     kind        VARCHAR NOT NULL,
@@ -73,6 +81,7 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.data_o
     -- the SAME JSON text on both backends (implicit VARCHAR→STRUCT cast).
     properties  {{ if isPostgres }}JSONB{{ else }}STRUCT(
         name VARCHAR,
+        sql VARCHAR,
         soft_delete BOOLEAN,
         is_cube BOOLEAN,
         is_m2m BOOLEAN,
@@ -98,7 +107,8 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.fields
     properties             {{ if isPostgres }}JSONB{{ else }}STRUCT(
         source VARCHAR,
         computed BOOLEAN,
-        "default" STRUCT(value JSON, sequence VARCHAR),
+        sql VARCHAR,
+        "default" STRUCT(value JSON, sequence VARCHAR, insert_exp VARCHAR, update_exp VARCHAR),
         geometry STRUCT("type" VARCHAR, srid BIGINT),
         measurement BOOLEAN,
         timescale_key BOOLEAN,
@@ -106,9 +116,9 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.fields
         filter_required BOOLEAN,
         exclude_mcp BOOLEAN,
         cache STRUCT(ttl VARCHAR, "key" VARCHAR, tags VARCHAR[]),
-        "join" STRUCT(references_name VARCHAR, source_fields VARCHAR[], references_fields VARCHAR[]),
-        function_call STRUCT("function" STRUCT(module VARCHAR, name VARCHAR), args JSON, source_fields VARCHAR[], references_fields VARCHAR[]),
-        table_function_call_join STRUCT("function" STRUCT(module VARCHAR, name VARCHAR), args JSON, source_fields VARCHAR[], references_fields VARCHAR[])
+        "join" STRUCT(references_name VARCHAR, source_fields VARCHAR[], references_fields VARCHAR[], sql VARCHAR),
+        function_call STRUCT("function" STRUCT(module VARCHAR, name VARCHAR), args JSON, source_fields VARCHAR[], references_fields VARCHAR[], sql VARCHAR),
+        table_function_call_join STRUCT("function" STRUCT(module VARCHAR, name VARCHAR), args JSON, source_fields VARCHAR[], references_fields VARCHAR[], sql VARCHAR)
     ){{ end }},
     data_source            VARCHAR NOT NULL,
     dependency_data_source VARCHAR,
@@ -151,7 +161,7 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.functi
     is_table    BOOLEAN NOT NULL,
     args        {{ if isPostgres }}JSONB{{ else }}STRUCT(name VARCHAR, "type" VARCHAR, description VARCHAR, "default" VARCHAR, arg_default VARCHAR)[]{{ end }},
     properties  {{ if isPostgres }}JSONB{{ else }}STRUCT(
-        "function" STRUCT(name VARCHAR, skip_null_arg BOOLEAN, is_table BOOLEAN, json_cast BOOLEAN),
+        "function" STRUCT(name VARCHAR, sql VARCHAR, skip_null_arg BOOLEAN, is_table BOOLEAN, json_cast BOOLEAN),
         cache STRUCT(ttl VARCHAR, "key" VARCHAR, tags VARCHAR[])
     ){{ end }},
     description VARCHAR,

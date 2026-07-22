@@ -458,6 +458,8 @@ type enum_values @view(name: "_schema_enum_values") {
 type entity_data_object_properties {
   "Physical name in the source"
   name: String
+  "View definition SQL (@view)"
+  sql: String
   "Soft-delete behavior marker (the condition/set expressions are not stored)"
   soft_delete: Boolean
   is_cube: Boolean
@@ -478,8 +480,10 @@ type entity_data_object_properties {
 type entity_field_properties {
   "Physical column (@field_source)"
   source: String
-  "Computed field marker (@sql; the expression is not stored)"
+  "Computed field marker (@sql)"
   computed: Boolean
+  "Computed field SQL expression (@sql)"
+  sql: String
   default: entity_default_value
   geometry: entity_geometry_info
   measurement: Boolean
@@ -488,7 +492,7 @@ type entity_field_properties {
   filter_required: Boolean
   exclude_mcp: Boolean
   cache: entity_cache_settings
-  "Declared @join field binding (the join-condition sql is not stored)"
+  "Declared @join field binding"
   join: entity_join_binding
   function_call: entity_function_call_binding
   table_function_call_join: entity_function_call_binding
@@ -536,6 +540,10 @@ type entity_at_pin {
 type entity_default_value {
   value: JSON
   sequence: String
+  "Insert-time SQL expression (@default(insert_exp:))"
+  insert_exp: String
+  "Update-time SQL expression (@default(update_exp:))"
+  update_exp: String
 }
 
 type entity_geometry_info {
@@ -547,6 +555,8 @@ type entity_join_binding {
   references_name: String
   source_fields: [String]
   references_fields: [String]
+  "Raw join condition SQL (@join(sql:))"
+  sql: String
 }
 
 type entity_function_call_binding {
@@ -555,6 +565,8 @@ type entity_function_call_binding {
   args: JSON
   source_fields: [String]
   references_fields: [String]
+  "Raw call condition SQL (@function_call / @table_function_call_join (sql:))"
+  sql: String
 }
 
 type entity_function_binding_ref {
@@ -562,9 +574,11 @@ type entity_function_binding_ref {
   name: String
 }
 
-"Bound source function (@function; the sql body is not stored)"
+"Bound source function (@function)"
 type entity_function_binding {
   name: String
+  "Function body SQL (@function(sql:))"
+  sql: String
   skip_null_arg: Boolean
   is_table: Boolean
   json_cast: Boolean
@@ -624,7 +638,7 @@ type entity_module_data_sources
 "Logical-model data objects (active data sources only)"
 type entity_data_objects
   @view(name: "entity_data_objects", sql: """
-    SELECT o.name, o.data_source, o.module, o.kind,
+    SELECT o.name, o.original_name, o.data_source, o.module, o.kind,
       o.properties,
       COALESCE(a.description, o.description) AS description,
       a.long_description,
@@ -636,7 +650,10 @@ type entity_data_objects
         ON a.entity_kind = 'data_object' AND a.entity_key = o.name
   """)
   {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
+  "Compiled (prefixed) GraphQL type name"
   name: String! @pk
+  "Source's unprefixed name (@original_name)"
+  original_name: String!
   data_source: String!
   module: String!
   kind: String!
