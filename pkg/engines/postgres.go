@@ -472,7 +472,18 @@ func (e *Postgres) RepackObject(sql string, field *ast.Field) string {
 	if len(field.SelectionSet) == 0 {
 		return sql
 	}
-	return repackPGJsonRecursive(sql, field, "")
+	if field.Definition.Type.NamedType != "" {
+		return repackPGJsonRecursive(sql, field, "")
+	}
+	// Top-level list of objects: repack each element, mirroring the nested
+	// list branch inside repackPGJsonRecursive (array_agg over
+	// jsonb_array_elements). Without this the list would be repacked as a
+	// single object and "sql->'field'" would index a JSON array by key.
+	children := repackPGJsonRecursive("_value", field, "")
+	if children == "_value" {
+		return sql
+	}
+	return "(SELECT array_agg(" + children + ") FROM jsonb_array_elements(" + sql + ") AS _value)"
 }
 
 func (e *Postgres) UnpackObjectToFieldList(sql string, field *ast.Field) string {
@@ -568,7 +579,7 @@ func (e *Postgres) CastFromIntermediateType(f *ast.Field, toJSON bool) (string, 
 			return Ident(f.Alias) + "::JSON", nil
 		}
 		if f.Definition.Type.NamedType == "" && f.Directives.ForName(base.UnnestDirectiveName) == nil {
-			return "list_transform(" + Ident(f.Alias) + "," + Ident(f.Alias) + "->" + JsonToStruct(f, "", false, false) + ")", nil
+			return "list_transform(" + Ident(f.Alias) + ", lambda _value: json_transform(_value, '" + jsonStructRecursive(f, false, false) + "'))", nil
 		}
 		return JsonToStruct(f, "", false, false), nil
 	}
@@ -1219,7 +1230,7 @@ func repackPGJsonRecursive(sql string, field *ast.Field, path string) string {
 	}
 	if sum == 0 {
 		if path != "" {
-			return path + "." + sql
+			return sql + extractPGJsonFieldByPath(path, false)
 		}
 		return sql
 	}
