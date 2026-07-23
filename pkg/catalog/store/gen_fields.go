@@ -20,7 +20,7 @@ import (
 // (bucket for Timestamp, transforms for Geometry, …).
 var scalarArgsFieldRule = fieldRule{
 	name: "scalar_args",
-	apply: func(_ context.Context, _ *genContext, _ *objectTraits, def *ast.Definition) {
+	apply: func(_ context.Context, _ *genContext, _ *objectTraits, def *ast.Definition) error {
 		for _, fd := range def.Fields {
 			if fd.Type.NamedType == "" {
 				continue
@@ -33,6 +33,7 @@ var scalarArgsFieldRule = fieldRule{
 				fd.Arguments = args
 			}
 		}
+		return nil
 	},
 }
 
@@ -42,14 +43,19 @@ var scalarArgsFieldRule = fieldRule{
 // the {name}_aggregation / {name}_bucket_aggregation twins on the object.
 var joinFieldsRule = fieldRule{
 	name: "join_fields",
-	apply: func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition) error {
 		for _, f := range t.fields {
 			if f.Properties == nil || (f.Properties.Join == nil && f.Properties.TableFunctionCallJoin == nil) {
 				continue
 			}
 			typ := parseFieldType(f.FieldType)
 			target := typ.Name()
-			if typ.NamedType != "" || !g.s.dataObjectExists(ctx, target) {
+			if typ.NamedType != "" {
+				continue
+			}
+			if exists, err := g.dataObjectExists(ctx, target); err != nil {
+				return err
+			} else if !exists {
 				continue
 			}
 			twinArgs := func() ast.ArgumentDefinitionList {
@@ -67,6 +73,7 @@ var joinFieldsRule = fieldRule{
 			def.Fields = append(def.Fields,
 				relationAggTwinFields(f.Name, target, twinArgs, t.srcs, f.DataSource)...)
 		}
+		return nil
 	},
 }
 
@@ -76,9 +83,13 @@ var joinFieldsRule = fieldRule{
 // forward navigation of its own.
 var navFieldsRule = fieldRule{
 	name: "nav_fields",
-	apply: func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition) error {
 		if !t.isM2M() {
-			for _, leg := range g.s.relationsBySource(ctx, t.row.Name) {
+			legs, err := g.relationsBySource(ctx, t.row.Name)
+			if err != nil {
+				return err
+			}
+			for _, leg := range legs {
 				def.Fields = append(def.Fields, &ast.FieldDefinition{
 					Name: leg.SourceField,
 					Type: ast.NamedType(leg.Destination, reconPos),
@@ -93,10 +104,18 @@ var navFieldsRule = fieldRule{
 				})
 			}
 		}
-		for _, leg := range g.s.relationsByDestination(ctx, t.row.Name) {
+		legs, err := g.relationsByDestination(ctx, t.row.Name)
+		if err != nil {
+			return err
+		}
+		for _, leg := range legs {
 			backName := orDefault(leg.DestinationField, leg.Source)
 			if leg.m2mJunction {
-				for _, co := range g.s.relationsBySource(ctx, leg.Source) {
+				cos, err := g.relationsBySource(ctx, leg.Source)
+				if err != nil {
+					return err
+				}
+				for _, co := range cos {
 					if co.Name == leg.Name {
 						continue
 					}
@@ -118,6 +137,7 @@ var navFieldsRule = fieldRule{
 				relationAggTwinFields(backName, leg.Source,
 					subQueryArgsFactory(leg.Source), t.srcs, leg.DataSource)...)
 		}
+		return nil
 	},
 }
 
@@ -187,7 +207,7 @@ func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDef
 // complete field definition.
 var extraFieldsRule = fieldRule{
 	name: "extra_fields",
-	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) error {
 		for _, f := range t.fields {
 			if f.Name == "_stub" {
 				continue
@@ -204,6 +224,7 @@ var extraFieldsRule = fieldRule{
 				def.Fields = append(def.Fields, extraField)
 			}
 		}
+		return nil
 	},
 }
 
@@ -246,9 +267,9 @@ func cubeHypertableArgs(row *dataObject, f *field) *ast.ArgumentDefinition {
 // the object fields themselves.
 var cubeHypertableFieldRule = fieldRule{
 	name: "cube_hypertable_args",
-	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) error {
 		if t.row.Properties == nil || (!t.row.Properties.IsCube && !t.row.Properties.IsHypertable) {
-			return
+			return nil
 		}
 		for _, f := range t.fields {
 			arg := cubeHypertableArgs(t.row, f)
@@ -259,6 +280,7 @@ var cubeHypertableFieldRule = fieldRule{
 				fd.Arguments = append(fd.Arguments, arg)
 			}
 		}
+		return nil
 	},
 }
 
@@ -267,10 +289,10 @@ var cubeHypertableFieldRule = fieldRule{
 // QueryEmbeddingDistance extra-field binding.
 var embeddingsFieldRule = fieldRule{
 	name: "embeddings_fields",
-	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) error {
 		_, emb := t.vectorTraits()
 		if emb == nil {
-			return
+			return nil
 		}
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
 			Name:        "_distance_to_query",
@@ -294,6 +316,7 @@ var embeddingsFieldRule = fieldRule{
 			},
 			Position: reconPos,
 		})
+		return nil
 	},
 }
 
@@ -302,9 +325,9 @@ var embeddingsFieldRule = fieldRule{
 // (JoinSpatialRule).
 var sharedFieldsRule = fieldRule{
 	name: "shared_fields",
-	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) error {
 		if t.isM2M() {
-			return
+			return nil
 		}
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
 			Name: "_join",
@@ -322,5 +345,6 @@ var sharedFieldsRule = fieldRule{
 				Position:  reconPos,
 			})
 		}
+		return nil
 	},
 }

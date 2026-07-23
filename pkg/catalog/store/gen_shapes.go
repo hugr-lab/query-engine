@@ -22,14 +22,21 @@ type objectTraits struct {
 	srcs   map[string]activeSource
 }
 
-func (g *genContext) objectTraits(ctx context.Context, row *dataObject) *objectTraits {
-	srcs := g.s.activeSources(ctx)
+func (g *genContext) objectTraits(ctx context.Context, row *dataObject) (*objectTraits, error) {
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fields, err := g.readFields(ctx, row.Name)
+	if err != nil {
+		return nil, err
+	}
 	return &objectTraits{
 		row:    row,
-		fields: g.s.readFields(ctx, row.Name),
+		fields: fields,
 		src:    srcs[row.DataSource],
 		srcs:   srcs,
-	}
+	}, nil
 }
 
 // queryName is the marker/root base name: the ORIGINAL (unprefixed) name for

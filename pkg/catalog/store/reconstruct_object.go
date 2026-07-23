@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -23,13 +24,15 @@ import (
 //     twins, extra fields, shared members — gen_fields.go).
 //
 // All reads are activity-gated.
-func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Definition {
-	row, ok := s.readDataObject(ctx, name)
-	if !ok {
-		return nil
+func reconstructDataObject(ctx context.Context, g *genContext, name string) (*ast.Definition, error) {
+	row, err := g.readDataObject(ctx, name)
+	if err != nil || row == nil {
+		return nil, err
 	}
-	g := s.genCtx()
-	t := g.objectTraits(ctx, row)
+	t, err := g.objectTraits(ctx, row)
+	if err != nil {
+		return nil, err
+	}
 	def := &ast.Definition{
 		Kind:        ast.Object,
 		Name:        row.Name,
@@ -40,23 +43,38 @@ func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Defi
 	def.Directives = append(def.Directives, catalogDirective(row.DataSource, t.src.Engine))
 
 	// Enriched @references: own physical legs, then the m2m projections.
-	fwd := s.relationsBySource(ctx, name)
+	fwd, err := g.relationsBySource(ctx, name)
+	if err != nil {
+		return nil, err
+	}
 	for _, r := range fwd {
 		targetDesc := ""
-		if target, ok := s.readDataObject(ctx, r.Destination); ok {
+		if target, err := g.readDataObject(ctx, r.Destination); err != nil {
+			return nil, err
+		} else if target != nil {
 			targetDesc = target.Description
 		}
 		def.Directives = append(def.Directives, referencesDirective(r, targetDesc, row.Description))
 	}
-	for _, leg := range s.relationsByDestination(ctx, name) {
+	legs, err := g.relationsByDestination(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	for _, leg := range legs {
 		if !leg.m2mJunction {
 			continue
 		}
 		junctionDesc := ""
-		if junction, ok := s.readDataObject(ctx, leg.Source); ok {
+		if junction, err := g.readDataObject(ctx, leg.Source); err != nil {
+			return nil, err
+		} else if junction != nil {
 			junctionDesc = junction.Description
 		}
-		for _, co := range s.relationsBySource(ctx, leg.Source) {
+		cos, err := g.relationsBySource(ctx, leg.Source)
+		if err != nil {
+			return nil, err
+		}
+		for _, co := range cos {
 			if co.Name == leg.Name {
 				continue
 			}
@@ -67,7 +85,11 @@ func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Defi
 	// Derived-type markers + the queryShapes @query/@mutation set.
 	def.Directives = append(def.Directives,
 		directive(base.FilterInputDirectiveName, strArg(base.ArgName, row.Name+filterSuffix)))
-	if t.needsListFilter(len(fwd) > 0, s.isM2MEndpoint(ctx, name)) {
+	m2mEndpoint, err := g.isM2MEndpoint(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if t.needsListFilter(len(fwd) > 0, m2mEndpoint) {
 		def.Directives = append(def.Directives,
 			directive(base.FilterListInputDirectiveName, strArg(base.ArgName, row.Name+listFilterSuffix)))
 	}
@@ -82,7 +104,11 @@ func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Defi
 	// old compiler's module-function precedence, replicated by the assembler
 	// (replaceOrAddQueryDirective); the LAST function in (module, name) order
 	// wins.
-	if fn := s.lastListReturningModuleFunction(ctx, row.Name); fn != "" {
+	fn, err := g.lastListReturningModuleFunction(ctx, row.Name)
+	if err != nil {
+		return nil, err
+	}
+	if fn != "" {
 		replaceQueryMarkerName(def, "AGGREGATE", fn+"_aggregation")
 		replaceQueryMarkerName(def, "AGGREGATE_BUCKET", fn+"_bucket_aggregation")
 	}
@@ -109,25 +135,27 @@ func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Defi
 	}
 
 	for i := range fieldRules {
-		fieldRules[i].apply(ctx, g, t, def)
+		if err := fieldRules[i].apply(ctx, g, t, def); err != nil {
+			return nil, err
+		}
 	}
-	return def
+	return def, nil
 }
 
 // lastListReturningModuleFunction returns the name of the LAST (module, name)
 // ordered module function (kind=function, module != ”) returning a list of
 // the object — the one whose aggregation names win the def markers.
-func (s *Store) lastListReturningModuleFunction(ctx context.Context, typeName string) string {
+func (g *genContext) lastListReturningModuleFunction(ctx context.Context, typeName string) (string, error) {
 	variants := lit("["+typeName+"]") + `, ` + lit("["+typeName+"!]") + `, ` +
 		lit("["+typeName+"]!") + `, ` + lit("["+typeName+"!]!")
-	names := s.queryNames(ctx, `SELECT f.name FROM core.catalog.functions f`+
+	names, err := g.queryNames(ctx, `SELECT f.name FROM core.catalog.functions f`+
 		activeMeta("m", "f.data_source")+`
 		WHERE f.kind = 'function' AND f.module <> '' AND f.returns IN (`+variants+`)
 		ORDER BY f.module, f.name`)
-	if len(names) == 0 {
-		return ""
+	if err != nil || len(names) == 0 {
+		return "", err
 	}
-	return names[len(names)-1]
+	return names[len(names)-1], nil
 }
 
 func replaceQueryMarkerName(def *ast.Definition, queryType, name string) {
@@ -154,13 +182,17 @@ func (t *objectTraits) needsListFilter(hasBackProjections, isM2MEndpoint bool) b
 }
 
 // isM2MEndpoint reports whether some is_m2m junction leg points at the object.
-func (s *Store) isM2MEndpoint(ctx context.Context, name string) bool {
-	for _, leg := range s.relationsByDestination(ctx, name) {
+func (g *genContext) isM2MEndpoint(ctx context.Context, name string) (bool, error) {
+	legs, err := g.relationsByDestination(ctx, name)
+	if err != nil {
+		return false, err
+	}
+	for _, leg := range legs {
 		if leg.m2mJunction {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
 // m2mReferencesProjection is the endpoint-oriented @references the compiler
@@ -237,18 +269,23 @@ type activeSource struct {
 	AsModule bool
 }
 
-func (s *Store) activeSources(ctx context.Context) map[string]activeSource {
-	conn, err := s.pool.Conn(ctx)
+// activeSources reads the active-source meta map, memoized per session (the
+// single hottest lookup — the generation rules consult it repeatedly). The
+// meta itself records no touched source: a definition's dependency on a
+// source comes from the ROWS it reads, not from the meta consult.
+func (g *genContext) activeSources(ctx context.Context) (map[string]activeSource, error) {
+	if g.haveSources {
+		return g.sources, nil
+	}
+	conn, err := g.s.pool.Conn(ctx)
 	if err != nil {
-		readErr("sources", err)
-		return nil
+		return nil, fmt.Errorf("read source meta: %w", err)
 	}
 	defer conn.Close()
 	rows, err := conn.Query(ctx, `SELECT data_source, engine, read_only, as_module FROM core.catalog.data_source_meta
 		WHERE loaded AND NOT disabled AND NOT suspended`)
 	if err != nil {
-		readErr("sources", err)
-		return nil
+		return nil, fmt.Errorf("read source meta: %w", err)
 	}
 	defer rows.Close()
 	out := map[string]activeSource{}
@@ -256,34 +293,39 @@ func (s *Store) activeSources(ctx context.Context) map[string]activeSource {
 		var source string
 		var meta activeSource
 		if err := rows.Scan(&source, &meta.Engine, &meta.ReadOnly, &meta.AsModule); err != nil {
-			readErr("sources", err)
-			return nil
+			return nil, fmt.Errorf("read source meta: %w", err)
 		}
 		out[source] = meta
 	}
 	if err := rows.Err(); err != nil {
-		readErr("sources", err)
-		return nil
+		return nil, fmt.Errorf("read source meta: %w", err)
 	}
-	return out
+	g.sources, g.haveSources = out, true
+	return out, nil
 }
 
-func (s *Store) activeEngines(ctx context.Context) map[string]string {
-	srcs := s.activeSources(ctx)
+func (g *genContext) activeEngines(ctx context.Context) (map[string]string, error) {
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make(map[string]string, len(srcs))
 	for name, meta := range srcs {
 		out[name] = meta.Engine
 	}
-	return out
+	return out, nil
 }
 
 // --- catalog.* readers (fill the shared entity models) ---
 
-func (s *Store) readDataObject(ctx context.Context, name string) (*dataObject, bool) {
-	conn, err := s.pool.Conn(ctx)
+// readDataObject reads one data-object row; absent = (nil, nil).
+func (g *genContext) readDataObject(ctx context.Context, name string) (*dataObject, error) {
+	if row, ok := g.objects[name]; ok {
+		return row, nil
+	}
+	conn, err := g.s.pool.Conn(ctx)
 	if err != nil {
-		readErr("data_object", err)
-		return nil, false
+		return nil, fmt.Errorf("read data object %s: %w", name, err)
 	}
 	defer conn.Close()
 	r := dataObject{Properties: &dataObjectProperties{}}
@@ -295,22 +337,33 @@ func (s *Store) readDataObject(ctx context.Context, name string) (*dataObject, b
 		Scan(&r.Name, &r.OriginalName, &r.DataSource, &r.Module, &r.Kind, &props, &desc)
 	if err != nil {
 		if err != sql.ErrNoRows {
-			readErr("data_object", err)
+			return nil, fmt.Errorf("read data object %s: %w", name, err)
 		}
-		return nil, false
+		if g.objects == nil {
+			g.objects = map[string]*dataObject{}
+		}
+		g.objects[name] = nil
+		return nil, nil
 	}
 	r.Description = desc.String
 	if props.Valid {
 		_ = json.Unmarshal([]byte(props.String), r.Properties)
 	}
-	return &r, true
+	if g.objects == nil {
+		g.objects = map[string]*dataObject{}
+	}
+	g.objects[name] = &r
+	g.touch(r.DataSource)
+	return &r, nil
 }
 
-func (s *Store) readFields(ctx context.Context, typeName string) []*field {
-	conn, err := s.pool.Conn(ctx)
+func (g *genContext) readFields(ctx context.Context, typeName string) ([]*field, error) {
+	if out, ok := g.fieldRows[typeName]; ok {
+		return out, nil
+	}
+	conn, err := g.s.pool.Conn(ctx)
 	if err != nil {
-		readErr("fields", err)
-		return nil
+		return nil, fmt.Errorf("read fields of %s: %w", typeName, err)
 	}
 	defer conn.Close()
 	rows, err := conn.Query(ctx, `SELECT f.name, f.field_type, f.properties::JSON::VARCHAR,
@@ -319,8 +372,7 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 		FROM core.catalog.fields f`+activeMeta("m", "f.data_source")+`
 		WHERE f.type_name = `+lit(typeName)+` ORDER BY f.ordinal, f.name`)
 	if err != nil {
-		readErr("fields", err)
-		return nil
+		return nil, fmt.Errorf("read fields of %s: %w", typeName, err)
 	}
 	defer rows.Close()
 	var out []*field
@@ -328,8 +380,7 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 		f := field{TypeName: typeName, Properties: &fieldProperties{}}
 		var props, args, dependency, deprecated, desc sql.NullString
 		if err := rows.Scan(&f.Name, &f.FieldType, &props, &args, &f.DataSource, &dependency, &f.IsPK, &f.Ordinal, &deprecated, &desc); err != nil {
-			readErr("fields", err)
-			return nil
+			return nil, fmt.Errorf("read fields of %s: %w", typeName, err)
 		}
 		f.DependencyDataSource = dependency.String
 		f.DeprecationReason = deprecated.String
@@ -340,11 +391,15 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 		if args.Valid {
 			_ = json.Unmarshal([]byte(args.String), &f.Args)
 		}
+		g.touch(f.DataSource, f.DependencyDataSource)
 		out = append(out, &f)
 	}
 	if err := rows.Err(); err != nil {
-		readErr("fields", err)
-		return nil
+		return nil, fmt.Errorf("read fields of %s: %w", typeName, err)
 	}
-	return out
+	if g.fieldRows == nil {
+		g.fieldRows = map[string][]*field{}
+	}
+	g.fieldRows[typeName] = out
+	return out, nil
 }

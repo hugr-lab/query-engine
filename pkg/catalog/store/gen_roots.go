@@ -31,43 +31,53 @@ func (sc *rootScope) top() bool { return sc.module == "" }
 // of the name is tried against the modules table; a module without the kind
 // (or an empty store for the top-level roots) yields nil and the static stub
 // stays authoritative.
-func resolveModuleRoot(ctx context.Context, s *Store, name string) *ast.Definition {
-	g := s.genCtx()
+func resolveModuleRoot(ctx context.Context, g *genContext, name string) (*ast.Definition, error) {
 	for _, ref := range classifyModuleRootName(name) {
-		for _, module := range g.resolveModulePath(ctx, ref.Module) {
-			if def := buildModuleRoot(ctx, g, rootScope{module: module, kind: ref.Kind, name: name}); def != nil {
-				return def
+		modules, err := g.resolveModulePath(ctx, ref.Module)
+		if err != nil {
+			return nil, err
+		}
+		for _, module := range modules {
+			def, err := buildModuleRoot(ctx, g, rootScope{module: module, kind: ref.Kind, name: name})
+			if err != nil {
+				return nil, err
+			}
+			if def != nil {
+				return def, nil
 			}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // resolveModulePath maps the underscored path from the type name back to the
 // dotted module names that produce it ("" maps to the root).
-func (g *genContext) resolveModulePath(ctx context.Context, underscored string) []string {
+func (g *genContext) resolveModulePath(ctx context.Context, underscored string) ([]string, error) {
 	if underscored == "" {
-		return []string{""}
+		return []string{""}, nil
 	}
-	return g.s.queryNames(ctx, `SELECT mm.name FROM core.catalog.modules mm
+	return g.queryNames(ctx, `SELECT mm.name FROM core.catalog.modules mm
 		WHERE replace(mm.name, '.', '_') = `+lit(underscored)+` ORDER BY mm.name`)
 }
 
-func buildModuleRoot(ctx context.Context, g *genContext, sc rootScope) *ast.Definition {
-	rows := g.s.readModuleInfo(ctx, sc.module)
+func buildModuleRoot(ctx context.Context, g *genContext, sc rootScope) (*ast.Definition, error) {
+	rows, err := g.readModuleInfo(ctx, sc.module)
+	if err != nil {
+		return nil, err
+	}
 	if len(rows) == 0 {
-		return nil // inactive / unknown module — static stubs stay authoritative
+		return nil, nil // inactive / unknown module — static stubs stay authoritative
 	}
 	sc.info = rows[0]
 	if !rootKindAvailable(sc.info, sc.kind, sc.top()) {
-		return nil
+		return nil, nil
 	}
 
 	var def *ast.Definition
 	if sc.top() {
 		def = copyRootStub(g.s.static.ForName(ctx, sc.name))
 		if def == nil {
-			return nil
+			return nil, nil
 		}
 	} else {
 		def = &ast.Definition{
@@ -80,15 +90,21 @@ func buildModuleRoot(ctx context.Context, g *genContext, sc rootScope) *ast.Defi
 					enumArg("type", rootKindEnum(sc.kind))),
 			},
 		}
-		for _, src := range g.s.moduleKindSources(ctx, sc.module, sc.kind) {
+		srcs, err := g.moduleKindSources(ctx, sc.module, sc.kind)
+		if err != nil {
+			return nil, err
+		}
+		for _, src := range srcs {
 			def.Directives = append(def.Directives, moduleCatalogDirective(src))
 		}
 	}
 
 	for i := range rootRules {
-		rootRules[i].apply(ctx, g, &sc, def)
+		if err := rootRules[i].apply(ctx, g, &sc, def); err != nil {
+			return nil, err
+		}
 	}
-	return def
+	return def, nil
 }
 
 // rootKindAvailable gates a root on the aggregated subtree flags; the
@@ -163,7 +179,7 @@ func moduleCatalogDirective(dataSource string) *ast.Directive {
 
 // moduleKindSources lists the ACTIVE sources contributing the kind to the
 // module subtree — the @module_catalog attribution set.
-func (s *Store) moduleKindSources(ctx context.Context, module string, kind sdl.ModuleObjectType) []string {
+func (g *genContext) moduleKindSources(ctx context.Context, module string, kind sdl.ModuleObjectType) ([]string, error) {
 	flag := map[sdl.ModuleObjectType]string{
 		sdl.ModuleQuery:            "md.has_data_objects",
 		sdl.ModuleMutation:         "md.has_tables AND NOT ms.read_only",
@@ -171,7 +187,7 @@ func (s *Store) moduleKindSources(ctx context.Context, module string, kind sdl.M
 		sdl.ModuleMutationFunction: "md.has_mut_functions AND NOT ms.read_only",
 		sdl.ModuleSubscription:     "md.has_subscriptions",
 	}[kind]
-	return s.queryNames(ctx, `SELECT DISTINCT md.data_source FROM core.catalog.module_data_sources md`+
+	return g.queryNames(ctx, `SELECT DISTINCT md.data_source FROM core.catalog.module_data_sources md`+
 		activeMeta("ms", "md.data_source")+`
 		WHERE md.module = `+lit(module)+` AND (`+flag+`) ORDER BY md.data_source`)
 }
@@ -209,16 +225,26 @@ var rootRules = []rootRule{
 // on mutation roots).
 var rootObjectShapesRule = rootRule{
 	name: "object_shapes",
-	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) {
+	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) error {
 		if sc.kind != sdl.ModuleQuery && sc.kind != sdl.ModuleMutation {
-			return
+			return nil
 		}
-		for _, name := range g.s.dataObjectNames(ctx, sc.module) {
-			row, ok := g.s.readDataObject(ctx, name)
-			if !ok {
+		names, err := g.dataObjectNames(ctx, sc.module)
+		if err != nil {
+			return err
+		}
+		for _, name := range names {
+			row, err := g.readDataObject(ctx, name)
+			if err != nil {
+				return err
+			}
+			if row == nil {
 				continue
 			}
-			t := g.objectTraits(ctx, row)
+			t, err := g.objectTraits(ctx, row)
+			if err != nil {
+				return err
+			}
 			for i := range queryShapes {
 				shape := &queryShapes[i]
 				if shape.rootKind != sc.kind || !shape.matches(t) {
@@ -227,6 +253,7 @@ var rootObjectShapesRule = rootRule{
 				def.Fields = append(def.Fields, shape.root(t)...)
 			}
 		}
+		return nil
 	},
 }
 
@@ -237,18 +264,25 @@ var rootObjectShapesRule = rootRule{
 // (addModuleFuncAggregations).
 var rootFunctionsRule = rootRule{
 	name: "functions",
-	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) {
+	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) error {
 		kind := functionKindOf(sc.kind)
 		if kind == "" {
-			return
+			return nil
 		}
 		if sc.top() && (sc.kind == sdl.ModuleQuery || sc.kind == sdl.ModuleMutation) {
 			// module-"" functions only; modules' functions live under Function/MutationFunction.
 		} else if sc.kind == sdl.ModuleQuery || sc.kind == sdl.ModuleMutation {
-			return
+			return nil
 		}
-		srcs := g.s.activeSources(ctx)
-		for _, fn := range g.s.readFunctions(ctx, sc.module) {
+		srcs, err := g.activeSources(ctx)
+		if err != nil {
+			return err
+		}
+		fns, err := g.readFunctions(ctx, sc.module)
+		if err != nil {
+			return err
+		}
+		for _, fn := range fns {
 			if fn.Kind != kind {
 				continue
 			}
@@ -270,7 +304,12 @@ var rootFunctionsRule = rootRule{
 				continue
 			}
 			target, isList := listReturnTarget(fn)
-			if !isList || !g.s.dataObjectExists(ctx, target) {
+			if !isList {
+				continue
+			}
+			if exists, err := g.dataObjectExists(ctx, target); err != nil {
+				return err
+			} else if !exists {
 				continue
 			}
 			catalog := func() *ast.Directive {
@@ -297,6 +336,7 @@ var rootFunctionsRule = rootRule{
 				},
 			)
 		}
+		return nil
 	},
 }
 
@@ -313,9 +353,13 @@ func listReturnTarget(fn *function) (string, bool) {
 // (Query/Mutation/Subscription top gateways stay bare).
 var rootChildGatewaysRule = rootRule{
 	name: "child_gateways",
-	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) {
+	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) error {
 		describeTop := sc.kind == sdl.ModuleFunction || sc.kind == sdl.ModuleMutationFunction
-		for _, child := range g.s.readChildModuleInfos(ctx, sc.module) {
+		children, err := g.readChildModuleInfos(ctx, sc.module)
+		if err != nil {
+			return err
+		}
+		for _, child := range children {
 			if !rootKindAvailable(child, sc.kind, false) {
 				continue
 			}
@@ -328,11 +372,16 @@ var rootChildGatewaysRule = rootRule{
 			if !sc.top() || describeTop {
 				fd.Description = "The root " + rootGatewayWord(sc.kind) + " object of the module " + child.Name
 			}
-			for _, src := range g.s.moduleKindSources(ctx, child.Name, sc.kind) {
+			srcs, err := g.moduleKindSources(ctx, child.Name, sc.kind)
+			if err != nil {
+				return err
+			}
+			for _, src := range srcs {
 				fd.Directives = append(fd.Directives, moduleCatalogDirective(src))
 			}
 			def.Fields = append(def.Fields, fd)
 		}
+		return nil
 	},
 }
 
@@ -340,9 +389,9 @@ var rootChildGatewaysRule = rootRule{
 // top-level Query/Mutation with @module_catalog per contributing source.
 var rootFunctionGatewayRule = rootRule{
 	name: "function_gateway",
-	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) {
+	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) error {
 		if !sc.top() {
-			return
+			return nil
 		}
 		var gatewayKind sdl.ModuleObjectType
 		switch sc.kind {
@@ -351,19 +400,23 @@ var rootFunctionGatewayRule = rootRule{
 		case sdl.ModuleMutation:
 			gatewayKind = sdl.ModuleMutationFunction
 		default:
-			return
+			return nil
 		}
 		fd := def.Fields.ForName("function")
 		if fd == nil {
-			return
+			return nil
 		}
-		sources := g.s.moduleKindSources(ctx, "", gatewayKind)
+		sources, err := g.moduleKindSources(ctx, "", gatewayKind)
+		if err != nil {
+			return err
+		}
 		if len(sources) == 0 {
-			return // no functions anywhere — the bare prelude field stays
+			return nil // no functions anywhere — the bare prelude field stays
 		}
 		fd.Description = "Functions"
 		for _, src := range sources {
 			fd.Directives = append(fd.Directives, moduleCatalogDirective(src))
 		}
+		return nil
 	},
 }

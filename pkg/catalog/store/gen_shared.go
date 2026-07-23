@@ -29,13 +29,19 @@ type sharedObjectEntry struct {
 
 // sharedObjects lists every ACTIVE non-M2M data object with the traits the
 // shared-type members branch on.
-func (g *genContext) sharedObjects(ctx context.Context) []*sharedObjectEntry {
-	names := g.s.queryNames(ctx, `SELECT o.name FROM core.catalog.data_objects o`+
+func (g *genContext) sharedObjects(ctx context.Context) ([]*sharedObjectEntry, error) {
+	names, err := g.queryNames(ctx, `SELECT o.name FROM core.catalog.data_objects o`+
 		activeMeta("m", "o.data_source")+` ORDER BY o.name`)
+	if err != nil {
+		return nil, err
+	}
 	var out []*sharedObjectEntry
 	for _, name := range names {
-		row, ok := g.s.readDataObject(ctx, name)
-		if !ok || (row.Properties != nil && row.Properties.IsM2M) {
+		row, err := g.readDataObject(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if row == nil || (row.Properties != nil && row.Properties.IsM2M) {
 			continue
 		}
 		e := &sharedObjectEntry{
@@ -49,7 +55,10 @@ func (g *genContext) sharedObjects(ctx context.Context) []*sharedObjectEntry {
 			e.info.RequiredArgs = row.Properties.RequiredArgs
 			e.hasEmbeddings = row.Properties.Embeddings != nil
 		}
-		fields := g.s.readFields(ctx, name)
+		fields, err := g.readFields(ctx, name)
+		if err != nil {
+			return nil, err
+		}
 		e.spatial = fieldsHaveGeometry(fields)
 		e.hasVector = e.hasEmbeddings
 		if !e.hasVector {
@@ -62,15 +71,31 @@ func (g *genContext) sharedObjects(ctx context.Context) []*sharedObjectEntry {
 		}
 		out = append(out, e)
 	}
-	return out
+	return out, nil
 }
 
-func buildJoinShared(ctx context.Context, g *genContext) *ast.Definition {
-	objs := g.sharedObjects(ctx)
-	if len(objs) == 0 {
-		return nil
+// sharedBuildScope loads the object list and source meta every shared-type
+// builder starts from; empty objs = the builder yields nil.
+func sharedBuildScope(ctx context.Context, g *genContext) ([]*sharedObjectEntry, map[string]activeSource, error) {
+	objs, err := g.sharedObjects(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
-	srcs := g.s.activeSources(ctx)
+	if len(objs) == 0 {
+		return nil, nil, nil
+	}
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return objs, srcs, nil
+}
+
+func buildJoinShared(ctx context.Context, g *genContext) (*ast.Definition, error) {
+	objs, srcs, err := sharedBuildScope(ctx, g)
+	if err != nil || len(objs) == 0 {
+		return nil, err
+	}
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       "_join",
@@ -84,15 +109,14 @@ func buildJoinShared(ctx context.Context, g *genContext) *ast.Definition {
 		}
 		def.Fields = append(def.Fields, sharedMemberTrio(obj, args, srcs)...)
 	}
-	return def
+	return def, nil
 }
 
-func buildJoinAggShared(ctx context.Context, g *genContext) *ast.Definition {
-	objs := g.sharedObjects(ctx)
-	if len(objs) == 0 {
-		return nil
+func buildJoinAggShared(ctx context.Context, g *genContext) (*ast.Definition, error) {
+	objs, srcs, err := sharedBuildScope(ctx, g)
+	if err != nil || len(objs) == 0 {
+		return nil, err
 	}
-	srcs := g.s.activeSources(ctx)
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       "_join_aggregation",
@@ -104,15 +128,18 @@ func buildJoinAggShared(ctx context.Context, g *genContext) *ast.Definition {
 		args = append(args, rules.VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
 		def.Fields = append(def.Fields, sharedAggMember(obj, args, srcs))
 	}
-	return def
+	return def, nil
 }
 
-func buildSpatialShared(ctx context.Context, g *genContext) *ast.Definition {
-	objs := spatialOnly(g.sharedObjects(ctx))
-	if len(objs) == 0 {
-		return nil
+func buildSpatialShared(ctx context.Context, g *genContext) (*ast.Definition, error) {
+	objs, srcs, err := sharedBuildScope(ctx, g)
+	if err != nil {
+		return nil, err
 	}
-	srcs := g.s.activeSources(ctx)
+	objs = spatialOnly(objs)
+	if len(objs) == 0 {
+		return nil, nil
+	}
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       "_spatial",
@@ -122,15 +149,18 @@ func buildSpatialShared(ctx context.Context, g *genContext) *ast.Definition {
 	for _, obj := range objs {
 		def.Fields = append(def.Fields, sharedMemberTrio(obj, spatialMemberArgs(obj), srcs)...)
 	}
-	return def
+	return def, nil
 }
 
-func buildSpatialAggShared(ctx context.Context, g *genContext) *ast.Definition {
-	objs := spatialOnly(g.sharedObjects(ctx))
-	if len(objs) == 0 {
-		return nil
+func buildSpatialAggShared(ctx context.Context, g *genContext) (*ast.Definition, error) {
+	objs, srcs, err := sharedBuildScope(ctx, g)
+	if err != nil {
+		return nil, err
 	}
-	srcs := g.s.activeSources(ctx)
+	objs = spatialOnly(objs)
+	if len(objs) == 0 {
+		return nil, nil
+	}
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       "_spatial_aggregation",
@@ -142,17 +172,20 @@ func buildSpatialAggShared(ctx context.Context, g *genContext) *ast.Definition {
 		args = append(args, rules.VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
 		def.Fields = append(def.Fields, sharedAggMember(obj, args, srcs))
 	}
-	return def
+	return def, nil
 }
 
 // buildH3DataShared mirrors H3Rule: the _spatial member trio with the four
 // h3-specific arguments appended.
-func buildH3DataShared(ctx context.Context, g *genContext) *ast.Definition {
-	objs := spatialOnly(g.sharedObjects(ctx))
-	if len(objs) == 0 {
-		return nil
+func buildH3DataShared(ctx context.Context, g *genContext) (*ast.Definition, error) {
+	objs, srcs, err := sharedBuildScope(ctx, g)
+	if err != nil {
+		return nil, err
 	}
-	srcs := g.s.activeSources(ctx)
+	objs = spatialOnly(objs)
+	if len(objs) == 0 {
+		return nil, nil
+	}
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       "_h3_data_query",
@@ -165,7 +198,7 @@ func buildH3DataShared(ctx context.Context, g *genContext) *ast.Definition {
 		}
 		def.Fields = append(def.Fields, sharedMemberTrio(obj, args, srcs)...)
 	}
-	return def
+	return def, nil
 }
 
 func spatialOnly(objs []*sharedObjectEntry) []*sharedObjectEntry {

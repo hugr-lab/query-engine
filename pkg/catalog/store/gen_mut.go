@@ -32,42 +32,63 @@ var mutDataRule = derivedRule{
 	build: buildMutData,
 }
 
-func buildMutInputData(ctx context.Context, g *genContext, baseName, name string) *ast.Definition {
-	if row, ok := g.s.readDataObject(ctx, baseName); ok {
-		def := buildObjectMutInput(ctx, g, row, name, mutInputDataSuffix)
-		if def == nil {
-			return nil
-		}
-		appendInsertRelationFields(ctx, g, row, def)
-		return def
+func buildMutInputData(ctx context.Context, g *genContext, baseName, name string) (*ast.Definition, error) {
+	row, err := g.readDataObject(ctx, baseName)
+	if err != nil {
+		return nil, err
 	}
-	if td, ds := g.structType(ctx, baseName); td != nil {
+	if row != nil {
+		def, err := buildObjectMutInput(ctx, g, row, name, mutInputDataSuffix)
+		if err != nil || def == nil {
+			return nil, err
+		}
+		if err := appendInsertRelationFields(ctx, g, row, def); err != nil {
+			return nil, err
+		}
+		return def, nil
+	}
+	td, ds, err := g.structType(ctx, baseName)
+	if err != nil {
+		return nil, err
+	}
+	if td != nil {
 		return buildStructMutInput(ctx, g, td, ds, name, mutInputDataSuffix)
 	}
-	return nil
+	return nil, nil
 }
 
-func buildMutData(ctx context.Context, g *genContext, baseName, name string) *ast.Definition {
-	if row, ok := g.s.readDataObject(ctx, baseName); ok {
+func buildMutData(ctx context.Context, g *genContext, baseName, name string) (*ast.Definition, error) {
+	row, err := g.readDataObject(ctx, baseName)
+	if err != nil {
+		return nil, err
+	}
+	if row != nil {
 		return buildObjectMutInput(ctx, g, row, name, mutDataSuffix)
 	}
-	if td, ds := g.structType(ctx, baseName); td != nil {
+	td, ds, err := g.structType(ctx, baseName)
+	if err != nil {
+		return nil, err
+	}
+	if td != nil {
 		return buildStructMutInput(ctx, g, td, ds, name, mutDataSuffix)
 	}
-	return nil
+	return nil, nil
 }
 
 // buildObjectMutInput builds the column part of a table's mutation input:
 // stored fields minus _stub / @sql computed / virtual; scalar members drop
 // their null constraints, structural members nest by suffix, data-object
 // typed members are skipped (relations own them).
-func buildObjectMutInput(ctx context.Context, g *genContext, row *dataObject, name, suffix string) *ast.Definition {
+func buildObjectMutInput(ctx context.Context, g *genContext, row *dataObject, name, suffix string) (*ast.Definition, error) {
 	if row.Kind != "table" {
-		return nil // views can't be mutated
+		return nil, nil // views can't be mutated
 	}
-	srcs := g.s.activeSources(ctx)
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if srcs[row.DataSource].ReadOnly {
-		return nil
+		return nil, nil
 	}
 	def := &ast.Definition{
 		Kind:     ast.InputObject,
@@ -78,7 +99,11 @@ func buildObjectMutInput(ctx context.Context, g *genContext, row *dataObject, na
 			catalogDirective(row.DataSource, srcs[row.DataSource].Engine),
 		},
 	}
-	for _, f := range g.s.readFields(ctx, row.Name) {
+	fields, err := g.readFields(ctx, row.Name)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range fields {
 		if f.Name == "_stub" || isVirtualStoreField(f) || f.DependencyDataSource != "" {
 			continue // extension fields join no derived types
 		}
@@ -89,10 +114,14 @@ func buildObjectMutInput(ctx context.Context, g *genContext, row *dataObject, na
 		typeName := typ.Name()
 		fieldType := ast.NamedType(typeName, reconPos)
 		if types.Lookup(typeName) == nil {
-			if g.s.dataObjectExists(ctx, typeName) {
+			if exists, err := g.dataObjectExists(ctx, typeName); err != nil {
+				return nil, err
+			} else if exists {
 				continue // table/view references are handled as relations
 			}
-			if td, _ := g.structType(ctx, typeName); td != nil {
+			if td, _, err := g.structType(ctx, typeName); err != nil {
+				return nil, err
+			} else if td != nil {
 				fieldType = ast.NamedType(typeName+suffix, reconPos)
 			}
 		}
@@ -105,16 +134,23 @@ func buildObjectMutInput(ctx context.Context, g *genContext, row *dataObject, na
 			Position: reconPos,
 		})
 	}
-	return def
+	return def, nil
 }
 
 // appendInsertRelationFields adds the relation subqueries the compiler puts
 // on insert inputs (addReferenceToMutInput): forward FK single, back FK and
 // M2M list — same catalog only, both endpoints writable tables. An is_m2m
 // junction contributes no forward fields of its own.
-func appendInsertRelationFields(ctx context.Context, g *genContext, row *dataObject, def *ast.Definition) {
-	srcs := g.s.activeSources(ctx)
-	for r := range g.s.Relations(ctx, row.Name) {
+func appendInsertRelationFields(ctx context.Context, g *genContext, row *dataObject, def *ast.Definition) error {
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return err
+	}
+	rels, err := g.relations(ctx, row.Name)
+	if err != nil {
+		return err
+	}
+	for _, r := range rels {
 		if r.Kind == catalog.RelationJoin {
 			continue
 		}
@@ -122,8 +158,11 @@ func appendInsertRelationFields(ctx context.Context, g *genContext, row *dataObj
 			r.Kind == catalog.RelationFK && r.Direction == catalog.RelationForward {
 			continue
 		}
-		target, ok := g.s.readDataObject(ctx, r.DataObject)
-		if !ok || target.Kind != "table" || srcs[target.DataSource].ReadOnly {
+		target, err := g.readDataObject(ctx, r.DataObject)
+		if err != nil {
+			return err
+		}
+		if target == nil || target.Kind != "table" || srcs[target.DataSource].ReadOnly {
 			continue // the other endpoint has no mutation input
 		}
 		if target.DataSource != row.DataSource {
@@ -139,18 +178,23 @@ func appendInsertRelationFields(ctx context.Context, g *genContext, row *dataObj
 			Position: reconPos,
 		})
 	}
+	return nil
 }
 
 // buildStructMutInput mirrors generateNestedMutInputData / generateNestedMutData:
 // every member except _stub, Object-typed members nest by suffix.
-func buildStructMutInput(ctx context.Context, g *genContext, td *ast.Definition, dataSource, name, suffix string) *ast.Definition {
+func buildStructMutInput(ctx context.Context, g *genContext, td *ast.Definition, dataSource, name, suffix string) (*ast.Definition, error) {
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
 	def := &ast.Definition{
 		Kind:     ast.InputObject,
 		Name:     name,
 		Position: reconPos,
 		Directives: ast.DirectiveList{
 			directive(base.DataInputDirectiveName, strArg(base.ArgName, td.Name)),
-			catalogDirective(dataSource, g.s.activeSources(ctx)[dataSource].Engine),
+			catalogDirective(dataSource, srcs[dataSource].Engine),
 		},
 	}
 	for _, f := range td.Fields {
@@ -160,9 +204,15 @@ func buildStructMutInput(ctx context.Context, g *genContext, td *ast.Definition,
 		typeName := f.Type.Name()
 		fieldType := ast.NamedType(typeName, reconPos)
 		if types.Lookup(typeName) == nil {
-			if g.s.dataObjectExists(ctx, typeName) {
+			exists, err := g.dataObjectExists(ctx, typeName)
+			if err != nil {
+				return nil, err
+			}
+			if exists {
 				fieldType = ast.NamedType(typeName+suffix, reconPos)
-			} else if td2, _ := g.structType(ctx, typeName); td2 != nil {
+			} else if td2, _, err := g.structType(ctx, typeName); err != nil {
+				return nil, err
+			} else if td2 != nil {
 				fieldType = ast.NamedType(typeName+suffix, reconPos)
 			}
 		}
@@ -175,5 +225,5 @@ func buildStructMutInput(ctx context.Context, g *genContext, td *ast.Definition,
 			Position: reconPos,
 		})
 	}
-	return def
+	return def, nil
 }

@@ -4,18 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
+	"golang.org/x/sync/singleflight"
 )
 
-// readErr logs a read-side DB failure. The catalog.Provider read surface has
-// no error channel (nil covers both "absent" and "failed"), so readers log
-// here and return EMPTY — never a partial result that would silently truncate
-// a generated type. Distinguishable propagation comes with the read cache /
-// CanServe step.
-func readErr(op string, err error) {
+// logReadErr reports a read failure at a Provider surface (ForName, the
+// logical model, NameExists). The read interfaces have no error channel, so the
+// surface logs the propagated error here and serves EMPTY; the failed result
+// is never cached (absence is a nil WITHOUT an error).
+func logReadErr(op string, err error) {
 	slog.Error("catalog store: read failed", "op", op, "error", err)
 }
 
@@ -36,6 +37,9 @@ type Config struct {
 	// IsReadonly rejects all writes (cluster workers read the already-populated
 	// catalog schema).
 	IsReadonly bool
+	// Cache configures the read-side definition cache; the zero value takes
+	// the defaults (set Disabled to switch it off).
+	Cache CacheConfig
 }
 
 // Store is the entity-storage catalog provider. It holds the in-memory system
@@ -56,6 +60,13 @@ type Store struct {
 	// base directives) assembled at startup. Source entities are stored in
 	// catalog.*; system types live only here.
 	static *static.Provider
+
+	// cache holds compiled definitions by name (nil = disabled); gen is the
+	// invalidation clock its installs check against; sf collapses concurrent
+	// resolutions of the same name.
+	cache *defCache
+	gen   atomic.Uint64
+	sf    singleflight.Group
 }
 
 // New assembles the system layer and returns a Store bound to the CoreDB pool.
@@ -72,7 +83,44 @@ func New(_ context.Context, pool *db.Pool, cfg Config, embedder Embedder) (*Stor
 		isReadonly: cfg.IsReadonly,
 		embedder:   embedder,
 		static:     sp,
+		cache:      newDefCache(cfg.Cache),
 	}, nil
+}
+
+// invalidateSource drops every cached artifact a write to the source could
+// have changed: the definition cache's source and allSources buckets, plus
+// the affected object FAMILIES (an object plus its derived types — the
+// write-side closure for cross-source absence dependencies: relations
+// pointing at foreign objects and module functions returning lists of them
+// influence definitions whose builds saw no row of this source). The
+// invalidation clock is bumped FIRST so in-flight resolutions discard their
+// results.
+func (s *Store) invalidateSource(source string, affected map[string]struct{}) {
+	s.gen.Add(1)
+	if len(affected) == 0 {
+		s.cache.invalidate(source, nil)
+		return
+	}
+	s.cache.invalidate(source, func(name string) bool {
+		if _, ok := affected[name]; ok {
+			return true
+		}
+		for i := range derivedRules {
+			if base, ok := derivedRules[i].match(name); ok {
+				if _, hit := affected[base]; hit {
+					return true
+				}
+			}
+		}
+		return false
+	})
+}
+
+// invalidateAll is the conservative fallback when the affected-object set
+// could not be computed (a read failure during the write path).
+func (s *Store) invalidateAll() {
+	s.gen.Add(1)
+	s.cache.invalidateAll()
 }
 
 // System returns the in-memory system-type layer. The writer skips

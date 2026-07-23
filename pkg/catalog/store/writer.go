@@ -79,6 +79,14 @@ func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) 
 	}
 	defer conn.Close()
 
+	// The cross-source invalidation closure needs the OLD rows (about to be
+	// deleted) and the incoming ones; a failure here never fails the write —
+	// the cache then invalidates wholesale.
+	affected, affectedErr := affectedByStored(txCtx, conn, state.Name)
+	if affectedErr == nil {
+		addAffectedDesired(affected, d)
+	}
+
 	if err := deleteSourceRows(txCtx, conn, state.Name); err != nil {
 		return false, err
 	}
@@ -99,7 +107,74 @@ func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) 
 	if err := s.pool.Commit(txCtx); err != nil {
 		return false, fmt.Errorf("catalog write %s commit: %w", state.Name, err)
 	}
+	if affectedErr != nil {
+		s.invalidateAll()
+	} else {
+		s.invalidateSource(state.Name, affected)
+	}
 	return true, nil
+}
+
+// affectedByStored collects the data-object names whose COMPILED shape can
+// depend on the source's stored relations (both endpoints gain/lose nav
+// fields, markers and derived-type members) and module functions returning
+// object lists (they rename the object's aggregation markers). These are the
+// absence dependencies the read-side source index cannot see — a definition
+// built BEFORE such rows existed recorded no dependency on this source.
+func affectedByStored(ctx context.Context, conn *db.Connection, dataSource string) (map[string]struct{}, error) {
+	out := map[string]struct{}{}
+	ds := lit(dataSource)
+	rows, err := conn.Query(ctx, `SELECT r.source, r.destination FROM core.catalog.relations r
+		WHERE r.data_source = `+ds)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var source, destination string
+		if err := rows.Scan(&source, &destination); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		out[source] = struct{}{}
+		out[destination] = struct{}{}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	rows, err = conn.Query(ctx, `SELECT f.returns FROM core.catalog.functions f
+		WHERE f.data_source = `+ds+` AND f.kind = 'function' AND f.module <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var returns string
+		if err := rows.Scan(&returns); err != nil {
+			return nil, err
+		}
+		if target, isList := listReturnTarget(&function{Returns: returns}); isList {
+			out[target] = struct{}{}
+		}
+	}
+	return out, rows.Err()
+}
+
+// addAffectedDesired folds the incoming desired rows into the affected set.
+func addAffectedDesired(out map[string]struct{}, d *desired) {
+	for _, r := range d.relations {
+		out[r.Source] = struct{}{}
+		out[r.Destination] = struct{}{}
+	}
+	for _, fn := range d.functions {
+		if fn.Kind != "function" || fn.Module == "" {
+			continue
+		}
+		if target, isList := listReturnTarget(fn); isList {
+			out[target] = struct{}{}
+		}
+	}
 }
 
 // deleteSource removes a source's rows, meta and dependencies (the unregister
@@ -122,6 +197,8 @@ func (s *Store) deleteSource(ctx context.Context, dataSource string) error {
 	}
 	defer conn.Close()
 
+	affected, affectedErr := affectedByStored(txCtx, conn, dataSource)
+
 	if err := deleteSourceRows(txCtx, conn, dataSource); err != nil {
 		return err
 	}
@@ -141,6 +218,11 @@ func (s *Store) deleteSource(ctx context.Context, dataSource string) error {
 	if err := s.pool.Commit(txCtx); err != nil {
 		return fmt.Errorf("catalog delete %s: %w", dataSource, err)
 	}
+	if affectedErr != nil {
+		s.invalidateAll()
+	} else {
+		s.invalidateSource(dataSource, affected)
+	}
 	return nil
 }
 
@@ -153,11 +235,19 @@ func (s *Store) setFlags(ctx context.Context, dataSource string, loaded, disable
 		return fmt.Errorf("catalog set flags %s: %w", dataSource, err)
 	}
 	defer conn.Close()
+	// Flag flips change VISIBILITY, not rows — the affected closure reads the
+	// (surviving) rows either before hiding or after unhiding.
+	affected, affectedErr := affectedByStored(ctx, conn, dataSource)
 	_, err = conn.Exec(ctx, `UPDATE core.catalog.data_source_meta SET loaded = `+lit(loaded)+
 		`, disabled = `+lit(disabled)+`, suspended = `+lit(suspended)+
 		` WHERE data_source = `+lit(dataSource))
 	if err != nil {
 		return fmt.Errorf("catalog set flags %s: %w", dataSource, err)
+	}
+	if affectedErr != nil {
+		s.invalidateAll()
+	} else {
+		s.invalidateSource(dataSource, affected)
 	}
 	return nil
 }

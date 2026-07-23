@@ -42,19 +42,29 @@ var listFilterRule = derivedRule{
 // buildFilter serves X_filter for a data object (full shape: scalars with
 // directive copies, structural nesting, nav fields from relations, logical
 // ops) or for a structural type (scalar members + logical ops only).
-func buildFilter(ctx context.Context, g *genContext, baseName, name string) *ast.Definition {
-	if row, ok := g.s.readDataObject(ctx, baseName); ok {
+func buildFilter(ctx context.Context, g *genContext, baseName, name string) (*ast.Definition, error) {
+	row, err := g.readDataObject(ctx, baseName)
+	if err != nil {
+		return nil, err
+	}
+	if row != nil {
 		return buildObjectFilter(ctx, g, row, name)
 	}
-	if td, ds := g.structType(ctx, baseName); td != nil {
+	td, ds, err := g.structType(ctx, baseName)
+	if err != nil {
+		return nil, err
+	}
+	if td != nil {
 		return buildStructFilter(ctx, g, td, ds, name)
 	}
-	return nil
+	return nil, nil
 }
 
-func buildObjectFilter(ctx context.Context, g *genContext, row *dataObject, name string) *ast.Definition {
-	s := g.s
-	engines := s.activeEngines(ctx)
+func buildObjectFilter(ctx context.Context, g *genContext, row *dataObject, name string) (*ast.Definition, error) {
+	engines, err := g.activeEngines(ctx)
+	if err != nil {
+		return nil, err
+	}
 	def := &ast.Definition{
 		Kind:        ast.InputObject,
 		Name:        name,
@@ -66,8 +76,16 @@ func buildObjectFilter(ctx context.Context, g *genContext, row *dataObject, name
 		},
 	}
 
-	for _, f := range s.readFields(ctx, row.Name) {
-		if fd := filterFieldFor(ctx, g, f); fd != nil {
+	fields, err := g.readFields(ctx, row.Name)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range fields {
+		fd, err := filterFieldFor(ctx, g, f)
+		if err != nil {
+			return nil, err
+		}
+		if fd != nil {
 			def.Fields = append(def.Fields, fd)
 		}
 	}
@@ -77,7 +95,11 @@ func buildObjectFilter(ctx context.Context, g *genContext, row *dataObject, name
 	// M2M → list filter; parameterized-view targets are excluded; an is_m2m
 	// junction contributes no forward nav (its @references processing stops at
 	// the endpoint synthesis).
-	for r := range s.Relations(ctx, row.Name) {
+	rels, err := g.relations(ctx, row.Name)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rels {
 		if r.Kind == catalog.RelationJoin {
 			continue
 		}
@@ -85,8 +107,11 @@ func buildObjectFilter(ctx context.Context, g *genContext, row *dataObject, name
 			r.Kind == catalog.RelationFK && r.Direction == catalog.RelationForward {
 			continue
 		}
-		target, ok := s.readDataObject(ctx, r.DataObject)
-		if !ok {
+		target, err := g.readDataObject(ctx, r.DataObject)
+		if err != nil {
+			return nil, err
+		}
+		if target == nil {
 			continue
 		}
 		if target.Properties != nil && target.Properties.ArgsTypeName != "" {
@@ -109,7 +134,11 @@ func buildObjectFilter(ctx context.Context, g *genContext, row *dataObject, name
 
 	// Field-declared legs are mirrored onto the matching scalar filter field
 	// as @field_references (gen_references.go: addFieldReferencesToFilter).
-	for _, rel := range s.relationsBySource(ctx, row.Name) {
+	legs, err := g.relationsBySource(ctx, row.Name)
+	if err != nil {
+		return nil, err
+	}
+	for _, rel := range legs {
 		if !rel.FieldDeclared || len(rel.SourceKeys) != 1 {
 			continue
 		}
@@ -119,20 +148,20 @@ func buildObjectFilter(ctx context.Context, g *genContext, row *dataObject, name
 	}
 
 	appendFilterLogicalOps(def, name)
-	return def
+	return def, nil
 }
 
 // filterFieldFor maps one stored field into its filter member (nil = not
 // filterable): scalars via the Filterable registry, structural members via
 // the nested filter names; _stub and virtual fields are skipped.
-func filterFieldFor(ctx context.Context, g *genContext, f *field) *ast.FieldDefinition {
+func filterFieldFor(ctx context.Context, g *genContext, f *field) (*ast.FieldDefinition, error) {
 	if f.Name == "_stub" || isVirtualStoreField(f) {
-		return nil
+		return nil, nil
 	}
 	if f.DependencyDataSource != "" {
 		// The compiler's extension path extends ONLY the object definition —
 		// extension fields join none of the derived types; mirrored here.
-		return nil
+		return nil, nil
 	}
 	typ := parseFieldType(f.FieldType)
 	typeName := typ.Name()
@@ -141,7 +170,7 @@ func filterFieldFor(ctx context.Context, g *genContext, f *field) *ast.FieldDefi
 	if s := types.Lookup(typeName); s != nil {
 		fi, ok := s.(types.Filterable)
 		if !ok {
-			return nil
+			return nil, nil
 		}
 		filterType := fi.FilterTypeName()
 		if isList {
@@ -165,17 +194,17 @@ func filterFieldFor(ctx context.Context, g *genContext, f *field) *ast.FieldDefi
 		if f.Properties != nil && f.Properties.FilterRequired {
 			fd.Type.NonNull = true
 		}
-		return fd
+		return fd, nil
 	}
 
 	// Structural member: nested filter by name (the struct's own filter is a
 	// derived name too). Data objects and non-Object residual types (enums,
 	// inputs) contribute no filter member.
-	if g.s.dataObjectExists(ctx, typeName) {
-		return nil
+	if exists, err := g.dataObjectExists(ctx, typeName); err != nil || exists {
+		return nil, err
 	}
-	if td, _ := g.structType(ctx, typeName); td == nil {
-		return nil
+	if td, _, err := g.structType(ctx, typeName); err != nil || td == nil {
+		return nil, err
 	}
 	filterType := typeName + filterSuffix
 	if isList {
@@ -185,19 +214,23 @@ func filterFieldFor(ctx context.Context, g *genContext, f *field) *ast.FieldDefi
 		Name:     f.Name,
 		Type:     ast.NamedType(filterType, reconPos),
 		Position: reconPos,
-	}
+	}, nil
 }
 
 // buildStructFilter mirrors generateNestedFilterInput: scalar members only,
 // no directive copies, logical ops.
-func buildStructFilter(ctx context.Context, g *genContext, td *ast.Definition, dataSource, name string) *ast.Definition {
+func buildStructFilter(ctx context.Context, g *genContext, td *ast.Definition, dataSource, name string) (*ast.Definition, error) {
+	engines, err := g.activeEngines(ctx)
+	if err != nil {
+		return nil, err
+	}
 	def := &ast.Definition{
 		Kind:     ast.InputObject,
 		Name:     name,
 		Position: reconPos,
 		Directives: ast.DirectiveList{
 			directive(base.FilterInputDirectiveName, strArg(base.ArgName, td.Name)),
-			catalogDirective(dataSource, g.s.activeEngines(ctx)[dataSource]),
+			catalogDirective(dataSource, engines[dataSource]),
 		},
 	}
 	for _, f := range td.Fields {
@@ -225,21 +258,31 @@ func buildStructFilter(ctx context.Context, g *genContext, td *ast.Definition, d
 		})
 	}
 	appendFilterLogicalOps(def, name)
-	return def
+	return def, nil
 }
 
 // buildListFilter serves X_list_filter (any_of / all_of / none_of over
 // X_filter) for any base that has a filter: a data object or a structural
 // type. The compiler creates these lazily on first use; serving them for
 // every filterable base is a superset — nothing references the extra names.
-func buildListFilter(ctx context.Context, g *genContext, baseName, name string) *ast.Definition {
+func buildListFilter(ctx context.Context, g *genContext, baseName, name string) (*ast.Definition, error) {
 	var dataSource string
-	if row, ok := g.s.readDataObject(ctx, baseName); ok {
+	row, err := g.readDataObject(ctx, baseName)
+	if err != nil {
+		return nil, err
+	}
+	if row != nil {
 		dataSource = row.DataSource
-	} else if td, ds := g.structType(ctx, baseName); td != nil {
+	} else if td, ds, err := g.structType(ctx, baseName); err != nil {
+		return nil, err
+	} else if td != nil {
 		dataSource = ds
 	} else {
-		return nil
+		return nil, nil
+	}
+	engines, err := g.activeEngines(ctx)
+	if err != nil {
+		return nil, err
 	}
 	filterName := baseName + filterSuffix
 	return &ast.Definition{
@@ -248,14 +291,14 @@ func buildListFilter(ctx context.Context, g *genContext, baseName, name string) 
 		Position: reconPos,
 		Directives: ast.DirectiveList{
 			directive(base.FilterListInputDirectiveName, strArg(base.ArgName, baseName)),
-			catalogDirective(dataSource, g.s.activeEngines(ctx)[dataSource]),
+			catalogDirective(dataSource, engines[dataSource]),
 		},
 		Fields: ast.FieldList{
 			{Name: "any_of", Type: ast.NamedType(filterName, reconPos), Position: reconPos},
 			{Name: "all_of", Type: ast.NamedType(filterName, reconPos), Position: reconPos},
 			{Name: "none_of", Type: ast.NamedType(filterName, reconPos), Position: reconPos},
 		},
-	}
+	}, nil
 }
 
 func appendFilterLogicalOps(def *ast.Definition, name string) {
@@ -269,16 +312,15 @@ func appendFilterLogicalOps(def *ast.Definition, name string) {
 // structType resolves a STRUCTURAL residual type: a stored Object definition
 // that is not a table/view (those are data objects). Returns the definition
 // (without @catalog) and its owning data source.
-func (g *genContext) structType(ctx context.Context, name string) (*ast.Definition, string) {
-	td, ds, err := g.s.readType(ctx, name)
+func (g *genContext) structType(ctx context.Context, name string) (*ast.Definition, string, error) {
+	td, ds, err := g.readType(ctx, name)
 	if err != nil {
-		readErr("type", err)
-		return nil, ""
+		return nil, "", err
 	}
 	if td == nil || td.Kind != ast.Object {
-		return nil, ""
+		return nil, "", nil
 	}
-	return td, ds
+	return td, ds, nil
 }
 
 // isVirtualStoreField reports a declared @join / @function_call /

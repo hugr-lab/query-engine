@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -13,12 +14,12 @@ import (
 // root. Directives come from the function pair table (pairs_function.go),
 // arguments from emitFunctionArgs (@arg_default / @deprecated re-attached);
 // @catalog(name, engine) is attached by the root rules (gen_roots.go).
-func reconstructFunction(ctx context.Context, s *Store, module, name string) *ast.FieldDefinition {
-	row, ok := s.readFunction(ctx, module, name)
-	if !ok {
-		return nil
+func reconstructFunction(ctx context.Context, g *genContext, module, name string) (*ast.FieldDefinition, error) {
+	row, err := g.readFunction(ctx, module, name)
+	if err != nil || row == nil {
+		return nil, err
 	}
-	return functionField(row)
+	return functionField(row), nil
 }
 
 // functionField builds the root-field definition from a function row.
@@ -33,11 +34,16 @@ func functionField(row *function) *ast.FieldDefinition {
 	}
 }
 
-func (s *Store) readFunction(ctx context.Context, module, name string) (*function, bool) {
-	conn, err := s.pool.Conn(ctx)
+// readFunction reads one function row by its (module, name) primary key;
+// absent = (nil, nil).
+func (g *genContext) readFunction(ctx context.Context, module, name string) (*function, error) {
+	key := pkKey(module, name)
+	if row, ok := g.function[key]; ok {
+		return row, nil
+	}
+	conn, err := g.s.pool.Conn(ctx)
 	if err != nil {
-		readErr("function", err)
-		return nil, false
+		return nil, fmt.Errorf("read function %s.%s: %w", module, name, err)
 	}
 	defer conn.Close()
 	row, err := scanFunction(conn.QueryRow(ctx, `SELECT f.module, f.name, f.kind, f.data_source, f.returns, f.is_table,
@@ -46,11 +52,20 @@ func (s *Store) readFunction(ctx context.Context, module, name string) (*functio
 		WHERE f.module = `+lit(module)+` AND f.name = `+lit(name)).Scan)
 	if err != nil {
 		if err != sql.ErrNoRows {
-			readErr("function", err)
+			return nil, fmt.Errorf("read function %s.%s: %w", module, name, err)
 		}
-		return nil, false
+		if g.function == nil {
+			g.function = map[string]*function{}
+		}
+		g.function[key] = nil
+		return nil, nil
 	}
-	return row, true
+	if g.function == nil {
+		g.function = map[string]*function{}
+	}
+	g.function[key] = row
+	g.touch(row.DataSource)
+	return row, nil
 }
 
 // scanFunction fills a function row from the canonical column list (module,

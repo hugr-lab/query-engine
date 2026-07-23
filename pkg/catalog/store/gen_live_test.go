@@ -111,6 +111,12 @@ func TestGenGoldenLiveCorpus(t *testing.T) {
 			assert.NotNil(t, got, "store must serve %s", name)
 			continue
 		}
+		// Cache parity: a repeat read serves the SAME definition (cached
+		// classes by pointer identity, static classes are stable anyway).
+		if got2 := store.ForName(ctx, name); got2 != got {
+			diffs++
+			assert.Fail(t, "cache parity", "second read of %s is a different definition", name)
+		}
 		// Old-path quirks tolerated on the REFERENCE side (logged, never
 		// silent): @wfs* directives (intentionally dropped from the store —
 		// the surface moves to a separate service), duplicated @catalog tags
