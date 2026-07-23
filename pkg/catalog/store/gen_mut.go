@@ -79,8 +79,8 @@ func buildObjectMutInput(ctx context.Context, g *genContext, row *dataObject, na
 		},
 	}
 	for _, f := range g.s.readFields(ctx, row.Name) {
-		if f.Name == "_stub" || isVirtualStoreField(f) {
-			continue
+		if f.Name == "_stub" || isVirtualStoreField(f) || f.DependencyDataSource != "" {
+			continue // extension fields join no derived types
 		}
 		if f.Properties != nil && (f.Properties.Computed || f.Properties.SQL != "") {
 			continue // computed @sql fields are not writable

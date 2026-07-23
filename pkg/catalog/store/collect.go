@@ -28,6 +28,12 @@ import (
 // objects do). Data objects / fields keep their own @catalog when present.
 func collect(ctx context.Context, defs base.ExtensionsSource, dataSource string) *desired {
 	d := newDesired()
+	// The AsModule option routes the source's members into a module named
+	// after the source (PrefixPreparer keeps it in ObjectInfo only — the
+	// directive is not always materialized, so normalize here).
+	if co, ok := defs.(interface{ CompileOptions() base.Options }); ok {
+		d.asModule = co.CompileOptions().AsModule
+	}
 	// Data objects and residual source types live in the (in-place mutated)
 	// definitions after VALIDATE+PREPARE.
 	for def := range defs.Definitions(ctx) {
@@ -76,6 +82,15 @@ func collectDataObject(ctx context.Context, defs base.DefinitionsSource, d *desi
 		Description: def.Description,
 	}
 	collectObjectDirectives(def, obj) // fills OriginalName / Module / Kind + bag
+	// AsModule routing: the module is the source name, an inline @module
+	// nests under it (PrefixPreparer semantics: "shop" + "air" → "shop.air").
+	if d.asModule {
+		if obj.Module == "" {
+			obj.Module = dataSource
+		} else if !strings.HasPrefix(obj.Module, dataSource+".") && obj.Module != dataSource {
+			obj.Module = dataSource + "." + obj.Module
+		}
+	}
 	// @args(required:) is auto-computed by the compiler from the input type's
 	// NonNull fields — normalize it into the bag the same way (gen_view.go).
 	if obj.Properties.ArgsTypeName != "" && !obj.Properties.RequiredArgs {

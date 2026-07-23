@@ -129,6 +129,11 @@ func filterFieldFor(ctx context.Context, g *genContext, f *field) *ast.FieldDefi
 	if f.Name == "_stub" || isVirtualStoreField(f) {
 		return nil
 	}
+	if f.DependencyDataSource != "" {
+		// The compiler's extension path extends ONLY the object definition —
+		// extension fields join none of the derived types; mirrored here.
+		return nil
+	}
 	typ := parseFieldType(f.FieldType)
 	typeName := typ.Name()
 	isList := typ.NamedType == ""

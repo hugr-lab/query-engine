@@ -14,6 +14,8 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -220,16 +222,184 @@ func TestGenGoldenStructs(t *testing.T) {
 	}
 }
 
+// fixtureSource describes one source of a multi-source golden fixture.
+type fixtureSource struct {
+	name        string
+	schema      string
+	prefix      string
+	asModule    bool
+	readOnly    bool
+	isExtension bool
+}
+
+func fixtureOpts(fs fixtureSource, e *engines.DuckDB) compiler.Options {
+	return compiler.Options{
+		Name:         fs.name,
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+		Prefix:       fs.prefix,
+		AsModule:     fs.asModule,
+		ReadOnly:     fs.readOnly,
+		IsExtension:  fs.isExtension,
+	}
+}
+
+// storeForSources writes the fixture sources in ORDER through the partial
+// pipeline — each later source compiles against the earlier ones (cross-source
+// extends resolve), states carry prefix/as_module/read_only.
+func storeForSources(t *testing.T, fixtures []fixtureSource) (*Store, context.Context) {
+	t.Helper()
+	ctx := context.Background()
+	pool, err := db.NewPool("")
+	require.NoError(t, err)
+	t.Cleanup(func() { pool.Close() })
+	require.NoError(t, coredb.New(coredb.Config{VectorSize: 8}).Attach(ctx, pool))
+	store, err := New(ctx, pool, Config{VecSize: 8}, nil)
+	require.NoError(t, err)
+
+	target, err := static.New()
+	require.NoError(t, err)
+	for _, fs := range fixtures {
+		e := &engines.DuckDB{}
+		src, err := sources.NewStringSource(fs.name, e, fixtureOpts(fs, e), fs.schema)
+		require.NoError(t, err)
+		_, err = compiler.New(partialRules()...).Compile(ctx, target, src, src.CompileOptions())
+		require.NoError(t, err)
+		require.NoError(t, target.Update(ctx, src))
+		d := collect(ctx, src, fs.name)
+		_, err = store.writeSource(ctx, d, SourceState{
+			Name: fs.name, Version: "v1", Engine: "duckdb",
+			Prefix: fs.prefix, AsModule: fs.asModule, ReadOnly: fs.readOnly, Loaded: true,
+		})
+		require.NoError(t, err)
+	}
+	return store, ctx
+}
+
+// goldenRefSources compiles the same fixtures with the FULL rule set,
+// sequentially into one static provider (multi-catalog reference).
+func goldenRefSources(t *testing.T, fixtures []fixtureSource) *static.Provider {
+	t.Helper()
+	ctx := context.Background()
+	target, err := static.New()
+	require.NoError(t, err)
+	for i, fs := range fixtures {
+		e := &engines.DuckDB{}
+		src, err := sources.NewStringSource(fs.name, e, fixtureOpts(fs, e), fs.schema)
+		require.NoError(t, err)
+		var p base.Provider
+		if i > 0 {
+			p = target
+		}
+		compiled, err := compiler.New(rules.RegisterAll()...).Compile(ctx, p, src, src.CompileOptions())
+		require.NoError(t, err)
+		require.NoError(t, target.Update(ctx, compiled))
+	}
+	return target
+}
+
+// genMultiFixtures covers the deferred source-option axes: a prefixed
+// AsModule source, a read-only source, and a cross-source extension.
+var genMultiFixtures = []fixtureSource{
+	{
+		name: "shop", prefix: "shop", asModule: true,
+		// categories declared BEFORE items: the compiler's insert-relation
+		// subqueries are created lazily in declaration order (the target's
+		// mutation input must already exist).
+		schema: `
+type categories @table(name: "categories") {
+  id: Int! @pk
+  title: String!
+}
+
+type items @table(name: "items") {
+  id: Int! @pk
+  category_id: Int @field_references(references_name: "categories", field: "id", query: "category", references_query: "items")
+  name: String!
+  price: Float
+}
+`,
+	},
+	{
+		name: "ro", readOnly: true,
+		schema: `
+type logs @module(name: "ro_mod") @table(name: "logs") {
+  id: Int! @pk
+  message: String
+}
+`,
+	},
+	{
+		name: "ext", isExtension: true,
+		schema: `extend type shop_items {
+  note: String
+}
+`,
+	},
+}
+
+// TestGenGoldenMultiSource pins the prefix + AsModule + read-only + extension
+// axes: prefixed compiled names with original-name markers and roots,
+// mutation suppression for the read-only source, extension field attribution.
+func TestGenGoldenMultiSource(t *testing.T) {
+	store, ctx := storeForSources(t, genMultiFixtures)
+	ref := goldenRefSources(t, genMultiFixtures)
+
+	assertGenParity(t, ctx, store, ref, []string{
+		// Prefixed objects: @original_name, markers with ORIGINAL names,
+		// prefixed nav/derived names, the extension field on shop_items.
+		"shop_items",
+		"shop_categories",
+		"shop_items_filter",
+		"shop_categories_filter",
+		"shop_items_list_filter",
+		"shop_items_mut_input_data",
+		"shop_items_mut_data",
+		"_shop_items_aggregation",
+		"_shop_items_aggregation_sub_aggregation",
+		"_shop_categories_aggregation",
+		// Read-only source: no mutation surface at all.
+		"logs",
+		"logs_filter",
+		"_logs_aggregation",
+		// Roots: AsModule module named after the source, original-name
+		// members; ro_mod contributes no mutation root.
+		"Query",
+		"Mutation",
+		"_module_shop_query",
+		"_module_shop_mutation",
+		"_module_ro_mod_query",
+		// Shared types span all three sources.
+		"_join",
+		"_join_aggregation",
+	})
+
+	for _, name := range []string{
+		"logs_mut_input_data",
+		"logs_mut_data",
+		"_module_ro_mod_mutation",
+	} {
+		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
+		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
+	}
+}
+
 // assertGenParity: each covered name must be served by the store structurally
 // identical to the fully-compiled reference (member order is not part of the
 // contract — definitions are normalized before comparison).
 func assertGenParity(t *testing.T, ctx context.Context, s *Store, ref *static.Provider, names []string) {
 	t.Helper()
 	for _, name := range names {
+		// Per-name asserts (no require): one missing name must not hide the
+		// diffs of the remaining ones.
 		want := ref.ForName(ctx, name)
-		require.NotNil(t, want, "reference must contain %s", name)
+		if !assert.NotNil(t, want, "reference must contain %s", name) {
+			continue
+		}
 		got := s.ForName(ctx, name)
-		require.NotNil(t, got, "store must serve %s", name)
+		if !assert.NotNil(t, got, "store must serve %s", name) {
+			continue
+		}
 		assert.Equal(t, goldenSDL(want), goldenSDL(got), "definition parity for %s", name)
 	}
 }

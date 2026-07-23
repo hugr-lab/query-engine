@@ -80,7 +80,11 @@ func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Defi
 
 	for _, f := range t.fields {
 		fd := reconstructField(f)
-		if f.DataSource != row.DataSource || isVirtualStoreField(f) {
+		if f.DependencyDataSource != "" {
+			// Extension-source fields carry @dependency instead of @catalog.
+			fd.Directives = append(fd.Directives,
+				directive(base.DependencyDirectiveName, strArg(base.ArgName, f.DependencyDataSource)))
+		} else if f.DataSource != row.DataSource || isVirtualStoreField(f) {
 			fd.Directives = append(fd.Directives, catalogDirective(f.DataSource, t.srcs[f.DataSource].Engine))
 		}
 		def.Fields = append(def.Fields, fd)
@@ -253,7 +257,7 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 	}
 	defer conn.Close()
 	rows, err := conn.Query(ctx, `SELECT f.name, f.field_type, f.properties::JSON::VARCHAR,
-		f.data_source, f.is_pk, f.ordinal, f.deprecation_reason, f.description
+		f.data_source, f.dependency_data_source, f.is_pk, f.ordinal, f.deprecation_reason, f.description
 		FROM core.catalog.fields f`+activeMeta("m", "f.data_source")+`
 		WHERE f.type_name = `+lit(typeName)+` ORDER BY f.ordinal, f.name`)
 	if err != nil {
@@ -263,10 +267,11 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 	var out []*field
 	for rows.Next() {
 		f := field{TypeName: typeName, Properties: &fieldProperties{}}
-		var props, deprecated, desc sql.NullString
-		if err := rows.Scan(&f.Name, &f.FieldType, &props, &f.DataSource, &f.IsPK, &f.Ordinal, &deprecated, &desc); err != nil {
+		var props, dependency, deprecated, desc sql.NullString
+		if err := rows.Scan(&f.Name, &f.FieldType, &props, &f.DataSource, &dependency, &f.IsPK, &f.Ordinal, &deprecated, &desc); err != nil {
 			return out
 		}
+		f.DependencyDataSource = dependency.String
 		f.DeprecationReason = deprecated.String
 		f.Description = desc.String
 		if props.Valid {

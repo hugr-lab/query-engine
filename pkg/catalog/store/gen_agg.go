@@ -130,8 +130,8 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 		typ := parseFieldType(f.FieldType)
 		typeName := typ.Name()
 		isList := typ.NamedType == ""
-		if f.Name == "_stub" {
-			continue
+		if f.Name == "_stub" || f.DependencyDataSource != "" {
+			continue // extension fields join no derived types
 		}
 		if s := types.Lookup(typeName); s != nil {
 			// Scalar twin — the compiler takes every non-list Aggregatable

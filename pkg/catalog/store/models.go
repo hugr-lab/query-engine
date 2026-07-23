@@ -130,6 +130,9 @@ type dataSourceDependency struct {
 // desired is the full desired model state of the catalog namespace for one
 // reconcile sweep, keyed by table primary keys.
 type desired struct {
+	// asModule mirrors the source's AsModule option: members without an
+	// explicit module land in the module named after the source.
+	asModule      bool
 	modules       map[string]*module               // key: name
 	moduleSources map[string]*moduleSource         // key: module\x1fsource
 	dataObjects   map[string]*dataObject           // key: name
