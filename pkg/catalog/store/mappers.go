@@ -77,6 +77,10 @@ func mapFunctionArgs(f *ast.FieldDefinition) []functionArgument {
 // deprecationReason reads @deprecated into the storage column value: "" means
 // active; a bare @deprecated stores the GraphQL spec default reason so the
 // column alone distinguishes deprecated-without-reason from active.
+// deprecatedDefaultReason is the GraphQL spec default a bare @deprecated
+// carries — stored explicitly, emitted back as the bare directive.
+const deprecatedDefaultReason = "No longer supported"
+
 func deprecationReason(dd ast.DirectiveList) string {
 	d := dd.ForName(base.DeprecatedDirectiveName)
 	if d == nil {
@@ -85,7 +89,15 @@ func deprecationReason(dd ast.DirectiveList) string {
 	if r := base.DirectiveArgString(d, argReason); r != "" {
 		return r
 	}
-	return "No longer supported"
+	return deprecatedDefaultReason
+}
+
+// deprecatedDirective restores the bare form for the spec-default reason.
+func deprecatedDirective(reason string) *ast.Directive {
+	if reason == deprecatedDefaultReason {
+		return directive(base.DeprecatedDirectiveName)
+	}
+	return directive(base.DeprecatedDirectiveName, strArg(argReason, reason))
 }
 
 func mapCacheSettings(d *ast.Directive) *cacheSettings {

@@ -41,12 +41,17 @@ func (s *Store) genCtx() *genContext { return &genContext{s: s} }
 // Ш4.7 adds the root-field builders). New query kind = one entry.
 type queryShape struct {
 	kind string
+	// rootKind routes the root field: query shapes land on Query/_module_*_query,
+	// mutation shapes on Mutation/_module_*_mutation.
+	rootKind sdl.ModuleObjectType
 	// matches reports whether the object gets this shape (views take no
 	// mutations, by-pk needs a PK on a non-m2m object, …).
 	matches func(t *objectTraits) bool
 	// markers emits the def-level @query/@mutation directives; queryName is
 	// the AsModule-aware base (original name on module roots).
 	markers func(t *objectTraits, queryName string) []*ast.Directive
+	// root instantiates the shape's field on the module root.
+	root func(t *objectTraits) *ast.FieldDefinition
 }
 
 var queryShapes = []queryShape{
@@ -59,34 +64,12 @@ var queryShapes = []queryShape{
 	deleteShape,
 }
 
-// argProfileKind names the base argument sets (§3.2, compiler helpers.go):
-// Root (filter/order_by/limit/offset/distinct_on), SubQuery (Root + inner +
-// nested_*), AggRef / AggSubRef, ByPK, Unique.
-type argProfileKind string
-
-const (
-	argProfileRoot      argProfileKind = "root"
-	argProfileSubQuery  argProfileKind = "subquery"
-	argProfileAggRef    argProfileKind = "agg_ref"
-	argProfileAggSubRef argProfileKind = "agg_sub_ref"
-	argProfileByPK      argProfileKind = "by_pk"
-	argProfileUnique    argProfileKind = "unique"
-)
-
-// argProfiles builds the base argument list of a profile for an object.
-var argProfiles = map[argProfileKind]func(ctx context.Context, g *genContext, obj *dataObject) ast.ArgumentDefinitionList{}
-
-// argDecorator (§3.2) adjusts a profile's arguments for an object trait:
-// similarity (Vector fields), semantic (@embeddings), h3 extras, measurement
-// functions (@cube), gapfill (@hypertable), parameterized-view args. New
-// argument = one decorator.
-type argDecorator struct {
-	name    string
-	matches func(profile argProfileKind, obj *dataObject) bool
-	apply   func(ctx context.Context, g *genContext, profile argProfileKind, obj *dataObject, args ast.ArgumentDefinitionList) ast.ArgumentDefinitionList
-}
-
-var argDecorators []argDecorator
+// The argProfiles/argDecorators axis (§3.2) lives in compiler/rules — ONE
+// source of truth shared with the compiled path: QueryArgsWithViewArgs
+// (Root, view args prepended), SubQueryArgs, AggRefArgs, AggSubRefArgs,
+// JoinObject*/SpatialObject* profiles and the VectorSearchArgs decorator
+// (similarity/semantic). A new argument = one decorator function there,
+// appended by the shape/field/shared rule that owns the member.
 
 // fieldRule (§3.3) contributes generated members to the reconstructed data
 // object: nav fields from relations, subquery args on virtual fields, the
@@ -184,22 +167,7 @@ func resolveSharedType(ctx context.Context, s *Store, name string) *ast.Definiti
 // run in registration order over an empty root definition.
 type rootRule struct {
 	name  string
-	apply func(ctx context.Context, g *genContext, root moduleRootRef, def *ast.Definition)
-}
-
-var rootRules []rootRule
-
-// resolveModuleRoot (4) synthesizes Query/Mutation/Subscription and
-// _module_* roots from their members. Until the root rules land the
-// static-prelude stubs stay authoritative.
-func resolveModuleRoot(ctx context.Context, s *Store, name string) *ast.Definition {
-	if len(rootRules) == 0 {
-		return nil
-	}
-	// TODO(Ш4.7): resolve classifyModuleRootName candidates against
-	// catalog.modules (underscored path → dotted module), gate the kind on the
-	// module_data_sources flags, then build via rootRules.
-	return nil
+	apply func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition)
 }
 
 // moduleRootRef is one syntactic parse of a module-root type name. Module is

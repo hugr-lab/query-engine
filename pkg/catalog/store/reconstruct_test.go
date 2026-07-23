@@ -163,7 +163,9 @@ func TestReconstructFunction(t *testing.T) {
 	assert.Equal(t, "String", fn.Type.String())
 	assert.Equal(t, "order_status", dirArg(fn.Directives.ForName("function"), "name"))
 	assert.Equal(t, "sales", dirArg(fn.Directives.ForName("module"), "name"))
-	assert.Equal(t, "No longer supported", dirArg(fn.Directives.ForName("deprecated"), "reason"))
+	deprecated := fn.Directives.ForName("deprecated")
+	require.NotNil(t, deprecated, "bare @deprecated round-trips")
+	assert.Empty(t, deprecated.Arguments, "the spec-default reason re-emits as the bare form")
 
 	require.Len(t, fn.Arguments, 2)
 	id := fn.Arguments.ForName("id")

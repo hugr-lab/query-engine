@@ -286,7 +286,7 @@ var fieldPairs = []fieldPair{
 			if row.DeprecationReason == "" {
 				return nil
 			}
-			return []*ast.Directive{directive(base.DeprecatedDirectiveName, strArg(argReason, row.DeprecationReason))}
+			return []*ast.Directive{deprecatedDirective(row.DeprecationReason)}
 		},
 	},
 }

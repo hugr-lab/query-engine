@@ -80,13 +80,22 @@ var genParityNames = []string{
 	"_spatial",
 	"_spatial_aggregation",
 	"_h3_data_query",
+	// Ш4.7 — module roots.
+	"Query",
+	"Mutation",
+	"Function",
+	"MutationFunction",
+	"Subscription",
+	"_module_sales_query",
+	"_module_sales_mutation",
+	"_module_sales_function",
+	"_module_sales_mut_function",
+	"_module_sales_reports_query",
 }
 
 // genPendingNames — names the reference generates that the store must learn
 // to serve, keyed by the sub-step that delivers them.
-var genPendingNames = map[string][]string{
-	"Ш4.7 roots": {"_module_sales_query", "_module_sales_mutation", "Query", "Mutation"},
-}
+var genPendingNames = map[string][]string{}
 
 // goldenRef compiles a fixture with the FULL rule set into a fresh static
 // provider — the reference the generation layer converges to, name by name.
@@ -124,8 +133,10 @@ func TestGenGoldenHarness(t *testing.T) {
 	assertGenParity(t, ctx, store, ref, genParityNames)
 
 	// Negative parity: names the compiler does NOT generate must stay absent
-	// on the store side too (views take no mutation inputs).
-	for _, name := range []string{"sales_by_country_mut_input_data", "sales_by_country_mut_data"} {
+	// on the store side too (views take no mutation inputs; no subscriptions
+	// or reports-module mutations in the fixture).
+	for _, name := range []string{"sales_by_country_mut_input_data", "sales_by_country_mut_data",
+		"_module_sales_subscription", "_module_sales_reports_mutation"} {
 		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
 		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
 	}

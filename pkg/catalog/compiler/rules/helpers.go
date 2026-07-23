@@ -98,12 +98,12 @@ func addModuleToFuncCallDirective(f *ast.FieldDefinition, moduleName string) {
 
 // queryArgs returns the standard query arguments for list queries.
 func queryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
-	return queryArgsWithViewArgs(nil, filterName, pos)
+	return QueryArgsWithViewArgs(nil, filterName, pos)
 }
 
-// queryArgsWithViewArgs returns standard query arguments, optionally prepending
+// QueryArgsWithViewArgs returns standard query arguments, optionally prepending
 // an "args" parameter for parameterized views (@args directive).
-func queryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+func QueryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	var args ast.ArgumentDefinitionList
 	if info != nil && info.InputArgsName != "" {
 		var argType *ast.Type

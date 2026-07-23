@@ -678,7 +678,7 @@ func generateQueryFields(ctx base.CompilationContext, def *ast.Definition, info 
 		Name:        queryName,
 		Description: def.Description,
 		Type:        ast.ListType(ast.NamedType(def.Name, pos), pos),
-		Arguments:   queryArgsWithViewArgs(info, filterName, pos),
+		Arguments:   QueryArgsWithViewArgs(info, filterName, pos),
 		Directives: ast.DirectiveList{
 			{Name: "query", Arguments: ast.ArgumentList{
 				{Name: "name", Value: &ast.Value{Raw: def.Name, Kind: ast.StringValue, Position: pos}, Position: pos},
@@ -745,7 +745,7 @@ func generateQueryFields(ctx base.CompilationContext, def *ast.Definition, info 
 		Name:        queryName + "_aggregation",
 		Description: "The aggregation for " + queryName,
 		Type:        ast.NamedType(aggTypeName, pos),
-		Arguments:   queryArgsWithViewArgs(info, filterName, pos),
+		Arguments:   QueryArgsWithViewArgs(info, filterName, pos),
 		Directives: ast.DirectiveList{
 			{Name: "aggregation_query", Arguments: ast.ArgumentList{
 				{Name: "name", Value: &ast.Value{Raw: queryName, Kind: ast.StringValue, Position: pos}, Position: pos},
@@ -761,7 +761,7 @@ func generateQueryFields(ctx base.CompilationContext, def *ast.Definition, info 
 		Name:        queryName + "_bucket_aggregation",
 		Description: "The aggregation for " + queryName,
 		Type:        ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
-		Arguments:   queryArgsWithViewArgs(info, filterName, pos),
+		Arguments:   QueryArgsWithViewArgs(info, filterName, pos),
 		Directives: ast.DirectiveList{
 			{Name: "aggregation_query", Arguments: ast.ArgumentList{
 				{Name: "name", Value: &ast.Value{Raw: queryName, Kind: ast.StringValue, Position: pos}, Position: pos},

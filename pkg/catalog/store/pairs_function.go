@@ -88,7 +88,7 @@ var functionPairs = []functionPair{
 			if row.DeprecationReason == "" {
 				return nil
 			}
-			return []*ast.Directive{directive(base.DeprecatedDirectiveName, strArg(argReason, row.DeprecationReason))}
+			return []*ast.Directive{deprecatedDirective(row.DeprecationReason)}
 		},
 	},
 }
@@ -136,8 +136,7 @@ func emitFunctionArgs(row *function) ast.ArgumentDefinitionList {
 				directive(base.ArgDefaultDirectiveName, strArg(base.ArgValue, a.ArgDefault)))
 		}
 		if a.DeprecationReason != "" {
-			def.Directives = append(def.Directives,
-				directive(base.DeprecatedDirectiveName, strArg(argReason, a.DeprecationReason)))
+			def.Directives = append(def.Directives, deprecatedDirective(a.DeprecationReason))
 		}
 		out = append(out, def)
 	}
