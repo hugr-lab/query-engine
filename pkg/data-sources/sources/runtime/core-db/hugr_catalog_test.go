@@ -157,8 +157,10 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 	// module→source CLOSURE (submodule contributions recorded on the parent).
 	exec(`INSERT INTO core.catalog.modules (name, parent, description) VALUES
 		('probe_mod', NULL, NULL), ('probe_mod.sub', 'probe_mod', 'sub module')`)
-	exec(`INSERT INTO core.catalog.module_data_sources (module, data_source) VALUES
-		('probe_mod', 'probe'), ('probe_mod.sub', 'probe')`)
+	exec(`INSERT INTO core.catalog.module_data_sources (module, data_source,
+		has_data_objects, has_tables, has_functions, has_mut_functions, has_subscriptions) VALUES
+		('probe_mod', 'probe', true, true, false, false, false),
+		('probe_mod.sub', 'probe', true, false, false, false, false)`)
 	got := queryStrings(t, pool, `SELECT name FROM core.catalog.modules WHERE parent = 'probe_mod'`)
 	assert.Equal(t, []string{"probe_mod.sub"}, got, "child selection is a plain equality on parent")
 
@@ -202,6 +204,16 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 	exec(`UPDATE core.catalog.data_source_meta SET loaded = true, suspended = false WHERE data_source = 'probe'`)
 	got = queryStrings(t, pool, activeModules)
 	assert.Equal(t, []string{"probe_mod", "probe_mod.sub"}, got, "module gate is a plain semi-join")
+
+	// C1b: module root kinds — a FLAT bool_or aggregate over the closure rows
+	// (the hierarchy is flattened at save time; read_only gates the mutation
+	// kinds, so disabling / read-only-ing a source drops exactly its kinds).
+	got = queryStrings(t, pool, `SELECT bool_or(md.has_data_objects), bool_or(md.has_tables AND NOT m.read_only)
+		FROM core.catalog.module_data_sources md
+		JOIN core.catalog.data_source_meta m ON m.data_source = md.data_source
+			AND m.loaded AND NOT m.disabled AND NOT m.suspended
+		WHERE md.module = 'probe_mod'`)
+	assert.Equal(t, []string{"true|true"}, got, "kind aggregate reads flat, no recursion")
 
 	// C2: bag replace via plain UPDATE (annotation-style RMW writes the whole
 	// JSON text back).

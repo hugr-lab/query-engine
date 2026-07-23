@@ -89,19 +89,22 @@ func (s *Store) readType(ctx context.Context, name string) (*ast.Definition, err
 	defer conn.Close()
 	var definition string
 	err = conn.QueryRow(ctx,
-		`SELECT definition FROM core.catalog.types WHERE name = `+lit(name)).Scan(&definition)
+		`SELECT t.definition FROM core.catalog.types t`+activeMeta("m", "t.data_source")+
+			` WHERE t.name = `+lit(name)).Scan(&definition)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("catalog read type %s: %w", name, err)
 	}
-	doc, gerr := parser.ParseSchema(&ast.Source{Name: "catalog:" + name, Input: definition})
-	if gerr != nil {
-		return nil, fmt.Errorf("catalog parse type %s: %w", name, gerr)
+	return parseStoredDefinition(name, definition), nil
+}
+
+// parseStoredDefinition parses one stored SDL definition (catalog.types rows).
+func parseStoredDefinition(name, definition string) *ast.Definition {
+	doc, err := parser.ParseSchema(&ast.Source{Name: "catalog:" + name, Input: definition})
+	if err != nil || len(doc.Definitions) == 0 {
+		return nil
 	}
-	if len(doc.Definitions) == 0 {
-		return nil, nil
-	}
-	return doc.Definitions[0], nil
+	return doc.Definitions[0]
 }

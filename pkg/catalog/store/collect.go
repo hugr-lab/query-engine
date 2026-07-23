@@ -151,22 +151,33 @@ func collectExtensionFields(ctx context.Context, defs base.DefinitionsSource, d 
 // relation row whose source is the declaring object. is_m2m stays a property of
 // the junction OBJECT (@table(is_m2m:true)); the m2m navigation is generated on
 // read from the junction's two fk legs — not stored here.
+//
+// Omitted args are stored NORMALIZED with the compiler's defaults
+// (gen_references.go): name → <target>[_<field> when single-key], query →
+// target name, references_query → declaring object name.
 func collectObjectReferences(d *desired, source, owner string, def *ast.Definition) {
 	for _, dir := range def.Directives.ForNames(base.ReferencesDirectiveName) {
 		ref := sdl.ReferencesInfo(dir)
 		if ref == nil || ref.ReferencesName == "" {
 			continue
 		}
+		name := ref.Name
+		if name == "" {
+			name = ref.ReferencesName
+			if sf := ref.SourceFields(); len(sf) == 1 {
+				name += "_" + sf[0]
+			}
+		}
 		putRelation(d, &relation{
 			Source:                      source,
-			Name:                        ref.Name,
+			Name:                        name,
 			Kind:                        "fk",
 			Destination:                 ref.ReferencesName,
 			SourceKeys:                  ref.SourceFields(),
 			DestinationKeys:             ref.ReferencesFields(),
-			SourceField:                 ref.Query,
+			SourceField:                 orDefault(ref.Query, ref.ReferencesName),
 			SourceFieldDescription:      ref.Description,
-			DestinationField:            ref.ReferencesQuery,
+			DestinationField:            orDefault(ref.ReferencesQuery, source),
 			DestinationFieldDescription: ref.ReferencesDescription,
 			DataSource:                  owner,
 		})
@@ -332,29 +343,50 @@ func ensureModule(d *desired, name string) {
 }
 
 // buildModuleClosure fills catalog.module_data_sources: each collected entity's
-// owner source is recorded on its module AND every ancestor, so module
-// visibility is a plain semi-join with no tree walk at read time.
+// owner source is recorded on its module AND every ancestor INCLUDING the root
+// "", with the root-kind flags of the entity — the hierarchy is walked ONCE
+// here at save time, so the read side never recurses (a module's kinds are a
+// flat bool_or aggregate over its closure rows).
 func buildModuleClosure(d *desired) {
 	for _, obj := range d.dataObjects {
-		for _, anc := range moduleAncestors(obj.Module) {
-			addModuleSource(d, anc, obj.DataSource)
+		for _, anc := range moduleChain(obj.Module) {
+			ms := touchModuleSource(d, anc, obj.DataSource)
+			if ms == nil {
+				continue
+			}
+			ms.HasDataObjects = true
+			if obj.Kind == "table" {
+				ms.HasTables = true
+			}
 		}
 	}
 	for _, fn := range d.functions {
-		for _, anc := range moduleAncestors(fn.Module) {
-			addModuleSource(d, anc, fn.DataSource)
+		for _, anc := range moduleChain(fn.Module) {
+			ms := touchModuleSource(d, anc, fn.DataSource)
+			if ms == nil {
+				continue
+			}
+			switch fn.Kind {
+			case "mutation":
+				ms.HasMutFunctions = true
+			case "subscription":
+				ms.HasSubscriptions = true
+			default:
+				ms.HasFunctions = true
+			}
 		}
 	}
 }
 
-func addModuleSource(d *desired, module, source string) {
-	if module == "" || source == "" {
-		return
+func touchModuleSource(d *desired, module, source string) *moduleSource {
+	if source == "" {
+		return nil
 	}
 	key := pkKey(module, source)
 	if _, ok := d.moduleSources[key]; !ok {
 		d.moduleSources[key] = &moduleSource{Module: module, DataSource: source}
 	}
+	return d.moduleSources[key]
 }
 
 func moduleParent(name string) string {
@@ -364,15 +396,15 @@ func moduleParent(name string) string {
 	return ""
 }
 
-// moduleAncestors returns the module and its dotted-name ancestors
-// (a.b.c → [a.b.c, a.b, a]); the implicit root "" is excluded.
-func moduleAncestors(name string) []string {
+// moduleChain returns the module, its dotted-name ancestors and the root
+// (a.b.c → [a.b.c, a.b, a, ""]) — the closure rows of one entity.
+func moduleChain(name string) []string {
 	var out []string
 	for name != "" {
 		out = append(out, name)
 		name = moduleParent(name)
 	}
-	return out
+	return append(out, "")
 }
 
 // --- text helpers ---

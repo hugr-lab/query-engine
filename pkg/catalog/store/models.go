@@ -25,11 +25,19 @@ type module struct {
 
 // moduleSource is one row of catalog.module_data_sources — the module→source
 // CLOSURE: a source that backs data objects / functions in the module OR any
-// of its submodules is recorded on the module AND every ancestor, so module
-// visibility is a plain semi-join against data_source_meta with no tree walk.
+// of its submodules is recorded on the module AND every ancestor INCLUDING the
+// root "", so module visibility is a plain semi-join against data_source_meta
+// and the root kinds of any module are ONE bool_or aggregate. The has_* flags
+// record which root kinds this source's members contribute to the subtree;
+// mutation kinds are additionally gated by meta.read_only at read time.
 type moduleSource struct {
-	Module     string
-	DataSource string
+	Module           string
+	DataSource       string
+	HasDataObjects   bool
+	HasTables        bool
+	HasFunctions     bool
+	HasMutFunctions  bool
+	HasSubscriptions bool
 }
 
 // dataObject is one row of catalog.data_objects. Name is the compiled (prefixed)

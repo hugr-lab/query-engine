@@ -65,12 +65,27 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.module
 
 -- Module → contributing data sources, as a CLOSURE: a row lists a source that
 -- backs data objects / functions / subscriptions in the module OR any of its
--- submodules. Maintained by the writer at insert time — module visibility is
--- then a plain semi-join against data_source_meta (a module with no ACTIVE
--- source is off) with no module-tree walk at read time.
+-- submodules (the chain includes the ROOT module '' — a WHERE module = ''
+-- aggregate covers the whole tree). Maintained by the writer at insert time —
+-- module visibility is then a plain semi-join against data_source_meta (a
+-- module with no ACTIVE source is off) with no module-tree walk at read time.
+--
+-- The has_* flags record WHICH ROOT KINDS the source's members contribute to
+-- the module subtree, so the logical model resolves a module's root kinds in
+-- ONE bool_or aggregate. The mutation kinds are decided at READ time by
+-- combining the flags with data_source_meta.read_only (a module whose sources
+-- are all read-only has no mutations and no mutation functions):
+--   query    = bool_or(has_data_objects)
+--   mutation = bool_or(has_tables AND NOT read_only)
+--   function / mut_function / subscription = bool_or(has_*_functions ...)
 CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.module_data_sources (
-    module      VARCHAR NOT NULL,
-    data_source VARCHAR NOT NULL,
+    module             VARCHAR NOT NULL,
+    data_source        VARCHAR NOT NULL,
+    has_data_objects   BOOLEAN NOT NULL,
+    has_tables         BOOLEAN NOT NULL,
+    has_functions      BOOLEAN NOT NULL,
+    has_mut_functions  BOOLEAN NOT NULL,
+    has_subscriptions  BOOLEAN NOT NULL,
     PRIMARY KEY (module, data_source)
 );
 

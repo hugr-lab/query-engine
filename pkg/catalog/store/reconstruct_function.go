@@ -20,6 +20,11 @@ func reconstructFunction(ctx context.Context, s *Store, module, name string) *as
 	if !ok {
 		return nil
 	}
+	return functionField(row)
+}
+
+// functionField builds the root-field definition from a function row.
+func functionField(row *function) *ast.FieldDefinition {
 	return &ast.FieldDefinition{
 		Name:        row.Name,
 		Type:        parseFieldType(row.Returns),
@@ -36,14 +41,25 @@ func (s *Store) readFunction(ctx context.Context, module, name string) (*functio
 		return nil, false
 	}
 	defer conn.Close()
-	r := function{Properties: &functionProperties{}}
-	var args, props, deprecated, desc sql.NullString
-	err = conn.QueryRow(ctx, `SELECT module, name, kind, data_source, returns, is_table,
-		args::JSON::VARCHAR, properties::JSON::VARCHAR, deprecation_reason, description
-		FROM core.catalog.functions WHERE module = `+lit(module)+` AND name = `+lit(name)).
-		Scan(&r.Module, &r.Name, &r.Kind, &r.DataSource, &r.Returns, &r.IsTable, &args, &props, &deprecated, &desc)
+	row, err := scanFunction(conn.QueryRow(ctx, `SELECT f.module, f.name, f.kind, f.data_source, f.returns, f.is_table,
+		f.args::JSON::VARCHAR, f.properties::JSON::VARCHAR, f.deprecation_reason, f.description
+		FROM core.catalog.functions f`+activeMeta("m", "f.data_source")+`
+		WHERE f.module = `+lit(module)+` AND f.name = `+lit(name)).Scan)
 	if err != nil {
 		return nil, false
+	}
+	return row, true
+}
+
+// scanFunction fills a function row from the canonical column list (module,
+// name, kind, data_source, returns, is_table, args, properties,
+// deprecation_reason, description).
+func scanFunction(scan func(...any) error) (*function, error) {
+	r := function{Properties: &functionProperties{}}
+	var args, props, deprecated, desc sql.NullString
+	err := scan(&r.Module, &r.Name, &r.Kind, &r.DataSource, &r.Returns, &r.IsTable, &args, &props, &deprecated, &desc)
+	if err != nil {
+		return nil, err
 	}
 	r.DeprecationReason = deprecated.String
 	r.Description = desc.String
@@ -53,5 +69,5 @@ func (s *Store) readFunction(ctx context.Context, module, name string) (*functio
 	if props.Valid {
 		_ = json.Unmarshal([]byte(props.String), r.Properties)
 	}
-	return &r, true
+	return &r, nil
 }

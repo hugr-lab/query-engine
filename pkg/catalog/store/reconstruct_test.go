@@ -25,7 +25,7 @@ func writtenStore(t *testing.T) (*Store, context.Context) {
 	store, err := New(ctx, pool, Config{VecSize: 8}, nil)
 	require.NoError(t, err)
 	d := collect(ctx, partialSource(t, "test", collectTestSchema), "test")
-	_, err = store.writeSource(ctx, d, SourceState{Name: "test", Version: "v1", Loaded: true})
+	_, err = store.writeSource(ctx, d, SourceState{Name: "test", Version: "v1", Engine: "duckdb", Loaded: true})
 	require.NoError(t, err)
 	return store, ctx
 }
@@ -66,6 +66,20 @@ func TestReconstructDataObjectBase(t *testing.T) {
 	assert.Equal(t, "deleted_at = now()", dirArg(tblDir, "soft_delete_set"))
 	assert.Equal(t, "orders", dirArg(orders.Directives.ForName("original_name"), "name"))
 	assert.Equal(t, "sales", dirArg(orders.Directives.ForName("module"), "name"))
+
+	// @catalog(name, engine) re-attached from data_source_meta.
+	cat := orders.Directives.ForName("catalog")
+	require.NotNil(t, cat)
+	assert.Equal(t, "test", dirArg(cat, "name"))
+	assert.Equal(t, "duckdb", dirArg(cat, "engine"))
+
+	// @references re-emitted from the physical relation row.
+	ref := orders.Directives.ForName("references")
+	require.NotNil(t, ref)
+	assert.Equal(t, "order_customer", dirArg(ref, "name"))
+	assert.Equal(t, "customers", dirArg(ref, "references_name"))
+	assert.Equal(t, "customer", dirArg(ref, "query"))
+	assert.Equal(t, "orders", dirArg(ref, "references_query"))
 
 	// Base fields: id is @pk, customer_id present, generated fields NOT here.
 	id := orders.Fields.ForName("id")

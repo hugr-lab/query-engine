@@ -10,10 +10,10 @@ import (
 // the store (see fieldPairs for the contract). Rows are catalog.data_objects:
 // kind / original_name / module are columns, the rest lives in the typed bag.
 //
-// NOT here: @references (a relations row, collectObjectReferences — the read
-// side re-emits it from relations once the logical model lands), @catalog
-// (provenance column; re-attached WITH the engine by the generation layer from
-// data_source_meta) and the dropped gis surface (@wfs / @feature).
+// NOT here: @references (a relations row, collectObjectReferences ↔
+// referencesDirective in reconstruct_object.go), @catalog (provenance column;
+// re-attached WITH the engine from data_source_meta by reconstructDataObject)
+// and the dropped gis surface (@wfs / @feature).
 type objectPair struct {
 	directive string
 	collect   func(def *ast.Definition, row *dataObject)

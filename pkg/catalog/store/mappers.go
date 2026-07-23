@@ -26,6 +26,7 @@ const (
 	argSkipNullArg                   = "skip_null_arg"
 	argJSONCast                      = "json_cast"
 	argSRID                          = "srid"
+	argEngine                        = "engine"
 	argFields                        = "fields"
 )
 

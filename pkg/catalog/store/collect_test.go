@@ -85,8 +85,8 @@ type tags @module(name: "sales") @table(name: "tags") {
 }
 
 type order_tags @module(name: "sales") @table(name: "order_tags", is_m2m: true) {
-  order_id: Int! @pk @field_references(references_name: "orders", field: "id", query: "tags", references_query: "orders")
-  tag_name: String! @pk @field_references(references_name: "tags", field: "name", query: "orders", references_query: "tags")
+  order_id: Int! @pk @field_references(references_name: "orders", field: "id", query: "order", references_query: "tags")
+  tag_name: String! @pk @field_references(references_name: "tags", field: "name", query: "tag", references_query: "orders")
 }
 
 type sales_by_country @module(name: "sales.reports")
@@ -120,10 +120,23 @@ func TestCollect(t *testing.T) {
 	assert.Equal(t, "", d.modules["sales"].Parent)
 	assert.Equal(t, "sales", d.modules["sales.reports"].Parent, "parent derived from dotted name")
 
-	// --- module→source closure: the child's source rolls up to the parent ---
+	// --- module→source closure: the child's source rolls up to the parent and
+	// the root ''; kind flags recorded per row (hierarchy flattened at save) ---
 	assert.Contains(t, d.moduleSources, pkKey("sales", "test"))
 	assert.Contains(t, d.moduleSources, pkKey("sales.reports", "test"),
 		"submodule backed by its view source")
+	require.Contains(t, d.moduleSources, pkKey("", "test"), "root row covers the whole tree")
+	sales := d.moduleSources[pkKey("sales", "test")]
+	assert.True(t, sales.HasDataObjects)
+	assert.True(t, sales.HasTables)
+	assert.True(t, sales.HasFunctions)
+	assert.True(t, sales.HasMutFunctions)
+	assert.False(t, sales.HasSubscriptions)
+	reports := d.moduleSources[pkKey("sales.reports", "test")]
+	assert.True(t, reports.HasDataObjects)
+	assert.False(t, reports.HasTables, "a view is not mutation-capable")
+	root := d.moduleSources[pkKey("", "test")]
+	assert.True(t, root.HasTables && root.HasFunctions && root.HasMutFunctions)
 
 	// --- data objects ---
 	require.Contains(t, d.dataObjects, "orders")

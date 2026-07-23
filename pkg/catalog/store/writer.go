@@ -14,7 +14,7 @@ import (
 // writerFormatVersion is mixed into the stored data_source_meta.version. Bump it
 // when the row shapes / property bags change: every source then reads as
 // "changed" once and is rewritten; an upgrade without a format change is free.
-const writerFormatVersion = "f2"
+const writerFormatVersion = "f3"
 
 const insertChunk = 200
 
@@ -272,9 +272,12 @@ func mergeModules(ctx context.Context, conn *db.Connection, d *desired) error {
 	links := make([][]any, 0, len(d.moduleSources))
 	for _, k := range sortedKeys(d.moduleSources) {
 		ms := d.moduleSources[k]
-		links = append(links, []any{ms.Module, ms.DataSource})
+		links = append(links, []any{ms.Module, ms.DataSource,
+			ms.HasDataObjects, ms.HasTables, ms.HasFunctions, ms.HasMutFunctions, ms.HasSubscriptions})
 	}
-	return insertRows(ctx, conn, "module_data_sources", []string{"module", "data_source"}, links)
+	return insertRows(ctx, conn, "module_data_sources",
+		[]string{"module", "data_source", "has_data_objects", "has_tables",
+			"has_functions", "has_mut_functions", "has_subscriptions"}, links)
 }
 
 // pruneOrphanModules removes modules no source backs anymore — with the closure,

@@ -79,14 +79,21 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 		`SELECT json_extract_string(args::JSON, '$[0].name'), json_extract_string(args::JSON, '$[0].type')
 		 FROM core.catalog.functions WHERE name = 'order_status'`))
 
-	// --- modules + parent + closure ---
+	// --- modules + parent + closure (incl. the root '' row) with kind flags ---
 	assert.Equal(t, []string{"sales|<nil>", "sales.reports|sales"}, rows(t, pool,
 		`SELECT name, parent FROM core.catalog.modules ORDER BY name`))
-	assert.Equal(t, []string{"sales", "sales.reports"}, rows(t, pool,
+	assert.Equal(t, []string{"", "sales", "sales.reports"}, rows(t, pool,
 		`SELECT module FROM core.catalog.module_data_sources WHERE data_source = 'test' ORDER BY module`))
+	assert.Equal(t, []string{"true|true|true|true|false"}, rows(t, pool,
+		`SELECT has_data_objects, has_tables, has_functions, has_mut_functions, has_subscriptions
+		 FROM core.catalog.module_data_sources WHERE module = 'sales'`))
+	assert.Equal(t, []string{"true|false|false|false|false"}, rows(t, pool,
+		`SELECT has_data_objects, has_tables, has_functions, has_mut_functions, has_subscriptions
+		 FROM core.catalog.module_data_sources WHERE module = 'sales.reports'`),
+		"the view-only submodule contributes no table/function kinds")
 
 	// --- meta stamped with the writer-format version + options ---
-	assert.Equal(t, []string{"f2|v1|true|false|false"}, rows(t, pool,
+	assert.Equal(t, []string{"f3|v1|true|false|false"}, rows(t, pool,
 		`SELECT version, loaded, disabled, suspended FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
 	assert.Equal(t, []string{"duckdb|false|shop|true"}, rows(t, pool,
 		`SELECT engine, read_only, prefix, as_module FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
@@ -106,7 +113,7 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, changed3)
 	assert.Equal(t, []string{"5"}, rows(t, pool, `SELECT count(*) FROM core.catalog.data_objects WHERE data_source = 'test'`))
-	assert.Equal(t, []string{"f2|v2"}, rows(t, pool,
+	assert.Equal(t, []string{"f3|v2"}, rows(t, pool,
 		`SELECT version FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
 
 	// --- setFlags mirrors flags into the meta; rows stay ---

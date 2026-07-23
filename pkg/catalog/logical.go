@@ -24,9 +24,13 @@ var moduleKinds = []sdl.ModuleObjectType{
 type ModuleInfo struct {
 	Name        string // full dotted name; "" for the root module
 	Description string
-	// RootTypes holds the resolved module root type per kind; a module exists
-	// when at least one kind resolves.
-	RootTypes   map[sdl.ModuleObjectType]*ast.Definition
+	// RootTypes maps each PRESENT root kind to its type name
+	// (sdl.ModuleTypeName). Key presence carries the information — a module
+	// exists when at least one kind is present; the definition is resolved
+	// LAZILY via Type(ctx, name) only when a consumer actually needs it (the
+	// entity store synthesizes root types on demand — building five of them
+	// per module lookup would defeat the on-the-fly model).
+	RootTypes   map[sdl.ModuleObjectType]string
 	DataSources []string // distinct data sources of direct members, sorted
 }
 
@@ -127,18 +131,17 @@ type providerLogicalModel struct {
 
 var _ LogicalModel = (*providerLogicalModel)(nil)
 
-func (m *providerLogicalModel) rootTypes(ctx context.Context, name string) map[sdl.ModuleObjectType]*ast.Definition {
-	roots := map[sdl.ModuleObjectType]*ast.Definition{}
+func (m *providerLogicalModel) Module(ctx context.Context, name string) *ModuleInfo {
+	// Probe the compiled root types per kind; expose only the NAMES — the
+	// resolved definitions stay local (description fallback below).
+	roots := map[sdl.ModuleObjectType]string{}
+	var defs []*ast.Definition
 	for _, kind := range moduleKinds {
 		if def := m.p.ForName(ctx, sdl.ModuleTypeName(name, kind)); def != nil {
-			roots[kind] = def
+			roots[kind] = def.Name
+			defs = append(defs, def)
 		}
 	}
-	return roots
-}
-
-func (m *providerLogicalModel) Module(ctx context.Context, name string) *ModuleInfo {
-	roots := m.rootTypes(ctx, name)
 	if len(roots) == 0 {
 		return nil
 	}
@@ -147,8 +150,8 @@ func (m *providerLogicalModel) Module(ctx context.Context, name string) *ModuleI
 		info.Description = m.p.Description(ctx)
 	}
 	if info.Description == "" {
-		for _, kind := range moduleKinds {
-			if def, ok := roots[kind]; ok && def.Description != "" {
+		for _, def := range defs {
+			if def.Description != "" {
 				info.Description = def.Description
 				break
 			}
