@@ -14,7 +14,7 @@ import (
 // writerFormatVersion is mixed into the stored data_source_meta.version. Bump it
 // when the row shapes / property bags change: every source then reads as
 // "changed" once and is rewritten; an upgrade without a format change is free.
-const writerFormatVersion = "f4"
+const writerFormatVersion = "f5"
 
 const insertChunk = 200
 

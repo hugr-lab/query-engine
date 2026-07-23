@@ -36,25 +36,28 @@ func (s *Store) genCtx() *genContext { return &genContext{s: s} }
 
 // queryShape (§3.1) declares one per-object query/mutation kind: select,
 // select_one (by pk / by unique), aggregate, bucket_agg, insert, update,
-// delete. Consumed by module-root synthesis (rootRules), shared-type synthesis
-// (_join/_spatial members) and the def-level @query/@mutation marker emission
-// on the data object itself. New query kind = one entry.
+// delete. Consumed by the def-level @query/@mutation marker emission on the
+// data object (reconstructDataObject) and by module-root synthesis (rootRules,
+// Ш4.7 adds the root-field builders). New query kind = one entry.
 type queryShape struct {
 	kind string
-	// matches reports whether the object gets this shape (e.g. views take no
-	// mutations, insert needs a writable table).
-	matches func(obj *dataObject) bool
-	// fieldName is the root-field name pattern; AsModule sources use the
-	// ORIGINAL (unprefixed) name on module roots.
-	fieldName func(obj *dataObject, asModule bool) string
-	// build produces the root field (args via argProfiles + argDecorators).
-	build func(ctx context.Context, g *genContext, obj *dataObject) *ast.FieldDefinition
-	// marker is the def-level @query/@mutation/@aggregation_query directive
-	// the planner reads off the data-object definition.
-	marker func(obj *dataObject, fieldName string) *ast.Directive
+	// matches reports whether the object gets this shape (views take no
+	// mutations, by-pk needs a PK on a non-m2m object, …).
+	matches func(t *objectTraits) bool
+	// markers emits the def-level @query/@mutation directives; queryName is
+	// the AsModule-aware base (original name on module roots).
+	markers func(t *objectTraits, queryName string) []*ast.Directive
 }
 
-var queryShapes []queryShape
+var queryShapes = []queryShape{
+	selectShape,
+	selectOnePKShape,
+	aggregateShape,
+	bucketAggShape,
+	insertShape,
+	updateShape,
+	deleteShape,
+}
 
 // argProfileKind names the base argument sets (§3.2, compiler helpers.go):
 // Root (filter/order_by/limit/offset/distinct_on), SubQuery (Root + inner +
@@ -92,10 +95,16 @@ var argDecorators []argDecorator
 // New field on existing types = one rule.
 type fieldRule struct {
 	name  string
-	apply func(ctx context.Context, g *genContext, obj *dataObject, def *ast.Definition)
+	apply func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition)
 }
 
-var fieldRules []fieldRule
+var fieldRules = []fieldRule{
+	scalarArgsFieldRule,
+	joinFieldsRule,
+	navFieldsRule,
+	extraFieldsRule,
+	sharedFieldsRule,
+}
 
 // derivedRule (§3.4) serves one derived-type suffix (class 5): filter,
 // list_filter, mut_input_data, mut_data, aggregation, aggregation_bucket,

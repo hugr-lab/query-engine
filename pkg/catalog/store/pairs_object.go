@@ -27,6 +27,11 @@ var objectPairs = []objectPair{
 			row.OriginalName = originalName(def)
 		},
 		emit: func(row *dataObject) []*ast.Directive {
+			// The compiler carries @original_name only when prefixing renamed
+			// the object — an unprefixed compiled def has none.
+			if row.OriginalName == "" || row.OriginalName == row.Name {
+				return nil
+			}
 			return []*ast.Directive{directive(base.OriginalNameDirectiveName, strArg(base.ArgName, row.OriginalName))}
 		},
 	},

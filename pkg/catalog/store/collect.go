@@ -76,6 +76,18 @@ func collectDataObject(ctx context.Context, defs base.DefinitionsSource, d *desi
 		Description: def.Description,
 	}
 	collectObjectDirectives(def, obj) // fills OriginalName / Module / Kind + bag
+	// @args(required:) is auto-computed by the compiler from the input type's
+	// NonNull fields — normalize it into the bag the same way (gen_view.go).
+	if obj.Properties.ArgsTypeName != "" && !obj.Properties.RequiredArgs {
+		if inputDef := defs.ForName(ctx, obj.Properties.ArgsTypeName); inputDef != nil {
+			for _, f := range inputDef.Fields {
+				if f.Type.NonNull {
+					obj.Properties.RequiredArgs = true
+					break
+				}
+			}
+		}
+	}
 	ensureModule(d, obj.Module)
 	d.dataObjects[def.Name] = obj
 

@@ -9,24 +9,27 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// reconstructDataObject rebuilds the BASE (pre-generate) object definition from
-// catalog.* — the logical-model "source" that the generation rules compile. The
-// directive↔bag pair tables (pairs_object.go / pairs_field.go) re-attach every
-// stored directive; on top of them:
+// reconstructDataObject rebuilds the COMPILED object definition from
+// catalog.*. The directive↔bag pair tables (pairs_object.go / pairs_field.go)
+// re-attach every stored directive; on top of them:
 //   - @catalog(name, engine) — from the row's data_source + data_source_meta
-//     (object level always; field level for virtual and foreign-owned fields,
-//     mirroring the compiler);
-//   - @references — re-emitted from the object's physical relation rows
-//     (relations.go); the m2m/back projections stay generated, never attached.
+//     (object level always; field level for virtual and foreign-owned fields);
+//   - enriched @references — the object's physical legs plus the synthesized
+//     m2m projections through is_m2m junctions;
+//   - @field_references mirrored back onto field-declared leg columns;
+//   - the def-level markers: @filter_input / @filter_list_input /
+//     @data_input×2 and the queryShapes @query/@mutation set;
+//   - the fieldRules contributions (nav fields, subquery args, aggregation
+//     twins, extra fields, shared members — gen_fields.go).
 //
-// Generated fields (nav, aggregation, filters) are NOT added here — they are
-// produced per name by the generation layer. All reads are activity-gated.
+// All reads are activity-gated.
 func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Definition {
 	row, ok := s.readDataObject(ctx, name)
 	if !ok {
 		return nil
 	}
-	engines := s.activeEngines(ctx)
+	g := s.genCtx()
+	t := g.objectTraits(ctx, row)
 	def := &ast.Definition{
 		Kind:        ast.Object,
 		Name:        row.Name,
@@ -34,25 +37,103 @@ func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Defi
 		Directives:  emitObjectDirectives(row),
 		Position:    reconPos,
 	}
-	def.Directives = append(def.Directives, catalogDirective(row.DataSource, engines[row.DataSource]))
-	for _, r := range s.relationsBySource(ctx, name) {
-		def.Directives = append(def.Directives, referencesDirective(r))
+	def.Directives = append(def.Directives, catalogDirective(row.DataSource, t.src.Engine))
+
+	// Enriched @references: own physical legs, then the m2m projections.
+	fwd := s.relationsBySource(ctx, name)
+	for _, r := range fwd {
+		targetDesc := ""
+		if target, ok := s.readDataObject(ctx, r.Destination); ok {
+			targetDesc = target.Description
+		}
+		def.Directives = append(def.Directives, referencesDirective(r, targetDesc, row.Description))
 	}
-	for _, f := range s.readFields(ctx, name) {
+	for _, leg := range s.relationsByDestination(ctx, name) {
+		if !leg.m2mJunction {
+			continue
+		}
+		junctionDesc := ""
+		if junction, ok := s.readDataObject(ctx, leg.Source); ok {
+			junctionDesc = junction.Description
+		}
+		for _, co := range s.relationsBySource(ctx, leg.Source) {
+			if co.Name == leg.Name {
+				continue
+			}
+			def.Directives = append(def.Directives, m2mReferencesProjection(leg, co, junctionDesc))
+		}
+	}
+
+	// Derived-type markers + the queryShapes @query/@mutation set.
+	def.Directives = append(def.Directives,
+		directive(base.FilterInputDirectiveName, strArg(base.ArgName, row.Name+filterSuffix)))
+	if t.needsListFilter(len(fwd) > 0, s.isM2MEndpoint(ctx, name)) {
+		def.Directives = append(def.Directives,
+			directive(base.FilterListInputDirectiveName, strArg(base.ArgName, row.Name+listFilterSuffix)))
+	}
+	if t.writable() {
+		def.Directives = append(def.Directives,
+			directive(base.DataInputDirectiveName, strArg(base.ArgName, row.Name+mutDataSuffix)),
+			directive(base.DataInputDirectiveName, strArg(base.ArgName, row.Name+mutInputDataSuffix)))
+	}
+	def.Directives = append(def.Directives, shapeMarkers(t)...)
+
+	for _, f := range t.fields {
 		fd := reconstructField(f)
-		if f.DataSource != row.DataSource ||
-			f.Properties.FunctionCall != nil || f.Properties.TableFunctionCallJoin != nil {
-			fd.Directives = append(fd.Directives, catalogDirective(f.DataSource, engines[f.DataSource]))
+		if f.DataSource != row.DataSource || isVirtualStoreField(f) {
+			fd.Directives = append(fd.Directives, catalogDirective(f.DataSource, t.srcs[f.DataSource].Engine))
 		}
 		def.Fields = append(def.Fields, fd)
 	}
-	// Generation layer: ordered field rules add the generated members (nav
-	// fields, subquery args, _join, extras — gen.go); empty registry = no-op.
-	g := s.genCtx()
+	// Field-declared legs mirror @field_references onto their column.
+	for _, r := range fwd {
+		if !r.FieldDeclared || len(r.SourceKeys) != 1 {
+			continue
+		}
+		if fd := def.Fields.ForName(r.SourceKeys[0]); fd != nil {
+			fd.Directives = append(fd.Directives, fieldReferencesDirective(r))
+		}
+	}
+
 	for i := range fieldRules {
-		fieldRules[i].apply(ctx, g, row, def)
+		fieldRules[i].apply(ctx, g, t, def)
 	}
 	return def
+}
+
+// needsListFilter: X_list_filter exists when some filter lists X — X is the
+// many side of a back projection (it declares non-m2m legs) or an m2m
+// endpoint. An is_m2m junction itself is never listed.
+func (t *objectTraits) needsListFilter(hasForwardLegs, isM2MEndpoint bool) bool {
+	return !t.isM2M() && (hasForwardLegs || isM2MEndpoint)
+}
+
+// isM2MEndpoint reports whether some is_m2m junction leg points at the object.
+func (s *Store) isM2MEndpoint(ctx context.Context, name string) bool {
+	for _, leg := range s.relationsByDestination(ctx, name) {
+		if leg.m2mJunction {
+			return true
+		}
+	}
+	return false
+}
+
+// m2mReferencesProjection is the endpoint-oriented @references the compiler
+// stamps on both m2m sides (m2mReferencesDirective): keys re-oriented
+// endpoint→junction, query names from the two legs, m2m_name = junction.
+func m2mReferencesProjection(leg *relationEdge, co *relation, junctionDesc string) *ast.Directive {
+	return directive(base.ReferencesDirectiveName,
+		strArg(base.ArgName, leg.Name),
+		strArg(base.ArgReferencesName, co.Destination),
+		strListArg(base.ArgSourceFields, leg.DestinationKeys),
+		strListArg(base.ArgReferencesFields, leg.SourceKeys),
+		strArg(base.ArgQuery, leg.DestinationField),
+		strArg(base.ArgReferencesQuery, co.DestinationField),
+		boolArg(base.ArgIsM2M, true),
+		strArg(base.ArgM2MName, leg.Source),
+		strArg(base.ArgDescription, junctionDesc),
+		strArg(base.ArgReferencesDescription, junctionDesc),
+	)
 }
 
 // reconstructField rebuilds a base field definition via the field pair table.
@@ -74,23 +155,29 @@ func catalogDirective(dataSource, engine string) *ast.Directive {
 }
 
 // referencesDirective rebuilds an object-level @references from a stored
-// relation row (values are normalized at collect time — no defaults here).
-func referencesDirective(r *relation) *ast.Directive {
-	args := []*ast.Argument{
+// relation row with the compiler's enrichment: is_m2m/m2m_name always
+// present, descriptions defaulting to the two objects' descriptions.
+func referencesDirective(r *relation, targetDesc, sourceDesc string) *ast.Directive {
+	description := r.SourceFieldDescription
+	if description == "" {
+		description = targetDesc
+	}
+	referencesDescription := r.DestinationFieldDescription
+	if referencesDescription == "" {
+		referencesDescription = sourceDesc
+	}
+	return directive(base.ReferencesDirectiveName,
 		strArg(base.ArgName, r.Name),
 		strArg(base.ArgReferencesName, r.Destination),
 		strListArg(base.ArgSourceFields, r.SourceKeys),
 		strListArg(base.ArgReferencesFields, r.DestinationKeys),
 		strArg(base.ArgQuery, r.SourceField),
 		strArg(base.ArgReferencesQuery, r.DestinationField),
-	}
-	if r.SourceFieldDescription != "" {
-		args = append(args, strArg(base.ArgDescription, r.SourceFieldDescription))
-	}
-	if r.DestinationFieldDescription != "" {
-		args = append(args, strArg(base.ArgReferencesDescription, r.DestinationFieldDescription))
-	}
-	return directive(base.ReferencesDirectiveName, args...)
+		boolArg(base.ArgIsM2M, false),
+		strArg(base.ArgM2MName, ""),
+		strArg(base.ArgDescription, description),
+		strArg(base.ArgReferencesDescription, referencesDescription),
+	)
 }
 
 // activeSource is the per-source meta the generation layer branches on
@@ -98,6 +185,7 @@ func referencesDirective(r *relation) *ast.Directive {
 type activeSource struct {
 	Engine   string
 	ReadOnly bool
+	AsModule bool
 }
 
 func (s *Store) activeSources(ctx context.Context) map[string]activeSource {
@@ -106,7 +194,7 @@ func (s *Store) activeSources(ctx context.Context) map[string]activeSource {
 		return nil
 	}
 	defer conn.Close()
-	rows, err := conn.Query(ctx, `SELECT data_source, engine, read_only FROM core.catalog.data_source_meta
+	rows, err := conn.Query(ctx, `SELECT data_source, engine, read_only, as_module FROM core.catalog.data_source_meta
 		WHERE loaded AND NOT disabled AND NOT suspended`)
 	if err != nil {
 		return nil
@@ -116,7 +204,7 @@ func (s *Store) activeSources(ctx context.Context) map[string]activeSource {
 	for rows.Next() {
 		var source string
 		var meta activeSource
-		if err := rows.Scan(&source, &meta.Engine, &meta.ReadOnly); err != nil {
+		if err := rows.Scan(&source, &meta.Engine, &meta.ReadOnly, &meta.AsModule); err != nil {
 			return out
 		}
 		out[source] = meta

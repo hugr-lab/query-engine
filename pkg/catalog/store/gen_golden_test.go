@@ -67,6 +67,13 @@ var genParityNames = []string{
 	"_order_tags_aggregation",
 	"_sales_by_country_aggregation",
 	"_sales_by_country_aggregation_bucket",
+	// Ш4.4/4.5 — the data objects themselves: markers, enriched references,
+	// nav fields + twins, extras, shared members.
+	"orders",
+	"customers",
+	"tags",
+	"order_tags",
+	"sales_by_country",
 }
 
 // genPendingNames — names the reference generates that the store must learn
@@ -183,6 +190,8 @@ func TestGenGoldenStructs(t *testing.T) {
 		"_ProductSpecs_aggregation_sub_aggregation",
 		"_BoxSize_aggregation",
 		"_ProductVariant_aggregation",
+		// The table itself: struct fields keep their types, markers attach.
+		"products",
 	})
 
 	// Struct aggregations take no bucket and stop at sub-depth 1.
