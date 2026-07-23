@@ -200,6 +200,19 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 	appendRelationAggFields(ctx, g, row, def, 0)
 	appendExtraAggFields(fields, def, 0)
 
+	// @embeddings objects aggregate the query distance too (EmbeddingsRule).
+	if row.Properties != nil && row.Properties.Embeddings != nil {
+		def.Fields = append(def.Fields, &ast.FieldDefinition{
+			Name: "_distance_to_query",
+			Type: ast.NamedType("FloatAggregation", reconPos),
+			Arguments: ast.ArgumentDefinitionList{
+				{Name: "query", Type: ast.NonNullNamedType("String", reconPos), Position: reconPos},
+			},
+			Directives: ast.DirectiveList{fieldAggregationMarker("_distance_to_query")},
+			Position:   reconPos,
+		})
+	}
+
 	// Every non-M2M data object's aggregation carries the shared cross-source
 	// `_join` member — and `_spatial` when the object has a Geometry field
 	// (JoinSpatialRule); their args are skipped by the sub-agg mapping, so
@@ -408,6 +421,11 @@ func buildObjectSubAggregation(ctx context.Context, g *genContext, row *dataObje
 	baseAgg := buildObjectAggregation(ctx, g, row, "_"+row.Name+"_aggregation")
 	for _, f := range baseAgg.Fields {
 		if f.Name == "_rows_count" {
+			continue
+		}
+		if f.Name == "_distance_to_query" {
+			// EmbeddingsRule extends the base aggregation only — the member
+			// never reaches the sub-aggregations.
 			continue
 		}
 		if subType := types.SubAggregationTypeName(f.Type.Name()); subType != "" {

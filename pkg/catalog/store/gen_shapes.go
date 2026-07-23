@@ -69,6 +69,65 @@ func (t *objectTraits) writable() bool {
 	return t.row.Kind == "table" && !t.src.ReadOnly
 }
 
+// vectorTraits: any Vector field → similarity; @embeddings → also semantic.
+func (t *objectTraits) vectorTraits() (hasVector bool, emb *embeddingsConfig) {
+	if t.row.Properties != nil && t.row.Properties.Embeddings != nil {
+		return true, t.row.Properties.Embeddings
+	}
+	for _, f := range t.fields {
+		if parseFieldType(f.FieldType).Name() == "Vector" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// appendRootVectorArgs decorates a root select/aggregation field's arguments
+// (VectorSearchRule / EmbeddingsRule; by_pk fields are skipped by the
+// callers). The semantic description here intentionally differs from the
+// shorter one on the shared _join members — the compiler has both.
+func appendRootVectorArgs(t *objectTraits, args ast.ArgumentDefinitionList) ast.ArgumentDefinitionList {
+	hasVector, emb := t.vectorTraits()
+	if !hasVector {
+		return args
+	}
+	args = append(args, &ast.ArgumentDefinition{
+		Name:        "similarity",
+		Description: "Search for vector similarity",
+		Type:        ast.NamedType("VectorSearchInput", reconPos),
+		Position:    reconPos,
+	})
+	if emb != nil {
+		args = append(args, &ast.ArgumentDefinition{
+			Name:        "semantic",
+			Description: "Search for semantic similarity, works only for single object queries. Uses the OpenAI API to compute embeddings and find the most relevant object.",
+			Type:        ast.NamedType("SemanticSearchInput", reconPos),
+			Position:    reconPos,
+		})
+	}
+	return args
+}
+
+// embellishMutationForEmbeddings applies the EmbeddingsRule mutation shape:
+// data becomes nullable, a summary argument is appended.
+func embellishMutationForEmbeddings(t *objectTraits, fd *ast.FieldDefinition, mutationType string) *ast.FieldDefinition {
+	if _, emb := t.vectorTraits(); emb == nil {
+		return fd
+	}
+	for _, arg := range fd.Arguments {
+		if arg.Name == "data" {
+			arg.Type.NonNull = false
+		}
+	}
+	fd.Arguments = append(fd.Arguments, &ast.ArgumentDefinition{
+		Name:        "summary",
+		Description: mutationType + " summary embedding",
+		Type:        ast.NamedType("String", reconPos),
+		Position:    reconPos,
+	})
+	return fd
+}
+
 func queryMarker(name, queryType string) []*ast.Directive {
 	return []*ast.Directive{directive("query",
 		strArg(base.ArgName, name),
@@ -120,7 +179,7 @@ var selectShape = queryShape{
 			Name:        t.queryName(),
 			Description: t.row.Description,
 			Type:        ast.ListType(ast.NamedType(t.row.Name, reconPos), reconPos),
-			Arguments:   rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos),
+			Arguments:   appendRootVectorArgs(t, rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
 			Directives:  ast.DirectiveList{rootQueryMarker(t, "SELECT"), t.rootCatalog()},
 			Position:    reconPos,
 		}
@@ -178,7 +237,7 @@ var aggregateShape = queryShape{
 			Name:        qn + "_aggregation",
 			Description: "The aggregation for " + qn,
 			Type:        ast.NamedType("_"+t.row.Name+"_aggregation", reconPos),
-			Arguments:   rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos),
+			Arguments:   appendRootVectorArgs(t, rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
 			Directives:  ast.DirectiveList{rootAggMarker(qn, false), t.rootCatalog()},
 			Position:    reconPos,
 		}
@@ -198,7 +257,7 @@ var bucketAggShape = queryShape{
 			Name:        qn + "_bucket_aggregation",
 			Description: "The aggregation for " + qn,
 			Type:        ast.ListType(ast.NamedType("_"+t.row.Name+"_aggregation_bucket", reconPos), reconPos),
-			Arguments:   rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos),
+			Arguments:   appendRootVectorArgs(t, rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
 			Directives:  ast.DirectiveList{rootAggMarker(qn, true), t.rootCatalog()},
 			Position:    reconPos,
 		}
@@ -218,7 +277,7 @@ var insertShape = queryShape{
 		if !t.hasPK() || t.isM2M() {
 			outType = ast.NamedType("OperationResult", reconPos)
 		}
-		return &ast.FieldDefinition{
+		fd := &ast.FieldDefinition{
 			Name:        "insert_" + t.queryName(),
 			Description: t.row.Description,
 			Type:        outType,
@@ -228,6 +287,7 @@ var insertShape = queryShape{
 			Directives: ast.DirectiveList{rootMutationMarker(t, "INSERT", inputName), t.rootCatalog()},
 			Position:   reconPos,
 		}
+		return embellishMutationForEmbeddings(t, fd, "INSERT")
 	},
 }
 
@@ -240,7 +300,7 @@ var updateShape = queryShape{
 	},
 	root: func(t *objectTraits) *ast.FieldDefinition {
 		inputName := t.row.Name + mutDataSuffix
-		return &ast.FieldDefinition{
+		fd := &ast.FieldDefinition{
 			Name:        "update_" + t.queryName(),
 			Description: t.row.Description,
 			Type:        ast.NamedType("OperationResult", reconPos),
@@ -251,6 +311,7 @@ var updateShape = queryShape{
 			Directives: ast.DirectiveList{rootMutationMarker(t, "UPDATE", inputName), t.rootCatalog()},
 			Position:   reconPos,
 		}
+		return embellishMutationForEmbeddings(t, fd, "UPDATE")
 	},
 }
 

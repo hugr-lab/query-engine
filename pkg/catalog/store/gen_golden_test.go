@@ -222,6 +222,49 @@ func TestGenGoldenStructs(t *testing.T) {
 	}
 }
 
+// genVectorSchema exercises the vector-search axes: a plain Vector field
+// (similarity) and @embeddings (semantic + _distance_to_query + mutation
+// summary shape).
+const genVectorSchema = `
+type docs @module(name: "ai") @table(name: "docs") {
+  id: Int! @pk
+  title: String!
+  vec: Vector @dim(len: 8)
+}
+
+type notes @module(name: "ai") @table(name: "notes") @embeddings(model: "openai", vector: "vec", distance: Cosine) {
+  id: Int! @pk
+  body: String
+  vec: Vector @dim(len: 8)
+}
+`
+
+// TestGenGoldenVector pins similarity/semantic root arguments, the
+// _distance_to_query members and the embeddings mutation shape (nullable
+// data + summary).
+func TestGenGoldenVector(t *testing.T) {
+	store, ctx := storeFor(t, genVectorSchema)
+	ref := goldenRef(t, "test", genVectorSchema)
+
+	assertGenParity(t, ctx, store, ref, []string{
+		"docs",
+		"notes",
+		"docs_filter",
+		"notes_filter",
+		"docs_mut_input_data",
+		"notes_mut_input_data",
+		"notes_mut_data",
+		"_docs_aggregation",
+		"_notes_aggregation",
+		"_notes_aggregation_sub_aggregation",
+		"_join",
+		"_join_aggregation",
+		"_module_ai_query",
+		"_module_ai_mutation",
+		"Query",
+	})
+}
+
 // fixtureSource describes one source of a multi-source golden fixture.
 type fixtureSource struct {
 	name        string

@@ -188,6 +188,41 @@ var extraFieldsRule = fieldRule{
 	},
 }
 
+// embeddingsFieldRule adds `_distance_to_query` on @embeddings objects
+// (EmbeddingsRule): a computed Float over the vector field with the
+// QueryEmbeddingDistance extra-field binding.
+var embeddingsFieldRule = fieldRule{
+	name: "embeddings_fields",
+	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) {
+		_, emb := t.vectorTraits()
+		if emb == nil {
+			return
+		}
+		def.Fields = append(def.Fields, &ast.FieldDefinition{
+			Name:        "_distance_to_query",
+			Description: "Calculate vector distance to the specified vector for field " + emb.Vector,
+			Type:        ast.NamedType("Float", reconPos),
+			Arguments: ast.ArgumentDefinitionList{
+				{
+					Name:        "query",
+					Description: "Query to calculate distance to",
+					Type:        ast.NonNullNamedType("String", reconPos),
+					Position:    reconPos,
+				},
+			},
+			Directives: ast.DirectiveList{
+				directive("sql", strArg("exp", "["+emb.Vector+"]")),
+				directive("extra_field",
+					strArg(base.ArgName, "QueryEmbeddingDistance"),
+					strArg("base_field", emb.Vector),
+					enumArg("base_type", "Vector"),
+				),
+			},
+			Position: reconPos,
+		})
+	},
+}
+
 // sharedFieldsRule adds the shared cross-source members: `_join` on every
 // non-M2M data object, `_spatial` when the object has a Geometry field
 // (JoinSpatialRule).

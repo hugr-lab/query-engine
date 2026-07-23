@@ -86,6 +86,7 @@ var fieldRules = []fieldRule{
 	joinFieldsRule,
 	navFieldsRule,
 	extraFieldsRule,
+	embeddingsFieldRule,
 	sharedFieldsRule,
 }
 
