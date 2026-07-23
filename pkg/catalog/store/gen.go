@@ -115,6 +115,8 @@ type derivedRule struct {
 var derivedRules = []derivedRule{
 	listFilterRule,
 	filterRule,
+	mutInputDataRule,
+	mutDataRule,
 }
 
 // resolveDerivedType (5) generates a derived type from its base data object.

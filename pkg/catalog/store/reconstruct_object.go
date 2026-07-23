@@ -93,26 +93,42 @@ func referencesDirective(r *relation) *ast.Directive {
 	return directive(base.ReferencesDirectiveName, args...)
 }
 
-// activeEngines maps ACTIVE data sources to their engine type strings.
-func (s *Store) activeEngines(ctx context.Context) map[string]string {
+// activeSource is the per-source meta the generation layer branches on
+// (activeSources / activeEngines read it for ACTIVE sources only).
+type activeSource struct {
+	Engine   string
+	ReadOnly bool
+}
+
+func (s *Store) activeSources(ctx context.Context) map[string]activeSource {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
 		return nil
 	}
 	defer conn.Close()
-	rows, err := conn.Query(ctx, `SELECT data_source, engine FROM core.catalog.data_source_meta
+	rows, err := conn.Query(ctx, `SELECT data_source, engine, read_only FROM core.catalog.data_source_meta
 		WHERE loaded AND NOT disabled AND NOT suspended`)
 	if err != nil {
 		return nil
 	}
 	defer rows.Close()
-	out := map[string]string{}
+	out := map[string]activeSource{}
 	for rows.Next() {
-		var source, engine string
-		if err := rows.Scan(&source, &engine); err != nil {
+		var source string
+		var meta activeSource
+		if err := rows.Scan(&source, &meta.Engine, &meta.ReadOnly); err != nil {
 			return out
 		}
-		out[source] = engine
+		out[source] = meta
+	}
+	return out
+}
+
+func (s *Store) activeEngines(ctx context.Context) map[string]string {
+	srcs := s.activeSources(ctx)
+	out := make(map[string]string, len(srcs))
+	for name, meta := range srcs {
+		out[name] = meta.Engine
 	}
 	return out
 }

@@ -45,13 +45,22 @@ var genParityNames = []string{
 	"tags_list_filter",
 	"order_tags_filter",
 	"sales_by_country_filter",
+	// Ш4.2 — mutation inputs: columns minus computed/virtual, relation
+	// subqueries on insert (FWD single / BACK+M2M list, same catalog), the
+	// junction without forward fields.
+	"orders_mut_input_data",
+	"orders_mut_data",
+	"customers_mut_input_data",
+	"customers_mut_data",
+	"tags_mut_input_data",
+	"order_tags_mut_input_data",
+	"order_tags_mut_data",
 }
 
 // genPendingNames — names the reference generates that the store must learn
 // to serve, keyed by the sub-step that delivers them.
 var genPendingNames = map[string][]string{
-	"Ш4.2 mut inputs": {"orders_mut_input_data", "orders_mut_data"},
-	"Ш4.3 agg":        {"_orders_aggregation", "_orders_aggregation_bucket"},
+	"Ш4.3 agg":    {"_orders_aggregation", "_orders_aggregation_bucket"},
 	"Ш4.6 shared":     {"_join", "_join_aggregation"},
 	"Ш4.7 roots":      {"_module_sales_query", "_module_sales_mutation", "Query", "Mutation"},
 }
@@ -90,6 +99,13 @@ func TestGenGoldenHarness(t *testing.T) {
 	}
 
 	assertGenParity(t, ctx, store, ref, genParityNames)
+
+	// Negative parity: names the compiler does NOT generate must stay absent
+	// on the store side too (views take no mutation inputs).
+	for _, name := range []string{"sales_by_country_mut_input_data", "sales_by_country_mut_data"} {
+		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
+		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
+	}
 }
 
 // assertGenParity: each covered name must be served by the store structurally
