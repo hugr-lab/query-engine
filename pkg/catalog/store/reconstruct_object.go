@@ -46,6 +46,12 @@ func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Defi
 		}
 		def.Fields = append(def.Fields, fd)
 	}
+	// Generation layer: ordered field rules add the generated members (nav
+	// fields, subquery args, _join, extras — gen.go); empty registry = no-op.
+	g := s.genCtx()
+	for i := range fieldRules {
+		fieldRules[i].apply(ctx, g, row, def)
+	}
 	return def
 }
 

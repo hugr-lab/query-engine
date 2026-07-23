@@ -163,8 +163,12 @@ func TestLogicalTypes(t *testing.T) {
 	require.NotNil(t, store.Type(ctx, "orders"))
 
 	var sourceTypes []string
-	for name := range store.SourceTypes(ctx) {
+	for name, def := range store.SourceTypes(ctx) {
 		sourceTypes = append(sourceTypes, name)
+		cat := def.Directives.ForName("catalog")
+		require.NotNil(t, cat, "@catalog re-attached on %s", name)
+		assert.Equal(t, "test", dirArg(cat, "name"))
+		assert.Equal(t, "duckdb", dirArg(cat, "engine"))
 	}
 	assert.Contains(t, sourceTypes, "sales_by_country_args")
 

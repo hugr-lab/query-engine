@@ -351,11 +351,17 @@ func (s *Store) Type(ctx context.Context, name string) *ast.Definition {
 }
 
 // SourceTypes iterates the residual source-defined base types — exactly the
-// content of catalog.types (active sources, by name).
+// content of catalog.types (active sources, by name), with @catalog
+// re-attached the same way ForName serves them.
 func (s *Store) SourceTypes(ctx context.Context) iter.Seq2[string, *ast.Definition] {
 	return func(yield func(string, *ast.Definition) bool) {
-		for _, row := range s.readSourceTypes(ctx) {
-			def := parseStoredDefinition(row.Name, row.Definition)
+		rows := s.readSourceTypes(ctx)
+		if len(rows) == 0 {
+			return
+		}
+		engines := s.activeEngines(ctx)
+		for _, row := range rows {
+			def := attachCatalog(parseStoredDefinition(row.Name, row.Definition), row.DataSource, engines)
 			if def == nil {
 				continue
 			}

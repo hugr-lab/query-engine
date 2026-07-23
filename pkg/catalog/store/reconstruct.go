@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 )
@@ -26,6 +27,7 @@ type resolver func(ctx context.Context, s *Store, name string) *ast.Definition
 
 var resolvers = []resolver{
 	resolveModuleRoot,  // 4: Query / Mutation / _module_*_query — synthesized from members
+	resolveSharedType,  // 6: _join / _spatial / … — synthesized from active objects
 	resolveSystemType,  // 1: scalars / __* / @system — static prelude
 	resolveDataObject,  // 3: catalog.data_objects — generated object type
 	resolveSourceType,  // 2: catalog.types — parsed from stored SDL
@@ -52,52 +54,51 @@ func resolveSourceType(ctx context.Context, s *Store, name string) *ast.Definiti
 	return s.reconstructType(ctx, name)
 }
 
-// resolveModuleRoot (4) synthesizes Query/Mutation/Subscription and per-module
-// roots from their members. TODO(M3).
-func resolveModuleRoot(ctx context.Context, s *Store, name string) *ast.Definition {
-	return nil
-}
-
-// resolveDataObject (3) generates the compiled object type. M3 base slice: the
-// reconstructed base object (nav / aggregation / extra fields via fieldRules
-// follow).
+// resolveDataObject (3) generates the compiled object type: the reconstructed
+// base object plus the fieldRules contributions (gen.go).
 func resolveDataObject(ctx context.Context, s *Store, name string) *ast.Definition {
 	return reconstructDataObject(ctx, s, name)
 }
 
-// resolveDerivedType (5) generates a derived type (_X_aggregation, X_filter, …)
-// from its base X. TODO(M3).
-func resolveDerivedType(ctx context.Context, s *Store, name string) *ast.Definition {
-	return nil
-}
-
 // reconstructType parses a residual source type from its stored SDL
-// (catalog.types.definition); nil when the name is not a stored type.
+// (catalog.types.definition) and re-attaches @catalog(name, engine) — the
+// compiler tags every definition, but the SDL is stored pre-tagging; nil when
+// the name is not a stored type.
 func (s *Store) reconstructType(ctx context.Context, name string) *ast.Definition {
-	def, err := s.readType(ctx, name)
-	if err != nil {
+	def, dataSource, err := s.readType(ctx, name)
+	if err != nil || def == nil {
 		return nil
 	}
+	return attachCatalog(def, dataSource, s.activeEngines(ctx))
+}
+
+// attachCatalog re-attaches @catalog(name, engine) to a stored-SDL definition
+// when the stored text does not already carry it.
+func attachCatalog(def *ast.Definition, dataSource string, engines map[string]string) *ast.Definition {
+	if def == nil || def.Directives.ForName(base.CatalogDirectiveName) != nil {
+		return def
+	}
+	def.Directives = append(def.Directives, catalogDirective(dataSource, engines[dataSource]))
 	return def
 }
 
-func (s *Store) readType(ctx context.Context, name string) (*ast.Definition, error) {
+func (s *Store) readType(ctx context.Context, name string) (*ast.Definition, string, error) {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer conn.Close()
-	var definition string
+	var definition, dataSource string
 	err = conn.QueryRow(ctx,
-		`SELECT t.definition FROM core.catalog.types t`+activeMeta("m", "t.data_source")+
-			` WHERE t.name = `+lit(name)).Scan(&definition)
+		`SELECT t.definition, t.data_source FROM core.catalog.types t`+activeMeta("m", "t.data_source")+
+			` WHERE t.name = `+lit(name)).Scan(&definition, &dataSource)
 	if err == sql.ErrNoRows {
-		return nil, nil
+		return nil, "", nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("catalog read type %s: %w", name, err)
+		return nil, "", fmt.Errorf("catalog read type %s: %w", name, err)
 	}
-	return parseStoredDefinition(name, definition), nil
+	return parseStoredDefinition(name, definition), dataSource, nil
 }
 
 // parseStoredDefinition parses one stored SDL definition (catalog.types rows).

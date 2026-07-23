@@ -1,0 +1,263 @@
+//go:build duckdb_arrow
+
+package store
+
+import (
+	"bytes"
+	"context"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
+	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
+	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/formatter"
+)
+
+// The golden frame for the generation layer (Ш4): the SAME fixture goes
+// through (a) the partial compiler → collect → store → ForName and (b) the
+// FULL compiler (GENERATE included) → static provider. Every name in
+// genParityNames must produce identical definitions on both sides; each Ш4.x
+// sub-step moves names from genPendingNames into genParityNames.
+
+// genParityNames — generated names the store already serves at full parity
+// with the compiled reference.
+var genParityNames = []string{
+	// Static prelude smoke: the same binary layer feeds both sides, proving
+	// the compare pipe end to end.
+	"Geometry",
+	"JSON",
+	// Residual source types: stored SDL vs compiler passthrough.
+	"sales_by_country_args",
+}
+
+// genPendingNames — names the reference generates that the store must learn
+// to serve, keyed by the sub-step that delivers them.
+var genPendingNames = map[string][]string{
+	"Ш4.1 filter":     {"orders_filter", "orders_list_filter"},
+	"Ш4.2 mut inputs": {"orders_mut_input_data", "orders_mut_data"},
+	"Ш4.3 agg":        {"_orders_aggregation", "_orders_aggregation_bucket"},
+	"Ш4.6 shared":     {"_join", "_join_aggregation"},
+	"Ш4.7 roots":      {"_module_sales_query", "_module_sales_mutation", "Query", "Mutation"},
+}
+
+// goldenRef compiles a fixture with the FULL rule set into a fresh static
+// provider — the reference the generation layer converges to, name by name.
+func goldenRef(t *testing.T, name, schema string) *static.Provider {
+	t.Helper()
+	ctx := context.Background()
+	target, err := static.New()
+	require.NoError(t, err)
+	e := &engines.DuckDB{}
+	src, err := sources.NewStringSource(name, e, compiler.Options{
+		Name:         name,
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+	}, schema)
+	require.NoError(t, err)
+	compiled, err := compiler.New(rules.RegisterAll()...).Compile(ctx, target, src, src.CompileOptions())
+	require.NoError(t, err)
+	require.NoError(t, target.Update(ctx, compiled))
+	return target
+}
+
+func TestGenGoldenHarness(t *testing.T) {
+	store, ctx := writtenStore(t)
+	ref := goldenRef(t, "test", collectTestSchema)
+
+	// The reference side really generates the artifacts the sub-steps target —
+	// a pending name disappearing here means the fixture (or the expected
+	// name) drifted, not that the work is done.
+	for step, names := range genPendingNames {
+		for _, name := range names {
+			assert.NotNil(t, ref.ForName(ctx, name), "reference must generate %s (%s)", name, step)
+		}
+	}
+
+	assertGenParity(t, ctx, store, ref, genParityNames)
+}
+
+// assertGenParity: each covered name must be served by the store structurally
+// identical to the fully-compiled reference (member order is not part of the
+// contract — definitions are normalized before comparison).
+func assertGenParity(t *testing.T, ctx context.Context, s *Store, ref *static.Provider, names []string) {
+	t.Helper()
+	for _, name := range names {
+		want := ref.ForName(ctx, name)
+		require.NotNil(t, want, "reference must contain %s", name)
+		got := s.ForName(ctx, name)
+		require.NotNil(t, got, "store must serve %s", name)
+		assert.Equal(t, goldenSDL(want), goldenSDL(got), "definition parity for %s", name)
+	}
+}
+
+// goldenSDL formats a normalized definition for comparison and readable diffs.
+func goldenSDL(def *ast.Definition) string {
+	var buf bytes.Buffer
+	f := formatter.NewFormatter(&buf, formatter.WithIndent("  "))
+	f.FormatSchemaDocument(&ast.SchemaDocument{Definitions: ast.DefinitionList{normalizeDef(def)}})
+	return strings.TrimSpace(buf.String()) + "\n"
+}
+
+// normalizeDef deep-copies a definition with every order-insensitive member
+// list (fields, args, directives, enum values, object-value children) sorted
+// and positions cleared.
+func normalizeDef(def *ast.Definition) *ast.Definition {
+	d := *def
+	d.Position = nil
+	d.Directives = normalizeDirectives(def.Directives)
+	d.Interfaces = slices.Sorted(slices.Values(def.Interfaces))
+	d.Fields = make(ast.FieldList, len(def.Fields))
+	for i, f := range def.Fields {
+		d.Fields[i] = normalizeFieldDef(f)
+	}
+	slices.SortFunc(d.Fields, func(a, b *ast.FieldDefinition) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	if len(def.EnumValues) > 0 {
+		d.EnumValues = slices.Clone(def.EnumValues)
+		for i, ev := range d.EnumValues {
+			nev := *ev
+			nev.Position = nil
+			nev.Directives = normalizeDirectives(ev.Directives)
+			d.EnumValues[i] = &nev
+		}
+		slices.SortFunc(d.EnumValues, func(a, b *ast.EnumValueDefinition) int {
+			return strings.Compare(a.Name, b.Name)
+		})
+	}
+	return &d
+}
+
+func normalizeFieldDef(f *ast.FieldDefinition) *ast.FieldDefinition {
+	nf := *f
+	nf.Position = nil
+	nf.Directives = normalizeDirectives(f.Directives)
+	nf.DefaultValue = normalizeValue(f.DefaultValue)
+	nf.Arguments = normalizeArgDefs(f.Arguments)
+	return &nf
+}
+
+func normalizeArgDefs(args ast.ArgumentDefinitionList) ast.ArgumentDefinitionList {
+	if len(args) == 0 {
+		return nil
+	}
+	out := make(ast.ArgumentDefinitionList, len(args))
+	for i, a := range args {
+		na := *a
+		na.Position = nil
+		na.Directives = normalizeDirectives(a.Directives)
+		na.DefaultValue = normalizeValue(a.DefaultValue)
+		out[i] = &na
+	}
+	slices.SortFunc(out, func(a, b *ast.ArgumentDefinition) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return out
+}
+
+func normalizeDirectives(dl ast.DirectiveList) ast.DirectiveList {
+	if len(dl) == 0 {
+		return nil
+	}
+	out := make(ast.DirectiveList, len(dl))
+	for i, dir := range dl {
+		nd := *dir
+		nd.Position = nil
+		nd.Definition = nil
+		nd.ParentDefinition = nil
+		nd.Arguments = slices.Clone(dir.Arguments)
+		for j, a := range nd.Arguments {
+			na := *a
+			na.Position = nil
+			na.Value = normalizeValue(a.Value)
+			nd.Arguments[j] = &na
+		}
+		slices.SortFunc(nd.Arguments, func(a, b *ast.Argument) int {
+			return strings.Compare(a.Name, b.Name)
+		})
+		out[i] = &nd
+	}
+	// Repeatable directives (@references, @query, @unique …) share a name —
+	// tie-break on the serialized arguments for a stable order.
+	slices.SortStableFunc(out, func(a, b *ast.Directive) int {
+		if c := strings.Compare(a.Name, b.Name); c != 0 {
+			return c
+		}
+		return strings.Compare(directiveKey(a), directiveKey(b))
+	})
+	return out
+}
+
+func directiveKey(d *ast.Directive) string {
+	parts := make([]string, len(d.Arguments))
+	for i, a := range d.Arguments {
+		parts[i] = a.Name + ":" + a.Value.String()
+	}
+	return strings.Join(parts, ",")
+}
+
+func normalizeValue(v *ast.Value) *ast.Value {
+	if v == nil {
+		return nil
+	}
+	nv := *v
+	nv.Position = nil
+	nv.Definition = nil
+	nv.ExpectedType = nil
+	nv.VariableDefinition = nil
+	if len(v.Children) > 0 {
+		nv.Children = slices.Clone(v.Children)
+		for i, c := range nv.Children {
+			nc := *c
+			nc.Position = nil
+			nc.Value = normalizeValue(c.Value)
+			nv.Children[i] = &nc
+		}
+		if v.Kind == ast.ObjectValue {
+			slices.SortFunc(nv.Children, func(a, b *ast.ChildValue) int {
+				return strings.Compare(a.Name, b.Name)
+			})
+		}
+	}
+	return &nv
+}
+
+// TestClassifyModuleRootName pins the syntactic inverse of sdl.ModuleTypeName,
+// including the underscore-ambiguity cases the dispatcher must disambiguate
+// against the modules table.
+func TestClassifyModuleRootName(t *testing.T) {
+	cases := []struct {
+		name string
+		want []moduleRootRef
+	}{
+		{"Query", []moduleRootRef{{Kind: base.ModuleQuery}}},
+		{"Mutation", []moduleRootRef{{Kind: base.ModuleMutation}}},
+		{"Function", []moduleRootRef{{Kind: base.ModuleFunction}}},
+		{"MutationFunction", []moduleRootRef{{Kind: base.ModuleMutationFunction}}},
+		{"Subscription", []moduleRootRef{{Kind: base.ModuleSubscription}}},
+		{"_module_sales_query", []moduleRootRef{{Module: "sales", Kind: base.ModuleQuery}}},
+		{"_module_sales_reports_mutation", []moduleRootRef{{Module: "sales_reports", Kind: base.ModuleMutation}}},
+		{"_module_sales_subscription", []moduleRootRef{{Module: "sales", Kind: base.ModuleSubscription}}},
+		// _mut_function wins specificity, plain _function stays a candidate.
+		{"_module_x_mut_function", []moduleRootRef{
+			{Module: "x", Kind: base.ModuleMutationFunction},
+			{Module: "x_mut", Kind: base.ModuleFunction},
+		}},
+		{"_module_mut_function", []moduleRootRef{{Module: "mut", Kind: base.ModuleFunction}}},
+		// Not module roots at all.
+		{"orders", nil},
+		{"_module_", nil},
+		{"_join", nil},
+	}
+	for _, c := range cases {
+		assert.Equal(t, c.want, classifyModuleRootName(c.name), "name %s", c.name)
+	}
+}
