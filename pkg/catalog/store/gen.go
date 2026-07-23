@@ -50,13 +50,15 @@ type queryShape struct {
 	// markers emits the def-level @query/@mutation directives; queryName is
 	// the AsModule-aware base (original name on module roots).
 	markers func(t *objectTraits, queryName string) []*ast.Directive
-	// root instantiates the shape's field on the module root.
-	root func(t *objectTraits) *ast.FieldDefinition
+	// root instantiates the shape's fields on the module root (most shapes
+	// yield one; @unique yields one per constraint).
+	root func(t *objectTraits) []*ast.FieldDefinition
 }
 
 var queryShapes = []queryShape{
 	selectShape,
 	selectOnePKShape,
+	selectOneUniqueShape,
 	aggregateShape,
 	bucketAggShape,
 	insertShape,
@@ -83,6 +85,7 @@ type fieldRule struct {
 
 var fieldRules = []fieldRule{
 	scalarArgsFieldRule,
+	cubeHypertableFieldRule,
 	joinFieldsRule,
 	navFieldsRule,
 	extraFieldsRule,

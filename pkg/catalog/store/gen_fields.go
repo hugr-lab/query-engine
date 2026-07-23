@@ -188,6 +188,61 @@ var extraFieldsRule = fieldRule{
 	},
 }
 
+// cubeHypertableArgs returns the extra argument for one field under the
+// cube/hypertable traits (CubeHypertableRule): measurement_func on @cube
+// @measurement fields, gapfill on @hypertable @timescale_key Timestamps.
+func cubeHypertableArgs(row *dataObject, f *field) *ast.ArgumentDefinition {
+	if row.Properties == nil || f.Properties == nil {
+		return nil
+	}
+	if row.Properties.IsCube && f.Properties.Measurement {
+		s := types.Lookup(parseFieldType(f.FieldType).Name())
+		if s == nil {
+			return nil
+		}
+		ma, ok := s.(types.MeasurementAggregatable)
+		if !ok {
+			return nil
+		}
+		return &ast.ArgumentDefinition{
+			Name:        "measurement_func",
+			Description: "Aggregation function for measurement field",
+			Type:        ast.NamedType(ma.MeasurementAggregationTypeName(), reconPos),
+			Position:    reconPos,
+		}
+	}
+	if row.Properties.IsHypertable && f.Properties.TimescaleKey &&
+		parseFieldType(f.FieldType).NamedType == "Timestamp" {
+		return &ast.ArgumentDefinition{
+			Name:        "gapfill",
+			Description: "Extracts the specified part of the timestamp",
+			Type:        ast.NamedType("Boolean", reconPos),
+			Position:    reconPos,
+		}
+	}
+	return nil
+}
+
+// cubeHypertableFieldRule appends the measurement_func / gapfill arguments to
+// the object fields themselves.
+var cubeHypertableFieldRule = fieldRule{
+	name: "cube_hypertable_args",
+	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) {
+		if t.row.Properties == nil || (!t.row.Properties.IsCube && !t.row.Properties.IsHypertable) {
+			return
+		}
+		for _, f := range t.fields {
+			arg := cubeHypertableArgs(t.row, f)
+			if arg == nil {
+				continue
+			}
+			if fd := def.Fields.ForName(f.Name); fd != nil {
+				fd.Arguments = append(fd.Arguments, arg)
+			}
+		}
+	},
+}
+
 // embeddingsFieldRule adds `_distance_to_query` on @embeddings objects
 // (EmbeddingsRule): a computed Float over the vector field with the
 // QueryEmbeddingDistance extra-field binding.

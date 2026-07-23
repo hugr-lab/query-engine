@@ -174,15 +174,15 @@ var selectShape = queryShape{
 	markers: func(_ *objectTraits, qn string) []*ast.Directive {
 		return queryMarker(qn, "SELECT")
 	},
-	root: func(t *objectTraits) *ast.FieldDefinition {
-		return &ast.FieldDefinition{
+	root: func(t *objectTraits) []*ast.FieldDefinition {
+		return []*ast.FieldDefinition{{
 			Name:        t.queryName(),
 			Description: t.row.Description,
 			Type:        ast.ListType(ast.NamedType(t.row.Name, reconPos), reconPos),
 			Arguments:   appendRootVectorArgs(t, rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
 			Directives:  ast.DirectiveList{rootQueryMarker(t, "SELECT"), t.rootCatalog()},
 			Position:    reconPos,
-		}
+		}}
 	},
 }
 
@@ -193,7 +193,7 @@ var selectOnePKShape = queryShape{
 	markers: func(_ *objectTraits, qn string) []*ast.Directive {
 		return queryMarker(qn+"_by_pk", "SELECT_ONE")
 	},
-	root: func(t *objectTraits) *ast.FieldDefinition {
+	root: func(t *objectTraits) []*ast.FieldDefinition {
 		fd := &ast.FieldDefinition{
 			Name:        t.queryName() + "_by_pk",
 			Description: t.row.Description,
@@ -220,7 +220,7 @@ var selectOnePKShape = queryShape{
 				Position: reconPos,
 			})
 		}
-		return fd
+		return []*ast.FieldDefinition{fd}
 	},
 }
 
@@ -231,16 +231,16 @@ var aggregateShape = queryShape{
 	markers: func(_ *objectTraits, qn string) []*ast.Directive {
 		return queryMarker(qn+"_aggregation", "AGGREGATE")
 	},
-	root: func(t *objectTraits) *ast.FieldDefinition {
+	root: func(t *objectTraits) []*ast.FieldDefinition {
 		qn := t.queryName()
-		return &ast.FieldDefinition{
+		return []*ast.FieldDefinition{{
 			Name:        qn + "_aggregation",
 			Description: "The aggregation for " + qn,
 			Type:        ast.NamedType("_"+t.row.Name+"_aggregation", reconPos),
 			Arguments:   appendRootVectorArgs(t, rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
 			Directives:  ast.DirectiveList{rootAggMarker(qn, false), t.rootCatalog()},
 			Position:    reconPos,
-		}
+		}}
 	},
 }
 
@@ -251,16 +251,16 @@ var bucketAggShape = queryShape{
 	markers: func(_ *objectTraits, qn string) []*ast.Directive {
 		return queryMarker(qn+"_bucket_aggregation", "AGGREGATE_BUCKET")
 	},
-	root: func(t *objectTraits) *ast.FieldDefinition {
+	root: func(t *objectTraits) []*ast.FieldDefinition {
 		qn := t.queryName()
-		return &ast.FieldDefinition{
+		return []*ast.FieldDefinition{{
 			Name:        qn + "_bucket_aggregation",
 			Description: "The aggregation for " + qn,
 			Type:        ast.ListType(ast.NamedType("_"+t.row.Name+"_aggregation_bucket", reconPos), reconPos),
 			Arguments:   appendRootVectorArgs(t, rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
 			Directives:  ast.DirectiveList{rootAggMarker(qn, true), t.rootCatalog()},
 			Position:    reconPos,
-		}
+		}}
 	},
 }
 
@@ -271,7 +271,7 @@ var insertShape = queryShape{
 	markers: func(t *objectTraits, qn string) []*ast.Directive {
 		return mutationMarker("insert_"+qn, "INSERT", t.row.Name+mutInputDataSuffix)
 	},
-	root: func(t *objectTraits) *ast.FieldDefinition {
+	root: func(t *objectTraits) []*ast.FieldDefinition {
 		inputName := t.row.Name + mutInputDataSuffix
 		outType := ast.NamedType(t.row.Name, reconPos)
 		if !t.hasPK() || t.isM2M() {
@@ -287,7 +287,7 @@ var insertShape = queryShape{
 			Directives: ast.DirectiveList{rootMutationMarker(t, "INSERT", inputName), t.rootCatalog()},
 			Position:   reconPos,
 		}
-		return embellishMutationForEmbeddings(t, fd, "INSERT")
+		return []*ast.FieldDefinition{embellishMutationForEmbeddings(t, fd, "INSERT")}
 	},
 }
 
@@ -298,7 +298,7 @@ var updateShape = queryShape{
 	markers: func(t *objectTraits, qn string) []*ast.Directive {
 		return mutationMarker("update_"+qn, "UPDATE", t.row.Name+mutDataSuffix)
 	},
-	root: func(t *objectTraits) *ast.FieldDefinition {
+	root: func(t *objectTraits) []*ast.FieldDefinition {
 		inputName := t.row.Name + mutDataSuffix
 		fd := &ast.FieldDefinition{
 			Name:        "update_" + t.queryName(),
@@ -311,7 +311,7 @@ var updateShape = queryShape{
 			Directives: ast.DirectiveList{rootMutationMarker(t, "UPDATE", inputName), t.rootCatalog()},
 			Position:   reconPos,
 		}
-		return embellishMutationForEmbeddings(t, fd, "UPDATE")
+		return []*ast.FieldDefinition{embellishMutationForEmbeddings(t, fd, "UPDATE")}
 	},
 }
 
@@ -322,8 +322,8 @@ var deleteShape = queryShape{
 	markers: func(t *objectTraits, qn string) []*ast.Directive {
 		return mutationMarker("delete_"+qn, "DELETE", "")
 	},
-	root: func(t *objectTraits) *ast.FieldDefinition {
-		return &ast.FieldDefinition{
+	root: func(t *objectTraits) []*ast.FieldDefinition {
+		return []*ast.FieldDefinition{{
 			Name:        "delete_" + t.queryName(),
 			Description: t.row.Description,
 			Type:        ast.NamedType("OperationResult", reconPos),
@@ -332,8 +332,82 @@ var deleteShape = queryShape{
 			},
 			Directives: ast.DirectiveList{rootMutationMarker(t, "DELETE", ""), t.rootCatalog()},
 			Position:   reconPos,
-		}
+		}}
 	},
+}
+
+// uniqueQueries lists the servable @unique constraints (UniqueRule takes
+// suffixed constraints with fields only).
+func (t *objectTraits) uniqueQueries() []uniqueConstraint {
+	if t.row.Properties == nil {
+		return nil
+	}
+	var out []uniqueConstraint
+	for _, u := range t.row.Properties.Unique {
+		if u.QuerySuffix == "" || len(u.Fields) == 0 {
+			continue
+		}
+		out = append(out, u)
+	}
+	return out
+}
+
+// selectOneUniqueShape (UniqueRule): one SELECT_ONE root field per suffixed
+// @unique constraint, keyed by the constraint fields. View args (bare, no
+// description) are prepended for parameterized views.
+var selectOneUniqueShape = queryShape{
+	kind:     "select_one_unique",
+	rootKind: sdl.ModuleQuery,
+	matches:  func(t *objectTraits) bool { return len(t.uniqueQueries()) > 0 },
+	markers: func(t *objectTraits, qn string) []*ast.Directive {
+		var out []*ast.Directive
+		for _, u := range t.uniqueQueries() {
+			out = append(out, queryMarker(qn+"_"+u.QuerySuffix, "SELECT_ONE")...)
+		}
+		return out
+	},
+	root: func(t *objectTraits) []*ast.FieldDefinition {
+		var out []*ast.FieldDefinition
+		for _, u := range t.uniqueQueries() {
+			fd := &ast.FieldDefinition{
+				Name:       t.queryName() + "_" + u.QuerySuffix,
+				Type:       ast.NamedType(t.row.Name, reconPos),
+				Directives: ast.DirectiveList{rootQueryMarker(t, "SELECT_ONE"), t.rootCatalog()},
+				Position:   reconPos,
+			}
+			if info := t.objInfo(); info.InputArgsName != "" {
+				argType := ast.NamedType(info.InputArgsName, reconPos)
+				if info.RequiredArgs {
+					argType = ast.NonNullNamedType(info.InputArgsName, reconPos)
+				}
+				fd.Arguments = append(fd.Arguments, &ast.ArgumentDefinition{
+					Name: "args", Type: argType, Position: reconPos,
+				})
+			}
+			for _, name := range u.Fields {
+				f := fieldByName(t.fields, name)
+				if f == nil {
+					continue
+				}
+				fd.Arguments = append(fd.Arguments, &ast.ArgumentDefinition{
+					Name:     name,
+					Type:     ast.NonNullNamedType(parseFieldType(f.FieldType).Name(), reconPos),
+					Position: reconPos,
+				})
+			}
+			out = append(out, fd)
+		}
+		return out
+	},
+}
+
+func fieldByName(fields []*field, name string) *field {
+	for _, f := range fields {
+		if f.Name == name {
+			return f
+		}
+	}
+	return nil
 }
 
 // shapeMarkers emits every matching shape's def-level markers for the object.

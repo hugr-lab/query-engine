@@ -221,7 +221,7 @@ var rootObjectShapesRule = rootRule{
 				if shape.rootKind != sc.kind || !shape.matches(t) {
 					continue
 				}
-				def.Fields = append(def.Fields, shape.root(t))
+				def.Fields = append(def.Fields, shape.root(t)...)
 			}
 		}
 	},

@@ -143,10 +143,14 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 			if !ok {
 				continue
 			}
+			args := scalarFieldArguments(s)
+			if extra := cubeHypertableArgs(row, f); extra != nil {
+				args = append(args, extra)
+			}
 			def.Fields = append(def.Fields, &ast.FieldDefinition{
 				Name:       f.Name,
 				Type:       ast.NamedType(a.AggregationTypeName(), reconPos),
-				Arguments:  scalarFieldArguments(s),
+				Arguments:  args,
 				Directives: ast.DirectiveList{fieldAggregationMarker(f.Name)},
 				Position:   reconPos,
 			})

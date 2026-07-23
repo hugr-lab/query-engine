@@ -265,6 +265,69 @@ func TestGenGoldenVector(t *testing.T) {
 	})
 }
 
+// genCubeSchema exercises the cube/hypertable argument decorators.
+const genCubeSchema = `
+type sales_cube @module(name: "bi") @cube @table(name: "sales_cube") {
+  id: Int! @pk
+  region: String!
+  revenue: Float @measurement
+  quantity: Int @measurement
+}
+
+type readings @module(name: "bi") @hypertable @table(name: "readings") {
+  id: Int! @pk
+  recorded_at: Timestamp @timescale_key
+  temperature: Float
+}
+`
+
+// TestGenGoldenCube pins measurement_func on @cube @measurement fields and
+// gapfill on @hypertable @timescale_key fields — on the objects and their
+// aggregation twins.
+func TestGenGoldenCube(t *testing.T) {
+	store, ctx := storeFor(t, genCubeSchema)
+	ref := goldenRef(t, "test", genCubeSchema)
+
+	assertGenParity(t, ctx, store, ref, []string{
+		"sales_cube",
+		"readings",
+		"sales_cube_filter",
+		"readings_filter",
+		"_sales_cube_aggregation",
+		"_sales_cube_aggregation_bucket",
+		"_sales_cube_aggregation_sub_aggregation",
+		"_readings_aggregation",
+		"_readings_aggregation_sub_aggregation",
+		"sales_cube_mut_input_data",
+		"_module_bi_query",
+	})
+}
+
+// genUniqueSchema exercises @unique SELECT_ONE variants.
+const genUniqueSchema = `
+type users @module(name: "crm") @table(name: "users")
+  @unique(fields: ["email"], query_suffix: "by_email")
+  @unique(fields: ["first_name", "last_name"], query_suffix: "by_full_name") {
+  id: Int! @pk
+  email: String!
+  first_name: String!
+  last_name: String!
+}
+`
+
+// TestGenGoldenUnique pins the @unique SELECT_ONE root fields and their
+// def-level markers.
+func TestGenGoldenUnique(t *testing.T) {
+	store, ctx := storeFor(t, genUniqueSchema)
+	ref := goldenRef(t, "test", genUniqueSchema)
+
+	assertGenParity(t, ctx, store, ref, []string{
+		"users",
+		"users_filter",
+		"_module_crm_query",
+	})
+}
+
 // fixtureSource describes one source of a multi-source golden fixture.
 type fixtureSource struct {
 	name        string
