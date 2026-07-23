@@ -205,11 +205,18 @@ func (e *DuckDB) RepackObject(sql string, field *ast.Field) string {
 	if len(field.SelectionSet) == 0 {
 		return sql
 	}
-	out := repackStructRecursive(sql, field, "")
 	if field.Definition.Type.NamedType != "" {
-		return out
+		return repackStructRecursive(sql, field, "")
 	}
-	return "list_transform(" + sql + ", lambda " + field.Name + ": " + out + ")"
+	// List of structs: list_transform binds each element to the lambda
+	// variable, so the struct body must reference that variable — not the
+	// outer column. Use "_value" to match the nested-list convention used
+	// throughout repackStructRecursive / UnpackObjectToFieldList.
+	out := repackStructRecursive("_value", field, "")
+	if out == "_value" {
+		return sql
+	}
+	return "list_transform(" + sql + ", lambda _value: " + out + ")"
 }
 
 // create fields list for the first level of object (struct)

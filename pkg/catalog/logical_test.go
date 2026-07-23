@@ -128,8 +128,8 @@ func TestLogicalModelFromProvider(t *testing.T) {
 		if root.Name != "" {
 			t.Errorf("root module name = %q, want empty", root.Name)
 		}
-		if qt := root.RootTypes[sdl.ModuleQuery]; qt == nil || qt.Name != "Query" {
-			t.Errorf("root query type = %v, want Query", qt)
+		if qt := root.RootTypes[sdl.ModuleQuery]; qt != "Query" {
+			t.Errorf("root query type = %q, want Query", qt)
 		}
 	})
 
@@ -150,7 +150,7 @@ func TestLogicalModelFromProvider(t *testing.T) {
 		if ev == nil {
 			t.Fatal("subscription-only module events not resolved")
 		}
-		if ev.RootTypes[sdl.ModuleSubscription] == nil {
+		if ev.RootTypes[sdl.ModuleSubscription] == "" {
 			t.Error("events module has no subscription root type")
 		}
 		if len(ev.RootTypes) != 1 {

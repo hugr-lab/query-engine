@@ -937,3 +937,75 @@ func TestExtractJSONStruct(t *testing.T) {
 		})
 	}
 }
+
+// TestPostgresRepackObjectTopLevelList locks in the fix for a top-level
+// list-of-object field: it must be repacked with array_agg over
+// jsonb_array_elements (mirroring the nested-list branch), not treated as a
+// single object where "sql->'field'" indexes a JSON array by key.
+func TestPostgresRepackObjectTopLevelList(t *testing.T) {
+	e := &Postgres{}
+	objDef := &ast.Definition{Name: "arg", Fields: []*ast.FieldDefinition{
+		{Name: "col_a"}, {Name: "col_b"}, {Name: "col_c"},
+	}}
+	field := &ast.Field{
+		Alias:      "args",
+		Name:       "args",
+		Definition: &ast.FieldDefinition{Name: "args", Type: &ast.Type{Elem: &ast.Type{NamedType: "arg"}}},
+		SelectionSet: ast.SelectionSet{
+			&ast.Field{
+				Alias: "col_a", Name: "col_a", ObjectDefinition: objDef,
+				Definition: &ast.FieldDefinition{Name: "col_a", Type: &ast.Type{NamedType: "String"}},
+			},
+			&ast.Field{
+				Alias: "col_b", Name: "col_b", ObjectDefinition: objDef,
+				Definition: &ast.FieldDefinition{Name: "col_b", Type: &ast.Type{NamedType: "String"}},
+			},
+		},
+	}
+	got := e.RepackObject("_objects.args", field)
+	want := "(SELECT array_agg(jsonb_build_object('col_a',_value->'col_a','col_b',_value->'col_b')) FROM jsonb_array_elements(_objects.args) AS _value)"
+	if got != want {
+		t.Errorf("RepackObject top-level list\n  want %s\n  got  %s", want, got)
+	}
+}
+
+// TestRepackPGJsonRecursiveFullySelectedNested locks in the fix for the
+// sum==0 collapse of a fully-selected nested object: it must return
+// "sql->'path'" (JSON access on the outer value), not the reversed
+// "path.sql" which produced an invalid cross-database reference.
+func TestRepackPGJsonRecursiveFullySelectedNested(t *testing.T) {
+	subDef := &ast.Definition{Name: "sub", Fields: []*ast.FieldDefinition{
+		{Name: "x"}, {Name: "y"},
+	}}
+	propsDef := &ast.Definition{Name: "props", Fields: []*ast.FieldDefinition{
+		{Name: "scalar_a"}, {Name: "sub"}, {Name: "extra"},
+	}}
+	field := &ast.Field{
+		Alias: "props", Name: "props",
+		SelectionSet: ast.SelectionSet{
+			&ast.Field{
+				Alias: "scalar_a", Name: "scalar_a", ObjectDefinition: propsDef,
+				Definition: &ast.FieldDefinition{Name: "scalar_a", Type: &ast.Type{NamedType: "String"}},
+			},
+			&ast.Field{
+				Alias: "sub", Name: "sub", ObjectDefinition: propsDef,
+				Definition: &ast.FieldDefinition{Name: "sub", Type: &ast.Type{NamedType: "sub"}},
+				SelectionSet: ast.SelectionSet{
+					&ast.Field{
+						Alias: "x", Name: "x", ObjectDefinition: subDef,
+						Definition: &ast.FieldDefinition{Name: "x", Type: &ast.Type{NamedType: "String"}},
+					},
+					&ast.Field{
+						Alias: "y", Name: "y", ObjectDefinition: subDef,
+						Definition: &ast.FieldDefinition{Name: "y", Type: &ast.Type{NamedType: "String"}},
+					},
+				},
+			},
+		},
+	}
+	got := repackPGJsonRecursive("obj", field, "")
+	want := "jsonb_build_object('scalar_a',obj->'scalar_a','sub',obj->'sub')"
+	if got != want {
+		t.Errorf("fully-selected nested collapse\n  want %s\n  got  %s", want, got)
+	}
+}

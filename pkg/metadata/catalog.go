@@ -132,11 +132,13 @@ func moduleResolver(ctx context.Context, lm catalog.LogicalModel, provider catal
 	}
 	moduleRootType := func(kind sdl.ModuleObjectType) fieldResolverFunc {
 		return func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			// RootTypes carries NAMES; the definition is resolved only here —
+			// when the root-type field is actually selected.
 			rt := info.RootTypes[kind]
-			if rt == nil {
+			if rt == "" {
 				return nil, nil
 			}
-			data, err := typeResolver(ctx, provider, ast.NamedType(rt.Name, &ast.Position{}), field.SelectionSet, maxDepth)
+			data, err := typeResolver(ctx, provider, ast.NamedType(rt, &ast.Position{}), field.SelectionSet, maxDepth)
 			if errors.Is(err, ErrTypeNotFound) {
 				return nil, nil
 			}
@@ -163,7 +165,7 @@ func moduleResolver(ctx context.Context, lm catalog.LogicalModel, provider catal
 		"modules": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			res := []map[string]any{}
 			for child := range lm.Modules(ctx, info.Name) {
-				if !submoduleVisible(ctx, info, child) {
+				if !submoduleVisible(ctx, lm, info, child) {
 					continue
 				}
 				if !moduleHasVisibleContent(ctx, lm, provider, child) {
@@ -512,8 +514,9 @@ func functionVisible(ctx context.Context, entry *catalog.FunctionEntry) bool {
 }
 
 // submoduleVisible reports whether a child module's navigation field is
-// visible on at least one of the parent's root types that carry it.
-func submoduleVisible(ctx context.Context, parent *catalog.ModuleInfo, child *catalog.ModuleInfo) bool {
+// visible on at least one of the parent's root types that carry it. The root
+// definitions are resolved lazily — only on the permission-filtered path.
+func submoduleVisible(ctx context.Context, lm catalog.LogicalModel, parent *catalog.ModuleInfo, child *catalog.ModuleInfo) bool {
 	p := perm.PermissionsFromCtx(ctx)
 	if p == nil {
 		return true
@@ -522,8 +525,9 @@ func submoduleVisible(ctx context.Context, parent *catalog.ModuleInfo, child *ca
 	if i := strings.LastIndex(seg, "."); i >= 0 {
 		seg = seg[i+1:]
 	}
-	for _, rootDef := range parent.RootTypes {
-		if rootDef.Fields.ForName(seg) == nil {
+	for _, rootName := range parent.RootTypes {
+		rootDef := lm.Type(ctx, rootName)
+		if rootDef == nil || rootDef.Fields.ForName(seg) == nil {
 			continue
 		}
 		if _, ok := p.Visible(rootDef.Name, seg); ok {
@@ -565,7 +569,7 @@ func moduleHasVisibleContent(ctx context.Context, lm catalog.LogicalModel, provi
 		}
 	}
 	for child := range lm.Modules(ctx, info.Name) {
-		if !submoduleVisible(ctx, info, child) {
+		if !submoduleVisible(ctx, lm, info, child) {
 			continue
 		}
 		if moduleHasVisibleContent(ctx, lm, provider, child) {

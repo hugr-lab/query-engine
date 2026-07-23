@@ -727,3 +727,34 @@ func TestDuckDBEngineFilterOperationSQLValue(t *testing.T) {
 		})
 	}
 }
+
+// TestDuckDBRepackObjectTopLevelList locks in the fix for a top-level
+// list-of-object field: list_transform must bind each element to the lambda
+// variable and the struct body must reference that variable, not the outer
+// column. Regression for the "json_extract string index" / wrong-column bug.
+func TestDuckDBRepackObjectTopLevelList(t *testing.T) {
+	e := &DuckDB{}
+	objDef := &ast.Definition{Name: "arg", Fields: []*ast.FieldDefinition{
+		{Name: "col_a"}, {Name: "col_b"}, {Name: "col_c"},
+	}}
+	field := &ast.Field{
+		Alias:      "args",
+		Name:       "args",
+		Definition: &ast.FieldDefinition{Name: "args", Type: &ast.Type{Elem: &ast.Type{NamedType: "arg"}}},
+		SelectionSet: ast.SelectionSet{
+			&ast.Field{
+				Alias: "col_a", Name: "col_a", ObjectDefinition: objDef,
+				Definition: &ast.FieldDefinition{Name: "col_a", Type: &ast.Type{NamedType: "String"}},
+			},
+			&ast.Field{
+				Alias: "col_b", Name: "col_b", ObjectDefinition: objDef,
+				Definition: &ast.FieldDefinition{Name: "col_b", Type: &ast.Type{NamedType: "String"}},
+			},
+		},
+	}
+	got := e.RepackObject("_objects.args", field)
+	want := "list_transform(_objects.args, lambda _value: {col_a: _value['col_a'],col_b: _value['col_b']})"
+	if got != want {
+		t.Errorf("RepackObject top-level list\n  want %s\n  got  %s", want, got)
+	}
+}
