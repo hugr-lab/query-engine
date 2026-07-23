@@ -198,7 +198,8 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.functi
     args        {{ if isPostgres }}JSONB{{ else }}STRUCT(name VARCHAR, "type" VARCHAR, description VARCHAR, "default" VARCHAR, arg_default VARCHAR, deprecation_reason VARCHAR)[]{{ end }},
     properties  {{ if isPostgres }}JSONB{{ else }}STRUCT(
         "function" STRUCT(name VARCHAR, sql VARCHAR, skip_null_arg BOOLEAN, is_table BOOLEAN, json_cast BOOLEAN),
-        cache STRUCT(ttl VARCHAR, "key" VARCHAR, tags VARCHAR[])
+        cache STRUCT(ttl VARCHAR, "key" VARCHAR, tags VARCHAR[]),
+        geometry STRUCT("type" VARCHAR, srid BIGINT)
     ){{ end }},
     deprecation_reason VARCHAR,
     description VARCHAR,
