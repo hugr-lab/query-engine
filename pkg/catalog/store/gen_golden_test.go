@@ -55,12 +55,23 @@ var genParityNames = []string{
 	"tags_mut_input_data",
 	"order_tags_mut_input_data",
 	"order_tags_mut_data",
+	// Ш4.3 — aggregation family: scalar/extra twins, relation members both
+	// directions + m2m, @join virtual twins, bucket, sub-aggregation depth 1-2.
+	"_orders_aggregation",
+	"_orders_aggregation_bucket",
+	"_orders_aggregation_sub_aggregation",
+	"_orders_aggregation_sub_aggregation_sub_aggregation",
+	"_customers_aggregation",
+	"_customers_aggregation_sub_aggregation",
+	"_tags_aggregation",
+	"_order_tags_aggregation",
+	"_sales_by_country_aggregation",
+	"_sales_by_country_aggregation_bucket",
 }
 
 // genPendingNames — names the reference generates that the store must learn
 // to serve, keyed by the sub-step that delivers them.
 var genPendingNames = map[string][]string{
-	"Ш4.3 agg":    {"_orders_aggregation", "_orders_aggregation_bucket"},
 	"Ш4.6 shared":     {"_join", "_join_aggregation"},
 	"Ш4.7 roots":      {"_module_sales_query", "_module_sales_mutation", "Query", "Mutation"},
 }
@@ -103,6 +114,82 @@ func TestGenGoldenHarness(t *testing.T) {
 	// Negative parity: names the compiler does NOT generate must stay absent
 	// on the store side too (views take no mutation inputs).
 	for _, name := range []string{"sales_by_country_mut_input_data", "sales_by_country_mut_data"} {
+		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
+		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
+	}
+}
+
+// genStructSchema exercises the nested-structural branches: struct fields on
+// a table (single / list / scalar list), struct-in-struct nesting, and the
+// residual passthrough types themselves.
+const genStructSchema = `
+type products @module(name: "sales") @table(name: "products") {
+  id: Int! @pk
+  name: String!
+  specs: ProductSpecs
+  variants: [ProductVariant]
+  tags: [String]
+}
+
+type ProductSpecs {
+  weight: Float
+  size: BoxSize
+  labels: [String]
+}
+
+type BoxSize {
+  w: Float
+  h: Float
+}
+
+type ProductVariant {
+  sku: String!
+  price: Float
+}
+`
+
+// TestGenGoldenStructs pins the struct-nesting parity: table filter/inputs
+// reference the nested names, struct filters stay scalar-only, struct inputs
+// nest Object members, and the passthrough types round-trip.
+func TestGenGoldenStructs(t *testing.T) {
+	store, ctx := storeFor(t, genStructSchema)
+	ref := goldenRef(t, "test", genStructSchema)
+
+	assertGenParity(t, ctx, store, ref, []string{
+		// Residual passthrough types (stored SDL vs compiler passthrough).
+		"ProductSpecs",
+		"BoxSize",
+		"ProductVariant",
+		// Table filter nests struct members; struct filters are scalar-only
+		// (size: BoxSize_filter must NOT appear inside ProductSpecs_filter).
+		"products_filter",
+		"ProductSpecs_filter",
+		"BoxSize_filter",
+		"ProductVariant_filter",
+		"ProductVariant_list_filter",
+		// Mutation inputs nest Object members on both levels.
+		"products_mut_input_data",
+		"products_mut_data",
+		"ProductSpecs_mut_input_data",
+		"ProductSpecs_mut_data",
+		"BoxSize_mut_input_data",
+		"ProductVariant_mut_input_data",
+		// Aggregations: table agg nests struct members, struct aggs are
+		// scalar+nested, struct sub-aggs drop the nested members.
+		"_products_aggregation",
+		"_products_aggregation_bucket",
+		"_products_aggregation_sub_aggregation",
+		"_ProductSpecs_aggregation",
+		"_ProductSpecs_aggregation_sub_aggregation",
+		"_BoxSize_aggregation",
+		"_ProductVariant_aggregation",
+	})
+
+	// Struct aggregations take no bucket and stop at sub-depth 1.
+	for _, name := range []string{
+		"_ProductSpecs_aggregation_bucket",
+		"_ProductSpecs_aggregation_sub_aggregation_sub_aggregation",
+	} {
 		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
 		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
 	}

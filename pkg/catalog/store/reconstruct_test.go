@@ -16,6 +16,12 @@ import (
 // writtenStore boots an in-memory CoreDB, writes the collect fixture and returns
 // the store — the read-side test base.
 func writtenStore(t *testing.T) (*Store, context.Context) {
+	return storeFor(t, collectTestSchema)
+}
+
+// storeFor writes a fixture schema through the partial-compile → collect →
+// write path into a fresh in-memory CoreDB and returns the reading Store.
+func storeFor(t *testing.T, schema string) (*Store, context.Context) {
 	t.Helper()
 	ctx := context.Background()
 	pool, err := db.NewPool("")
@@ -24,7 +30,7 @@ func writtenStore(t *testing.T) (*Store, context.Context) {
 	require.NoError(t, coredb.New(coredb.Config{VectorSize: 8}).Attach(ctx, pool))
 	store, err := New(ctx, pool, Config{VecSize: 8}, nil)
 	require.NoError(t, err)
-	d := collect(ctx, partialSource(t, "test", collectTestSchema), "test")
+	d := collect(ctx, partialSource(t, "test", schema), "test")
 	_, err = store.writeSource(ctx, d, SourceState{Name: "test", Version: "v1", Engine: "duckdb", Loaded: true})
 	require.NoError(t, err)
 	return store, ctx

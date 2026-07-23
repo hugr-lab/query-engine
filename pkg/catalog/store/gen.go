@@ -113,6 +113,7 @@ type derivedRule struct {
 // derivedRules in match order — ONE place: a more specific suffix registers
 // before its overlap (X_list_filter also parses as X_list + _filter).
 var derivedRules = []derivedRule{
+	aggregationRule,
 	listFilterRule,
 	filterRule,
 	mutInputDataRule,
