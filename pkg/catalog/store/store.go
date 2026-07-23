@@ -3,11 +3,21 @@ package store
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 )
+
+// readErr logs a read-side DB failure. The catalog.Provider read surface has
+// no error channel (nil covers both "absent" and "failed"), so readers log
+// here and return EMPTY — never a partial result that would silently truncate
+// a generated type. Distinguishable propagation comes with the read cache /
+// CanServe step.
+func readErr(op string, err error) {
+	slog.Error("catalog store: read failed", "op", op, "error", err)
+}
 
 // Embedder creates embedding vectors for annotation seeding at insert time.
 // Same method set as the engine's embedding source (pkg/catalog/db.Embedder) —

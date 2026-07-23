@@ -188,3 +188,32 @@ func dirArg(d *ast.Directive, name string) string {
 	}
 	return ""
 }
+
+// TestParseValueRawComposite pins the Value.String() ↔ parseValueRaw round
+// trip for composite literals: list/object defaults must come back as real
+// Kind/Children trees, not a single enum-kinded scalar.
+func TestParseValueRawComposite(t *testing.T) {
+	list := parseValueRaw(`[1,2]`)
+	require.Equal(t, ast.ListValue, list.Kind)
+	require.Len(t, list.Children, 2)
+	assert.Equal(t, "1", list.Children[0].Value.Raw)
+	assert.Equal(t, ast.IntValue, list.Children[0].Value.Kind)
+
+	obj := parseValueRaw(`{a:1,b:"x",c:[true]}`)
+	require.Equal(t, ast.ObjectValue, obj.Kind)
+	require.Len(t, obj.Children, 3)
+	assert.Equal(t, "a", obj.Children[0].Name)
+	assert.Equal(t, ast.StringValue, obj.Children[1].Value.Kind)
+	assert.Equal(t, "x", obj.Children[1].Value.Raw)
+	c := obj.Children[2].Value
+	require.Equal(t, ast.ListValue, c.Kind)
+	assert.Equal(t, ast.BooleanValue, c.Children[0].Value.Kind)
+
+	// String() of the parsed tree reproduces the stored text (inverse pair).
+	assert.Equal(t, `[1,2]`, list.String())
+
+	// Unparseable composite text degrades to the raw-enum fallback.
+	bad := parseValueRaw(`[1,`)
+	assert.Equal(t, ast.EnumValue, bad.Kind)
+	assert.Equal(t, `[1,`, bad.Raw)
+}

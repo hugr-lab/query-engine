@@ -304,3 +304,29 @@ func TestCollectExtensionFields(t *testing.T) {
 	assert.NotContains(t, dB.moduleSources, pkKey("sales", "B"))
 	assert.Empty(t, dB.dataObjects)
 }
+
+// TestCollectFieldReferencesCompositePK mirrors the compiler's PK-default rule
+// (gen_references.go): an argless @field_references(field:) defaults to the
+// target PK only when the key is a SINGLE column — a composite-PK target
+// yields no relation instead of a fabricated single-leg join.
+func TestCollectFieldReferencesCompositePK(t *testing.T) {
+	ctx := context.Background()
+	const schema = `type parts @table(name: "parts") {
+  vendor_id: Int! @pk
+  part_no: Int! @pk
+  name: String
+}
+
+type shipments @table(name: "shipments") {
+  id: Int! @pk
+  part_no: Int @field_references(references_name: "parts")
+  vendor_ref: Int @field_references(references_name: "parts", field: "vendor_id")
+}`
+	d := collect(ctx, partialSource(t, "test", schema), "test")
+	assert.NotContains(t, d.relations, pkKey("shipments", "parts_part_no"),
+		"composite PK target: no default field, relation dropped")
+	require.Contains(t, d.relations, pkKey("shipments", "parts_vendor_ref"),
+		"explicit field: unaffected by the composite PK")
+	assert.Equal(t, []string{"vendor_id"},
+		d.relations[pkKey("shipments", "parts_vendor_ref")].DestinationKeys)
+}

@@ -68,7 +68,11 @@ func resolveDataObject(ctx context.Context, s *Store, name string) *ast.Definiti
 // field arguments the passthrough applies before storing its compiled copy.
 func (s *Store) reconstructType(ctx context.Context, name string) *ast.Definition {
 	def, dataSource, err := s.readType(ctx, name)
-	if err != nil || def == nil {
+	if err != nil {
+		readErr("type", err)
+		return nil
+	}
+	if def == nil {
 		return nil
 	}
 	applyScalarFieldArguments(def)

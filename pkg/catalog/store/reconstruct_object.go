@@ -115,10 +115,11 @@ func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Defi
 }
 
 // lastListReturningModuleFunction returns the name of the LAST (module, name)
-// ordered module function (kind=function, module != '') returning a list of
+// ordered module function (kind=function, module != ”) returning a list of
 // the object — the one whose aggregation names win the def markers.
 func (s *Store) lastListReturningModuleFunction(ctx context.Context, typeName string) string {
-	variants := `'[` + typeName + `]', '[` + typeName + `!]', '[` + typeName + `]!', '[` + typeName + `!]!'`
+	variants := lit("["+typeName+"]") + `, ` + lit("["+typeName+"!]") + `, ` +
+		lit("["+typeName+"]!") + `, ` + lit("["+typeName+"!]!")
 	names := s.queryNames(ctx, `SELECT f.name FROM core.catalog.functions f`+
 		activeMeta("m", "f.data_source")+`
 		WHERE f.kind = 'function' AND f.module <> '' AND f.returns IN (`+variants+`)
@@ -239,12 +240,14 @@ type activeSource struct {
 func (s *Store) activeSources(ctx context.Context) map[string]activeSource {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
+		readErr("sources", err)
 		return nil
 	}
 	defer conn.Close()
 	rows, err := conn.Query(ctx, `SELECT data_source, engine, read_only, as_module FROM core.catalog.data_source_meta
 		WHERE loaded AND NOT disabled AND NOT suspended`)
 	if err != nil {
+		readErr("sources", err)
 		return nil
 	}
 	defer rows.Close()
@@ -253,9 +256,14 @@ func (s *Store) activeSources(ctx context.Context) map[string]activeSource {
 		var source string
 		var meta activeSource
 		if err := rows.Scan(&source, &meta.Engine, &meta.ReadOnly, &meta.AsModule); err != nil {
-			return out
+			readErr("sources", err)
+			return nil
 		}
 		out[source] = meta
+	}
+	if err := rows.Err(); err != nil {
+		readErr("sources", err)
+		return nil
 	}
 	return out
 }
@@ -274,6 +282,7 @@ func (s *Store) activeEngines(ctx context.Context) map[string]string {
 func (s *Store) readDataObject(ctx context.Context, name string) (*dataObject, bool) {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
+		readErr("data_object", err)
 		return nil, false
 	}
 	defer conn.Close()
@@ -285,6 +294,9 @@ func (s *Store) readDataObject(ctx context.Context, name string) (*dataObject, b
 		WHERE o.name = `+lit(name)).
 		Scan(&r.Name, &r.OriginalName, &r.DataSource, &r.Module, &r.Kind, &props, &desc)
 	if err != nil {
+		if err != sql.ErrNoRows {
+			readErr("data_object", err)
+		}
 		return nil, false
 	}
 	r.Description = desc.String
@@ -297,6 +309,7 @@ func (s *Store) readDataObject(ctx context.Context, name string) (*dataObject, b
 func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
+		readErr("fields", err)
 		return nil
 	}
 	defer conn.Close()
@@ -306,6 +319,7 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 		FROM core.catalog.fields f`+activeMeta("m", "f.data_source")+`
 		WHERE f.type_name = `+lit(typeName)+` ORDER BY f.ordinal, f.name`)
 	if err != nil {
+		readErr("fields", err)
 		return nil
 	}
 	defer rows.Close()
@@ -314,7 +328,8 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 		f := field{TypeName: typeName, Properties: &fieldProperties{}}
 		var props, args, dependency, deprecated, desc sql.NullString
 		if err := rows.Scan(&f.Name, &f.FieldType, &props, &args, &f.DataSource, &dependency, &f.IsPK, &f.Ordinal, &deprecated, &desc); err != nil {
-			return out
+			readErr("fields", err)
+			return nil
 		}
 		f.DependencyDataSource = dependency.String
 		f.DeprecationReason = deprecated.String
@@ -326,6 +341,10 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 			_ = json.Unmarshal([]byte(args.String), &f.Args)
 		}
 		out = append(out, &f)
+	}
+	if err := rows.Err(); err != nil {
+		readErr("fields", err)
+		return nil
 	}
 	return out
 }

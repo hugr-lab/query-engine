@@ -232,6 +232,10 @@ func collectObjectReferences(d *desired, source, owner string, def *ast.Definiti
 		if ref == nil || ref.ReferencesName == "" {
 			continue
 		}
+		// Compiler mirror (gen_references.go): keyless references emit nothing.
+		if len(ref.SourceFields()) == 0 || len(ref.ReferencesFields()) == 0 {
+			continue
+		}
 		name := ref.Name
 		if name == "" {
 			name = ref.ReferencesName
@@ -239,8 +243,9 @@ func collectObjectReferences(d *desired, source, owner string, def *ast.Definiti
 				name += "_" + sf[0]
 			}
 		}
-		// Explicit references_query: "" suppresses the back navigation —
-		// default only when the argument is ABSENT.
+		// An explicit references_query: "" is stored as declared (verbatim
+		// @field_references re-emission fidelity); generation collapses "" to
+		// the default. Only an ABSENT argument is normalized here.
 		refQuery := ref.ReferencesQuery
 		if dir.Arguments.ForName(base.ArgReferencesQuery) == nil {
 			refQuery = source
@@ -286,8 +291,9 @@ func collectFieldReferences(ctx context.Context, defs base.DefinitionsSource, d 
 		if query == "" {
 			query = refName
 		}
-		// An EXPLICIT references_query: "" suppresses the back navigation and
-		// must survive as-is; only an ABSENT argument takes the default.
+		// An EXPLICIT references_query: "" survives as declared (verbatim
+		// re-emission fidelity; generation collapses "" to the default) —
+		// only an ABSENT argument is normalized here.
 		refQuery := base.DirectiveArgString(dir, base.ArgReferencesQuery)
 		if dir.Arguments.ForName(base.ArgReferencesQuery) == nil {
 			refQuery = source
@@ -318,18 +324,26 @@ func putRelation(d *desired, row *relation) {
 	}
 }
 
-// targetPrimaryKey returns the single @pk field of a referenced object, or "".
+// targetPrimaryKey returns the single @pk field of a referenced object, or ""
+// — the compiler defaults @field_references(field:) to the target PK only when
+// the key is a SINGLE column (gen_references.go); a composite PK yields no
+// default and the relation is dropped.
 func targetPrimaryKey(ctx context.Context, defs base.DefinitionsSource, typeName string) string {
 	def := defs.ForName(ctx, typeName)
 	if def == nil {
 		return ""
 	}
+	pk := ""
 	for _, f := range def.Fields {
-		if f.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil {
-			return f.Name
+		if f.Directives.ForName(base.FieldPrimaryKeyDirectiveName) == nil {
+			continue
 		}
+		if pk != "" {
+			return ""
+		}
+		pk = f.Name
 	}
-	return ""
+	return pk
 }
 
 // collectModuleRoot extracts the callable members of a module root type

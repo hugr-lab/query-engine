@@ -207,7 +207,7 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 	}
 
 	appendRelationAggFields(ctx, g, row, def, 0)
-	appendExtraAggFields(fields, def, 0)
+	appendExtraAggFields(fields, def)
 
 	// @embeddings objects aggregate the query distance too (EmbeddingsRule).
 	if row.Properties != nil && row.Properties.Embeddings != nil {
@@ -320,9 +320,10 @@ func appendRelationAggFields(ctx context.Context, g *genContext, row *dataObject
 	}
 }
 
-// appendExtraAggFields adds ExtraFieldProvider twins: at depth 0 the extra
-// field's Aggregatable type, at depth 1 its SubAggregation variant.
-func appendExtraAggFields(fields []*field, def *ast.Definition, depth int) {
+// appendExtraAggFields adds ExtraFieldProvider twins with the extra field's
+// Aggregatable type. Base aggregation only — sub-aggregations map extras via
+// the scalar field mapping (buildObjectSubAggregation).
+func appendExtraAggFields(fields []*field, def *ast.Definition) {
 	for _, f := range fields {
 		if f.Name == "_stub" {
 			continue
@@ -348,11 +349,6 @@ func appendExtraAggFields(fields []*field, def *ast.Definition, depth int) {
 			continue
 		}
 		typeName := a.AggregationTypeName()
-		if depth > 0 {
-			if typeName = types.SubAggregationTypeName(typeName); typeName == "" {
-				continue
-			}
-		}
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
 			Name:       extraField.Name,
 			Type:       ast.NamedType(typeName, reconPos),

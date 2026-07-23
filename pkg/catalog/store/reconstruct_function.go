@@ -11,10 +11,8 @@ import (
 // reconstructFunction rebuilds a stored function / mutation / subscription as
 // the root-field definition the module-root synthesis places on its module
 // root. Directives come from the function pair table (pairs_function.go),
-// arguments from emitFunctionArgs (@arg_default / @deprecated re-attached).
-//
-// Still to come (generation layer): @catalog(name, engine) from
-// data_source_meta.
+// arguments from emitFunctionArgs (@arg_default / @deprecated re-attached);
+// @catalog(name, engine) is attached by the root rules (gen_roots.go).
 func reconstructFunction(ctx context.Context, s *Store, module, name string) *ast.FieldDefinition {
 	row, ok := s.readFunction(ctx, module, name)
 	if !ok {
@@ -38,6 +36,7 @@ func functionField(row *function) *ast.FieldDefinition {
 func (s *Store) readFunction(ctx context.Context, module, name string) (*function, bool) {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
+		readErr("function", err)
 		return nil, false
 	}
 	defer conn.Close()
@@ -46,6 +45,9 @@ func (s *Store) readFunction(ctx context.Context, module, name string) (*functio
 		FROM core.catalog.functions f`+activeMeta("m", "f.data_source")+`
 		WHERE f.module = `+lit(module)+` AND f.name = `+lit(name)).Scan)
 	if err != nil {
+		if err != sql.ErrNoRows {
+			readErr("function", err)
+		}
 		return nil, false
 	}
 	return row, true

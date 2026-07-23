@@ -81,7 +81,7 @@ var navFieldsRule = fieldRule{
 			for _, leg := range g.s.relationsBySource(ctx, t.row.Name) {
 				def.Fields = append(def.Fields, &ast.FieldDefinition{
 					Name: leg.SourceField,
-					Type: &ast.Type{NamedType: leg.Destination},
+					Type: ast.NamedType(leg.Destination, reconPos),
 					Arguments: ast.ArgumentDefinitionList{
 						{Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", reconPos), Position: reconPos},
 					},

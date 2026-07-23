@@ -178,6 +178,9 @@ func (s *Store) moduleKindSources(ctx context.Context, module string, kind sdl.M
 
 // copyRootStub deep-copies a static root stub far enough that appended
 // members and per-field directive attributions never touch the shared AST.
+// CAUTION: field Arguments slices and the *ast.Directive / *ast.Type values
+// are still SHARED with the static prelude — root rules may append to the
+// copied lists but must never mutate those shared nodes in place.
 func copyRootStub(stub *ast.Definition) *ast.Definition {
 	if stub == nil {
 		return nil

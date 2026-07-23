@@ -26,8 +26,9 @@ import (
 // rules, storage in store), and that split keeps the move mechanical.
 
 // genContext is the narrow read surface the generation registries work
-// against: memoized lookups over the Store's read models for one resolution
-// request.
+// against: lookups over the Store's read models for one resolution request.
+// No memoization yet — every lookup hits CoreDB; the per-request cache
+// arrives with the read-cache step (schemaCache port).
 type genContext struct {
 	s *Store
 }
@@ -118,9 +119,6 @@ var derivedRules = []derivedRule{
 
 // resolveDerivedType (5) generates a derived type from its base data object.
 func resolveDerivedType(ctx context.Context, s *Store, name string) *ast.Definition {
-	if len(derivedRules) == 0 {
-		return nil
-	}
 	g := s.genCtx()
 	for i := range derivedRules {
 		r := &derivedRules[i]

@@ -63,11 +63,13 @@ func (s *Store) relationsByDestination(ctx context.Context, destination string) 
 func (s *Store) readRelations(ctx context.Context, query string) []*relationEdge {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
+		readErr("relations", err)
 		return nil
 	}
 	defer conn.Close()
 	rows, err := conn.Query(ctx, query)
 	if err != nil {
+		readErr("relations", err)
 		return nil
 	}
 	defer rows.Close()
@@ -78,7 +80,8 @@ func (s *Store) readRelations(ctx context.Context, query string) []*relationEdge
 		if err := rows.Scan(&e.Source, &e.Name, &e.Kind, &e.Destination, &m2mObject,
 			&srcKeys, &dstKeys, &srcField, &srcDesc, &dstField, &dstDesc,
 			&e.FieldDeclared, &e.DataSource, &e.m2mJunction); err != nil {
-			return out
+			readErr("relations", err)
+			return nil
 		}
 		e.M2MObject = m2mObject.String
 		e.SourceField = srcField.String
@@ -92,6 +95,10 @@ func (s *Store) readRelations(ctx context.Context, query string) []*relationEdge
 			_ = json.Unmarshal([]byte(dstKeys.String), &e.DestinationKeys)
 		}
 		out = append(out, &e)
+	}
+	if err := rows.Err(); err != nil {
+		readErr("relations", err)
+		return nil
 	}
 	return out
 }

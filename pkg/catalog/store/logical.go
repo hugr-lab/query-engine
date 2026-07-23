@@ -131,11 +131,13 @@ func (s *Store) readChildModuleInfos(ctx context.Context, parent string) []*modu
 func (s *Store) queryModuleInfos(ctx context.Context, query string) []*moduleInfoRow {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
+		readErr("modules", err)
 		return nil
 	}
 	defer conn.Close()
 	rows, err := conn.Query(ctx, query)
 	if err != nil {
+		readErr("modules", err)
 		return nil
 	}
 	defer rows.Close()
@@ -145,7 +147,8 @@ func (s *Store) queryModuleInfos(ctx context.Context, query string) []*moduleInf
 		var desc sql.NullString
 		var q, mut, fn, mfn, sub sql.NullBool
 		if err := rows.Scan(&r.Name, &desc, &q, &mut, &fn, &mfn, &sub); err != nil {
-			return out
+			readErr("modules", err)
+			return nil
 		}
 		if !q.Valid && r.Name == "" {
 			continue // empty root aggregate — no active rows at all
@@ -157,6 +160,10 @@ func (s *Store) queryModuleInfos(ctx context.Context, query string) []*moduleInf
 		r.HasMutFunctions = mfn.Bool
 		r.HasSubscriptions = sub.Bool
 		out = append(out, &r)
+	}
+	if err := rows.Err(); err != nil {
+		readErr("modules", err)
+		return nil
 	}
 	return out
 }
@@ -283,7 +290,7 @@ func (s *Store) Relations(ctx context.Context, object string) iter.Seq[*catalog.
 						Name:            r.Name,
 						Direction:       catalog.RelationForward,
 						Kind:            catalog.RelationM2M,
-						FieldName:       r.DestinationField,
+						FieldName:       orDefault(r.DestinationField, r.Source),
 						Description:     r.DestinationFieldDescription,
 						DataObject:      co.Destination,
 						Through:         r.Source,
@@ -407,6 +414,7 @@ func (s *Store) dataObjectExists(ctx context.Context, name string) bool {
 func (s *Store) readFunctions(ctx context.Context, module string) []*function {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
+		readErr("functions", err)
 		return nil
 	}
 	defer conn.Close()
@@ -415,6 +423,7 @@ func (s *Store) readFunctions(ctx context.Context, module string) []*function {
 		FROM core.catalog.functions f`+activeMeta("m", "f.data_source")+`
 		WHERE f.module = `+lit(module)+` ORDER BY f.name`)
 	if err != nil {
+		readErr("functions", err)
 		return nil
 	}
 	defer rows.Close()
@@ -422,9 +431,14 @@ func (s *Store) readFunctions(ctx context.Context, module string) []*function {
 	for rows.Next() {
 		row, err := scanFunction(rows.Scan)
 		if err != nil {
-			return out
+			readErr("functions", err)
+			return nil
 		}
 		out = append(out, row)
+	}
+	if err := rows.Err(); err != nil {
+		readErr("functions", err)
+		return nil
 	}
 	return out
 }
@@ -432,12 +446,14 @@ func (s *Store) readFunctions(ctx context.Context, module string) []*function {
 func (s *Store) readSourceTypes(ctx context.Context) []*sourceType {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
+		readErr("types", err)
 		return nil
 	}
 	defer conn.Close()
 	rows, err := conn.Query(ctx, `SELECT t.name, t.kind, t.data_source, t.module, t.definition, t.description
 		FROM core.catalog.types t`+activeMeta("m", "t.data_source")+` ORDER BY t.name`)
 	if err != nil {
+		readErr("types", err)
 		return nil
 	}
 	defer rows.Close()
@@ -446,10 +462,15 @@ func (s *Store) readSourceTypes(ctx context.Context) []*sourceType {
 		var r sourceType
 		var desc sql.NullString
 		if err := rows.Scan(&r.Name, &r.Kind, &r.DataSource, &r.Module, &r.Definition, &desc); err != nil {
-			return out
+			readErr("types", err)
+			return nil
 		}
 		r.Description = desc.String
 		out = append(out, &r)
+	}
+	if err := rows.Err(); err != nil {
+		readErr("types", err)
+		return nil
 	}
 	return out
 }
@@ -457,11 +478,13 @@ func (s *Store) readSourceTypes(ctx context.Context) []*sourceType {
 func (s *Store) queryNames(ctx context.Context, query string) []string {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
+		readErr("names", err)
 		return nil
 	}
 	defer conn.Close()
 	rows, err := conn.Query(ctx, query)
 	if err != nil {
+		readErr("names", err)
 		return nil
 	}
 	defer rows.Close()
@@ -469,9 +492,14 @@ func (s *Store) queryNames(ctx context.Context, query string) []string {
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return out
+			readErr("names", err)
+			return nil
 		}
 		out = append(out, name)
+	}
+	if err := rows.Err(); err != nil {
+		readErr("names", err)
+		return nil
 	}
 	return out
 }

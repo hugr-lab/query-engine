@@ -51,7 +51,9 @@ func (s SourceState) storedVersion() string { return writerFormatVersion + "|" +
 // free). Otherwise it rewrites the source's rows wholesale in a single
 // transaction — delete by attribution, insert the collected rows, merge the
 // module set, prune orphan modules — and stamps the meta. Returns whether the
-// rows were rewritten (the caller scopes cache invalidation to it).
+// rows were rewritten (the caller scopes cache invalidation to it). NOTE:
+// under an ambient context transaction pool.WithTx JOINS it (nesting counter),
+// so atomicity then spans the CALLER's transaction, not this call alone.
 func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) (bool, error) {
 	stored, ok, err := s.sourceVersion(ctx, state.Name)
 	if err != nil {
@@ -136,7 +138,10 @@ func (s *Store) deleteSource(ctx context.Context, dataSource string) error {
 		return err
 	}
 	committed = true
-	return s.pool.Commit(txCtx)
+	if err := s.pool.Commit(txCtx); err != nil {
+		return fmt.Errorf("catalog delete %s: %w", dataSource, err)
+	}
+	return nil
 }
 
 // setFlags mirrors a source's load / disable / suspend flags into the meta
@@ -226,9 +231,11 @@ func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) erro
 		r := d.relations[k]
 		rels = append(rels, []any{r.Source, r.Name, r.Kind, r.Destination, nilIfEmpty(r.M2MObject),
 			jsonOrNil(r.SourceKeys), jsonOrNil(r.DestinationKeys), nilIfEmpty(r.SourceField),
-			// destination_field keeps the EMPTY string: an explicit
-			// references_query: "" (suppressed back navigation) must stay
-			// distinguishable from an absent value.
+			// destination_field keeps the EMPTY string so the verbatim
+			// @field_references re-emission (fieldReferencesDirective) can
+			// reproduce an explicit references_query: "" as declared.
+			// Semantically "" means the DEFAULT — generation collapses it
+			// via orDefault everywhere.
 			nilIfEmpty(r.SourceFieldDescription), r.DestinationField,
 			nilIfEmpty(r.DestinationFieldDescription), r.FieldDeclared, r.DataSource})
 	}

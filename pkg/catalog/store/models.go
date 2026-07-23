@@ -125,6 +125,9 @@ type sourceType struct {
 }
 
 // dataSourceDependency is one row of catalog.data_source_dependencies.
+// NOT populated yet: cross-source dependency tracking (extension sources
+// suspending with their base) is wired by the CatalogManager step; the writer
+// already deletes the rows so unregister stays complete once it lands.
 type dataSourceDependency struct {
 	DataSource string
 	DependsOn  string

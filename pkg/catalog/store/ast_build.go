@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/parser"
 )
 
 // AST builders for the read side: the emit half of the directive↔bag pairs
@@ -130,7 +131,10 @@ func parseFieldType(s string) *ast.Type {
 }
 
 // parseValueRaw turns a stored SDL value text (function argument defaults kept
-// via Value.String()) back into an ast.Value with a best-effort kind.
+// via Value.String()) back into an ast.Value. Scalars map directly; list and
+// object literals go through the real gqlparser (wrapped as an input-field
+// default) so the Kind/Children tree round-trips exactly — Value.String() and
+// the parser are inverses.
 func parseValueRaw(s string) *ast.Value {
 	switch {
 	case s == "null":
@@ -142,6 +146,11 @@ func parseValueRaw(s string) *ast.Value {
 			return &ast.Value{Raw: unq, Kind: ast.StringValue, Position: reconPos}
 		}
 		return &ast.Value{Raw: s, Kind: ast.StringValue, Position: reconPos}
+	case strings.HasPrefix(s, "[") || strings.HasPrefix(s, "{"):
+		if v := parseValueLiteral(s); v != nil {
+			return v
+		}
+		return &ast.Value{Raw: s, Kind: ast.EnumValue, Position: reconPos}
 	default:
 		if _, err := strconv.ParseInt(s, 10, 64); err == nil {
 			return &ast.Value{Raw: s, Kind: ast.IntValue, Position: reconPos}
@@ -151,4 +160,17 @@ func parseValueRaw(s string) *ast.Value {
 		}
 		return &ast.Value{Raw: s, Kind: ast.EnumValue, Position: reconPos}
 	}
+}
+
+// parseValueLiteral parses a composite SDL value literal with gqlparser by
+// wrapping it as an input-field default; nil when the text does not parse.
+func parseValueLiteral(s string) *ast.Value {
+	doc, err := parser.ParseSchema(&ast.Source{
+		Name:  "catalog:value",
+		Input: "input _V { v: JSON = " + s + " }",
+	})
+	if err != nil || len(doc.Definitions) == 0 || len(doc.Definitions[0].Fields) == 0 {
+		return nil
+	}
+	return doc.Definitions[0].Fields[0].DefaultValue
 }

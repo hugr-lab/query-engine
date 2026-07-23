@@ -510,6 +510,8 @@ type entity_field_properties {
 type entity_function_properties {
   function: entity_function_binding
   cache: entity_cache_settings
+  "Geometry return metadata (@geometry_info)"
+  geometry: entity_geometry_info
 }
 
 "One ordered argument of a function"
@@ -543,7 +545,8 @@ type entity_cache_settings {
 }
 
 type entity_at_pin {
-  version: Int
+  "Snapshot / version id (@at(version:)) — 64-bit (Iceberg snapshot ids)"
+  version: BigInt
   timestamp: String
 }
 
@@ -626,11 +629,15 @@ type entity_modules
   vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
 
-"Module → contributing data sources (closure over submodules)"
+"Module → contributing data sources (closure over submodules, active sources only)"
 type entity_module_data_sources
   @view(name: "entity_module_data_sources", sql: """
-    SELECT md.module, md.data_source
+    SELECT md.module, md.data_source,
+      md.has_data_objects, md.has_tables, md.has_functions,
+      md.has_mut_functions, md.has_subscriptions
     FROM [catalog.module_data_sources] md
+      JOIN [catalog.data_source_meta] ms
+        ON ms.data_source = md.data_source AND ms.loaded AND NOT ms.disabled AND NOT ms.suspended
   """)
   {
   module: String! @pk @field_references(
@@ -643,6 +650,11 @@ type entity_module_data_sources
     references_description: "Data sources contributing to this module and its submodules"
   )
   data_source: String! @pk
+  has_data_objects: Boolean!
+  has_tables: Boolean!
+  has_functions: Boolean!
+  has_mut_functions: Boolean!
+  has_subscriptions: Boolean!
 }
 
 "Logical-model data objects (active data sources only)"
@@ -677,7 +689,7 @@ type entity_data_objects
 type entity_fields
   @view(name: "entity_fields", sql: """
     SELECT f.type_name, f.name, f.field_type,
-      f.properties,
+      f.properties, f.args,
       f.data_source, f.dependency_data_source, f.is_pk, f.ordinal,
       f.deprecation_reason,
       COALESCE(a.description, f.description) AS description,
@@ -702,6 +714,8 @@ type entity_fields
   name: String! @pk
   field_type: String!
   properties: entity_field_properties
+  "Declared SDL arguments of the field (@table_function_call_join call parameters)"
+  args: JSON
   data_source: String!
   dependency_data_source: String
   is_pk: Boolean!
@@ -717,7 +731,7 @@ type entity_fields
 type entity_relations
   @view(name: "entity_relations", sql: """
     SELECT r.source, r.name, r.kind, r.destination, r.m2m_object,
-      r.source_keys, r.destination_keys, r.data_source,
+      r.source_keys, r.destination_keys, r.field_declared, r.data_source,
       r.source_field,
       COALESCE(asrc.description, r.source_field_description) AS source_field_description,
       r.destination_field,
@@ -737,6 +751,8 @@ type entity_relations
   m2m_object: String
   source_keys: JSON
   destination_keys: JSON
+  "Declared via @field_references on the source column (vs object-level @references)"
+  field_declared: Boolean!
   data_source: String!
   source_field: String
   source_field_description: String

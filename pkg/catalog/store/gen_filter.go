@@ -271,7 +271,11 @@ func appendFilterLogicalOps(def *ast.Definition, name string) {
 // (without @catalog) and its owning data source.
 func (g *genContext) structType(ctx context.Context, name string) (*ast.Definition, string) {
 	td, ds, err := g.s.readType(ctx, name)
-	if err != nil || td == nil || td.Kind != ast.Object {
+	if err != nil {
+		readErr("type", err)
+		return nil, ""
+	}
+	if td == nil || td.Kind != ast.Object {
 		return nil, ""
 	}
 	return td, ds
@@ -315,8 +319,9 @@ func fieldReferencesDirective(rel *relation) *ast.Directive {
 	if rel.SourceField != "" && rel.SourceField != rel.Destination {
 		d.Arguments = append(d.Arguments, strArg(base.ArgQuery, rel.SourceField))
 	}
-	// An explicit references_query: "" (suppressed back navigation) is part
-	// of the declared set and re-emits as the empty string.
+	// An explicit references_query: "" is part of the declared set and
+	// re-emits verbatim (it does NOT suppress the back navigation —
+	// generation treats "" as the default).
 	if rel.DestinationField != rel.Source {
 		d.Arguments = append(d.Arguments, strArg(base.ArgReferencesQuery, rel.DestinationField))
 	}

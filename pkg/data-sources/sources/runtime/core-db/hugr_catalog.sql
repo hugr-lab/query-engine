@@ -44,9 +44,10 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.data_s
     -- capability): it gates all mutation generation and the X_mut_* types.
     engine       VARCHAR NOT NULL,
     read_only    BOOLEAN NOT NULL,
-    -- prefix / as_module are compile options that shape names at read time:
-    -- prefix renames source types (with @original_name preserved), as_module
-    -- makes the source a module and drives module query/mutation field naming.
+    -- prefix is recorded for PROVENANCE only -- entity names are stored
+    -- already prefixed (with @original_name preserved); nothing reads it back.
+    -- as_module IS read at generation time: it makes the source a module and
+    -- drives module query/mutation field naming.
     prefix       VARCHAR,
     as_module    BOOLEAN NOT NULL,
     loaded       BOOLEAN NOT NULL,
@@ -250,7 +251,7 @@ CREATE INDEX IF NOT EXISTS idx_hc_data_objects_module ON catalog.data_objects (m
 CREATE INDEX IF NOT EXISTS idx_hc_fields_source       ON catalog.fields (data_source);
 CREATE INDEX IF NOT EXISTS idx_hc_fields_dependency   ON catalog.fields (dependency_data_source);
 CREATE INDEX IF NOT EXISTS idx_hc_relations_dest      ON catalog.relations (destination);
-CREATE INDEX IF NOT EXISTS idx_hc_relations_source    ON catalog.relations (data_source);
+CREATE INDEX IF NOT EXISTS idx_hc_relations_data_source ON catalog.relations (data_source);
 CREATE INDEX IF NOT EXISTS idx_hc_functions_source    ON catalog.functions (data_source);
 CREATE INDEX IF NOT EXISTS idx_hc_functions_module    ON catalog.functions (module);
 CREATE INDEX IF NOT EXISTS idx_hc_types_source        ON catalog.types (data_source);
