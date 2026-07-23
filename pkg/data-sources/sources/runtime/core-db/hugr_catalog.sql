@@ -145,6 +145,10 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.fields
         function_call STRUCT("function" STRUCT(module VARCHAR, name VARCHAR), args JSON, source_fields VARCHAR[], references_fields VARCHAR[], sql VARCHAR),
         table_function_call_join STRUCT("function" STRUCT(module VARCHAR, name VARCHAR), args JSON, source_fields VARCHAR[], references_fields VARCHAR[], sql VARCHAR)
     ){{ end }},
+    -- DECLARED field arguments (SDL), same shape as functions.args — carried
+    -- by @table_function_call_join fields (user-facing call parameters);
+    -- NULL for plain columns.
+    args                   {{ if isPostgres }}JSONB{{ else }}JSON{{ end }},
     data_source            VARCHAR NOT NULL,
     dependency_data_source VARCHAR,
     is_pk                  BOOLEAN NOT NULL,

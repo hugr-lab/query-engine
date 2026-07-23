@@ -36,14 +36,15 @@ var scalarArgsFieldRule = fieldRule{
 	},
 }
 
-// joinFieldsRule finishes declared @join list fields whose target is a data
-// object: the field gets the subquery argument profile, the object gets the
-// {name}_aggregation / {name}_bucket_aggregation twins.
+// joinFieldsRule finishes declared @join and @table_function_call_join list
+// fields whose target is a data object: @join fields get the subquery
+// argument profile, TFCJ fields keep their DECLARED call arguments; both put
+// the {name}_aggregation / {name}_bucket_aggregation twins on the object.
 var joinFieldsRule = fieldRule{
 	name: "join_fields",
 	apply: func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition) {
 		for _, f := range t.fields {
-			if f.Properties == nil || f.Properties.Join == nil {
+			if f.Properties == nil || (f.Properties.Join == nil && f.Properties.TableFunctionCallJoin == nil) {
 				continue
 			}
 			typ := parseFieldType(f.FieldType)
@@ -51,11 +52,20 @@ var joinFieldsRule = fieldRule{
 			if typ.NamedType != "" || !g.s.dataObjectExists(ctx, target) {
 				continue
 			}
-			if fd := def.Fields.ForName(f.Name); fd != nil && len(fd.Arguments) == 0 {
-				fd.Arguments = rules.SubQueryArgs(target+filterSuffix, reconPos)
+			twinArgs := func() ast.ArgumentDefinitionList {
+				return rules.SubQueryArgs(target+filterSuffix, reconPos)
+			}
+			if f.Properties.Join != nil {
+				if fd := def.Fields.ForName(f.Name); fd != nil && len(fd.Arguments) == 0 {
+					fd.Arguments = rules.SubQueryArgs(target+filterSuffix, reconPos)
+				}
+			} else {
+				// TFCJ twins reuse the declared call arguments as-is.
+				declared := f.Args
+				twinArgs = func() ast.ArgumentDefinitionList { return emitArgumentDefs(declared) }
 			}
 			def.Fields = append(def.Fields,
-				relationAggTwinFields(f.Name, target, t.srcs, f.DataSource)...)
+				relationAggTwinFields(f.Name, target, twinArgs, t.srcs, f.DataSource)...)
 		}
 	},
 }
@@ -94,7 +104,8 @@ var navFieldsRule = fieldRule{
 						navQueryDirective(co.Destination, leg.Name, true, leg.Source),
 						t.srcs, leg.DataSource))
 					def.Fields = append(def.Fields,
-						relationAggTwinFields(leg.DestinationField, co.Destination, t.srcs, leg.DataSource)...)
+						relationAggTwinFields(leg.DestinationField, co.Destination,
+						subQueryArgsFactory(co.Destination), t.srcs, leg.DataSource)...)
 				}
 				continue
 			}
@@ -103,9 +114,16 @@ var navFieldsRule = fieldRule{
 				navQueryDirective(leg.Source, leg.Name, false, ""),
 				t.srcs, leg.DataSource))
 			def.Fields = append(def.Fields,
-				relationAggTwinFields(leg.DestinationField, leg.Source, t.srcs, leg.DataSource)...)
+				relationAggTwinFields(leg.DestinationField, leg.Source,
+					subQueryArgsFactory(leg.Source), t.srcs, leg.DataSource)...)
 		}
 	},
+}
+
+func subQueryArgsFactory(target string) func() ast.ArgumentDefinitionList {
+	return func() ast.ArgumentDefinitionList {
+		return rules.SubQueryArgs(target+filterSuffix, reconPos)
+	}
 }
 
 func navListField(name, target string, refDir *ast.Directive, srcs map[string]activeSource, dataSource string) *ast.FieldDefinition {
@@ -133,9 +151,9 @@ func navQueryDirective(referencesName, relName string, isM2M bool, m2mName strin
 
 // relationAggTwinFields is addReferenceAggregationFields: the
 // {name}_aggregation / {name}_bucket_aggregation members every list relation
-// (@join / back FK / M2M) puts on the base object.
-func relationAggTwinFields(fieldName, target string, srcs map[string]activeSource, dataSource string) []*ast.FieldDefinition {
-	targetFilter := target + filterSuffix
+// (@join / TFCJ / back FK / M2M) puts on the base object. args is a factory —
+// each twin gets its own argument list instance.
+func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDefinitionList, srcs map[string]activeSource, dataSource string) []*ast.FieldDefinition {
 	catalog := func() *ast.Directive { return catalogDirective(dataSource, srcs[dataSource].Engine) }
 	aggQuery := func(isBucket bool) *ast.Directive {
 		return directive(base.FieldAggregationQueryDirectiveName,
@@ -148,7 +166,7 @@ func relationAggTwinFields(fieldName, target string, srcs map[string]activeSourc
 			Name:        fieldName + "_aggregation",
 			Description: "The aggregation for " + fieldName,
 			Type:        ast.NamedType("_"+target+"_aggregation", reconPos),
-			Arguments:   rules.SubQueryArgs(targetFilter, reconPos),
+			Arguments:   args(),
 			Directives:  ast.DirectiveList{aggQuery(false), catalog()},
 			Position:    reconPos,
 		},
@@ -156,7 +174,7 @@ func relationAggTwinFields(fieldName, target string, srcs map[string]activeSourc
 			Name:        fieldName + "_bucket_aggregation",
 			Description: "The bucket aggregation for " + fieldName,
 			Type:        ast.ListType(ast.NamedType("_"+target+"_aggregation_bucket", reconPos), reconPos),
-			Arguments:   rules.SubQueryArgs(targetFilter, reconPos),
+			Arguments:   args(),
 			Directives:  ast.DirectiveList{aggQuery(true), catalog()},
 			Position:    reconPos,
 		},

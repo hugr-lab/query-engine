@@ -169,12 +169,11 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 		}
 	}
 
-	// Virtual @join object-list twins (addVirtualFieldAggregations). TFCJ
-	// twins reuse the declared call arguments — those need stored field args
-	// (fixture/parity pending, see requirements §5).
+	// Virtual object-list twins (addVirtualFieldAggregations): @join pairs
+	// use the agg-ref profiles, TFCJ pairs reuse the DECLARED call arguments.
 	for _, f := range fields {
 		j := f.Properties
-		if j == nil || j.Join == nil {
+		if j == nil || (j.Join == nil && j.TableFunctionCallJoin == nil) {
 			continue
 		}
 		typ := parseFieldType(f.FieldType)
@@ -183,18 +182,24 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 			continue
 		}
 		targetFilter := target + filterSuffix
+		directArgs := rules.AggRefArgs(targetFilter, reconPos)
+		subArgs := rules.AggSubRefArgs(targetFilter, reconPos)
+		if j.TableFunctionCallJoin != nil {
+			directArgs = emitArgumentDefs(f.Args)
+			subArgs = emitArgumentDefs(f.Args)
+		}
 		def.Fields = append(def.Fields,
 			&ast.FieldDefinition{
 				Name:       f.Name,
 				Type:       ast.NamedType("_"+target+"_aggregation", reconPos),
-				Arguments:  rules.AggRefArgs(targetFilter, reconPos),
+				Arguments:  directArgs,
 				Directives: ast.DirectiveList{fieldAggregationMarker(f.Name)},
 				Position:   reconPos,
 			},
 			&ast.FieldDefinition{
 				Name:       f.Name + "_aggregation",
 				Type:       ast.NamedType(rules.AggTypeNameAtDepth(target, 1), reconPos),
-				Arguments:  rules.AggSubRefArgs(targetFilter, reconPos),
+				Arguments:  subArgs,
 				Directives: ast.DirectiveList{fieldAggregationMarker(f.Name)},
 				Position:   reconPos,
 			},

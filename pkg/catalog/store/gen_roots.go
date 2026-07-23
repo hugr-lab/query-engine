@@ -229,8 +229,9 @@ var rootObjectShapesRule = rootRule{
 
 // rootFunctionsRule adds the module's functions of the root's kind. On the
 // top-level roots the module-"" functions attach directly to Query/Mutation
-// (RootTypeAssembler behavior). List-of-data-object functions additionally
-// get aggregation twins — pending the function fixture (requirements §5).
+// (RootTypeAssembler behavior). On FUNCTION module roots, list-of-data-object
+// functions additionally get their aggregation twin pair
+// (addModuleFuncAggregations).
 var rootFunctionsRule = rootRule{
 	name: "functions",
 	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) {
@@ -251,8 +252,45 @@ var rootFunctionsRule = rootRule{
 			fd := functionField(fn)
 			fd.Directives = append(fd.Directives, catalogDirective(fn.DataSource, srcs[fn.DataSource].Engine))
 			def.Fields = append(def.Fields, fd)
+			if sc.kind != sdl.ModuleFunction {
+				continue
+			}
+			target, isList := listReturnTarget(fn)
+			if !isList || !g.s.dataObjectExists(ctx, target) {
+				continue
+			}
+			catalog := func() *ast.Directive {
+				return catalogDirective(fn.DataSource, srcs[fn.DataSource].Engine)
+			}
+			funcAgg := func(isBucket bool) *ast.Directive {
+				return directive("aggregation_query",
+					strArg(base.ArgName, fn.Name), boolArg(base.ArgIsBucket, isBucket))
+			}
+			def.Fields = append(def.Fields,
+				&ast.FieldDefinition{
+					Name:       fn.Name + "_aggregation",
+					Type:       ast.NamedType("_"+target+"_aggregation", reconPos),
+					Arguments:  emitArgumentDefs(fn.Args),
+					Directives: ast.DirectiveList{funcAgg(false), catalog()},
+					Position:   reconPos,
+				},
+				&ast.FieldDefinition{
+					Name:       fn.Name + "_bucket_aggregation",
+					Type:       ast.ListType(ast.NamedType("_"+target+"_aggregation_bucket", reconPos), reconPos),
+					Arguments:  emitArgumentDefs(fn.Args),
+					Directives: ast.DirectiveList{funcAgg(true), catalog()},
+					Position:   reconPos,
+				},
+			)
 		}
 	},
+}
+
+// listReturnTarget parses a function's stored return type; isList reports a
+// list of the named type.
+func listReturnTarget(fn *function) (string, bool) {
+	typ := parseFieldType(fn.Returns)
+	return typ.Name(), typ.NamedType == ""
 }
 
 // rootChildGatewaysRule wires the child modules that carry the kind. The

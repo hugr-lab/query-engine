@@ -120,8 +120,14 @@ func emitFunctionDirectives(row *function) ast.DirectiveList {
 // emitFunctionArgs rebuilds the ordered argument definitions: structural
 // members plus the argument-level directive pairs (@arg_default, @deprecated).
 func emitFunctionArgs(row *function) ast.ArgumentDefinitionList {
+	return emitArgumentDefs(row.Args)
+}
+
+// emitArgumentDefs is the shared argument re-emission (functions and declared
+// field arguments store the same shape).
+func emitArgumentDefs(args []functionArgument) ast.ArgumentDefinitionList {
 	var out ast.ArgumentDefinitionList
-	for _, a := range row.Args {
+	for _, a := range args {
 		def := &ast.ArgumentDefinition{
 			Name:        a.Name,
 			Type:        parseFieldType(a.Type),

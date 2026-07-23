@@ -14,7 +14,7 @@ import (
 // writerFormatVersion is mixed into the stored data_source_meta.version. Bump it
 // when the row shapes / property bags change: every source then reads as
 // "changed" once and is rewritten; an upgrade without a format change is free.
-const writerFormatVersion = "f5"
+const writerFormatVersion = "f6"
 
 const insertChunk = 200
 
@@ -209,12 +209,12 @@ func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) erro
 	fields := make([][]any, 0, len(d.fields))
 	for _, k := range sortedKeys(d.fields) {
 		r := d.fields[k]
-		fields = append(fields, []any{r.TypeName, r.Name, r.FieldType, jsonOrNil(r.Properties), r.DataSource,
-			nilIfEmpty(r.DependencyDataSource), r.IsPK, r.Ordinal,
+		fields = append(fields, []any{r.TypeName, r.Name, r.FieldType, jsonOrNil(r.Properties), jsonOrNil(r.Args),
+			r.DataSource, nilIfEmpty(r.DependencyDataSource), r.IsPK, r.Ordinal,
 			nilIfEmpty(r.DeprecationReason), nilIfEmpty(r.Description)})
 	}
 	if err := insertRows(ctx, conn, "fields",
-		[]string{"type_name", "name", "field_type", "properties", "data_source",
+		[]string{"type_name", "name", "field_type", "properties", "args", "data_source",
 			"dependency_data_source", "is_pk", "ordinal", "deprecation_reason", "description"}, fields); err != nil {
 		return err
 	}

@@ -115,6 +115,7 @@ func collectDataObject(ctx context.Context, defs base.DefinitionsSource, d *desi
 			TypeName:             def.Name,
 			Name:                 f.Name,
 			FieldType:            f.Type.String(),
+			Args:                 mapFunctionArgs(f),
 			DataSource:           fieldOwner(f, owner),
 			DependencyDataSource: base.FieldDefDependency(f),
 			Ordinal:              ordinal,
@@ -162,6 +163,7 @@ func collectExtensionFields(ctx context.Context, defs base.DefinitionsSource, d 
 			TypeName:             ext.Name,
 			Name:                 f.Name,
 			FieldType:            f.Type.String(),
+			Args:                 mapFunctionArgs(f),
 			DataSource:           owner,
 			DependencyDataSource: base.FieldDefDependency(f),
 			Ordinal:              ordinal,
@@ -288,6 +290,15 @@ func collectModuleRoot(ctx context.Context, defs base.DefinitionsSource, d *desi
 			continue
 		}
 		module := sdl.FunctionModule(f)
+		// AsModule routing for functions (FunctionRule mirror): no module →
+		// the source name, an inline @module nests under it.
+		if d.asModule {
+			if module == "" {
+				module = dataSource
+			} else if !strings.HasPrefix(module, dataSource+".") && module != dataSource {
+				module = dataSource + "." + module
+			}
+		}
 		ensureModule(d, module)
 		key := pkKey(module, f.Name)
 		if _, ok := d.functions[key]; ok {

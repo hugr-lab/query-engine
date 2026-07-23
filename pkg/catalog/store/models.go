@@ -57,9 +57,12 @@ type dataObject struct {
 // @table_function_call_join fields are ordinary field rows carrying their
 // typed property bags (D17) — they are NOT relations.
 type field struct {
-	TypeName             string
-	Name                 string
-	FieldType            string
+	TypeName  string
+	Name      string
+	FieldType string
+	// Args are the DECLARED SDL arguments (same shape as functions.args) —
+	// @table_function_call_join call parameters; empty for plain columns.
+	Args                 []functionArgument
 	Properties           *fieldProperties
 	DataSource           string
 	DependencyDataSource string

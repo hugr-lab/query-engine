@@ -77,6 +77,15 @@ func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Defi
 			directive(base.DataInputDirectiveName, strArg(base.ArgName, row.Name+mutInputDataSuffix)))
 	}
 	def.Directives = append(def.Directives, shapeMarkers(t)...)
+	// Module functions returning a LIST of this object rename its
+	// AGGREGATE/AGGREGATE_BUCKET markers to the function-based names — the
+	// old compiler's module-function precedence, replicated by the assembler
+	// (replaceOrAddQueryDirective); the LAST function in (module, name) order
+	// wins.
+	if fn := s.lastListReturningModuleFunction(ctx, row.Name); fn != "" {
+		replaceQueryMarkerName(def, "AGGREGATE", fn+"_aggregation")
+		replaceQueryMarkerName(def, "AGGREGATE_BUCKET", fn+"_bucket_aggregation")
+	}
 
 	for _, f := range t.fields {
 		fd := reconstructField(f)
@@ -103,6 +112,33 @@ func reconstructDataObject(ctx context.Context, s *Store, name string) *ast.Defi
 		fieldRules[i].apply(ctx, g, t, def)
 	}
 	return def
+}
+
+// lastListReturningModuleFunction returns the name of the LAST (module, name)
+// ordered module function (kind=function, module != '') returning a list of
+// the object — the one whose aggregation names win the def markers.
+func (s *Store) lastListReturningModuleFunction(ctx context.Context, typeName string) string {
+	variants := `'[` + typeName + `]', '[` + typeName + `!]', '[` + typeName + `]!', '[` + typeName + `!]!'`
+	names := s.queryNames(ctx, `SELECT f.name FROM core.catalog.functions f`+
+		activeMeta("m", "f.data_source")+`
+		WHERE f.kind = 'function' AND f.module <> '' AND f.returns IN (`+variants+`)
+		ORDER BY f.module, f.name`)
+	if len(names) == 0 {
+		return ""
+	}
+	return names[len(names)-1]
+}
+
+func replaceQueryMarkerName(def *ast.Definition, queryType, name string) {
+	for _, d := range def.Directives {
+		if d.Name != "query" || base.DirectiveArgString(d, "type") != queryType {
+			continue
+		}
+		if a := d.Arguments.ForName(base.ArgName); a != nil {
+			a.Value.Raw = name
+		}
+		return
+	}
 }
 
 // needsListFilter: X_list_filter exists when some filter lists X — X is the
@@ -146,6 +182,7 @@ func reconstructField(f *field) *ast.FieldDefinition {
 		Name:        f.Name,
 		Type:        parseFieldType(f.FieldType),
 		Description: f.Description,
+		Arguments:   emitArgumentDefs(f.Args),
 		Directives:  emitFieldDirectives(f),
 		Position:    reconPos,
 	}
@@ -257,7 +294,8 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 	}
 	defer conn.Close()
 	rows, err := conn.Query(ctx, `SELECT f.name, f.field_type, f.properties::JSON::VARCHAR,
-		f.data_source, f.dependency_data_source, f.is_pk, f.ordinal, f.deprecation_reason, f.description
+		f.args::JSON::VARCHAR, f.data_source, f.dependency_data_source, f.is_pk, f.ordinal,
+		f.deprecation_reason, f.description
 		FROM core.catalog.fields f`+activeMeta("m", "f.data_source")+`
 		WHERE f.type_name = `+lit(typeName)+` ORDER BY f.ordinal, f.name`)
 	if err != nil {
@@ -267,8 +305,8 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 	var out []*field
 	for rows.Next() {
 		f := field{TypeName: typeName, Properties: &fieldProperties{}}
-		var props, dependency, deprecated, desc sql.NullString
-		if err := rows.Scan(&f.Name, &f.FieldType, &props, &f.DataSource, &dependency, &f.IsPK, &f.Ordinal, &deprecated, &desc); err != nil {
+		var props, args, dependency, deprecated, desc sql.NullString
+		if err := rows.Scan(&f.Name, &f.FieldType, &props, &args, &f.DataSource, &dependency, &f.IsPK, &f.Ordinal, &deprecated, &desc); err != nil {
 			return out
 		}
 		f.DependencyDataSource = dependency.String
@@ -276,6 +314,9 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*field {
 		f.Description = desc.String
 		if props.Valid {
 			_ = json.Unmarshal([]byte(props.String), f.Properties)
+		}
+		if args.Valid {
+			_ = json.Unmarshal([]byte(args.String), &f.Args)
 		}
 		out = append(out, &f)
 	}

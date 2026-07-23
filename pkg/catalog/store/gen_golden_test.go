@@ -328,6 +328,44 @@ func TestGenGoldenUnique(t *testing.T) {
 	})
 }
 
+// genTFCJSchema exercises @table_function_call_join: a declared call
+// parameter (radius) plus a mapped one (iata), twins on the object and its
+// aggregation reuse the declared arguments.
+const genTFCJSchema = `
+type airports @module(name: "geo") @table(name: "airports") {
+  iata: String! @pk
+  name: String!
+}
+
+extend type Function {
+  find_nearby(iata: String!, radius: Float): [airports]
+    @module(name: "geo") @function(name: "find_nearby")
+}
+
+extend type airports {
+  nearby(radius: Float): [airports]
+    @table_function_call_join(references_name: "find_nearby", module: "geo", args: {iata: "iata"})
+}
+`
+
+// TestGenGoldenTFCJ pins the table_function_call_join surface: declared field
+// arguments round-trip (f6 fields.args), the aggregation twin pairs on the
+// object and the aggregation type carry the declared arguments.
+func TestGenGoldenTFCJ(t *testing.T) {
+	store, ctx := storeFor(t, genTFCJSchema)
+	ref := goldenRef(t, "test", genTFCJSchema)
+
+	assertGenParity(t, ctx, store, ref, []string{
+		"airports",
+		"airports_filter",
+		"_airports_aggregation",
+		"_airports_aggregation_sub_aggregation",
+		"airports_mut_input_data",
+		"_module_geo_query",
+		"_module_geo_function",
+	})
+}
+
 // fixtureSource describes one source of a multi-source golden fixture.
 type fixtureSource struct {
 	name        string
@@ -424,6 +462,11 @@ type items @table(name: "items") {
   name: String!
   price: Float
 }
+
+extend type Function {
+  item_label(id: Int!): String @function(name: "item_label")
+  slugify(s: String!): String @module(name: "tools") @function(name: "slugify")
+}
 `,
 	},
 	{
@@ -469,11 +512,15 @@ func TestGenGoldenMultiSource(t *testing.T) {
 		"logs_filter",
 		"_logs_aggregation",
 		// Roots: AsModule module named after the source, original-name
-		// members; ro_mod contributes no mutation root.
+		// members; ro_mod contributes no mutation root. Functions route into
+		// the source module (inline @module nests: shop.tools).
 		"Query",
 		"Mutation",
+		"Function",
 		"_module_shop_query",
 		"_module_shop_mutation",
+		"_module_shop_function",
+		"_module_shop_tools_function",
 		"_module_ro_mod_query",
 		// Shared types span all three sources.
 		"_join",
