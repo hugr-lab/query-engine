@@ -290,12 +290,15 @@ func collectModuleRoot(ctx context.Context, defs base.DefinitionsSource, d *desi
 			continue
 		}
 		module := sdl.FunctionModule(f)
-		// AsModule routing for functions (FunctionRule mirror): no module →
-		// the source name, an inline @module nests under it.
+		// AsModule routing (FunctionRule mirror): no module → the source
+		// name, an inline @module nests under it. EXCEPT subscriptions: the
+		// assembler only defaults the empty module and keeps an inline
+		// @module as written (no source-name nesting).
 		if d.asModule {
 			if module == "" {
 				module = dataSource
-			} else if !strings.HasPrefix(module, dataSource+".") && module != dataSource {
+			} else if kind != "subscription" &&
+				!strings.HasPrefix(module, dataSource+".") && module != dataSource {
 				module = dataSource + "." + module
 			}
 		}

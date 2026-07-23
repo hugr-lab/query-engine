@@ -250,7 +250,18 @@ var rootFunctionsRule = rootRule{
 				continue
 			}
 			fd := functionField(fn)
-			fd.Directives = append(fd.Directives, catalogDirective(fn.DataSource, srcs[fn.DataSource].Engine))
+			// Subscription decoration mirrors the assembler: module-routed
+			// fields gain @catalog + bare @subscription, root-level ones stay
+			// exactly as declared.
+			if sc.kind == sdl.ModuleSubscription {
+				if !sc.top() {
+					fd.Directives = append(fd.Directives,
+						catalogDirective(fn.DataSource, srcs[fn.DataSource].Engine),
+						directive(base.SubscriptionDirectiveName))
+				}
+			} else {
+				fd.Directives = append(fd.Directives, catalogDirective(fn.DataSource, srcs[fn.DataSource].Engine))
+			}
 			def.Fields = append(def.Fields, fd)
 			if sc.kind != sdl.ModuleFunction {
 				continue
@@ -295,12 +306,12 @@ func listReturnTarget(fn *function) (string, bool) {
 
 // rootChildGatewaysRule wires the child modules that carry the kind. The
 // compiler's description convention: intermediate gateways always carry it;
-// top-level gateways only on the Function/MutationFunction/Subscription roots
-// (Query/Mutation top gateways stay bare).
+// top-level gateways only on the Function/MutationFunction roots
+// (Query/Mutation/Subscription top gateways stay bare).
 var rootChildGatewaysRule = rootRule{
 	name: "child_gateways",
 	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) {
-		describeTop := sc.kind != sdl.ModuleQuery && sc.kind != sdl.ModuleMutation
+		describeTop := sc.kind == sdl.ModuleFunction || sc.kind == sdl.ModuleMutationFunction
 		for _, child := range g.s.readChildModuleInfos(ctx, sc.module) {
 			if !rootKindAvailable(child, sc.kind, false) {
 				continue

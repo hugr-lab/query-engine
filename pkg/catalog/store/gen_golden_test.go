@@ -237,6 +237,11 @@ type notes @module(name: "ai") @table(name: "notes") @embeddings(model: "openai"
   body: String
   vec: Vector @dim(len: 8)
 }
+
+extend type Subscription {
+  note_stream(note_id: Int!): notes @module(name: "ai")
+  heartbeat(interval_ms: Int): String
+}
 `
 
 // TestGenGoldenVector pins similarity/semantic root arguments, the
@@ -261,6 +266,11 @@ func TestGenGoldenVector(t *testing.T) {
 		"_join_aggregation",
 		"_module_ai_query",
 		"_module_ai_mutation",
+		// Subscriptions: the module root gets decorated members
+		// (@catalog + @subscription), the top root keeps the raw
+		// root-level field + the module gateway.
+		"_module_ai_subscription",
+		"Subscription",
 		"Query",
 	})
 }
