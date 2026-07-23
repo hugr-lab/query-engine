@@ -58,8 +58,12 @@ func TestReconstructDataObjectBase(t *testing.T) {
 	orders := store.ForName(ctx, "orders")
 	require.NotNil(t, orders)
 	assert.Equal(t, ast.Object, orders.Kind)
-	require.NotNil(t, orders.Directives.ForName("table"), "@table reattached")
-	assert.Equal(t, "orders", dirArg(orders.Directives.ForName("table"), "name"), "physical name")
+	tblDir := orders.Directives.ForName("table")
+	require.NotNil(t, tblDir, "@table reattached")
+	assert.Equal(t, "orders", dirArg(tblDir, "name"), "physical name")
+	assert.Equal(t, "true", dirArg(tblDir, "soft_delete"))
+	assert.Equal(t, "deleted_at IS NULL", dirArg(tblDir, "soft_delete_cond"))
+	assert.Equal(t, "deleted_at = now()", dirArg(tblDir, "soft_delete_set"))
 	assert.Equal(t, "orders", dirArg(orders.Directives.ForName("original_name"), "name"))
 	assert.Equal(t, "sales", dirArg(orders.Directives.ForName("module"), "name"))
 
@@ -77,6 +81,39 @@ func TestReconstructDataObjectBase(t *testing.T) {
 	assert.Equal(t, "use total_with_tax", dirArg(amount.Directives.ForName("deprecated"), "reason"))
 	assert.Nil(t, id.Directives.ForName("deprecated"))
 
+	// Field bag directives re-emitted by the pair table.
+	computed := orders.Fields.ForName("total_with_tax")
+	require.NotNil(t, computed)
+	assert.Equal(t, "amount * 1.1", dirArg(computed.Directives.ForName("sql"), "exp"))
+	area := orders.Fields.ForName("area")
+	require.NotNil(t, area)
+	assert.Equal(t, "POLYGON", dirArg(area.Directives.ForName("geometry_info"), "type"))
+	assert.Equal(t, "4326", dirArg(area.Directives.ForName("geometry_info"), "srid"))
+	assert.Equal(t, "3", dirArg(area.Directives.ForName("dim"), "len"))
+	assert.Equal(t, "INTERSECTS", dirArg(area.Directives.ForName("unique_rule"), "rule"))
+	created := orders.Fields.ForName("created_at")
+	require.NotNil(t, created)
+	assert.Equal(t, "now()", dirArg(created.Directives.ForName("default"), "insert_exp"))
+	statusLabel := orders.Fields.ForName("status_label")
+	require.NotNil(t, statusLabel)
+	fcDir := statusLabel.Directives.ForName("function_call")
+	require.NotNil(t, fcDir)
+	assert.Equal(t, "order_status", dirArg(fcDir, "references_name"))
+	assert.Equal(t, "sales", dirArg(fcDir, "module"))
+	require.NotNil(t, fcDir.Arguments.ForName("args"), "@function_call args map re-emitted")
+
+	// Declared @join field on customers.
+	customers := store.ForName(ctx, "customers")
+	require.NotNil(t, customers)
+	joinField := customers.Fields.ForName("customer_orders")
+	require.NotNil(t, joinField, "declared @join field is a stored column row")
+	joinDir := joinField.Directives.ForName("join")
+	require.NotNil(t, joinDir)
+	assert.Equal(t, "orders", dirArg(joinDir, "references_name"))
+	nameField := customers.Fields.ForName("name")
+	require.NotNil(t, nameField)
+	assert.Equal(t, "10m", dirArg(nameField.Directives.ForName("cache"), "ttl"))
+
 	// A view keeps its @view(sql:).
 	view := store.ForName(ctx, "sales_by_country")
 	require.NotNil(t, view)
@@ -89,6 +126,32 @@ func TestReconstructDataObjectBase(t *testing.T) {
 	tbl := junction.Directives.ForName("table")
 	require.NotNil(t, tbl)
 	assert.Equal(t, "true", tbl.Arguments.ForName("is_m2m").Value.Raw)
+}
+
+// TestReconstructFunction covers the function pair table: the stored root-field
+// definition round-trips with @function / @module / @deprecated and the ordered
+// arguments incl. argument-level @deprecated.
+func TestReconstructFunction(t *testing.T) {
+	store, ctx := writtenStore(t)
+
+	fn := reconstructFunction(ctx, store, "sales", "order_status")
+	require.NotNil(t, fn)
+	assert.Equal(t, "order_status", fn.Name)
+	assert.Equal(t, "String", fn.Type.String())
+	assert.Equal(t, "order_status", dirArg(fn.Directives.ForName("function"), "name"))
+	assert.Equal(t, "sales", dirArg(fn.Directives.ForName("module"), "name"))
+	assert.Equal(t, "No longer supported", dirArg(fn.Directives.ForName("deprecated"), "reason"))
+
+	require.Len(t, fn.Arguments, 2)
+	id := fn.Arguments.ForName("id")
+	require.NotNil(t, id)
+	assert.Equal(t, "Int!", id.Type.String())
+	mode := fn.Arguments.ForName("mode")
+	require.NotNil(t, mode)
+	assert.Equal(t, "unused", dirArg(mode.Directives.ForName("deprecated"), "reason"))
+
+	// Absent function → nil.
+	assert.Nil(t, reconstructFunction(ctx, store, "sales", "no_such_fn"))
 }
 
 func dirArg(d *ast.Directive, name string) string {

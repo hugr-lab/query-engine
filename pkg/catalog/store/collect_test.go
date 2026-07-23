@@ -60,7 +60,8 @@ func partialSource(t *testing.T, name, schema string, seeds ...base.DefinitionsS
 const collectTestSchema = `
 type customers @module(name: "sales") @table(name: "customers") {
   id: Int! @pk
-  name: String!
+  name: String! @cache(ttl: "10m", tags: ["crm"])
+  customer_orders: [orders] @join(references_name: "orders", source_fields: ["id"], references_fields: ["customer_id"])
 }
 
 type orders @module(name: "sales")
@@ -73,8 +74,10 @@ type orders @module(name: "sales")
   customer_id: Int!
   amount: Float @deprecated(reason: "use total_with_tax")
   total_with_tax: Float @sql(exp: "amount * 1.1")
+  created_at: Timestamp @default(insert_exp: "now()")
   deleted_at: Timestamp
   area: Geometry @geometry_info(type: POLYGON, srid: 4326) @dim(len: 3) @unique_rule(rule: INTERSECTS)
+  status_label: String @function_call(references_name: "order_status", module: "sales", args: {id: "id"})
 }
 
 type tags @module(name: "sales") @table(name: "tags") {
@@ -205,6 +208,22 @@ func TestCollect(t *testing.T) {
 	assert.Equal(t, "use total_with_tax", d.fields[pkKey("orders", "amount")].DeprecationReason)
 	assert.Empty(t, d.fields[pkKey("orders", "id")].DeprecationReason)
 	assert.Equal(t, "No longer supported", fn.DeprecationReason)
+
+	// declared-field bags: @join, @function_call, @default, @cache.
+	join := d.fields[pkKey("customers", "customer_orders")].Properties.Join
+	require.NotNil(t, join)
+	assert.Equal(t, "orders", join.ReferencesName)
+	assert.Equal(t, []string{"id"}, join.SourceFields)
+	fc := d.fields[pkKey("orders", "status_label")].Properties.FunctionCall
+	require.NotNil(t, fc)
+	assert.Equal(t, "order_status", fc.Function.Name)
+	assert.Equal(t, "sales", fc.Function.Module)
+	require.NotNil(t, d.fields[pkKey("orders", "created_at")].Properties.Default)
+	assert.Equal(t, "now()", d.fields[pkKey("orders", "created_at")].Properties.Default.InsertExp)
+	cache := d.fields[pkKey("customers", "name")].Properties.Cache
+	require.NotNil(t, cache)
+	assert.Equal(t, "10m", cache.TTL)
+	assert.Equal(t, []string{"crm"}, cache.Tags)
 
 	// function config + ordered args.
 	fp := d.functions[pkKey("sales", "order_status")].Properties

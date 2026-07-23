@@ -19,7 +19,9 @@ import (
 // table) with NO generation. The derived surface — m2m navigation, aggregation
 // / filter types, module roots — is regenerated on READ, not stored.
 //
-// Property bags are populated by the mappers (M2.3); here they are left nil.
+// Directives land in the rows via the directive↔bag pair tables
+// (pairs_object.go / pairs_field.go / pairs_function.go) — the collect half of
+// each pair; the emit half rebuilds them in reconstruct*.
 //
 // dataSource is the owner attributed to entities the compiler leaves untagged
 // (functions and source types carry no @catalog after PREPARE — only data
@@ -67,37 +69,32 @@ func collectDataObject(ctx context.Context, defs base.DefinitionsSource, d *desi
 	if _, ok := d.dataObjects[def.Name]; ok {
 		return
 	}
-	info := sdl.DataObjectInfo(def)
-	owner := orDefault(info.Catalog, dataSource)
-	module := sdl.ObjectModule(def)
-	ensureModule(d, module)
-	d.dataObjects[def.Name] = &dataObject{
-		Name:         def.Name,
-		OriginalName: originalName(def),
-		DataSource:   owner,
-		Module:       module,
-		Kind:         info.Type, // table | view
-		Properties:   mapDataObjectProperties(def, info),
-		Description:  def.Description,
+	owner := orDefault(sdl.CatalogName(def), dataSource)
+	obj := &dataObject{
+		Name:        def.Name,
+		DataSource:  owner,
+		Description: def.Description,
 	}
+	collectObjectDirectives(def, obj) // fills OriginalName / Module / Kind + bag
+	ensureModule(d, obj.Module)
+	d.dataObjects[def.Name] = obj
 
 	ordinal := 0
 	for _, f := range def.Fields {
 		if skipField(f) {
 			continue
 		}
-		d.fields[pkKey(def.Name, f.Name)] = &field{
+		row := &field{
 			TypeName:             def.Name,
 			Name:                 f.Name,
 			FieldType:            f.Type.String(),
-			Properties:           mapFieldProperties(f),
 			DataSource:           fieldOwner(f, owner),
 			DependencyDataSource: base.FieldDefDependency(f),
-			IsPK:                 f.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil,
 			Ordinal:              ordinal,
-			DeprecationReason:    deprecationReason(f.Directives),
 			Description:          f.Description,
 		}
+		collectFieldDirectives(f, row) // fills IsPK / DeprecationReason + bag
+		d.fields[pkKey(def.Name, f.Name)] = row
 		ordinal++
 		collectFieldReferences(ctx, defs, d, def.Name, owner, f)
 	}
@@ -134,18 +131,17 @@ func collectExtensionFields(ctx context.Context, defs base.DefinitionsSource, d 
 			continue
 		}
 		owner := orDefault(base.FieldDefCatalog(f), dataSource)
-		d.fields[pkKey(ext.Name, f.Name)] = &field{
+		row := &field{
 			TypeName:             ext.Name,
 			Name:                 f.Name,
 			FieldType:            f.Type.String(),
-			Properties:           mapFieldProperties(f),
 			DataSource:           owner,
 			DependencyDataSource: base.FieldDefDependency(f),
-			IsPK:                 f.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil,
 			Ordinal:              ordinal,
-			DeprecationReason:    deprecationReason(f.Directives),
 			Description:          f.Description,
 		}
+		collectFieldDirectives(f, row)
+		d.fields[pkKey(ext.Name, f.Name)] = row
 		ordinal++
 		collectFieldReferences(ctx, defs, d, ext.Name, owner, f)
 	}
@@ -258,18 +254,17 @@ func collectModuleRoot(ctx context.Context, defs base.DefinitionsSource, d *desi
 		if _, ok := d.functions[key]; ok {
 			continue
 		}
-		d.functions[key] = &function{
-			Module:            module,
-			Name:              f.Name,
-			Kind:              kind,
-			DataSource:        orDefault(base.FieldDefCatalog(f), dataSource),
-			Returns:           f.Type.String(),
-			IsTable:           isDataObjectType(ctx, defs, f.Type.Name()),
-			Args:              mapFunctionArgs(f),
-			Properties:        mapFunctionProperties(f),
-			DeprecationReason: deprecationReason(f.Directives),
-			Description:       f.Description,
+		row := &function{
+			Module:      module,
+			Name:        f.Name,
+			Kind:        kind,
+			DataSource:  orDefault(base.FieldDefCatalog(f), dataSource),
+			Returns:     f.Type.String(),
+			IsTable:     isDataObjectType(ctx, defs, f.Type.Name()),
+			Description: f.Description,
 		}
+		collectFunctionDirectives(f, row) // fills DeprecationReason + bag + args
+		d.functions[key] = row
 	}
 }
 
