@@ -64,14 +64,17 @@ type customers @module(name: "sales") @table(name: "customers") {
 }
 
 type orders @module(name: "sales")
-  @table(name: "orders")
+  @table(name: "orders", soft_delete: true,
+    soft_delete_cond: "deleted_at IS NULL", soft_delete_set: "deleted_at = now()")
   @references(name: "order_customer", references_name: "customers",
     source_fields: ["customer_id"], references_fields: ["id"],
     query: "customer", references_query: "orders") {
   id: Int! @pk
   customer_id: Int!
-  amount: Float
+  amount: Float @deprecated(reason: "use total_with_tax")
   total_with_tax: Float @sql(exp: "amount * 1.1")
+  deleted_at: Timestamp
+  area: Geometry @geometry_info(type: POLYGON, srid: 4326) @dim(len: 3) @unique_rule(rule: INTERSECTS)
 }
 
 type tags @module(name: "sales") @table(name: "tags") {
@@ -95,7 +98,8 @@ input sales_by_country_args {
 }
 
 extend type Function {
-  order_status(id: Int!): String @module(name: "sales") @function(name: "order_status")
+  order_status(id: Int!, mode: String @deprecated(reason: "unused")): String
+    @module(name: "sales") @function(name: "order_status") @deprecated
 }
 
 extend type MutationFunction {
@@ -184,15 +188,35 @@ func TestCollect(t *testing.T) {
 	assert.True(t, comp.Computed)
 	assert.Equal(t, "amount * 1.1", comp.SQL)
 
+	// soft-delete raw expressions stored on the object bag.
+	assert.True(t, orders.SoftDelete)
+	assert.Equal(t, "deleted_at IS NULL", orders.SoftDeleteCond)
+	assert.Equal(t, "deleted_at = now()", orders.SoftDeleteSet)
+
+	// geometry field: @geometry_info + @dim + @unique_rule.
+	area := d.fields[pkKey("orders", "area")].Properties
+	require.NotNil(t, area)
+	require.NotNil(t, area.Geometry)
+	assert.Equal(t, "POLYGON", area.Geometry.Type)
+	assert.EqualValues(t, 3, area.Dim)
+	assert.Equal(t, "INTERSECTS", area.UniqueRule)
+
+	// @deprecated → column value; bare directive stores the spec default.
+	assert.Equal(t, "use total_with_tax", d.fields[pkKey("orders", "amount")].DeprecationReason)
+	assert.Empty(t, d.fields[pkKey("orders", "id")].DeprecationReason)
+	assert.Equal(t, "No longer supported", fn.DeprecationReason)
+
 	// function config + ordered args.
 	fp := d.functions[pkKey("sales", "order_status")].Properties
 	require.NotNil(t, fp)
 	require.NotNil(t, fp.Function)
 	assert.Equal(t, "order_status", fp.Function.Name)
 	fargs := d.functions[pkKey("sales", "order_status")].Args
-	require.Len(t, fargs, 1)
+	require.Len(t, fargs, 2)
 	assert.Equal(t, "id", fargs[0].Name)
 	assert.Equal(t, "Int!", fargs[0].Type)
+	assert.Empty(t, fargs[0].DeprecationReason)
+	assert.Equal(t, "unused", fargs[1].DeprecationReason)
 }
 
 // TestCollectPrefixedOriginalName verifies a prefixed source keeps its

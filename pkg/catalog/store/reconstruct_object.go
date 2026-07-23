@@ -75,6 +75,9 @@ func reconstructField(f *fieldRow) *ast.FieldDefinition {
 	if f.Properties != nil && f.Properties.Source != "" {
 		fd.Directives = append(fd.Directives, directive("field_source", strArg("field", f.Properties.Source)))
 	}
+	if f.DeprecationReason != "" {
+		fd.Directives = append(fd.Directives, directive("deprecated", strArg("reason", f.DeprecationReason)))
+	}
 	return fd
 }
 
@@ -92,12 +95,13 @@ type dataObjectRow struct {
 
 // fieldRow is a field read back from storage (properties decoded).
 type fieldRow struct {
-	Name        string
-	FieldType   string
-	Properties  *fieldProperties
-	IsPK        bool
-	Ordinal     int
-	Description  string
+	Name              string
+	FieldType         string
+	Properties        *fieldProperties
+	IsPK              bool
+	Ordinal           int
+	DeprecationReason string
+	Description       string
 }
 
 func (s *Store) readDataObject(ctx context.Context, name string) (*dataObjectRow, bool) {
@@ -131,7 +135,7 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*fieldRow {
 		return nil
 	}
 	defer conn.Close()
-	rows, err := conn.Query(ctx, `SELECT name, field_type, properties::JSON::VARCHAR, is_pk, ordinal, description
+	rows, err := conn.Query(ctx, `SELECT name, field_type, properties::JSON::VARCHAR, is_pk, ordinal, deprecation_reason, description
 		FROM core.catalog.fields WHERE type_name = `+lit(typeName)+` ORDER BY ordinal, name`)
 	if err != nil {
 		return nil
@@ -140,10 +144,11 @@ func (s *Store) readFields(ctx context.Context, typeName string) []*fieldRow {
 	var out []*fieldRow
 	for rows.Next() {
 		var f fieldRow
-		var props, desc sql.NullString
-		if err := rows.Scan(&f.Name, &f.FieldType, &props, &f.IsPK, &f.Ordinal, &desc); err != nil {
+		var props, deprecated, desc sql.NullString
+		if err := rows.Scan(&f.Name, &f.FieldType, &props, &f.IsPK, &f.Ordinal, &deprecated, &desc); err != nil {
 			return out
 		}
+		f.DeprecationReason = deprecated.String
 		f.Description = desc.String
 		if props.Valid {
 			var p fieldProperties

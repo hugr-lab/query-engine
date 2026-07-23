@@ -38,6 +38,12 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.data_s
     data_source  VARCHAR NOT NULL PRIMARY KEY,
     version      VARCHAR NOT NULL,
     capabilities {{ if isPostgres }}JSONB{{ else }}JSON{{ end }},
+    -- engine is the source's engine type string: @catalog(name, engine) — name
+    -- IS the data source — is re-attached from here to every generated
+    -- type/field at read time. read_only is a per-source OPTION (not an engine
+    -- capability): it gates all mutation generation and the X_mut_* types.
+    engine       VARCHAR NOT NULL,
+    read_only    BOOLEAN NOT NULL,
     -- prefix / as_module are compile options that shape names at read time:
     -- prefix renames source types (with @original_name preserved), as_module
     -- makes the source a module and drives module query/mutation field naming.
@@ -83,6 +89,8 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.data_o
         name VARCHAR,
         sql VARCHAR,
         soft_delete BOOLEAN,
+        soft_delete_cond VARCHAR,
+        soft_delete_set VARCHAR,
         is_cube BOOLEAN,
         is_m2m BOOLEAN,
         is_hypertable BOOLEAN,
@@ -110,8 +118,10 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.fields
         sql VARCHAR,
         "default" STRUCT(value JSON, sequence VARCHAR, insert_exp VARCHAR, update_exp VARCHAR),
         geometry STRUCT("type" VARCHAR, srid BIGINT),
+        dim BIGINT,
         measurement BOOLEAN,
         timescale_key BOOLEAN,
+        unique_rule VARCHAR,
         exclude_filter VARCHAR[],
         filter_required BOOLEAN,
         exclude_mcp BOOLEAN,
@@ -124,6 +134,9 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.fields
     dependency_data_source VARCHAR,
     is_pk                  BOOLEAN NOT NULL,
     ordinal                INTEGER NOT NULL,
+    -- @deprecated(reason:) — NULL means active (deprecation applies to fields
+    -- and arguments everywhere, so it is a plain column, not a bag member).
+    deprecation_reason     VARCHAR,
     description            VARCHAR,
     PRIMARY KEY (type_name, name)
 );
@@ -159,11 +172,12 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.functi
     data_source VARCHAR NOT NULL,
     returns     VARCHAR NOT NULL,
     is_table    BOOLEAN NOT NULL,
-    args        {{ if isPostgres }}JSONB{{ else }}STRUCT(name VARCHAR, "type" VARCHAR, description VARCHAR, "default" VARCHAR, arg_default VARCHAR)[]{{ end }},
+    args        {{ if isPostgres }}JSONB{{ else }}STRUCT(name VARCHAR, "type" VARCHAR, description VARCHAR, "default" VARCHAR, arg_default VARCHAR, deprecation_reason VARCHAR)[]{{ end }},
     properties  {{ if isPostgres }}JSONB{{ else }}STRUCT(
         "function" STRUCT(name VARCHAR, sql VARCHAR, skip_null_arg BOOLEAN, is_table BOOLEAN, json_cast BOOLEAN),
         cache STRUCT(ttl VARCHAR, "key" VARCHAR, tags VARCHAR[])
     ){{ end }},
+    deprecation_reason VARCHAR,
     description VARCHAR,
     PRIMARY KEY (module, name)
 );

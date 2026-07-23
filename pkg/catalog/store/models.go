@@ -57,6 +57,7 @@ type field struct {
 	DependencyDataSource string
 	IsPK                 bool
 	Ordinal              int
+	DeprecationReason    string // @deprecated(reason:) — "" means active
 	Description          string
 }
 
@@ -64,17 +65,17 @@ type field struct {
 // (fk | m2m) readable from both sides. Identity is (Source, Name); DataSource
 // is definition provenance / reconcile attribution only, never identity.
 type relation struct {
-	Source                      string
-	Name                        string
-	Kind                        string // fk | m2m
-	Destination                 string
-	M2MObject                   string
+	Source      string
+	Name        string
+	Kind        string // fk | m2m
+	Destination string
+	M2MObject   string
 	// Physical reference field lists. An m2m relation is just two ordinary
 	// @field_references on the junction table (@table(is_m2m: true)) — each a
 	// plain source→target leg — so keys are []string; the m2m navigation is
 	// synthesized at read time from is_m2m + the two legs.
-	SourceKeys      []string
-	DestinationKeys []string
+	SourceKeys                  []string
+	DestinationKeys             []string
 	SourceField                 string
 	SourceFieldDescription      string
 	DestinationField            string
@@ -85,15 +86,16 @@ type relation struct {
 // function is one row of catalog.functions. Kind is function | mutation |
 // subscription; Args is the ordered argument list stored as one JSON array.
 type function struct {
-	Module      string
-	Name        string
-	Kind        string
-	DataSource  string
-	Returns     string
-	IsTable     bool
-	Args        []functionArgument
-	Properties  *functionProperties
-	Description string
+	Module            string
+	Name              string
+	Kind              string
+	DataSource        string
+	Returns           string
+	IsTable           bool
+	Args              []functionArgument
+	Properties        *functionProperties
+	DeprecationReason string // @deprecated(reason:) — "" means active
+	Description       string
 }
 
 // sourceType is one row of catalog.types: a residual source-defined base type
@@ -117,13 +119,13 @@ type dataSourceDependency struct {
 // reconcile sweep, keyed by table primary keys.
 type desired struct {
 	modules       map[string]*module               // key: name
-	moduleSources map[string]*moduleSource          // key: module\x1fsource
-	dataObjects   map[string]*dataObject            // key: name
-	fields        map[string]*field                 // key: typeName\x1fname
-	relations     map[string]*relation              // key: source\x1fname
-	functions     map[string]*function              // key: module\x1fname
-	types         map[string]*sourceType            // key: name
-	dependencies  map[string]*dataSourceDependency  // key: source\x1fdependsOn
+	moduleSources map[string]*moduleSource         // key: module\x1fsource
+	dataObjects   map[string]*dataObject           // key: name
+	fields        map[string]*field                // key: typeName\x1fname
+	relations     map[string]*relation             // key: source\x1fname
+	functions     map[string]*function             // key: module\x1fname
+	types         map[string]*sourceType           // key: name
+	dependencies  map[string]*dataSourceDependency // key: source\x1fdependsOn
 }
 
 func newDesired() *desired {

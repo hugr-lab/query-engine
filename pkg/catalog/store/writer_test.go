@@ -28,7 +28,7 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	d := collect(ctx, partialSource(t, "test", collectTestSchema), "test")
-	state := SourceState{Name: "test", Version: "v1", Prefix: "shop", AsModule: true, Loaded: true}
+	state := SourceState{Name: "test", Version: "v1", Engine: "duckdb", Prefix: "shop", AsModule: true, Loaded: true}
 
 	changed, err := store.writeSource(ctx, d, state)
 	require.NoError(t, err)
@@ -53,6 +53,19 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 		`SELECT json_extract_string(properties::JSON, '$.sql') FROM core.catalog.data_objects WHERE name = 'sales_by_country'`)[0],
 		"SELECT", "@view sql stored")
 
+	// --- step-1 members: soft-delete raw expressions, @dim/@unique_rule, @deprecated ---
+	assert.Equal(t, []string{"deleted_at IS NULL|deleted_at = now()"}, rows(t, pool,
+		`SELECT json_extract_string(properties::JSON, '$.soft_delete_cond'), json_extract_string(properties::JSON, '$.soft_delete_set')
+		 FROM core.catalog.data_objects WHERE name = 'orders'`))
+	assert.Equal(t, []string{"3|INTERSECTS"}, rows(t, pool,
+		`SELECT json_extract_string(properties::JSON, '$.dim'), json_extract_string(properties::JSON, '$.unique_rule')
+		 FROM core.catalog.fields WHERE type_name = 'orders' AND name = 'area'`))
+	assert.Equal(t, []string{"use total_with_tax"}, rows(t, pool,
+		`SELECT deprecation_reason FROM core.catalog.fields WHERE type_name = 'orders' AND name = 'amount'`))
+	assert.Equal(t, []string{"No longer supported|unused"}, rows(t, pool,
+		`SELECT deprecation_reason, json_extract_string(args::JSON, '$[1].deprecation_reason')
+		 FROM core.catalog.functions WHERE name = 'order_status'`))
+
 	// --- physical relations: fk + two m2m legs (source = junction) ---
 	assert.Equal(t, []string{"order_tags|orders|fk", "order_tags|tags|fk", "orders|customers|fk"},
 		rows(t, pool, `SELECT source, destination, kind FROM core.catalog.relations ORDER BY source, destination`))
@@ -72,11 +85,11 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 	assert.Equal(t, []string{"sales", "sales.reports"}, rows(t, pool,
 		`SELECT module FROM core.catalog.module_data_sources WHERE data_source = 'test' ORDER BY module`))
 
-	// --- meta stamped with the writer-format version + prefix/as_module ---
-	assert.Equal(t, []string{"f1|v1|true|false|false"}, rows(t, pool,
+	// --- meta stamped with the writer-format version + options ---
+	assert.Equal(t, []string{"f2|v1|true|false|false"}, rows(t, pool,
 		`SELECT version, loaded, disabled, suspended FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
-	assert.Equal(t, []string{"shop|true"}, rows(t, pool,
-		`SELECT prefix, as_module FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
+	assert.Equal(t, []string{"duckdb|false|shop|true"}, rows(t, pool,
+		`SELECT engine, read_only, prefix, as_module FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
 
 	// --- original_name stored (equals name for the unprefixed fixture) ---
 	assert.Equal(t, []string{"orders|orders"}, rows(t, pool,
@@ -93,7 +106,7 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, changed3)
 	assert.Equal(t, []string{"5"}, rows(t, pool, `SELECT count(*) FROM core.catalog.data_objects WHERE data_source = 'test'`))
-	assert.Equal(t, []string{"f1|v2"}, rows(t, pool,
+	assert.Equal(t, []string{"f2|v2"}, rows(t, pool,
 		`SELECT version FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
 
 	// --- setFlags mirrors flags into the meta; rows stay ---

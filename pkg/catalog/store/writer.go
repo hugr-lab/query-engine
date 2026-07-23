@@ -14,7 +14,7 @@ import (
 // writerFormatVersion is mixed into the stored data_source_meta.version. Bump it
 // when the row shapes / property bags change: every source then reads as
 // "changed" once and is rewritten; an upgrade without a format change is free.
-const writerFormatVersion = "f1"
+const writerFormatVersion = "f2"
 
 const insertChunk = 200
 
@@ -24,12 +24,16 @@ const insertChunk = 200
 var litEngine = engines.NewDuckDB()
 
 // SourceState is the load state of one data source. Version is the catalog
-// content hash — an unchanged version makes writeSource a no-op. Prefix and
+// content hash — an unchanged version makes writeSource a no-op. Engine is the
+// source's engine type string (re-attached as @catalog(name, engine) on read);
+// ReadOnly is the per-source option gating mutation generation. Prefix and
 // AsModule are the compile options that shape names at read time.
 type SourceState struct {
 	Name         string
 	Version      string
 	Capabilities json.RawMessage
+	Engine       string
+	ReadOnly     bool
 	Prefix       string
 	AsModule     bool
 	Loaded       bool
@@ -206,11 +210,12 @@ func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) erro
 	for _, k := range sortedKeys(d.fields) {
 		r := d.fields[k]
 		fields = append(fields, []any{r.TypeName, r.Name, r.FieldType, jsonOrNil(r.Properties), r.DataSource,
-			nilIfEmpty(r.DependencyDataSource), r.IsPK, r.Ordinal, nilIfEmpty(r.Description)})
+			nilIfEmpty(r.DependencyDataSource), r.IsPK, r.Ordinal,
+			nilIfEmpty(r.DeprecationReason), nilIfEmpty(r.Description)})
 	}
 	if err := insertRows(ctx, conn, "fields",
 		[]string{"type_name", "name", "field_type", "properties", "data_source",
-			"dependency_data_source", "is_pk", "ordinal", "description"}, fields); err != nil {
+			"dependency_data_source", "is_pk", "ordinal", "deprecation_reason", "description"}, fields); err != nil {
 		return err
 	}
 
@@ -233,10 +238,11 @@ func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) erro
 	for _, k := range sortedKeys(d.functions) {
 		r := d.functions[k]
 		fns = append(fns, []any{r.Module, r.Name, r.Kind, r.DataSource, r.Returns, r.IsTable,
-			jsonOrNil(r.Args), jsonOrNil(r.Properties), nilIfEmpty(r.Description)})
+			jsonOrNil(r.Args), jsonOrNil(r.Properties), nilIfEmpty(r.DeprecationReason), nilIfEmpty(r.Description)})
 	}
 	if err := insertRows(ctx, conn, "functions",
-		[]string{"module", "name", "kind", "data_source", "returns", "is_table", "args", "properties", "description"}, fns); err != nil {
+		[]string{"module", "name", "kind", "data_source", "returns", "is_table", "args", "properties",
+			"deprecation_reason", "description"}, fns); err != nil {
 		return err
 	}
 
@@ -285,12 +291,14 @@ func pruneOrphanModules(ctx context.Context, conn *db.Connection) error {
 // upsertMeta stamps the source's version, capabilities and flags.
 func upsertMeta(ctx context.Context, conn *db.Connection, state SourceState) error {
 	stmt := `INSERT INTO core.catalog.data_source_meta
-		(data_source, version, capabilities, prefix, as_module, loaded, disabled, suspended, loaded_at)
+		(data_source, version, capabilities, engine, read_only, prefix, as_module, loaded, disabled, suspended, loaded_at)
 		VALUES (` + lit(state.Name) + `, ` + lit(state.storedVersion()) + `, ` + lit(capabilitiesText(state.Capabilities)) + `, ` +
+		lit(state.Engine) + `, ` + lit(state.ReadOnly) + `, ` +
 		lit(nilIfEmpty(state.Prefix)) + `, ` + lit(state.AsModule) + `, ` +
 		lit(state.Loaded) + `, ` + lit(state.Disabled) + `, ` + lit(state.Suspended) + `, CURRENT_TIMESTAMP)
 		ON CONFLICT (data_source) DO UPDATE SET version = EXCLUDED.version,
-		capabilities = EXCLUDED.capabilities, prefix = EXCLUDED.prefix, as_module = EXCLUDED.as_module,
+		capabilities = EXCLUDED.capabilities, engine = EXCLUDED.engine, read_only = EXCLUDED.read_only,
+		prefix = EXCLUDED.prefix, as_module = EXCLUDED.as_module,
 		loaded = EXCLUDED.loaded, disabled = EXCLUDED.disabled, suspended = EXCLUDED.suspended, loaded_at = EXCLUDED.loaded_at`
 	if _, err := conn.Exec(ctx, stmt); err != nil {
 		return fmt.Errorf("catalog meta upsert %s: %w", state.Name, err)

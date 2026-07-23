@@ -135,11 +135,11 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 
 	// A1: multi-row insert, property bags as plain JSON text: rich (nested
 	// struct, list of struct, list of varchar), partial (one key), SQL NULL.
-	exec(`INSERT INTO core.catalog.data_objects (name, data_source, module, kind, properties) VALUES
-		('probe_rich', 'probe', '', 'table',
+	exec(`INSERT INTO core.catalog.data_objects (name, original_name, data_source, module, kind, properties) VALUES
+		('probe_rich', 'probe_rich', 'probe', '', 'table',
 		 '{"cache":{"ttl":"5m","tags":["a","b"]},"unique":[{"fields":["name"],"query_suffix":"by_name"},{"fields":["id","name"],"skip_query":true}],"at":{"version":42}}'),
-		('probe_partial', 'probe', '', 'view', '{"soft_delete":true}'),
-		('probe_null', 'probe', '', 'table', NULL)`)
+		('probe_partial', 'probe_partial', 'probe', '', 'view', '{"soft_delete":true}'),
+		('probe_null', 'probe_null', 'probe', '', 'table', NULL)`)
 
 	// A2: fields.properties — the trickiest bag shape: JSON-typed members
 	// INSIDE the struct (default.value, function_call.args).
@@ -166,8 +166,8 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 
 	// B1: meta upsert — the same statement drives both the insert and the
 	// update path (version gate / flag reconcile).
-	meta := `INSERT INTO core.catalog.data_source_meta (data_source, version, capabilities, loaded, disabled, suspended, loaded_at)
-		VALUES ('probe', '%s', '{"read_only":false}', true, false, false, CURRENT_TIMESTAMP)
+	meta := `INSERT INTO core.catalog.data_source_meta (data_source, version, capabilities, engine, read_only, as_module, loaded, disabled, suspended, loaded_at)
+		VALUES ('probe', '%s', '{"read_only":false}', 'duckdb', false, false, true, false, false, CURRENT_TIMESTAMP)
 		ON CONFLICT (data_source) DO UPDATE SET version = EXCLUDED.version, capabilities = EXCLUDED.capabilities`
 	exec(fmt.Sprintf(meta, "v1"))
 	exec(fmt.Sprintf(meta, "v2"))
@@ -177,8 +177,8 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 	assert.Equal(t, []string{"v2|true|false|false|false"}, got)
 
 	// B2: upserting the property bag itself — replaced wholesale.
-	exec(`INSERT INTO core.catalog.data_objects (name, data_source, module, kind, properties) VALUES
-		('probe_rich', 'probe', '', 'table', '{"cache":{"ttl":"10m"}}')
+	exec(`INSERT INTO core.catalog.data_objects (name, original_name, data_source, module, kind, properties) VALUES
+		('probe_rich', 'probe_rich', 'probe', '', 'table', '{"cache":{"ttl":"10m"}}')
 		ON CONFLICT (name) DO UPDATE SET properties = EXCLUDED.properties`)
 	got = queryStrings(t, pool, `SELECT json_extract_string(properties::JSON, '$.cache.ttl'),
 		json_extract_string(properties::JSON, '$.unique[0].query_suffix')

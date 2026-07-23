@@ -23,19 +23,21 @@ package store
 
 // dataObjectProperties is catalog.data_objects.properties.
 type dataObjectProperties struct {
-	Name         string             `json:"name,omitempty"` // physical name in the source
-	SQL          string             `json:"sql,omitempty"`  // @view(sql:) body; empty for tables / native views
-	SoftDelete   bool               `json:"soft_delete,omitempty"`
-	IsCube       bool               `json:"is_cube,omitempty"`
-	IsM2M        bool               `json:"is_m2m,omitempty"`
-	IsHypertable bool               `json:"is_hypertable,omitempty"`
-	Embeddings   *embeddingsConfig  `json:"embeddings,omitempty"`
-	ArgsTypeName string             `json:"args_type_name,omitempty"`
-	RequiredArgs bool               `json:"required_args,omitempty"`
-	Unique       []uniqueConstraint `json:"unique,omitempty"`
-	Dependencies []string           `json:"dependencies,omitempty"`
-	Cache        *cacheSettings     `json:"cache,omitempty"`
-	At           *atPin             `json:"at,omitempty"`
+	Name           string             `json:"name,omitempty"` // physical name in the source
+	SQL            string             `json:"sql,omitempty"`  // @view(sql:) body; empty for tables / native views
+	SoftDelete     bool               `json:"soft_delete,omitempty"`
+	SoftDeleteCond string             `json:"soft_delete_cond,omitempty"` // @table(soft_delete_cond:) raw condition
+	SoftDeleteSet  string             `json:"soft_delete_set,omitempty"`  // @table(soft_delete_set:) raw SET expression
+	IsCube         bool               `json:"is_cube,omitempty"`
+	IsM2M          bool               `json:"is_m2m,omitempty"`
+	IsHypertable   bool               `json:"is_hypertable,omitempty"`
+	Embeddings     *embeddingsConfig  `json:"embeddings,omitempty"`
+	ArgsTypeName   string             `json:"args_type_name,omitempty"`
+	RequiredArgs   bool               `json:"required_args,omitempty"`
+	Unique         []uniqueConstraint `json:"unique,omitempty"`
+	Dependencies   []string           `json:"dependencies,omitempty"`
+	Cache          *cacheSettings     `json:"cache,omitempty"`
+	At             *atPin             `json:"at,omitempty"`
 }
 
 // fieldProperties is catalog.fields.properties.
@@ -45,8 +47,10 @@ type fieldProperties struct {
 	SQL                   string               `json:"sql,omitempty"`      // @sql(exp:) computed expression
 	Default               *defaultValue        `json:"default,omitempty"`
 	Geometry              *geometryInfo        `json:"geometry,omitempty"`
+	Dim                   any                  `json:"dim,omitempty"` // @dim(len:) — geometry / vector dimension (BIGINT column)
 	Measurement           bool                 `json:"measurement,omitempty"`
 	TimescaleKey          bool                 `json:"timescale_key,omitempty"`
+	UniqueRule            string               `json:"unique_rule,omitempty"` // @unique_rule(rule:) enum value
 	ExcludeFilter         []string             `json:"exclude_filter,omitempty"`
 	FilterRequired        bool                 `json:"filter_required,omitempty"`
 	ExcludeMCP            bool                 `json:"exclude_mcp,omitempty"`
@@ -64,11 +68,12 @@ type functionProperties struct {
 
 // functionArgument is one ordered entry of catalog.functions.args.
 type functionArgument struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description,omitempty"`
-	Default     string `json:"default,omitempty"`
-	ArgDefault  string `json:"arg_default,omitempty"` // server-injected @arg_default placeholder
+	Name              string `json:"name"`
+	Type              string `json:"type"`
+	Description       string `json:"description,omitempty"`
+	Default           string `json:"default,omitempty"`
+	ArgDefault        string `json:"arg_default,omitempty"`        // server-injected @arg_default placeholder
+	DeprecationReason string `json:"deprecation_reason,omitempty"` // @deprecated(reason:) — empty means active
 }
 
 type embeddingsConfig struct {

@@ -63,6 +63,16 @@ func TestPropertyBagJSON(t *testing.T) {
 		`[{"name":"id","type":"Int!","description":"identifier"},{"name":"mode","type":"String"}]`,
 		marshal(args))
 
+	// Step-1 gap members: soft-delete raw expressions, @dim, @unique_rule and
+	// argument @deprecated — all pinned to the STRUCT member names.
+	assert.Equal(t,
+		`{"soft_delete":true,"soft_delete_cond":"deleted_at IS NULL","soft_delete_set":"deleted_at = now()"}`,
+		marshal(&dataObjectProperties{SoftDelete: true, SoftDeleteCond: "deleted_at IS NULL", SoftDeleteSet: "deleted_at = now()"}))
+	assert.Equal(t, `{"dim":3,"unique_rule":"INTERSECTS"}`,
+		marshal(&fieldProperties{Dim: 3, UniqueRule: "INTERSECTS"}))
+	assert.Equal(t, `[{"name":"id","type":"Int","deprecation_reason":"use uid"}]`,
+		marshal([]functionArgument{{Name: "id", Type: "Int", DeprecationReason: "use uid"}}))
+
 	// Empty bags carry no keys — the writer collapses "{}" to SQL NULL.
 	assert.Equal(t, `{}`, marshal(&dataObjectProperties{}))
 	assert.Equal(t, `{}`, marshal(&fieldProperties{}))

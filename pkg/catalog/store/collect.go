@@ -95,6 +95,7 @@ func collectDataObject(ctx context.Context, defs base.DefinitionsSource, d *desi
 			DependencyDataSource: base.FieldDefDependency(f),
 			IsPK:                 f.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil,
 			Ordinal:              ordinal,
+			DeprecationReason:    deprecationReason(f.Directives),
 			Description:          f.Description,
 		}
 		ordinal++
@@ -142,6 +143,7 @@ func collectExtensionFields(ctx context.Context, defs base.DefinitionsSource, d 
 			DependencyDataSource: base.FieldDefDependency(f),
 			IsPK:                 f.Directives.ForName(base.FieldPrimaryKeyDirectiveName) != nil,
 			Ordinal:              ordinal,
+			DeprecationReason:    deprecationReason(f.Directives),
 			Description:          f.Description,
 		}
 		ordinal++
@@ -257,15 +259,16 @@ func collectModuleRoot(ctx context.Context, defs base.DefinitionsSource, d *desi
 			continue
 		}
 		d.functions[key] = &function{
-			Module:      module,
-			Name:        f.Name,
-			Kind:        kind,
-			DataSource:  orDefault(base.FieldDefCatalog(f), dataSource),
-			Returns:     f.Type.String(),
-			IsTable:     isDataObjectType(ctx, defs, f.Type.Name()),
-			Args:        mapFunctionArgs(f),
-			Properties:  mapFunctionProperties(f),
-			Description: f.Description,
+			Module:            module,
+			Name:              f.Name,
+			Kind:              kind,
+			DataSource:        orDefault(base.FieldDefCatalog(f), dataSource),
+			Returns:           f.Type.String(),
+			IsTable:           isDataObjectType(ctx, defs, f.Type.Name()),
+			Args:              mapFunctionArgs(f),
+			Properties:        mapFunctionProperties(f),
+			DeprecationReason: deprecationReason(f.Directives),
+			Description:       f.Description,
 		}
 	}
 }

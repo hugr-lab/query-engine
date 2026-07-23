@@ -460,8 +460,12 @@ type entity_data_object_properties {
   name: String
   "View definition SQL (@view)"
   sql: String
-  "Soft-delete behavior marker (the condition/set expressions are not stored)"
+  "Soft-delete behavior marker (@table(soft_delete:))"
   soft_delete: Boolean
+  "Raw soft-delete condition SQL (@table(soft_delete_cond:))"
+  soft_delete_cond: String
+  "Raw soft-delete SET expression SQL (@table(soft_delete_set:))"
+  soft_delete_set: String
   is_cube: Boolean
   is_m2m: Boolean
   is_hypertable: Boolean
@@ -486,8 +490,12 @@ type entity_field_properties {
   sql: String
   default: entity_default_value
   geometry: entity_geometry_info
+  "Geometry / vector dimension (@dim(len:))"
+  dim: Int
   measurement: Boolean
   timescale_key: Boolean
+  "Unique-constraint match rule (@unique_rule(rule:))"
+  unique_rule: String
   exclude_filter: [String]
   filter_required: Boolean
   exclude_mcp: Boolean
@@ -512,6 +520,8 @@ type entity_function_argument {
   default: String
   "Server-injected @arg_default placeholder"
   arg_default: String
+  "@deprecated(reason:) — null means active"
+  deprecation_reason: String
 }
 
 type entity_embeddings_config {
@@ -669,6 +679,7 @@ type entity_fields
     SELECT f.type_name, f.name, f.field_type,
       f.properties,
       f.data_source, f.dependency_data_source, f.is_pk, f.ordinal,
+      f.deprecation_reason,
       COALESCE(a.description, f.description) AS description,
       a.long_description,
       a.vec
@@ -695,6 +706,8 @@ type entity_fields
   dependency_data_source: String
   is_pk: Boolean!
   ordinal: Int!
+  "@deprecated(reason:) — null means active"
+  deprecation_reason: String
   description: String
   long_description: String
   vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
@@ -737,6 +750,7 @@ type entity_functions
     SELECT f.module, f.name, f.kind, f.data_source, f.returns, f.is_table,
       f.args,
       f.properties,
+      f.deprecation_reason,
       COALESCE(a.description, f.description) AS description,
       a.long_description,
       a.vec
@@ -756,6 +770,8 @@ type entity_functions
   is_table: Boolean!
   args: [entity_function_argument]
   properties: entity_function_properties
+  "@deprecated(reason:) — null means active"
+  deprecation_reason: String
   description: String
   long_description: String
   vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}

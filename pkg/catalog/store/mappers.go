@@ -9,13 +9,19 @@ import (
 // The mappers read a definition's directives into the typed property bags
 // (models.go / properties.go). SQL bodies are stored AND exposed (typed
 // members) — @view/@function/@sql/@join/@function_call/@default.
+//
+// The gis surface (@wfs / @wfs_field / @wfs_exclude / @feature) is deliberately
+// DROPPED — rudimentary, moves to a separate service (decision 2026-07-23).
 
 // Directive-argument names without base-package constants (repo idiom: the
 // compiler rules reference these by literal too).
 const (
 	fieldExcludeFilterDirectiveName  = "exclude_filter"
 	fieldFilterRequiredDirectiveName = "filter_required"
+	fieldUniqueRuleDirectiveName     = "unique_rule"
 	argOperations                    = "operations"
+	argRule                          = "rule"
+	argReason                        = "reason"
 	argTTL                           = "ttl"
 	argKey                           = "key"
 	argTags                          = "tags"
@@ -30,13 +36,15 @@ const (
 // mapDataObjectProperties builds data_objects.properties.
 func mapDataObjectProperties(def *ast.Definition, obj *sdl.Object) *dataObjectProperties {
 	p := &dataObjectProperties{
-		Name:         obj.Name,
-		SQL:          base.DefinitionDirectiveArgString(def, base.ObjectViewDirectiveName, base.ArgSQL),
-		SoftDelete:   obj.SoftDelete,
-		IsCube:       obj.IsCube,
-		IsM2M:        obj.IsM2M,
-		IsHypertable: obj.IsHypertable,
-		ArgsTypeName: obj.InputArgsName,
+		Name:           obj.Name,
+		SQL:            base.DefinitionDirectiveArgString(def, base.ObjectViewDirectiveName, base.ArgSQL),
+		SoftDelete:     obj.SoftDelete,
+		SoftDeleteCond: base.DefinitionDirectiveArgString(def, base.ObjectTableDirectiveName, base.ArgSoftDeleteCond),
+		SoftDeleteSet:  base.DefinitionDirectiveArgString(def, base.ObjectTableDirectiveName, base.ArgSoftDeleteSet),
+		IsCube:         obj.IsCube,
+		IsM2M:          obj.IsM2M,
+		IsHypertable:   obj.IsHypertable,
+		ArgsTypeName:   obj.InputArgsName,
 	}
 	if obj.InputArgsName != "" {
 		p.RequiredArgs = obj.RequiredArgs
@@ -84,8 +92,12 @@ func mapFieldProperties(f *ast.FieldDefinition) *fieldProperties {
 		SQL:            base.FieldDefDirectiveArgString(f, base.FieldSqlDirectiveName, base.ArgExp),
 		Measurement:    f.Directives.ForName(base.FieldMeasurementDirectiveName) != nil,
 		TimescaleKey:   f.Directives.ForName(base.FieldTimescaleKeyDirectiveName) != nil,
+		UniqueRule:     base.FieldDefDirectiveArgString(f, fieldUniqueRuleDirectiveName, argRule),
 		FilterRequired: f.Directives.ForName(fieldFilterRequiredDirectiveName) != nil,
 		ExcludeMCP:     f.Directives.ForName(base.FieldExcludeMCPDirectiveName) != nil,
+	}
+	if v, ok := dirArgValue(f.Directives.ForName(base.FieldDimDirectiveName), base.ArgLen); ok {
+		p.Dim = v
 	}
 	if d := f.Directives.ForName(base.FieldDefaultDirectiveName); d != nil {
 		dv := &defaultValue{
@@ -189,9 +201,24 @@ func mapFunctionArgs(f *ast.FieldDefinition) []functionArgument {
 		if ad := a.Directives.ForName(base.ArgDefaultDirectiveName); ad != nil {
 			arg.ArgDefault = base.DirectiveArgString(ad, base.ArgValue)
 		}
+		arg.DeprecationReason = deprecationReason(a.Directives)
 		args = append(args, arg)
 	}
 	return args
+}
+
+// deprecationReason reads @deprecated into the storage column value: "" means
+// active; a bare @deprecated stores the GraphQL spec default reason so the
+// column alone distinguishes deprecated-without-reason from active.
+func deprecationReason(dd ast.DirectiveList) string {
+	d := dd.ForName(base.DeprecatedDirectiveName)
+	if d == nil {
+		return ""
+	}
+	if r := base.DirectiveArgString(d, argReason); r != "" {
+		return r
+	}
+	return "No longer supported"
 }
 
 func mapCacheSettings(d *ast.Directive) *cacheSettings {

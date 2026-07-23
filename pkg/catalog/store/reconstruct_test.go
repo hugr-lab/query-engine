@@ -71,6 +71,12 @@ func TestReconstructDataObjectBase(t *testing.T) {
 	require.NotNil(t, orders.Fields.ForName("customer_id"))
 	assert.Nil(t, orders.Fields.ForName("customer"), "nav field is generated, not stored")
 
+	// @deprecated round-trips through the deprecation_reason column.
+	amount := orders.Fields.ForName("amount")
+	require.NotNil(t, amount)
+	assert.Equal(t, "use total_with_tax", dirArg(amount.Directives.ForName("deprecated"), "reason"))
+	assert.Nil(t, id.Directives.ForName("deprecated"))
+
 	// A view keeps its @view(sql:).
 	view := store.ForName(ctx, "sales_by_country")
 	require.NotNil(t, view)
