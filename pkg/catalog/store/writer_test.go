@@ -71,6 +71,9 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 		rows(t, pool, `SELECT source, destination, kind FROM core.catalog.relations ORDER BY source, destination`))
 	assert.Equal(t, []string{`["customer_id"]|["id"]`}, rows(t, pool,
 		`SELECT source_keys::JSON::VARCHAR, destination_keys::JSON::VARCHAR FROM core.catalog.relations WHERE name = 'order_customer'`))
+	assert.Equal(t, []string{"order_customer|false", "orders_order_id|true", "tags_tag_name|true"}, rows(t, pool,
+		`SELECT name, field_declared FROM core.catalog.relations ORDER BY name`),
+		"@field_references legs carry the field-declared provenance, object-level @references do not")
 
 	// --- functions + ordered args ---
 	assert.Equal(t, []string{"sales|order_status|function|false", "sales|reprice_orders|mutation|true"},
@@ -93,7 +96,7 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 		"the view-only submodule contributes no table/function kinds")
 
 	// --- meta stamped with the writer-format version + options ---
-	assert.Equal(t, []string{"f3|v1|true|false|false"}, rows(t, pool,
+	assert.Equal(t, []string{"f4|v1|true|false|false"}, rows(t, pool,
 		`SELECT version, loaded, disabled, suspended FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
 	assert.Equal(t, []string{"duckdb|false|shop|true"}, rows(t, pool,
 		`SELECT engine, read_only, prefix, as_module FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
@@ -113,7 +116,7 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, changed3)
 	assert.Equal(t, []string{"5"}, rows(t, pool, `SELECT count(*) FROM core.catalog.data_objects WHERE data_source = 'test'`))
-	assert.Equal(t, []string{"f3|v2"}, rows(t, pool,
+	assert.Equal(t, []string{"f4|v2"}, rows(t, pool,
 		`SELECT version FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
 
 	// --- setFlags mirrors flags into the meta; rows stay ---

@@ -176,6 +176,10 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.relati
     source_field_description      VARCHAR,
     destination_field             VARCHAR,
     destination_field_description VARCHAR,
+    -- declared as @field_references on the source field (vs object-level
+    -- @references) — the compiler mirrors field-declared legs onto the
+    -- matching filter field as @field_references
+    field_declared                BOOLEAN NOT NULL,
     data_source                   VARCHAR NOT NULL,
     PRIMARY KEY (source, name)
 );

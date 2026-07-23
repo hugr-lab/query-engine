@@ -36,12 +36,20 @@ var genParityNames = []string{
 	"JSON",
 	// Residual source types: stored SDL vs compiler passthrough.
 	"sales_by_country_args",
+	// Ш4.1 — filter family: plain FK both directions, m2m endpoints, the
+	// junction (no nav), the parameterized view.
+	"orders_filter",
+	"orders_list_filter",
+	"customers_filter",
+	"tags_filter",
+	"tags_list_filter",
+	"order_tags_filter",
+	"sales_by_country_filter",
 }
 
 // genPendingNames — names the reference generates that the store must learn
 // to serve, keyed by the sub-step that delivers them.
 var genPendingNames = map[string][]string{
-	"Ш4.1 filter":     {"orders_filter", "orders_list_filter"},
 	"Ш4.2 mut inputs": {"orders_mut_input_data", "orders_mut_data"},
 	"Ш4.3 agg":        {"_orders_aggregation", "_orders_aggregation_bucket"},
 	"Ш4.6 shared":     {"_join", "_join_aggregation"},

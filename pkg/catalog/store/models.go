@@ -88,7 +88,11 @@ type relation struct {
 	SourceFieldDescription      string
 	DestinationField            string
 	DestinationFieldDescription string
-	DataSource                  string
+	// FieldDeclared marks a leg written as @field_references on the source
+	// field (vs object-level @references) — such legs are mirrored onto the
+	// matching filter field as @field_references.
+	FieldDeclared bool
+	DataSource    string
 }
 
 // function is one row of catalog.functions. Kind is function | mutation |

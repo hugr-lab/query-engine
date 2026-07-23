@@ -110,7 +110,12 @@ type derivedRule struct {
 	build func(ctx context.Context, g *genContext, baseName, name string) *ast.Definition
 }
 
-var derivedRules []derivedRule
+// derivedRules in match order — ONE place: a more specific suffix registers
+// before its overlap (X_list_filter also parses as X_list + _filter).
+var derivedRules = []derivedRule{
+	listFilterRule,
+	filterRule,
+}
 
 // resolveDerivedType (5) generates a derived type from its base data object.
 func resolveDerivedType(ctx context.Context, s *Store, name string) *ast.Definition {

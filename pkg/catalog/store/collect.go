@@ -222,6 +222,7 @@ func collectFieldReferences(ctx context.Context, defs base.DefinitionsSource, d 
 			DestinationKeys:  []string{targetField},
 			SourceField:      query,
 			DestinationField: refQuery,
+			FieldDeclared:    true,
 			DataSource:       owner,
 		})
 	}

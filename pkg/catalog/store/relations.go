@@ -36,7 +36,7 @@ func activeMeta(alias, column string) string {
 const relationColumns = `r.source, r.name, r.kind, r.destination, r.m2m_object,
 	r.source_keys::JSON::VARCHAR, r.destination_keys::JSON::VARCHAR,
 	r.source_field, r.source_field_description, r.destination_field, r.destination_field_description,
-	r.data_source`
+	r.field_declared, r.data_source`
 
 // relationsBySource reads the relations DECLARED BY an object (its fk legs).
 func (s *Store) relationsBySource(ctx context.Context, source string) []*relation {
@@ -77,7 +77,7 @@ func (s *Store) readRelations(ctx context.Context, query string) []*relationEdge
 		var m2mObject, srcKeys, dstKeys, srcField, srcDesc, dstField, dstDesc sql.NullString
 		if err := rows.Scan(&e.Source, &e.Name, &e.Kind, &e.Destination, &m2mObject,
 			&srcKeys, &dstKeys, &srcField, &srcDesc, &dstField, &dstDesc,
-			&e.DataSource, &e.m2mJunction); err != nil {
+			&e.FieldDeclared, &e.DataSource, &e.m2mJunction); err != nil {
 			return out
 		}
 		e.M2MObject = m2mObject.String

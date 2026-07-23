@@ -14,7 +14,7 @@ import (
 // writerFormatVersion is mixed into the stored data_source_meta.version. Bump it
 // when the row shapes / property bags change: every source then reads as
 // "changed" once and is rewritten; an upgrade without a format change is free.
-const writerFormatVersion = "f3"
+const writerFormatVersion = "f4"
 
 const insertChunk = 200
 
@@ -225,12 +225,12 @@ func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) erro
 		rels = append(rels, []any{r.Source, r.Name, r.Kind, r.Destination, nilIfEmpty(r.M2MObject),
 			jsonOrNil(r.SourceKeys), jsonOrNil(r.DestinationKeys), nilIfEmpty(r.SourceField),
 			nilIfEmpty(r.SourceFieldDescription), nilIfEmpty(r.DestinationField),
-			nilIfEmpty(r.DestinationFieldDescription), r.DataSource})
+			nilIfEmpty(r.DestinationFieldDescription), r.FieldDeclared, r.DataSource})
 	}
 	if err := insertRows(ctx, conn, "relations",
 		[]string{"source", "name", "kind", "destination", "m2m_object", "source_keys", "destination_keys",
 			"source_field", "source_field_description", "destination_field", "destination_field_description",
-			"data_source"}, rels); err != nil {
+			"field_declared", "data_source"}, rels); err != nil {
 		return err
 	}
 
