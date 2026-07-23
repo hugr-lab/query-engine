@@ -74,13 +74,18 @@ var genParityNames = []string{
 	"tags",
 	"order_tags",
 	"sales_by_country",
+	// Ш4.6 — shared cross-source types.
+	"_join",
+	"_join_aggregation",
+	"_spatial",
+	"_spatial_aggregation",
+	"_h3_data_query",
 }
 
 // genPendingNames — names the reference generates that the store must learn
 // to serve, keyed by the sub-step that delivers them.
 var genPendingNames = map[string][]string{
-	"Ш4.6 shared":     {"_join", "_join_aggregation"},
-	"Ш4.7 roots":      {"_module_sales_query", "_module_sales_mutation", "Query", "Mutation"},
+	"Ш4.7 roots": {"_module_sales_query", "_module_sales_mutation", "Query", "Mutation"},
 }
 
 // goldenRef compiles a fixture with the FULL rule set into a fresh static

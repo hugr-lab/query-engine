@@ -88,7 +88,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 		Position: pos,
 	}
 	for _, obj := range dataObjects {
-		joinArgs := joinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
+		joinArgs := JoinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
 		joinArgs = append(joinArgs, joinVectorArgs(obj, pos)...)
 
 		// Main query field
@@ -109,7 +109,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 		// Aggregation field
 		aggTypeName := "_" + obj.name + "_aggregation"
 		if ctx.LookupType(aggTypeName) != nil {
-			aggJoinArgs := joinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
+			aggJoinArgs := JoinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
 			aggJoinArgs = append(aggJoinArgs, joinVectorArgs(obj, pos)...)
 
 			joinExt.Fields = append(joinExt.Fields, &ast.FieldDefinition{
@@ -128,7 +128,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 
 			// Bucket aggregation field
 			bucketAggTypeName := "_" + obj.name + "_aggregation_bucket"
-			bucketJoinArgs := joinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
+			bucketJoinArgs := JoinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, pos)
 			bucketJoinArgs = append(bucketJoinArgs, joinVectorArgs(obj, pos)...)
 
 			joinExt.Fields = append(joinExt.Fields, &ast.FieldDefinition{
@@ -172,7 +172,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 		if ctx.LookupType(aggTypeName) == nil {
 			continue
 		}
-		aggArgs := joinObjectAggArgsWithViewArgs(obj.info, obj.filterName, pos)
+		aggArgs := JoinObjectAggArgsWithViewArgs(obj.info, obj.filterName, pos)
 		aggArgs = append(aggArgs, joinVectorArgs(obj, pos)...)
 		joinAggExt.Fields = append(joinAggExt.Fields, &ast.FieldDefinition{
 			Name:      obj.name,
@@ -252,7 +252,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			Position: pos,
 		}
 		for _, obj := range spatialObjects {
-			spatialArgs := spatialObjectQueryArgs(obj.filterName, pos)
+			spatialArgs := SpatialObjectQueryArgs(obj.filterName, pos)
 			spatialArgs = append(spatialArgs, joinVectorArgs(obj, pos)...)
 
 			// Main query field
@@ -273,7 +273,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			// Aggregation field
 			aggTypeName := "_" + obj.name + "_aggregation"
 			if ctx.LookupType(aggTypeName) != nil {
-				aggSpatialArgs := spatialObjectQueryArgs(obj.filterName, pos)
+				aggSpatialArgs := SpatialObjectQueryArgs(obj.filterName, pos)
 				aggSpatialArgs = append(aggSpatialArgs, joinVectorArgs(obj, pos)...)
 
 				spatialExt.Fields = append(spatialExt.Fields, &ast.FieldDefinition{
@@ -292,7 +292,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 
 				// Bucket aggregation field
 				bucketAggTypeName := "_" + obj.name + "_aggregation_bucket"
-				bucketSpatialArgs := spatialObjectQueryArgs(obj.filterName, pos)
+				bucketSpatialArgs := SpatialObjectQueryArgs(obj.filterName, pos)
 				bucketSpatialArgs = append(bucketSpatialArgs, joinVectorArgs(obj, pos)...)
 
 				spatialExt.Fields = append(spatialExt.Fields, &ast.FieldDefinition{
@@ -336,7 +336,7 @@ func (r *JoinSpatialRule) ProcessAll(ctx base.CompilationContext) error {
 			if ctx.LookupType(aggTypeName) == nil {
 				continue
 			}
-			sAggArgs := spatialObjectAggArgs(obj.filterName, pos)
+			sAggArgs := SpatialObjectAggArgs(obj.filterName, pos)
 			sAggArgs = append(sAggArgs, joinVectorArgs(obj, pos)...)
 			spatialAggExt.Fields = append(spatialAggExt.Fields, &ast.FieldDefinition{
 				Name:      obj.name,
@@ -415,9 +415,9 @@ type joinObjectEntry struct {
 	hasEmbeddings bool // has @embeddings → additionally add semantic arg to _join fields
 }
 
-// joinObjectQueryArgsWithViewArgs creates args for _join type fields, optionally
+// JoinObjectQueryArgsWithViewArgs creates args for _join type fields, optionally
 // prepending view args for parameterized views.
-func joinObjectQueryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+func JoinObjectQueryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	var args ast.ArgumentDefinitionList
 	if info != nil && info.InputArgsName != "" {
 		var argType *ast.Type
@@ -433,9 +433,9 @@ func joinObjectQueryArgsWithViewArgs(info *base.ObjectInfo, filterName string, p
 	return append(args, joinObjectQueryArgs(filterName, pos)...)
 }
 
-// joinObjectAggArgsWithViewArgs creates args for _join_aggregation type fields,
+// JoinObjectAggArgsWithViewArgs creates args for _join_aggregation type fields,
 // optionally prepending view args for parameterized views.
-func joinObjectAggArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+func JoinObjectAggArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	var args ast.ArgumentDefinitionList
 	if info != nil && info.InputArgsName != "" {
 		var argType *ast.Type
@@ -485,8 +485,8 @@ func joinObjectAggArgs(filterName string, pos *ast.Position) ast.ArgumentDefinit
 	}
 }
 
-// spatialObjectQueryArgs creates args for _spatial type fields (includes limit/offset).
-func spatialObjectQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+// SpatialObjectQueryArgs creates args for _spatial type fields (includes limit/offset).
+func SpatialObjectQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
 		{Name: "field", Type: ast.NonNullNamedType("String", pos), Position: pos},
 		{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
@@ -504,8 +504,8 @@ func spatialObjectQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDe
 	}
 }
 
-// spatialObjectAggArgs creates args for _spatial_aggregation type fields (no limit/offset).
-func spatialObjectAggArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+// SpatialObjectAggArgs creates args for _spatial_aggregation type fields (no limit/offset).
+func SpatialObjectAggArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
 	return ast.ArgumentDefinitionList{
 		{Name: "field", Type: ast.NonNullNamedType("String", pos), Position: pos},
 		{Name: "filter", Description: base.DescFilter, Type: ast.NamedType(filterName, pos), Position: pos},
@@ -523,7 +523,13 @@ func spatialObjectAggArgs(filterName string, pos *ast.Position) ast.ArgumentDefi
 // - hasVector only → similarity
 // - hasEmbeddings → similarity + semantic
 func joinVectorArgs(obj *joinObjectEntry, pos *ast.Position) ast.ArgumentDefinitionList {
-	if !obj.hasVector {
+	return VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, pos)
+}
+
+// VectorSearchArgs is the similarity/semantic argument decorator shared with
+// the on-the-fly generation layer.
+func VectorSearchArgs(hasVector, hasEmbeddings bool, pos *ast.Position) ast.ArgumentDefinitionList {
+	if !hasVector {
 		return nil
 	}
 	args := ast.ArgumentDefinitionList{
@@ -534,7 +540,7 @@ func joinVectorArgs(obj *joinObjectEntry, pos *ast.Position) ast.ArgumentDefinit
 			Position:    pos,
 		},
 	}
-	if obj.hasEmbeddings {
+	if hasEmbeddings {
 		args = append(args, &ast.ArgumentDefinition{
 			Name:        "semantic",
 			Description: "Search for semantic similarity",

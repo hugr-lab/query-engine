@@ -157,7 +157,13 @@ type sharedTypeRule struct {
 	build func(ctx context.Context, g *genContext) *ast.Definition
 }
 
-var sharedTypeRules []sharedTypeRule
+var sharedTypeRules = []sharedTypeRule{
+	{name: "_join", build: buildJoinShared},
+	{name: "_join_aggregation", build: buildJoinAggShared},
+	{name: "_spatial", build: buildSpatialShared},
+	{name: "_spatial_aggregation", build: buildSpatialAggShared},
+	{name: "_h3_data_query", build: buildH3DataShared},
+}
 
 // resolveSharedType (6) serves shared system types. It runs BEFORE the static
 // layer: the prelude holds only stubs for these names, the real member fields
