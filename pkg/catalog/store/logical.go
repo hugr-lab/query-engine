@@ -294,11 +294,13 @@ func (s *Store) Relations(ctx context.Context, object string) iter.Seq[*catalog.
 				}
 				continue
 			}
+			// An explicitly EMPTY references_query means the DEFAULT (the
+			// declaring object name) — the compiler never distinguishes.
 			rels = append(rels, &catalog.RelationInfo{
 				Name:            r.Name,
 				Direction:       catalog.RelationBack,
 				Kind:            catalog.RelationFK,
-				FieldName:       r.DestinationField,
+				FieldName:       orDefault(r.DestinationField, r.Source),
 				Description:     r.DestinationFieldDescription,
 				DataObject:      r.Source,
 				SourceKeys:      r.SourceKeys,

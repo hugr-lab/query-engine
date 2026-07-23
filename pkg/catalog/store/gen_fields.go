@@ -94,27 +94,28 @@ var navFieldsRule = fieldRule{
 			}
 		}
 		for _, leg := range g.s.relationsByDestination(ctx, t.row.Name) {
+			backName := orDefault(leg.DestinationField, leg.Source)
 			if leg.m2mJunction {
 				for _, co := range g.s.relationsBySource(ctx, leg.Source) {
 					if co.Name == leg.Name {
 						continue
 					}
 					def.Fields = append(def.Fields, navListField(
-						leg.DestinationField, co.Destination,
+						backName, co.Destination,
 						navQueryDirective(co.Destination, leg.Name, true, leg.Source),
 						t.srcs, leg.DataSource))
 					def.Fields = append(def.Fields,
-						relationAggTwinFields(leg.DestinationField, co.Destination,
-						subQueryArgsFactory(co.Destination), t.srcs, leg.DataSource)...)
+						relationAggTwinFields(backName, co.Destination,
+							subQueryArgsFactory(co.Destination), t.srcs, leg.DataSource)...)
 				}
 				continue
 			}
 			def.Fields = append(def.Fields, navListField(
-				leg.DestinationField, leg.Source,
+				backName, leg.Source,
 				navQueryDirective(leg.Source, leg.Name, false, ""),
 				t.srcs, leg.DataSource))
 			def.Fields = append(def.Fields,
-				relationAggTwinFields(leg.DestinationField, leg.Source,
+				relationAggTwinFields(backName, leg.Source,
 					subQueryArgsFactory(leg.Source), t.srcs, leg.DataSource)...)
 		}
 	},

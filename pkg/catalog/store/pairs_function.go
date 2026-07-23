@@ -21,6 +21,34 @@ type functionPair struct {
 
 var functionPairs = []functionPair{
 	{
+		directive: base.FieldGeometryInfoDirectiveName, // bag member geometry
+		collect: func(f *ast.FieldDefinition, row *function) {
+			d := f.Directives.ForName(base.FieldGeometryInfoDirectiveName)
+			if d == nil {
+				return
+			}
+			geom := &geometryInfo{Type: base.DirectiveArgString(d, base.ArgType)}
+			if v, ok := dirArgValue(d, argSRID); ok {
+				geom.SRID = v
+			}
+			row.Properties.Geometry = geom
+		},
+		emit: func(row *function) []*ast.Directive {
+			geom := row.Properties.Geometry
+			if geom == nil {
+				return nil
+			}
+			var args []*ast.Argument
+			if geom.Type != "" {
+				args = append(args, enumArg(base.ArgType, geom.Type))
+			}
+			if geom.SRID != nil {
+				args = append(args, numArg(argSRID, geom.SRID))
+			}
+			return []*ast.Directive{directive(base.FieldGeometryInfoDirectiveName, args...)}
+		},
+	},
+	{
 		directive: base.ModuleDirectiveName, // column module (also the row key)
 		collect: func(f *ast.FieldDefinition, row *function) {
 			// Module is resolved by the caller before the row exists (it is part

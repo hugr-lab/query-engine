@@ -65,7 +65,7 @@ func collect(ctx context.Context, defs base.ExtensionsSource, dataSource string)
 			collectModuleRoot(ctx, defs, d, ext, dataSource)
 			continue
 		}
-		collectExtensionFields(ctx, defs, d, ext, dataSource)
+		collectExtensionFields(ctx, defs, d, ext, resolveExtensionTarget(ctx, defs, ext.Name), dataSource)
 	}
 	buildModuleClosure(d)
 	return d
@@ -85,11 +85,7 @@ func collectDataObject(ctx context.Context, defs base.DefinitionsSource, d *desi
 	// AsModule routing: the module is the source name, an inline @module
 	// nests under it (PrefixPreparer semantics: "shop" + "air" → "shop.air").
 	if d.asModule {
-		if obj.Module == "" {
-			obj.Module = dataSource
-		} else if !strings.HasPrefix(obj.Module, dataSource+".") && obj.Module != dataSource {
-			obj.Module = dataSource + "." + obj.Module
-		}
+		obj.Module = nestModule(dataSource, obj.Module)
 	}
 	// @args(required:) is auto-computed by the compiler from the input type's
 	// NonNull fields — normalize it into the bag the same way (gen_view.go).
@@ -122,6 +118,7 @@ func collectDataObject(ctx context.Context, defs base.DefinitionsSource, d *desi
 			Description:          f.Description,
 		}
 		collectFieldDirectives(f, row) // fills IsPK / DeprecationReason + bag
+		normalizeFuncCallModules(d, row, dataSource)
 		d.fields[pkKey(def.Name, f.Name)] = row
 		ordinal++
 		collectFieldReferences(ctx, defs, d, def.Name, owner, f)
@@ -146,13 +143,57 @@ func originalName(def *ast.Definition) string {
 	return def.Name
 }
 
+// nestModule applies the AsModule nesting rule: empty → the source name, an
+// inline module nests under it (unless already nested).
+func nestModule(dataSource, module string) string {
+	if module == "" {
+		return dataSource
+	}
+	if module == dataSource || strings.HasPrefix(module, dataSource+".") {
+		return module
+	}
+	return dataSource + "." + module
+}
+
+// normalizeFuncCallModules rewrites the @function_call / @tfcj binding module
+// to the FUNCTION's compiled module under AsModule (the compiled path resolves
+// the target function and stores its full module path).
+func normalizeFuncCallModules(d *desired, row *field, dataSource string) {
+	if !d.asModule || row.Properties == nil {
+		return
+	}
+	if fc := row.Properties.FunctionCall; fc != nil {
+		fc.Function.Module = nestModule(dataSource, fc.Function.Module)
+	}
+	if fc := row.Properties.TableFunctionCallJoin; fc != nil {
+		fc.Function.Module = nestModule(dataSource, fc.Function.Module)
+	}
+}
+
+// resolveExtensionTarget maps a leftover extension's target to the COMPILED
+// type name. A same-source extension survives the merger unprefixed when
+// PrefixPreparer (a per-definition rule) renamed the base first — the full
+// compiler matches it back through @original_name, mirrored here. Cross-source
+// extensions already reference the compiled name.
+func resolveExtensionTarget(ctx context.Context, defs base.DefinitionsSource, name string) string {
+	if defs.ForName(ctx, name) != nil {
+		return name
+	}
+	for def := range defs.Definitions(ctx) {
+		if originalName(def) == name {
+			return def.Name
+		}
+	}
+	return name
+}
+
 // collectExtensionFields adds the fields of a cross-source `extend type <object>`
 // to the fields table, attributed to THIS (extending) source. The object row
 // itself is owned by the source that declares it and is never created here; the
 // extending source does not back the object's module either (no closure row) —
 // so unloading it drops only its added fields. Ordinal is local to the
 // extension (the read side orders base fields before extension fields).
-func collectExtensionFields(ctx context.Context, defs base.DefinitionsSource, d *desired, ext *ast.Definition, dataSource string) {
+func collectExtensionFields(ctx context.Context, defs base.DefinitionsSource, d *desired, ext *ast.Definition, typeName, dataSource string) {
 	ordinal := 0
 	for _, f := range ext.Fields {
 		if skipField(f) {
@@ -160,7 +201,7 @@ func collectExtensionFields(ctx context.Context, defs base.DefinitionsSource, d 
 		}
 		owner := orDefault(base.FieldDefCatalog(f), dataSource)
 		row := &field{
-			TypeName:             ext.Name,
+			TypeName:             typeName,
 			Name:                 f.Name,
 			FieldType:            f.Type.String(),
 			Args:                 mapFunctionArgs(f),
@@ -170,9 +211,10 @@ func collectExtensionFields(ctx context.Context, defs base.DefinitionsSource, d 
 			Description:          f.Description,
 		}
 		collectFieldDirectives(f, row)
-		d.fields[pkKey(ext.Name, f.Name)] = row
+		normalizeFuncCallModules(d, row, dataSource)
+		d.fields[pkKey(typeName, f.Name)] = row
 		ordinal++
-		collectFieldReferences(ctx, defs, d, ext.Name, owner, f)
+		collectFieldReferences(ctx, defs, d, typeName, owner, f)
 	}
 }
 
@@ -197,6 +239,12 @@ func collectObjectReferences(d *desired, source, owner string, def *ast.Definiti
 				name += "_" + sf[0]
 			}
 		}
+		// Explicit references_query: "" suppresses the back navigation —
+		// default only when the argument is ABSENT.
+		refQuery := ref.ReferencesQuery
+		if dir.Arguments.ForName(base.ArgReferencesQuery) == nil {
+			refQuery = source
+		}
 		putRelation(d, &relation{
 			Source:                      source,
 			Name:                        name,
@@ -206,7 +254,7 @@ func collectObjectReferences(d *desired, source, owner string, def *ast.Definiti
 			DestinationKeys:             ref.ReferencesFields(),
 			SourceField:                 orDefault(ref.Query, ref.ReferencesName),
 			SourceFieldDescription:      ref.Description,
-			DestinationField:            orDefault(ref.ReferencesQuery, source),
+			DestinationField:            refQuery,
 			DestinationFieldDescription: ref.ReferencesDescription,
 			DataSource:                  owner,
 		})
@@ -238,21 +286,25 @@ func collectFieldReferences(ctx context.Context, defs base.DefinitionsSource, d 
 		if query == "" {
 			query = refName
 		}
+		// An EXPLICIT references_query: "" suppresses the back navigation and
+		// must survive as-is; only an ABSENT argument takes the default.
 		refQuery := base.DirectiveArgString(dir, base.ArgReferencesQuery)
-		if refQuery == "" {
+		if dir.Arguments.ForName(base.ArgReferencesQuery) == nil {
 			refQuery = source
 		}
 		putRelation(d, &relation{
-			Source:           source,
-			Name:             name,
-			Kind:             "fk",
-			Destination:      refName,
-			SourceKeys:       []string{f.Name},
-			DestinationKeys:  []string{targetField},
-			SourceField:      query,
-			DestinationField: refQuery,
-			FieldDeclared:    true,
-			DataSource:       owner,
+			Source:                      source,
+			Name:                        name,
+			Kind:                        "fk",
+			Destination:                 refName,
+			SourceKeys:                  []string{f.Name},
+			DestinationKeys:             []string{targetField},
+			SourceField:                 query,
+			DestinationField:            refQuery,
+			SourceFieldDescription:      base.DirectiveArgString(dir, base.ArgDescription),
+			DestinationFieldDescription: base.DirectiveArgString(dir, base.ArgReferencesDescription),
+			FieldDeclared:               true,
+			DataSource:                  owner,
 		})
 	}
 }
@@ -295,11 +347,10 @@ func collectModuleRoot(ctx context.Context, defs base.DefinitionsSource, d *desi
 		// assembler only defaults the empty module and keeps an inline
 		// @module as written (no source-name nesting).
 		if d.asModule {
-			if module == "" {
-				module = dataSource
-			} else if kind != "subscription" &&
-				!strings.HasPrefix(module, dataSource+".") && module != dataSource {
-				module = dataSource + "." + module
+			if kind == "subscription" {
+				module = orDefault(module, dataSource)
+			} else {
+				module = nestModule(dataSource, module)
 			}
 		}
 		ensureModule(d, module)
@@ -345,7 +396,8 @@ func skipField(f *ast.FieldDefinition) bool {
 		return true
 	}
 	switch f.Name {
-	case base.QueryTimeJoinsFieldName, base.QueryTimeSpatialFieldName,
+	case "_stub", "_placeholder", // declaration placeholders, never columns
+		base.QueryTimeJoinsFieldName, base.QueryTimeSpatialFieldName,
 		base.H3QueryFieldName, base.QueryEmbeddingsDistanceFieldName:
 		return true
 	}

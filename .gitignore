@@ -16,3 +16,6 @@ integration-test/e2e/testdata/duckdb/ducklake*/data/
 models.test
 
 go.work.sum
+
+# live-corpus SDL mirror for pkg/catalog/store golden tests (hand-copied)
+fixtures/schemas/

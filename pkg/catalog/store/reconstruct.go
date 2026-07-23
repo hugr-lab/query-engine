@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 )
@@ -63,13 +64,35 @@ func resolveDataObject(ctx context.Context, s *Store, name string) *ast.Definiti
 // reconstructType parses a residual source type from its stored SDL
 // (catalog.types.definition) and re-attaches @catalog(name, engine) — the
 // compiler tags every definition, but the SDL is stored pre-tagging; nil when
-// the name is not a stored type.
+// the name is not a stored type. Structural Object types also get the scalar
+// field arguments the passthrough applies before storing its compiled copy.
 func (s *Store) reconstructType(ctx context.Context, name string) *ast.Definition {
 	def, dataSource, err := s.readType(ctx, name)
 	if err != nil || def == nil {
 		return nil
 	}
+	applyScalarFieldArguments(def)
 	return attachCatalog(def, dataSource, s.activeEngines(ctx))
+}
+
+// applyScalarFieldArguments mirrors setScalarFieldArguments on read: non-list
+// fields of FieldArgumentsProvider scalars carry the scalar's argument list.
+func applyScalarFieldArguments(def *ast.Definition) {
+	if def.Kind != ast.Object {
+		return
+	}
+	for _, f := range def.Fields {
+		if f.Name == "_stub" || f.Type.NamedType == "" {
+			continue
+		}
+		s := types.Lookup(f.Type.Name())
+		if s == nil {
+			continue
+		}
+		if args := scalarFieldArguments(s); args != nil {
+			f.Arguments = args
+		}
+	}
 }
 
 // attachCatalog re-attaches @catalog(name, engine) to a stored-SDL definition

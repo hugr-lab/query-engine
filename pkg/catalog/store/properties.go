@@ -64,6 +64,7 @@ type fieldProperties struct {
 type functionProperties struct {
 	Function *functionBinding `json:"function,omitempty"`
 	Cache    *cacheSettings   `json:"cache,omitempty"`
+	Geometry *geometryInfo    `json:"geometry,omitempty"` // @geometry_info on the function field
 }
 
 // functionArgument is one ordered entry of catalog.functions.args.

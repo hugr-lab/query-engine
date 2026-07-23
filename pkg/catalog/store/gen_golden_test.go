@@ -380,13 +380,31 @@ func TestGenGoldenTFCJ(t *testing.T) {
 type fixtureSource struct {
 	name        string
 	schema      string
+	engineType  string // "" = duckdb
 	prefix      string
 	asModule    bool
 	readOnly    bool
 	isExtension bool
 }
 
-func fixtureOpts(fs fixtureSource, e *engines.DuckDB) compiler.Options {
+// fixtureEngine maps an engine type string to its engine (harness-side
+// factory; the live corpus spans several engines).
+func fixtureEngine(engineType string) engines.Engine {
+	switch engineType {
+	case "postgres":
+		return engines.NewPostgres()
+	case "mssql":
+		return engines.NewMssql()
+	case "mysql":
+		return engines.NewMySql()
+	case "http":
+		return engines.NewHttp()
+	default:
+		return engines.NewDuckDB()
+	}
+}
+
+func fixtureOpts(fs fixtureSource, e engines.Engine) compiler.Options {
 	return compiler.Options{
 		Name:         fs.name,
 		EngineType:   string(e.Type()),
@@ -414,21 +432,27 @@ func storeForSources(t *testing.T, fixtures []fixtureSource) (*Store, context.Co
 	target, err := static.New()
 	require.NoError(t, err)
 	for _, fs := range fixtures {
-		e := &engines.DuckDB{}
+		e := fixtureEngine(fs.engineType)
 		src, err := sources.NewStringSource(fs.name, e, fixtureOpts(fs, e), fs.schema)
 		require.NoError(t, err)
 		_, err = compiler.New(partialRules()...).Compile(ctx, target, src, src.CompileOptions())
 		require.NoError(t, err)
-		require.NoError(t, target.Update(ctx, src))
+		// Seed ONLY the definitions: later sources need the prior types for
+		// their extends to validate; leftover extensions (e.g. unmerged
+		// same-source virtual-field extends) are collect's job, not the seed's.
+		require.NoError(t, target.Update(ctx, definitionsOnly{src}))
 		d := collect(ctx, src, fs.name)
 		_, err = store.writeSource(ctx, d, SourceState{
-			Name: fs.name, Version: "v1", Engine: "duckdb",
+			Name: fs.name, Version: "v1", Engine: string(e.Type()),
 			Prefix: fs.prefix, AsModule: fs.asModule, ReadOnly: fs.readOnly, Loaded: true,
 		})
 		require.NoError(t, err)
 	}
 	return store, ctx
 }
+
+// definitionsOnly hides a source's Extensions from the seed provider.
+type definitionsOnly struct{ base.DefinitionsSource }
 
 // goldenRefSources compiles the same fixtures with the FULL rule set,
 // sequentially into one static provider (multi-catalog reference).
@@ -438,7 +462,7 @@ func goldenRefSources(t *testing.T, fixtures []fixtureSource) *static.Provider {
 	target, err := static.New()
 	require.NoError(t, err)
 	for i, fs := range fixtures {
-		e := &engines.DuckDB{}
+		e := fixtureEngine(fs.engineType)
 		src, err := sources.NewStringSource(fs.name, e, fixtureOpts(fs, e), fs.schema)
 		require.NoError(t, err)
 		var p base.Provider
@@ -655,12 +679,17 @@ func normalizeDirectives(dl ast.DirectiveList) ast.DirectiveList {
 		out[i] = &nd
 	}
 	// Repeatable directives (@references, @query, @unique …) share a name —
-	// tie-break on the serialized arguments for a stable order.
+	// tie-break on the serialized arguments for a stable order. IDENTICAL
+	// duplicates collapse (the old compiled path double-tags @catalog on some
+	// residual types).
 	slices.SortStableFunc(out, func(a, b *ast.Directive) int {
 		if c := strings.Compare(a.Name, b.Name); c != 0 {
 			return c
 		}
 		return strings.Compare(directiveKey(a), directiveKey(b))
+	})
+	out = slices.CompactFunc(out, func(a, b *ast.Directive) bool {
+		return a.Name == b.Name && directiveKey(a) == directiveKey(b)
 	})
 	return out
 }

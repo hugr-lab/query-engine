@@ -298,18 +298,33 @@ func relationQueryDirective(r *catalog.RelationInfo) *ast.Directive {
 
 // fieldReferencesDirective re-emits a field-declared leg as @field_references
 // (the compiler copies the source directive onto the filter field verbatim;
-// the store emits the normalized argument set).
+// the store emits the declared argument set — the relation name only when the
+// user overrode the default `<references_name>_<field>` pattern).
 func fieldReferencesDirective(rel *relation) *ast.Directive {
 	d := directive(base.FieldReferencesDirectiveName,
 		strArg(base.ArgReferencesName, rel.Destination))
+	// Arguments the user left to their DEFAULTS are omitted — the compiler
+	// copies the directive as written (name → `<references_name>_<field>`,
+	// query → references_name, references_query → the declaring object).
+	if len(rel.SourceKeys) == 1 && rel.Name != rel.Destination+"_"+rel.SourceKeys[0] {
+		d.Arguments = append(d.Arguments, strArg(base.ArgName, rel.Name))
+	}
 	if len(rel.DestinationKeys) == 1 {
 		d.Arguments = append(d.Arguments, strArg(base.ArgField, rel.DestinationKeys[0]))
 	}
-	if rel.SourceField != "" {
+	if rel.SourceField != "" && rel.SourceField != rel.Destination {
 		d.Arguments = append(d.Arguments, strArg(base.ArgQuery, rel.SourceField))
 	}
-	if rel.DestinationField != "" {
+	// An explicit references_query: "" (suppressed back navigation) is part
+	// of the declared set and re-emits as the empty string.
+	if rel.DestinationField != rel.Source {
 		d.Arguments = append(d.Arguments, strArg(base.ArgReferencesQuery, rel.DestinationField))
+	}
+	if rel.SourceFieldDescription != "" {
+		d.Arguments = append(d.Arguments, strArg(base.ArgDescription, rel.SourceFieldDescription))
+	}
+	if rel.DestinationFieldDescription != "" {
+		d.Arguments = append(d.Arguments, strArg(base.ArgReferencesDescription, rel.DestinationFieldDescription))
 	}
 	return d
 }

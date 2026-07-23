@@ -142,10 +142,14 @@ func replaceQueryMarkerName(def *ast.Definition, queryType, name string) {
 }
 
 // needsListFilter: X_list_filter exists when some filter lists X — X is the
-// many side of a back projection (it declares non-m2m legs) or an m2m
-// endpoint. An is_m2m junction itself is never listed.
-func (t *objectTraits) needsListFilter(hasForwardLegs, isM2MEndpoint bool) bool {
-	return !t.isM2M() && (hasForwardLegs || isM2MEndpoint)
+// many side of a back projection (it declares non-m2m legs with back
+// navigation) or an m2m endpoint. An is_m2m junction is never listed, and a
+// parameterized view is excluded from filter nesting entirely.
+func (t *objectTraits) needsListFilter(hasBackProjections, isM2MEndpoint bool) bool {
+	if t.row.Properties != nil && t.row.Properties.ArgsTypeName != "" {
+		return false
+	}
+	return !t.isM2M() && (hasBackProjections || isM2MEndpoint)
 }
 
 // isM2MEndpoint reports whether some is_m2m junction leg points at the object.
@@ -167,8 +171,8 @@ func m2mReferencesProjection(leg *relationEdge, co *relation, junctionDesc strin
 		strArg(base.ArgReferencesName, co.Destination),
 		strListArg(base.ArgSourceFields, leg.DestinationKeys),
 		strListArg(base.ArgReferencesFields, leg.SourceKeys),
-		strArg(base.ArgQuery, leg.DestinationField),
-		strArg(base.ArgReferencesQuery, co.DestinationField),
+		strArg(base.ArgQuery, orDefault(leg.DestinationField, leg.Source)),
+		strArg(base.ArgReferencesQuery, orDefault(co.DestinationField, co.Source)),
 		boolArg(base.ArgIsM2M, true),
 		strArg(base.ArgM2MName, leg.Source),
 		strArg(base.ArgDescription, junctionDesc),
@@ -197,14 +201,17 @@ func catalogDirective(dataSource, engine string) *ast.Directive {
 
 // referencesDirective rebuilds an object-level @references from a stored
 // relation row with the compiler's enrichment: is_m2m/m2m_name always
-// present, descriptions defaulting to the two objects' descriptions.
+// present, descriptions defaulting to the two objects' descriptions. A
+// FIELD-declared leg always carries the OBJECT descriptions here — the
+// compiler's @field_references→@references conversion drops the leg's own
+// description args (they survive only on the filter-field copy).
 func referencesDirective(r *relation, targetDesc, sourceDesc string) *ast.Directive {
 	description := r.SourceFieldDescription
-	if description == "" {
+	if description == "" || r.FieldDeclared {
 		description = targetDesc
 	}
 	referencesDescription := r.DestinationFieldDescription
-	if referencesDescription == "" {
+	if referencesDescription == "" || r.FieldDeclared {
 		referencesDescription = sourceDesc
 	}
 	return directive(base.ReferencesDirectiveName,
@@ -213,7 +220,7 @@ func referencesDirective(r *relation, targetDesc, sourceDesc string) *ast.Direct
 		strListArg(base.ArgSourceFields, r.SourceKeys),
 		strListArg(base.ArgReferencesFields, r.DestinationKeys),
 		strArg(base.ArgQuery, r.SourceField),
-		strArg(base.ArgReferencesQuery, r.DestinationField),
+		strArg(base.ArgReferencesQuery, orDefault(r.DestinationField, r.Source)),
 		boolArg(base.ArgIsM2M, false),
 		strArg(base.ArgM2MName, ""),
 		strArg(base.ArgDescription, description),

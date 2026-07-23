@@ -1,10 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -14,7 +16,7 @@ import (
 // writerFormatVersion is mixed into the stored data_source_meta.version. Bump it
 // when the row shapes / property bags change: every source then reads as
 // "changed" once and is rewritten; an upgrade without a format change is free.
-const writerFormatVersion = "f6"
+const writerFormatVersion = "f7"
 
 const insertChunk = 200
 
@@ -224,7 +226,10 @@ func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) erro
 		r := d.relations[k]
 		rels = append(rels, []any{r.Source, r.Name, r.Kind, r.Destination, nilIfEmpty(r.M2MObject),
 			jsonOrNil(r.SourceKeys), jsonOrNil(r.DestinationKeys), nilIfEmpty(r.SourceField),
-			nilIfEmpty(r.SourceFieldDescription), nilIfEmpty(r.DestinationField),
+			// destination_field keeps the EMPTY string: an explicit
+			// references_query: "" (suppressed back navigation) must stay
+			// distinguishable from an absent value.
+			nilIfEmpty(r.SourceFieldDescription), r.DestinationField,
 			nilIfEmpty(r.DestinationFieldDescription), r.FieldDeclared, r.DataSource})
 	}
 	if err := insertRows(ctx, conn, "relations",
@@ -373,6 +378,13 @@ func tuple(vals []any) string {
 }
 
 func lit(v any) string {
+	if j, ok := v.(jsonText); ok {
+		s, err := litEngine.SQLValue(string(j))
+		if err != nil {
+			return "NULL"
+		}
+		return s + "::JSON"
+	}
 	s, err := litEngine.SQLValue(v)
 	if err != nil {
 		return "NULL"
@@ -390,19 +402,35 @@ func nilIfEmpty(s string) any {
 
 // jsonOrNil marshals a bag / keys value to plain JSON text (the STRUCT/JSONB
 // columns take it via the implicit cast); empty content collapses to NULL.
+// jsonText marks a value that must reach the backend AS JSON: lit() renders
+// it with an explicit ::JSON cast. DuckDB's plain VARCHAR→STRUCT cast parses
+// the text with its own struct-literal reader which EATS backslashes
+// (`a\nb`→`anb`); VARCHAR→JSON(→STRUCT) preserves the escapes.
+type jsonText string
+
 func jsonOrNil(v any) any {
 	if v == nil {
 		return nil
 	}
-	b, err := json.Marshal(v)
+	s, err := marshalJSONText(v)
 	if err != nil {
 		return nil
 	}
-	switch s := string(b); s {
+	switch s {
+	case "null", "{}", "[]":
+		return nil
+	}
+	// Re-marshal PADDED: the JSON→STRUCT cast is strict about missing keys,
+	// so every struct key must be present (null when absent).
+	s, err = marshalJSONText(padForStrictCast(reflect.ValueOf(v)))
+	if err != nil {
+		return nil
+	}
+	switch s {
 	case "null", "{}", "[]":
 		return nil
 	default:
-		return s
+		return jsonText(s)
 	}
 }
 
@@ -411,4 +439,57 @@ func capabilitiesText(c json.RawMessage) any {
 		return nil
 	}
 	return string(c)
+}
+
+// marshalJSONText marshals WITHOUT HTML escaping — the stored JSON must
+// round-trip SQL text (`->` operators in @function(sql:) etc.) byte-exact.
+func marshalJSONText(v any) (string, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "", err
+	}
+	return strings.TrimRight(buf.String(), "\n"), nil
+}
+
+// padForStrictCast converts a bag value into a JSON-marshalable form carrying
+// EVERY key of its Go struct shape (null for absent members) — DuckDB's
+// JSON→STRUCT cast (the only escape-correct text path into the bag columns)
+// rejects objects with missing keys. The Go struct stays the single source of
+// truth for the shape.
+func padForStrictCast(v reflect.Value) any {
+	switch v.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if v.IsNil() {
+			return nil
+		}
+		return padForStrictCast(v.Elem())
+	case reflect.Struct:
+		out := make(map[string]any, v.NumField())
+		t := v.Type()
+		for i := 0; i < v.NumField(); i++ {
+			tag := t.Field(i).Tag.Get("json")
+			name, _, _ := strings.Cut(tag, ",")
+			if name == "-" {
+				continue
+			}
+			if name == "" {
+				name = t.Field(i).Name
+			}
+			out[name] = padForStrictCast(v.Field(i))
+		}
+		return out
+	case reflect.Slice, reflect.Array:
+		if v.Kind() == reflect.Slice && v.IsNil() {
+			return nil
+		}
+		out := make([]any, v.Len())
+		for i := 0; i < v.Len(); i++ {
+			out[i] = padForStrictCast(v.Index(i))
+		}
+		return out
+	default:
+		return v.Interface()
+	}
 }
