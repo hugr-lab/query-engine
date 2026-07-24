@@ -23,10 +23,12 @@ import (
 // (retiring) compiler; the golden parity harness compares the pre-finalise
 // generation (forNameRaw), so they do not drift the oracle.
 
-// finalizeDescriptions decorates a freshly built definition in place.
-func (s *Store) finalizeDescriptions(_ context.Context, _ *genContext, def *ast.Definition) error {
+// finalizeDescriptions decorates a freshly built definition in place: the
+// default descriptions first, then the annotation overlay (which overrides
+// any of them where a curation row exists).
+func (s *Store) finalizeDescriptions(ctx context.Context, g *genContext, def *ast.Definition) error {
 	applyDefaultDescriptions(def)
-	return nil
+	return s.applyAnnotations(ctx, g, def)
 }
 
 // sharedKind labels a cross-source shared query type for its member wording.
