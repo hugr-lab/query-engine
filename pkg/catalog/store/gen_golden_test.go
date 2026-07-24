@@ -499,6 +499,7 @@ type items @table(name: "items") {
   id: Int! @pk
   category_id: Int @field_references(references_name: "categories", field: "id", query: "category", references_query: "items")
   name: String!
+  "The item price"
   price: Float
 }
 

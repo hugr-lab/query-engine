@@ -37,7 +37,8 @@ func TestAnnotationOverlay(t *testing.T) {
 	require.NotNil(t, items)
 	assert.Equal(t, "Curated shop item type", items.Description)
 	assert.Equal(t, "Curated name field", items.Fields.ForName("name").Description)
-	assert.Empty(t, items.Fields.ForName("price").Description, "seed row leaves the field blank")
+	assert.Equal(t, "The item price", items.Fields.ForName("price").Description,
+		"seed row leaves the source-provided text intact")
 
 	tools := store.ForName(ctx, "_module_tools_function")
 	require.NotNil(t, tools)
@@ -55,6 +56,38 @@ func TestAnnotationOverlay(t *testing.T) {
 	rawItems := store.forNameRaw(ctx, "shop_items")
 	require.NotNil(t, rawItems)
 	assert.Empty(t, rawItems.Description, "overlay is a finalise-step concern")
+}
+
+// TestAnnotationDerivedInheritance pins the implicit inheritance: derived types
+// (filters / mutation inputs / aggregations) read their base through ForName —
+// already carrying the curation — so a curated base field shows on the derived
+// types' same-named fields without any per-derived-type rows. A direct
+// gql_field row on the derived type still wins.
+func TestAnnotationDerivedInheritance(t *testing.T) {
+	store, ctx := storeForSources(t, genMultiFixtures)
+
+	annotate(t, store.pool, `('field', 'shop_items.name', 'shop_items', 'Curated name field')`)
+	// A direct gql curation on the FILTER's other field must survive inheritance.
+	annotate(t, store.pool, `('gql_field', 'shop_items_filter.price', 'shop_items_filter', 'Filter by price')`)
+
+	filter := store.ForName(ctx, "shop_items_filter")
+	require.NotNil(t, filter)
+	assert.Equal(t, "Curated name field", filter.Fields.ForName("name").Description,
+		"filter field inherits the base field curation")
+	assert.Equal(t, "Filter by price", filter.Fields.ForName("price").Description,
+		"direct gql curation on the derived type wins")
+
+	agg := store.ForName(ctx, "_shop_items_aggregation")
+	require.NotNil(t, agg)
+	assert.Equal(t, "Curated name field", agg.Fields.ForName("name").Description,
+		"aggregation twin inherits the base field curation")
+	assert.Equal(t, "The item price", agg.Fields.ForName("price").Description,
+		"aggregation twin inherits the SOURCE description too — no curation needed")
+
+	mut := store.ForName(ctx, "shop_items_mut_input_data")
+	require.NotNil(t, mut)
+	assert.Equal(t, "Curated name field", mut.Fields.ForName("name").Description,
+		"mutation input inherits the base field curation")
 }
 
 // TestAnnotationGraphQLWinsLogical pins the layer precedence: a gql_type

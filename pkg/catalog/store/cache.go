@@ -177,6 +177,21 @@ func (c *defCache) evict(name string) {
 	c.types.Remove(name)
 }
 
+// evictFamily drops a base definition plus every cached name isDerived reports
+// as derived from it — the write-side closure for a field curation, whose
+// description is INHERITED by the derived types' same-named fields.
+func (c *defCache) evictFamily(base string, isDerived func(name string) bool) {
+	if c == nil {
+		return
+	}
+	c.types.Remove(base)
+	for _, name := range c.types.Keys() {
+		if isDerived(name) {
+			c.types.Remove(name)
+		}
+	}
+}
+
 // invalidateAll purges the cache.
 func (c *defCache) invalidateAll() {
 	if c == nil {

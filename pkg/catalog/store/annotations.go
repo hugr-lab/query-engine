@@ -69,9 +69,28 @@ func argumentKey(typeName, fieldName, argName string) string {
 // reconstructed definition: the def-level description (data_object / type) and
 // the field descriptions (field, incl. relation navigation fields), plus — for
 // function-exposing module roots — the function field descriptions keyed by
-// module.name. The rows come from one name-anchored query; function rows need a
-// second query because they are keyed by module.name, not by the root name.
+// module.name. Derived types (filters / mutation inputs / aggregations) first
+// INHERIT their base entity's field curation onto same-named fields, so
+// curating shop_items.name implicitly shows on shop_items_filter.name and
+// _shop_items_aggregation.name; direct rows (and the GraphQL layer) still win.
 func (s *Store) applyLogicalAnnotations(ctx context.Context, g *genContext, def *ast.Definition, rows []annotationRow) error {
+	// A derived type (filter / mutation input / aggregation) inherits its base's
+	// field descriptions onto same-named fields. The base name comes from the
+	// session (recorded by resolveDerivedType from the matched rule — never
+	// parsed back from directives, whose input markers are directional), and the
+	// base is read through ForName — cached, and already carrying defaults AND
+	// curation. Only derived rules record a base, so the chain is one level deep
+	// and the shared query types (_join_aggregation — a shared rule) keep their
+	// more specific default wording.
+	if owner := g.derivedBase; owner != "" && owner != def.Name {
+		if baseDef := s.ForName(ctx, owner); baseDef != nil {
+			for _, f := range def.Fields {
+				if bf := baseDef.Fields.ForName(f.Name); bf != nil && bf.Description != "" {
+					f.Description = bf.Description
+				}
+			}
+		}
+	}
 	prefix := def.Name + "."
 	for _, a := range rows {
 		switch a.kind {

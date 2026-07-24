@@ -37,24 +37,30 @@ func (s *Store) SetModuleDescription(ctx context.Context, module, desc, longDesc
 
 // SetDataObjectDescription curates a data object's description; evicts that type.
 func (s *Store) SetDataObjectDescription(ctx context.Context, name, desc, longDesc string) error {
-	return s.curate(ctx, kindDataObject, name, "", desc, longDesc, []string{name})
+	return s.curate(ctx, kindDataObject, name, "", desc, longDesc, func() { s.evictType(name) })
 }
 
 // SetSourceTypeDescription curates a residual source type's description; evicts it.
 func (s *Store) SetSourceTypeDescription(ctx context.Context, name, desc, longDesc string) error {
-	return s.curate(ctx, kindType, name, "", desc, longDesc, []string{name})
+	return s.curate(ctx, kindType, name, "", desc, longDesc, func() { s.evictType(name) })
 }
 
 // SetObjectFieldDescription curates a data-object field (incl. a relation
-// navigation field); evicts the owning object type.
+// navigation field); evicts the owning type AND its cached derived types
+// (filters / mutation inputs / aggregations), whose same-named fields inherit
+// the description at reconstruction.
 func (s *Store) SetObjectFieldDescription(ctx context.Context, owner, field, desc, longDesc string) error {
-	return s.curate(ctx, kindField, fieldKey(owner, field), owner, desc, longDesc, []string{owner})
+	return s.curate(ctx, kindField, fieldKey(owner, field), owner, desc, longDesc, func() { s.evictTypeFamily(owner) })
 }
 
 // SetFunctionDescription curates a function (keyed module.name, parent=module);
 // evicts every module root that could expose it as a direct field.
 func (s *Store) SetFunctionDescription(ctx context.Context, module, name, desc, longDesc string) error {
-	return s.curate(ctx, kindFunction, functionKey(module, name), module, desc, longDesc, functionRootTypes(module))
+	return s.curate(ctx, kindFunction, functionKey(module, name), module, desc, longDesc, func() {
+		for _, root := range functionRootTypes(module) {
+			s.evictType(root)
+		}
+	})
 }
 
 // SetDataSourceDescription curates a data source (no ForName surface — data
@@ -67,19 +73,20 @@ func (s *Store) SetDataSourceDescription(ctx context.Context, name, desc, longDe
 
 // SetDefinitionDescription curates a generated type's description; evicts it.
 func (s *Store) SetDefinitionDescription(ctx context.Context, typeName, desc, longDesc string) error {
-	return s.curate(ctx, kindGQLType, typeName, "", desc, longDesc, []string{typeName})
+	return s.curate(ctx, kindGQLType, typeName, "", desc, longDesc, func() { s.evictType(typeName) })
 }
 
 // SetFieldDescription curates a generated field's description; evicts its type.
 func (s *Store) SetFieldDescription(ctx context.Context, typeName, fieldName, desc, longDesc string) error {
-	return s.curate(ctx, kindGQLField, fieldKey(typeName, fieldName), typeName, desc, longDesc, []string{typeName})
+	return s.curate(ctx, kindGQLField, fieldKey(typeName, fieldName), typeName, desc, longDesc,
+		func() { s.evictType(typeName) })
 }
 
 // SetArgumentDescription curates a generated field argument's description;
 // evicts the owning type.
 func (s *Store) SetArgumentDescription(ctx context.Context, typeName, fieldName, argName, desc, longDesc string) error {
 	return s.curate(ctx, kindGQLArgument, argumentKey(typeName, fieldName, argName),
-		fieldKey(typeName, fieldName), desc, longDesc, []string{typeName})
+		fieldKey(typeName, fieldName), desc, longDesc, func() { s.evictType(typeName) })
 }
 
 // functionRootTypes are the module roots that may carry a function as a direct
@@ -93,11 +100,11 @@ func functionRootTypes(module string) []string {
 	}
 }
 
-// curate upserts one annotation row and evicts the affected reconstructed
-// types. The embedding vector is computed from the curated text (nil when
-// embeddings are off or the text is empty — a clear); the upsert then preserves
-// any existing seed vector.
-func (s *Store) curate(ctx context.Context, kind, key, parent, desc, longDesc string, evict []string) error {
+// curate upserts one annotation row and runs the caller's cache eviction (nil
+// when the curation has no ForName surface). The embedding vector is computed
+// from the curated text (nil when embeddings are off or the text is empty — a
+// clear); the upsert then preserves any existing seed vector.
+func (s *Store) curate(ctx context.Context, kind, key, parent, desc, longDesc string, evict func()) error {
 	if s.isReadonly {
 		return errReadonly
 	}
@@ -108,8 +115,8 @@ func (s *Store) curate(ctx context.Context, kind, key, parent, desc, longDesc st
 	if err := s.upsertAnnotation(ctx, kind, key, parent, desc, longDesc, vec); err != nil {
 		return err
 	}
-	for _, name := range evict {
-		s.evictType(name)
+	if evict != nil {
+		evict()
 	}
 	return nil
 }

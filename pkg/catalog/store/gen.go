@@ -36,6 +36,13 @@ import (
 type genContext struct {
 	s *Store
 
+	// derivedBase is the base entity name when THIS session resolved a derived
+	// type (filter / mutation input / aggregation) — recorded by
+	// resolveDerivedType from the matched rule, consumed by the description
+	// finalisation to inherit the base's field descriptions. Only derived rules
+	// set it, so the inheritance chain is structurally one level deep.
+	derivedBase string
+
 	// touched is the set of data sources whose ROWS the session read —
 	// exactly the sources whose rewrite can change the produced definition
 	// (row-level provenance; absence dependencies are closed on the write
@@ -165,6 +172,8 @@ var derivedRules = []derivedRule{
 }
 
 // resolveDerivedType (5) generates a derived type from its base data object.
+// The successful rule's base name is recorded on the session — the description
+// finalisation inherits the base's field descriptions from it.
 func resolveDerivedType(ctx context.Context, g *genContext, name string) (*ast.Definition, error) {
 	for i := range derivedRules {
 		r := &derivedRules[i]
@@ -177,6 +186,7 @@ func resolveDerivedType(ctx context.Context, g *genContext, name string) (*ast.D
 			return nil, err
 		}
 		if def != nil {
+			g.derivedBase = baseName
 			return def, nil
 		}
 	}

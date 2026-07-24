@@ -133,6 +133,23 @@ func (s *Store) evictType(name string) {
 	s.cache.evict(name)
 }
 
+// evictTypeFamily drops a base type AND its cached derived types (filters,
+// mutation inputs, aggregation types) — the write-side closure for a FIELD
+// curation, whose description the derived types inherit onto their same-named
+// fields at reconstruction. Every derived rule is checked (suffixes overlap:
+// x_list_filter parses as both x+list_filter and x_list+filter).
+func (s *Store) evictTypeFamily(name string) {
+	s.gen.Add(1)
+	s.cache.evictFamily(name, func(candidate string) bool {
+		for i := range derivedRules {
+			if b, ok := derivedRules[i].match(candidate); ok && b == name {
+				return true
+			}
+		}
+		return false
+	})
+}
+
 // System returns the in-memory system-type layer. The writer skips
 // sdl.IsSystemType(def) and the reader delegates system-type resolution here
 // (except Query/Mutation/Subscription, which are synthesized from catalog.*).

@@ -30,9 +30,14 @@ func TestLogicalAnnotatorWrite(t *testing.T) {
 	require.NoError(t, store.SetDataObjectDescription(ctx, "shop_items", "Curated item", "long form"))
 	assert.Equal(t, "Curated item", store.ForName(ctx, "shop_items").Description)
 
-	// Object field description.
+	// Object field description. The derived types were CACHED above the write —
+	// the family evict makes them reflect the inherited curation too.
+	require.NotNil(t, store.ForName(ctx, "shop_items_filter")) // prime the derived cache
 	require.NoError(t, store.SetObjectFieldDescription(ctx, "shop_items", "name", "The item name", ""))
 	assert.Equal(t, "The item name", store.ForName(ctx, "shop_items").Fields.ForName("name").Description)
+	assert.Equal(t, "The item name",
+		store.ForName(ctx, "shop_items_filter").Fields.ForName("name").Description,
+		"cached filter evicted with the base — inherits the new curation")
 
 	// Function description keyed module.name, surfaced on the module function root.
 	require.NoError(t, store.SetFunctionDescription(ctx, "tools", "slugify", "Slugify a string", ""))
