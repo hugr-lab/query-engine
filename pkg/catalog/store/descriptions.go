@@ -16,19 +16,31 @@ import (
 //      leaves blank — the module-root data-object fields and the cross-source
 //      shared-type members (_join / _spatial / _h3_data_query and their
 //      aggregation twins);
-//   2. (upcoming) the annotation overlay, which overrides any of these.
+//   2. the logical-model annotation overlay (data_object / type / field /
+//      function curation), then
+//   3. the GraphQL annotation overlay (gql_type / gql_field / gql_argument),
+//      each layer overriding the previous where a curation row exists.
 //
-// Only EMPTY descriptions are filled — a source-provided or generator-provided
-// description always wins. These defaults are store-only enrichment beyond the
+// Only EMPTY descriptions are filled by the defaults — a source- or
+// generator-provided description always wins; the overlays override
+// unconditionally. These defaults are store-only enrichment beyond the
 // (retiring) compiler; the golden parity harness compares the pre-finalise
 // generation (forNameRaw), so they do not drift the oracle.
 
 // finalizeDescriptions decorates a freshly built definition in place: the
-// default descriptions first, then the annotation overlay (which overrides
-// any of them where a curation row exists).
+// default descriptions first, then the logical overlay, then the GraphQL
+// overlay. The two overlays share one name-anchored annotation read.
 func (s *Store) finalizeDescriptions(ctx context.Context, g *genContext, def *ast.Definition) error {
 	applyDefaultDescriptions(def)
-	return s.applyAnnotations(ctx, g, def)
+	rows, err := g.readAnnotationsByName(ctx, def.Name)
+	if err != nil {
+		return err
+	}
+	if err := s.applyLogicalAnnotations(ctx, g, def, rows); err != nil {
+		return err
+	}
+	s.applyGraphQLAnnotations(def, rows)
+	return nil
 }
 
 // sharedKind labels a cross-source shared query type for its member wording.

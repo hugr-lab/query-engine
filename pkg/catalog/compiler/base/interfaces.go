@@ -49,8 +49,9 @@ type Provider interface {
 
 // MutableProvider is a mutable container for compiled schema definitions.
 // It carries the compiler write path (per-source Update, DropCatalog) — the
-// description-annotation surface is split out into SchemaAnnotator so a
-// provider can curate descriptions without owning full compilation semantics.
+// description-annotation surface is split out into the annotator interfaces
+// (LogicalAnnotator / GraphQLAnnotator) so a provider can curate descriptions
+// without owning full compilation semantics.
 type MutableProvider interface {
 	Provider
 
@@ -58,24 +59,49 @@ type MutableProvider interface {
 	Update(ctx context.Context, changes DefinitionsSource) error
 }
 
-// SchemaAnnotator curates human descriptions over an already-compiled schema.
-// It is orthogonal to compilation: an annotator overrides the description /
-// long-description of types, fields, arguments, modules and catalogs without
-// re-running the compiler. The store applies these as an overlay at
-// reconstruction time; the legacy DB provider persists them into its schema
-// tables. Callers reach it via type assertion, like SuspendableProvider.
-type SchemaAnnotator interface {
-	// SetDefinitionDescription updates a type's description and long description.
-	SetDefinitionDescription(ctx context.Context, name, desc, longDesc string) error
-	// SetFieldDescription updates a field's description and long description.
+// LogicalAnnotator curates human descriptions over the LOGICAL model — the
+// source-level entities the CoreDB entity_* views expose: modules, data
+// objects, residual source-defined types, object fields (including relation
+// navigation fields), functions and data sources. The keys mirror exactly how
+// those views select their overlay from catalog.annotations, so a curation
+// written here also feeds the vector search MCP discovery runs over the same
+// rows. The store applies these as a description overlay at reconstruction
+// time; callers reach it via type assertion, like SuspendableProvider.
+type LogicalAnnotator interface {
+	// SetModuleDescription curates a module's description (entity_kind=module).
+	SetModuleDescription(ctx context.Context, module, desc, longDesc string) error
+	// SetDataObjectDescription curates a data object's description
+	// (entity_kind=data_object, key = compiled object type name).
+	SetDataObjectDescription(ctx context.Context, name, desc, longDesc string) error
+	// SetSourceTypeDescription curates a residual source-defined type's
+	// description (entity_kind=type).
+	SetSourceTypeDescription(ctx context.Context, name, desc, longDesc string) error
+	// SetObjectFieldDescription curates a data-object field's description,
+	// including relation navigation fields (entity_kind=field, key=owner.field).
+	SetObjectFieldDescription(ctx context.Context, owner, field, desc, longDesc string) error
+	// SetFunctionDescription curates a function's description (entity_kind=
+	// function, key = module.name, or name when module is empty; parent=module).
+	SetFunctionDescription(ctx context.Context, module, name, desc, longDesc string) error
+	// SetDataSourceDescription curates a data source's description
+	// (entity_kind=data_source).
+	SetDataSourceDescription(ctx context.Context, name, desc, longDesc string) error
+}
+
+// GraphQLAnnotator curates human descriptions over the GENERATED GraphQL
+// schema surface — the synthetic types (aggregations, filters, mutation
+// inputs, module roots, shared query types), their fields and their arguments,
+// which have no logical-model entity to hang a description on. Its keys live in
+// a separate namespace (gql_type / gql_field / gql_argument) so they never
+// collide with the logical annotations, and the store applies them AFTER the
+// logical layer, so a GraphQL curation wins over a logical one.
+type GraphQLAnnotator interface {
+	// SetDefinitionDescription curates a generated type's description (gql_type).
+	SetDefinitionDescription(ctx context.Context, typeName, desc, longDesc string) error
+	// SetFieldDescription curates a field's description (gql_field, key=type.field).
 	SetFieldDescription(ctx context.Context, typeName, fieldName, desc, longDesc string) error
-	// SetArgumentDescription updates a field argument's description and long
-	// description (typeName.fieldName identifies the field carrying the argument).
+	// SetArgumentDescription curates a field argument's description
+	// (gql_argument, key=type.field.arg).
 	SetArgumentDescription(ctx context.Context, typeName, fieldName, argName, desc, longDesc string) error
-	// SetModuleDescription updates a module's description and long description.
-	SetModuleDescription(ctx context.Context, name, desc, longDesc string) error
-	// SetCatalogDescription updates a catalog's description and long description.
-	SetCatalogDescription(ctx context.Context, name, desc, longDesc string) error
 }
 
 // SuspendableProvider is optionally implemented by providers that support
