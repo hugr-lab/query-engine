@@ -6,10 +6,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 )
 
@@ -73,63 +73,73 @@ func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) 
 		return false, nil // unchanged — nothing to do
 	}
 
+	// Embed the seed vectors BEFORE opening the transaction — the embedder is a
+	// network call and must not hold DB locks (on an attached PostgreSQL CoreDB
+	// it would pin the remote transaction for the whole round-trip). Best-effort:
+	// an embed failure logs and proceeds without seeds, so an embedder outage
+	// never blocks schema loading. The seed ROWS are written inside the tx below.
+	seeds, err := s.computeSeeds(ctx, d, state)
+	if err != nil {
+		slog.Error("catalog store: seed embeddings", "source", state.Name, "error", err)
+		seeds = nil
+	}
+
 	txCtx, err := s.pool.WithTx(ctx)
 	if err != nil {
 		return false, fmt.Errorf("catalog write %s: %w", state.Name, err)
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = s.pool.Rollback(txCtx)
-		}
-	}()
-	conn, err := s.pool.Conn(txCtx)
-	if err != nil {
-		return false, fmt.Errorf("catalog write %s: %w", state.Name, err)
-	}
-	defer conn.Close()
+	// Rollback is idempotent per WithTx scope — after a successful Commit it is a
+	// no-op, on any early return it aborts the flattened tx.
+	defer s.pool.Rollback(txCtx)
+
+	// Every writer step takes the transaction's connection from txCtx (via the
+	// pool) — no connection is threaded through.
 
 	// Virtual fields are attributed to the source their DATA comes from,
 	// resolved by the declared reference at WRITE time — the read side then
 	// takes @catalog straight from the field row and the standard activity
 	// gate hides the field with that source.
-	if err := resolveVirtualAttribution(txCtx, conn, d); err != nil {
+	if err := s.resolveVirtualAttribution(txCtx, d); err != nil {
 		return false, fmt.Errorf("catalog write %s: %w", state.Name, err)
 	}
 
 	// The cross-source invalidation closure needs the OLD rows (about to be
-	// deleted) and the incoming ones; a failure here never fails the write —
-	// the cache then invalidates wholesale.
-	affected, affectedErr := affectedObjects(txCtx, conn, state.Name, d)
-
-	if err := deleteSourceRows(txCtx, conn, state.Name); err != nil {
-		return false, err
-	}
-	if err := insertSourceRows(txCtx, conn, d); err != nil {
-		return false, err
-	}
-	if err := mergeModules(txCtx, conn, d); err != nil {
-		return false, err
-	}
-	if err := pruneOrphanModules(txCtx, conn); err != nil {
-		return false, err
-	}
-	if err := upsertMeta(txCtx, conn, state); err != nil {
-		return false, err
+	// deleted) and the incoming ones. It shares the write transaction's
+	// connection, so a failure here would fail the write anyway — abort now
+	// rather than proceed and mask it.
+	affected, err := s.affectedObjects(txCtx, state.Name, d)
+	if err != nil {
+		return false, fmt.Errorf("catalog write %s: %w", state.Name, err)
 	}
 
-	committed = true
+	if err := s.deleteSourceRows(txCtx, state.Name); err != nil {
+		return false, err
+	}
+	if err := s.insertSourceRows(txCtx, d); err != nil {
+		return false, err
+	}
+	if err := s.mergeModules(txCtx, d); err != nil {
+		return false, err
+	}
+	if err := s.pruneOrphanModules(txCtx); err != nil {
+		return false, err
+	}
+	if err := s.upsertMeta(txCtx, state); err != nil {
+		return false, err
+	}
+	// Seed rows commit atomically with the entity rows (vectors already embedded
+	// above, outside the transaction).
+	if err := s.writeSeeds(txCtx, state.Name, seeds); err != nil {
+		return false, err
+	}
+
 	if err := s.pool.Commit(txCtx); err != nil {
 		// The commit may have succeeded server-side despite the client error —
 		// invalidate conservatively.
 		s.invalidateAll()
 		return false, fmt.Errorf("catalog write %s commit: %w", state.Name, err)
 	}
-	if affectedErr != nil {
-		s.invalidateAll()
-	} else {
-		s.invalidateSource(state.Name, affected)
-	}
+	s.invalidateSource(state.Name, affected)
 	return true, nil
 }
 
@@ -140,7 +150,12 @@ func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) 
 // incoming batch resolves first, then the stored catalog. An unresolvable
 // reference keeps the declared attribution — the engine writes an extension
 // AFTER its dependencies, and a reload re-resolves.
-func resolveVirtualAttribution(ctx context.Context, conn *db.Connection, d *desired) error {
+func (s *Store) resolveVirtualAttribution(ctx context.Context, d *desired) error {
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
 	lookupFunc := func(module, name string) (string, error) {
 		if fn, ok := d.functions[pkKey(module, name)]; ok {
 			return fn.DataSource, nil
@@ -221,7 +236,12 @@ func resolveVirtualAttribution(ctx context.Context, conn *db.Connection, d *desi
 //
 // All lookups read DECLARED rows (types, references_name, function bindings) —
 // a reverse index computed at write time, no heuristics.
-func affectedObjects(ctx context.Context, conn *db.Connection, dataSource string, d *desired) (map[string]struct{}, error) {
+func (s *Store) affectedObjects(ctx context.Context, dataSource string, d *desired) (map[string]struct{}, error) {
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
 	out := map[string]struct{}{}
 	ds := lit(dataSource)
 
@@ -409,21 +429,21 @@ func (s *Store) deleteSource(ctx context.Context, dataSource string) error {
 	if err != nil {
 		return fmt.Errorf("catalog delete %s: %w", dataSource, err)
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = s.pool.Rollback(txCtx)
-		}
-	}()
-	conn, err := s.pool.Conn(txCtx)
+	// Idempotent per scope: no-op after Commit, aborts the flattened tx on any
+	// early return.
+	defer s.pool.Rollback(txCtx)
+
+	affected, err := s.affectedObjects(txCtx, dataSource, nil)
 	if err != nil {
 		return fmt.Errorf("catalog delete %s: %w", dataSource, err)
 	}
-	defer conn.Close()
 
-	affected, affectedErr := affectedObjects(txCtx, conn, dataSource, nil)
-
-	if err := deleteSourceRows(txCtx, conn, dataSource); err != nil {
+	// Sweep the source's SEED annotations BEFORE its entity rows go — the sweep
+	// resolves keys from the still-present rows and keeps curated rows.
+	if err := s.sweepAnnotationSeeds(txCtx, dataSource); err != nil {
+		return err
+	}
+	if err := s.deleteSourceRows(txCtx, dataSource); err != nil {
 		return err
 	}
 	ds := lit(dataSource)
@@ -431,25 +451,20 @@ func (s *Store) deleteSource(ctx context.Context, dataSource string) error {
 		`DELETE FROM core.catalog.data_source_dependencies WHERE data_source = ` + ds,
 		`DELETE FROM core.catalog.data_source_meta WHERE data_source = ` + ds,
 	} {
-		if _, err := conn.Exec(txCtx, stmt); err != nil {
+		if err := s.exec(txCtx, stmt); err != nil {
 			return fmt.Errorf("catalog delete %s: %w", dataSource, err)
 		}
 	}
-	if err := pruneOrphanModules(txCtx, conn); err != nil {
+	if err := s.pruneOrphanModules(txCtx); err != nil {
 		return err
 	}
-	committed = true
 	if err := s.pool.Commit(txCtx); err != nil {
 		// The commit may have succeeded server-side despite the client error —
 		// invalidate conservatively.
 		s.invalidateAll()
 		return fmt.Errorf("catalog delete %s: %w", dataSource, err)
 	}
-	if affectedErr != nil {
-		s.invalidateAll()
-	} else {
-		s.invalidateSource(dataSource, affected)
-	}
+	s.invalidateSource(dataSource, affected)
 	return nil
 }
 
@@ -457,25 +472,18 @@ func (s *Store) deleteSource(ctx context.Context, dataSource string) error {
 // (unload, suspend, enable — the rows stay, hidden by the flags). A missing
 // meta row (source never written) is a no-op.
 func (s *Store) setFlags(ctx context.Context, dataSource string, loaded, disabled, suspended bool) error {
-	conn, err := s.pool.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("catalog set flags %s: %w", dataSource, err)
-	}
-	defer conn.Close()
 	// Flag flips change VISIBILITY, not rows — the affected closure reads the
 	// (surviving) rows either before hiding or after unhiding.
-	affected, affectedErr := affectedObjects(ctx, conn, dataSource, nil)
-	_, err = conn.Exec(ctx, `UPDATE core.catalog.data_source_meta SET loaded = `+lit(loaded)+
-		`, disabled = `+lit(disabled)+`, suspended = `+lit(suspended)+
-		` WHERE data_source = `+lit(dataSource))
+	affected, err := s.affectedObjects(ctx, dataSource, nil)
 	if err != nil {
 		return fmt.Errorf("catalog set flags %s: %w", dataSource, err)
 	}
-	if affectedErr != nil {
-		s.invalidateAll()
-	} else {
-		s.invalidateSource(dataSource, affected)
+	if err := s.exec(ctx, `UPDATE core.catalog.data_source_meta SET loaded = `+lit(loaded)+
+		`, disabled = `+lit(disabled)+`, suspended = `+lit(suspended)+
+		` WHERE data_source = `+lit(dataSource)); err != nil {
+		return fmt.Errorf("catalog set flags %s: %w", dataSource, err)
 	}
+	s.invalidateSource(dataSource, affected)
 	return nil
 }
 
@@ -497,7 +505,7 @@ func (s *Store) sourceVersion(ctx context.Context, dataSource string) (string, b
 	return v, true, nil
 }
 
-func deleteSourceRows(ctx context.Context, conn *db.Connection, dataSource string) error {
+func (s *Store) deleteSourceRows(ctx context.Context, dataSource string) error {
 	// Strictly own attribution: a source touches only its own rows. Fields an
 	// EXTENSION source added to another source's object carry their own
 	// data_source, so reloading the base source never removes them (cross-source
@@ -511,7 +519,7 @@ func deleteSourceRows(ctx context.Context, conn *db.Connection, dataSource strin
 		`DELETE FROM core.catalog.types WHERE data_source = ` + ds,
 		`DELETE FROM core.catalog.module_data_sources WHERE data_source = ` + ds,
 	} {
-		if _, err := conn.Exec(ctx, stmt); err != nil {
+		if err := s.exec(ctx, stmt); err != nil {
 			return fmt.Errorf("catalog delete rows %s: %w", dataSource, err)
 		}
 	}
@@ -519,13 +527,13 @@ func deleteSourceRows(ctx context.Context, conn *db.Connection, dataSource strin
 }
 
 // insertSourceRows inserts every entity row collected for one source.
-func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) error {
+func (s *Store) insertSourceRows(ctx context.Context, d *desired) error {
 	objs := make([][]any, 0, len(d.dataObjects))
 	for _, k := range sortedKeys(d.dataObjects) {
 		r := d.dataObjects[k]
 		objs = append(objs, []any{r.Name, r.OriginalName, r.DataSource, r.Module, r.Kind, jsonOrNil(r.Properties), nilIfEmpty(r.Description)})
 	}
-	if err := insertRows(ctx, conn, "data_objects",
+	if err := s.insertRows(ctx, "data_objects",
 		[]string{"name", "original_name", "data_source", "module", "kind", "properties", "description"}, objs); err != nil {
 		return err
 	}
@@ -537,7 +545,7 @@ func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) erro
 			r.DataSource, nilIfEmpty(r.DependencyDataSource), r.IsPK, r.Ordinal,
 			nilIfEmpty(r.DeprecationReason), nilIfEmpty(r.Description)})
 	}
-	if err := insertRows(ctx, conn, "fields",
+	if err := s.insertRows(ctx, "fields",
 		[]string{"type_name", "name", "field_type", "properties", "args", "data_source",
 			"dependency_data_source", "is_pk", "ordinal", "deprecation_reason", "description"}, fields); err != nil {
 		return err
@@ -556,7 +564,7 @@ func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) erro
 			nilIfEmpty(r.SourceFieldDescription), r.DestinationField,
 			nilIfEmpty(r.DestinationFieldDescription), r.FieldDeclared, r.DataSource})
 	}
-	if err := insertRows(ctx, conn, "relations",
+	if err := s.insertRows(ctx, "relations",
 		[]string{"source", "name", "kind", "destination", "m2m_object", "source_keys", "destination_keys",
 			"source_field", "source_field_description", "destination_field", "destination_field_description",
 			"field_declared", "data_source"}, rels); err != nil {
@@ -569,7 +577,7 @@ func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) erro
 		fns = append(fns, []any{r.Module, r.Name, r.Kind, r.DataSource, r.Returns, r.IsTable,
 			jsonOrNil(r.Args), jsonOrNil(r.Properties), nilIfEmpty(r.DeprecationReason), nilIfEmpty(r.Description)})
 	}
-	if err := insertRows(ctx, conn, "functions",
+	if err := s.insertRows(ctx, "functions",
 		[]string{"module", "name", "kind", "data_source", "returns", "is_table", "args", "properties",
 			"deprecation_reason", "description"}, fns); err != nil {
 		return err
@@ -580,20 +588,20 @@ func insertSourceRows(ctx context.Context, conn *db.Connection, d *desired) erro
 		r := d.types[k]
 		types = append(types, []any{r.Name, r.Kind, r.DataSource, r.Module, r.Definition, nilIfEmpty(r.Description)})
 	}
-	return insertRows(ctx, conn, "types",
+	return s.insertRows(ctx, "types",
 		[]string{"name", "kind", "data_source", "module", "definition", "description"}, types)
 }
 
 // mergeModules upserts the source's module rows and inserts its module→source
 // closure (its old closure rows were removed by deleteSourceRows). Modules are
 // shared across sources, so they are upserted, never attributed.
-func mergeModules(ctx context.Context, conn *db.Connection, d *desired) error {
+func (s *Store) mergeModules(ctx context.Context, d *desired) error {
 	moduleRows := make([][]any, 0, len(d.modules))
 	for _, k := range sortedKeys(d.modules) {
 		m := d.modules[k]
 		moduleRows = append(moduleRows, []any{m.Name, nilIfEmpty(m.Parent), nilIfEmpty(m.Description)})
 	}
-	if err := upsertRows(ctx, conn, "modules",
+	if err := s.upsertRows(ctx, "modules",
 		[]string{"name", "parent", "description"}, []string{"name"},
 		[]string{"parent", "description"}, moduleRows); err != nil {
 		return err
@@ -604,24 +612,23 @@ func mergeModules(ctx context.Context, conn *db.Connection, d *desired) error {
 		links = append(links, []any{ms.Module, ms.DataSource,
 			ms.HasDataObjects, ms.HasTables, ms.HasFunctions, ms.HasMutFunctions, ms.HasSubscriptions})
 	}
-	return insertRows(ctx, conn, "module_data_sources",
+	return s.insertRows(ctx, "module_data_sources",
 		[]string{"module", "data_source", "has_data_objects", "has_tables",
 			"has_functions", "has_mut_functions", "has_subscriptions"}, links)
 }
 
 // pruneOrphanModules removes modules no source backs anymore — with the closure,
 // a live module always has at least one module_data_sources row.
-func pruneOrphanModules(ctx context.Context, conn *db.Connection) error {
-	_, err := conn.Exec(ctx, `DELETE FROM core.catalog.modules
-		WHERE name NOT IN (SELECT DISTINCT module FROM core.catalog.module_data_sources)`)
-	if err != nil {
+func (s *Store) pruneOrphanModules(ctx context.Context) error {
+	if err := s.exec(ctx, `DELETE FROM core.catalog.modules
+		WHERE name NOT IN (SELECT DISTINCT module FROM core.catalog.module_data_sources)`); err != nil {
 		return fmt.Errorf("catalog prune modules: %w", err)
 	}
 	return nil
 }
 
 // upsertMeta stamps the source's version, capabilities and flags.
-func upsertMeta(ctx context.Context, conn *db.Connection, state SourceState) error {
+func (s *Store) upsertMeta(ctx context.Context, state SourceState) error {
 	stmt := `INSERT INTO core.catalog.data_source_meta
 		(data_source, version, capabilities, engine, read_only, prefix, as_module, is_extension, loaded, disabled, suspended, loaded_at)
 		VALUES (` + lit(state.Name) + `, ` + lit(state.storedVersion()) + `, ` + lit(capabilitiesText(state.Capabilities)) + `, ` +
@@ -632,7 +639,7 @@ func upsertMeta(ctx context.Context, conn *db.Connection, state SourceState) err
 		capabilities = EXCLUDED.capabilities, engine = EXCLUDED.engine, read_only = EXCLUDED.read_only,
 		prefix = EXCLUDED.prefix, as_module = EXCLUDED.as_module, is_extension = EXCLUDED.is_extension,
 		loaded = EXCLUDED.loaded, disabled = EXCLUDED.disabled, suspended = EXCLUDED.suspended, loaded_at = EXCLUDED.loaded_at`
-	if _, err := conn.Exec(ctx, stmt); err != nil {
+	if err := s.exec(ctx, stmt); err != nil {
 		return fmt.Errorf("catalog meta upsert %s: %w", state.Name, err)
 	}
 	return nil
@@ -640,10 +647,29 @@ func upsertMeta(ctx context.Context, conn *db.Connection, state SourceState) err
 
 // --- SQL building ---
 
-func insertRows(ctx context.Context, conn *db.Connection, table string, columns []string, rows [][]any) error {
+// exec runs one statement on the connection carried by ctx — the transaction's
+// connection inside a write tx (Close is then a no-op), or a fresh pooled one
+// otherwise. The seed/sweep and writer helpers all resolve the connection this
+// way instead of threading it through.
+func (s *Store) exec(ctx context.Context, query string) error {
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, err = conn.Exec(ctx, query)
+	return err
+}
+
+func (s *Store) insertRows(ctx context.Context, table string, columns []string, rows [][]any) error {
 	if len(rows) == 0 {
 		return nil
 	}
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
 	head := `INSERT INTO core.catalog.` + table + ` (` + strings.Join(columns, ", ") + `) VALUES `
 	for start := 0; start < len(rows); start += insertChunk {
 		end := min(start+insertChunk, len(rows))
@@ -663,10 +689,15 @@ func insertRows(ctx context.Context, conn *db.Connection, table string, columns 
 }
 
 // upsertRows inserts with ON CONFLICT DO UPDATE of the given columns.
-func upsertRows(ctx context.Context, conn *db.Connection, table string, columns, pkCols, updateCols []string, rows [][]any) error {
+func (s *Store) upsertRows(ctx context.Context, table string, columns, pkCols, updateCols []string, rows [][]any) error {
 	if len(rows) == 0 {
 		return nil
 	}
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
 	sets := make([]string, len(updateCols))
 	for i, c := range updateCols {
 		sets[i] = c + " = EXCLUDED." + c

@@ -118,8 +118,9 @@ func (s *Store) curate(ctx context.Context, kind, key, parent, desc, longDesc st
 // empty description is stored as NULL. When vec is non-nil it is written and
 // updated on conflict; when nil the vec column is left untouched so a load-time
 // seed vector survives a text-only curation (or a clear). The vector is
-// rendered as a SQL literal like the rest of the writer (litEngine); the
-// DOUBLE[] literal casts to the column's FLOAT[]/vector on insert.
+// rendered as a cross-engine text literal (vecLiteral) and CURRENT_TIMESTAMP is
+// used for updated_at — the statement shapes the CoreDB inventory pins as
+// working on both DuckDB and attached PostgreSQL (core-db/hugr_catalog_test.go).
 func (s *Store) upsertAnnotation(ctx context.Context, kind, key, parent, desc, longDesc string, vec qetypes.Vector) error {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
@@ -131,15 +132,15 @@ func (s *Store) upsertAnnotation(ctx context.Context, kind, key, parent, desc, l
 	vals := `VALUES (` + lit(kind) + `, ` + lit(key) + `, ` + lit(nilIfEmpty(parent)) + `, ` +
 		lit(nilIfEmpty(desc)) + `, ` + lit(nilIfEmpty(longDesc))
 	set := `ON CONFLICT (entity_kind, entity_key) DO UPDATE SET
-		parent = excluded.parent, description = excluded.description,
-		long_description = excluded.long_description`
+		parent = EXCLUDED.parent, description = EXCLUDED.description,
+		long_description = EXCLUDED.long_description`
 	var stmt string
 	if vec != nil {
-		stmt = head + `, vec, updated_at) ` + vals + `, ` + lit([]float64(vec)) + `, now()::TIMESTAMP) ` +
-			set + `, vec = excluded.vec, updated_at = excluded.updated_at`
+		stmt = head + `, vec, updated_at) ` + vals + `, ` + vecLiteral(vec) + `, CURRENT_TIMESTAMP) ` +
+			set + `, vec = EXCLUDED.vec, updated_at = EXCLUDED.updated_at`
 	} else {
-		stmt = head + `, updated_at) ` + vals + `, now()::TIMESTAMP) ` +
-			set + `, updated_at = excluded.updated_at`
+		stmt = head + `, updated_at) ` + vals + `, CURRENT_TIMESTAMP) ` +
+			set + `, updated_at = EXCLUDED.updated_at`
 	}
 	if _, err := conn.Exec(ctx, stmt); err != nil {
 		return fmt.Errorf("set annotation %s %s: %w", kind, key, err)
