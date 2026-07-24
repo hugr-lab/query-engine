@@ -47,21 +47,35 @@ type Provider interface {
 	Types(ctx context.Context) iter.Seq2[string, *ast.Definition]
 }
 
-// MutableProvider is a mutable container for schema definitions.
+// MutableProvider is a mutable container for compiled schema definitions.
+// It carries the compiler write path (per-source Update, DropCatalog) — the
+// description-annotation surface is split out into SchemaAnnotator so a
+// provider can curate descriptions without owning full compilation semantics.
 type MutableProvider interface {
 	Provider
 
+	DropCatalog(ctx context.Context, name string, cascade bool) error
+	Update(ctx context.Context, changes DefinitionsSource) error
+}
+
+// SchemaAnnotator curates human descriptions over an already-compiled schema.
+// It is orthogonal to compilation: an annotator overrides the description /
+// long-description of types, fields, arguments, modules and catalogs without
+// re-running the compiler. The store applies these as an overlay at
+// reconstruction time; the legacy DB provider persists them into its schema
+// tables. Callers reach it via type assertion, like SuspendableProvider.
+type SchemaAnnotator interface {
 	// SetDefinitionDescription updates a type's description and long description.
 	SetDefinitionDescription(ctx context.Context, name, desc, longDesc string) error
 	// SetFieldDescription updates a field's description and long description.
 	SetFieldDescription(ctx context.Context, typeName, fieldName, desc, longDesc string) error
+	// SetArgumentDescription updates a field argument's description and long
+	// description (typeName.fieldName identifies the field carrying the argument).
+	SetArgumentDescription(ctx context.Context, typeName, fieldName, argName, desc, longDesc string) error
 	// SetModuleDescription updates a module's description and long description.
 	SetModuleDescription(ctx context.Context, name, desc, longDesc string) error
 	// SetCatalogDescription updates a catalog's description and long description.
 	SetCatalogDescription(ctx context.Context, name, desc, longDesc string) error
-
-	DropCatalog(ctx context.Context, name string, cascade bool) error
-	Update(ctx context.Context, changes DefinitionsSource) error
 }
 
 // SuspendableProvider is optionally implemented by providers that support
