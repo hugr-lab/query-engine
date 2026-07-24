@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 	"time"
 )
@@ -239,5 +240,25 @@ func TestPool_NestedTxSemantics(t *testing.T) {
 	}()
 	if got := count(); got != 0 {
 		t.Fatalf("inner rollback must abort the whole tx: want 0 rows, got %d", got)
+	}
+
+	// (c) Committing AFTER an inner rollback poisoned the tx must not look like
+	// success — the work is gone, the owner gets ErrTxDone.
+	func() {
+		owner, _ := pool.WithTx(ctx)
+		defer pool.Rollback(owner)
+		exec(owner, "INSERT INTO t VALUES (1)")
+		func() {
+			inner, _ := pool.WithTx(owner)
+			defer pool.Rollback(inner) // rolls back and poisons
+			exec(inner, "INSERT INTO t VALUES (2)")
+		}()
+		// The owner IGNORES the inner failure and commits anyway.
+		if err := pool.Commit(owner); err != sql.ErrTxDone {
+			t.Errorf("commit after poison: want sql.ErrTxDone, got %v", err)
+		}
+	}()
+	if got := count(); got != 0 {
+		t.Fatalf("poisoned commit persisted rows: want 0, got %d", got)
 	}
 }

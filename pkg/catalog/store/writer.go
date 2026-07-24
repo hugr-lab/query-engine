@@ -112,6 +112,18 @@ func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) 
 		return false, fmt.Errorf("catalog write %s: %w", state.Name, err)
 	}
 
+	// Refresh the seed set atomically with the entity rows: sweep the STORED
+	// entities' seeds first (this is what drops the seeds of entities the new
+	// version removes — after deleteSourceRows their keys are unresolvable, and
+	// the unregister sweep could never find them either), then writeSeeds below
+	// inserts the fresh set. Skipped when embedding produced nothing (embedder
+	// off or failed): stale seeds are better than none.
+	if len(seeds) > 0 {
+		if err := s.sweepAnnotationSeeds(txCtx, state.Name); err != nil {
+			return false, err
+		}
+	}
+
 	if err := s.deleteSourceRows(txCtx, state.Name); err != nil {
 		return false, err
 	}

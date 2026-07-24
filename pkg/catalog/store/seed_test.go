@@ -68,6 +68,21 @@ func TestSeedVectorsAndSweep(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, changed)
 
+	// --- Reload with a version that DROPS entities sweeps their stale seeds ---
+	// (after the entity rows are gone their keys would be unresolvable forever).
+	d2 := collect(ctx, partialSource(t, "test", seedV2Schema), "test")
+	changed, err = store.writeSource(ctx, d2, SourceState{
+		Name: "test", Version: "v2", Engine: "duckdb", Prefix: "shop", AsModule: true, Loaded: true,
+	})
+	require.NoError(t, err)
+	require.True(t, changed)
+	assert.Empty(t, seedRow(kindFunction, "sales.order_status"), "dropped function's seed swept on reload")
+	assert.Empty(t, seedRow(kindField, "orders.amount"), "dropped object's field seed swept on reload")
+	assert.Equal(t, []string{"true|false"}, seedRow(kindDataObject, "customers"), "kept entity reseeded")
+	assert.Equal(t, []string{"Curated orders"}, rows(t, pool,
+		`SELECT description FROM core.catalog.annotations WHERE entity_kind = 'data_object' AND entity_key = 'orders'`),
+		"curation survives the reload sweep even though its object was dropped")
+
 	// --- Unregister sweeps seeds, keeps curation ---
 	require.NoError(t, store.deleteSource(ctx, "test"))
 
@@ -104,3 +119,12 @@ func TestSeedNoEmbedderNoop(t *testing.T) {
 	assert.Equal(t, []string{"0"}, rows(t, pool, `SELECT count(*) FROM core.catalog.annotations`),
 		"no embedder → no seed rows")
 }
+
+// seedV2Schema is the collectTestSchema source rewritten to a single table —
+// the reload fixture that DROPS the other objects, functions and types.
+const seedV2Schema = `
+type customers @module(name: "sales") @table(name: "customers") {
+  id: Int! @pk
+  name: String!
+}
+`

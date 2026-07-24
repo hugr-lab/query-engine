@@ -95,11 +95,16 @@ func (p *Pool) Commit(ctx context.Context) error {
 	txc := f.txc
 	// A nested commit is only a vote — the physical commit happens when the LAST
 	// holder commits, and only if no rollback has poisoned the flattened tx.
+	// Committing work a rollback has already thrown away must NOT look like
+	// success — report ErrTxDone so the caller knows nothing was persisted.
 	if txc.level.Add(-1) > 0 {
+		if txc.settled.Load() {
+			return sql.ErrTxDone
+		}
 		return nil
 	}
 	if txc.settled.Swap(true) {
-		return nil
+		return sql.ErrTxDone
 	}
 	err := txc.tx.Commit()
 	txc.Connection.tx = nil

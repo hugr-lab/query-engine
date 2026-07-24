@@ -63,18 +63,28 @@ func (s *Store) embed(ctx context.Context, text string) (qetypes.Vector, error) 
 	return res.Vector, nil
 }
 
-// embedBatch computes embedding vectors for many texts in one call — the seed
-// path embeds every entity of a source at once. Returns nil when embeddings are
-// not configured.
+// embedBatchSize bounds one CreateEmbeddings call — embedding backends cap
+// their batch sizes, and a large source (thousands of fields) would otherwise
+// go out in a single oversized request and fail wholesale.
+const embedBatchSize = 256
+
+// embedBatch computes embedding vectors for many texts — the seed path embeds
+// every entity of a source, chunked by embedBatchSize. Returns nil when
+// embeddings are not configured.
 func (s *Store) embedBatch(ctx context.Context, texts []string) ([]qetypes.Vector, error) {
 	if s.embedder == nil || s.vecSize == 0 || len(texts) == 0 {
 		return nil, nil
 	}
-	res, err := s.embedder.CreateEmbeddings(ctx, texts)
-	if err != nil {
-		return nil, fmt.Errorf("embed batch (%d): %w", len(texts), err)
+	out := make([]qetypes.Vector, 0, len(texts))
+	for start := 0; start < len(texts); start += embedBatchSize {
+		end := min(start+embedBatchSize, len(texts))
+		res, err := s.embedder.CreateEmbeddings(ctx, texts[start:end])
+		if err != nil {
+			return nil, fmt.Errorf("embed batch %d..%d of %d: %w", start, end, len(texts), err)
+		}
+		out = append(out, res.Vectors...)
 	}
-	return res.Vectors, nil
+	return out, nil
 }
 
 // vecLiteral renders a vector as a cross-engine SQL STRING literal
