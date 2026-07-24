@@ -144,12 +144,16 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 		typ := parseFieldType(f.FieldType)
 		typeName := typ.Name()
 		isList := typ.NamedType == ""
-		if f.Name == "_stub" || f.DependencyDataSource != "" {
-			continue // extension fields join no derived types
+		if f.Name == "_stub" {
+			continue
+		}
+		if f.DependencyDataSource != "" && !isVirtualStoreField(f) {
+			continue // plain extension fields join no derived types
 		}
 		if s := types.Lookup(typeName); s != nil {
 			// Scalar twin — the compiler takes every non-list Aggregatable
-			// scalar here, virtual (@function_call) fields included.
+			// scalar here, virtual (@function_call) fields included;
+			// extension-contributed ones keep their @dependency marker.
 			if isList {
 				continue
 			}
@@ -161,11 +165,16 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 			if extra := cubeHypertableArgs(row, f); extra != nil {
 				args = append(args, extra)
 			}
+			dirs := ast.DirectiveList{}
+			if f.DependencyDataSource != "" {
+				dirs = append(dirs, dependencyDirective(f.DependencyDataSource))
+			}
+			dirs = append(dirs, fieldAggregationMarker(f.Name))
 			def.Fields = append(def.Fields, &ast.FieldDefinition{
 				Name:       f.Name,
 				Type:       ast.NamedType(a.AggregationTypeName(), reconPos),
 				Arguments:  args,
-				Directives: ast.DirectiveList{fieldAggregationMarker(f.Name)},
+				Directives: dirs,
 				Position:   reconPos,
 			})
 			continue
@@ -192,6 +201,7 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 
 	// Virtual object-list twins (addVirtualFieldAggregations): @join pairs
 	// use the agg-ref profiles, TFCJ pairs reuse the DECLARED call arguments.
+	// A cross-source @join target generates nothing (bare declared field).
 	for _, f := range fields {
 		j := f.Properties
 		if j == nil || (j.Join == nil && j.TableFunctionCallJoin == nil) {
@@ -202,7 +212,13 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 		if typ.NamedType != "" {
 			continue
 		}
-		if exists, err := g.dataObjectExists(ctx, target); err != nil {
+		if j.Join != nil {
+			if _, ok, err := g.joinMachineryTarget(ctx, f); err != nil {
+				return nil, err
+			} else if !ok {
+				continue
+			}
+		} else if exists, err := g.dataObjectExists(ctx, target); err != nil {
 			return nil, err
 		} else if !exists {
 			continue
@@ -214,19 +230,26 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 			directArgs = emitArgumentDefs(f.Args)
 			subArgs = emitArgumentDefs(f.Args)
 		}
+		memberDirs := func() ast.DirectiveList {
+			var out ast.DirectiveList
+			if f.DependencyDataSource != "" {
+				out = append(out, dependencyDirective(f.DependencyDataSource))
+			}
+			return append(out, fieldAggregationMarker(f.Name))
+		}
 		def.Fields = append(def.Fields,
 			&ast.FieldDefinition{
 				Name:       f.Name,
 				Type:       ast.NamedType("_"+target+"_aggregation", reconPos),
 				Arguments:  directArgs,
-				Directives: ast.DirectiveList{fieldAggregationMarker(f.Name)},
+				Directives: memberDirs(),
 				Position:   reconPos,
 			},
 			&ast.FieldDefinition{
 				Name:       f.Name + "_aggregation",
 				Type:       ast.NamedType(rules.AggTypeNameAtDepth(target, 1), reconPos),
 				Arguments:  subArgs,
-				Directives: ast.DirectiveList{fieldAggregationMarker(f.Name)},
+				Directives: memberDirs(),
 				Position:   reconPos,
 			},
 		)
@@ -253,15 +276,23 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 	// Every non-M2M data object's aggregation carries the shared cross-source
 	// `_join` member — and `_spatial` when the object has a Geometry field
 	// (JoinSpatialRule); their args are skipped by the sub-agg mapping, so
-	// they stay base-level-only members.
+	// they stay base-level-only members. On an extension-owned object they
+	// carry @dependency like every generated member.
 	if row.Properties == nil || !row.Properties.IsM2M {
+		sharedDirs := func(name string) ast.DirectiveList {
+			var out ast.DirectiveList
+			if srcs[row.DataSource].IsExtension {
+				out = append(out, dependencyDirective(row.DataSource))
+			}
+			return append(out, fieldAggregationMarker(name))
+		}
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
 			Name: "_join",
 			Type: ast.NamedType("_join_aggregation", reconPos),
 			Arguments: ast.ArgumentDefinitionList{
 				{Name: "fields", Type: ast.NonNullListType(ast.NonNullNamedType("String", reconPos), reconPos), Position: reconPos},
 			},
-			Directives: ast.DirectiveList{fieldAggregationMarker("_join")},
+			Directives: sharedDirs("_join"),
 			Position:   reconPos,
 		})
 		if fieldsHaveGeometry(fields) {
@@ -269,7 +300,7 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 				Name:       "_spatial",
 				Type:       ast.NamedType("_spatial_aggregation", reconPos),
 				Arguments:  spatialFieldArgs(),
-				Directives: ast.DirectiveList{fieldAggregationMarker("_spatial")},
+				Directives: sharedDirs("_spatial"),
 				Position:   reconPos,
 			})
 		}
@@ -466,6 +497,25 @@ func buildObjectSubAggregation(ctx context.Context, g *genContext, row *dataObje
 	if err != nil {
 		return nil, err
 	}
+	// Virtual @join/TFCJ twin members never reach the sub-aggregations — the
+	// compiler drops BOTH the direct member and the `_aggregation` twin at
+	// sub level (args-ful ones fall out of the generic mapping anyway; the
+	// set closes the argless extension-contributed case).
+	fields, err := g.readFields(ctx, row.Name)
+	if err != nil {
+		return nil, err
+	}
+	virtualTwins := map[string]bool{}
+	for _, f := range fields {
+		if f.Properties == nil || (f.Properties.Join == nil && f.Properties.TableFunctionCallJoin == nil) {
+			continue
+		}
+		if parseFieldType(f.FieldType).NamedType != "" {
+			continue
+		}
+		virtualTwins[f.Name] = true
+		virtualTwins[f.Name+"_aggregation"] = true
+	}
 	for _, f := range baseAgg.Fields {
 		if f.Name == "_rows_count" {
 			continue
@@ -473,6 +523,13 @@ func buildObjectSubAggregation(ctx context.Context, g *genContext, row *dataObje
 		if f.Name == "_distance_to_query" {
 			// EmbeddingsRule extends the base aggregation only — the member
 			// never reaches the sub-aggregations.
+			continue
+		}
+		if f.Directives.ForName(base.DependencyDirectiveName) != nil {
+			// Extension-contributed members stay base-level-only.
+			continue
+		}
+		if virtualTwins[f.Name] {
 			continue
 		}
 		if subType := types.SubAggregationTypeName(f.Type.Name()); subType != "" {
@@ -492,7 +549,7 @@ func buildObjectSubAggregation(ctx context.Context, g *genContext, row *dataObje
 				Position:   reconPos,
 			})
 		}
-		// Members with args (relation / virtual twins) re-instantiate below.
+		// Members with args (relation twins) re-instantiate below.
 	}
 	// Extra members flip through the scalar mapping above (their base twins
 	// are Aggregatable-typed), so no separate pass is needed here.

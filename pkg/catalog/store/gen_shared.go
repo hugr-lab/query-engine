@@ -22,6 +22,7 @@ type sharedObjectEntry struct {
 	filterName    string
 	info          *base.ObjectInfo
 	dataSource    string
+	isExtension   bool
 	hasVector     bool
 	hasEmbeddings bool
 	spatial       bool
@@ -35,6 +36,10 @@ func (g *genContext) sharedObjects(ctx context.Context) ([]*sharedObjectEntry, e
 	if err != nil {
 		return nil, err
 	}
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var out []*sharedObjectEntry
 	for _, name := range names {
 		row, err := g.readDataObject(ctx, name)
@@ -45,10 +50,11 @@ func (g *genContext) sharedObjects(ctx context.Context) ([]*sharedObjectEntry, e
 			continue
 		}
 		e := &sharedObjectEntry{
-			name:       name,
-			filterName: name + filterSuffix,
-			info:       &base.ObjectInfo{Name: name, OriginalName: row.OriginalName},
-			dataSource: row.DataSource,
+			name:        name,
+			filterName:  name + filterSuffix,
+			info:        &base.ObjectInfo{Name: name, OriginalName: row.OriginalName},
+			dataSource:  row.DataSource,
+			isExtension: srcs[row.DataSource].IsExtension,
 		}
 		if row.Properties != nil {
 			e.info.InputArgsName = row.Properties.ArgsTypeName
@@ -222,7 +228,14 @@ func spatialMemberArgs(obj *sharedObjectEntry) func() ast.ArgumentDefinitionList
 // set every shared query type carries per object. args is a factory — each
 // member gets its own argument list instance.
 func sharedMemberTrio(obj *sharedObjectEntry, args func() ast.ArgumentDefinitionList, srcs map[string]activeSource) []*ast.FieldDefinition {
-	catalog := func() *ast.Directive { return catalogDirective(obj.dataSource, srcs[obj.dataSource].Engine) }
+	dirs := func(head ...*ast.Directive) ast.DirectiveList {
+		out := ast.DirectiveList(head)
+		out = append(out, catalogDirective(obj.dataSource, srcs[obj.dataSource].Engine))
+		if obj.isExtension {
+			out = append(out, dependencyDirective(obj.dataSource))
+		}
+		return out
+	}
 	aggQuery := func(isBucket bool) *ast.Directive {
 		return directive(base.FieldAggregationQueryDirectiveName,
 			boolArg(base.ArgIsBucket, isBucket),
@@ -234,24 +247,22 @@ func sharedMemberTrio(obj *sharedObjectEntry, args func() ast.ArgumentDefinition
 			Name:      obj.name,
 			Type:      ast.ListType(ast.NamedType(obj.name, reconPos), reconPos),
 			Arguments: args(),
-			Directives: ast.DirectiveList{
-				directive("query", strArg(base.ArgName, obj.name), enumArg("type", "SELECT")),
-				catalog(),
-			},
+			Directives: dirs(
+				directive("query", strArg(base.ArgName, obj.name), enumArg("type", "SELECT"))),
 			Position: reconPos,
 		},
 		{
 			Name:       obj.name + "_aggregation",
 			Type:       ast.NamedType("_"+obj.name+"_aggregation", reconPos),
 			Arguments:  args(),
-			Directives: ast.DirectiveList{aggQuery(false), catalog()},
+			Directives: dirs(aggQuery(false)),
 			Position:   reconPos,
 		},
 		{
 			Name:       obj.name + "_bucket_aggregation",
 			Type:       ast.ListType(ast.NamedType("_"+obj.name+"_aggregation_bucket", reconPos), reconPos),
 			Arguments:  args(),
-			Directives: ast.DirectiveList{aggQuery(true), catalog()},
+			Directives: dirs(aggQuery(true)),
 			Position:   reconPos,
 		},
 	}
@@ -260,19 +271,23 @@ func sharedMemberTrio(obj *sharedObjectEntry, args func() ast.ArgumentDefinition
 // sharedAggMember is the single aggregation member the *_aggregation shared
 // types carry per object.
 func sharedAggMember(obj *sharedObjectEntry, args ast.ArgumentDefinitionList, srcs map[string]activeSource) *ast.FieldDefinition {
+	dirs := ast.DirectiveList{
+		directive(base.FieldAggregationQueryDirectiveName,
+			boolArg(base.ArgIsBucket, false),
+			strArg(base.ArgName, obj.name),
+		),
+		catalogDirective(obj.dataSource, srcs[obj.dataSource].Engine),
+	}
+	if obj.isExtension {
+		dirs = append(dirs, dependencyDirective(obj.dataSource))
+	}
+	dirs = append(dirs, fieldAggregationMarker(obj.name))
 	return &ast.FieldDefinition{
-		Name:      obj.name,
-		Type:      ast.NamedType("_"+obj.name+"_aggregation", reconPos),
-		Arguments: args,
-		Directives: ast.DirectiveList{
-			directive(base.FieldAggregationQueryDirectiveName,
-				boolArg(base.ArgIsBucket, false),
-				strArg(base.ArgName, obj.name),
-			),
-			catalogDirective(obj.dataSource, srcs[obj.dataSource].Engine),
-			fieldAggregationMarker(obj.name),
-		},
-		Position: reconPos,
+		Name:       obj.name,
+		Type:       ast.NamedType("_"+obj.name+"_aggregation", reconPos),
+		Arguments:  args,
+		Directives: dirs,
+		Position:   reconPos,
 	}
 }
 

@@ -250,18 +250,27 @@ var rootObjectShapesRule = rootRule{
 				if shape.rootKind != sc.kind || !shape.matches(t) {
 					continue
 				}
-				def.Fields = append(def.Fields, shape.root(t)...)
+				shapeFields := shape.root(t)
+				// Root fields of an extension-owned object carry @dependency
+				// so dependency tracking drops them with the extension.
+				if t.src.IsExtension {
+					for _, fd := range shapeFields {
+						fd.Directives = append(fd.Directives, dependencyDirective(row.DataSource))
+					}
+				}
+				def.Fields = append(def.Fields, shapeFields...)
 			}
 		}
 		return nil
 	},
 }
 
-// rootFunctionsRule adds the module's functions of the root's kind. On the
-// top-level roots the module-"" functions attach directly to Query/Mutation
-// (RootTypeAssembler behavior). On FUNCTION module roots, list-of-data-object
-// functions additionally get their aggregation twin pair
-// (addModuleFuncAggregations).
+// rootFunctionsRule adds the module's functions of the root's kind. Functions
+// NEVER attach to Query/Mutation directly — module-"" functions live under the
+// Function/MutationFunction roots and Query/Mutation expose them through the
+// `function` gateway (FunctionRule emits Function-type extensions only). On
+// FUNCTION module roots, list-of-data-object functions additionally get their
+// aggregation twin pair (addModuleFuncAggregations).
 var rootFunctionsRule = rootRule{
 	name: "functions",
 	apply: func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) error {
@@ -269,9 +278,7 @@ var rootFunctionsRule = rootRule{
 		if kind == "" {
 			return nil
 		}
-		if sc.top() && (sc.kind == sdl.ModuleQuery || sc.kind == sdl.ModuleMutation) {
-			// module-"" functions only; modules' functions live under Function/MutationFunction.
-		} else if sc.kind == sdl.ModuleQuery || sc.kind == sdl.ModuleMutation {
+		if sc.kind == sdl.ModuleQuery || sc.kind == sdl.ModuleMutation {
 			return nil
 		}
 		srcs, err := g.activeSources(ctx)

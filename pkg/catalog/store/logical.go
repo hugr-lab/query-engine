@@ -260,11 +260,14 @@ func (s *Store) Function(ctx context.Context, module, name string) *catalog.Func
 // subscription kinds in that order, by name within each kind.
 func (s *Store) Functions(ctx context.Context, module string) iter.Seq[*catalog.FunctionEntry] {
 	return func(yield func(*catalog.FunctionEntry) bool) {
-		rows, err := s.genCtx().readFunctions(ctx, module)
+		memoized, err := s.genCtx().readFunctions(ctx, module)
 		if err != nil {
 			logReadErr("functions of "+module, err)
 			return
 		}
+		// Sort a copy — the memoized slice's ORDER BY name order is a reader
+		// contract other consumers rely on.
+		rows := slices.Clone(memoized)
 		slices.SortFunc(rows, func(a, b *function) int {
 			if c := functionKindRank(a.Kind) - functionKindRank(b.Kind); c != 0 {
 				return c
@@ -504,10 +507,13 @@ func (g *genContext) dataObjectNames(ctx context.Context, module string) ([]stri
 		WHERE o.module = `+lit(module)+` ORDER BY o.name`)
 }
 
+// dataObjectExists probes through readDataObject: memoized, applies the full
+// visibility gate (source activity AND declared dependencies) and records the
+// found object's sources as provenance — a definition that branched on this
+// probe is indexed under the target's sources.
 func (g *genContext) dataObjectExists(ctx context.Context, name string) (bool, error) {
-	names, err := g.queryNames(ctx, `SELECT o.name FROM core.catalog.data_objects o`+
-		activeMeta("m", "o.data_source")+` WHERE o.name = `+lit(name))
-	return len(names) > 0, err
+	row, err := g.readDataObject(ctx, name)
+	return row != nil, err
 }
 
 func (g *genContext) readFunctions(ctx context.Context, module string) ([]*function, error) {

@@ -169,6 +169,18 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 			"%s.%s: unknown function %q", def.Name, field.Name, refName)
 	}
 
+	// 1b. A regular source describes ONLY its own data — cross-source schema
+	// artifacts (@function_call / @table_function_call_join referencing
+	// another source's function) belong to EXTENSION sources exclusively.
+	if !ctx.CompileOptions().IsExtension {
+		funcCat := base.DirectiveArgString(funcField.Directives.ForName(base.CatalogDirectiveName), base.ArgName)
+		if funcCat != "" && funcCat != ctx.CompileOptions().Name {
+			return gqlerror.ErrorPosf(field.Position,
+				"%s.%s: references function %q of data source %q — cross-source references are only allowed in extension sources",
+				def.Name, field.Name, refName, funcCat)
+		}
+	}
+
 	// 2. Validate return type
 	if !isTableFuncJoin {
 		if !equalTypes(funcField.Type, field.Type) {

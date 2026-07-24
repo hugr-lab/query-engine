@@ -53,25 +53,38 @@ var joinFieldsRule = fieldRule{
 			if typ.NamedType != "" {
 				continue
 			}
-			if exists, err := g.dataObjectExists(ctx, target); err != nil {
-				return err
-			} else if !exists {
-				continue
-			}
 			twinArgs := func() ast.ArgumentDefinitionList {
 				return rules.SubQueryArgs(target+filterSuffix, reconPos)
 			}
 			if f.Properties.Join != nil {
+				_, ok, err := g.joinMachineryTarget(ctx, f)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					continue // cross-source (or absent) target → bare field
+				}
 				if fd := def.Fields.ForName(f.Name); fd != nil && len(fd.Arguments) == 0 {
 					fd.Arguments = rules.SubQueryArgs(target+filterSuffix, reconPos)
 				}
 			} else {
+				if exists, err := g.dataObjectExists(ctx, target); err != nil {
+					return err
+				} else if !exists {
+					continue
+				}
 				// TFCJ twins reuse the declared call arguments as-is.
 				declared := f.Args
 				twinArgs = func() ast.ArgumentDefinitionList { return emitArgumentDefs(declared) }
 			}
+			// Extension-contributed virtual fields: the twins carry the same
+			// write-time-resolved @catalog as the field, plus @dependency.
+			var extra []*ast.Directive
+			if f.DependencyDataSource != "" {
+				extra = append(extra, dependencyDirective(f.DependencyDataSource))
+			}
 			def.Fields = append(def.Fields,
-				relationAggTwinFields(f.Name, target, twinArgs, t.srcs, f.DataSource)...)
+				relationAggTwinFields(f.Name, target, twinArgs, t.srcs, f.DataSource, extra...)...)
 		}
 		return nil
 	},
@@ -173,14 +186,18 @@ func navQueryDirective(referencesName, relName string, isM2M bool, m2mName strin
 // relationAggTwinFields is addReferenceAggregationFields: the
 // {name}_aggregation / {name}_bucket_aggregation members every list relation
 // (@join / TFCJ / back FK / M2M) puts on the base object. args is a factory —
-// each twin gets its own argument list instance.
-func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDefinitionList, srcs map[string]activeSource, dataSource string) []*ast.FieldDefinition {
-	catalog := func() *ast.Directive { return catalogDirective(dataSource, srcs[dataSource].Engine) }
-	aggQuery := func(isBucket bool) *ast.Directive {
-		return directive(base.FieldAggregationQueryDirectiveName,
-			boolArg(base.ArgIsBucket, isBucket),
-			strArg(base.ArgName, fieldName),
-		)
+// each twin gets its own argument list instance; extra directives (the
+// @dependency of extension-contributed fields) are appended to both twins.
+func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDefinitionList, srcs map[string]activeSource, dataSource string, extra ...*ast.Directive) []*ast.FieldDefinition {
+	twinDirectives := func(isBucket bool) ast.DirectiveList {
+		out := ast.DirectiveList{
+			directive(base.FieldAggregationQueryDirectiveName,
+				boolArg(base.ArgIsBucket, isBucket),
+				strArg(base.ArgName, fieldName),
+			),
+			catalogDirective(dataSource, srcs[dataSource].Engine),
+		}
+		return append(out, extra...)
 	}
 	return []*ast.FieldDefinition{
 		{
@@ -188,7 +205,7 @@ func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDef
 			Description: "The aggregation for " + fieldName,
 			Type:        ast.NamedType("_"+target+"_aggregation", reconPos),
 			Arguments:   args(),
-			Directives:  ast.DirectiveList{aggQuery(false), catalog()},
+			Directives:  twinDirectives(false),
 			Position:    reconPos,
 		},
 		{
@@ -196,7 +213,7 @@ func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDef
 			Description: "The bucket aggregation for " + fieldName,
 			Type:        ast.ListType(ast.NamedType("_"+target+"_aggregation_bucket", reconPos), reconPos),
 			Arguments:   args(),
-			Directives:  ast.DirectiveList{aggQuery(true), catalog()},
+			Directives:  twinDirectives(true),
 			Position:    reconPos,
 		},
 	}
@@ -329,20 +346,28 @@ var sharedFieldsRule = fieldRule{
 		if t.isM2M() {
 			return nil
 		}
+		// Generated members of an extension-owned object carry @dependency
+		// so dependency tracking drops them with the extension.
+		var dirs ast.DirectiveList
+		if t.src.IsExtension {
+			dirs = ast.DirectiveList{dependencyDirective(t.row.DataSource)}
+		}
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
 			Name: "_join",
 			Type: ast.NamedType("_join", reconPos),
 			Arguments: ast.ArgumentDefinitionList{
 				{Name: "fields", Type: ast.NonNullListType(ast.NonNullNamedType("String", reconPos), reconPos), Position: reconPos},
 			},
-			Position: reconPos,
+			Directives: dirs,
+			Position:   reconPos,
 		})
 		if fieldsHaveGeometry(t.fields) {
 			def.Fields = append(def.Fields, &ast.FieldDefinition{
-				Name:      "_spatial",
-				Type:      ast.NamedType("_spatial", reconPos),
-				Arguments: spatialFieldArgs(),
-				Position:  reconPos,
+				Name:       "_spatial",
+				Type:       ast.NamedType("_spatial", reconPos),
+				Arguments:  spatialFieldArgs(),
+				Directives: dirs,
+				Position:   reconPos,
 			})
 		}
 		return nil

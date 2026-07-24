@@ -100,25 +100,35 @@ func (c *defCache) get(name string) *ast.Definition {
 // caller's invalidation-clock check (Store.gen captured when the resolution
 // started): it is verified before indexing AND re-verified after the LRU add,
 // so an invalidation racing the install either sees the indexed name or the
-// post-add check removes the stale entry.
+// post-add check removes the stale entry. The memberships are re-asserted
+// AFTER the add too — the LRU's background expiry can evict the PREVIOUS
+// entry under this name between our index write and the add, and its onEvict
+// would strip the fresh memberships.
 func (c *defCache) put(name string, sources []string, def *ast.Definition, stillValid func() bool) {
 	if c == nil {
 		return
+	}
+	index := func() {
+		for _, src := range sources {
+			if c.sourceIndex[src] == nil {
+				c.sourceIndex[src] = map[string]struct{}{}
+			}
+			c.sourceIndex[src][name] = struct{}{}
+		}
 	}
 	c.mu.Lock()
 	if !stillValid() {
 		c.mu.Unlock()
 		return
 	}
-	for _, src := range sources {
-		if c.sourceIndex[src] == nil {
-			c.sourceIndex[src] = map[string]struct{}{}
-		}
-		c.sourceIndex[src][name] = struct{}{}
-	}
+	index()
 	c.mu.Unlock()
 
 	c.types.Add(name, &defEntry{def: def, sources: sources})
+
+	c.mu.Lock()
+	index()
+	c.mu.Unlock()
 	if !stillValid() {
 		c.types.Remove(name)
 	}

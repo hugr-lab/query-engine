@@ -29,7 +29,9 @@ var litEngine = engines.NewDuckDB()
 // content hash — an unchanged version makes writeSource a no-op. Engine is the
 // source's engine type string (re-attached as @catalog(name, engine) on read);
 // ReadOnly is the per-source option gating mutation generation. Prefix and
-// AsModule are the compile options that shape names at read time.
+// AsModule are the compile options that shape names at read time. IsExtension
+// marks an extension source — generated members of its objects carry
+// @dependency(name: <source>).
 type SourceState struct {
 	Name         string
 	Version      string
@@ -38,12 +40,20 @@ type SourceState struct {
 	ReadOnly     bool
 	Prefix       string
 	AsModule     bool
+	IsExtension  bool
 	Loaded       bool
 	Disabled     bool
 	Suspended    bool
 }
 
-func (s SourceState) storedVersion() string { return writerFormatVersion + "|" + s.Version }
+// storedVersion mixes the format version, the caller's content hash AND the
+// compile options into the stored version — a meta-only change (engine string,
+// read_only, prefix, as_module, is_extension) must rewrite and invalidate
+// too, not slip through the content gate.
+func (s SourceState) storedVersion() string {
+	return fmt.Sprintf("%s|%s|%s|%t|%s|%t|%t",
+		writerFormatVersion, s.Version, s.Engine, s.ReadOnly, s.Prefix, s.AsModule, s.IsExtension)
+}
 
 // writeSource persists one source's collected rows into the catalog namespace
 // (the Add / Reload primitive). It is version-gated: if the stored version
@@ -79,13 +89,18 @@ func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) 
 	}
 	defer conn.Close()
 
+	// Virtual fields are attributed to the source their DATA comes from,
+	// resolved by the declared reference at WRITE time — the read side then
+	// takes @catalog straight from the field row and the standard activity
+	// gate hides the field with that source.
+	if err := resolveVirtualAttribution(txCtx, conn, d); err != nil {
+		return false, fmt.Errorf("catalog write %s: %w", state.Name, err)
+	}
+
 	// The cross-source invalidation closure needs the OLD rows (about to be
 	// deleted) and the incoming ones; a failure here never fails the write —
 	// the cache then invalidates wholesale.
-	affected, affectedErr := affectedByStored(txCtx, conn, state.Name)
-	if affectedErr == nil {
-		addAffectedDesired(affected, d)
-	}
+	affected, affectedErr := affectedObjects(txCtx, conn, state.Name, d)
 
 	if err := deleteSourceRows(txCtx, conn, state.Name); err != nil {
 		return false, err
@@ -105,6 +120,9 @@ func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) 
 
 	committed = true
 	if err := s.pool.Commit(txCtx); err != nil {
+		// The commit may have succeeded server-side despite the client error —
+		// invalidate conservatively.
+		s.invalidateAll()
 		return false, fmt.Errorf("catalog write %s commit: %w", state.Name, err)
 	}
 	if affectedErr != nil {
@@ -115,66 +133,272 @@ func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) 
 	return true, nil
 }
 
-// affectedByStored collects the data-object names whose COMPILED shape can
-// depend on the source's stored relations (both endpoints gain/lose nav
-// fields, markers and derived-type members) and module functions returning
-// object lists (they rename the object's aggregation markers). These are the
-// absence dependencies the read-side source index cannot see — a definition
-// built BEFORE such rows existed recorded no dependency on this source.
-func affectedByStored(ctx context.Context, conn *db.Connection, dataSource string) (map[string]struct{}, error) {
+// resolveVirtualAttribution stamps each virtual field row with the data
+// source its DATA comes from, resolved through the declared reference: the
+// referenced FUNCTION's source (by module, name) for @function_call and
+// @table_function_call_join, the referenced OBJECT's source for @join. The
+// incoming batch resolves first, then the stored catalog. An unresolvable
+// reference keeps the declared attribution — the engine writes an extension
+// AFTER its dependencies, and a reload re-resolves.
+func resolveVirtualAttribution(ctx context.Context, conn *db.Connection, d *desired) error {
+	lookupFunc := func(module, name string) (string, error) {
+		if fn, ok := d.functions[pkKey(module, name)]; ok {
+			return fn.DataSource, nil
+		}
+		var ds string
+		err := conn.QueryRow(ctx, `SELECT data_source FROM core.catalog.functions
+			WHERE module = `+lit(module)+` AND name = `+lit(name)).Scan(&ds)
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		return ds, nil
+	}
+	lookupObject := func(name string) (string, error) {
+		if row, ok := d.dataObjects[name]; ok {
+			return row.DataSource, nil
+		}
+		var ds string
+		err := conn.QueryRow(ctx, `SELECT data_source FROM core.catalog.data_objects
+			WHERE name = `+lit(name)).Scan(&ds)
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		return ds, nil
+	}
+	for _, f := range d.fields {
+		p := f.Properties
+		if p == nil {
+			continue
+		}
+		var src string
+		var err error
+		switch {
+		case p.Join != nil:
+			src, err = lookupObject(p.Join.ReferencesName)
+		case p.FunctionCall != nil:
+			src, err = lookupFunc(p.FunctionCall.Function.Module, p.FunctionCall.Function.Name)
+		case p.TableFunctionCallJoin != nil:
+			src, err = lookupFunc(p.TableFunctionCallJoin.Function.Module, p.TableFunctionCallJoin.Function.Name)
+		default:
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if src != "" {
+			f.DataSource = src
+		}
+	}
+	return nil
+}
+
+// affectedObjects collects the names whose COMPILED shape can depend on the
+// source's rows — the absence dependencies the read-side provenance index
+// cannot see (a definition built BEFORE such rows existed recorded no
+// dependency on this source). Both the STORED rows (about to be deleted /
+// flag-flipped) and the incoming desired rows (nil for delete / flags)
+// contribute:
+//   - the source's relations: both endpoints gain/lose nav fields, markers
+//     and derived-type members;
+//   - relations of ANY source whose endpoint is one of this source's objects
+//     (extension-declared legs live under the DECLARING source);
+//   - the source's module functions returning object lists (they rename the
+//     target's aggregation markers);
+//   - the objects the source's fields extend (cross-source `extend type`);
+//   - fields of ANY source TYPED with one of this source's object/type names
+//     (@join targets — the field type IS the target — and structural member
+//     references);
+//   - fields of ANY source whose @function_call / @table_function_call_join
+//     binding references one of this source's functions (module, name) — the
+//     effective @catalog of such fields is computed from the function's
+//     source (virtualFieldSource).
+//
+// All lookups read DECLARED rows (types, references_name, function bindings) —
+// a reverse index computed at write time, no heuristics.
+func affectedObjects(ctx context.Context, conn *db.Connection, dataSource string, d *desired) (map[string]struct{}, error) {
 	out := map[string]struct{}{}
 	ds := lit(dataSource)
-	rows, err := conn.Query(ctx, `SELECT r.source, r.destination FROM core.catalog.relations r
-		WHERE r.data_source = `+ds)
-	if err != nil {
-		return nil, err
-	}
-	for rows.Next() {
-		var source, destination string
-		if err := rows.Scan(&source, &destination); err != nil {
-			rows.Close()
-			return nil, err
+
+	scanInto := func(query string, cols int) error {
+		rows, err := conn.Query(ctx, query)
+		if err != nil {
+			return err
 		}
-		out[source] = struct{}{}
-		out[destination] = struct{}{}
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
+		defer rows.Close()
+		for rows.Next() {
+			a, b := "", ""
+			dest := []any{&a}
+			if cols == 2 {
+				dest = append(dest, &b)
+			}
+			if err := rows.Scan(dest...); err != nil {
+				return err
+			}
+			out[a] = struct{}{}
+			if cols == 2 {
+				out[b] = struct{}{}
+			}
+		}
+		return rows.Err()
 	}
 
-	rows, err = conn.Query(ctx, `SELECT f.returns FROM core.catalog.functions f
+	// Rows OWNED by the source.
+	if err := scanInto(`SELECT r.source, r.destination FROM core.catalog.relations r
+		WHERE r.data_source = `+ds, 2); err != nil {
+		return nil, err
+	}
+	if err := scanInto(`SELECT DISTINCT f.type_name FROM core.catalog.fields f
+		WHERE f.data_source = `+ds+` OR f.dependency_data_source = `+ds, 1); err != nil {
+		return nil, err
+	}
+	rows, err := conn.Query(ctx, `SELECT f.returns FROM core.catalog.functions f
 		WHERE f.data_source = `+ds+` AND f.kind = 'function' AND f.module <> ''`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var returns string
 		if err := rows.Scan(&returns); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		if target, isList := listReturnTarget(&function{Returns: returns}); isList {
 			out[target] = struct{}{}
 		}
 	}
-	return out, rows.Err()
-}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-// addAffectedDesired folds the incoming desired rows into the affected set.
-func addAffectedDesired(out map[string]struct{}, d *desired) {
-	for _, r := range d.relations {
-		out[r.Source] = struct{}{}
-		out[r.Destination] = struct{}{}
-	}
-	for _, fn := range d.functions {
-		if fn.Kind != "function" || fn.Module == "" {
-			continue
+	// The source's entity NAMES (old stored + incoming) drive the reverse
+	// lookups: rows of OTHER sources referencing them.
+	names := map[string]struct{}{}
+	if err := func() error {
+		rows, err := conn.Query(ctx, `SELECT o.name FROM core.catalog.data_objects o WHERE o.data_source = `+ds+`
+			UNION SELECT t.name FROM core.catalog.types t WHERE t.data_source = `+ds)
+		if err != nil {
+			return err
 		}
-		if target, isList := listReturnTarget(fn); isList {
-			out[target] = struct{}{}
+		defer rows.Close()
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				return err
+			}
+			names[name] = struct{}{}
+		}
+		return rows.Err()
+	}(); err != nil {
+		return nil, err
+	}
+	if d != nil {
+		for name := range d.dataObjects {
+			names[name] = struct{}{}
+		}
+		for name := range d.types {
+			names[name] = struct{}{}
+		}
+		for _, r := range d.relations {
+			out[r.Source] = struct{}{}
+			out[r.Destination] = struct{}{}
+		}
+		for _, f := range d.fields {
+			out[f.TypeName] = struct{}{}
+		}
+		for _, fn := range d.functions {
+			if fn.Kind != "function" || fn.Module == "" {
+				continue
+			}
+			if target, isList := listReturnTarget(fn); isList {
+				out[target] = struct{}{}
+			}
 		}
 	}
+	if len(names) > 0 {
+		list := make([]string, 0, len(names))
+		for _, name := range sortedKeys(names) {
+			list = append(list, lit(name))
+		}
+		in := strings.Join(list, ", ")
+		if err := scanInto(`SELECT r.source, r.destination FROM core.catalog.relations r
+			WHERE r.source IN (`+in+`) OR r.destination IN (`+in+`)`, 2); err != nil {
+			return nil, err
+		}
+		// trim strips the list/non-null wrapping ([X!]! → X) — the field TYPE
+		// is the declared reference target for @join and structural members.
+		if err := scanInto(`SELECT DISTINCT f.type_name FROM core.catalog.fields f
+			WHERE trim(f.field_type, '[]!') IN (`+in+`)`, 1); err != nil {
+			return nil, err
+		}
+	}
+
+	// The source's FUNCTIONS (old stored + incoming) drive the function-call
+	// reverse lookup: @function_call / @table_function_call_join fields are
+	// typed with the function's RETURN, so the type match above cannot see
+	// them — match the declared (module, name) binding instead.
+	functions := map[string]struct{}{}
+	if err := func() error {
+		rows, err := conn.Query(ctx, `SELECT f.module, f.name FROM core.catalog.functions f
+			WHERE f.data_source = `+ds)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var module, name string
+			if err := rows.Scan(&module, &name); err != nil {
+				return err
+			}
+			functions[pkKey(module, name)] = struct{}{}
+		}
+		return rows.Err()
+	}(); err != nil {
+		return nil, err
+	}
+	if d != nil {
+		for key := range d.functions {
+			functions[key] = struct{}{}
+		}
+	}
+	if len(functions) > 0 {
+		rows, err := conn.Query(ctx, `SELECT f.type_name,
+			json_extract_string(f.properties::JSON, '$.function_call.function.module'),
+			json_extract_string(f.properties::JSON, '$.function_call.function.name'),
+			json_extract_string(f.properties::JSON, '$.table_function_call_join.function.module'),
+			json_extract_string(f.properties::JSON, '$.table_function_call_join.function.name')
+			FROM core.catalog.fields f
+			WHERE json_extract(f.properties::JSON, '$.function_call') IS NOT NULL
+			OR json_extract(f.properties::JSON, '$.table_function_call_join') IS NOT NULL`)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var typeName string
+			var fcModule, fcName, tfModule, tfName sql.NullString
+			if err := rows.Scan(&typeName, &fcModule, &fcName, &tfModule, &tfName); err != nil {
+				return nil, err
+			}
+			if _, ok := functions[pkKey(fcModule.String, fcName.String)]; ok {
+				out[typeName] = struct{}{}
+				continue
+			}
+			if _, ok := functions[pkKey(tfModule.String, tfName.String)]; ok {
+				out[typeName] = struct{}{}
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // deleteSource removes a source's rows, meta and dependencies (the unregister
@@ -197,7 +421,7 @@ func (s *Store) deleteSource(ctx context.Context, dataSource string) error {
 	}
 	defer conn.Close()
 
-	affected, affectedErr := affectedByStored(txCtx, conn, dataSource)
+	affected, affectedErr := affectedObjects(txCtx, conn, dataSource, nil)
 
 	if err := deleteSourceRows(txCtx, conn, dataSource); err != nil {
 		return err
@@ -216,6 +440,9 @@ func (s *Store) deleteSource(ctx context.Context, dataSource string) error {
 	}
 	committed = true
 	if err := s.pool.Commit(txCtx); err != nil {
+		// The commit may have succeeded server-side despite the client error —
+		// invalidate conservatively.
+		s.invalidateAll()
 		return fmt.Errorf("catalog delete %s: %w", dataSource, err)
 	}
 	if affectedErr != nil {
@@ -237,7 +464,7 @@ func (s *Store) setFlags(ctx context.Context, dataSource string, loaded, disable
 	defer conn.Close()
 	// Flag flips change VISIBILITY, not rows — the affected closure reads the
 	// (surviving) rows either before hiding or after unhiding.
-	affected, affectedErr := affectedByStored(ctx, conn, dataSource)
+	affected, affectedErr := affectedObjects(ctx, conn, dataSource, nil)
 	_, err = conn.Exec(ctx, `UPDATE core.catalog.data_source_meta SET loaded = `+lit(loaded)+
 		`, disabled = `+lit(disabled)+`, suspended = `+lit(suspended)+
 		` WHERE data_source = `+lit(dataSource))
@@ -396,14 +623,14 @@ func pruneOrphanModules(ctx context.Context, conn *db.Connection) error {
 // upsertMeta stamps the source's version, capabilities and flags.
 func upsertMeta(ctx context.Context, conn *db.Connection, state SourceState) error {
 	stmt := `INSERT INTO core.catalog.data_source_meta
-		(data_source, version, capabilities, engine, read_only, prefix, as_module, loaded, disabled, suspended, loaded_at)
+		(data_source, version, capabilities, engine, read_only, prefix, as_module, is_extension, loaded, disabled, suspended, loaded_at)
 		VALUES (` + lit(state.Name) + `, ` + lit(state.storedVersion()) + `, ` + lit(capabilitiesText(state.Capabilities)) + `, ` +
 		lit(state.Engine) + `, ` + lit(state.ReadOnly) + `, ` +
-		lit(nilIfEmpty(state.Prefix)) + `, ` + lit(state.AsModule) + `, ` +
+		lit(nilIfEmpty(state.Prefix)) + `, ` + lit(state.AsModule) + `, ` + lit(state.IsExtension) + `, ` +
 		lit(state.Loaded) + `, ` + lit(state.Disabled) + `, ` + lit(state.Suspended) + `, CURRENT_TIMESTAMP)
 		ON CONFLICT (data_source) DO UPDATE SET version = EXCLUDED.version,
 		capabilities = EXCLUDED.capabilities, engine = EXCLUDED.engine, read_only = EXCLUDED.read_only,
-		prefix = EXCLUDED.prefix, as_module = EXCLUDED.as_module,
+		prefix = EXCLUDED.prefix, as_module = EXCLUDED.as_module, is_extension = EXCLUDED.is_extension,
 		loaded = EXCLUDED.loaded, disabled = EXCLUDED.disabled, suspended = EXCLUDED.suspended, loaded_at = EXCLUDED.loaded_at`
 	if _, err := conn.Exec(ctx, stmt); err != nil {
 		return fmt.Errorf("catalog meta upsert %s: %w", state.Name, err)

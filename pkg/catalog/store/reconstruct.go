@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
@@ -187,9 +188,15 @@ func (g *genContext) readType(ctx context.Context, name string) (*ast.Definition
 }
 
 // parseStoredDefinition parses one stored SDL definition (catalog.types rows).
+// A parse failure means a corrupt stored row (writes are validated) — logged,
+// classified as absent.
 func parseStoredDefinition(name, definition string) *ast.Definition {
 	doc, err := parser.ParseSchema(&ast.Source{Name: "catalog:" + name, Input: definition})
 	if err != nil || len(doc.Definitions) == 0 {
+		if err != nil {
+			slog.Warn("catalog store: stored definition does not parse",
+				"type", name, "error", err)
+		}
 		return nil
 	}
 	return doc.Definitions[0]

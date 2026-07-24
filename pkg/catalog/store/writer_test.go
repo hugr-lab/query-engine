@@ -95,8 +95,9 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 		 FROM core.catalog.module_data_sources WHERE module = 'sales.reports'`),
 		"the view-only submodule contributes no table/function kinds")
 
-	// --- meta stamped with the writer-format version + options ---
-	assert.Equal(t, []string{"f7|v1|true|false|false"}, rows(t, pool,
+	// --- meta stamped with the writer-format version + options (the options
+	// are part of the stored version so meta-only changes rewrite too) ---
+	assert.Equal(t, []string{"f7|v1|duckdb|false|shop|true|false|true|false|false"}, rows(t, pool,
 		`SELECT version, loaded, disabled, suspended FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
 	assert.Equal(t, []string{"duckdb|false|shop|true"}, rows(t, pool,
 		`SELECT engine, read_only, prefix, as_module FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
@@ -116,7 +117,7 @@ func TestWriteSourceRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, changed3)
 	assert.Equal(t, []string{"5"}, rows(t, pool, `SELECT count(*) FROM core.catalog.data_objects WHERE data_source = 'test'`))
-	assert.Equal(t, []string{"f7|v2"}, rows(t, pool,
+	assert.Equal(t, []string{"f7|v2|duckdb|false|shop|true|false"}, rows(t, pool,
 		`SELECT version FROM core.catalog.data_source_meta WHERE data_source = 'test'`))
 
 	// --- setFlags mirrors flags into the meta; rows stay ---

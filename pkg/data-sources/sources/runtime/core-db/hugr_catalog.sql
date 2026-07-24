@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.data_s
     -- drives module query/mutation field naming.
     prefix       VARCHAR,
     as_module    BOOLEAN NOT NULL,
+    -- is_extension marks an extension source: generated members of its
+    -- objects (root fields, shared members, _join/_spatial) carry
+    -- @dependency(name: <source>) so dependency tracking can drop them.
+    is_extension BOOLEAN NOT NULL DEFAULT false,
     loaded       BOOLEAN NOT NULL,
     disabled     BOOLEAN NOT NULL,
     suspended    BOOLEAN NOT NULL,

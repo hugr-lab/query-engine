@@ -6,6 +6,8 @@ import (
 	"context"
 	"testing"
 
+	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -118,6 +120,10 @@ type b_obj @module(name: "app") @table(name: "b_obj")
 	before := store.ForName(ctx, "a_obj")
 	require.NotNil(t, before)
 	require.Nil(t, before.Fields.ForName("b_items"), "no back navigation yet")
+	// Cache the derived family BEFORE the write — its eviction is the point.
+	filterBefore := store.ForName(ctx, "a_obj_filter")
+	require.NotNil(t, filterBefore)
+	require.Nil(t, filterBefore.Fields.ForName("b_items"))
 
 	srcB := partialSource(t, "b", schemaB, definitionsOnly{srcA})
 	d := collect(ctx, srcB, "b")
@@ -130,9 +136,215 @@ type b_obj @module(name: "app") @table(name: "b_obj")
 	assert.False(t, before == after, "family closure evicted the foreign endpoint")
 	assert.NotNil(t, after.Fields.ForName("b_items"), "back navigation from B's relation")
 
-	// And the derived family of A follows.
+	// The derived family of A was evicted and rebuilt too.
+	filterAfter := store.ForName(ctx, "a_obj_filter")
+	require.NotNil(t, filterAfter)
+	assert.False(t, filterBefore == filterAfter, "derived family evicted")
+	assert.NotNil(t, filterAfter.Fields.ForName("b_items"), "filter nav member from B's relation")
 	lf := store.ForName(ctx, "a_obj_list_filter")
 	assert.NotNil(t, lf, "list filter exists once A is a back-projection target")
+
+	// deleteSource closes the reverse direction: B's relation disappears.
+	require.NoError(t, store.deleteSource(ctx, "b"))
+	dropped := store.ForName(ctx, "a_obj")
+	require.NotNil(t, dropped)
+	assert.Nil(t, dropped.Fields.ForName("b_items"), "back navigation dropped with B")
+}
+
+// TestCacheJoinTargetClosure pins the cross-source @join semantics the
+// multi-source golden established: a base source's @join to a FOREIGN object
+// serves a BARE declared field (no subquery args, no aggregation twins) —
+// and stays bare through the target source's whole lifecycle; the target
+// lookup still records provenance, so the definition re-resolves cleanly on
+// every flip instead of serving stale machinery.
+func TestCacheJoinTargetClosure(t *testing.T) {
+	const schemaB = `
+type b_stats @module(name: "app") @table(name: "b_stats") {
+  order_id: Int! @pk
+}
+`
+	const schemaA = `
+type a_orders @module(name: "app") @table(name: "a_orders") {
+  id: Int! @pk
+  stats: [b_stats] @join(references_name: "b_stats", source_fields: ["id"], references_fields: ["order_id"])
+}
+`
+	// A compiles against B's definitions, but only A is WRITTEN — the target
+	// source does not exist in the store yet.
+	srcB := partialSource(t, "b", schemaB)
+	ctx := context.Background()
+	pool, err := db.NewPool("")
+	require.NoError(t, err)
+	t.Cleanup(func() { pool.Close() })
+	require.NoError(t, coredb.New(coredb.Config{VectorSize: 8}).Attach(ctx, pool))
+	store, err := New(ctx, pool, Config{VecSize: 8}, nil)
+	require.NoError(t, err)
+	srcA := partialSource(t, "test", schemaA, definitionsOnly{srcB})
+	dA := collect(ctx, srcA, "test")
+	_, err = store.writeSource(ctx, dA, SourceState{Name: "test", Version: "v1", Engine: "duckdb", Loaded: true})
+	require.NoError(t, err)
+
+	assertBare := func(when string) {
+		def := store.ForName(ctx, "a_orders")
+		require.NotNilf(t, def, "a_orders served (%s)", when)
+		fd := def.Fields.ForName("stats")
+		require.NotNilf(t, fd, "declared join field present (%s)", when)
+		assert.Emptyf(t, fd.Arguments, "cross-source join field stays bare (%s)", when)
+		assert.Nilf(t, def.Fields.ForName("stats_aggregation"), "no twins for a cross-source target (%s)", when)
+	}
+
+	assertBare("target absent")
+
+	// Register the target source — the field stays bare (compiled parity).
+	dB := collect(ctx, srcB, "b")
+	_, err = store.writeSource(ctx, dB, SourceState{Name: "b", Version: "v1", Engine: "duckdb", Loaded: true})
+	require.NoError(t, err)
+	assertBare("target active")
+
+	require.NoError(t, store.setFlags(ctx, "b", true, true, false))
+	assertBare("target disabled")
+}
+
+// TestMultiSourceFlagPlay drives the 5-source golden fixture set through
+// source enable/disable cycles: the extension flip drops every contributed
+// artifact, the shop flip hides the @dependency view while the extension
+// stays active, and the ro / func flips hide the wired fields entirely —
+// a virtual field is attributed to the source its DATA comes from
+// (write-time resolution), so the standard activity gate applies. Every
+// assertion goes through the definition cache — a stale entry after a flip
+// fails the test.
+func TestMultiSourceFlagPlay(t *testing.T) {
+	store, ctx := storeForSources(t, genMultiFixtures)
+
+	assertBaseline := func(when string) {
+		items := store.ForName(ctx, "shop_items")
+		require.NotNilf(t, items, "shop_items (%s)", when)
+		for _, name := range []string{"note", "label", "similar", "similar_aggregation"} {
+			assert.NotNilf(t, items.Fields.ForName(name), "shop_items.%s (%s)", name, when)
+		}
+		audit := store.ForName(ctx, "audit_events")
+		require.NotNilf(t, audit, "audit_events (%s)", when)
+		assert.NotNilf(t, audit.Fields.ForName("logs"), "audit_events.logs (%s)", when)
+		assert.NotNilf(t, audit.Fields.ForName("logs_aggregation"), "audit_events.logs_aggregation (%s)", when)
+		require.NotNilf(t, store.ForName(ctx, "shop_overview"), "shop_overview (%s)", when)
+		require.NotNilf(t, store.ForName(ctx, "logs"), "logs (%s)", when)
+	}
+	assertBaseline("initial")
+
+	// --- extension off: every contributed artifact disappears ---
+	require.NoError(t, store.setFlags(ctx, "ext", true, true, false))
+	items := store.ForName(ctx, "shop_items")
+	require.NotNil(t, items, "base object survives the extension flip")
+	for _, name := range []string{"note", "label", "similar", "similar_aggregation"} {
+		assert.Nilf(t, items.Fields.ForName(name), "shop_items.%s dropped with the extension", name)
+	}
+	audit := store.ForName(ctx, "audit_events")
+	require.NotNil(t, audit)
+	assert.Nil(t, audit.Fields.ForName("logs"), "extension join dropped")
+	assert.Nil(t, store.ForName(ctx, "shop_overview"), "extension view dropped")
+	assert.False(t, store.NameExists(ctx, "shop_overview"))
+	require.NoError(t, store.setFlags(ctx, "ext", true, false, false))
+	assertBaseline("extension back")
+
+	// --- shop off: the @dependency view hides while the extension is active ---
+	require.NoError(t, store.setFlags(ctx, "shop", true, true, false))
+	assert.Nil(t, store.ForName(ctx, "shop_items"))
+	assert.Nil(t, store.ForName(ctx, "shop_overview"), "declared @dependency gates the view")
+	assert.Nil(t, store.ForName(ctx, "shop_overview_filter"), "derived types follow")
+	assert.False(t, store.NameExists(ctx, "shop_overview"))
+	require.NoError(t, store.setFlags(ctx, "shop", true, false, false))
+	assertBaseline("shop back")
+
+	// --- ro off: the extension join field is ATTRIBUTED to ro (its data
+	// source) and disappears with it, machinery included ---
+	require.NoError(t, store.setFlags(ctx, "ro", true, true, false))
+	assert.Nil(t, store.ForName(ctx, "logs"))
+	audit = store.ForName(ctx, "audit_events")
+	require.NotNil(t, audit)
+	assert.Nil(t, audit.Fields.ForName("logs"), "join field hidden with its data source")
+	assert.Nil(t, audit.Fields.ForName("logs_aggregation"))
+	require.NoError(t, store.setFlags(ctx, "ro", true, false, false))
+	assertBaseline("ro back")
+
+	// --- func off: the TFCJ field is ATTRIBUTED to the function's source and
+	// disappears with it; the same-source @function_call stays ---
+	require.NoError(t, store.setFlags(ctx, "func", true, true, false))
+	items = store.ForName(ctx, "shop_items")
+	require.NotNil(t, items)
+	assert.Nil(t, items.Fields.ForName("similar"), "TFCJ field hidden with the function's source")
+	assert.Nil(t, items.Fields.ForName("similar_aggregation"))
+	assert.NotNil(t, items.Fields.ForName("label"), "shop's function_call unaffected")
+	require.NoError(t, store.setFlags(ctx, "func", true, false, false))
+	assertBaseline("func back")
+}
+
+// TestObjectDependencyGate pins the @dependency contract on views: the object
+// (and everything derived from it) is hidden while ANY declared dependency
+// source is inactive or unregistered, and dependency flag flips invalidate
+// the cache through the recorded provenance.
+func TestObjectDependencyGate(t *testing.T) {
+	const schema = `
+type v_stats @module(name: "app")
+  @view(name: "v_stats", sql: "SELECT 1 AS id")
+  @dependency(name: "depsrc") {
+  id: Int! @pk
+}
+`
+	store, ctx := storeFor(t, schema)
+
+	// The dependency is unregistered → the view is not served.
+	assert.Nil(t, store.ForName(ctx, "v_stats"))
+	assert.False(t, store.NameExists(ctx, "v_stats"))
+	assert.Nil(t, store.ForName(ctx, "v_stats_filter"), "derived types follow the gate")
+
+	// Register the dependency (meta only) → the view appears.
+	_, err := store.writeSource(ctx, newDesired(), SourceState{Name: "depsrc", Version: "v1", Engine: "duckdb", Loaded: true})
+	require.NoError(t, err)
+	def := store.ForName(ctx, "v_stats")
+	require.NotNil(t, def, "view served once the dependency is active")
+	require.NotNil(t, def.Directives.ForName("dependency"), "@dependency re-emitted")
+	assert.True(t, store.NameExists(ctx, "v_stats"))
+	require.NotNil(t, store.ForName(ctx, "v_stats_filter"))
+
+	// Disabling the dependency hides it again — the cached definition was
+	// indexed under the dependency source and must be evicted.
+	require.NoError(t, store.setFlags(ctx, "depsrc", true, true, false))
+	assert.Nil(t, store.ForName(ctx, "v_stats"), "view hidden with its dependency")
+	assert.Nil(t, store.ForName(ctx, "v_stats_filter"))
+	assert.False(t, store.NameExists(ctx, "v_stats"))
+
+	require.NoError(t, store.setFlags(ctx, "depsrc", true, false, false))
+	require.NotNil(t, store.ForName(ctx, "v_stats"), "and back")
+}
+
+// TestFieldDependencyGate mirrors the compiled provider's read-time gate on
+// dependency_catalog: a field whose @dependency source is inactive is hidden
+// from the object and its derived types.
+func TestFieldDependencyGate(t *testing.T) {
+	store, ctx := writtenStore(t)
+
+	// Attribute one stored column to a dependency source directly (the
+	// compiled path stamps @dependency on virtual/extension fields).
+	conn, err := store.pool.Conn(ctx)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `UPDATE core.catalog.fields SET dependency_data_source = 'ghost'
+		WHERE type_name = 'orders' AND name = 'amount'`)
+	conn.Close()
+	require.NoError(t, err)
+
+	def := store.ForName(ctx, "orders")
+	require.NotNil(t, def)
+	assert.Nil(t, def.Fields.ForName("amount"), "field hidden while its dependency is unregistered")
+
+	// Registering the dependency reveals it — the closure covers fields BY
+	// dependency attribution, so the cached object is evicted.
+	_, err = store.writeSource(ctx, newDesired(), SourceState{Name: "ghost", Version: "v1", Engine: "duckdb", Loaded: true})
+	require.NoError(t, err)
+	def = store.ForName(ctx, "orders")
+	require.NotNil(t, def)
+	fd := def.Fields.ForName("amount")
+	require.NotNil(t, fd, "field served once the dependency is active")
+	assert.NotNil(t, fd.Directives.ForName("dependency"), "@dependency re-emitted on the field")
 }
 
 func TestCacheErrorNotCached(t *testing.T) {
