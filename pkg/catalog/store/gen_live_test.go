@@ -105,17 +105,26 @@ func TestGenGoldenLiveCorpus(t *testing.T) {
 	diffs, supersets, oldPathQuirks := 0, 0, 0
 	for _, name := range names {
 		want := schema.Types[name]
-		got := store.ForName(ctx, name)
+		// Cache parity: a repeat read serves the SAME definition (cached
+		// classes by pointer identity, static classes are stable anyway).
+		cached := store.ForName(ctx, name)
+		if cached == nil {
+			diffs++
+			assert.NotNil(t, cached, "store must serve %s", name)
+			continue
+		}
+		if cached2 := store.ForName(ctx, name); cached2 != cached {
+			diffs++
+			assert.Fail(t, "cache parity", "second read of %s is a different definition", name)
+		}
+		// SDL parity is against the PRE-FINALISE generation: the store enriches
+		// synthetic-member descriptions beyond the retiring compiler, which is
+		// verified separately (descriptions_test.go), not by this oracle.
+		got := store.forNameRaw(ctx, name)
 		if got == nil {
 			diffs++
 			assert.NotNil(t, got, "store must serve %s", name)
 			continue
-		}
-		// Cache parity: a repeat read serves the SAME definition (cached
-		// classes by pointer identity, static classes are stable anyway).
-		if got2 := store.ForName(ctx, name); got2 != got {
-			diffs++
-			assert.Fail(t, "cache parity", "second read of %s is a different definition", name)
 		}
 		// Old-path quirks tolerated on the REFERENCE side (logged, never
 		// silent): @wfs* directives (intentionally dropped from the store —

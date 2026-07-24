@@ -48,6 +48,11 @@ var resolvers = []resolverEntry{
 // session. The catalog.Provider surface has no error channel, so a read
 // failure is logged here and served as nil — never cached (absence is a nil
 // WITHOUT an error and is simply not cached either).
+//
+// A freshly built (non-system) definition is finalised before caching:
+// description defaults for synthetic query members, and the annotation
+// overlay. System definitions come straight from the shared static prelude
+// and are neither finalised nor cached.
 func (s *Store) ForName(ctx context.Context, name string) *ast.Definition {
 	if def := s.cache.get(name); def != nil {
 		return def
@@ -58,31 +63,63 @@ func (s *Store) ForName(ctx context.Context, name string) *ast.Definition {
 		}
 		gen := s.gen.Load()
 		g := s.genCtx()
-		for i := range resolvers {
-			e := &resolvers[i]
-			def, err := e.resolve(ctx, g, name)
-			if err != nil {
-				logReadErr("resolve "+name, err)
-				return nil, nil
-			}
-			if def == nil {
-				continue
-			}
-			if !e.system {
-				sources := []string{allSources}
-				if !e.global {
-					sources = g.sourceList()
-				}
-				s.cache.put(name, sources, def, func() bool { return s.gen.Load() == gen })
-			}
+		def, sources, system, err := s.resolveByName(ctx, g, name)
+		if err != nil {
+			logReadErr("resolve "+name, err)
+			return nil, nil
+		}
+		if def == nil || system {
 			return def, nil
 		}
-		return nil, nil
+		if err := s.finalizeDescriptions(ctx, g, def); err != nil {
+			logReadErr("finalize "+name, err)
+			return nil, nil
+		}
+		s.cache.put(name, sources, def, func() bool { return s.gen.Load() == gen })
+		return def, nil
 	})
 	if v == nil {
 		return nil
 	}
 	return v.(*ast.Definition)
+}
+
+// resolveByName runs the resolver chain and returns the built definition, the
+// cache source list to index it under, and whether it is a system definition
+// (served from the shared static prelude — never cached, never finalised). A
+// nil definition means the name is not served.
+func (s *Store) resolveByName(ctx context.Context, g *genContext, name string) (*ast.Definition, []string, bool, error) {
+	for i := range resolvers {
+		e := &resolvers[i]
+		def, err := e.resolve(ctx, g, name)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		if def == nil {
+			continue
+		}
+		if e.system {
+			return def, nil, true, nil
+		}
+		sources := []string{allSources}
+		if !e.global {
+			sources = g.sourceList()
+		}
+		return def, sources, false, nil
+	}
+	return nil, nil, false, nil
+}
+
+// forNameRaw resolves a definition through the generator chain WITHOUT the
+// description finalisation or the read cache — the pre-enrichment generation
+// the golden parity harness compares against the fully-compiled reference.
+func (s *Store) forNameRaw(ctx context.Context, name string) *ast.Definition {
+	def, _, _, err := s.resolveByName(ctx, s.genCtx(), name)
+	if err != nil {
+		logReadErr("resolve "+name, err)
+		return nil
+	}
+	return def
 }
 
 // resolveSystemType (1) serves the binary-owned system layer.

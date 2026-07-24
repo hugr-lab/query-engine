@@ -207,6 +207,7 @@ const (
 	DescNestedOrderBy   = "Sort options for the nested result set"
 	DescNestedLimit     = "Limit the number of returned nested objects"
 	DescNestedOffset    = "Skip the first n nested objects"
+	DescMutationData    = "The record data"
 )
 
 // Directive argument name constants (shared between sdl and rules).
