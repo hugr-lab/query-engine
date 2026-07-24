@@ -499,6 +499,7 @@ type items @table(name: "items") {
   id: Int! @pk
   category_id: Int @field_references(references_name: "categories", field: "id", query: "category", references_query: "items")
   name: String!
+  "The item price"
   price: Float
 }
 
@@ -625,7 +626,11 @@ func TestGenGoldenMultiSource(t *testing.T) {
 
 // assertGenParity: each covered name must be served by the store structurally
 // identical to the fully-compiled reference (member order is not part of the
-// contract — definitions are normalized before comparison).
+// contract — definitions are normalized before comparison). The comparison is
+// against the store's PRE-FINALISE generation (forNameRaw): the store enriches
+// descriptions on synthetic query members beyond the retiring compiler, and
+// that store-only enrichment is verified separately (descriptions_test.go), not
+// by the base-generation oracle.
 func assertGenParity(t *testing.T, ctx context.Context, s *Store, ref *static.Provider, names []string) {
 	t.Helper()
 	for _, name := range names {
@@ -635,7 +640,7 @@ func assertGenParity(t *testing.T, ctx context.Context, s *Store, ref *static.Pr
 		if !assert.NotNil(t, want, "reference must contain %s", name) {
 			continue
 		}
-		got := s.ForName(ctx, name)
+		got := s.forNameRaw(ctx, name)
 		if !assert.NotNil(t, got, "store must serve %s", name) {
 			continue
 		}

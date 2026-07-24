@@ -817,6 +817,41 @@ type entity_types
   vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
 
+"Logical-model data sources (active runtime state; config joined when present)"
+type entity_data_sources
+  @view(name: "entity_data_sources", sql: """
+    SELECT m.data_source AS name, m.engine,
+      COALESCE(ds.type, m.engine) AS type,
+      COALESCE(NULLIF(m.prefix, ''), ds.prefix) AS prefix,
+      m.as_module, m.read_only, m.is_extension,
+      COALESCE(ds.self_defined, false) AS self_defined,
+      ds.path,
+      COALESCE(a.description, ds.description) AS description,
+      a.long_description,
+      a.vec
+    FROM [catalog.data_source_meta] m
+      LEFT JOIN [data_sources] ds ON ds.name = m.data_source
+      LEFT JOIN [catalog.annotations] a
+        ON a.entity_kind = 'data_source' AND a.entity_key = m.data_source
+    WHERE m.loaded AND NOT m.disabled AND NOT m.suspended
+  """)
+  {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
+  "The data source name (@catalog name)"
+  name: String! @pk
+  "The source's engine type string"
+  engine: String
+  type: String
+  prefix: String
+  as_module: Boolean
+  read_only: Boolean
+  is_extension: Boolean
+  self_defined: Boolean
+  path: String
+  description: String
+  long_description: String
+  vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
+}
+
 "Curation overlay incl. orphans and vec-only seed rows (entity storage)"
 type entity_annotations
   @view(name: "entity_annotations", sql: """

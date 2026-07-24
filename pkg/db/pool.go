@@ -165,8 +165,8 @@ func (p *Pool) Exec(ctx context.Context, query string, args ...any) (sql.Result,
 }
 
 func (p *Pool) Conn(ctx context.Context) (*Connection, error) {
-	if tx := ctx.Value(txKey); tx != nil {
-		return tx.(*txContext).Connection, nil
+	if f := txFrameFrom(ctx); f != nil {
+		return f.txc.Connection, nil
 	}
 	// wait for available connection
 	p.acquire(ctx)
