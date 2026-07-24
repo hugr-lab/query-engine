@@ -25,15 +25,62 @@ import (
 // long-term home of this file is the compiler package (schema logic with the
 // rules, storage in store), and that split keeps the move mechanical.
 
-// genContext is the narrow read surface the generation registries work
-// against: lookups over the Store's read models for one resolution request.
-// No memoization yet — every lookup hits CoreDB; the per-request cache
-// arrives with the read-cache step (schemaCache port).
+// genContext is the READ SESSION of one resolution request: the narrow
+// surface the generation registries work against, with the request's reader
+// memoization and the touched-source set the definition cache indexes the
+// result under. Readers return errors Go-style — absent rows are nil results
+// WITHOUT an error — and the whole generation chain propagates them up to the
+// Provider surface (ForName / the logical model), which logs and serves empty
+// because those interfaces have no error channel. A session runs on a single
+// goroutine — the maps are unsynchronized by design.
 type genContext struct {
 	s *Store
+
+	// touched is the set of data sources whose ROWS the session read —
+	// exactly the sources whose rewrite can change the produced definition
+	// (row-level provenance; absence dependencies are closed on the write
+	// side, see affectedByStored).
+	touched map[string]struct{}
+
+	// Per-request memoization (one ForName reads activeSources and the base
+	// object rows many times across the generation rules). Only successful
+	// reads are memoized; absent rows memoize as nil entries.
+	sources     map[string]activeSource
+	haveSources bool
+	objects     map[string]*dataObject // nil value = known absent
+	fieldRows   map[string][]*field
+	relSrc      map[string][]*relation
+	relDst      map[string][]*relationEdge
+	nameRows    map[string][]string         // queryNames, by SQL text
+	moduleInfos map[string][]*moduleInfoRow // queryModuleInfos, by SQL text
+	functions   map[string][]*function      // readFunctions, by module
+	function    map[string]*function        // readFunction, by module\x1fname (nil = absent)
+	typeRows    map[string]*typeRow         // readType, by name (nil = absent)
 }
 
-func (s *Store) genCtx() *genContext { return &genContext{s: s} }
+// typeRow memoizes a catalog.types row as its STORED text: readType parses a
+// fresh AST per call because callers mutate the returned definition
+// (attachCatalog, applyScalarFieldArguments).
+type typeRow struct {
+	definition string
+	dataSource string
+}
+
+func (s *Store) genCtx() *genContext {
+	return &genContext{s: s, touched: map[string]struct{}{}}
+}
+
+// touch records the data sources of rows a reader returned.
+func (g *genContext) touch(sources ...string) {
+	for _, src := range sources {
+		if src != "" {
+			g.touched[src] = struct{}{}
+		}
+	}
+}
+
+// sourceList returns the touched sources in deterministic order.
+func (g *genContext) sourceList() []string { return sortedKeys(g.touched) }
 
 // queryShape (§3.1) declares one per-object query/mutation kind: select,
 // select_one (by pk / by unique), aggregate, bucket_agg, insert, update,
@@ -81,7 +128,7 @@ var queryShapes = []queryShape{
 // New field on existing types = one rule.
 type fieldRule struct {
 	name  string
-	apply func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition)
+	apply func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition) error
 }
 
 var fieldRules = []fieldRule{
@@ -104,7 +151,7 @@ type derivedRule struct {
 	// so registration order puts the more specific suffix first and build
 	// returning nil (base is not a data object) falls through to later rules.
 	match func(name string) (baseName string, ok bool)
-	build func(ctx context.Context, g *genContext, baseName, name string) *ast.Definition
+	build func(ctx context.Context, g *genContext, baseName, name string) (*ast.Definition, error)
 }
 
 // derivedRules in match order — ONE place: a more specific suffix registers
@@ -118,19 +165,22 @@ var derivedRules = []derivedRule{
 }
 
 // resolveDerivedType (5) generates a derived type from its base data object.
-func resolveDerivedType(ctx context.Context, s *Store, name string) *ast.Definition {
-	g := s.genCtx()
+func resolveDerivedType(ctx context.Context, g *genContext, name string) (*ast.Definition, error) {
 	for i := range derivedRules {
 		r := &derivedRules[i]
 		baseName, ok := r.match(name)
 		if !ok {
 			continue
 		}
-		if def := r.build(ctx, g, baseName, name); def != nil {
-			return def
+		def, err := r.build(ctx, g, baseName, name)
+		if err != nil {
+			return nil, err
+		}
+		if def != nil {
+			return def, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // sharedTypeRule (§3.5) synthesizes one per-schema shared system type from
@@ -139,7 +189,7 @@ func resolveDerivedType(ctx context.Context, s *Store, name string) *ast.Definit
 // static stub when the planner needs the name to always exist).
 type sharedTypeRule struct {
 	name  string
-	build func(ctx context.Context, g *genContext) *ast.Definition
+	build func(ctx context.Context, g *genContext) (*ast.Definition, error)
 }
 
 var sharedTypeRules = []sharedTypeRule{
@@ -153,14 +203,14 @@ var sharedTypeRules = []sharedTypeRule{
 // resolveSharedType (6) serves shared system types. It runs BEFORE the static
 // layer: the prelude holds only stubs for these names, the real member fields
 // come from the active objects.
-func resolveSharedType(ctx context.Context, s *Store, name string) *ast.Definition {
+func resolveSharedType(ctx context.Context, g *genContext, name string) (*ast.Definition, error) {
 	for i := range sharedTypeRules {
 		if sharedTypeRules[i].name != name {
 			continue
 		}
-		return sharedTypeRules[i].build(ctx, s.genCtx())
+		return sharedTypeRules[i].build(ctx, g)
 	}
-	return nil
+	return nil, nil
 }
 
 // rootRule (§3.6) contributes members to a synthesized module root: data
@@ -169,7 +219,7 @@ func resolveSharedType(ctx context.Context, s *Store, name string) *ast.Definiti
 // run in registration order over an empty root definition.
 type rootRule struct {
 	name  string
-	apply func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition)
+	apply func(ctx context.Context, g *genContext, sc *rootScope, def *ast.Definition) error
 }
 
 // moduleRootRef is one syntactic parse of a module-root type name. Module is

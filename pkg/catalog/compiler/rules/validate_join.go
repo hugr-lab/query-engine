@@ -73,6 +73,18 @@ func validateJoinField(ctx base.CompilationContext, def *ast.Definition, field *
 			def.Name, field.Name, refName)
 	}
 
+	// 2b. A regular source describes ONLY its own data — cross-source schema
+	// artifacts (@join to another source's object) belong to EXTENSION
+	// sources exclusively.
+	if !ctx.CompileOptions().IsExtension {
+		refCat := base.DirectiveArgString(refDef.Directives.ForName(base.CatalogDirectiveName), base.ArgName)
+		if refCat != "" && refCat != ctx.CompileOptions().Name {
+			return gqlerror.ErrorPosf(field.Position,
+				"@join on %s.%s: references object %q of data source %q — cross-source references are only allowed in extension sources",
+				def.Name, field.Name, refName, refCat)
+		}
+	}
+
 	// 3. Propagate @catalog from referenced object to field if missing
 	if field.Directives.ForName(base.CatalogDirectiveName) == nil {
 		if refCatalog := refDef.Directives.ForName(base.CatalogDirectiveName); refCatalog != nil {

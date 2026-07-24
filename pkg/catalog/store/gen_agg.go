@@ -45,7 +45,7 @@ func matchAggregationName(name string) (string, bool) {
 	return baseName, ok && baseName != ""
 }
 
-func buildAggregation(ctx context.Context, g *genContext, baseName, name string) *ast.Definition {
+func buildAggregation(ctx context.Context, g *genContext, baseName, name string) (*ast.Definition, error) {
 	// Re-parse the variant off the full name.
 	aggName := "_" + baseName + "_aggregation"
 	isBucket := name == aggName+"_bucket"
@@ -53,16 +53,20 @@ func buildAggregation(ctx context.Context, g *genContext, baseName, name string)
 	if !isBucket {
 		for n := aggName; n != name; n += "_sub_aggregation" {
 			if !strings.HasPrefix(name, n) {
-				return nil
+				return nil, nil
 			}
 			depth++
 			if depth > maxSubAggDepth {
-				return nil
+				return nil, nil
 			}
 		}
 	}
 
-	if row, ok := g.s.readDataObject(ctx, baseName); ok {
+	row, err := g.readDataObject(ctx, baseName)
+	if err != nil {
+		return nil, err
+	}
+	if row != nil {
 		switch {
 		case isBucket:
 			return buildObjectAggBucket(ctx, g, row, name)
@@ -72,19 +76,23 @@ func buildAggregation(ctx context.Context, g *genContext, baseName, name string)
 			return buildObjectSubAggregation(ctx, g, row, name, depth)
 		}
 	}
-	if td, ds := g.structType(ctx, baseName); td != nil {
+	td, ds, err := g.structType(ctx, baseName)
+	if err != nil {
+		return nil, err
+	}
+	if td != nil {
 		switch {
 		case isBucket:
-			return nil // structural types take no bucket aggregation
+			return nil, nil // structural types take no bucket aggregation
 		case depth == 0:
 			return buildStructAggregation(ctx, g, td, ds, name)
 		case depth == 1:
 			return buildStructSubAggregation(ctx, g, td, ds, name)
 		default:
-			return nil // struct sub-aggs stop at depth 1
+			return nil, nil // struct sub-aggs stop at depth 1
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 const maxSubAggDepth = 2
@@ -110,8 +118,11 @@ func scalarFieldArguments(s types.ScalarType) ast.ArgumentDefinitionList {
 // buildObjectAggregation assembles the FINAL `_X_aggregation` for a data
 // object: _rows_count + scalar twins + structural members + virtual @join
 // list twins + relation members + ExtraFieldProvider twins.
-func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject, name string) *ast.Definition {
-	srcs := g.s.activeSources(ctx)
+func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject, name string) (*ast.Definition, error) {
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
 	def := &ast.Definition{
 		Kind:     ast.Object,
 		Name:     name,
@@ -125,17 +136,24 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 		},
 	}
 
-	fields := g.s.readFields(ctx, row.Name)
+	fields, err := g.readFields(ctx, row.Name)
+	if err != nil {
+		return nil, err
+	}
 	for _, f := range fields {
 		typ := parseFieldType(f.FieldType)
 		typeName := typ.Name()
 		isList := typ.NamedType == ""
-		if f.Name == "_stub" || f.DependencyDataSource != "" {
-			continue // extension fields join no derived types
+		if f.Name == "_stub" {
+			continue
+		}
+		if f.DependencyDataSource != "" && !isVirtualStoreField(f) {
+			continue // plain extension fields join no derived types
 		}
 		if s := types.Lookup(typeName); s != nil {
 			// Scalar twin — the compiler takes every non-list Aggregatable
-			// scalar here, virtual (@function_call) fields included.
+			// scalar here, virtual (@function_call) fields included;
+			// extension-contributed ones keep their @dependency marker.
 			if isList {
 				continue
 			}
@@ -147,19 +165,31 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 			if extra := cubeHypertableArgs(row, f); extra != nil {
 				args = append(args, extra)
 			}
+			dirs := ast.DirectiveList{}
+			if f.DependencyDataSource != "" {
+				dirs = append(dirs, dependencyDirective(f.DependencyDataSource))
+			}
+			dirs = append(dirs, fieldAggregationMarker(f.Name))
 			def.Fields = append(def.Fields, &ast.FieldDefinition{
 				Name:       f.Name,
 				Type:       ast.NamedType(a.AggregationTypeName(), reconPos),
 				Arguments:  args,
-				Directives: ast.DirectiveList{fieldAggregationMarker(f.Name)},
+				Directives: dirs,
 				Position:   reconPos,
 			})
 			continue
 		}
-		if isList || isVirtualStoreField(f) || g.s.dataObjectExists(ctx, typeName) {
+		if isList || isVirtualStoreField(f) {
 			continue
 		}
-		if td, _ := g.structType(ctx, typeName); td != nil {
+		if exists, err := g.dataObjectExists(ctx, typeName); err != nil {
+			return nil, err
+		} else if exists {
+			continue
+		}
+		if td, _, err := g.structType(ctx, typeName); err != nil {
+			return nil, err
+		} else if td != nil {
 			def.Fields = append(def.Fields, &ast.FieldDefinition{
 				Name:       f.Name,
 				Type:       ast.NamedType("_"+typeName+"_aggregation", reconPos),
@@ -171,6 +201,7 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 
 	// Virtual object-list twins (addVirtualFieldAggregations): @join pairs
 	// use the agg-ref profiles, TFCJ pairs reuse the DECLARED call arguments.
+	// A cross-source @join target generates nothing (bare declared field).
 	for _, f := range fields {
 		j := f.Properties
 		if j == nil || (j.Join == nil && j.TableFunctionCallJoin == nil) {
@@ -178,7 +209,18 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 		}
 		typ := parseFieldType(f.FieldType)
 		target := typ.Name()
-		if typ.NamedType != "" || !g.s.dataObjectExists(ctx, target) {
+		if typ.NamedType != "" {
+			continue
+		}
+		if j.Join != nil {
+			if _, ok, err := g.joinMachineryTarget(ctx, f); err != nil {
+				return nil, err
+			} else if !ok {
+				continue
+			}
+		} else if exists, err := g.dataObjectExists(ctx, target); err != nil {
+			return nil, err
+		} else if !exists {
 			continue
 		}
 		targetFilter := target + filterSuffix
@@ -188,25 +230,34 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 			directArgs = emitArgumentDefs(f.Args)
 			subArgs = emitArgumentDefs(f.Args)
 		}
+		memberDirs := func() ast.DirectiveList {
+			var out ast.DirectiveList
+			if f.DependencyDataSource != "" {
+				out = append(out, dependencyDirective(f.DependencyDataSource))
+			}
+			return append(out, fieldAggregationMarker(f.Name))
+		}
 		def.Fields = append(def.Fields,
 			&ast.FieldDefinition{
 				Name:       f.Name,
 				Type:       ast.NamedType("_"+target+"_aggregation", reconPos),
 				Arguments:  directArgs,
-				Directives: ast.DirectiveList{fieldAggregationMarker(f.Name)},
+				Directives: memberDirs(),
 				Position:   reconPos,
 			},
 			&ast.FieldDefinition{
 				Name:       f.Name + "_aggregation",
 				Type:       ast.NamedType(rules.AggTypeNameAtDepth(target, 1), reconPos),
 				Arguments:  subArgs,
-				Directives: ast.DirectiveList{fieldAggregationMarker(f.Name)},
+				Directives: memberDirs(),
 				Position:   reconPos,
 			},
 		)
 	}
 
-	appendRelationAggFields(ctx, g, row, def, 0)
+	if err := appendRelationAggFields(ctx, g, row, def, 0); err != nil {
+		return nil, err
+	}
 	appendExtraAggFields(fields, def)
 
 	// @embeddings objects aggregate the query distance too (EmbeddingsRule).
@@ -225,15 +276,23 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 	// Every non-M2M data object's aggregation carries the shared cross-source
 	// `_join` member — and `_spatial` when the object has a Geometry field
 	// (JoinSpatialRule); their args are skipped by the sub-agg mapping, so
-	// they stay base-level-only members.
+	// they stay base-level-only members. On an extension-owned object they
+	// carry @dependency like every generated member.
 	if row.Properties == nil || !row.Properties.IsM2M {
+		sharedDirs := func(name string) ast.DirectiveList {
+			var out ast.DirectiveList
+			if srcs[row.DataSource].IsExtension {
+				out = append(out, dependencyDirective(row.DataSource))
+			}
+			return append(out, fieldAggregationMarker(name))
+		}
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
 			Name: "_join",
 			Type: ast.NamedType("_join_aggregation", reconPos),
 			Arguments: ast.ArgumentDefinitionList{
 				{Name: "fields", Type: ast.NonNullListType(ast.NonNullNamedType("String", reconPos), reconPos), Position: reconPos},
 			},
-			Directives: ast.DirectiveList{fieldAggregationMarker("_join")},
+			Directives: sharedDirs("_join"),
 			Position:   reconPos,
 		})
 		if fieldsHaveGeometry(fields) {
@@ -241,12 +300,12 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 				Name:       "_spatial",
 				Type:       ast.NamedType("_spatial_aggregation", reconPos),
 				Arguments:  spatialFieldArgs(),
-				Directives: ast.DirectiveList{fieldAggregationMarker("_spatial")},
+				Directives: sharedDirs("_spatial"),
 				Position:   reconPos,
 			})
 		}
 	}
-	return def
+	return def, nil
 }
 
 func fieldsHaveGeometry(fields []*field) bool {
@@ -271,8 +330,12 @@ func spatialFieldArgs() ast.ArgumentDefinitionList {
 // appendRelationAggFields mirrors addRefToAggAtDepth for one depth: forward
 // FK single members (depth 0 only), list members (BACK/M2M) with their
 // `_aggregation` sub-member one level deeper.
-func appendRelationAggFields(ctx context.Context, g *genContext, row *dataObject, def *ast.Definition, depth int) {
-	for r := range g.s.Relations(ctx, row.Name) {
+func appendRelationAggFields(ctx context.Context, g *genContext, row *dataObject, def *ast.Definition, depth int) error {
+	rels, err := g.relations(ctx, row.Name)
+	if err != nil {
+		return err
+	}
+	for _, r := range rels {
 		if r.Kind == catalog.RelationJoin {
 			continue // @join members come from the field bags
 		}
@@ -318,6 +381,7 @@ func appendRelationAggFields(ctx context.Context, g *genContext, row *dataObject
 			},
 		)
 	}
+	return nil
 }
 
 // appendExtraAggFields adds ExtraFieldProvider twins with the extra field's
@@ -360,8 +424,11 @@ func appendExtraAggFields(fields []*field, def *ast.Definition) {
 }
 
 // buildObjectAggBucket is the literal bucket shape: key + aggregations.
-func buildObjectAggBucket(ctx context.Context, g *genContext, row *dataObject, name string) *ast.Definition {
-	srcs := g.s.activeSources(ctx)
+func buildObjectAggBucket(ctx context.Context, g *genContext, row *dataObject, name string) (*ast.Definition, error) {
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &ast.Definition{
 		Kind:        ast.Object,
 		Name:        name,
@@ -389,7 +456,7 @@ func buildObjectAggBucket(ctx context.Context, g *genContext, row *dataObject, n
 				Position: reconPos,
 			},
 		},
-	}
+	}, nil
 }
 
 // buildObjectSubAggregation maps the base aggregation into its depth-1 or
@@ -397,8 +464,11 @@ func buildObjectAggBucket(ctx context.Context, g *genContext, row *dataObject, n
 // SubAggregation types (directives + args copied), structural members to
 // their _sub_aggregation, relation list members re-instantiate one level
 // deeper; depth 2 keeps only _rows_count.
-func buildObjectSubAggregation(ctx context.Context, g *genContext, row *dataObject, name string, depth int) *ast.Definition {
-	srcs := g.s.activeSources(ctx)
+func buildObjectSubAggregation(ctx context.Context, g *genContext, row *dataObject, name string, depth int) (*ast.Definition, error) {
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
 	level := depth + 1
 	def := &ast.Definition{
 		Kind:     ast.Object,
@@ -420,10 +490,32 @@ func buildObjectSubAggregation(ctx context.Context, g *genContext, row *dataObje
 		Position:   reconPos,
 	})
 	if depth >= maxSubAggDepth {
-		return def
+		return def, nil
 	}
 
-	baseAgg := buildObjectAggregation(ctx, g, row, "_"+row.Name+"_aggregation")
+	baseAgg, err := buildObjectAggregation(ctx, g, row, "_"+row.Name+"_aggregation")
+	if err != nil {
+		return nil, err
+	}
+	// Virtual @join/TFCJ twin members never reach the sub-aggregations — the
+	// compiler drops BOTH the direct member and the `_aggregation` twin at
+	// sub level (args-ful ones fall out of the generic mapping anyway; the
+	// set closes the argless extension-contributed case).
+	fields, err := g.readFields(ctx, row.Name)
+	if err != nil {
+		return nil, err
+	}
+	virtualTwins := map[string]bool{}
+	for _, f := range fields {
+		if f.Properties == nil || (f.Properties.Join == nil && f.Properties.TableFunctionCallJoin == nil) {
+			continue
+		}
+		if parseFieldType(f.FieldType).NamedType != "" {
+			continue
+		}
+		virtualTwins[f.Name] = true
+		virtualTwins[f.Name+"_aggregation"] = true
+	}
 	for _, f := range baseAgg.Fields {
 		if f.Name == "_rows_count" {
 			continue
@@ -431,6 +523,13 @@ func buildObjectSubAggregation(ctx context.Context, g *genContext, row *dataObje
 		if f.Name == "_distance_to_query" {
 			// EmbeddingsRule extends the base aggregation only — the member
 			// never reaches the sub-aggregations.
+			continue
+		}
+		if f.Directives.ForName(base.DependencyDirectiveName) != nil {
+			// Extension-contributed members stay base-level-only.
+			continue
+		}
+		if virtualTwins[f.Name] {
 			continue
 		}
 		if subType := types.SubAggregationTypeName(f.Type.Name()); subType != "" {
@@ -450,24 +549,30 @@ func buildObjectSubAggregation(ctx context.Context, g *genContext, row *dataObje
 				Position:   reconPos,
 			})
 		}
-		// Members with args (relation / virtual twins) re-instantiate below.
+		// Members with args (relation twins) re-instantiate below.
 	}
 	// Extra members flip through the scalar mapping above (their base twins
 	// are Aggregatable-typed), so no separate pass is needed here.
-	appendRelationAggFields(ctx, g, row, def, depth)
-	return def
+	if err := appendRelationAggFields(ctx, g, row, def, depth); err != nil {
+		return nil, err
+	}
+	return def, nil
 }
 
 // buildStructAggregation mirrors generateAggregationType on a structural
 // type: _rows_count + scalar twins (with scalar args) + nested struct members.
-func buildStructAggregation(ctx context.Context, g *genContext, td *ast.Definition, dataSource, name string) *ast.Definition {
+func buildStructAggregation(ctx context.Context, g *genContext, td *ast.Definition, dataSource, name string) (*ast.Definition, error) {
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
 	def := &ast.Definition{
 		Kind:     ast.Object,
 		Name:     name,
 		Position: reconPos,
 		Directives: ast.DirectiveList{
 			aggregationMarker(td.Name, false, 1),
-			catalogDirective(dataSource, g.s.activeSources(ctx)[dataSource].Engine),
+			catalogDirective(dataSource, srcs[dataSource].Engine),
 		},
 		Fields: ast.FieldList{
 			{Name: "_rows_count", Type: ast.NamedType("BigInt", reconPos), Position: reconPos},
@@ -496,10 +601,17 @@ func buildStructAggregation(ctx context.Context, g *genContext, td *ast.Definiti
 			})
 			continue
 		}
-		if isList || g.s.dataObjectExists(ctx, typeName) {
+		if isList {
 			continue
 		}
-		if nested, _ := g.structType(ctx, typeName); nested != nil {
+		if exists, err := g.dataObjectExists(ctx, typeName); err != nil {
+			return nil, err
+		} else if exists {
+			continue
+		}
+		if nested, _, err := g.structType(ctx, typeName); err != nil {
+			return nil, err
+		} else if nested != nil {
 			def.Fields = append(def.Fields, &ast.FieldDefinition{
 				Name:       f.Name,
 				Type:       ast.NamedType("_"+typeName+"_aggregation", reconPos),
@@ -508,22 +620,29 @@ func buildStructAggregation(ctx context.Context, g *genContext, td *ast.Definiti
 			})
 		}
 	}
-	return def
+	return def, nil
 }
 
 // buildStructSubAggregation mirrors generateStructSubAggType: scalar members
 // flip to SubAggregation variants (directives copied, args dropped), nested
 // struct members are omitted.
-func buildStructSubAggregation(ctx context.Context, g *genContext, td *ast.Definition, dataSource, name string) *ast.Definition {
+func buildStructSubAggregation(ctx context.Context, g *genContext, td *ast.Definition, dataSource, name string) (*ast.Definition, error) {
 	aggName := "_" + td.Name + "_aggregation"
-	baseAgg := buildStructAggregation(ctx, g, td, dataSource, aggName)
+	baseAgg, err := buildStructAggregation(ctx, g, td, dataSource, aggName)
+	if err != nil {
+		return nil, err
+	}
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
 	def := &ast.Definition{
 		Kind:     ast.Object,
 		Name:     name,
 		Position: reconPos,
 		Directives: ast.DirectiveList{
 			aggregationMarker(aggName, false, 2),
-			catalogDirective(dataSource, g.s.activeSources(ctx)[dataSource].Engine),
+			catalogDirective(dataSource, srcs[dataSource].Engine),
 		},
 		Fields: ast.FieldList{
 			{
@@ -549,7 +668,7 @@ func buildStructSubAggregation(ctx context.Context, g *genContext, td *ast.Defin
 			Position:   reconPos,
 		})
 	}
-	return def
+	return def, nil
 }
 
 func fieldAggregationMarker(name string) *ast.Directive {

@@ -22,6 +22,7 @@ type sharedObjectEntry struct {
 	filterName    string
 	info          *base.ObjectInfo
 	dataSource    string
+	isExtension   bool
 	hasVector     bool
 	hasEmbeddings bool
 	spatial       bool
@@ -29,27 +30,41 @@ type sharedObjectEntry struct {
 
 // sharedObjects lists every ACTIVE non-M2M data object with the traits the
 // shared-type members branch on.
-func (g *genContext) sharedObjects(ctx context.Context) []*sharedObjectEntry {
-	names := g.s.queryNames(ctx, `SELECT o.name FROM core.catalog.data_objects o`+
+func (g *genContext) sharedObjects(ctx context.Context) ([]*sharedObjectEntry, error) {
+	names, err := g.queryNames(ctx, `SELECT o.name FROM core.catalog.data_objects o`+
 		activeMeta("m", "o.data_source")+` ORDER BY o.name`)
+	if err != nil {
+		return nil, err
+	}
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var out []*sharedObjectEntry
 	for _, name := range names {
-		row, ok := g.s.readDataObject(ctx, name)
-		if !ok || (row.Properties != nil && row.Properties.IsM2M) {
+		row, err := g.readDataObject(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if row == nil || (row.Properties != nil && row.Properties.IsM2M) {
 			continue
 		}
 		e := &sharedObjectEntry{
-			name:       name,
-			filterName: name + filterSuffix,
-			info:       &base.ObjectInfo{Name: name, OriginalName: row.OriginalName},
-			dataSource: row.DataSource,
+			name:        name,
+			filterName:  name + filterSuffix,
+			info:        &base.ObjectInfo{Name: name, OriginalName: row.OriginalName},
+			dataSource:  row.DataSource,
+			isExtension: srcs[row.DataSource].IsExtension,
 		}
 		if row.Properties != nil {
 			e.info.InputArgsName = row.Properties.ArgsTypeName
 			e.info.RequiredArgs = row.Properties.RequiredArgs
 			e.hasEmbeddings = row.Properties.Embeddings != nil
 		}
-		fields := g.s.readFields(ctx, name)
+		fields, err := g.readFields(ctx, name)
+		if err != nil {
+			return nil, err
+		}
 		e.spatial = fieldsHaveGeometry(fields)
 		e.hasVector = e.hasEmbeddings
 		if !e.hasVector {
@@ -62,15 +77,31 @@ func (g *genContext) sharedObjects(ctx context.Context) []*sharedObjectEntry {
 		}
 		out = append(out, e)
 	}
-	return out
+	return out, nil
 }
 
-func buildJoinShared(ctx context.Context, g *genContext) *ast.Definition {
-	objs := g.sharedObjects(ctx)
-	if len(objs) == 0 {
-		return nil
+// sharedBuildScope loads the object list and source meta every shared-type
+// builder starts from; empty objs = the builder yields nil.
+func sharedBuildScope(ctx context.Context, g *genContext) ([]*sharedObjectEntry, map[string]activeSource, error) {
+	objs, err := g.sharedObjects(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
-	srcs := g.s.activeSources(ctx)
+	if len(objs) == 0 {
+		return nil, nil, nil
+	}
+	srcs, err := g.activeSources(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return objs, srcs, nil
+}
+
+func buildJoinShared(ctx context.Context, g *genContext) (*ast.Definition, error) {
+	objs, srcs, err := sharedBuildScope(ctx, g)
+	if err != nil || len(objs) == 0 {
+		return nil, err
+	}
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       "_join",
@@ -84,15 +115,14 @@ func buildJoinShared(ctx context.Context, g *genContext) *ast.Definition {
 		}
 		def.Fields = append(def.Fields, sharedMemberTrio(obj, args, srcs)...)
 	}
-	return def
+	return def, nil
 }
 
-func buildJoinAggShared(ctx context.Context, g *genContext) *ast.Definition {
-	objs := g.sharedObjects(ctx)
-	if len(objs) == 0 {
-		return nil
+func buildJoinAggShared(ctx context.Context, g *genContext) (*ast.Definition, error) {
+	objs, srcs, err := sharedBuildScope(ctx, g)
+	if err != nil || len(objs) == 0 {
+		return nil, err
 	}
-	srcs := g.s.activeSources(ctx)
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       "_join_aggregation",
@@ -104,15 +134,18 @@ func buildJoinAggShared(ctx context.Context, g *genContext) *ast.Definition {
 		args = append(args, rules.VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
 		def.Fields = append(def.Fields, sharedAggMember(obj, args, srcs))
 	}
-	return def
+	return def, nil
 }
 
-func buildSpatialShared(ctx context.Context, g *genContext) *ast.Definition {
-	objs := spatialOnly(g.sharedObjects(ctx))
-	if len(objs) == 0 {
-		return nil
+func buildSpatialShared(ctx context.Context, g *genContext) (*ast.Definition, error) {
+	objs, srcs, err := sharedBuildScope(ctx, g)
+	if err != nil {
+		return nil, err
 	}
-	srcs := g.s.activeSources(ctx)
+	objs = spatialOnly(objs)
+	if len(objs) == 0 {
+		return nil, nil
+	}
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       "_spatial",
@@ -122,15 +155,18 @@ func buildSpatialShared(ctx context.Context, g *genContext) *ast.Definition {
 	for _, obj := range objs {
 		def.Fields = append(def.Fields, sharedMemberTrio(obj, spatialMemberArgs(obj), srcs)...)
 	}
-	return def
+	return def, nil
 }
 
-func buildSpatialAggShared(ctx context.Context, g *genContext) *ast.Definition {
-	objs := spatialOnly(g.sharedObjects(ctx))
-	if len(objs) == 0 {
-		return nil
+func buildSpatialAggShared(ctx context.Context, g *genContext) (*ast.Definition, error) {
+	objs, srcs, err := sharedBuildScope(ctx, g)
+	if err != nil {
+		return nil, err
 	}
-	srcs := g.s.activeSources(ctx)
+	objs = spatialOnly(objs)
+	if len(objs) == 0 {
+		return nil, nil
+	}
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       "_spatial_aggregation",
@@ -142,17 +178,20 @@ func buildSpatialAggShared(ctx context.Context, g *genContext) *ast.Definition {
 		args = append(args, rules.VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
 		def.Fields = append(def.Fields, sharedAggMember(obj, args, srcs))
 	}
-	return def
+	return def, nil
 }
 
 // buildH3DataShared mirrors H3Rule: the _spatial member trio with the four
 // h3-specific arguments appended.
-func buildH3DataShared(ctx context.Context, g *genContext) *ast.Definition {
-	objs := spatialOnly(g.sharedObjects(ctx))
-	if len(objs) == 0 {
-		return nil
+func buildH3DataShared(ctx context.Context, g *genContext) (*ast.Definition, error) {
+	objs, srcs, err := sharedBuildScope(ctx, g)
+	if err != nil {
+		return nil, err
 	}
-	srcs := g.s.activeSources(ctx)
+	objs = spatialOnly(objs)
+	if len(objs) == 0 {
+		return nil, nil
+	}
 	def := &ast.Definition{
 		Kind:       ast.Object,
 		Name:       "_h3_data_query",
@@ -165,7 +204,7 @@ func buildH3DataShared(ctx context.Context, g *genContext) *ast.Definition {
 		}
 		def.Fields = append(def.Fields, sharedMemberTrio(obj, args, srcs)...)
 	}
-	return def
+	return def, nil
 }
 
 func spatialOnly(objs []*sharedObjectEntry) []*sharedObjectEntry {
@@ -189,7 +228,14 @@ func spatialMemberArgs(obj *sharedObjectEntry) func() ast.ArgumentDefinitionList
 // set every shared query type carries per object. args is a factory — each
 // member gets its own argument list instance.
 func sharedMemberTrio(obj *sharedObjectEntry, args func() ast.ArgumentDefinitionList, srcs map[string]activeSource) []*ast.FieldDefinition {
-	catalog := func() *ast.Directive { return catalogDirective(obj.dataSource, srcs[obj.dataSource].Engine) }
+	dirs := func(head ...*ast.Directive) ast.DirectiveList {
+		out := ast.DirectiveList(head)
+		out = append(out, catalogDirective(obj.dataSource, srcs[obj.dataSource].Engine))
+		if obj.isExtension {
+			out = append(out, dependencyDirective(obj.dataSource))
+		}
+		return out
+	}
 	aggQuery := func(isBucket bool) *ast.Directive {
 		return directive(base.FieldAggregationQueryDirectiveName,
 			boolArg(base.ArgIsBucket, isBucket),
@@ -201,24 +247,22 @@ func sharedMemberTrio(obj *sharedObjectEntry, args func() ast.ArgumentDefinition
 			Name:      obj.name,
 			Type:      ast.ListType(ast.NamedType(obj.name, reconPos), reconPos),
 			Arguments: args(),
-			Directives: ast.DirectiveList{
-				directive("query", strArg(base.ArgName, obj.name), enumArg("type", "SELECT")),
-				catalog(),
-			},
+			Directives: dirs(
+				directive("query", strArg(base.ArgName, obj.name), enumArg("type", "SELECT"))),
 			Position: reconPos,
 		},
 		{
 			Name:       obj.name + "_aggregation",
 			Type:       ast.NamedType("_"+obj.name+"_aggregation", reconPos),
 			Arguments:  args(),
-			Directives: ast.DirectiveList{aggQuery(false), catalog()},
+			Directives: dirs(aggQuery(false)),
 			Position:   reconPos,
 		},
 		{
 			Name:       obj.name + "_bucket_aggregation",
 			Type:       ast.ListType(ast.NamedType("_"+obj.name+"_aggregation_bucket", reconPos), reconPos),
 			Arguments:  args(),
-			Directives: ast.DirectiveList{aggQuery(true), catalog()},
+			Directives: dirs(aggQuery(true)),
 			Position:   reconPos,
 		},
 	}
@@ -227,19 +271,23 @@ func sharedMemberTrio(obj *sharedObjectEntry, args func() ast.ArgumentDefinition
 // sharedAggMember is the single aggregation member the *_aggregation shared
 // types carry per object.
 func sharedAggMember(obj *sharedObjectEntry, args ast.ArgumentDefinitionList, srcs map[string]activeSource) *ast.FieldDefinition {
+	dirs := ast.DirectiveList{
+		directive(base.FieldAggregationQueryDirectiveName,
+			boolArg(base.ArgIsBucket, false),
+			strArg(base.ArgName, obj.name),
+		),
+		catalogDirective(obj.dataSource, srcs[obj.dataSource].Engine),
+	}
+	if obj.isExtension {
+		dirs = append(dirs, dependencyDirective(obj.dataSource))
+	}
+	dirs = append(dirs, fieldAggregationMarker(obj.name))
 	return &ast.FieldDefinition{
-		Name:      obj.name,
-		Type:      ast.NamedType("_"+obj.name+"_aggregation", reconPos),
-		Arguments: args,
-		Directives: ast.DirectiveList{
-			directive(base.FieldAggregationQueryDirectiveName,
-				boolArg(base.ArgIsBucket, false),
-				strArg(base.ArgName, obj.name),
-			),
-			catalogDirective(obj.dataSource, srcs[obj.dataSource].Engine),
-			fieldAggregationMarker(obj.name),
-		},
-		Position: reconPos,
+		Name:       obj.name,
+		Type:       ast.NamedType("_"+obj.name+"_aggregation", reconPos),
+		Arguments:  args,
+		Directives: dirs,
+		Position:   reconPos,
 	}
 }
 

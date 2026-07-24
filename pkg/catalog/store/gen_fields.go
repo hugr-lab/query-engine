@@ -20,7 +20,7 @@ import (
 // (bucket for Timestamp, transforms for Geometry, …).
 var scalarArgsFieldRule = fieldRule{
 	name: "scalar_args",
-	apply: func(_ context.Context, _ *genContext, _ *objectTraits, def *ast.Definition) {
+	apply: func(_ context.Context, _ *genContext, _ *objectTraits, def *ast.Definition) error {
 		for _, fd := range def.Fields {
 			if fd.Type.NamedType == "" {
 				continue
@@ -33,6 +33,7 @@ var scalarArgsFieldRule = fieldRule{
 				fd.Arguments = args
 			}
 		}
+		return nil
 	},
 }
 
@@ -42,31 +43,50 @@ var scalarArgsFieldRule = fieldRule{
 // the {name}_aggregation / {name}_bucket_aggregation twins on the object.
 var joinFieldsRule = fieldRule{
 	name: "join_fields",
-	apply: func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition) error {
 		for _, f := range t.fields {
 			if f.Properties == nil || (f.Properties.Join == nil && f.Properties.TableFunctionCallJoin == nil) {
 				continue
 			}
 			typ := parseFieldType(f.FieldType)
 			target := typ.Name()
-			if typ.NamedType != "" || !g.s.dataObjectExists(ctx, target) {
+			if typ.NamedType != "" {
 				continue
 			}
 			twinArgs := func() ast.ArgumentDefinitionList {
 				return rules.SubQueryArgs(target+filterSuffix, reconPos)
 			}
 			if f.Properties.Join != nil {
+				_, ok, err := g.joinMachineryTarget(ctx, f)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					continue // cross-source (or absent) target → bare field
+				}
 				if fd := def.Fields.ForName(f.Name); fd != nil && len(fd.Arguments) == 0 {
 					fd.Arguments = rules.SubQueryArgs(target+filterSuffix, reconPos)
 				}
 			} else {
+				if exists, err := g.dataObjectExists(ctx, target); err != nil {
+					return err
+				} else if !exists {
+					continue
+				}
 				// TFCJ twins reuse the declared call arguments as-is.
 				declared := f.Args
 				twinArgs = func() ast.ArgumentDefinitionList { return emitArgumentDefs(declared) }
 			}
+			// Extension-contributed virtual fields: the twins carry the same
+			// write-time-resolved @catalog as the field, plus @dependency.
+			var extra []*ast.Directive
+			if f.DependencyDataSource != "" {
+				extra = append(extra, dependencyDirective(f.DependencyDataSource))
+			}
 			def.Fields = append(def.Fields,
-				relationAggTwinFields(f.Name, target, twinArgs, t.srcs, f.DataSource)...)
+				relationAggTwinFields(f.Name, target, twinArgs, t.srcs, f.DataSource, extra...)...)
 		}
+		return nil
 	},
 }
 
@@ -76,9 +96,13 @@ var joinFieldsRule = fieldRule{
 // forward navigation of its own.
 var navFieldsRule = fieldRule{
 	name: "nav_fields",
-	apply: func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(ctx context.Context, g *genContext, t *objectTraits, def *ast.Definition) error {
 		if !t.isM2M() {
-			for _, leg := range g.s.relationsBySource(ctx, t.row.Name) {
+			legs, err := g.relationsBySource(ctx, t.row.Name)
+			if err != nil {
+				return err
+			}
+			for _, leg := range legs {
 				def.Fields = append(def.Fields, &ast.FieldDefinition{
 					Name: leg.SourceField,
 					Type: ast.NamedType(leg.Destination, reconPos),
@@ -93,10 +117,18 @@ var navFieldsRule = fieldRule{
 				})
 			}
 		}
-		for _, leg := range g.s.relationsByDestination(ctx, t.row.Name) {
+		legs, err := g.relationsByDestination(ctx, t.row.Name)
+		if err != nil {
+			return err
+		}
+		for _, leg := range legs {
 			backName := orDefault(leg.DestinationField, leg.Source)
 			if leg.m2mJunction {
-				for _, co := range g.s.relationsBySource(ctx, leg.Source) {
+				cos, err := g.relationsBySource(ctx, leg.Source)
+				if err != nil {
+					return err
+				}
+				for _, co := range cos {
 					if co.Name == leg.Name {
 						continue
 					}
@@ -118,6 +150,7 @@ var navFieldsRule = fieldRule{
 				relationAggTwinFields(backName, leg.Source,
 					subQueryArgsFactory(leg.Source), t.srcs, leg.DataSource)...)
 		}
+		return nil
 	},
 }
 
@@ -153,14 +186,18 @@ func navQueryDirective(referencesName, relName string, isM2M bool, m2mName strin
 // relationAggTwinFields is addReferenceAggregationFields: the
 // {name}_aggregation / {name}_bucket_aggregation members every list relation
 // (@join / TFCJ / back FK / M2M) puts on the base object. args is a factory —
-// each twin gets its own argument list instance.
-func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDefinitionList, srcs map[string]activeSource, dataSource string) []*ast.FieldDefinition {
-	catalog := func() *ast.Directive { return catalogDirective(dataSource, srcs[dataSource].Engine) }
-	aggQuery := func(isBucket bool) *ast.Directive {
-		return directive(base.FieldAggregationQueryDirectiveName,
-			boolArg(base.ArgIsBucket, isBucket),
-			strArg(base.ArgName, fieldName),
-		)
+// each twin gets its own argument list instance; extra directives (the
+// @dependency of extension-contributed fields) are appended to both twins.
+func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDefinitionList, srcs map[string]activeSource, dataSource string, extra ...*ast.Directive) []*ast.FieldDefinition {
+	twinDirectives := func(isBucket bool) ast.DirectiveList {
+		out := ast.DirectiveList{
+			directive(base.FieldAggregationQueryDirectiveName,
+				boolArg(base.ArgIsBucket, isBucket),
+				strArg(base.ArgName, fieldName),
+			),
+			catalogDirective(dataSource, srcs[dataSource].Engine),
+		}
+		return append(out, extra...)
 	}
 	return []*ast.FieldDefinition{
 		{
@@ -168,7 +205,7 @@ func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDef
 			Description: "The aggregation for " + fieldName,
 			Type:        ast.NamedType("_"+target+"_aggregation", reconPos),
 			Arguments:   args(),
-			Directives:  ast.DirectiveList{aggQuery(false), catalog()},
+			Directives:  twinDirectives(false),
 			Position:    reconPos,
 		},
 		{
@@ -176,7 +213,7 @@ func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDef
 			Description: "The bucket aggregation for " + fieldName,
 			Type:        ast.ListType(ast.NamedType("_"+target+"_aggregation_bucket", reconPos), reconPos),
 			Arguments:   args(),
-			Directives:  ast.DirectiveList{aggQuery(true), catalog()},
+			Directives:  twinDirectives(true),
 			Position:    reconPos,
 		},
 	}
@@ -187,7 +224,7 @@ func relationAggTwinFields(fieldName, target string, args func() ast.ArgumentDef
 // complete field definition.
 var extraFieldsRule = fieldRule{
 	name: "extra_fields",
-	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) error {
 		for _, f := range t.fields {
 			if f.Name == "_stub" {
 				continue
@@ -204,6 +241,7 @@ var extraFieldsRule = fieldRule{
 				def.Fields = append(def.Fields, extraField)
 			}
 		}
+		return nil
 	},
 }
 
@@ -246,9 +284,9 @@ func cubeHypertableArgs(row *dataObject, f *field) *ast.ArgumentDefinition {
 // the object fields themselves.
 var cubeHypertableFieldRule = fieldRule{
 	name: "cube_hypertable_args",
-	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) error {
 		if t.row.Properties == nil || (!t.row.Properties.IsCube && !t.row.Properties.IsHypertable) {
-			return
+			return nil
 		}
 		for _, f := range t.fields {
 			arg := cubeHypertableArgs(t.row, f)
@@ -259,6 +297,7 @@ var cubeHypertableFieldRule = fieldRule{
 				fd.Arguments = append(fd.Arguments, arg)
 			}
 		}
+		return nil
 	},
 }
 
@@ -267,10 +306,10 @@ var cubeHypertableFieldRule = fieldRule{
 // QueryEmbeddingDistance extra-field binding.
 var embeddingsFieldRule = fieldRule{
 	name: "embeddings_fields",
-	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) error {
 		_, emb := t.vectorTraits()
 		if emb == nil {
-			return
+			return nil
 		}
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
 			Name:        "_distance_to_query",
@@ -294,6 +333,7 @@ var embeddingsFieldRule = fieldRule{
 			},
 			Position: reconPos,
 		})
+		return nil
 	},
 }
 
@@ -302,9 +342,15 @@ var embeddingsFieldRule = fieldRule{
 // (JoinSpatialRule).
 var sharedFieldsRule = fieldRule{
 	name: "shared_fields",
-	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) {
+	apply: func(_ context.Context, _ *genContext, t *objectTraits, def *ast.Definition) error {
 		if t.isM2M() {
-			return
+			return nil
+		}
+		// Generated members of an extension-owned object carry @dependency
+		// so dependency tracking drops them with the extension.
+		var dirs ast.DirectiveList
+		if t.src.IsExtension {
+			dirs = ast.DirectiveList{dependencyDirective(t.row.DataSource)}
 		}
 		def.Fields = append(def.Fields, &ast.FieldDefinition{
 			Name: "_join",
@@ -312,15 +358,18 @@ var sharedFieldsRule = fieldRule{
 			Arguments: ast.ArgumentDefinitionList{
 				{Name: "fields", Type: ast.NonNullListType(ast.NonNullNamedType("String", reconPos), reconPos), Position: reconPos},
 			},
-			Position: reconPos,
+			Directives: dirs,
+			Position:   reconPos,
 		})
 		if fieldsHaveGeometry(t.fields) {
 			def.Fields = append(def.Fields, &ast.FieldDefinition{
-				Name:      "_spatial",
-				Type:      ast.NamedType("_spatial", reconPos),
-				Arguments: spatialFieldArgs(),
-				Position:  reconPos,
+				Name:       "_spatial",
+				Type:       ast.NamedType("_spatial", reconPos),
+				Arguments:  spatialFieldArgs(),
+				Directives: dirs,
+				Position:   reconPos,
 			})
 		}
+		return nil
 	},
 }

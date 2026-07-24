@@ -157,11 +157,22 @@ func processExtensionTFCJField(ctx base.CompilationContext, parentName string, f
 	targetAggName := "_" + targetName + "_aggregation"
 	bucketAggName := "_" + targetName + "_aggregation_bucket"
 	subAggName := AggTypeNameAtDepth(targetName, 1)
-	targetCatDir := targetCatalogDirective(targetDef)
 
-	// Add @catalog from the target type so the planner knows which engine
-	// this join's data comes from (critical for cross-source joins).
-	if targetCatDir != nil {
+	// @catalog names the source where the referenced FUNCTION is defined —
+	// the TFCJ data comes from the function call; the return type only shapes
+	// the join side. Fall back to the return type's catalog when the function
+	// does not resolve.
+	targetCatDir := targetCatalogDirective(targetDef)
+	if tfcjDir := f.Directives.ForName(base.FunctionCallTableJoinDirectiveName); tfcjDir != nil {
+		if refName := base.DirectiveArgString(tfcjDir, base.ArgReferencesName); refName != "" {
+			if fn := buildFuncRegistry(ctx)[refName]; fn != nil {
+				if d := fn.Directives.ForName(base.CatalogDirectiveName); d != nil {
+					targetCatDir = d
+				}
+			}
+		}
+	}
+	if targetCatDir != nil && f.Directives.ForName(base.CatalogDirectiveName) == nil {
 		f.Directives = append(f.Directives, targetCatDir)
 	}
 

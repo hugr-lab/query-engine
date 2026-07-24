@@ -157,7 +157,8 @@ func TestReconstructDataObjectBase(t *testing.T) {
 func TestReconstructFunction(t *testing.T) {
 	store, ctx := writtenStore(t)
 
-	fn := reconstructFunction(ctx, store, "sales", "order_status")
+	fn, err := reconstructFunction(ctx, store.genCtx(), "sales", "order_status")
+	require.NoError(t, err)
 	require.NotNil(t, fn)
 	assert.Equal(t, "order_status", fn.Name)
 	assert.Equal(t, "String", fn.Type.String())
@@ -175,8 +176,10 @@ func TestReconstructFunction(t *testing.T) {
 	require.NotNil(t, mode)
 	assert.Equal(t, "unused", dirArg(mode.Directives.ForName("deprecated"), "reason"))
 
-	// Absent function → nil.
-	assert.Nil(t, reconstructFunction(ctx, store, "sales", "no_such_fn"))
+	// Absent function → nil without an error.
+	absent, err := reconstructFunction(ctx, store.genCtx(), "sales", "no_such_fn")
+	require.NoError(t, err)
+	assert.Nil(t, absent)
 }
 
 func dirArg(d *ast.Directive, name string) string {

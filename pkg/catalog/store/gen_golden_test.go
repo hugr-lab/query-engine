@@ -444,7 +444,8 @@ func storeForSources(t *testing.T, fixtures []fixtureSource) (*Store, context.Co
 		d := collect(ctx, src, fs.name)
 		_, err = store.writeSource(ctx, d, SourceState{
 			Name: fs.name, Version: "v1", Engine: string(e.Type()),
-			Prefix: fs.prefix, AsModule: fs.asModule, ReadOnly: fs.readOnly, Loaded: true,
+			Prefix: fs.prefix, AsModule: fs.asModule, ReadOnly: fs.readOnly,
+			IsExtension: fs.isExtension, Loaded: true,
 		})
 		require.NoError(t, err)
 	}
@@ -477,7 +478,11 @@ func goldenRefSources(t *testing.T, fixtures []fixtureSource) *static.Provider {
 }
 
 // genMultiFixtures covers the deferred source-option axes: a prefixed
-// AsModule source, a read-only source, and a cross-source extension.
+// AsModule source, a read-only source, plain sources and a cross-source
+// extension. The CONTRACT pinned here: a regular source describes ONLY its
+// own data — every cross-source schema artifact (@join / @function_call /
+// @table_function_call_join wiring, cross-source views) lives in the
+// EXTENSION source.
 var genMultiFixtures = []fixtureSource{
 	{
 		name: "shop", prefix: "shop", asModule: true,
@@ -499,7 +504,6 @@ type items @table(name: "items") {
 
 extend type Function {
   item_label(id: Int!): String @function(name: "item_label")
-  slugify(s: String!): String @module(name: "tools") @function(name: "slugify")
 }
 `,
 	},
@@ -513,9 +517,47 @@ type logs @module(name: "ro_mod") @table(name: "logs") {
 `,
 	},
 	{
+		name: "audit",
+		schema: `
+type audit_events @module(name: "audit") @table(name: "audit_events") {
+  id: Int! @pk
+  log_id: Int
+}
+`,
+	},
+	{
+		// A function-only source; similar_items RETURNS another source's
+		// objects — the TFCJ wiring onto shop_items happens in the extension.
+		name: "func",
+		schema: `
+extend type Function {
+  similar_items(item_id: Int!, limit: Int = 5): [shop_items] @function(name: "similar_items")
+  slugify(s: String!): String @module(name: "tools") @function(name: "slugify")
+}
+`,
+	},
+	{
+		// The extension owns EVERY cross-source artifact: the @function_call
+		// wiring to shop's function, the @table_function_call_join wiring to
+		// the func source's function, the cross-source @join from audit's
+		// object to ro's logs, and a view with an explicit @dependency.
 		name: "ext", isExtension: true,
-		schema: `extend type shop_items {
+		schema: `
+extend type shop_items {
   note: String
+  label: String @function_call(references_name: "item_label", module: "shop", args: {id: "id"})
+  similar: [shop_items] @table_function_call_join(references_name: "similar_items", args: {item_id: "id"})
+}
+
+extend type audit_events {
+  logs: [logs] @join(references_name: "logs", source_fields: ["log_id"], references_fields: ["id"])
+}
+
+type shop_overview
+  @view(name: "shop_overview", sql: "SELECT category_id, count(*) AS items_count FROM shop.main.items GROUP BY category_id")
+  @dependency(name: "shop") {
+  category_id: Int @pk
+  items_count: BigInt
 }
 `,
 	},
@@ -545,6 +587,15 @@ func TestGenGoldenMultiSource(t *testing.T) {
 		"logs",
 		"logs_filter",
 		"_logs_aggregation",
+		// Cross-source @join: the declared field's @catalog is PROPAGATED from
+		// the referenced object ("ro"), computed via references_name on read.
+		"audit_events",
+		"_audit_events_aggregation",
+		// Extension view with an explicit @dependency (round-trips through the
+		// properties bag) and its derived types.
+		"shop_overview",
+		"shop_overview_filter",
+		"_shop_overview_aggregation",
 		// Roots: AsModule module named after the source, original-name
 		// members; ro_mod contributes no mutation root. Functions route into
 		// the source module (inline @module nests: shop.tools).
@@ -554,8 +605,9 @@ func TestGenGoldenMultiSource(t *testing.T) {
 		"_module_shop_query",
 		"_module_shop_mutation",
 		"_module_shop_function",
-		"_module_shop_tools_function",
+		"_module_tools_function",
 		"_module_ro_mod_query",
+		"_module_audit_query",
 		// Shared types span all three sources.
 		"_join",
 		"_join_aggregation",
