@@ -8,28 +8,12 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// partialRules is the write-side compiler: VALIDATE + PREPARE only (prefix,
-// validate, extension merge) — the GENERATE / ASSEMBLE / FINALIZE phases are
-// skipped, so the output is the PHYSICAL base model the store persists.
-func partialRules() []base.Rule {
-	return []base.Rule{
-		&rules.ExtensionValidator{},
-		&rules.DependencyCollector{},
-		&rules.SourceValidator{},
-		&rules.DefinitionValidator{},
-		&rules.InternalExtensionMerger{},
-		&rules.CatalogTagger{},
-		&rules.PrefixPreparer{},
-	}
-}
 
 // partialSource runs the partial compiler over a schema and returns the source
 // itself: VALIDATE+PREPARE mutate its definitions in place (prefix, catalog and

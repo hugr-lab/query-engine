@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 
+	catsrc "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -67,6 +69,11 @@ type Store struct {
 	cache *defCache
 	gen   atomic.Uint64
 	sf    singleflight.Group
+
+	// catMu guards catalogs — the live source handles the manager keeps for
+	// ReloadCatalog and reactivation (manager.go).
+	catMu    sync.RWMutex
+	catalogs map[string]catsrc.Catalog
 }
 
 // New assembles the system layer and returns a Store bound to the CoreDB pool.
@@ -84,6 +91,7 @@ func New(_ context.Context, pool *db.Pool, cfg Config, embedder Embedder) (*Stor
 		embedder:   embedder,
 		static:     sp,
 		cache:      newDefCache(cfg.Cache),
+		catalogs:   map[string]catsrc.Catalog{},
 	}, nil
 }
 

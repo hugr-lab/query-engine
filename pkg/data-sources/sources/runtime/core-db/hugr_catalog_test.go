@@ -168,8 +168,8 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 
 	// B1: meta upsert — the same statement drives both the insert and the
 	// update path (version gate / flag reconcile).
-	meta := `INSERT INTO core.catalog.data_source_meta (data_source, version, capabilities, engine, read_only, as_module, loaded, disabled, suspended, loaded_at)
-		VALUES ('probe', '%s', '{"read_only":false}', 'duckdb', false, false, true, false, false, CURRENT_TIMESTAMP)
+	meta := `INSERT INTO core.catalog.data_source_meta (data_source, version, capabilities, engine, read_only, as_module, is_extension, loaded, disabled, suspended, loaded_at)
+		VALUES ('probe', '%s', '{"read_only":false}', 'duckdb', false, false, false, true, false, false, CURRENT_TIMESTAMP)
 		ON CONFLICT (data_source) DO UPDATE SET version = EXCLUDED.version, capabilities = EXCLUDED.capabilities`
 	exec(fmt.Sprintf(meta, "v1"))
 	exec(fmt.Sprintf(meta, "v2"))
@@ -311,6 +311,22 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 		AND description IS NULL AND long_description IS NULL`)
 	got = queryStrings(t, pool, `SELECT entity_key FROM core.catalog.annotations WHERE entity_key LIKE 'probe%'`)
 	assert.Equal(t, []string{"probe_rich"}, got, "sweep removed seeds, kept curated")
+
+	// ---- G. legacy settings KV (schema_version counter shapes) ------------
+	// The store's cluster counter is a two-step read + LITERAL write on the
+	// JSON (DuckDB) / JSONB (PG) value column — no in-SQL arithmetic over the
+	// JSON type, which is what forced the old provider to branch per backend.
+	// A probe-owned key: the real schema_version row must not be touched.
+	exec(`DELETE FROM core._schema_settings WHERE key = 'probe_counter'`)
+	exec(`INSERT INTO core._schema_settings (key, value) VALUES ('probe_counter', '"7"')`)
+	got = queryStrings(t, pool, `SELECT CAST(TRIM(CAST(value AS VARCHAR), '"') AS BIGINT)
+		FROM core._schema_settings WHERE key = 'probe_counter'`)
+	assert.Equal(t, []string{"7"}, got, "JSON string counter reads back as a number")
+	exec(`UPDATE core._schema_settings SET value = '"8"' WHERE key = 'probe_counter'`)
+	got = queryStrings(t, pool, `SELECT CAST(TRIM(CAST(value AS VARCHAR), '"') AS BIGINT)
+		FROM core._schema_settings WHERE key = 'probe_counter'`)
+	assert.Equal(t, []string{"8"}, got, "literal update of the JSON value column")
+	exec(`DELETE FROM core._schema_settings WHERE key = 'probe_counter'`)
 }
 
 func queryStrings(t *testing.T, pool *db.Pool, query string) []string {
