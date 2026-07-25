@@ -31,8 +31,9 @@ func (e *Iceberg) Capabilities() *compiler.EngineCapabilities {
 	dbCaps := e.duckdb.Capabilities()
 	caps := *dbCaps // defensive copy
 	caps.General.SupportTimeTravel = true
-	// DuckDB Iceberg extension doesn't support targeted inserts (INSERT INTO tbl(col1,col2) VALUES ...)
-	caps.Insert.Insert = false
+	caps.Ingest = compiler.EngineIngestCapabilities{
+		Insert: true,
+	}
 	caps.Insert.Returning = false
 	caps.Insert.InsertReferences = false
 	return &caps

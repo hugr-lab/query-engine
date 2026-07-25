@@ -87,12 +87,20 @@ type EngineCapabilities struct {
 	Insert  EngineInsertCapabilities
 	Update  EngineUpdateCapabilities
 	Delete  EngineDeleteCapabilities
+	Ingest  EngineIngestCapabilities
 }
 
 type EngineInsertCapabilities struct {
 	Insert           bool
 	Returning        bool
 	InsertReferences bool
+}
+
+type EngineIngestCapabilities struct {
+	// Insert enables append-only INSERT ... SELECT ingest.
+	Insert bool
+	// Merge enables MERGE INTO ingest and requires Insert support.
+	Merge bool
 }
 
 type EngineUpdateCapabilities struct {

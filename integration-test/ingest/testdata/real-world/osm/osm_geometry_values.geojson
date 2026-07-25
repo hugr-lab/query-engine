@@ -1,0 +1,1629 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "source": "OpenStreetMap data via Overpass API",
+    "source_repository": "https://www.openstreetmap.org/",
+    "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+    "license": "ODbL; see https://www.openstreetmap.org/copyright",
+    "note": "Small value-check fixture with three OSM-derived features per geometry kind.",
+    "fixture_path": "integration-test/ingest/testdata/real-world/osm/osm_geometry_values.geojson",
+    "derived_from_fixture": "integration-test/ingest/testdata/real-world/osm/osm_geometry.geojson",
+    "generated_for": "Hugr Arrow IPC ingest integration tests",
+    "generation_method": "Selected three features per geometry kind from the committed OSM bulk fixture for deterministic row-by-row geometry equality checks.",
+    "source_requests": [
+      "No additional network request; this file is derived from integration-test/ingest/testdata/real-world/osm/osm_geometry.geojson."
+    ],
+    "upstream_source_requests": [
+      "POST https://overpass-api.de/api/interpreter data=[out:json][timeout:80]; node(51.49,-0.16,51.53,-0.08)[amenity|shop|tourism|historic|highway|public_transport|railway|leisure|natural]; out body qt 9000;",
+      "POST https://overpass-api.de/api/interpreter data=[out:json][timeout:80]; way(51.49,-0.16,51.53,-0.08)[highway|railway|waterway|barrier]; out geom qt 4000;",
+      "POST https://overpass-api.de/api/interpreter data=[out:json][timeout:80]; way(51.49,-0.16,51.53,-0.08)[building|amenity|landuse|leisure|natural|tourism|historic]; out geom qt 2500;"
+    ],
+    "selection_notes": [
+      "Point rows use real OSM node features.",
+      "LineString rows use real OSM way features with open line geometry.",
+      "Polygon rows use real OSM closed way features.",
+      "MultiPoint rows are derived by grouping real OSM node features.",
+      "MultiLineString rows are derived by grouping real OSM LineString way features.",
+      "MultiPolygon rows are derived by wrapping real OSM polygon way features as MultiPolygon geometry."
+    ]
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "point",
+        "name": "Trilogy",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "node",
+        "osm_id": 443404498,
+        "source_index": 0,
+        "shop": "clothes"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.1588833,
+          51.4915528
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "point",
+        "name": "Dubarry of Ireland",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "node",
+        "osm_id": 443404505,
+        "source_index": 1,
+        "shop": "clothes"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.1586821,
+          51.4916388
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "point",
+        "name": "Free People",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "node",
+        "osm_id": 443404521,
+        "source_index": 2,
+        "shop": "clothes"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -0.1584107,
+          51.4917708
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "line",
+        "name": "Bakerloo Line extension (planned, safeguarded route)",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 1467314264,
+        "source_index": 0,
+        "railway": "proposed"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -0.1105737,
+            51.4983289
+          ],
+          [
+            -0.1102712,
+            51.4982995
+          ],
+          [
+            -0.1098249,
+            51.4982461
+          ],
+          [
+            -0.1095244,
+            51.4982047
+          ],
+          [
+            -0.1092712,
+            51.4981593
+          ],
+          [
+            -0.1090502,
+            51.4980965
+          ],
+          [
+            -0.1086439,
+            51.497962
+          ],
+          [
+            -0.1082963,
+            51.497831
+          ],
+          [
+            -0.1079316,
+            51.4976707
+          ],
+          [
+            -0.1077299,
+            51.4975612
+          ],
+          [
+            -0.1071773,
+            51.4972307
+          ],
+          [
+            -0.1067141,
+            51.4969586
+          ],
+          [
+            -0.1061441,
+            51.4966382
+          ],
+          [
+            -0.1055314,
+            51.4963963
+          ],
+          [
+            -0.1046198,
+            51.4961079
+          ],
+          [
+            -0.1034915,
+            51.495745
+          ],
+          [
+            -0.1029129,
+            51.4955662
+          ],
+          [
+            -0.1023583,
+            51.4954426
+          ],
+          [
+            -0.1016883,
+            51.4953106
+          ],
+          [
+            -0.0994089,
+            51.4949984
+          ],
+          [
+            -0.098686,
+            51.4948993
+          ],
+          [
+            -0.0975249,
+            51.494689
+          ],
+          [
+            -0.0952066,
+            51.4942554
+          ],
+          [
+            -0.0916465,
+            51.4935621
+          ],
+          [
+            -0.0886934,
+            51.4930761
+          ],
+          [
+            -0.0857012,
+            51.4926387
+          ],
+          [
+            -0.0838349,
+            51.492223
+          ],
+          [
+            -0.0821313,
+            51.4916648
+          ],
+          [
+            -0.0803081,
+            51.4909855
+          ],
+          [
+            -0.079277,
+            51.4904831
+          ],
+          [
+            -0.0773492,
+            51.4894223
+          ],
+          [
+            -0.0767933,
+            51.4891111
+          ],
+          [
+            -0.075662,
+            51.4884777
+          ],
+          [
+            -0.0735638,
+            51.4873624
+          ],
+          [
+            -0.0719569,
+            51.4864501
+          ],
+          [
+            -0.0708898,
+            51.4858375
+          ],
+          [
+            -0.069269,
+            51.4850048
+          ],
+          [
+            -0.0675966,
+            51.4841924
+          ],
+          [
+            -0.0658304,
+            51.4834055
+          ],
+          [
+            -0.0636799,
+            51.4823306
+          ],
+          [
+            -0.061916,
+            51.4814163
+          ],
+          [
+            -0.0606342,
+            51.4808002
+          ],
+          [
+            -0.0598169,
+            51.480424
+          ],
+          [
+            -0.0592306,
+            51.4802108
+          ],
+          [
+            -0.0575113,
+            51.4795854
+          ],
+          [
+            -0.0537027,
+            51.478124
+          ],
+          [
+            -0.0506986,
+            51.4769373
+          ],
+          [
+            -0.0497201,
+            51.4766272
+          ],
+          [
+            -0.0491581,
+            51.4764987
+          ],
+          [
+            -0.04857,
+            51.4764027
+          ],
+          [
+            -0.047334,
+            51.4762209
+          ],
+          [
+            -0.045822,
+            51.4760248
+          ],
+          [
+            -0.0443611,
+            51.4758176
+          ],
+          [
+            -0.0434145,
+            51.4756283
+          ],
+          [
+            -0.0414388,
+            51.4751681
+          ],
+          [
+            -0.037927,
+            51.4743498
+          ],
+          [
+            -0.0313524,
+            51.4725535
+          ],
+          [
+            -0.028623,
+            51.4717516
+          ],
+          [
+            -0.0246404,
+            51.4707037
+          ],
+          [
+            -0.0225118,
+            51.4702011
+          ],
+          [
+            -0.021524,
+            51.4699218
+          ],
+          [
+            -0.0206064,
+            51.4696343
+          ],
+          [
+            -0.0200186,
+            51.4694118
+          ],
+          [
+            -0.0192043,
+            51.4690499
+          ],
+          [
+            -0.0184146,
+            51.4686036
+          ],
+          [
+            -0.0175203,
+            51.4680298
+          ],
+          [
+            -0.0166465,
+            51.467328
+          ],
+          [
+            -0.0145165,
+            51.4653965
+          ],
+          [
+            -0.0144479,
+            51.4653343
+          ],
+          [
+            -0.0138365,
+            51.4647095
+          ],
+          [
+            -0.0136708,
+            51.4644742
+          ],
+          [
+            -0.0135576,
+            51.4641694
+          ],
+          [
+            -0.0135057,
+            51.4638285
+          ],
+          [
+            -0.0134932,
+            51.4634261
+          ],
+          [
+            -0.0135704,
+            51.4630732
+          ],
+          [
+            -0.0137164,
+            51.4627523
+          ],
+          [
+            -0.0145639,
+            51.4610334
+          ],
+          [
+            -0.0147996,
+            51.4606308
+          ],
+          [
+            -0.0150333,
+            51.4603335
+          ],
+          [
+            -0.016462,
+            51.4587804
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "line",
+        "name": "Tyburn",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 170048648,
+        "source_index": 1,
+        "waterway": "stream"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -0.1591182,
+            51.5266292
+          ],
+          [
+            -0.1583134,
+            51.5255579
+          ],
+          [
+            -0.1578567,
+            51.5251666
+          ],
+          [
+            -0.1585994,
+            51.5244078
+          ],
+          [
+            -0.1585079,
+            51.5241163
+          ],
+          [
+            -0.1577708,
+            51.5224384
+          ],
+          [
+            -0.1574382,
+            51.5217343
+          ],
+          [
+            -0.1547397,
+            51.5198741
+          ],
+          [
+            -0.1545271,
+            51.5197028
+          ],
+          [
+            -0.1536886,
+            51.5187689
+          ],
+          [
+            -0.1529642,
+            51.518391
+          ],
+          [
+            -0.1516515,
+            51.5182532
+          ],
+          [
+            -0.1514787,
+            51.5181639
+          ],
+          [
+            -0.151134,
+            51.5180832
+          ],
+          [
+            -0.1509,
+            51.5180462
+          ],
+          [
+            -0.1508417,
+            51.5179848
+          ],
+          [
+            -0.1507384,
+            51.5177555
+          ],
+          [
+            -0.150761,
+            51.5176878
+          ],
+          [
+            -0.1508227,
+            51.5172846
+          ],
+          [
+            -0.1507172,
+            51.5169385
+          ],
+          [
+            -0.1506324,
+            51.5167391
+          ],
+          [
+            -0.1505493,
+            51.5164759
+          ],
+          [
+            -0.1505761,
+            51.5163257
+          ],
+          [
+            -0.1505869,
+            51.5162439
+          ],
+          [
+            -0.1505305,
+            51.5160603
+          ],
+          [
+            -0.1501098,
+            51.5151641
+          ],
+          [
+            -0.1499653,
+            51.5148757
+          ],
+          [
+            -0.1496619,
+            51.5143781
+          ],
+          [
+            -0.1494829,
+            51.514209
+          ],
+          [
+            -0.1487126,
+            51.5137816
+          ],
+          [
+            -0.1468578,
+            51.513002
+          ],
+          [
+            -0.1464559,
+            51.5128432
+          ],
+          [
+            -0.145366,
+            51.5123538
+          ],
+          [
+            -0.1451099,
+            51.5122522
+          ],
+          [
+            -0.1448705,
+            51.5116498
+          ],
+          [
+            -0.1442744,
+            51.5113556
+          ],
+          [
+            -0.1438685,
+            51.5109762
+          ],
+          [
+            -0.1438421,
+            51.5105206
+          ],
+          [
+            -0.1439438,
+            51.5095414
+          ],
+          [
+            -0.1440371,
+            51.5092365
+          ],
+          [
+            -0.1440524,
+            51.5090989
+          ],
+          [
+            -0.1439519,
+            51.5089966
+          ],
+          [
+            -0.1446247,
+            51.5083285
+          ],
+          [
+            -0.1453543,
+            51.5074737
+          ],
+          [
+            -0.1464272,
+            51.5068326
+          ],
+          [
+            -0.1458478,
+            51.5060447
+          ],
+          [
+            -0.145998,
+            51.5047892
+          ],
+          [
+            -0.1451397,
+            51.5041214
+          ],
+          [
+            -0.1439381,
+            51.503507
+          ],
+          [
+            -0.1427686,
+            51.5015234
+          ],
+          [
+            -0.1416957,
+            51.500161
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "line",
+        "name": "River Westbourne",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 188284801,
+        "source_index": 2,
+        "waterway": "drain"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -0.1772666,
+            51.5118343
+          ],
+          [
+            -0.176993,
+            51.5117675
+          ],
+          [
+            -0.1766824,
+            51.51143
+          ],
+          [
+            -0.1764727,
+            51.5113001
+          ],
+          [
+            -0.1761079,
+            51.5111498
+          ],
+          [
+            -0.1756358,
+            51.5110318
+          ],
+          [
+            -0.1722254,
+            51.5113724
+          ],
+          [
+            -0.1706791,
+            51.5115071
+          ],
+          [
+            -0.1688552,
+            51.5115905
+          ],
+          [
+            -0.1681256,
+            51.5116172
+          ],
+          [
+            -0.167101,
+            51.5117541
+          ],
+          [
+            -0.1657822,
+            51.5119426
+          ],
+          [
+            -0.1653182,
+            51.509952
+          ],
+          [
+            -0.1653023,
+            51.5098839
+          ],
+          [
+            -0.1651717,
+            51.5093885
+          ],
+          [
+            -0.1649177,
+            51.5079447
+          ],
+          [
+            -0.164955,
+            51.5071847
+          ],
+          [
+            -0.1630616,
+            51.5060141
+          ],
+          [
+            -0.1596965,
+            51.5053086
+          ],
+          [
+            -0.1594892,
+            51.505193
+          ],
+          [
+            -0.1594111,
+            51.5050752
+          ],
+          [
+            -0.1594294,
+            51.5049094
+          ],
+          [
+            -0.1598,
+            51.5043214
+          ],
+          [
+            -0.1596176,
+            51.5042952
+          ],
+          [
+            -0.1590973,
+            51.5040314
+          ],
+          [
+            -0.1587628,
+            51.5037307
+          ],
+          [
+            -0.158577,
+            51.50326
+          ],
+          [
+            -0.1584428,
+            51.502502
+          ],
+          [
+            -0.15841,
+            51.5022911
+          ],
+          [
+            -0.1583913,
+            51.502124
+          ],
+          [
+            -0.1583176,
+            51.5020716
+          ],
+          [
+            -0.1581822,
+            51.5019804
+          ],
+          [
+            -0.1575786,
+            51.5015435
+          ],
+          [
+            -0.1575092,
+            51.5014595
+          ],
+          [
+            -0.157481,
+            51.5013867
+          ],
+          [
+            -0.1573992,
+            51.5006515
+          ],
+          [
+            -0.157376,
+            51.5000925
+          ],
+          [
+            -0.1573716,
+            51.4999815
+          ],
+          [
+            -0.1573657,
+            51.499816
+          ],
+          [
+            -0.157209,
+            51.4989356
+          ],
+          [
+            -0.1572417,
+            51.4985059
+          ],
+          [
+            -0.1568355,
+            51.4976845
+          ],
+          [
+            -0.1568282,
+            51.4976665
+          ],
+          [
+            -0.1567101,
+            51.4973927
+          ],
+          [
+            -0.1564526,
+            51.4969519
+          ],
+          [
+            -0.1562869,
+            51.4965174
+          ],
+          [
+            -0.1562306,
+            51.4962001
+          ],
+          [
+            -0.1561737,
+            51.4954089
+          ],
+          [
+            -0.1561313,
+            51.4949777
+          ],
+          [
+            -0.1561115,
+            51.4948507
+          ],
+          [
+            -0.1560991,
+            51.4947707
+          ],
+          [
+            -0.1562166,
+            51.4944871
+          ],
+          [
+            -0.156244,
+            51.494086
+          ],
+          [
+            -0.1562762,
+            51.4937019
+          ],
+          [
+            -0.1562703,
+            51.4931946
+          ],
+          [
+            -0.1561681,
+            51.4927546
+          ],
+          [
+            -0.1560533,
+            51.4924444
+          ],
+          [
+            -0.1560446,
+            51.4924259
+          ],
+          [
+            -0.1559916,
+            51.4923132
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "polygon",
+        "name": "osm-way-5317913",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 5317913,
+        "source_index": 0,
+        "building": "yes"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -0.1590568,
+              51.4916287
+            ],
+            [
+              -0.1589878,
+              51.4916612
+            ],
+            [
+              -0.1587641,
+              51.4917663
+            ],
+            [
+              -0.1587044,
+              51.4917921
+            ],
+            [
+              -0.1586537,
+              51.4918147
+            ],
+            [
+              -0.158389,
+              51.4919358
+            ],
+            [
+              -0.1583678,
+              51.4919183
+            ],
+            [
+              -0.1583364,
+              51.4919287
+            ],
+            [
+              -0.1582626,
+              51.491864
+            ],
+            [
+              -0.1582331,
+              51.4918366
+            ],
+            [
+              -0.1582517,
+              51.4918277
+            ],
+            [
+              -0.158239,
+              51.4918175
+            ],
+            [
+              -0.1585028,
+              51.4916902
+            ],
+            [
+              -0.1586061,
+              51.4916408
+            ],
+            [
+              -0.1588963,
+              51.4915014
+            ],
+            [
+              -0.1589103,
+              51.4915127
+            ],
+            [
+              -0.1589217,
+              51.4915072
+            ],
+            [
+              -0.159032,
+              51.4915932
+            ],
+            [
+              -0.1590217,
+              51.4915982
+            ],
+            [
+              -0.1590568,
+              51.4916287
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "polygon",
+        "name": "osm-way-5317929",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 5317929,
+        "source_index": 1,
+        "building": "retail"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -0.158752,
+              51.4914989
+            ],
+            [
+              -0.1585737,
+              51.4915828
+            ],
+            [
+              -0.1584659,
+              51.4916334
+            ],
+            [
+              -0.1583584,
+              51.491684
+            ],
+            [
+              -0.1583264,
+              51.4916591
+            ],
+            [
+              -0.1582901,
+              51.4916762
+            ],
+            [
+              -0.158229,
+              51.4916258
+            ],
+            [
+              -0.1582635,
+              51.4916096
+            ],
+            [
+              -0.1582387,
+              51.4915904
+            ],
+            [
+              -0.158352,
+              51.4915365
+            ],
+            [
+              -0.1584609,
+              51.4914847
+            ],
+            [
+              -0.1586362,
+              51.4914013
+            ],
+            [
+              -0.1586626,
+              51.4914219
+            ],
+            [
+              -0.1586917,
+              51.4914082
+            ],
+            [
+              -0.1587529,
+              51.4914586
+            ],
+            [
+              -0.1587227,
+              51.4914728
+            ],
+            [
+              -0.158752,
+              51.4914989
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "polygon",
+        "name": "Saatchi Gallery",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 5317958,
+        "source_index": 2,
+        "tourism": "gallery",
+        "building": "yes"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -0.1592021,
+              51.4908252
+            ],
+            [
+              -0.1590946,
+              51.4908791
+            ],
+            [
+              -0.15895,
+              51.4909492
+            ],
+            [
+              -0.158918,
+              51.4909228
+            ],
+            [
+              -0.1587769,
+              51.4908121
+            ],
+            [
+              -0.1587889,
+              51.4908062
+            ],
+            [
+              -0.1586938,
+              51.4907301
+            ],
+            [
+              -0.1586535,
+              51.4907498
+            ],
+            [
+              -0.1586663,
+              51.49076
+            ],
+            [
+              -0.1586764,
+              51.4907551
+            ],
+            [
+              -0.1587199,
+              51.4907897
+            ],
+            [
+              -0.1584897,
+              51.4909017
+            ],
+            [
+              -0.1583247,
+              51.4907702
+            ],
+            [
+              -0.1585527,
+              51.4906593
+            ],
+            [
+              -0.1586022,
+              51.4906988
+            ],
+            [
+              -0.1585961,
+              51.4907018
+            ],
+            [
+              -0.1586077,
+              51.4907111
+            ],
+            [
+              -0.1586381,
+              51.4906963
+            ],
+            [
+              -0.1584064,
+              51.4905118
+            ],
+            [
+              -0.1583687,
+              51.4904818
+            ],
+            [
+              -0.1585308,
+              51.4904036
+            ],
+            [
+              -0.1586265,
+              51.4903563
+            ],
+            [
+              -0.1588324,
+              51.4905299
+            ],
+            [
+              -0.1588615,
+              51.490515
+            ],
+            [
+              -0.1588955,
+              51.4905018
+            ],
+            [
+              -0.1590631,
+              51.4906238
+            ],
+            [
+              -0.1590292,
+              51.4906385
+            ],
+            [
+              -0.1589925,
+              51.4906581
+            ],
+            [
+              -0.1592021,
+              51.4908252
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "multipoint",
+        "name": "osm-node-3079331757",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "node",
+        "osm_id": 3079331757,
+        "source_index": 0,
+        "natural": "tree",
+        "derived_from": "groups of four real OSM node features"
+      },
+      "geometry": {
+        "type": "MultiPoint",
+        "coordinates": [
+          [
+            -0.1277923,
+            51.5010914
+          ],
+          [
+            -0.1308747,
+            51.5011284
+          ],
+          [
+            -0.1306878,
+            51.501172
+          ],
+          [
+            -0.1280133,
+            51.5012374
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "multipoint",
+        "name": "osm-node-3079331799",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "node",
+        "osm_id": 3079331799,
+        "source_index": 1,
+        "natural": "tree",
+        "derived_from": "groups of four real OSM node features"
+      },
+      "geometry": {
+        "type": "MultiPoint",
+        "coordinates": [
+          [
+            -0.1309754,
+            51.5013023
+          ],
+          [
+            -0.1305711,
+            51.5013901
+          ],
+          [
+            -0.1303725,
+            51.501441
+          ],
+          [
+            -0.1259686,
+            51.496756
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "multipoint",
+        "name": "Good News Bear",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "node",
+        "osm_id": 3182664011,
+        "source_index": 2,
+        "tourism": "artwork",
+        "derived_from": "groups of four real OSM node features"
+      },
+      "geometry": {
+        "type": "MultiPoint",
+        "coordinates": [
+          [
+            -0.1276931,
+            51.5012102
+          ],
+          [
+            -0.1272671,
+            51.5011792
+          ],
+          [
+            -0.1290681,
+            51.4950317
+          ],
+          [
+            -0.1276505,
+            51.4949718
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "multiline",
+        "name": "osm-way-530430069",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 530430069,
+        "source_index": 0,
+        "derived_from": "groups of two real OSM way LineString features"
+      },
+      "geometry": {
+        "type": "MultiLineString",
+        "coordinates": [
+          [
+            [
+              -0.1541947,
+              51.4996387
+            ],
+            [
+              -0.1540657,
+              51.4995631
+            ]
+          ],
+          [
+            [
+              -0.1542553,
+              51.498742
+            ],
+            [
+              -0.1541223,
+              51.4988129
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "multiline",
+        "name": "osm-way-530430079",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 530430079,
+        "source_index": 1,
+        "derived_from": "groups of two real OSM way LineString features"
+      },
+      "geometry": {
+        "type": "MultiLineString",
+        "coordinates": [
+          [
+            [
+              -0.1536543,
+              51.4994711
+            ],
+            [
+              -0.1536305,
+              51.4994392
+            ]
+          ],
+          [
+            [
+              -0.1536432,
+              51.4996031
+            ],
+            [
+              -0.1536226,
+              51.4996394
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "multiline",
+        "name": "osm-way-530430081",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 530430081,
+        "source_index": 2,
+        "derived_from": "groups of two real OSM way LineString features"
+      },
+      "geometry": {
+        "type": "MultiLineString",
+        "coordinates": [
+          [
+            [
+              -0.1541947,
+              51.4996387
+            ],
+            [
+              -0.1542334,
+              51.4996594
+            ],
+            [
+              -0.1543544,
+              51.4997243
+            ]
+          ],
+          [
+            [
+              -0.1527499,
+              51.4996494
+            ],
+            [
+              -0.1527225,
+              51.4996669
+            ],
+            [
+              -0.1526017,
+              51.4997439
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "multipolygon",
+        "name": "osm-way-530132882",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 530132882,
+        "source_index": 0,
+        "building": "house",
+        "derived_from": "real OSM polygon way wrapped as MultiPolygon geometry"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -0.157233,
+                51.5013914
+              ],
+              [
+                -0.157165,
+                51.501401
+              ],
+              [
+                -0.1571496,
+                51.5013586
+              ],
+              [
+                -0.1571452,
+                51.5013465
+              ],
+              [
+                -0.1571344,
+                51.5013168
+              ],
+              [
+                -0.1572024,
+                51.5013072
+              ],
+              [
+                -0.157233,
+                51.5013914
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "multipolygon",
+        "name": "osm-way-530132883",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 530132883,
+        "source_index": 1,
+        "building": "house",
+        "derived_from": "real OSM polygon way wrapped as MultiPolygon geometry"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -0.1572709,
+                51.5014615
+              ],
+              [
+                -0.157215,
+                51.5014704
+              ],
+              [
+                -0.1572014,
+                51.5014389
+              ],
+              [
+                -0.1572009,
+                51.501437
+              ],
+              [
+                -0.1572572,
+                51.5014278
+              ],
+              [
+                -0.1572628,
+                51.5014426
+              ],
+              [
+                -0.1572709,
+                51.5014615
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "geometry_kind": "multipolygon",
+        "name": "osm-way-530132888",
+        "source": "OpenStreetMap",
+        "source_repository": "https://www.openstreetmap.org/",
+        "source_area": "Central London bbox 51.49,-0.16,51.53,-0.08",
+        "osm_type": "way",
+        "osm_id": 530132888,
+        "source_index": 2,
+        "building": "house",
+        "derived_from": "real OSM polygon way wrapped as MultiPolygon geometry"
+      },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -0.1569426,
+                51.5012694
+              ],
+              [
+                -0.1569284,
+                51.5012335
+              ],
+              [
+                -0.1570781,
+                51.5012105
+              ],
+              [
+                -0.157084,
+                51.5012254
+              ],
+              [
+                -0.1570419,
+                51.5012319
+              ],
+              [
+                -0.1570502,
+                51.5012529
+              ],
+              [
+                -0.1569426,
+                51.5012694
+              ]
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

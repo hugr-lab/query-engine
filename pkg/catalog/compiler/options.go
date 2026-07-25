@@ -11,6 +11,9 @@ type EngineCapabilities = base.EngineCapabilities
 // EngineInsertCapabilities is an alias for base.EngineInsertCapabilities.
 type EngineInsertCapabilities = base.EngineInsertCapabilities
 
+// EngineIngestCapabilities is an alias for base.EngineIngestCapabilities.
+type EngineIngestCapabilities = base.EngineIngestCapabilities
+
 // EngineUpdateCapabilities is an alias for base.EngineUpdateCapabilities.
 type EngineUpdateCapabilities = base.EngineUpdateCapabilities
 

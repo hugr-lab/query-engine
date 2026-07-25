@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/duckdb/duckdb-go/v2"
 )
@@ -219,6 +221,54 @@ func (p *Pool) Arrow(ctx context.Context) (*Arrow, error) {
 		drv:     conn,
 		release: p.release,
 	}, nil
+}
+
+// ExecArrowIngest registers source.Reader as a globally named DuckDB view,
+// executes query, then drops the view before releasing the Arrow stream.
+func (p *Pool) ExecArrowIngest(ctx context.Context, source ArrowIngestSource, query string) (result sql.Result, err error) {
+	if source.Reader == nil {
+		return nil, fmt.Errorf("missing arrow reader")
+	}
+	if source.View() == "" {
+		return nil, fmt.Errorf("missing arrow view name")
+	}
+	ar, err := p.Arrow(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer ar.Close()
+
+	execer, ok := ar.drv.(driver.ExecerContext)
+	if !ok {
+		return nil, fmt.Errorf("duckdb driver connection does not implement ExecerContext")
+	}
+	if source.NeedsSpatial() {
+		if _, err := execer.ExecContext(ctx, "LOAD spatial", nil); err != nil {
+			return nil, fmt.Errorf("prepare spatial arrow view: %w", err)
+		}
+	}
+	release, err := source.RegisterView(ar)
+	if err != nil {
+		return nil, fmt.Errorf("register arrow view: %w", err)
+	}
+	defer func() {
+		// The view created by duckdb_arrow_scan is global to the DuckDB
+		// database instance. Cleanup must outlive a canceled request context
+		// and must happen before the Arrow stream is released.
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_, cleanupErr := execer.ExecContext(cleanupCtx, "DROP VIEW IF EXISTS "+quoteIdentifier(source.View()), nil)
+		release()
+		if cleanupErr != nil {
+			err = errors.Join(err, fmt.Errorf("drop arrow ingest view %q: %w", source.View(), cleanupErr))
+		}
+	}()
+
+	return execer.ExecContext(ctx, query, nil)
+}
+
+func quoteIdentifier(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
 func (p *Pool) RegisterScalarFunction(ctx context.Context, function ScalarFunction) error {
