@@ -161,10 +161,13 @@ func (r reindexRow) text() string {
 // entity_* views use) and projects the reindexRow columns, with the constant
 // parts as literals so a single scanner serves all of them.
 func reindexQueries(dataSource string) []string {
-	// annotationJoin correlates the curation by the kind's entity_key expression.
-	join := func(kind, keyExpr string) string {
+	// join correlates the curation by the kind's entity_key expression. Both
+	// sides are EXPRESSIONS: every kind but the functions passes a literal, the
+	// functions correlate on their own kind column (the kind is part of a
+	// function's annotation identity).
+	join := func(kindExpr, keyExpr string) string {
 		return ` LEFT JOIN core.catalog.annotations a
-			ON a.entity_kind = ` + lit(kind) + ` AND a.entity_key = ` + keyExpr
+			ON a.entity_kind = ` + kindExpr + ` AND a.entity_key = ` + keyExpr
 	}
 	// curated projects the two overlay text columns (absent row → empty).
 	const curated = `coalesce(a.description, ''), coalesce(a.long_description, '')`
@@ -189,7 +192,7 @@ func reindexQueries(dataSource string) []string {
 		`SELECT ` + lit(kindDataSource) + `, m.data_source, '', ` + curated + `, '',
 			'catalog', m.data_source, '', '', ''
 		FROM core.catalog.data_source_meta m` +
-			join(kindDataSource, `m.data_source`) +
+			join(lit(kindDataSource), `m.data_source`) +
 			scoped("", "m.data_source"),
 
 		// Modules: shared across sources, so a scoped run takes the modules the
@@ -197,21 +200,21 @@ func reindexQueries(dataSource string) []string {
 		`SELECT ` + lit(kindModule) + `, m.name, coalesce(m.parent, ''), ` + curated + `, coalesce(m.description, ''),
 			'module', m.name, '', '', ''
 		FROM core.catalog.modules m` +
-			join(kindModule, `m.name`) +
+			join(lit(kindModule), `m.name`) +
 			moduleScope(dataSource),
 
 		// Data objects.
 		`SELECT ` + lit(kindDataObject) + `, o.name, '', ` + curated + `, coalesce(o.description, ''),
 			'', o.name, '', o.module, o.data_source
 		FROM core.catalog.data_objects o` +
-			join(kindDataObject, `o.name`) +
+			join(lit(kindDataObject), `o.name`) +
 			scoped("", "o.data_source"),
 
 		// Object fields (columns and declared virtual fields).
 		`SELECT ` + lit(kindField) + `, ` + fieldKeyExpr + `, f.type_name, ` + curated + `, coalesce(f.description, ''),
 			'', f.name, f.type_name, '', f.data_source
 		FROM core.catalog.fields f` +
-			join(kindField, fieldKeyExpr) +
+			join(lit(kindField), fieldKeyExpr) +
 			scoped("", "f.data_source"),
 
 		// Relation navigation fields, both legs (generated fields with no row in
@@ -220,28 +223,30 @@ func reindexQueries(dataSource string) []string {
 			coalesce(r.source_field_description, ''),
 			'', r.source_field, r.source, '', r.data_source
 		FROM core.catalog.relations r` +
-			join(kindField, srcFieldKeyExpr) +
+			join(lit(kindField), srcFieldKeyExpr) +
 			scoped(` WHERE r.source_field IS NOT NULL AND r.source_field <> ''`, "r.data_source"),
 
 		`SELECT ` + lit(kindField) + `, ` + dstFieldKeyExpr + `, r.destination, ` + curated + `,
 			coalesce(r.destination_field_description, ''),
 			'', r.destination_field, r.destination, '', r.data_source
 		FROM core.catalog.relations r` +
-			join(kindField, dstFieldKeyExpr) +
+			join(lit(kindField), dstFieldKeyExpr) +
 			scoped(` WHERE r.destination_field IS NOT NULL AND r.destination_field <> ''`, "r.data_source"),
 
-		// Functions (keyed module.name, parent = module).
-		`SELECT ` + lit(kindFunction) + `, ` + functionKeyExpr + `, fn.module, ` + curated + `, coalesce(fn.description, ''),
+		// Functions: keyed module.name UNDER THEIR KIND (parent = module), so the
+		// annotation kind is projected and joined from the column — the same name
+		// in two root namespaces re-embeds as two rows.
+		`SELECT fn.kind, ` + functionKeyExpr + `, fn.module, ` + curated + `, coalesce(fn.description, ''),
 			'', fn.name, '', fn.module, fn.data_source
 		FROM core.catalog.functions fn` +
-			join(kindFunction, functionKeyExpr) +
+			join(`fn.kind`, functionKeyExpr) +
 			scoped("", "fn.data_source"),
 
 		// Residual source types.
 		`SELECT ` + lit(kindType) + `, t.name, '', ` + curated + `, coalesce(t.description, ''),
 			'', t.name, '', t.module, t.data_source
 		FROM core.catalog.types t` +
-			join(kindType, `t.name`) +
+			join(lit(kindType), `t.name`) +
 			scoped("", "t.data_source"),
 	}
 

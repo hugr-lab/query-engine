@@ -39,8 +39,9 @@ func TestLogicalAnnotatorWrite(t *testing.T) {
 		store.ForName(ctx, "shop_items_filter").Fields.ForName("name").Description,
 		"cached filter evicted with the base — inherits the new curation")
 
-	// Function description keyed module.name, surfaced on the module function root.
-	require.NoError(t, store.SetFunctionDescription(ctx, "tools", "slugify", "Slugify a string", ""))
+	// Function description keyed module.name under its kind, surfaced on the
+	// module function root.
+	require.NoError(t, store.SetFunctionDescription(ctx, "tools", "slugify", "function", "Slugify a string", ""))
 	assert.Equal(t, "Slugify a string",
 		store.ForName(ctx, "_module_tools_function").Fields.ForName("slugify").Description)
 

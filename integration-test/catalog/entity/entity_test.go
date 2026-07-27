@@ -202,6 +202,32 @@ func TestEntityStorageCuration(t *testing.T) {
 		"core.entity_data_objects", &objects)
 	require.Len(t, objects, 1)
 	assert.Equal(t, "Registered data sources", objects[0].Desc, "curation overrides the stored description")
+
+	// A function is curated per ROOT NAMESPACE: load_data_source is a mutation
+	// function, so the curation must name that kind — the same name under the
+	// query-function kind is a different operation and leaves this row alone.
+	res, err = s.Query(ctx, `mutation { function { core { catalog {
+		mut: annotate_function(module: "core", name: "load_data_source", kind: "mutation",
+			description: "Load a registered data source", long_description: "") { success message }
+		fn: annotate_function(module: "core", name: "load_data_source", kind: "function",
+			description: "not this one", long_description: "") { success message }
+	} } } }`, nil)
+	require.NoError(t, err)
+	require.NoError(t, res.Err())
+	require.NoError(t, res.ScanData("function.core.catalog.mut", &out))
+	res.Close()
+	require.True(t, out.Success, out.Message)
+
+	var fns []struct {
+		Kind string `json:"kind"`
+		Desc string `json:"description"`
+	}
+	query(t, s, ctx, `query { core { entity_functions(filter: {name: {eq: "load_data_source"}}) { kind description } } }`,
+		"core.entity_functions", &fns)
+	require.Len(t, fns, 1)
+	assert.Equal(t, "mutation", fns[0].Kind)
+	assert.Equal(t, "Load a registered data source", fns[0].Desc,
+		"the mutation function reads its own kind's curation")
 }
 
 // TestCompiledStorageKeepsLegacyViews is the other half of the mode switch:

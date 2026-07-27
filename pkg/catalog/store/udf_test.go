@@ -65,7 +65,12 @@ func TestUDFCurationSurfaces(t *testing.T) {
 		{`_schema_update_data_object_desc('orders', 'object', 'object long')`, kindDataObject, "orders"},
 		{`_schema_update_data_object_field_desc('orders', 'amount', 'object field', '')`, kindField, "orders.amount"},
 		{`_schema_update_source_type_desc('sales_by_country_args', 'source type', '')`, kindType, "sales_by_country_args"},
-		{`_schema_update_function_desc('sales', 'order_status', 'function', '')`, kindFunction, "sales.order_status"},
+		{`_schema_update_function_desc('sales', 'order_status', 'function', 'the query fn', '')`,
+			kindFunction, "sales.order_status"},
+		// The kind selects the root namespace: the same name curated as a mutation
+		// function is an independent row.
+		{`_schema_update_function_desc('sales', 'order_status', 'mutation', 'the mutation fn', '')`,
+			kindMutationFunction, "sales.order_status"},
 	}
 	for _, c := range calls {
 		assert.Contains(t, udfCall(t, pool, c.expr), "'success': true", c.expr)
@@ -79,6 +84,15 @@ func TestUDFCurationSurfaces(t *testing.T) {
 	assert.Equal(t, []string{"data_object|object|object long", "gql_type|gql type|gql type long"},
 		rows(t, pool, `SELECT entity_kind, description, coalesce(long_description, '-')
 			FROM core.catalog.annotations WHERE entity_key = 'orders' ORDER BY entity_kind`))
+
+	// The two function kinds hold their own text side by side.
+	assert.Equal(t, []string{"function|the query fn", "mutation|the mutation fn"},
+		rows(t, pool, `SELECT entity_kind, description FROM core.catalog.annotations
+			WHERE entity_key = 'sales.order_status' ORDER BY entity_kind`))
+
+	// An unknown kind is refused through the result, not by failing the statement.
+	assert.Contains(t, udfCall(t, pool, `_schema_update_function_desc('sales', 'order_status', 'query', 'x', '')`),
+		"unknown function kind")
 
 	// An empty description clears the curation (NULL, generated text shows again).
 	assert.Contains(t, udfCall(t, pool, `_schema_update_data_object_desc('orders', '', '')`), "'success': true")

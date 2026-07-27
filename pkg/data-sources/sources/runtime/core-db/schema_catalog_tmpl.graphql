@@ -787,13 +787,14 @@ type entity_functions
       JOIN [catalog.data_source_meta] m
         ON m.data_source = f.data_source AND m.loaded AND NOT m.disabled AND NOT m.suspended
       LEFT JOIN [catalog.annotations] a
-        ON a.entity_kind = 'function'
+        ON a.entity_kind = f.kind
         AND a.entity_key = CASE WHEN f.module = '' THEN f.name ELSE f.module || '.' || f.name END
   """)
   {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   module: String! @pk
   name: String! @pk
-  kind: String!
+  "Root namespace — function / mutation / subscription; part of the identity"
+  kind: String! @pk
   data_source: String!
   returns: String!
   is_table: Boolean!

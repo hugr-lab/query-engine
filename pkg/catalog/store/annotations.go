@@ -23,9 +23,8 @@ import (
 //	  type          entity_key = residual source type name          → def.Description
 //	  field         entity_key = "owner.field" (incl. relation nav) → field.Description
 //	  function      entity_key = "module.name" (or "name"); parent=module → root field.Description
-//	                (kind-LESS on purpose: a name declared as both a function
-//	                and a mutation function is one operation exposed twice, and
-//	                shares its curation across the root namespaces)
+//	                entity_kind is the function's KIND (see below), so a name
+//	                declared in two root namespaces curates independently
 //	  data_source   entity_key = data source name                   (no ForName surface)
 //
 //	GRAPHQL (the generated surface with no logical entity to key on):
@@ -44,14 +43,42 @@ const (
 	kindDataObject = "data_object"
 	kindType       = "type"
 	kindField      = "field"
-	kindFunction   = "function"
 	kindDataSource = "data_source"
+
+	// A function's KIND IS its annotation kind. Query functions, mutation
+	// functions and subscriptions are three independent root namespaces, and one
+	// name may be declared in several of them (core.models exposes `completion`
+	// as both a function and a streaming subscription) — three operations with
+	// three descriptions. The kind therefore joins the identity here exactly as
+	// it does in the catalog.functions primary key, and it does so with the very
+	// value that table stores: the overlay join needs no mapping
+	// (a.entity_kind = f.kind) and a client curating a function passes back the
+	// kind it read from entity_functions / _catalog.
+	kindFunction         = "function"     // query function — also the pre-kind value
+	kindMutationFunction = "mutation"     // mutation function
+	kindSubscription     = "subscription" // subscription
 
 	// GraphQL kinds (a separate namespace for the generated surface).
 	kindGQLType     = "gql_type"
 	kindGQLField    = "gql_field"
 	kindGQLArgument = "gql_argument"
 )
+
+// functionAnnotationKind normalizes a function kind into its annotation kind
+// (the same value — see the kind constants). An empty kind means the
+// query-function default, which is also what the rows written before the kind
+// joined the identity carry. ok=false marks an unrecognized kind: the write
+// path rejects it rather than curating an unreachable key, the read paths fall
+// back to the default.
+func functionAnnotationKind(kind string) (string, bool) {
+	switch kind {
+	case kindFunction, kindMutationFunction, kindSubscription:
+		return kind, true
+	case "":
+		return kindFunction, true
+	}
+	return kindFunction, false
+}
 
 // fieldKey / functionKey / argKey build the entity_key for each kind — the
 // write side of the convention the overlay reads back.
@@ -138,9 +165,11 @@ func (s *Store) applyGraphQLAnnotations(def *ast.Definition, rows []annotationRo
 
 // applyFunctionAnnotations overlays the logical function descriptions onto a
 // function-exposing module root (Function / MutationFunction / Subscription and
-// their _module_* variants). Functions are keyed by module.name, so the fields
-// are matched by resolving the root's module and the direct functions of the
-// root's kind, then reading the annotations for their exact keys.
+// their _module_* variants). Functions are keyed by module.name under their own
+// kind, so the fields are matched by resolving the root's module and kind, then
+// reading that kind's annotations for the direct functions' exact keys — a
+// curation written for the mutation function never reaches the same-named query
+// function.
 func (s *Store) applyFunctionAnnotations(ctx context.Context, g *genContext, def *ast.Definition) error {
 	module, fnKind, ok := rootDirectFunctionKind(def)
 	if !ok {
@@ -163,7 +192,7 @@ func (s *Store) applyFunctionAnnotations(ctx context.Context, g *genContext, def
 	if len(keys) == 0 {
 		return nil
 	}
-	descByKey, err := g.readFunctionAnnotations(ctx, keys)
+	descByKey, err := g.readFunctionAnnotations(ctx, fnKind, keys)
 	if err != nil {
 		return err
 	}
@@ -252,9 +281,9 @@ func (g *genContext) readAnnotationsByName(ctx context.Context, typeName string)
 	return out, nil
 }
 
-// readFunctionAnnotations loads the curated function descriptions for the given
-// exact entity keys (kind=function), returning key → description.
-func (g *genContext) readFunctionAnnotations(ctx context.Context, keys []string) (map[string]string, error) {
+// readFunctionAnnotations loads the curated descriptions of one function kind
+// for the given exact entity keys, returning key → description.
+func (g *genContext) readFunctionAnnotations(ctx context.Context, fnKind string, keys []string) (map[string]string, error) {
 	conn, err := g.s.pool.Conn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("read function annotations: %w", err)
@@ -266,7 +295,7 @@ func (g *genContext) readFunctionAnnotations(ctx context.Context, keys []string)
 	}
 	rows, err := conn.Query(ctx, `SELECT entity_key, description
 		FROM core.catalog.annotations
-		WHERE entity_kind = `+lit(kindFunction)+` AND description IS NOT NULL
+		WHERE entity_kind = `+lit(fnKind)+` AND description IS NOT NULL
 		  AND entity_key IN (`+strings.Join(quoted, ", ")+`)`)
 	if err != nil {
 		return nil, fmt.Errorf("read function annotations: %w", err)

@@ -329,6 +329,23 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 	assert.Equal(t, []string{"field|probe_rich.linked|probe_rich||"}, got,
 		"computed join key and literal columns read on both backends")
 
+	// E7: the FUNCTION overlay join — the annotation kind is a COLUMN here, not
+	// a literal: a function's kind is part of its annotation identity, so the
+	// curation correlates on functions.kind (the entity_functions view and the
+	// reindex enumeration share this shape). The uncurated kind falls through.
+	exec(`INSERT INTO core.catalog.annotations (entity_kind, entity_key, description) VALUES
+		('function', 'probe.fn', 'the query fn'),
+		('mutation', 'probe.fn', 'the mutation fn')`)
+	got = queryStrings(t, pool, `SELECT f.kind, coalesce(a.description, '-')
+		FROM core.catalog.functions f
+		LEFT JOIN core.catalog.annotations a
+			ON a.entity_kind = f.kind
+			AND a.entity_key = CASE WHEN f.module = '' THEN f.name ELSE f.module || '.' || f.name END
+		WHERE f.data_source = 'probe' ORDER BY f.kind`)
+	assert.Equal(t, []string{"function|the query fn", "mutation|the mutation fn", "subscription|-"}, got,
+		"one key, three kinds — each namespace reads its own curation")
+	exec(`DELETE FROM core.catalog.annotations WHERE entity_key = 'probe.fn'`)
+
 	// ---- F. DELETE --------------------------------------------------------
 
 	// F1: row-value IN delete (composite-PK batch delete shape).
@@ -350,6 +367,19 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 	exec(`DELETE FROM core.catalog.fields WHERE COALESCE(dependency_data_source, data_source) = 'probe_ext'`)
 	got = queryStrings(t, pool, `SELECT count(*) FROM core.catalog.fields WHERE name = 'ext_join'`)
 	assert.Equal(t, []string{"0"}, got, "the DECLARING source removes it")
+
+	// F4: the per-kind function seed sweep — one statement per kind, with the
+	// entity subquery narrowed to the same kind, so unregistering a source drops
+	// each namespace's seeds independently.
+	exec(`INSERT INTO core.catalog.annotations (entity_kind, entity_key) VALUES
+		('mutation', 'probe.fn'), ('subscription', 'probe.fn')`)
+	exec(`DELETE FROM core.catalog.annotations WHERE entity_kind = 'mutation'
+		AND entity_key IN (SELECT CASE WHEN module = '' THEN name ELSE module || '.' || name END
+			FROM core.catalog.functions WHERE data_source = 'probe' AND kind = 'mutation')
+		AND description IS NULL AND long_description IS NULL`)
+	got = queryStrings(t, pool, `SELECT entity_kind FROM core.catalog.annotations WHERE entity_key = 'probe.fn'`)
+	assert.Equal(t, []string{"subscription"}, got, "only the swept kind's seed went")
+	exec(`DELETE FROM core.catalog.annotations WHERE entity_key = 'probe.fn'`)
 
 	// F2: predicate sweep (seed rows go, curated rows stay).
 	exec(`DELETE FROM core.catalog.annotations WHERE entity_key LIKE 'probe%'

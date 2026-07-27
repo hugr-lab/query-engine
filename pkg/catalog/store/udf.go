@@ -76,8 +76,8 @@ func (s *Store) RegisterUDFs(ctx context.Context, checker CatalogChecker) error 
 		{"_schema_update_source_type_desc", 3, "source type description updated", func(ctx context.Context, a []string) error {
 			return s.SetSourceTypeDescription(ctx, a[0], a[1], a[2])
 		}},
-		{"_schema_update_function_desc", 4, "function description updated", func(ctx context.Context, a []string) error {
-			return s.SetFunctionDescription(ctx, a[0], a[1], a[2], a[3])
+		{"_schema_update_function_desc", 5, "function description updated", func(ctx context.Context, a []string) error {
+			return s.SetFunctionDescription(ctx, a[0], a[1], a[2], a[3], a[4])
 		}},
 	}
 	for _, c := range curations {

@@ -53,13 +53,18 @@ func (s *Store) SetObjectFieldDescription(ctx context.Context, owner, field, des
 	return s.curate(ctx, kindField, fieldKey(owner, field), owner, desc, longDesc, func() { s.evictTypeFamily(owner) })
 }
 
-// SetFunctionDescription curates a function (keyed module.name, parent=module);
-// evicts every module root that could expose it as a direct field.
-func (s *Store) SetFunctionDescription(ctx context.Context, module, name, desc, longDesc string) error {
-	return s.curate(ctx, kindFunction, functionKey(module, name), module, desc, longDesc, func() {
-		for _, root := range functionRootTypes(module) {
-			s.evictType(root)
-		}
+// SetFunctionDescription curates ONE function kind (keyed module.name under the
+// kind, parent=module) and evicts the single module root that exposes it — the
+// same name in another root namespace is a different operation and keeps its
+// own description. An empty kind curates the query function.
+func (s *Store) SetFunctionDescription(ctx context.Context, module, name, kind, desc, longDesc string) error {
+	fnKind, ok := functionAnnotationKind(kind)
+	if !ok {
+		return fmt.Errorf("catalog store: unknown function kind %q (expected %s, %s or %s)",
+			kind, kindFunction, kindMutationFunction, kindSubscription)
+	}
+	return s.curate(ctx, fnKind, functionKey(module, name), module, desc, longDesc, func() {
+		s.evictType(sdl.ModuleTypeName(module, functionKindType(fnKind)))
 	})
 }
 
@@ -87,17 +92,6 @@ func (s *Store) SetFieldDescription(ctx context.Context, typeName, fieldName, de
 func (s *Store) SetArgumentDescription(ctx context.Context, typeName, fieldName, argName, desc, longDesc string) error {
 	return s.curate(ctx, kindGQLArgument, argumentKey(typeName, fieldName, argName),
 		fieldKey(typeName, fieldName), desc, longDesc, func() { s.evictType(typeName) })
-}
-
-// functionRootTypes are the module roots that may carry a function as a direct
-// field — the eviction targets for a function-description write (the function's
-// kind is not known at the call site, so all three candidates are evicted).
-func functionRootTypes(module string) []string {
-	return []string{
-		sdl.ModuleTypeName(module, base.ModuleFunction),
-		sdl.ModuleTypeName(module, base.ModuleMutationFunction),
-		sdl.ModuleTypeName(module, base.ModuleSubscription),
-	}
 }
 
 // curate upserts one annotation row and runs the caller's cache eviction (nil

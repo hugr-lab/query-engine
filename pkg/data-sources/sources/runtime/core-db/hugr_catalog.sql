@@ -229,8 +229,12 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.types 
 -- Curation overlay: NEVER touched by load/unload/reload (orphans legal).
 -- Identity is (entity_kind, entity_key) alone — names are unique in the
 -- logical model; source/module attribution lives in the entity tables and is
--- joined on demand, never denormalized here (D15). Rows with NULL texts and a
--- vector are load-time SEEDS (D24) — swept only with an unregistered source.
+-- joined on demand, never denormalized here (D15). A function's entity_kind IS
+-- its kind (function / mutation / subscription — the value functions.kind
+-- stores), so one name declared in several root namespaces curates
+-- independently and the overlay joins without a mapping. Rows with NULL texts
+-- and a vector are load-time SEEDS (D24) — swept only with an unregistered
+-- source.
 CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.annotations (
     entity_kind      VARCHAR NOT NULL,
     entity_key       VARCHAR NOT NULL,

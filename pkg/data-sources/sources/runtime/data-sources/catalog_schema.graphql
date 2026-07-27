@@ -73,10 +73,17 @@ extend type MutationFunction {
     @module(name: "core.catalog")
     @function(name: "_schema_update_source_type_desc")
 
-  "Curate a function description (module is the function's module, '' for none). Entity catalog storage only."
+  """
+    Curate a function description (module is the function's module, '' for none).
+    kind selects the root namespace the curated operation lives in — "function",
+    "mutation" or "subscription", exactly the value core.catalog.entity_functions
+    and _catalog report; the same name in another namespace keeps its own
+    description. Entity catalog storage only.
+  """
   annotate_function(
     module: String!
     name: String!
+    kind: String! = "function"
     description: String!
     long_description: String!
   ): OperationResult

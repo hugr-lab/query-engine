@@ -77,8 +77,12 @@ func collectSeedEntities(d *desired, dataSource string) []seedEntity {
 					syntheticDescription("", r.DestinationField, r.Destination, "", r.DataSource)))
 		}
 	}
+	// Seeded under the function's own kind, so the three root namespaces that may
+	// share a name each embed THEIR operation's description instead of racing for
+	// one row (the dedup below would otherwise keep whichever came first).
 	for _, fn := range d.functions {
-		add(kindFunction, functionKey(fn.Module, fn.Name), fn.Module,
+		kind, _ := functionAnnotationKind(fn.Kind)
+		add(kind, functionKey(fn.Module, fn.Name), fn.Module,
 			embeddingText("", fn.Description, syntheticDescription("", fn.Name, "", fn.Module, fn.DataSource)))
 	}
 	for _, t := range d.types {
@@ -247,9 +251,14 @@ func (s *Store) sweepAnnotationSeeds(ctx context.Context, dataSource string) err
 				UNION
 				SELECT destination || '.' || destination_field FROM core.catalog.relations
 					WHERE data_source = ` + ds + ` AND destination_field IS NOT NULL AND destination_field <> '')` + seedOnly,
-		`DELETE FROM core.catalog.annotations WHERE entity_kind = ` + lit(kindFunction) +
-			` AND entity_key IN (SELECT CASE WHEN module = '' THEN name ELSE module || '.' || name END
-				FROM core.catalog.functions WHERE data_source = ` + ds + `)` + seedOnly,
+	}
+	// One statement per function kind: the kind IS the annotation kind, so each
+	// namespace sweeps its own rows (probe F2's shape, narrowed by kind).
+	for _, kind := range []string{kindFunction, kindMutationFunction, kindSubscription} {
+		stmts = append(stmts,
+			`DELETE FROM core.catalog.annotations WHERE entity_kind = `+lit(kind)+
+				` AND entity_key IN (SELECT CASE WHEN module = '' THEN name ELSE module || '.' || name END
+					FROM core.catalog.functions WHERE data_source = `+ds+` AND kind = `+lit(kind)+`)`+seedOnly)
 	}
 	for _, stmt := range stmts {
 		if _, err := conn.Exec(ctx, stmt); err != nil {

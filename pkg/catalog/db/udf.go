@@ -235,7 +235,7 @@ var entityOnlyUDFs = map[string]int{
 	"_schema_update_data_object_desc":       3,
 	"_schema_update_data_object_field_desc": 4,
 	"_schema_update_source_type_desc":       3,
-	"_schema_update_function_desc":          4,
+	"_schema_update_function_desc":          5,
 	"_schema_update_argument_desc":          5,
 }
 
