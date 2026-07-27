@@ -44,6 +44,27 @@ type FunctionEntry struct {
 	IsTable    bool
 }
 
+// DataSourceInfo describes one data source as a LOGICAL entity: what it is
+// and what it contributes, never how to connect to it (the registry's
+// type/path are connection details — path is a DSN — and stay out of
+// introspection).
+//
+// The three flags are pointers because not every catalog storage RECORDS
+// them: the entity storage keeps them in data_source_meta, the walk adapter
+// over a compiled schema cannot recover them and leaves them nil. Reporting
+// nil ("this storage does not know") is the honest answer — claiming
+// ReadOnly=false for a read-only source would invite a mutation that fails.
+type DataSourceInfo struct {
+	Name            string
+	Engine          string // the source's engine type string (@catalog engine)
+	Description     string
+	LongDescription string
+	ReadOnly        *bool
+	AsModule        *bool
+	IsExtension     *bool
+	Modules         []string // modules this source contributes members to, sorted; "" = root
+}
+
 type RelationDirection string
 
 const (
@@ -97,6 +118,10 @@ type LogicalModel interface {
 	Functions(ctx context.Context, module string) iter.Seq[*FunctionEntry]
 	// Relations iterates the logical edges of a data object, both directions.
 	Relations(ctx context.Context, object string) iter.Seq[*RelationInfo]
+	// DataSource resolves an ACTIVE data source by name; nil when absent.
+	DataSource(ctx context.Context, name string) *DataSourceInfo
+	// DataSources iterates the active data sources, ordered by name.
+	DataSources(ctx context.Context) iter.Seq[*DataSourceInfo]
 	// Type resolves a GraphQL type definition by name; nil when absent.
 	// (Entity storage: the ForName resolution chain.)
 	Type(ctx context.Context, name string) *ast.Definition
@@ -355,6 +380,72 @@ func (m *providerLogicalModel) moduleDataSources(ctx context.Context, module str
 	}
 	slices.Sort(res)
 	return res
+}
+
+func (m *providerLogicalModel) DataSource(ctx context.Context, name string) *DataSourceInfo {
+	if name == "" {
+		return nil
+	}
+	for ds := range m.DataSources(ctx) {
+		if ds.Name == name {
+			return ds
+		}
+	}
+	return nil
+}
+
+// DataSources derives the source set from the module tree — in a compiled
+// schema the @catalog directive on every generated member is the only record
+// of provenance, so the tree walk IS the enumeration. Engine comes from the
+// source's data objects; the load-state flags and the curated descriptions
+// live in the catalog storage, not in the schema, and stay nil/empty here
+// (see DataSourceInfo).
+func (m *providerLogicalModel) DataSources(ctx context.Context) iter.Seq[*DataSourceInfo] {
+	return func(yield func(*DataSourceInfo) bool) {
+		acc := map[string]*DataSourceInfo{}
+		note := func(source, engine, module string) {
+			if source == "" {
+				return
+			}
+			info, ok := acc[source]
+			if !ok {
+				info = &DataSourceInfo{Name: source}
+				acc[source] = info
+			}
+			if info.Engine == "" {
+				info.Engine = engine
+			}
+			if !slices.Contains(info.Modules, module) {
+				info.Modules = append(info.Modules, module)
+			}
+		}
+		var walk func(module string)
+		walk = func(module string) {
+			for o := range m.DataObjects(ctx, module) {
+				note(o.Catalog, base.DefinitionCatalogEngine(o.Definition()), module)
+			}
+			for f := range m.Functions(ctx, module) {
+				note(f.DataSource, "", module)
+			}
+			for child := range m.Modules(ctx, module) {
+				walk(child.Name)
+			}
+		}
+		walk("")
+
+		names := make([]string, 0, len(acc))
+		for name := range acc {
+			names = append(names, name)
+		}
+		slices.Sort(names)
+		for _, name := range names {
+			info := acc[name]
+			slices.Sort(info.Modules)
+			if !yield(info) {
+				return
+			}
+		}
+	}
 }
 
 func (m *providerLogicalModel) Type(ctx context.Context, name string) *ast.Definition {

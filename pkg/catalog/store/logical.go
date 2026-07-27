@@ -487,6 +487,138 @@ func (s *Store) SystemTypes(ctx context.Context) iter.Seq2[string, *ast.Definiti
 	return s.static.Types(ctx)
 }
 
+// DataSource resolves ONE active data source; nil when absent or inactive.
+func (s *Store) DataSource(ctx context.Context, name string) *catalog.DataSourceInfo {
+	if name == "" {
+		return nil
+	}
+	g := s.genCtx()
+	rows, err := g.readDataSources(ctx, name)
+	if err != nil || len(rows) == 0 {
+		if err != nil {
+			logReadErr("data source "+name, err)
+		}
+		return nil
+	}
+	info, err := g.dataSourceInfo(ctx, rows[0])
+	if err != nil {
+		logReadErr("data source "+name, err)
+		return nil
+	}
+	return info
+}
+
+// DataSources iterates the active data sources, ordered by name.
+func (s *Store) DataSources(ctx context.Context) iter.Seq[*catalog.DataSourceInfo] {
+	return func(yield func(*catalog.DataSourceInfo) bool) {
+		g := s.genCtx()
+		rows, err := g.readDataSources(ctx, "")
+		if err != nil {
+			logReadErr("data sources", err)
+			return
+		}
+		for _, row := range rows {
+			info, err := g.dataSourceInfo(ctx, row)
+			if err != nil {
+				logReadErr("data sources", err)
+				return
+			}
+			if !yield(info) {
+				return
+			}
+		}
+	}
+}
+
+// dataSourceRow is one active data_source_meta row with its curation overlay.
+type dataSourceRow struct {
+	Name            string
+	Engine          string
+	ReadOnly        bool
+	AsModule        bool
+	IsExtension     bool
+	Description     string
+	LongDescription string
+}
+
+func (g *genContext) dataSourceInfo(ctx context.Context, row *dataSourceRow) (*catalog.DataSourceInfo, error) {
+	modules, err := g.dataSourceModules(ctx, row.Name)
+	if err != nil {
+		return nil, err
+	}
+	readOnly, asModule, isExtension := row.ReadOnly, row.AsModule, row.IsExtension
+	return &catalog.DataSourceInfo{
+		Name:            row.Name,
+		Engine:          row.Engine,
+		Description:     row.Description,
+		LongDescription: row.LongDescription,
+		ReadOnly:        &readOnly,
+		AsModule:        &asModule,
+		IsExtension:     &isExtension,
+		Modules:         modules,
+	}, nil
+}
+
+// readDataSources reads the active sources with the data_source curation
+// overlay applied — the same coalesce the entity_data_sources view does, so
+// introspection and the view never disagree. name == "" reads all.
+func (g *genContext) readDataSources(ctx context.Context, name string) ([]*dataSourceRow, error) {
+	where := `WHERE m.loaded AND NOT m.disabled AND NOT m.suspended`
+	if name != "" {
+		where += ` AND m.data_source = ` + lit(name)
+	}
+	query := `SELECT m.data_source, m.engine, m.read_only, m.as_module, m.is_extension,
+			coalesce(a.description, ''), coalesce(a.long_description, '')
+		FROM core.catalog.data_source_meta m
+		LEFT JOIN core.catalog.annotations a
+			ON a.entity_kind = ` + lit(kindDataSource) + ` AND a.entity_key = m.data_source
+		` + where + `
+		ORDER BY m.data_source`
+	if out, ok := g.dataSources[query]; ok {
+		return out, nil
+	}
+	conn, err := g.s.pool.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read data sources: %w", err)
+	}
+	defer conn.Close()
+	rows, err := conn.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("read data sources: %w", err)
+	}
+	defer rows.Close()
+	var out []*dataSourceRow
+	for rows.Next() {
+		var r dataSourceRow
+		if err := rows.Scan(&r.Name, &r.Engine, &r.ReadOnly, &r.AsModule, &r.IsExtension,
+			&r.Description, &r.LongDescription); err != nil {
+			return nil, fmt.Errorf("read data sources: %w", err)
+		}
+		out = append(out, &r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read data sources: %w", err)
+	}
+	if g.dataSources == nil {
+		g.dataSources = map[string][]*dataSourceRow{}
+	}
+	g.dataSources[query] = out
+	return out, nil
+}
+
+// dataSourceModules lists the modules the source places DIRECT members in
+// (the inverse of moduleMemberSources) — not the closure, so a source is
+// reported where its objects actually live, without their ancestors.
+func (g *genContext) dataSourceModules(ctx context.Context, name string) ([]string, error) {
+	return g.queryNames(ctx, `SELECT module FROM (
+		SELECT o.module AS module FROM core.catalog.data_objects o
+			WHERE o.data_source = `+lit(name)+`
+		UNION
+		SELECT f.module FROM core.catalog.functions f
+			WHERE f.data_source = `+lit(name)+`
+		) ORDER BY module`)
+}
+
 // --- list readers (all activity-gated, deterministic ORDER BY) ---
 
 // moduleMemberSources lists the distinct data sources of the module's DIRECT

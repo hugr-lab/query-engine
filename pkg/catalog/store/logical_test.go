@@ -119,6 +119,58 @@ func TestLogicalDataObjectQueries(t *testing.T) {
 	assert.Equal(t, []string{"first_name", "last_name"}, argNames("users_by_full_name"))
 }
 
+// TestLogicalDataSources covers the data-source entity: the flags the entity
+// storage records (which the compiled schema cannot), the curation overlay,
+// the DIRECT-member module list, and the activity gate.
+func TestLogicalDataSources(t *testing.T) {
+	store, ctx := writtenStore(t)
+
+	// A second, read-only source so the flags are not all false by default.
+	d := collect(ctx, partialSource(t, "ro", `
+type gauges @module(name: "ops") @table(name: "gauges") {
+  id: Int! @pk
+  value: Float
+}
+`), "ro")
+	_, err := store.writeSource(ctx, d, SourceState{
+		Name: "ro", Version: "v1", Engine: "postgres",
+		ReadOnly: true, AsModule: true, IsExtension: true, Loaded: true,
+	})
+	require.NoError(t, err)
+
+	var names []string
+	for ds := range store.DataSources(ctx) {
+		names = append(names, ds.Name)
+	}
+	assert.Equal(t, []string{"ro", "test"}, names, "ordered by name")
+
+	ro := store.DataSource(ctx, "ro")
+	require.NotNil(t, ro)
+	assert.Equal(t, "postgres", ro.Engine)
+	require.NotNil(t, ro.ReadOnly)
+	assert.True(t, *ro.ReadOnly, "the entity storage records the flags the compiled schema loses")
+	assert.True(t, *ro.AsModule)
+	assert.True(t, *ro.IsExtension)
+	assert.Equal(t, []string{"ops"}, ro.Modules, "direct members only, no ancestors")
+
+	main := store.DataSource(ctx, "test")
+	require.NotNil(t, main)
+	require.NotNil(t, main.ReadOnly)
+	assert.False(t, *main.ReadOnly)
+	assert.Equal(t, []string{"sales", "sales.reports"}, main.Modules)
+
+	// Curation is the point of the logical model: a curated description must
+	// reach introspection, not just the entity_data_sources view.
+	require.NoError(t, store.SetDataSourceDescription(ctx, "ro", "Operational gauges", "Long form."))
+	curated := store.DataSource(ctx, "ro")
+	require.NotNil(t, curated)
+	assert.Equal(t, "Operational gauges", curated.Description)
+	assert.Equal(t, "Long form.", curated.LongDescription)
+
+	assert.Nil(t, store.DataSource(ctx, "nope"))
+	assert.Nil(t, store.DataSource(ctx, ""))
+}
+
 // TestLogicalFunctions covers callable-member resolution and kind ordering.
 func TestLogicalFunctions(t *testing.T) {
 	store, ctx := writtenStore(t)

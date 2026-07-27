@@ -77,6 +77,43 @@ func processFunctionQuery(ctx context.Context, provider catalog.Provider, field 
 	return functionResolver(ctx, lm, provider, entry, field.SelectionSet, maxDepth)
 }
 
+func processDataSourcesQuery(ctx context.Context, provider catalog.Provider, field *ast.Field, maxDepth int) (any, error) {
+	if maxDepth <= 0 {
+		return nil, nil
+	}
+	lm := catalog.LogicalModelFromProvider(provider)
+	res := []map[string]any{}
+	for ds := range lm.DataSources(ctx) {
+		if !dataSourceVisible(ctx, lm, ds) {
+			continue
+		}
+		data, err := dataSourceResolver(ctx, ds, field.SelectionSet)
+		if err != nil {
+			return nil, err
+		}
+		if data != nil {
+			res = append(res, data)
+		}
+	}
+	return res, nil
+}
+
+func processDataSourceQuery(ctx context.Context, provider catalog.Provider, field *ast.Field, maxDepth int, vars map[string]any) (any, error) {
+	name, ok := metaStringArg(field, vars, "name")
+	if !ok {
+		return nil, ErrInvalidTypeQuery
+	}
+	if name == "" || maxDepth <= 0 {
+		return nil, nil
+	}
+	lm := catalog.LogicalModelFromProvider(provider)
+	ds := lm.DataSource(ctx, name)
+	if ds == nil || !dataSourceVisible(ctx, lm, ds) {
+		return nil, nil
+	}
+	return dataSourceResolver(ctx, ds, field.SelectionSet)
+}
+
 // processTypesQuery resolves _types — the GraphQL type definitions of the
 // logical model. scope: SOURCE (default) = residual base types defined by
 // data sources (the future entity-storage types table); SYSTEM = the
@@ -419,6 +456,45 @@ func queryTypeText(t sdl.ObjectQueryType) string {
 	return ""
 }
 
+func dataSourceResolver(ctx context.Context, ds *catalog.DataSourceInfo, ss ast.SelectionSet) (map[string]any, error) {
+	// The three flags are nullable on purpose: nil = the catalog storage does
+	// not record them (see catalog.DataSourceInfo), which must not read as false.
+	flag := func(v *bool) fieldResolverFunc {
+		return func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			if v == nil {
+				return nil, nil
+			}
+			return *v, nil
+		}
+	}
+	text := func(v string) fieldResolverFunc {
+		return func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			if v == "" {
+				return nil, nil
+			}
+			return v, nil
+		}
+	}
+	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
+		"__typename": typeNameResolver,
+		"name": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			return ds.Name, nil
+		},
+		"engine":          text(ds.Engine),
+		"description":     text(ds.Description),
+		"longDescription": text(ds.LongDescription),
+		"readOnly":        flag(ds.ReadOnly),
+		"asModule":        flag(ds.AsModule),
+		"isExtension":     flag(ds.IsExtension),
+		"modules": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			if ds.Modules == nil {
+				return []string{}, nil
+			}
+			return ds.Modules, nil
+		},
+	}, "_DataSource")
+}
+
 func relationResolver(ctx context.Context, lm catalog.LogicalModel, provider catalog.Provider, rel *catalog.RelationInfo, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
 	if maxDepth <= 0 {
 		return nil, nil
@@ -646,6 +722,30 @@ func relationVisible(ctx context.Context, lm catalog.LogicalModel, rel *catalog.
 		}
 	}
 	return true
+}
+
+// dataSourceVisible reports whether a data source still contributes anything
+// the request may see — the same "has visible content" rule modules use. A
+// source that places no members of its own (a pure extension, which only adds
+// FIELDS to other sources' objects) has nothing to gate on and stays visible.
+func dataSourceVisible(ctx context.Context, lm catalog.LogicalModel, ds *catalog.DataSourceInfo) bool {
+	p := perm.PermissionsFromCtx(ctx)
+	if p == nil || len(ds.Modules) == 0 {
+		return true
+	}
+	for _, module := range ds.Modules {
+		for obj := range lm.DataObjects(ctx, module) {
+			if obj.Catalog == ds.Name && dataObjectVisible(ctx, obj) {
+				return true
+			}
+		}
+		for entry := range lm.Functions(ctx, module) {
+			if entry.DataSource == ds.Name && functionVisible(ctx, entry) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // moduleHasVisibleContent reports whether a module still has any visible data

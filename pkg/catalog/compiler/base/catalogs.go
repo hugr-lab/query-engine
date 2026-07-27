@@ -12,6 +12,12 @@ func DefinitionCatalog(def *ast.Definition) string {
 	return DirectiveArgString(def.Directives.ForName(CatalogDirectiveName), "name")
 }
 
+// DefinitionCatalogEngine returns the engine type string recorded next to the
+// data source name on a definition's @catalog directive.
+func DefinitionCatalogEngine(def *ast.Definition) string {
+	return DirectiveArgString(def.Directives.ForName(CatalogDirectiveName), "engine")
+}
+
 func FieldDefCatalog(field *ast.FieldDefinition) string {
 	return DirectiveArgString(field.Directives.ForName(CatalogDirectiveName), "name")
 }

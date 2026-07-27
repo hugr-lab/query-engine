@@ -36,11 +36,13 @@ const (
 	// GraphQL hard-reserves "__" names (graphql-js rejects them even in
 	// introspection results), so these are ordinary system fields on Query —
 	// like jq/h3 — dispatched to the metadata path by name.
-	MetadataCatalogQuery    = "_catalog"
-	MetadataModuleQuery     = "_module"
-	MetadataDataObjectQuery = "_dataObject"
-	MetadataFunctionQuery   = "_function"
-	MetadataTypesQuery      = "_types"
+	MetadataCatalogQuery     = "_catalog"
+	MetadataModuleQuery      = "_module"
+	MetadataDataObjectQuery  = "_dataObject"
+	MetadataFunctionQuery    = "_function"
+	MetadataTypesQuery       = "_types"
+	MetadataDataSourceQuery  = "_dataSource"
+	MetadataDataSourcesQuery = "_dataSources"
 
 	JQTransformQueryName = "jq"
 )
