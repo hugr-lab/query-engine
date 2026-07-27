@@ -47,6 +47,25 @@ func New(querier types.Querier, mcpServer *server.MCPServer, debug bool) *Server
 	}
 	s := &Server{querier: querier, debug: debug}
 
+	// Catalog tools — the logical model (design-035).
+	mcpServer.AddTool(mcp.NewTool("catalog-list",
+		mcp.WithDescription(`Enumerate what EXISTS in the logical model — the map to start from when you do not yet know the vocabulary of this deployment.
+Pick a kind:
+- module — the namespaces, as a FLAT list of dotted paths ("sales", "sales.reports"); dots are GraphQL nesting: query { sales { reports { ... } } }. "" is the root module. Each entry carries how many data objects / functions / submodules it holds.
+- data_source — the attached sources, with the modules each contributes to. read_only=null means the storage does not record it, NOT that mutations are allowed.
+- data_object — the tables and views. 'name' is the GraphQL TYPE name; 'module' is where to nest the query. Use catalog-describe for the query field names to actually write.
+- function — the callables. type is FUNCTION (query), MUTATION or SUBSCRIPTION.
+Scope with 'module' (walks that subtree, including submodules) and 'prefix' (case-insensitive match on the name). Everything is paginated and permission-filtered: 'total' counts only what you may see.
+Use catalog-search instead when you know WHAT you want but not what it is called.`),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("module | data_source | data_object | function"),
+			mcp.Enum(catalogKinds...)),
+		mcp.WithString("module", mcp.Description(`Restrict to this module's subtree; "" (default) walks everything`)),
+		mcp.WithString("prefix", mcp.Description("Case-insensitive name prefix filter")),
+		mcp.WithNumber("limit", mcp.Description("Page size (1-200)"), mcp.DefaultNumber(defaultPageLimit)),
+		mcp.WithNumber("offset", mcp.Description("Items to skip"), mcp.DefaultNumber(0)),
+		mcp.WithOutputSchema[Page[CatalogItem]](),
+	), s.catalogList)
+
 	// Discovery tools.
 	mcpServer.AddTool(mcp.NewTool("discovery-search_modules",
 		mcp.WithDescription(`Search modules by natural language. Returns top-K modules ranked by semantic relevance.
