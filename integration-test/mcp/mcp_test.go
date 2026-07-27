@@ -174,9 +174,9 @@ func TestMCP_ToolsList(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	tools := result["tools"].([]any)
 
-	// Should have 15 tools (1 catalog + 7 discovery + 4 schema + 3 data).
+	// Should have 16 tools (2 catalog + 7 discovery + 4 schema + 3 data).
 	// The discovery-* half is being replaced by catalog-* (design-035).
-	assert.Len(t, tools, 15, "expected 15 MCP tools")
+	assert.Len(t, tools, 16, "expected 16 MCP tools")
 
 	// Verify tool names.
 	toolNames := make(map[string]bool)
@@ -186,6 +186,7 @@ func TestMCP_ToolsList(t *testing.T) {
 	}
 	expectedTools := []string{
 		"catalog-list",
+		"catalog-describe",
 		"discovery-search_modules",
 		"discovery-search_data_sources",
 		"discovery-search_module_data_objects",

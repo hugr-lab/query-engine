@@ -66,6 +66,25 @@ Use catalog-search instead when you know WHAT you want but not what it is called
 		mcp.WithOutputSchema[Page[CatalogItem]](),
 	), s.catalogList)
 
+	mcpServer.AddTool(mcp.NewTool("catalog-describe",
+		mcp.WithDescription(`Describe EXACT names you already have (from catalog-list, catalog-search, or an error message) — this is where you learn how to CALL them. Batched: pass every name you care about in one call.
+- data_object — returns queries[], the query field names to WRITE, with their arguments: <object> (the row set), <object>_by_pk and one more per unique key, <object>_aggregation, <object>_bucket_aggregation. Also the primary key, properties, parameterized-view args, relations (how to traverse to other objects) and fields_count. The FIELDS are deliberately not here: call catalog-object_fields for them.
+- function — arguments, return type, and is_table (true means it returns a row set you select fields from).
+- module — description and how much it holds.
+- data_source — engine, flags and the modules it contributes to.
+Nest the call in the module path from 'module': query { <module> { <query_name>(...) { ... } } }.
+Relations page: relations_total is the full count, and relations_has_more means there are more — call again with a larger relations_offset. The same edges also appear as navigation FIELDS, so catalog-object_fields and schema-type_fields on the object type are two other ways to walk them.
+Names that do not exist, and names the caller may not see, both come back in not_found — the tool cannot tell you which.`),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("module | data_source | data_object | function"),
+			mcp.Enum(catalogKinds...)),
+		mcp.WithArray("names", mcp.Required(), mcp.Description("Exact names, copied verbatim from a previous result"),
+			mcp.Items(map[string]any{"type": "string"})),
+		mcp.WithString("module", mcp.Description("Owning module — REQUIRED for kind=function, since a function's identity is (module, name)")),
+		mcp.WithNumber("relations_limit", mcp.Description("Relations per described object (1-200)"), mcp.DefaultNumber(defaultRelationsLimit)),
+		mcp.WithNumber("relations_offset", mcp.Description("Relations to skip, per described object"), mcp.DefaultNumber(0)),
+		mcp.WithOutputSchema[DescribeResult](),
+	), s.catalogDescribe)
+
 	// Discovery tools.
 	mcpServer.AddTool(mcp.NewTool("discovery-search_modules",
 		mcp.WithDescription(`Search modules by natural language. Returns top-K modules ranked by semantic relevance.
