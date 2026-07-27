@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	catsrc "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 )
 
@@ -28,51 +30,89 @@ var ErrReadOnly = errors.New("catalog store: read-only mode")
 // unchanged the rows are current and only the visibility flags are repaired —
 // a redeploy costs one metadata read. Otherwise the source is partially
 // compiled (VALIDATE + PREPARE against the live store), collected and written
-// wholesale in one transaction.
+// wholesale in one transaction. A content rewrite refreshes active dependents
+// (their references may resolve differently against the new base), and any
+// change retries suspended sources whose dependencies may now be satisfied.
 func (s *Store) AddCatalog(ctx context.Context, name string, cat catsrc.Catalog) error {
 	if s.isReadonly {
 		return ErrReadOnly
 	}
-	state, err := s.sourceState(ctx, name, cat)
+	rewritten, changed, err := s.addCatalog(ctx, name, cat)
 	if err != nil {
 		return err
+	}
+	if rewritten {
+		s.refreshDependents(ctx, name, map[string]bool{name: true})
+	}
+	if changed {
+		s.reactivateSuspended(ctx)
+	}
+	return nil
+}
+
+// addCatalog is the gate + write for ONE source (no cascade). Returns whether
+// the rows were rewritten and whether anything observable changed at all
+// (rows or flags).
+func (s *Store) addCatalog(ctx context.Context, name string, cat catsrc.Catalog) (rewritten, changed bool, err error) {
+	state, err := s.sourceState(ctx, name, cat)
+	if err != nil {
+		return false, false, err
 	}
 	meta, ok, err := s.sourceMeta(ctx, name)
 	if err != nil {
-		return err
+		return false, false, err
 	}
 	if ok && meta.Version == state.storedVersion() {
 		// Content and options unchanged — the stored rows are current. Repair
-		// visibility only: resume a suspended source, mark it loaded. The
-		// disabled flag is an operator decision and survives redeploys.
-		if meta.Suspended || !meta.Loaded {
+		// visibility only; the disabled flag is an operator decision and
+		// survives redeploys. A source whose stored dependencies are not
+		// satisfied stays (or becomes) suspended — reactivateSuspended picks
+		// it up when the dependencies arrive.
+		s.putCatalog(name, cat)
+		satisfied, err := s.storedDepsSatisfied(ctx, name)
+		if err != nil {
+			return false, false, err
+		}
+		switch {
+		case !satisfied && !meta.Suspended:
+			if err := s.setFlags(ctx, name, meta.Loaded, meta.Disabled, true); err != nil {
+				return false, false, err
+			}
+			s.bumpSchemaVersion(ctx, name)
+			slog.Warn("catalog suspended: dependencies not satisfied", "catalog", name)
+			return false, true, nil
+		case satisfied && (meta.Suspended || !meta.Loaded):
 			if err := s.setFlags(ctx, name, true, meta.Disabled, false); err != nil {
-				return err
+				return false, false, err
 			}
 			s.bumpSchemaVersion(ctx, name)
 			slog.Info("catalog resumed (version unchanged)", "catalog", name, "version", state.Version)
+			return false, true, nil
 		}
-		s.putCatalog(name, cat)
-		return nil
+		return false, false, nil
 	}
 	if ok {
 		state.Disabled = meta.Disabled
 	}
-	if err := s.compileAndWrite(ctx, name, cat, state); err != nil {
-		return err
+	if err := s.compileAndWrite(ctx, name, cat, &state); err != nil {
+		return false, false, err
 	}
 	s.putCatalog(name, cat)
 	s.bumpSchemaVersion(ctx, name)
-	slog.Info("catalog stored", "catalog", name, "version", state.Version)
-	return nil
+	slog.Info("catalog stored", "catalog", name, "version", state.Version,
+		"dependencies", state.Dependencies, "suspended", state.Suspended)
+	return true, true, nil
 }
 
 // RemoveCatalog deletes a source's entity rows, metadata, dependencies and
 // seed annotations (the unregister primitive) and drops the source handle.
+// Sources depending on it are suspended first (recursively) — their rows stay
+// and reactivateSuspended restores them when the dependency returns.
 func (s *Store) RemoveCatalog(ctx context.Context, name string) error {
 	if s.isReadonly {
 		return ErrReadOnly
 	}
+	s.suspendDependents(ctx, name, map[string]bool{name: true})
 	if err := s.deleteSource(ctx, name); err != nil {
 		return err
 	}
@@ -162,16 +202,255 @@ func (s *Store) IsSuspended(name string) bool {
 
 // compileAndWrite runs the write-side pipeline: VALIDATE + PREPARE with the
 // live Store as the compile target (cross-source references resolve through
-// ForName), collect the physical entities, persist them transactionally.
-func (s *Store) compileAndWrite(ctx context.Context, name string, cat catsrc.Catalog, state SourceState) error {
-	if _, err := compiler.New(partialRules()...).Compile(ctx, s, cat, cat.CompileOptions()); err != nil {
+// ForName), collect the physical entities, persist them transactionally. The
+// compiled @dependency set lands in state; when a declared dependency is not
+// active the source is written SUSPENDED (§5.1 suspend semantics — the rows
+// are order-independent, visibility is not) and reactivateSuspended restores
+// it once the dependencies arrive.
+func (s *Store) compileAndWrite(ctx context.Context, name string, cat catsrc.Catalog, state *SourceState) error {
+	compiled, err := compiler.New(partialRules()...).Compile(ctx, s, cat, cat.CompileOptions())
+	if err != nil {
 		return fmt.Errorf("compile catalog %q: %w", name, err)
 	}
+	if dc, ok := compiled.(base.DependentCompiledCatalog); ok {
+		state.Dependencies = dc.Dependencies()
+	}
+	if len(state.Dependencies) > 0 && !state.Suspended {
+		satisfied, err := s.depsActive(ctx, state.Dependencies)
+		if err != nil {
+			return err
+		}
+		if !satisfied {
+			state.Suspended = true
+			slog.Warn("catalog stored suspended: dependencies not satisfied",
+				"catalog", name, "dependencies", state.Dependencies)
+		}
+	}
 	d := collect(ctx, asExtensionsSource(cat), name)
-	if _, err := s.writeSource(ctx, d, state); err != nil {
+	if _, err := s.writeSource(ctx, d, *state); err != nil {
 		return err
 	}
 	return nil
+}
+
+// refreshDependents force-rewrites the ACTIVE dependents of a source whose
+// content changed: their own versions are unchanged, but their extension
+// references and virtual-field attribution resolve against the new base. A
+// dependent that fails to refresh is suspended (the old manager's semantics —
+// reactivation retries it later). Best-effort: failures are logged, the
+// cascade continues.
+func (s *Store) refreshDependents(ctx context.Context, base string, visited map[string]bool) {
+	dependents, err := s.dependentsOf(ctx, base)
+	if err != nil {
+		logReadErr("refreshDependents", err)
+		return
+	}
+	for _, name := range dependents {
+		if visited[name] {
+			continue
+		}
+		visited[name] = true
+		s.catMu.RLock()
+		cat, ok := s.catalogs[name]
+		s.catMu.RUnlock()
+		if !ok {
+			continue // no live handle in this process — rows stay as written
+		}
+		meta, mok, err := s.sourceMeta(ctx, name)
+		if err != nil || !mok || meta.Suspended {
+			continue // suspended dependents are reactivateSuspended's job
+		}
+		state, err := s.sourceState(ctx, name, cat)
+		if err != nil {
+			slog.Error("refresh dependent: state", "catalog", name, "error", err)
+			continue
+		}
+		state.Disabled = meta.Disabled
+		state.Force = true
+		if err := s.compileAndWrite(ctx, name, cat, &state); err != nil {
+			slog.Error("refresh dependent failed; suspending", "catalog", name, "base", base, "error", err)
+			if err := s.setFlags(ctx, name, meta.Loaded, meta.Disabled, true); err != nil {
+				slog.Error("suspend failed dependent", "catalog", name, "error", err)
+			}
+			continue
+		}
+		slog.Info("dependent catalog refreshed", "catalog", name, "base", base)
+		s.refreshDependents(ctx, name, visited)
+	}
+}
+
+// reactivateSuspended retries suspended sources that have a live handle and
+// whose stored dependencies are all active — loop until a full pass makes no
+// progress (a reactivation may satisfy the next source's dependencies).
+// Reactivation always recompiles (Force): the suspension reason was a missing
+// or changed base, so the stored rows' resolution is stale. Best-effort.
+func (s *Store) reactivateSuspended(ctx context.Context) {
+	for {
+		suspended, err := s.suspendedSources(ctx)
+		if err != nil {
+			logReadErr("reactivateSuspended", err)
+			return
+		}
+		progress := false
+		for _, name := range suspended {
+			s.catMu.RLock()
+			cat, ok := s.catalogs[name]
+			s.catMu.RUnlock()
+			if !ok {
+				continue
+			}
+			satisfied, err := s.storedDepsSatisfied(ctx, name)
+			if err != nil || !satisfied {
+				continue
+			}
+			meta, mok, err := s.sourceMeta(ctx, name)
+			if err != nil || !mok {
+				continue
+			}
+			state, err := s.sourceState(ctx, name, cat)
+			if err != nil {
+				slog.Error("reactivate: state", "catalog", name, "error", err)
+				continue
+			}
+			state.Disabled = meta.Disabled
+			state.Force = true
+			if err := s.compileAndWrite(ctx, name, cat, &state); err != nil {
+				slog.Error("reactivate failed", "catalog", name, "error", err)
+				continue
+			}
+			s.bumpSchemaVersion(ctx, name)
+			slog.Info("catalog reactivated", "catalog", name)
+			progress = true
+		}
+		if !progress {
+			return
+		}
+	}
+}
+
+// suspendDependents recursively suspends every source depending on base —
+// flags only, the rows stay for reactivation. Best-effort (mirrors the old
+// manager): a failure is logged and the walk continues.
+func (s *Store) suspendDependents(ctx context.Context, base string, visited map[string]bool) {
+	dependents, err := s.dependentsOf(ctx, base)
+	if err != nil {
+		logReadErr("suspendDependents", err)
+		return
+	}
+	for _, name := range dependents {
+		if visited[name] {
+			continue
+		}
+		visited[name] = true
+		s.suspendDependents(ctx, name, visited)
+		meta, ok, err := s.sourceMeta(ctx, name)
+		if err != nil || !ok || meta.Suspended {
+			continue
+		}
+		if err := s.setFlags(ctx, name, meta.Loaded, meta.Disabled, true); err != nil {
+			slog.Error("suspend dependent", "catalog", name, "dependency", base, "error", err)
+			continue
+		}
+		slog.Info("dependent catalog suspended", "catalog", name, "dependency", base)
+	}
+}
+
+// dependentsOf lists sources declaring a dependency on base.
+func (s *Store) dependentsOf(ctx context.Context, base string) ([]string, error) {
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("catalog dependents of %s: %w", base, err)
+	}
+	defer conn.Close()
+	rows, err := conn.Query(ctx, `SELECT data_source FROM core.catalog.data_source_dependencies
+		WHERE depends_on = `+lit(base)+` ORDER BY data_source`)
+	if err != nil {
+		return nil, fmt.Errorf("catalog dependents of %s: %w", base, err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("catalog dependents of %s: %w", base, err)
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// suspendedSources lists the suspended sources from the meta.
+func (s *Store) suspendedSources(ctx context.Context) ([]string, error) {
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("catalog suspended sources: %w", err)
+	}
+	defer conn.Close()
+	rows, err := conn.Query(ctx, `SELECT data_source FROM core.catalog.data_source_meta
+		WHERE suspended ORDER BY data_source`)
+	if err != nil {
+		return nil, fmt.Errorf("catalog suspended sources: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("catalog suspended sources: %w", err)
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// depsActive reports whether every named source is present and active.
+func (s *Store) depsActive(ctx context.Context, deps []string) (bool, error) {
+	if len(deps) == 0 {
+		return true, nil
+	}
+	names := make([]string, 0, len(deps))
+	seen := map[string]struct{}{}
+	for _, d := range deps {
+		if _, ok := seen[d]; ok || d == "" {
+			continue
+		}
+		seen[d] = struct{}{}
+		names = append(names, lit(d))
+	}
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return false, fmt.Errorf("catalog deps check: %w", err)
+	}
+	defer conn.Close()
+	var active int
+	err = conn.QueryRow(ctx, `SELECT count(*) FROM core.catalog.data_source_meta
+		WHERE data_source IN (`+strings.Join(names, ", ")+`)
+		AND loaded AND NOT disabled AND NOT suspended`).Scan(&active)
+	if err != nil {
+		return false, fmt.Errorf("catalog deps check: %w", err)
+	}
+	return active == len(names), nil
+}
+
+// storedDepsSatisfied reports whether every STORED dependency of the source is
+// present and active (the anti-join over the meta).
+func (s *Store) storedDepsSatisfied(ctx context.Context, name string) (bool, error) {
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return false, fmt.Errorf("catalog deps of %s: %w", name, err)
+	}
+	defer conn.Close()
+	var unsatisfied int
+	err = conn.QueryRow(ctx, `SELECT count(*) FROM core.catalog.data_source_dependencies d
+		WHERE d.data_source = `+lit(name)+`
+		AND NOT EXISTS (
+			SELECT 1 FROM core.catalog.data_source_meta m
+			WHERE m.data_source = d.depends_on AND m.loaded AND NOT m.disabled AND NOT m.suspended
+		)`).Scan(&unsatisfied)
+	if err != nil {
+		return false, fmt.Errorf("catalog deps of %s: %w", name, err)
+	}
+	return unsatisfied == 0, nil
 }
 
 // sourceState assembles the writer's SourceState from the catalog handle: the

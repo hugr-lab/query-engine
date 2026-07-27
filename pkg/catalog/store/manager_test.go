@@ -30,6 +30,20 @@ type orders @module(name: "sales") @table(name: "orders") {
 }
 `
 
+// managerExtSchema is an extension source over the "base" source's orders
+// object: one extension field on the foreign object plus one own view, both
+// declaring @dependency(name: "base").
+const managerExtSchema = `
+extend type orders @dependency(name: "base") {
+  vip: [ext_vip] @join(references_name: "ext_vip", source_fields: ["id"], references_fields: ["order_id"])
+}
+
+type ext_vip @view(name: "ext_vip") @dependency(name: "base") @module(name: "ext") {
+  order_id: Int! @pk
+  level: String
+}
+`
+
 // managerStore boots a fresh in-memory CoreDB and returns an EMPTY store —
 // the manager tests drive it through the CatalogManager surface.
 func managerStore(t *testing.T, cfg Config) (*Store, context.Context) {
@@ -53,6 +67,20 @@ func stringCatalog(t *testing.T, name, schema string) *catsrc.StringSource {
 		Name:         name,
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
+	}, schema)
+	require.NoError(t, err)
+	return src
+}
+
+// stringExtCatalog builds a raw EXTENSION catalog source (IsExtension set).
+func stringExtCatalog(t *testing.T, name, schema string) *catsrc.StringSource {
+	t.Helper()
+	e := &engines.DuckDB{}
+	src, err := catsrc.NewStringSource(name, e, compiler.Options{
+		Name:         name,
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+		IsExtension:  true,
 	}, schema)
 	require.NoError(t, err)
 	return src
@@ -180,6 +208,69 @@ func TestManagerReadOnly(t *testing.T) {
 	assert.ErrorIs(t, s.ReloadCatalog(ctx, "shop"), ErrReadOnly)
 	assert.ErrorIs(t, s.SuspendCatalog(ctx, "shop"), ErrReadOnly)
 	assert.ErrorIs(t, s.ReactivateCatalog(ctx, "shop", cat), ErrReadOnly)
+}
+
+func TestManagerDependencyCascade(t *testing.T) {
+	s, ctx := managerStore(t, Config{VecSize: 8})
+	require.NoError(t, s.AddCatalog(ctx, "base", stringCatalog(t, "base", managerSchemaV1)))
+	require.NoError(t, s.AddCatalog(ctx, "ext", stringExtCatalog(t, "ext", managerExtSchema)))
+
+	deps, err := s.dependentsOf(ctx, "base")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ext"}, deps, "@dependency persisted")
+
+	require.NotNil(t, s.ForName(ctx, "ext_vip"), "extension view served")
+	def := s.ForName(ctx, "orders")
+	require.NotNil(t, def)
+	assert.NotNil(t, def.Fields.ForName("vip"), "extension field on the base object")
+
+	// Removing the base suspends the dependent; its rows stay.
+	require.NoError(t, s.RemoveCatalog(ctx, "base"))
+	assert.True(t, s.IsSuspended("ext"))
+	assert.Nil(t, s.ForName(ctx, "ext_vip"), "suspended dependent hidden")
+
+	// The base returns — the dependent auto-reactivates (recompiled).
+	require.NoError(t, s.AddCatalog(ctx, "base", stringCatalog(t, "base", managerSchemaV1)))
+	assert.False(t, s.IsSuspended("ext"))
+	require.NotNil(t, s.ForName(ctx, "ext_vip"), "reactivated dependent served")
+	def = s.ForName(ctx, "orders")
+	require.NotNil(t, def)
+	assert.NotNil(t, def.Fields.ForName("vip"), "extension field back after reactivation")
+}
+
+func TestManagerExtensionBeforeBase(t *testing.T) {
+	s, ctx := managerStore(t, Config{VecSize: 8})
+
+	// The extension loads FIRST: rows land (order-independent), the source is
+	// stored SUSPENDED — its declared dependency is not active yet.
+	require.NoError(t, s.AddCatalog(ctx, "ext", stringExtCatalog(t, "ext", managerExtSchema)))
+	assert.True(t, s.IsSuspended("ext"))
+	assert.Nil(t, s.ForName(ctx, "ext_vip"))
+
+	// The base arrives — reactivateSuspended recompiles the extension and
+	// clears the flag.
+	require.NoError(t, s.AddCatalog(ctx, "base", stringCatalog(t, "base", managerSchemaV1)))
+	assert.False(t, s.IsSuspended("ext"))
+	require.NotNil(t, s.ForName(ctx, "ext_vip"))
+	def := s.ForName(ctx, "orders")
+	require.NotNil(t, def)
+	assert.NotNil(t, def.Fields.ForName("vip"), "extension field served once the base exists")
+}
+
+func TestManagerRefreshDependents(t *testing.T) {
+	s, ctx := managerStore(t, Config{VecSize: 8})
+	require.NoError(t, s.AddCatalog(ctx, "base", stringCatalog(t, "base", managerSchemaV1)))
+	require.NoError(t, s.AddCatalog(ctx, "ext", stringExtCatalog(t, "ext", managerExtSchema)))
+
+	// A base CONTENT change force-refreshes the active dependent — it stays
+	// visible and consistent against the new base.
+	require.NoError(t, s.AddCatalog(ctx, "base", stringCatalog(t, "base", managerSchemaV2)))
+	assert.False(t, s.IsSuspended("ext"))
+	def := s.ForName(ctx, "orders")
+	require.NotNil(t, def)
+	assert.NotNil(t, def.Fields.ForName("note"), "new base column served")
+	assert.NotNil(t, def.Fields.ForName("vip"), "extension field survived the base rewrite")
+	require.NotNil(t, s.ForName(ctx, "ext_vip"))
 }
 
 func TestSchemaVersionCounter(t *testing.T) {
