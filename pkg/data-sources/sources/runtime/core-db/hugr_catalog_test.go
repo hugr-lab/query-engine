@@ -52,7 +52,7 @@ func TestFreshCoreDBDuckDB(t *testing.T) {
 	got = queryStrings(t, pool, `SELECT properties.soft_delete FROM core.catalog.data_objects WHERE name = 'probe_partial'`)
 	assert.Equal(t, []string{"true"}, got)
 	got = queryStrings(t, pool, `SELECT args[1].name, args[1]."type", args[2].description
-		FROM core.catalog.functions WHERE module = 'probe' AND name = 'fn'`)
+		FROM core.catalog.functions WHERE module = 'probe' AND name = 'fn' AND kind = 'function'`)
 	assert.Equal(t, []string{"id|Int!|<nil>"}, got, "args is a native LIST of STRUCT")
 	got = queryStrings(t, pool, `SELECT properties.function_call."function".name,
 		properties.function_call.args::VARCHAR, properties."default".value::VARCHAR
@@ -149,9 +149,18 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 		 'probe', false, 3)`)
 
 	// A3: functions.args — a LIST of structs written as one JSON array text.
+	// The three KINDS of one name coexist: identity is (module, name, kind),
+	// because query functions, mutation functions and subscriptions are
+	// independent GraphQL root namespaces.
 	exec(`INSERT INTO core.catalog.functions (module, name, kind, data_source, returns, is_table, args) VALUES
 		('probe', 'fn', 'function', 'probe', 'String', false,
-		 '[{"name":"id","type":"Int!","description":"identifier"},{"name":"mode","type":"String"}]')`)
+		 '[{"name":"id","type":"Int!","description":"identifier"},{"name":"mode","type":"String"}]'),
+		('probe', 'fn', 'mutation', 'probe', 'String', false, NULL),
+		('probe', 'fn', 'subscription', 'probe', 'String', false, NULL)`)
+	got := queryStrings(t, pool, `SELECT kind FROM core.catalog.functions
+		WHERE module = 'probe' AND name = 'fn' ORDER BY kind`)
+	assert.Equal(t, []string{"function", "mutation", "subscription"}, got,
+		"one name, three kinds — composite primary key")
 
 	// A4: modules (parent derived from the dotted name at insert) + the
 	// module→source CLOSURE (submodule contributions recorded on the parent).
@@ -161,15 +170,15 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 		has_data_objects, has_tables, has_functions, has_mut_functions, has_subscriptions) VALUES
 		('probe_mod', 'probe', true, true, false, false, false),
 		('probe_mod.sub', 'probe', true, false, false, false, false)`)
-	got := queryStrings(t, pool, `SELECT name FROM core.catalog.modules WHERE parent = 'probe_mod'`)
+	got = queryStrings(t, pool, `SELECT name FROM core.catalog.modules WHERE parent = 'probe_mod'`)
 	assert.Equal(t, []string{"probe_mod.sub"}, got, "child selection is a plain equality on parent")
 
 	// ---- B. UPSERT --------------------------------------------------------
 
 	// B1: meta upsert — the same statement drives both the insert and the
 	// update path (version gate / flag reconcile).
-	meta := `INSERT INTO core.catalog.data_source_meta (data_source, version, capabilities, engine, read_only, as_module, loaded, disabled, suspended, loaded_at)
-		VALUES ('probe', '%s', '{"read_only":false}', 'duckdb', false, false, true, false, false, CURRENT_TIMESTAMP)
+	meta := `INSERT INTO core.catalog.data_source_meta (data_source, version, capabilities, engine, read_only, as_module, is_extension, loaded, disabled, suspended, loaded_at)
+		VALUES ('probe', '%s', '{"read_only":false}', 'duckdb', false, false, false, true, false, false, CURRENT_TIMESTAMP)
 		ON CONFLICT (data_source) DO UPDATE SET version = EXCLUDED.version, capabilities = EXCLUDED.capabilities`
 	exec(fmt.Sprintf(meta, "v1"))
 	exec(fmt.Sprintf(meta, "v2"))
@@ -218,9 +227,9 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 	// C2: bag replace via plain UPDATE (annotation-style RMW writes the whole
 	// JSON text back).
 	exec(`UPDATE core.catalog.functions SET description = 'probed', args = '[{"name":"id","type":"Int!"},{"name":"mode","type":"String"}]'
-		WHERE module = 'probe' AND name = 'fn'`)
+		WHERE module = 'probe' AND name = 'fn' AND kind = 'function'`)
 	got = queryStrings(t, pool, `SELECT description, json_extract_string(args::JSON, '$[0].description')
-		FROM core.catalog.functions WHERE module = 'probe' AND name = 'fn'`)
+		FROM core.catalog.functions WHERE module = 'probe' AND name = 'fn' AND kind = 'function'`)
 	assert.Equal(t, []string{"probed|<nil>"}, got, "args rewritten wholesale, description column set")
 
 	// ---- D. READS ---------------------------------------------------------
@@ -297,6 +306,46 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 		WHERE o.data_source = 'probe' ORDER BY o.name`)
 	assert.Equal(t, []string{"probe_null|-", "probe_partial|-", "probe_rich|curated"}, got)
 
+	// E5: UNCONDITIONAL multi-row vec upsert — the REINDEX write. Its text is
+	// the full overlay (curation first), so it refreshes a CURATED row's vector
+	// too and drops the seed guard; the text columns stay untouched either way.
+	exec(`INSERT INTO core.catalog.annotations (entity_kind, entity_key, parent, vec, updated_at) VALUES
+		('data_object', 'probe_rich', NULL, '` + vecText("0.5") + `', CURRENT_TIMESTAMP),
+		('data_object', 'probe_partial', NULL, '` + vecText("0.5") + `', CURRENT_TIMESTAMP)
+		ON CONFLICT (entity_kind, entity_key) DO UPDATE SET vec = EXCLUDED.vec, updated_at = EXCLUDED.updated_at`)
+	got = queryStrings(t, pool, `SELECT entity_key, coalesce(description, '-'), vec IS NOT NULL
+		FROM core.catalog.annotations WHERE entity_key IN ('probe_rich', 'probe_partial') ORDER BY entity_key`)
+	assert.Equal(t, []string{"probe_partial|-|true", "probe_rich|curated|true"}, got,
+		"vectors refreshed on both branches, curation text untouched")
+
+	// E6: reindex enumeration — the curation LEFT JOIN on a COMPUTED entity key
+	// plus literal projection columns, so one Go scanner serves every kind.
+	got = queryStrings(t, pool, `SELECT 'field', f.type_name || '.' || f.name, f.type_name,
+		coalesce(a.description, ''), coalesce(f.description, '')
+		FROM core.catalog.fields f
+		LEFT JOIN core.catalog.annotations a
+			ON a.entity_kind = 'field' AND a.entity_key = f.type_name || '.' || f.name
+		WHERE f.data_source = 'probe' ORDER BY f.name`)
+	assert.Equal(t, []string{"field|probe_rich.linked|probe_rich||"}, got,
+		"computed join key and literal columns read on both backends")
+
+	// E7: the FUNCTION overlay join — the annotation kind is a COLUMN here, not
+	// a literal: a function's kind is part of its annotation identity, so the
+	// curation correlates on functions.kind (the entity_functions view and the
+	// reindex enumeration share this shape). The uncurated kind falls through.
+	exec(`INSERT INTO core.catalog.annotations (entity_kind, entity_key, description) VALUES
+		('function', 'probe.fn', 'the query fn'),
+		('mutation', 'probe.fn', 'the mutation fn')`)
+	got = queryStrings(t, pool, `SELECT f.kind, coalesce(a.description, '-')
+		FROM core.catalog.functions f
+		LEFT JOIN core.catalog.annotations a
+			ON a.entity_kind = f.kind
+			AND a.entity_key = CASE WHEN f.module = '' THEN f.name ELSE f.module || '.' || f.name END
+		WHERE f.data_source = 'probe' ORDER BY f.kind`)
+	assert.Equal(t, []string{"function|the query fn", "mutation|the mutation fn", "subscription|-"}, got,
+		"one key, three kinds — each namespace reads its own curation")
+	exec(`DELETE FROM core.catalog.annotations WHERE entity_key = 'probe.fn'`)
+
 	// ---- F. DELETE --------------------------------------------------------
 
 	// F1: row-value IN delete (composite-PK batch delete shape).
@@ -306,11 +355,53 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 	got = queryStrings(t, pool, `SELECT count(*) FROM core.catalog.fields WHERE data_source = 'probe'`)
 	assert.Equal(t, []string{"1"}, got, "row-value IN removed exactly the listed key")
 
+	// F3: DECLARED-BY delete — the source that owns a field row is
+	// COALESCE(dependency_data_source, data_source): a virtual field an
+	// EXTENSION declared on a foreign object is attributed to the source whose
+	// DATA it reads, so neither side may delete by data_source alone.
+	exec(`INSERT INTO core.catalog.fields (type_name, name, field_type, properties, data_source, dependency_data_source, is_pk, ordinal) VALUES
+		('probe_rich', 'ext_join', 'probe_other', NULL, 'probe_other_src', 'probe_ext', false, 5)`)
+	exec(`DELETE FROM core.catalog.fields WHERE COALESCE(dependency_data_source, data_source) = 'probe_other_src'`)
+	got = queryStrings(t, pool, `SELECT count(*) FROM core.catalog.fields WHERE name = 'ext_join'`)
+	assert.Equal(t, []string{"1"}, got, "the DATA source does not own the extension's field")
+	exec(`DELETE FROM core.catalog.fields WHERE COALESCE(dependency_data_source, data_source) = 'probe_ext'`)
+	got = queryStrings(t, pool, `SELECT count(*) FROM core.catalog.fields WHERE name = 'ext_join'`)
+	assert.Equal(t, []string{"0"}, got, "the DECLARING source removes it")
+
+	// F4: the per-kind function seed sweep — one statement per kind, with the
+	// entity subquery narrowed to the same kind, so unregistering a source drops
+	// each namespace's seeds independently.
+	exec(`INSERT INTO core.catalog.annotations (entity_kind, entity_key) VALUES
+		('mutation', 'probe.fn'), ('subscription', 'probe.fn')`)
+	exec(`DELETE FROM core.catalog.annotations WHERE entity_kind = 'mutation'
+		AND entity_key IN (SELECT CASE WHEN module = '' THEN name ELSE module || '.' || name END
+			FROM core.catalog.functions WHERE data_source = 'probe' AND kind = 'mutation')
+		AND description IS NULL AND long_description IS NULL`)
+	got = queryStrings(t, pool, `SELECT entity_kind FROM core.catalog.annotations WHERE entity_key = 'probe.fn'`)
+	assert.Equal(t, []string{"subscription"}, got, "only the swept kind's seed went")
+	exec(`DELETE FROM core.catalog.annotations WHERE entity_key = 'probe.fn'`)
+
 	// F2: predicate sweep (seed rows go, curated rows stay).
 	exec(`DELETE FROM core.catalog.annotations WHERE entity_key LIKE 'probe%'
 		AND description IS NULL AND long_description IS NULL`)
 	got = queryStrings(t, pool, `SELECT entity_key FROM core.catalog.annotations WHERE entity_key LIKE 'probe%'`)
 	assert.Equal(t, []string{"probe_rich"}, got, "sweep removed seeds, kept curated")
+
+	// ---- G. legacy settings KV (schema_version counter shapes) ------------
+	// The store's cluster counter is a two-step read + LITERAL write on the
+	// JSON (DuckDB) / JSONB (PG) value column — no in-SQL arithmetic over the
+	// JSON type, which is what forced the old provider to branch per backend.
+	// A probe-owned key: the real schema_version row must not be touched.
+	exec(`DELETE FROM core._schema_settings WHERE key = 'probe_counter'`)
+	exec(`INSERT INTO core._schema_settings (key, value) VALUES ('probe_counter', '"7"')`)
+	got = queryStrings(t, pool, `SELECT CAST(TRIM(CAST(value AS VARCHAR), '"') AS BIGINT)
+		FROM core._schema_settings WHERE key = 'probe_counter'`)
+	assert.Equal(t, []string{"7"}, got, "JSON string counter reads back as a number")
+	exec(`UPDATE core._schema_settings SET value = '"8"' WHERE key = 'probe_counter'`)
+	got = queryStrings(t, pool, `SELECT CAST(TRIM(CAST(value AS VARCHAR), '"') AS BIGINT)
+		FROM core._schema_settings WHERE key = 'probe_counter'`)
+	assert.Equal(t, []string{"8"}, got, "literal update of the JSON value column")
+	exec(`DELETE FROM core._schema_settings WHERE key = 'probe_counter'`)
 }
 
 func queryStrings(t *testing.T, pool *db.Pool, query string) []string {

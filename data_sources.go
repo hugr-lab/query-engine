@@ -70,7 +70,7 @@ func (s *Service) attachRuntimeSources(ctx context.Context, readonly bool) error
 
 	// Attach cluster source if cluster mode is enabled.
 	if s.config.Cluster.Enabled {
-		s.cluster = cluster.NewSource(s.config.Cluster, s, s.dbProvider)
+		s.cluster = cluster.NewSource(s.config.Cluster, s, s.catalogProvider)
 		if err := s.ds.AttachRuntimeSource(ctx, s.cluster); err != nil {
 			return fmt.Errorf("attach cluster source: %w", err)
 		}
@@ -95,7 +95,7 @@ func (s *Service) attachRuntimeSourcesReadonly(ctx context.Context) error {
 
 	// Attach cluster source if cluster mode is enabled (workers too).
 	if s.config.Cluster.Enabled {
-		s.cluster = cluster.NewSource(s.config.Cluster, s, s.dbProvider)
+		s.cluster = cluster.NewSource(s.config.Cluster, s, s.catalogProvider)
 		readonlySources = append(readonlySources, s.cluster)
 	}
 

@@ -528,7 +528,7 @@ func (g *genContext) readFunctions(ctx context.Context, module string) ([]*funct
 	rows, err := conn.Query(ctx, `SELECT f.module, f.name, f.kind, f.data_source, f.returns, f.is_table,
 		f.args::JSON::VARCHAR, f.properties::JSON::VARCHAR, f.deprecation_reason, f.description
 		FROM core.catalog.functions f`+activeMeta("m", "f.data_source")+`
-		WHERE f.module = `+lit(module)+` ORDER BY f.name`)
+		WHERE f.module = `+lit(module)+` ORDER BY f.name, f.kind`)
 	if err != nil {
 		return nil, fmt.Errorf("read functions of %s: %w", module, err)
 	}

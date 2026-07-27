@@ -13,7 +13,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	catalogdb "github.com/hugr-lab/query-engine/pkg/catalog/db"
 	"github.com/hugr-lab/query-engine/pkg/cluster"
@@ -50,7 +49,10 @@ type Service struct {
 	embedder *embedding.Source
 	cluster  *cluster.Source
 
-	dbProvider *catalogdb.Provider
+	// catalogProvider is the active catalog storage — the compiled-schema
+	// provider or the entity store, behind the slice of surface the engine
+	// needs (catalog_storage.go).
+	catalogProvider catalogStorage
 
 	pendingSources []sources.RuntimeSource
 	initialized    bool
@@ -69,6 +71,10 @@ type Config struct {
 
 	SchemaCacheMaxEntries int           // LRU cache max entries (0 = default 10000)
 	SchemaCacheTTL        time.Duration // LRU cache TTL (0 = default 10m)
+
+	// CatalogStorage selects how the schema is stored in CoreDB.
+	// Empty (the default) keeps the compiled-schema provider.
+	CatalogStorage CatalogStorage
 
 	MCPEnabled bool // Enable MCP endpoint on /mcp
 
@@ -127,8 +133,17 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		})
 	}
 
-	// 3. Attach CoreDB early — creates _schema_* tables on first start.
-	//    The DB must exist before creating db.Provider.
+	// 2b. Resolve the catalog storage mode. The CoreDB source needs it before
+	//     its own catalog is compiled: the catalog module exposes the views of
+	//     the storage that actually runs (the other half's tables are empty).
+	storageMode, err := s.config.CatalogStorage.resolve()
+	if err != nil {
+		return err
+	}
+	s.config.CoreDB.SetEntityStorage(storageMode == CatalogStorageEntity)
+
+	// 3. Attach CoreDB early — creates the schema tables on first start.
+	//    The DB must exist before creating the catalog storage.
 	err = s.config.CoreDB.Attach(ctx, s.db)
 	if err != nil {
 		return fmt.Errorf("attach core db: %w", err)
@@ -152,47 +167,23 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		embedder = src
 	}
 
-	// 4. Create db.Provider with compiler for CatalogManager support.
-	isPostgres := s.config.CoreDB.Info().Type == sources.Postgres
-	tablePrefix := "core."
-	c := compiler.New(compiler.GlobalRules()...)
-	cacheConfig := catalogdb.CacheConfig{
-		MaxEntries: s.config.SchemaCacheMaxEntries,
-		TTL:        s.config.SchemaCacheTTL,
-	}
-	if cacheConfig.MaxEntries == 0 && cacheConfig.TTL == 0 {
-		cacheConfig = catalogdb.DefaultCacheConfig()
-	}
+	// 4-5. Create the catalog storage (compiled schema by default, entity
+	//      storage when configured) and persist the system types where the
+	//      storage needs them.
 	isReadonly := s.config.CoreDB.IsReadonly()
-	dbProvider, err := catalogdb.NewWithCompiler(ctx, s.db, catalogdb.Config{
-		TablePrefix: tablePrefix,
-		Cache:       cacheConfig,
-		IsPostgres:  isPostgres,
-		IsReadonly:  isReadonly,
-		VecSize:     s.config.Embedder.VectorSize,
-	}, embedder, c)
+	provider, err := s.initCatalogStorage(ctx, storageMode, embedder, isReadonly)
 	if err != nil {
-		return fmt.Errorf("create db provider: %w", err)
+		return err
 	}
+	s.catalogProvider = provider
 
-	s.dbProvider = dbProvider
-
-	// 5. Persist system types (version-checked, skips if unchanged on restart).
-	//    Skip in read-only mode — system types were persisted by the writer node.
-	if !isReadonly {
-		err = dbProvider.InitSystemTypes(ctx)
-		if err != nil {
-			return fmt.Errorf("init system types: %w", err)
-		}
-	}
-
-	// 6. Create catalog.Service (auto-detects CatalogManager on dbProvider).
-	ss := catalog.NewService(dbProvider)
+	// 6. Create catalog.Service (auto-detects CatalogManager on the provider).
+	ss := catalog.NewService(provider)
 	s.schema = ss
 	s.catalog = ss
 
 	// 6b. Register schema management UDFs (description updates, hard remove, reindex).
-	if err := dbProvider.RegisterUDFs(ctx, ss); err != nil {
+	if err := provider.RegisterUDFs(ctx, ss); err != nil {
 		return fmt.Errorf("register schema UDFs: %w", err)
 	}
 
@@ -296,7 +287,7 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	// only data-source catalogs missing from the data_sources table are removed.
 	// Skip on read-only CoreDB and cluster workers (management handles cleanup).
 	if !isReadonly && !s.config.Cluster.IsWorker() {
-		if err := s.dbProvider.CleanOrphanedCatalogs(ctx); err != nil {
+		if err := s.catalogProvider.CleanOrphanedCatalogs(ctx); err != nil {
 			slog.Error("failed to clean orphaned catalogs", "error", err)
 		}
 	}
@@ -314,7 +305,7 @@ func (s *Service) Init(ctx context.Context) (err error) {
 				continue
 			}
 			slog.Info("disabling catalog for failed data source", "name", name)
-			if err := s.dbProvider.RemoveCatalog(ctx, name); err != nil {
+			if err := s.catalogProvider.RemoveCatalog(ctx, name); err != nil {
 				slog.Error("failed to disable catalog for data source", "name", name, "error", err)
 			}
 		}

@@ -1,7 +1,19 @@
 # core.catalog Schema Views
 # Mounted as module core.catalog — types accessed as core.catalog.catalogs, core.catalog.types, etc.
 # Conditional: @embeddings directives included only when EmbeddingsEnabled=true
+#
+# TWO EXCLUSIVE HALVES, selected by the engine's catalog storage
+# (EntityStorage):
+#   * the LEGACY views below read the _schema_* tables the compiled-schema
+#     provider writes — the GENERATED GraphQL surface, one row per generated
+#     type / field / argument;
+#   * the ENTITY views (second half) read the catalog.* tables the entity
+#     storage writes — the LOGICAL model, from which the schema is generated on
+#     the fly.
+# Only the half backed by the running storage is rendered: the other half's
+# tables are present but empty, and an empty view is a silent lie.
 
+{{ if not .EntityStorage }}
 # --- Catalogs (data sources) ---
 
 "Schema catalogs (data sources)"
@@ -430,7 +442,8 @@ type enum_values @view(name: "_schema_enum_values") {
   ordinal: Int!
 }
 
-
+{{ end }}
+{{ if .EntityStorage }}
 # --- Entity storage (CoreDB "catalog" schema) ------------------------------
 # The catalog tables are the base-entity schema store (design 034); they are
 # filled by the entity writer and read here through plain static @view(sql:)
@@ -774,13 +787,14 @@ type entity_functions
       JOIN [catalog.data_source_meta] m
         ON m.data_source = f.data_source AND m.loaded AND NOT m.disabled AND NOT m.suspended
       LEFT JOIN [catalog.annotations] a
-        ON a.entity_kind = 'function'
+        ON a.entity_kind = f.kind
         AND a.entity_key = CASE WHEN f.module = '' THEN f.name ELSE f.module || '.' || f.name END
   """)
   {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   module: String! @pk
   name: String! @pk
-  kind: String!
+  "Root namespace — function / mutation / subscription; part of the identity"
+  kind: String! @pk
   data_source: String!
   returns: String!
   is_table: Boolean!
@@ -815,6 +829,79 @@ type entity_types
   description: String
   long_description: String
   vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
+}
+
+"""
+  Stored catalog state — EVERY source that has a stored schema, including the
+  suspended and disabled ones (entity_data_sources shows only the active half).
+  Rows are what a source costs; the three flags are what it shows. loaded_at is
+  stamped only by a real write, so an unchanged value across an unload/load
+  cycle is the proof that nothing was rewritten.
+"""
+type entity_catalogs
+  @view(name: "entity_catalogs", sql: """
+    SELECT m.data_source AS name, m.version, m.engine,
+      COALESCE(ds.type, m.engine) AS type,
+      COALESCE(NULLIF(m.prefix, ''), ds.prefix) AS prefix,
+      m.as_module, m.read_only, m.is_extension,
+      m.loaded, m.disabled, m.suspended, m.loaded_at,
+      COALESCE(a.description, ds.description) AS description,
+      a.long_description
+    FROM [catalog.data_source_meta] m
+      LEFT JOIN [data_sources] ds ON ds.name = m.data_source
+      LEFT JOIN [catalog.annotations] a
+        ON a.entity_kind = 'data_source' AND a.entity_key = m.data_source
+  """) {
+  "The data source name (@catalog name)"
+  name: String! @pk
+  "Stored content version — the gate a load compares against"
+  version: String
+  engine: String
+  type: String
+  prefix: String
+  as_module: Boolean
+  read_only: Boolean
+  is_extension: Boolean
+  "Registered with the engine"
+  loaded: Boolean
+  "Switched off by an operator (survives redeploys)"
+  disabled: Boolean
+  "Hidden without dropping its rows — a soft unload, or an unsatisfied dependency"
+  suspended: Boolean
+  "When the rows were last WRITTEN (not when the flags last moved)"
+  loaded_at: Timestamp
+  description: String
+  long_description: String
+}
+
+"Declared @dependency edges between stored catalogs (entity storage)"
+type entity_catalog_dependencies
+  @view(name: "entity_catalog_dependencies", sql: """
+    SELECT d.data_source AS catalog, d.depends_on
+    FROM [catalog.data_source_dependencies] d
+  """)
+  @references(
+    name: "entity_catalog_dep_catalog"
+    source_fields: ["catalog"]
+    references_fields: ["name"]
+    references_name: "entity_catalogs"
+    query: "catalog_info"
+    description: "The dependent catalog"
+    references_query: "dependencies"
+    references_description: "Catalogs this catalog depends on"
+  )
+  @references(
+    name: "entity_catalog_dep_depends_on"
+    source_fields: ["depends_on"]
+    references_fields: ["name"]
+    references_name: "entity_catalogs"
+    query: "depends_on_info"
+    description: "The dependency catalog"
+    references_query: "dependents"
+    references_description: "Catalogs that depend on this catalog"
+  ) {
+  catalog: String! @pk
+  depends_on: String! @pk
 }
 
 "Logical-model data sources (active runtime state; config joined when present)"
@@ -869,3 +956,4 @@ type entity_annotations
   updated_at: Timestamp
   updated_by: String
 }
+{{ end }}

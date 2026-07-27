@@ -79,9 +79,12 @@ type LogicalAnnotator interface {
 	// SetObjectFieldDescription curates a data-object field's description,
 	// including relation navigation fields (entity_kind=field, key=owner.field).
 	SetObjectFieldDescription(ctx context.Context, owner, field, desc, longDesc string) error
-	// SetFunctionDescription curates a function's description (entity_kind=
-	// function, key = module.name, or name when module is empty; parent=module).
-	SetFunctionDescription(ctx context.Context, module, name, desc, longDesc string) error
+	// SetFunctionDescription curates ONE function's description. The key is
+	// module.name (or name when module is empty; parent=module) and the
+	// entity_kind is the function's KIND — "function", "mutation" or
+	// "subscription", the value catalog.functions.kind stores — because the same
+	// name in two root namespaces is two operations. Empty means "function".
+	SetFunctionDescription(ctx context.Context, module, name, kind, desc, longDesc string) error
 	// SetDataSourceDescription curates a data source's description
 	// (entity_kind=data_source).
 	SetDataSourceDescription(ctx context.Context, name, desc, longDesc string) error

@@ -8,28 +8,12 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-// partialRules is the write-side compiler: VALIDATE + PREPARE only (prefix,
-// validate, extension merge) — the GENERATE / ASSEMBLE / FINALIZE phases are
-// skipped, so the output is the PHYSICAL base model the store persists.
-func partialRules() []base.Rule {
-	return []base.Rule{
-		&rules.ExtensionValidator{},
-		&rules.DependencyCollector{},
-		&rules.SourceValidator{},
-		&rules.DefinitionValidator{},
-		&rules.InternalExtensionMerger{},
-		&rules.CatalogTagger{},
-		&rules.PrefixPreparer{},
-	}
-}
 
 // partialSource runs the partial compiler over a schema and returns the source
 // itself: VALIDATE+PREPARE mutate its definitions in place (prefix, catalog and
@@ -173,11 +157,11 @@ func TestCollect(t *testing.T) {
 	assert.NotContains(t, d.relations, pkKey("orders", "tags"))
 
 	// --- functions (module roots not stored; members extracted) ---
-	fn := d.functions[pkKey("sales", "order_status")]
+	fn := d.functions[pkKey("sales", "order_status", "function")]
 	require.NotNil(t, fn)
 	assert.Equal(t, "function", fn.Kind)
 	assert.False(t, fn.IsTable, "scalar-returning function")
-	mut := d.functions[pkKey("sales", "reprice_orders")]
+	mut := d.functions[pkKey("sales", "reprice_orders", "mutation")]
 	require.NotNil(t, mut)
 	assert.Equal(t, "mutation", mut.Kind)
 	assert.True(t, mut.IsTable, "returns a data object")
@@ -239,11 +223,11 @@ func TestCollect(t *testing.T) {
 	assert.Equal(t, []string{"crm"}, cache.Tags)
 
 	// function config + ordered args.
-	fp := d.functions[pkKey("sales", "order_status")].Properties
+	fp := d.functions[pkKey("sales", "order_status", "function")].Properties
 	require.NotNil(t, fp)
 	require.NotNil(t, fp.Function)
 	assert.Equal(t, "order_status", fp.Function.Name)
-	fargs := d.functions[pkKey("sales", "order_status")].Args
+	fargs := d.functions[pkKey("sales", "order_status", "function")].Args
 	require.Len(t, fargs, 2)
 	assert.Equal(t, "id", fargs[0].Name)
 	assert.Equal(t, "Int!", fargs[0].Type)

@@ -323,28 +323,41 @@ type v_stats @module(name: "app")
 func TestFieldDependencyGate(t *testing.T) {
 	store, ctx := writtenStore(t)
 
-	// Attribute one stored column to a dependency source directly (the
-	// compiled path stamps @dependency on virtual/extension fields).
+	// The dependency source exists and is active first: a field's dependency
+	// IS its declaring (extension) source, so writing "ghost" AFTER stamping
+	// it would legitimately delete the row (deleteSourceRows removes what the
+	// source declared).
+	_, err := store.writeSource(ctx, newDesired(),
+		SourceState{Name: "ghost", Version: "v1", Engine: "duckdb", Loaded: true})
+	require.NoError(t, err)
+
+	// Attribute one stored column to that source directly (the compiled path
+	// stamps @dependency on virtual / extension fields).
 	conn, err := store.pool.Conn(ctx)
 	require.NoError(t, err)
 	_, err = conn.Exec(ctx, `UPDATE core.catalog.fields SET dependency_data_source = 'ghost'
 		WHERE type_name = 'orders' AND name = 'amount'`)
 	conn.Close()
 	require.NoError(t, err)
+	store.invalidateAll()
 
 	def := store.ForName(ctx, "orders")
 	require.NotNil(t, def)
-	assert.Nil(t, def.Fields.ForName("amount"), "field hidden while its dependency is unregistered")
+	fd := def.Fields.ForName("amount")
+	require.NotNil(t, fd, "field served while its dependency is active")
+	assert.NotNil(t, fd.Directives.ForName("dependency"), "@dependency re-emitted on the field")
 
-	// Registering the dependency reveals it — the closure covers fields BY
+	// Disabling the dependency hides it — the closure covers fields BY
 	// dependency attribution, so the cached object is evicted.
-	_, err = store.writeSource(ctx, newDesired(), SourceState{Name: "ghost", Version: "v1", Engine: "duckdb", Loaded: true})
-	require.NoError(t, err)
+	require.NoError(t, store.setFlags(ctx, "ghost", true, true, false))
 	def = store.ForName(ctx, "orders")
 	require.NotNil(t, def)
-	fd := def.Fields.ForName("amount")
-	require.NotNil(t, fd, "field served once the dependency is active")
-	assert.NotNil(t, fd.Directives.ForName("dependency"), "@dependency re-emitted on the field")
+	assert.Nil(t, def.Fields.ForName("amount"), "field hidden while its dependency is inactive")
+
+	require.NoError(t, store.setFlags(ctx, "ghost", true, false, false))
+	def = store.ForName(ctx, "orders")
+	require.NotNil(t, def)
+	assert.NotNil(t, def.Fields.ForName("amount"), "and back")
 }
 
 func TestCacheErrorNotCached(t *testing.T) {

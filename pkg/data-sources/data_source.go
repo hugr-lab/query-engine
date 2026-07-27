@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -57,8 +58,21 @@ func (s *Service) LoadDataSource(ctx context.Context, name string) error {
 
 	_, err = s.DataSource(name)
 	if err == nil {
-		// Hard unload on reload — schema may have changed (DDL, self-defined introspection).
-		err = s.UnloadDataSource(ctx, name, true)
+		// Reloading a source that is still attached. A catalog storage that
+		// REPLACES a catalog on add is detached softly: the catalog is
+		// suspended, its stored schema stays, and the re-add's version gate
+		// below decides whether anything is rewritten — the catalog is
+		// re-created from the current config and re-introspected where the
+		// source is self-defined, so a DDL change lands in the version and
+		// forces the rewrite, while an unchanged schema costs one flag flip
+		// instead of a full recompile. A storage that applies an incremental
+		// diff cannot do that: what the source stopped declaring would survive,
+		// so it is dropped first (catalog.ReplacingCatalogManager).
+		hard := true
+		if r, ok := s.catalogs.(catalog.ReplacingCatalogManager); ok {
+			hard = !r.ReplacesCatalogOnAdd()
+		}
+		err = s.UnloadDataSource(ctx, name, hard)
 		if err != nil && !errors.Is(err, errAlreadyUnloaded) {
 			return err
 		}

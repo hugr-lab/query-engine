@@ -7,15 +7,14 @@ import (
 	"fmt"
 
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/types"
 )
 
 // CatalogChecker checks whether a catalog (data source) has an active engine.
-type CatalogChecker interface {
-	ExistsCatalog(name string) bool
-}
+type CatalogChecker = catalog.CatalogChecker
 
 // RegisterUDFs registers all schema management UDFs on the Provider's DB pool.
 // The checker is used by _schema_hard_remove to verify the catalog is not loaded.
@@ -176,43 +175,6 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 		return err
 	}
 
-	// _schema_reset_summarized(name, scope)
-	if err := db.RegisterScalarFunction(ctx, pool, &db.ScalarFunctionWithArgs[resetSummarizedArgs, *types.OperationResult]{
-		Name: "_schema_reset_summarized",
-		Execute: func(ctx context.Context, args resetSummarizedArgs) (*types.OperationResult, error) {
-			count, err := p.ResetSummarized(ctx, args.name, args.scope)
-			if err != nil {
-				return types.ErrResult(err), nil
-			}
-			return types.Result(fmt.Sprintf("reset %d entities", count), count, 0), nil
-		},
-		ConvertInput: func(args []driver.Value) (resetSummarizedArgs, error) {
-			if len(args) != 2 {
-				return resetSummarizedArgs{}, fmt.Errorf("expected 2 arguments, got %d", len(args))
-			}
-			name, ok := args[0].(string)
-			if !ok {
-				return resetSummarizedArgs{}, fmt.Errorf("expected string for name, got %T", args[0])
-			}
-			scope, ok := args[1].(string)
-			if !ok {
-				return resetSummarizedArgs{}, fmt.Errorf("expected string for scope, got %T", args[1])
-			}
-			return resetSummarizedArgs{
-				name:  name,
-				scope: scope,
-			}, nil
-		},
-		ConvertOutput: convertOperationResult,
-		InputTypes: []duckdb.TypeInfo{
-			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
-			runtime.DuckDBTypeInfoByNameMust("VARCHAR"),
-		},
-		OutputType: db.DuckDBOperationResult(),
-	}); err != nil {
-		return err
-	}
-
 	// _schema_reindex(name, batch_size)
 	if err := db.RegisterScalarFunction(ctx, pool, &db.ScalarFunctionWithArgs[reindexArgs, *types.OperationResult]{
 		Name: "_schema_reindex",
@@ -260,6 +222,46 @@ func (p *Provider) RegisterUDFs(ctx context.Context, checker CatalogChecker) err
 		return err
 	}
 
+	return p.registerEntityOnlyUDFs(ctx)
+}
+
+// entityOnlyUDFs curate the LOGICAL model (design 034) and exist only on the
+// entity catalog storage — the compiled schema this provider stores has no
+// logical entities to key them on. They are registered here as REFUSALS so the
+// shared core.catalog GraphQL surface is complete whichever provider the engine
+// runs on: a call reports the reason through its OperationResult instead of
+// failing the statement with an unknown-function error.
+var entityOnlyUDFs = map[string]int{
+	"_schema_update_data_object_desc":       3,
+	"_schema_update_data_object_field_desc": 4,
+	"_schema_update_source_type_desc":       3,
+	"_schema_update_function_desc":          5,
+	"_schema_update_argument_desc":          5,
+}
+
+func (p *Provider) registerEntityOnlyUDFs(ctx context.Context) error {
+	for name, argc := range entityOnlyUDFs {
+		inputs := make([]duckdb.TypeInfo, argc)
+		for i := range inputs {
+			inputs[i] = runtime.DuckDBTypeInfoByNameMust("VARCHAR")
+		}
+		err := db.RegisterScalarFunction(ctx, p.pool, &db.ScalarFunctionWithArgs[[]string, *types.OperationResult]{
+			Name: name,
+			Execute: func(context.Context, []string) (*types.OperationResult, error) {
+				return types.ErrResult(fmt.Errorf(
+					"%s requires the entity catalog storage", name)), nil
+			},
+			// The arity is enforced by the executor; the arguments themselves
+			// are never read.
+			ConvertInput:  func([]driver.Value) ([]string, error) { return nil, nil },
+			ConvertOutput: convertOperationResult,
+			InputTypes:    inputs,
+			OutputType:    db.DuckDBOperationResult(),
+		})
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -281,11 +283,6 @@ type fieldDescArgs struct {
 type reindexArgs struct {
 	name      string
 	batchSize int32
-}
-
-type resetSummarizedArgs struct {
-	name  string
-	scope string
 }
 
 func convertDescArgs(args []driver.Value) (descArgs, error) {

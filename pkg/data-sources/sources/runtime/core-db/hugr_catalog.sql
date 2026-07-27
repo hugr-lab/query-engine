@@ -208,7 +208,12 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.functi
     ){{ end }},
     deprecation_reason VARCHAR,
     description VARCHAR,
-    PRIMARY KEY (module, name)
+    -- kind is part of the IDENTITY: query functions, mutation functions and
+    -- subscriptions are three independent GraphQL root namespaces, and one
+    -- name legally appears in more than one of them (an HTTP source exposes
+    -- every operation as both a function and a mutation function; core.models
+    -- exposes `completion` as a function AND as a streaming subscription).
+    PRIMARY KEY (module, name, kind)
 );
 
 -- Residual source-defined base types, raw SDL (parsed on demand later).
@@ -224,8 +229,12 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.types 
 -- Curation overlay: NEVER touched by load/unload/reload (orphans legal).
 -- Identity is (entity_kind, entity_key) alone — names are unique in the
 -- logical model; source/module attribution lives in the entity tables and is
--- joined on demand, never denormalized here (D15). Rows with NULL texts and a
--- vector are load-time SEEDS (D24) — swept only with an unregistered source.
+-- joined on demand, never denormalized here (D15). A function's entity_kind IS
+-- its kind (function / mutation / subscription — the value functions.kind
+-- stores), so one name declared in several root namespaces curates
+-- independently and the overlay joins without a mapping. Rows with NULL texts
+-- and a vector are load-time SEEDS (D24) — swept only with an unregistered
+-- source.
 CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.annotations (
     entity_kind      VARCHAR NOT NULL,
     entity_key       VARCHAR NOT NULL,

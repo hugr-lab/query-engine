@@ -44,6 +44,15 @@ type SourceState struct {
 	Loaded       bool
 	Disabled     bool
 	Suspended    bool
+	// Dependencies are the source names this source declares @dependency on
+	// (extension sources); persisted alongside the rows for the manager's
+	// suspend / reactivate cascade.
+	Dependencies []string
+	// Force skips the version gate: the rows are rewritten even when the
+	// stored version matches. The manager uses it to refresh dependents after
+	// their base changed (re-resolves virtual attribution) — the dependents'
+	// own versions are unchanged.
+	Force bool
 }
 
 // storedVersion mixes the format version, the caller's content hash AND the
@@ -65,12 +74,14 @@ func (s SourceState) storedVersion() string {
 // under an ambient context transaction pool.WithTx JOINS it (nesting counter),
 // so atomicity then spans the CALLER's transaction, not this call alone.
 func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) (bool, error) {
-	stored, ok, err := s.sourceVersion(ctx, state.Name)
-	if err != nil {
-		return false, err
-	}
-	if ok && stored == state.storedVersion() {
-		return false, nil // unchanged — nothing to do
+	if !state.Force {
+		stored, ok, err := s.sourceVersion(ctx, state.Name)
+		if err != nil {
+			return false, err
+		}
+		if ok && stored == state.storedVersion() {
+			return false, nil // unchanged — nothing to do
+		}
 	}
 
 	// Embed the seed vectors BEFORE opening the transaction — the embedder is a
@@ -139,6 +150,9 @@ func (s *Store) writeSource(ctx context.Context, d *desired, state SourceState) 
 	if err := s.upsertMeta(txCtx, state); err != nil {
 		return false, err
 	}
+	if err := s.writeDependencies(txCtx, state); err != nil {
+		return false, err
+	}
 	// Seed rows commit atomically with the entity rows (vectors already embedded
 	// above, outside the transaction).
 	if err := s.writeSeeds(txCtx, state.Name, seeds); err != nil {
@@ -168,13 +182,22 @@ func (s *Store) resolveVirtualAttribution(ctx context.Context, d *desired) error
 		return err
 	}
 	defer conn.Close()
+	// A binding names a function by (module, name) with no kind, so the batch is
+	// indexed kind-less once — every kind of one name is written by the same
+	// source, so collapsing them loses nothing and keeps the per-field lookup
+	// out of a scan over the whole function set.
+	batchFuncs := make(map[string]string, len(d.functions))
+	for _, fn := range d.functions {
+		batchFuncs[pkKey(fn.Module, fn.Name)] = fn.DataSource
+	}
 	lookupFunc := func(module, name string) (string, error) {
-		if fn, ok := d.functions[pkKey(module, name)]; ok {
-			return fn.DataSource, nil
+		if ds, ok := batchFuncs[pkKey(module, name)]; ok {
+			return ds, nil
 		}
 		var ds string
 		err := conn.QueryRow(ctx, `SELECT data_source FROM core.catalog.functions
-			WHERE module = `+lit(module)+` AND name = `+lit(name)).Scan(&ds)
+			WHERE module = `+lit(module)+` AND name = `+lit(name)+`
+			ORDER BY kind LIMIT 1`).Scan(&ds)
 		if err == sql.ErrNoRows {
 			return "", nil
 		}
@@ -395,8 +418,9 @@ func (s *Store) affectedObjects(ctx context.Context, dataSource string, d *desir
 		return nil, err
 	}
 	if d != nil {
-		for key := range d.functions {
-			functions[key] = struct{}{}
+		// Keyed WITHOUT the kind: a binding names its target by (module, name).
+		for _, fn := range d.functions {
+			functions[pkKey(fn.Module, fn.Name)] = struct{}{}
 		}
 	}
 	if len(functions) > 0 {
@@ -518,14 +542,20 @@ func (s *Store) sourceVersion(ctx context.Context, dataSource string) (string, b
 }
 
 func (s *Store) deleteSourceRows(ctx context.Context, dataSource string) error {
-	// Strictly own attribution: a source touches only its own rows. Fields an
-	// EXTENSION source added to another source's object carry their own
-	// data_source, so reloading the base source never removes them (cross-source
-	// dependents are refreshed by the engine's cascade reload).
+	// A source removes the rows it DECLARED, which for fields is not the same
+	// as the rows attributed to it: resolveVirtualAttribution re-points a
+	// virtual field's data_source at the source whose DATA it reads (a @join
+	// target's source), and dependency_data_source keeps the declaring
+	// extension. Deleting by data_source alone therefore (a) left an extension
+	// source's own fields behind — its next load hit the (type_name, name)
+	// primary key — and (b) let the DATA source's reload delete fields it
+	// never declared. COALESCE(dependency_data_source, data_source) is the
+	// declaring source for every row: plain fields keep data_source (dependency
+	// NULL), extension-declared ones resolve to their extension.
 	ds := lit(dataSource)
 	for _, stmt := range []string{
 		`DELETE FROM core.catalog.data_objects WHERE data_source = ` + ds,
-		`DELETE FROM core.catalog.fields WHERE data_source = ` + ds,
+		`DELETE FROM core.catalog.fields WHERE COALESCE(dependency_data_source, data_source) = ` + ds,
 		`DELETE FROM core.catalog.relations WHERE data_source = ` + ds,
 		`DELETE FROM core.catalog.functions WHERE data_source = ` + ds,
 		`DELETE FROM core.catalog.types WHERE data_source = ` + ds,
@@ -653,6 +683,27 @@ func (s *Store) upsertMeta(ctx context.Context, state SourceState) error {
 		loaded = EXCLUDED.loaded, disabled = EXCLUDED.disabled, suspended = EXCLUDED.suspended, loaded_at = EXCLUDED.loaded_at`
 	if err := s.exec(ctx, stmt); err != nil {
 		return fmt.Errorf("catalog meta upsert %s: %w", state.Name, err)
+	}
+	return nil
+}
+
+// writeDependencies replaces the source's declared @dependency rows — the
+// manager's cascade reads them back to suspend / reactivate dependents.
+func (s *Store) writeDependencies(ctx context.Context, state SourceState) error {
+	if err := s.exec(ctx, `DELETE FROM core.catalog.data_source_dependencies WHERE data_source = `+lit(state.Name)); err != nil {
+		return fmt.Errorf("catalog dependencies %s: %w", state.Name, err)
+	}
+	seen := map[string]struct{}{}
+	rows := make([][]any, 0, len(state.Dependencies))
+	for _, dep := range state.Dependencies {
+		if _, ok := seen[dep]; ok || dep == "" || dep == state.Name {
+			continue
+		}
+		seen[dep] = struct{}{}
+		rows = append(rows, []any{state.Name, dep})
+	}
+	if err := s.insertRows(ctx, "data_source_dependencies", []string{"data_source", "depends_on"}, rows); err != nil {
+		return fmt.Errorf("catalog dependencies %s: %w", state.Name, err)
 	}
 	return nil
 }
