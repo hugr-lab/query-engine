@@ -52,7 +52,7 @@ func TestFreshCoreDBDuckDB(t *testing.T) {
 	got = queryStrings(t, pool, `SELECT properties.soft_delete FROM core.catalog.data_objects WHERE name = 'probe_partial'`)
 	assert.Equal(t, []string{"true"}, got)
 	got = queryStrings(t, pool, `SELECT args[1].name, args[1]."type", args[2].description
-		FROM core.catalog.functions WHERE module = 'probe' AND name = 'fn'`)
+		FROM core.catalog.functions WHERE module = 'probe' AND name = 'fn' AND kind = 'function'`)
 	assert.Equal(t, []string{"id|Int!|<nil>"}, got, "args is a native LIST of STRUCT")
 	got = queryStrings(t, pool, `SELECT properties.function_call."function".name,
 		properties.function_call.args::VARCHAR, properties."default".value::VARCHAR
@@ -149,9 +149,18 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 		 'probe', false, 3)`)
 
 	// A3: functions.args — a LIST of structs written as one JSON array text.
+	// The three KINDS of one name coexist: identity is (module, name, kind),
+	// because query functions, mutation functions and subscriptions are
+	// independent GraphQL root namespaces.
 	exec(`INSERT INTO core.catalog.functions (module, name, kind, data_source, returns, is_table, args) VALUES
 		('probe', 'fn', 'function', 'probe', 'String', false,
-		 '[{"name":"id","type":"Int!","description":"identifier"},{"name":"mode","type":"String"}]')`)
+		 '[{"name":"id","type":"Int!","description":"identifier"},{"name":"mode","type":"String"}]'),
+		('probe', 'fn', 'mutation', 'probe', 'String', false, NULL),
+		('probe', 'fn', 'subscription', 'probe', 'String', false, NULL)`)
+	got := queryStrings(t, pool, `SELECT kind FROM core.catalog.functions
+		WHERE module = 'probe' AND name = 'fn' ORDER BY kind`)
+	assert.Equal(t, []string{"function", "mutation", "subscription"}, got,
+		"one name, three kinds — composite primary key")
 
 	// A4: modules (parent derived from the dotted name at insert) + the
 	// module→source CLOSURE (submodule contributions recorded on the parent).
@@ -161,7 +170,7 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 		has_data_objects, has_tables, has_functions, has_mut_functions, has_subscriptions) VALUES
 		('probe_mod', 'probe', true, true, false, false, false),
 		('probe_mod.sub', 'probe', true, false, false, false, false)`)
-	got := queryStrings(t, pool, `SELECT name FROM core.catalog.modules WHERE parent = 'probe_mod'`)
+	got = queryStrings(t, pool, `SELECT name FROM core.catalog.modules WHERE parent = 'probe_mod'`)
 	assert.Equal(t, []string{"probe_mod.sub"}, got, "child selection is a plain equality on parent")
 
 	// ---- B. UPSERT --------------------------------------------------------
@@ -218,9 +227,9 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 	// C2: bag replace via plain UPDATE (annotation-style RMW writes the whole
 	// JSON text back).
 	exec(`UPDATE core.catalog.functions SET description = 'probed', args = '[{"name":"id","type":"Int!"},{"name":"mode","type":"String"}]'
-		WHERE module = 'probe' AND name = 'fn'`)
+		WHERE module = 'probe' AND name = 'fn' AND kind = 'function'`)
 	got = queryStrings(t, pool, `SELECT description, json_extract_string(args::JSON, '$[0].description')
-		FROM core.catalog.functions WHERE module = 'probe' AND name = 'fn'`)
+		FROM core.catalog.functions WHERE module = 'probe' AND name = 'fn' AND kind = 'function'`)
 	assert.Equal(t, []string{"probed|<nil>"}, got, "args rewritten wholesale, description column set")
 
 	// ---- D. READS ---------------------------------------------------------
@@ -328,6 +337,19 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 	exec(`DELETE FROM core.catalog.fields WHERE (type_name, name) IN (('probe_rich', 'tmp_del'))`)
 	got = queryStrings(t, pool, `SELECT count(*) FROM core.catalog.fields WHERE data_source = 'probe'`)
 	assert.Equal(t, []string{"1"}, got, "row-value IN removed exactly the listed key")
+
+	// F3: DECLARED-BY delete — the source that owns a field row is
+	// COALESCE(dependency_data_source, data_source): a virtual field an
+	// EXTENSION declared on a foreign object is attributed to the source whose
+	// DATA it reads, so neither side may delete by data_source alone.
+	exec(`INSERT INTO core.catalog.fields (type_name, name, field_type, properties, data_source, dependency_data_source, is_pk, ordinal) VALUES
+		('probe_rich', 'ext_join', 'probe_other', NULL, 'probe_other_src', 'probe_ext', false, 5)`)
+	exec(`DELETE FROM core.catalog.fields WHERE COALESCE(dependency_data_source, data_source) = 'probe_other_src'`)
+	got = queryStrings(t, pool, `SELECT count(*) FROM core.catalog.fields WHERE name = 'ext_join'`)
+	assert.Equal(t, []string{"1"}, got, "the DATA source does not own the extension's field")
+	exec(`DELETE FROM core.catalog.fields WHERE COALESCE(dependency_data_source, data_source) = 'probe_ext'`)
+	got = queryStrings(t, pool, `SELECT count(*) FROM core.catalog.fields WHERE name = 'ext_join'`)
+	assert.Equal(t, []string{"0"}, got, "the DECLARING source removes it")
 
 	// F2: predicate sweep (seed rows go, curated rows stay).
 	exec(`DELETE FROM core.catalog.annotations WHERE entity_key LIKE 'probe%'

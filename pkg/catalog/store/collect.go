@@ -368,7 +368,14 @@ func collectModuleRoot(ctx context.Context, defs base.DefinitionsSource, d *desi
 			}
 		}
 		ensureModule(d, module)
-		key := pkKey(module, f.Name)
+		// The KIND is part of the identity: function, mutation function and
+		// subscription are independent GraphQL root namespaces, and one name
+		// legally appears in several of them (an HTTP source exposes every
+		// operation as both a function and a mutation function; core.models
+		// exposes `completion` as a function AND as a subscription). Keying
+		// without the kind silently dropped every duplicate — the dedup exists
+		// only to keep a repeated conflict target out of the multi-row write.
+		key := pkKey(module, f.Name, kind)
 		if _, ok := d.functions[key]; ok {
 			continue
 		}

@@ -157,11 +157,11 @@ func TestCollect(t *testing.T) {
 	assert.NotContains(t, d.relations, pkKey("orders", "tags"))
 
 	// --- functions (module roots not stored; members extracted) ---
-	fn := d.functions[pkKey("sales", "order_status")]
+	fn := d.functions[pkKey("sales", "order_status", "function")]
 	require.NotNil(t, fn)
 	assert.Equal(t, "function", fn.Kind)
 	assert.False(t, fn.IsTable, "scalar-returning function")
-	mut := d.functions[pkKey("sales", "reprice_orders")]
+	mut := d.functions[pkKey("sales", "reprice_orders", "mutation")]
 	require.NotNil(t, mut)
 	assert.Equal(t, "mutation", mut.Kind)
 	assert.True(t, mut.IsTable, "returns a data object")
@@ -223,11 +223,11 @@ func TestCollect(t *testing.T) {
 	assert.Equal(t, []string{"crm"}, cache.Tags)
 
 	// function config + ordered args.
-	fp := d.functions[pkKey("sales", "order_status")].Properties
+	fp := d.functions[pkKey("sales", "order_status", "function")].Properties
 	require.NotNil(t, fp)
 	require.NotNil(t, fp.Function)
 	assert.Equal(t, "order_status", fp.Function.Name)
-	fargs := d.functions[pkKey("sales", "order_status")].Args
+	fargs := d.functions[pkKey("sales", "order_status", "function")].Args
 	require.Len(t, fargs, 2)
 	assert.Equal(t, "id", fargs[0].Name)
 	assert.Equal(t, "Int!", fargs[0].Type)

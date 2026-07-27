@@ -208,7 +208,12 @@ CREATE TABLE IF NOT EXISTS {{ if isAttachedDuckdb }}core.{{ end }}catalog.functi
     ){{ end }},
     deprecation_reason VARCHAR,
     description VARCHAR,
-    PRIMARY KEY (module, name)
+    -- kind is part of the IDENTITY: query functions, mutation functions and
+    -- subscriptions are three independent GraphQL root namespaces, and one
+    -- name legally appears in more than one of them (an HTTP source exposes
+    -- every operation as both a function and a mutation function; core.models
+    -- exposes `completion` as a function AND as a streaming subscription).
+    PRIMARY KEY (module, name, kind)
 );
 
 -- Residual source-defined base types, raw SDL (parsed on demand later).

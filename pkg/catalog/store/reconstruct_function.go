@@ -34,8 +34,12 @@ func functionField(row *function) *ast.FieldDefinition {
 	}
 }
 
-// readFunction reads one function row by its (module, name) primary key;
-// absent = (nil, nil).
+// readFunction reads one function row by (module, name); absent = (nil, nil).
+// Identity includes the KIND, so a name declared in several root namespaces
+// has several rows — this lookup serves the kind-less Provider.Function
+// surface and takes the first by kind (function → mutation → subscription).
+// Kind-aware callers (the module roots, the annotation overlay) go through
+// readFunctions and filter themselves.
 func (g *genContext) readFunction(ctx context.Context, module, name string) (*function, error) {
 	key := pkKey(module, name)
 	if row, ok := g.function[key]; ok {
@@ -49,7 +53,8 @@ func (g *genContext) readFunction(ctx context.Context, module, name string) (*fu
 	row, err := scanFunction(conn.QueryRow(ctx, `SELECT f.module, f.name, f.kind, f.data_source, f.returns, f.is_table,
 		f.args::JSON::VARCHAR, f.properties::JSON::VARCHAR, f.deprecation_reason, f.description
 		FROM core.catalog.functions f`+activeMeta("m", "f.data_source")+`
-		WHERE f.module = `+lit(module)+` AND f.name = `+lit(name)).Scan)
+		WHERE f.module = `+lit(module)+` AND f.name = `+lit(name)+`
+		ORDER BY f.kind LIMIT 1`).Scan)
 	if err != nil {
 		if err != sql.ErrNoRows {
 			return nil, fmt.Errorf("read function %s.%s: %w", module, name, err)

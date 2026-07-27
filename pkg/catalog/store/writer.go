@@ -182,13 +182,18 @@ func (s *Store) resolveVirtualAttribution(ctx context.Context, d *desired) error
 		return err
 	}
 	defer conn.Close()
+	// A binding names a function by (module, name) with no kind, and every
+	// kind of one name comes from the same source — any row answers.
 	lookupFunc := func(module, name string) (string, error) {
-		if fn, ok := d.functions[pkKey(module, name)]; ok {
-			return fn.DataSource, nil
+		for _, fn := range d.functions {
+			if fn.Module == module && fn.Name == name {
+				return fn.DataSource, nil
+			}
 		}
 		var ds string
 		err := conn.QueryRow(ctx, `SELECT data_source FROM core.catalog.functions
-			WHERE module = `+lit(module)+` AND name = `+lit(name)).Scan(&ds)
+			WHERE module = `+lit(module)+` AND name = `+lit(name)+`
+			ORDER BY kind LIMIT 1`).Scan(&ds)
 		if err == sql.ErrNoRows {
 			return "", nil
 		}
@@ -409,8 +414,9 @@ func (s *Store) affectedObjects(ctx context.Context, dataSource string, d *desir
 		return nil, err
 	}
 	if d != nil {
-		for key := range d.functions {
-			functions[key] = struct{}{}
+		// Keyed WITHOUT the kind: a binding names its target by (module, name).
+		for _, fn := range d.functions {
+			functions[pkKey(fn.Module, fn.Name)] = struct{}{}
 		}
 	}
 	if len(functions) > 0 {
@@ -532,14 +538,20 @@ func (s *Store) sourceVersion(ctx context.Context, dataSource string) (string, b
 }
 
 func (s *Store) deleteSourceRows(ctx context.Context, dataSource string) error {
-	// Strictly own attribution: a source touches only its own rows. Fields an
-	// EXTENSION source added to another source's object carry their own
-	// data_source, so reloading the base source never removes them (cross-source
-	// dependents are refreshed by the engine's cascade reload).
+	// A source removes the rows it DECLARED, which for fields is not the same
+	// as the rows attributed to it: resolveVirtualAttribution re-points a
+	// virtual field's data_source at the source whose DATA it reads (a @join
+	// target's source), and dependency_data_source keeps the declaring
+	// extension. Deleting by data_source alone therefore (a) left an extension
+	// source's own fields behind — its next load hit the (type_name, name)
+	// primary key — and (b) let the DATA source's reload delete fields it
+	// never declared. COALESCE(dependency_data_source, data_source) is the
+	// declaring source for every row: plain fields keep data_source (dependency
+	// NULL), extension-declared ones resolve to their extension.
 	ds := lit(dataSource)
 	for _, stmt := range []string{
 		`DELETE FROM core.catalog.data_objects WHERE data_source = ` + ds,
-		`DELETE FROM core.catalog.fields WHERE data_source = ` + ds,
+		`DELETE FROM core.catalog.fields WHERE COALESCE(dependency_data_source, data_source) = ` + ds,
 		`DELETE FROM core.catalog.relations WHERE data_source = ` + ds,
 		`DELETE FROM core.catalog.functions WHERE data_source = ` + ds,
 		`DELETE FROM core.catalog.types WHERE data_source = ` + ds,

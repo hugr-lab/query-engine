@@ -235,8 +235,11 @@ func (s *Store) sweepAnnotationSeeds(ctx context.Context, dataSource string) err
 			` AND entity_key IN (SELECT name FROM core.catalog.data_objects WHERE data_source = ` + ds + `)` + seedOnly,
 		`DELETE FROM core.catalog.annotations WHERE entity_kind = ` + lit(kindType) +
 			` AND entity_key IN (SELECT name FROM core.catalog.types WHERE data_source = ` + ds + `)` + seedOnly,
+		// Fields the source DECLARED (mirrors deleteSourceRows: an extension's
+		// virtual field is attributed to the source whose data it reads).
 		`DELETE FROM core.catalog.annotations WHERE entity_kind = ` + lit(kindField) +
-			` AND entity_key IN (SELECT type_name || '.' || name FROM core.catalog.fields WHERE data_source = ` + ds + `)` + seedOnly,
+			` AND entity_key IN (SELECT type_name || '.' || name FROM core.catalog.fields
+				WHERE COALESCE(dependency_data_source, data_source) = ` + ds + `)` + seedOnly,
 		`DELETE FROM core.catalog.annotations WHERE entity_kind = ` + lit(kindField) +
 			` AND entity_key IN (
 				SELECT source || '.' || source_field FROM core.catalog.relations

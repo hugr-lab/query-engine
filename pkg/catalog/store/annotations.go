@@ -23,6 +23,9 @@ import (
 //	  type          entity_key = residual source type name          → def.Description
 //	  field         entity_key = "owner.field" (incl. relation nav) → field.Description
 //	  function      entity_key = "module.name" (or "name"); parent=module → root field.Description
+//	                (kind-LESS on purpose: a name declared as both a function
+//	                and a mutation function is one operation exposed twice, and
+//	                shares its curation across the root namespaces)
 //	  data_source   entity_key = data source name                   (no ForName surface)
 //
 //	GRAPHQL (the generated surface with no logical entity to key on):
