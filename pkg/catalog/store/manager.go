@@ -453,6 +453,28 @@ func (s *Store) storedDepsSatisfied(ctx context.Context, name string) (bool, err
 	return unsatisfied == 0, nil
 }
 
+// ClearSourceVersion invalidates a source's STORED version so the next load
+// recompiles and rewrites its rows wholesale instead of taking the version gate
+// (_schema_version_clean). The gate compares a content hash, so a row set that
+// went stale for a reason the hash cannot see — a compiler change, a partial
+// write recovered by hand — can only be forced out this way.
+func (s *Store) ClearSourceVersion(ctx context.Context, name string) error {
+	if s.isReadonly {
+		return ErrReadOnly
+	}
+	if _, ok, err := s.sourceMeta(ctx, name); err != nil {
+		return err
+	} else if !ok {
+		return fmt.Errorf("catalog %q not found", name)
+	}
+	if err := s.exec(ctx, `UPDATE core.catalog.data_source_meta SET version = `+lit("")+
+		` WHERE data_source = `+lit(name)); err != nil {
+		return fmt.Errorf("clear catalog version %q: %w", name, err)
+	}
+	slog.Info("catalog version cleared", "catalog", name)
+	return nil
+}
+
 // sourceState assembles the writer's SourceState from the catalog handle: the
 // content version, the compile options that shape stored names and the engine
 // capabilities snapshot.

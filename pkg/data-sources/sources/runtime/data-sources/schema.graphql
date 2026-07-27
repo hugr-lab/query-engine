@@ -67,11 +67,6 @@ extend type MutationFunction {
     @module(name: "core")
     @function(name: "_schema_update_catalog_desc")
 
-  "Reset is_summarized flag so summarizer re-processes entities. scope: all|catalog|type"
-  _schema_reset_summarized(name: String = "", scope: String = "all"): OperationResult
-    @module(name: "core")
-    @function(name: "_schema_reset_summarized")
-
   "Recompute embeddings. Empty name = all entities."
   _schema_reindex(name: String = "", batch_size: Int = 50): OperationResult 
     @module(name: "core")

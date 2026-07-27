@@ -151,7 +151,7 @@ func (s *Store) writeSeeds(ctx context.Context, source string, rows []seedRow) e
 		}
 		refresh = append(refresh, r)
 	}
-	return s.refreshSeedVectors(ctx, source, refresh)
+	return s.upsertVectors(ctx, "catalog seed "+source, refresh, true)
 }
 
 // insertSeedIfAbsent inserts a vec-only seed row ONLY when no row for the key
@@ -171,22 +171,27 @@ func (s *Store) insertSeedIfAbsent(ctx context.Context, r seedRow) error {
 	return err
 }
 
-// refreshSeedVectors upserts the SEED vectors of the non-module entities: create
-// the row (text NULL) or, when it already exists as a seed, refresh only its
-// vector — a curated row (description / long_description set) is left untouched
-// by the WHERE (probe E2).
-func (s *Store) refreshSeedVectors(ctx context.Context, source string, rows []seedRow) error {
+// upsertVectors writes vec-only annotation rows in chunks: create the row (text
+// NULL) or refresh an existing row's vector. seedsOnly guards the update with
+// "uncurated rows only" — the load-time seed path, whose text comes from the
+// SDL and must never overwrite a curation's vector (probe E2). The reindex path
+// clears the guard: its text is the FULL overlay (curation first), so refreshing
+// a curated row's vector is the point (probe E5). Rows must be unique by
+// (kind, key) — a repeated conflict target fails the statement on both backends.
+func (s *Store) upsertVectors(ctx context.Context, what string, rows []seedRow, seedsOnly bool) error {
 	if len(rows) == 0 {
 		return nil
 	}
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
-		return fmt.Errorf("catalog seed %s: %w", source, err)
+		return fmt.Errorf("%s: %w", what, err)
 	}
 	defer conn.Close()
 	tail := ` ON CONFLICT (entity_kind, entity_key) DO UPDATE SET vec = EXCLUDED.vec,
-		updated_at = EXCLUDED.updated_at
-		WHERE description IS NULL AND long_description IS NULL`
+		updated_at = EXCLUDED.updated_at`
+	if seedsOnly {
+		tail += ` WHERE description IS NULL AND long_description IS NULL`
+	}
 	head := `INSERT INTO core.catalog.annotations (entity_kind, entity_key, parent, vec, updated_at) VALUES `
 	for start := 0; start < len(rows); start += insertChunk {
 		end := min(start+insertChunk, len(rows))
@@ -202,7 +207,7 @@ func (s *Store) refreshSeedVectors(ctx context.Context, source string, rows []se
 		}
 		b.WriteString(tail)
 		if _, err := conn.Exec(ctx, b.String()); err != nil {
-			return fmt.Errorf("catalog seed %s: %w", source, err)
+			return fmt.Errorf("%s: %w", what, err)
 		}
 	}
 	return nil

@@ -18,6 +18,13 @@ import (
 //go:embed schema.graphql
 var schema string
 
+// catalogSchema is the curation / maintenance surface in the core.catalog
+// module — the stable names for the same UDFs the core module still exposes
+// under their internal `_schema_*` names.
+//
+//go:embed catalog_schema.graphql
+var catalogSchema string
+
 type Source struct {
 	db *db.Pool
 	qe types.Querier
@@ -64,5 +71,5 @@ func (s *Source) Catalog(ctx context.Context) (sources.Catalog, error) {
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
 	}
-	return sources.NewStringSource(s.Name(), e, opts, schema)
+	return sources.NewStringSource(s.Name(), e, opts, schema, catalogSchema)
 }

@@ -1,0 +1,136 @@
+# Catalog curation and maintenance — module core.catalog (alongside the
+# catalog views the CoreDB source contributes to the same module).
+#
+# These are the stable GraphQL names; the DuckDB UDFs behind them keep their
+# internal `_schema_*` names. The `_schema_*` FIELDS in the core module
+# (schema.graphql) are the same functions under their old names, kept until the
+# compiled-schema catalog provider is removed.
+#
+# Curation has TWO surfaces (design 034):
+#   * the LOGICAL model — modules, data sources, data objects and their fields,
+#     source types, functions: the entities a source declares. A curated logical
+#     entity also shows through on everything generation derives from it (its
+#     filter / aggregation / mutation-input fields), so prefer these.
+#   * the GENERATED GraphQL surface — annotate_gql_* — a single generated type,
+#     field or argument that has no logical entity to key on.
+#
+# An empty description clears the curation: the generated text shows again.
+#
+# The functions marked "entity catalog storage only" have no equivalent in the
+# compiled-schema provider and report that through their OperationResult when
+# the engine runs on it.
+
+extend type MutationFunction {
+  "Curate a module description."
+  annotate_module(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_update_module_desc")
+
+  "Curate a data source description."
+  annotate_data_source(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_update_catalog_desc")
+
+  "Curate a data object (table / view / cube) description. Entity catalog storage only."
+  annotate_data_object(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_update_data_object_desc")
+
+  """
+    Curate a data object field description, including a relation navigation
+    field. Entity catalog storage only.
+  """
+  annotate_field(
+    type_name: String!
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_update_data_object_field_desc")
+
+  """
+    Curate a source-declared type description (a struct or input type that is
+    not a data object). Entity catalog storage only.
+  """
+  annotate_type(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_update_source_type_desc")
+
+  "Curate a function description (module is the function's module, '' for none). Entity catalog storage only."
+  annotate_function(
+    module: String!
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_update_function_desc")
+
+  "Curate a GENERATED type description."
+  annotate_gql_type(
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_update_type_desc")
+
+  "Curate a GENERATED field description."
+  annotate_gql_field(
+    type_name: String!
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_update_field_desc")
+
+  "Curate a GENERATED field argument description. Entity catalog storage only."
+  annotate_gql_argument(
+    type_name: String!
+    field_name: String!
+    name: String!
+    description: String!
+    long_description: String!
+  ): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_update_argument_desc")
+
+  """
+    Delete a data source's stored schema entirely (curation is kept). Rejects a
+    data source whose catalog is still loaded — unload it first.
+  """
+  remove_data_source_schema(name: String!): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_hard_remove")
+
+  """
+    Reset a data source's stored schema version so the next load recompiles it
+    and rewrites its schema instead of reusing the stored one.
+  """
+  reset_data_source_version(name: String!): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_version_clean")
+
+  "Recompute embedding vectors. Empty name = every entity."
+  reindex_embeddings(name: String = "", batch_size: Int = 50): OperationResult
+    @module(name: "core.catalog")
+    @function(name: "_schema_reindex")
+}

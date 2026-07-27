@@ -297,6 +297,29 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 		WHERE o.data_source = 'probe' ORDER BY o.name`)
 	assert.Equal(t, []string{"probe_null|-", "probe_partial|-", "probe_rich|curated"}, got)
 
+	// E5: UNCONDITIONAL multi-row vec upsert — the REINDEX write. Its text is
+	// the full overlay (curation first), so it refreshes a CURATED row's vector
+	// too and drops the seed guard; the text columns stay untouched either way.
+	exec(`INSERT INTO core.catalog.annotations (entity_kind, entity_key, parent, vec, updated_at) VALUES
+		('data_object', 'probe_rich', NULL, '` + vecText("0.5") + `', CURRENT_TIMESTAMP),
+		('data_object', 'probe_partial', NULL, '` + vecText("0.5") + `', CURRENT_TIMESTAMP)
+		ON CONFLICT (entity_kind, entity_key) DO UPDATE SET vec = EXCLUDED.vec, updated_at = EXCLUDED.updated_at`)
+	got = queryStrings(t, pool, `SELECT entity_key, coalesce(description, '-'), vec IS NOT NULL
+		FROM core.catalog.annotations WHERE entity_key IN ('probe_rich', 'probe_partial') ORDER BY entity_key`)
+	assert.Equal(t, []string{"probe_partial|-|true", "probe_rich|curated|true"}, got,
+		"vectors refreshed on both branches, curation text untouched")
+
+	// E6: reindex enumeration — the curation LEFT JOIN on a COMPUTED entity key
+	// plus literal projection columns, so one Go scanner serves every kind.
+	got = queryStrings(t, pool, `SELECT 'field', f.type_name || '.' || f.name, f.type_name,
+		coalesce(a.description, ''), coalesce(f.description, '')
+		FROM core.catalog.fields f
+		LEFT JOIN core.catalog.annotations a
+			ON a.entity_kind = 'field' AND a.entity_key = f.type_name || '.' || f.name
+		WHERE f.data_source = 'probe' ORDER BY f.name`)
+	assert.Equal(t, []string{"field|probe_rich.linked|probe_rich||"}, got,
+		"computed join key and literal columns read on both backends")
+
 	// ---- F. DELETE --------------------------------------------------------
 
 	// F1: row-value IN delete (composite-PK batch delete shape).
