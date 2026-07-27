@@ -182,13 +182,17 @@ func (s *Store) resolveVirtualAttribution(ctx context.Context, d *desired) error
 		return err
 	}
 	defer conn.Close()
-	// A binding names a function by (module, name) with no kind, and every
-	// kind of one name comes from the same source — any row answers.
+	// A binding names a function by (module, name) with no kind, so the batch is
+	// indexed kind-less once — every kind of one name is written by the same
+	// source, so collapsing them loses nothing and keeps the per-field lookup
+	// out of a scan over the whole function set.
+	batchFuncs := make(map[string]string, len(d.functions))
+	for _, fn := range d.functions {
+		batchFuncs[pkKey(fn.Module, fn.Name)] = fn.DataSource
+	}
 	lookupFunc := func(module, name string) (string, error) {
-		for _, fn := range d.functions {
-			if fn.Module == module && fn.Name == name {
-				return fn.DataSource, nil
-			}
+		if ds, ok := batchFuncs[pkKey(module, name)]; ok {
+			return ds, nil
 		}
 		var ds string
 		err := conn.QueryRow(ctx, `SELECT data_source FROM core.catalog.functions

@@ -417,6 +417,9 @@ func (s *Store) depsActive(ctx context.Context, deps []string) (bool, error) {
 		seen[d] = struct{}{}
 		names = append(names, lit(d))
 	}
+	if len(names) == 0 {
+		return true, nil // only empty names — nothing to check (and no IN ())
+	}
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {
 		return false, fmt.Errorf("catalog deps check: %w", err)
@@ -488,37 +491,14 @@ func (s *Store) CleanOrphanedCatalogs(ctx context.Context) error {
 	if s.isReadonly {
 		return ErrReadOnly
 	}
-	conn, err := s.pool.Conn(ctx)
+	// The read is a separate call so its connection is released by the time the
+	// deletions start: deleteSource takes its own connection for the
+	// transaction, and holding this one across the loop would pin a second
+	// pool slot for the whole cleanup.
+	orphans, err := s.orphanedCatalogs(ctx)
 	if err != nil {
-		return fmt.Errorf("clean orphaned catalogs: %w", err)
+		return err
 	}
-	rows, err := conn.Query(ctx, `SELECT m.data_source FROM core.catalog.data_source_meta m
-		LEFT JOIN core.data_sources ds ON ds.name = m.data_source
-		WHERE ds.name IS NULL ORDER BY m.data_source`)
-	if err != nil {
-		conn.Close()
-		return fmt.Errorf("clean orphaned catalogs: %w", err)
-	}
-	var orphans []string
-	s.catMu.RLock()
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			break
-		}
-		if _, live := s.catalogs[name]; live {
-			continue
-		}
-		orphans = append(orphans, name)
-	}
-	s.catMu.RUnlock()
-	err = rows.Err()
-	rows.Close()
-	conn.Close()
-	if err != nil {
-		return fmt.Errorf("clean orphaned catalogs: %w", err)
-	}
-
 	for _, name := range orphans {
 		slog.Info("removing orphaned catalog", "catalog", name)
 		if err := s.deleteSource(ctx, name); err != nil { // invalidates its own cache
@@ -528,6 +508,42 @@ func (s *Store) CleanOrphanedCatalogs(ctx context.Context) error {
 		s.bumpSchemaVersion(ctx, name)
 	}
 	return nil
+}
+
+// orphanedCatalogs lists the stored sources that are no longer registered: a
+// metadata row with no core.data_sources row and no live handle in this
+// process.
+func (s *Store) orphanedCatalogs(ctx context.Context) ([]string, error) {
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("clean orphaned catalogs: %w", err)
+	}
+	defer conn.Close()
+	rows, err := conn.Query(ctx, `SELECT m.data_source FROM core.catalog.data_source_meta m
+		LEFT JOIN core.data_sources ds ON ds.name = m.data_source
+		WHERE ds.name IS NULL ORDER BY m.data_source`)
+	if err != nil {
+		return nil, fmt.Errorf("clean orphaned catalogs: %w", err)
+	}
+	defer rows.Close()
+	var orphans []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("clean orphaned catalogs: %w", err)
+		}
+		s.catMu.RLock()
+		_, live := s.catalogs[name]
+		s.catMu.RUnlock()
+		if live {
+			continue
+		}
+		orphans = append(orphans, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("clean orphaned catalogs: %w", err)
+	}
+	return orphans, nil
 }
 
 // InvalidateAll drops every cached definition — the cluster worker's response
