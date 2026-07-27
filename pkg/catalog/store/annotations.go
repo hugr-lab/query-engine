@@ -64,6 +64,17 @@ const (
 	kindGQLArgument = "gql_argument"
 )
 
+// indexedKind reports whether an annotation kind carries a search vector.
+// Only kindType is out: a residual source type is reached deterministically
+// from the data object that uses it, so it is never a search target
+// (design-035 vector index scope — the same decision seedableField and the
+// reindex enumeration implement). Its CURATION is unaffected: the description
+// overlay lives in the text columns and entity_types still coalesces it; only
+// the embedder call, and the vector nothing would read, are skipped.
+func indexedKind(kind string) bool {
+	return kind != kindType
+}
+
 // functionAnnotationKind normalizes a function kind into its annotation kind
 // (the same value — see the kind constants). An empty kind means the
 // query-function default, which is also what the rows written before the kind

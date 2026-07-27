@@ -807,20 +807,23 @@ type entity_functions
   vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
 
+# No vec column and no @embeddings: a residual type is reached
+# deterministically from the data object that uses it, so it is never a
+# semantic search target (design-035 vector index scope). Curation is
+# unaffected — the description overlay below is the one every entity view
+# applies, and catalog.annotations still stores the curated text.
 "Logical-model residual source-defined types as raw SDL (entity storage)"
 type entity_types
   @view(name: "entity_types", sql: """
     SELECT t.name, t.kind, t.data_source, t.module, t.definition,
       COALESCE(a.description, t.description) AS description,
-      a.long_description,
-      a.vec
+      a.long_description
     FROM [catalog.types] t
       JOIN [catalog.data_source_meta] m
         ON m.data_source = t.data_source AND m.loaded AND NOT m.disabled AND NOT m.suspended
       LEFT JOIN [catalog.annotations] a
         ON a.entity_kind = 'type' AND a.entity_key = t.name
-  """)
-  {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
+  """) {
   name: String! @pk
   kind: String!
   data_source: String!
@@ -828,7 +831,6 @@ type entity_types
   definition: String!
   description: String
   long_description: String
-  vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
 
 """

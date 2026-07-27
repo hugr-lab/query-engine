@@ -114,6 +114,29 @@ func TestAnnotatorEmbeds(t *testing.T) {
 	// Clearing nulls the text but leaves the vector untouched.
 	require.NoError(t, store.SetModuleDescription(ctx, "shop", "", ""))
 	assert.Equal(t, []string{"true|false"}, vecPresent(), "clear nulls text, keeps vec")
+
+	// A residual source TYPE is curated exactly like anything else — text is
+	// stored and the reader serves it — but it is outside the vector index
+	// scope, so no embedder call is made and no vector is stored (design-035).
+	require.NoError(t, store.SetSourceTypeDescription(ctx, "shop_dims", "A dimensions struct", "long"))
+	assert.Equal(t, []string{"false|true"}, rows(t, store.pool,
+		`SELECT vec IS NOT NULL, description IS NOT NULL FROM core.catalog.annotations
+			WHERE entity_kind = 'type' AND entity_key = 'shop_dims'`),
+		"type curation stores text without a vector")
+}
+
+// TestSourceTypeCurationReachesReader is the other half of the no-vector
+// decision: dropping the vector must not cost a type its curated description.
+func TestSourceTypeCurationReachesReader(t *testing.T) {
+	store, ctx := writtenStore(t)
+
+	const typeName = "sales_by_country_args"
+	require.NotNil(t, store.ForName(ctx, typeName), "fixture must expose a residual source type")
+
+	require.NoError(t, store.SetSourceTypeDescription(ctx, typeName, "Curated type", "long form"))
+	def := store.ForName(ctx, typeName)
+	require.NotNil(t, def)
+	assert.Equal(t, "Curated type", def.Description, "curation still reaches the reader")
 }
 
 // fakeEmbedder returns a fixed-size zero vector — enough to exercise the write
