@@ -36,6 +36,24 @@ type CatalogManager interface {
 	IsSuspended(name string) bool
 }
 
+// ReplacingCatalogManager is optionally implemented by a CatalogManager whose
+// AddCatalog REPLACES a catalog's stored schema in full: whatever the source
+// stopped declaring is gone after the write, without a destructive pre-step.
+//
+// It decides how a RELOAD of a still-attached source is staged. Against such a
+// manager the source can be detached softly — the catalog is suspended, its
+// rows survive, and the re-add's version gate decides whether anything is
+// rewritten at all, so reloading an unchanged source costs a flag flip instead
+// of a full recompile (and, with an embedder, a full re-embedding).
+//
+// The compiled-schema provider is deliberately NOT one: its write path applies
+// an incremental diff and its same-version path only clears the suspended
+// flag, so a definition the source dropped would survive a soft reload. It
+// must keep being dropped before it is re-added.
+type ReplacingCatalogManager interface {
+	ReplacesCatalogOnAdd() bool
+}
+
 // CatalogChecker reports whether a catalog currently has an active engine.
 // It is the gate the hard-remove UDF gets from the engine (Service implements
 // it), declared here so both catalog storages take the same type.

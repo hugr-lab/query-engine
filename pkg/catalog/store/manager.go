@@ -104,6 +104,12 @@ func (s *Store) addCatalog(ctx context.Context, name string, cat catsrc.Catalog)
 	return true, true, nil
 }
 
+// ReplacesCatalogOnAdd reports the store's write contract: writeSource deletes
+// the source's rows and re-inserts them wholesale inside one transaction, so
+// an entity the source stopped declaring cannot survive an add. A reload
+// therefore needs no destructive pre-step — see catalog.ReplacingCatalogManager.
+func (s *Store) ReplacesCatalogOnAdd() bool { return true }
+
 // RemoveCatalog deletes a source's entity rows, metadata, dependencies and
 // seed annotations (the unregister primitive) and drops the source handle.
 // Sources depending on it are suspended first (recursively) — their rows stay

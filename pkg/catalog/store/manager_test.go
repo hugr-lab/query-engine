@@ -58,6 +58,20 @@ func managerStore(t *testing.T, cfg Config) (*Store, context.Context) {
 	return store, ctx
 }
 
+// managerStoreEmbedded is managerStore with an embedder attached, so a test can
+// tell whether an operation re-embedded the source's entities.
+func managerStoreEmbedded(t *testing.T, cfg Config, e Embedder) (*Store, context.Context) {
+	t.Helper()
+	ctx := context.Background()
+	pool, err := db.NewPool("")
+	require.NoError(t, err)
+	t.Cleanup(func() { pool.Close() })
+	require.NoError(t, coredb.New(coredb.Config{VectorSize: 8}).Attach(ctx, pool))
+	store, err := New(ctx, pool, cfg, e)
+	require.NoError(t, err)
+	return store, ctx
+}
+
 // stringCatalog builds a raw (uncompiled) catalog source — the manager runs
 // the partial compile itself.
 func stringCatalog(t *testing.T, name, schema string) *catsrc.StringSource {
@@ -163,6 +177,56 @@ func TestManagerSuspendReactivate(t *testing.T) {
 	require.NoError(t, s.ReactivateCatalog(ctx, "shop", cat))
 	assert.False(t, s.IsSuspended("shop"))
 	require.NotNil(t, s.ForName(ctx, "orders"), "served again after reactivation")
+}
+
+// TestManagerReconnectDoesNotRewrite is the hugr-app disconnect/reconnect
+// scenario at the storage level: the heartbeat suspends the catalog when the
+// app stops answering and, on recovery, RE-READS the app's SDL over the wire
+// and calls ReactivateCatalog with it (pkg/data-sources/service.go). An app
+// that comes back unchanged must cost a flag flip — the rows stay AND the
+// entities are not re-embedded, which is the expensive half of a rewrite (one
+// embedder round trip per entity). Only a changed SDL may rewrite.
+func TestManagerReconnectDoesNotRewrite(t *testing.T) {
+	salt := 0
+	s, ctx := managerStoreEmbedded(t, Config{VecSize: 8}, saltEmbedder{dim: 8, salt: &salt})
+	require.NoError(t, s.AddCatalog(ctx, "shop", stringCatalog(t, "shop", managerSchemaV1)))
+	written := loadedAt(t, s, "shop")
+	require.NotEmpty(t, written)
+
+	// The app stops answering: the heartbeat suspends it.
+	require.NoError(t, s.SuspendCatalog(ctx, "shop"))
+	assert.True(t, s.IsSuspended("shop"))
+
+	// It comes back with the SAME SDL. Every vector written from here on would
+	// carry the new salt — none may.
+	salt = 7
+	require.NoError(t, s.ReactivateCatalog(ctx, "shop", stringCatalog(t, "shop", managerSchemaV1)))
+	assert.False(t, s.IsSuspended("shop"))
+	require.NotNil(t, s.ForName(ctx, "orders"), "served again after the reconnect")
+	assert.Equal(t, []string{"0"}, rows(t, s.pool,
+		`SELECT DISTINCT vec[2] FROM core.catalog.annotations WHERE vec IS NOT NULL`),
+		"an unchanged app is not re-embedded on reconnect")
+	assert.Equal(t, written, loadedAt(t, s, "shop"), "and its rows are not rewritten")
+
+	// A RESTARTED app that changed its schema must rewrite — the gate is on the
+	// content, not on the reconnect.
+	require.NoError(t, s.ReactivateCatalog(ctx, "shop", stringCatalog(t, "shop", managerSchemaV2)))
+	require.NotNil(t, s.ForName(ctx, "orders").Fields.ForName("note"), "new column served")
+	assert.Equal(t, []string{"7"}, rows(t, s.pool,
+		`SELECT vec[2] FROM core.catalog.annotations
+			WHERE entity_kind = 'data_object' AND entity_key = 'orders'`),
+		"a changed app re-embeds its entities (modules stay insert-only by design)")
+	assert.NotEqual(t, written, loadedAt(t, s, "shop"))
+}
+
+// loadedAt reads the write stamp of a source — moved only by a real write
+// (upsertMeta), never by a flag flip.
+func loadedAt(t *testing.T, s *Store, name string) string {
+	t.Helper()
+	got := rows(t, s.pool, `SELECT CAST(loaded_at AS VARCHAR) FROM core.catalog.data_source_meta
+		WHERE data_source = `+lit(name))
+	require.Len(t, got, 1)
+	return got[0]
 }
 
 func TestManagerRemoveCatalog(t *testing.T) {

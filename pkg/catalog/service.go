@@ -187,6 +187,17 @@ func (s *Service) RemoveCatalog(ctx context.Context, name string) error {
 	return s.manager.RemoveCatalog(ctx, name)
 }
 
+// ReplacesCatalogOnAdd forwards the underlying manager's answer (false when it
+// does not claim the property), so callers staging a reload can ask through
+// the Manager interface — see ReplacingCatalogManager for what it decides.
+func (s *Service) ReplacesCatalogOnAdd() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	r, ok := s.manager.(ReplacingCatalogManager)
+	return ok && r.ReplacesCatalogOnAdd()
+}
+
 func (s *Service) ExistsCatalog(name string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
