@@ -52,6 +52,9 @@ func (s *Store) Module(ctx context.Context, name string) *catalog.ModuleInfo {
 		logReadErr("module "+name, err)
 		return nil
 	}
+	if err := g.curateModules(ctx, []*catalog.ModuleInfo{info}); err != nil {
+		logReadErr("module "+name, err)
+	}
 	return info
 }
 
@@ -65,17 +68,54 @@ func (s *Store) Modules(ctx context.Context, parent string) iter.Seq[*catalog.Mo
 			logReadErr("modules of "+parent, err)
 			return
 		}
+		infos := make([]*catalog.ModuleInfo, 0, len(rows))
 		for _, row := range rows {
 			info, err := g.moduleInfo(ctx, row)
 			if err != nil {
 				logReadErr("modules of "+parent, err)
 				return
 			}
+			infos = append(infos, info)
+		}
+		// One curation read for the whole listing, not one per module.
+		if err := g.curateModules(ctx, infos); err != nil {
+			logReadErr("modules of "+parent, err)
+		}
+		for _, info := range infos {
 			if !yield(info) {
 				return
 			}
 		}
 	}
+}
+
+// curateModules applies the annotation overlay to a batch of modules in
+// place. A module's SDL description is often absent (the source declares
+// none), which is exactly why the curation is the description that matters —
+// and why the logical-model surface must serve it rather than the raw row.
+func (g *genContext) curateModules(ctx context.Context, infos []*catalog.ModuleInfo) error {
+	if len(infos) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(infos))
+	for _, info := range infos {
+		keys = append(keys, info.Name)
+	}
+	rows, err := g.readCurations(ctx, kindModule, keys)
+	if err != nil {
+		return err
+	}
+	for _, info := range infos {
+		c, ok := rows[info.Name]
+		if !ok {
+			continue
+		}
+		if c.description != "" {
+			info.Description = c.description
+		}
+		info.LongDescription = c.longDescription
+	}
+	return nil
 }
 
 // moduleInfoRow is one aggregated module row: identity + the subtree kind
@@ -205,16 +245,22 @@ func (g *genContext) queryModuleInfos(ctx context.Context, query string) ([]*mod
 
 // DataObject resolves a data object by type name (activity-gated), nil for
 // anything else.
+// The definition comes through ForName, NOT the bare reconstruction: ForName
+// is where the description overlay is applied (and the result cached), so the
+// logical model serves the curated text the entity views serve.
 func (s *Store) DataObject(ctx context.Context, name string) *sdl.Object {
-	def, err := reconstructDataObject(ctx, s.genCtx(), name)
-	if err != nil {
-		logReadErr("data object "+name, err)
-		return nil
-	}
+	def := s.ForName(ctx, name)
 	if def == nil || !sdl.IsDataObject(def) {
 		return nil
 	}
-	return sdl.DataObjectInfo(def)
+	obj := sdl.DataObjectInfo(def)
+	if obj == nil {
+		return nil
+	}
+	if err := s.genCtx().curateDataObjects(ctx, []*sdl.Object{obj}); err != nil {
+		logReadErr("data object "+name, err)
+	}
+	return obj
 }
 
 // DataObjects iterates the data objects that are members of a module.
@@ -226,20 +272,47 @@ func (s *Store) DataObjects(ctx context.Context, module string) iter.Seq[*sdl.Ob
 			logReadErr("data objects of "+module, err)
 			return
 		}
+		objects := make([]*sdl.Object, 0, len(names))
 		for _, name := range names {
-			def, err := reconstructDataObject(ctx, g, name)
-			if err != nil {
-				logReadErr("data object "+name, err)
-				return
-			}
+			def := s.ForName(ctx, name)
 			if def == nil || !sdl.IsDataObject(def) {
 				continue
 			}
-			if !yield(sdl.DataObjectInfo(def)) {
+			if obj := sdl.DataObjectInfo(def); obj != nil {
+				objects = append(objects, obj)
+			}
+		}
+		if err := g.curateDataObjects(ctx, objects); err != nil {
+			logReadErr("data objects of "+module, err)
+		}
+		for _, obj := range objects {
+			if !yield(obj) {
 				return
 			}
 		}
 	}
+}
+
+// curateDataObjects fills the LONG descriptions of a batch of objects (the
+// short ones already came overlaid through ForName) with one read.
+func (g *genContext) curateDataObjects(ctx context.Context, objects []*sdl.Object) error {
+	if len(objects) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(objects))
+	for _, obj := range objects {
+		keys = append(keys, obj.Definition().Name)
+	}
+	rows, err := g.readCurations(ctx, kindDataObject, keys)
+	if err != nil {
+		return err
+	}
+	for _, obj := range objects {
+		if c, ok := rows[obj.Definition().Name]; ok {
+			obj.LongDescription = c.longDescription
+		}
+	}
+	return nil
 }
 
 // Function resolves a callable member of a module by name ((module, name) is
@@ -253,7 +326,11 @@ func (s *Store) Function(ctx context.Context, module, name string) *catalog.Func
 	if row == nil {
 		return nil
 	}
-	return functionEntry(row)
+	entry := functionEntry(row)
+	if err := s.genCtx().curateFunctions(ctx, []*catalog.FunctionEntry{entry}); err != nil {
+		logReadErr("function "+module+"."+name, err)
+	}
+	return entry
 }
 
 // Functions iterates all callable members of a module: function, mutation and
@@ -274,11 +351,64 @@ func (s *Store) Functions(ctx context.Context, module string) iter.Seq[*catalog.
 			}
 			return strings.Compare(a.Name, b.Name)
 		})
+		entries := make([]*catalog.FunctionEntry, 0, len(rows))
 		for _, row := range rows {
-			if !yield(functionEntry(row)) {
+			entries = append(entries, functionEntry(row))
+		}
+		if err := s.genCtx().curateFunctions(ctx, entries); err != nil {
+			logReadErr("functions of "+module, err)
+		}
+		for _, entry := range entries {
+			if !yield(entry) {
 				return
 			}
 		}
+	}
+}
+
+// curateFunctions applies the annotation overlay to a batch of callables in
+// place, one read PER KIND: a function's kind is part of its annotation
+// identity, because the same name may exist as a query function, a mutation
+// and a subscription with three different descriptions.
+func (g *genContext) curateFunctions(ctx context.Context, entries []*catalog.FunctionEntry) error {
+	byKind := map[string][]*catalog.FunctionEntry{}
+	for _, entry := range entries {
+		kind, _ := functionAnnotationKind(functionKindName(entry.Kind))
+		byKind[kind] = append(byKind[kind], entry)
+	}
+	for kind, group := range byKind {
+		keys := make([]string, 0, len(group))
+		for _, entry := range group {
+			keys = append(keys, functionKey(entry.Module, entry.Field.Name))
+		}
+		rows, err := g.readCurations(ctx, kind, keys)
+		if err != nil {
+			return err
+		}
+		for _, entry := range group {
+			c, ok := rows[functionKey(entry.Module, entry.Field.Name)]
+			if !ok {
+				continue
+			}
+			if c.description != "" {
+				entry.Field.Description = c.description
+			}
+			entry.LongDescription = c.longDescription
+		}
+	}
+	return nil
+}
+
+// functionKindName maps a root kind back to the stored kind string — the
+// inverse of functionKindType, and the value that joins the annotation identity.
+func functionKindName(kind sdl.ModuleObjectType) string {
+	switch kind {
+	case sdl.ModuleMutationFunction:
+		return kindMutationFunction
+	case sdl.ModuleSubscription:
+		return kindSubscription
+	default:
+		return kindFunction
 	}
 }
 

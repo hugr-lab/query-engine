@@ -190,9 +190,7 @@ func moduleResolver(ctx context.Context, lm catalog.LogicalModel, provider catal
 		"description": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return info.Description, nil
 		},
-		"longDescription": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			return nil, nil
-		},
+		"longDescription": nullableText(info.LongDescription),
 		"dataSources": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			if info.DataSources == nil {
 				return []string{}, nil
@@ -277,9 +275,7 @@ func dataObjectResolver(ctx context.Context, lm catalog.LogicalModel, provider c
 		"description": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return def.Description, nil
 		},
-		"longDescription": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			return nil, nil
-		},
+		"longDescription": nullableText(obj.LongDescription),
 		"moduleName": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return sdl.ObjectModule(def), nil
 		},
@@ -442,6 +438,18 @@ func dataObjectQueriesResolver(ctx context.Context, lm catalog.LogicalModel, pro
 	return res, nil
 }
 
+// nullableText serves a curated text field: absent curation reads as GraphQL
+// null, not as an empty string, so a client can tell "nothing was curated"
+// from "curated as empty".
+func nullableText(v string) fieldResolverFunc {
+	return func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+		if v == "" {
+			return nil, nil
+		}
+		return v, nil
+	}
+}
+
 func queryTypeText(t sdl.ObjectQueryType) string {
 	switch t {
 	case sdl.QueryTypeSelect:
@@ -467,14 +475,7 @@ func dataSourceResolver(ctx context.Context, ds *catalog.DataSourceInfo, ss ast.
 			return *v, nil
 		}
 	}
-	text := func(v string) fieldResolverFunc {
-		return func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			if v == "" {
-				return nil, nil
-			}
-			return v, nil
-		}
-	}
+	text := nullableText
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
 		"__typename": typeNameResolver,
 		"name": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
@@ -563,9 +564,7 @@ func functionResolver(ctx context.Context, lm catalog.LogicalModel, provider cat
 		"description": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return entry.Field.Description, nil
 		},
-		"longDescription": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			return nil, nil
-		},
+		"longDescription": nullableText(entry.LongDescription),
 		"moduleName": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return entry.Module, nil
 		},

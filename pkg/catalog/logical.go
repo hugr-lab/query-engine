@@ -22,8 +22,13 @@ var moduleKinds = []sdl.ModuleObjectType{
 
 // ModuleInfo describes one node of the logical module tree.
 type ModuleInfo struct {
-	Name        string // full dotted name; "" for the root module
-	Description string
+	Name string // full dotted name; "" for the root module
+	// Description is the CURATED text where a curation exists, the stored one
+	// otherwise — the same overlay the entity views apply. LongDescription
+	// exists only as curation and is empty when the storage has no curation
+	// layer (the compiled provider).
+	Description     string
+	LongDescription string
 	// RootTypes maps each PRESENT root kind to its type name
 	// (sdl.ModuleTypeName). Key presence carries the information — a module
 	// exists when at least one kind is present; the definition is resolved
@@ -42,6 +47,9 @@ type FunctionEntry struct {
 	Module     string
 	DataSource string
 	IsTable    bool
+	// LongDescription is the curated long form; empty without a curation
+	// layer. The short description lives on Field, already overlaid.
+	LongDescription string
 }
 
 // DataSourceInfo describes one data source as a LOGICAL entity: what it is
