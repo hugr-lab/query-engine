@@ -319,15 +319,33 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 		"vectors refreshed on both branches, curation text untouched")
 
 	// E6: reindex enumeration — the curation LEFT JOIN on a COMPUTED entity key
-	// plus literal projection columns, so one Go scanner serves every kind.
+	// plus literal projection columns, so one Go scanner serves every kind. The
+	// field enumeration additionally narrows to the vector index scope
+	// (design-035): the owner must be a DATA OBJECT, and an @exclude_mcp field
+	// is never indexed — a JSON predicate in the same statement as the join.
 	got = queryStrings(t, pool, `SELECT 'field', f.type_name || '.' || f.name, f.type_name,
 		coalesce(a.description, ''), coalesce(f.description, '')
 		FROM core.catalog.fields f
+		JOIN core.catalog.data_objects o ON o.name = f.type_name
 		LEFT JOIN core.catalog.annotations a
 			ON a.entity_kind = 'field' AND a.entity_key = f.type_name || '.' || f.name
-		WHERE f.data_source = 'probe' ORDER BY f.name`)
+		WHERE NOT COALESCE(json_extract_string(f.properties::JSON, '$.exclude_mcp') = 'true', false)
+			AND f.data_source = 'probe' ORDER BY f.name`)
 	assert.Equal(t, []string{"field|probe_rich.linked|probe_rich||"}, got,
-		"computed join key and literal columns read on both backends")
+		"computed join key, data-object gate and the omitempty exclude_mcp predicate")
+
+	// E6b: the exclusion actually excludes, while a field whose bag has no
+	// exclude_mcp key at all (omitempty) survives the COALESCE default. The
+	// marked row is added and removed here so the shared fixture is unchanged.
+	exec(`INSERT INTO core.catalog.fields (type_name, name, field_type, properties, data_source, is_pk, ordinal) VALUES
+		('probe_rich', 'tmp_excluded', 'String', '{"exclude_mcp":true}', 'probe', false, 4)`)
+	got = queryStrings(t, pool, `SELECT f.name FROM core.catalog.fields f
+		JOIN core.catalog.data_objects o ON o.name = f.type_name
+		WHERE NOT COALESCE(json_extract_string(f.properties::JSON, '$.exclude_mcp') = 'true', false)
+			AND f.data_source = 'probe' ORDER BY f.name`)
+	assert.Equal(t, []string{"linked"}, got,
+		"@exclude_mcp drops out; the unmarked field survives the omitempty default")
+	exec(`DELETE FROM core.catalog.fields WHERE (type_name, name) IN (('probe_rich', 'tmp_excluded'))`)
 
 	// E7: the FUNCTION overlay join — the annotation kind is a COLUMN here, not
 	// a literal: a function's kind is part of its annotation identity, so the

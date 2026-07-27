@@ -35,11 +35,12 @@ type seedEntity struct {
 	text   string
 }
 
-// collectSeedEntities enumerates the logical entities of a written source — data
-// source, modules, data objects, fields (columns + relation navigation fields),
-// functions and residual types — each with the text to embed. Keyed by
-// (kind, key) so a duplicate never reaches the multi-row upsert (which would
-// fail on a repeated conflict target).
+// collectSeedEntities enumerates the SEARCHABLE logical entities of a written
+// source — data source, modules, data objects, the fields OF data objects
+// (columns, relation navigation fields and extra fields alike) and functions —
+// each with the text to embed. Residual source types and their fields are out
+// of scope (see seedableField). Keyed by (kind, key) so a duplicate never
+// reaches the multi-row upsert (which would fail on a repeated conflict target).
 func collectSeedEntities(d *desired, dataSource string) []seedEntity {
 	seen := map[string]struct{}{}
 	var out []seedEntity
@@ -62,6 +63,9 @@ func collectSeedEntities(d *desired, dataSource string) []seedEntity {
 			embeddingText("", o.Description, syntheticDescription("", o.Name, "", o.Module, o.DataSource)))
 	}
 	for _, f := range d.fields {
+		if !seedableField(d, f) {
+			continue
+		}
 		add(kindField, fieldKey(f.TypeName, f.Name), f.TypeName,
 			embeddingText("", f.Description, syntheticDescription("", f.Name, f.TypeName, "", f.DataSource)))
 	}
@@ -85,11 +89,27 @@ func collectSeedEntities(d *desired, dataSource string) []seedEntity {
 		add(kind, functionKey(fn.Module, fn.Name), fn.Module,
 			embeddingText("", fn.Description, syntheticDescription("", fn.Name, "", fn.Module, fn.DataSource)))
 	}
-	for _, t := range d.types {
-		add(kindType, t.Name, "",
-			embeddingText("", t.Description, syntheticDescription("", t.Name, "", t.Module, t.DataSource)))
-	}
+	// Residual source types (structs, inputs, enums) are NOT seeded: they are
+	// reachable deterministically from the data object that uses them, so they
+	// are never a semantic search target (design-035, vector index scope).
 	return out
+}
+
+// seedableField reports whether a field row is worth a vector. Two exclusions:
+//
+//   - fields of RESIDUAL SOURCE TYPES — a struct's or input's members are read
+//     from the object that uses them, never searched by meaning. The test is
+//     "the owner is a type of this source", not "the owner is one of this
+//     source's data objects": an extension source's fields are attached to
+//     ANOTHER source's data object, and those must keep their vectors — they
+//     are precisely the fields hardest to find by name.
+//   - @exclude_mcp fields — an operator marked them invisible to agents, so a
+//     vector could only ever produce a hit the search path must then drop.
+func seedableField(d *desired, f *field) bool {
+	if _, residual := d.types[f.TypeName]; residual {
+		return false
+	}
+	return f.Properties == nil || !f.Properties.ExcludeMCP
 }
 
 // seedRow is one embedded entity ready to persist: its annotation identity plus
