@@ -28,6 +28,9 @@ type Config struct {
 	SchemaCacheTTL        time.Duration
 	MCPEnabled            bool
 
+	// CatalogStorage: "" / "db" = compiled schema, "entity" = entity storage.
+	CatalogStorage hugr.CatalogStorage
+
 	DB db.Config
 
 	CoreDB coredb.Config
@@ -61,6 +64,7 @@ func initEnvs() {
 	viper.SetDefault("SCHEMA_CACHE_MAX_ENTRIES", 0)
 	viper.SetDefault("SCHEMA_CACHE_TTL", "0s")
 	viper.SetDefault("MCP_ENABLED", false)
+	viper.SetDefault("CATALOG_STORAGE", "")
 	viper.SetDefault("CLUSTER_ENABLED", false)
 	viper.SetDefault("CLUSTER_ROLE", "")
 	viper.SetDefault("CLUSTER_NODE_NAME", "")
@@ -90,6 +94,7 @@ func loadConfig() Config {
 		SchemaCacheMaxEntries: viper.GetInt("SCHEMA_CACHE_MAX_ENTRIES"),
 		SchemaCacheTTL:        viper.GetDuration("SCHEMA_CACHE_TTL"),
 		MCPEnabled:            viper.GetBool("MCP_ENABLED"),
+		CatalogStorage:        hugr.CatalogStorage(viper.GetString("CATALOG_STORAGE")),
 		DB: db.Config{
 			Path:         viper.GetString("DB_PATH"),
 			MaxOpenConns: viper.GetInt("DB_MAX_OPEN_CONNS"),

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/types"
@@ -33,9 +34,7 @@ import (
 // CatalogChecker reports whether a catalog (data source) currently has an
 // active engine — _schema_hard_remove refuses to unregister a loaded source.
 // Implemented by catalog.Service.
-type CatalogChecker interface {
-	ExistsCatalog(name string) bool
-}
+type CatalogChecker = catalog.CatalogChecker
 
 // curationUDF is one description-curation function: an all-VARCHAR signature
 // whose last two arguments are always description / long_description.

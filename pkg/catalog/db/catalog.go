@@ -65,6 +65,23 @@ func (p *Provider) ListCatalogs(ctx context.Context) ([]*CatalogRecord, error) {
 	return catalogs, nil
 }
 
+// ActiveCatalogs lists the catalogs that should be attached: registered,
+// enabled and not suspended (the cluster.CatalogProvider surface — workers
+// reconcile their attached sources against it).
+func (p *Provider) ActiveCatalogs(ctx context.Context) ([]string, error) {
+	catalogs, err := p.ListCatalogs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(catalogs))
+	for _, c := range catalogs {
+		if !c.Disabled && !c.Suspended {
+			names = append(names, c.Name)
+		}
+	}
+	return names, nil
+}
+
 // SetCatalogVersion updates the version of a catalog.
 func (p *Provider) SetCatalogVersion(ctx context.Context, name, version string) error {
 	conn, err := p.pool.Conn(ctx)

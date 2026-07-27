@@ -1,7 +1,19 @@
 # core.catalog Schema Views
 # Mounted as module core.catalog — types accessed as core.catalog.catalogs, core.catalog.types, etc.
 # Conditional: @embeddings directives included only when EmbeddingsEnabled=true
+#
+# TWO EXCLUSIVE HALVES, selected by the engine's catalog storage
+# (EntityStorage):
+#   * the LEGACY views below read the _schema_* tables the compiled-schema
+#     provider writes — the GENERATED GraphQL surface, one row per generated
+#     type / field / argument;
+#   * the ENTITY views (second half) read the catalog.* tables the entity
+#     storage writes — the LOGICAL model, from which the schema is generated on
+#     the fly.
+# Only the half backed by the running storage is rendered: the other half's
+# tables are present but empty, and an empty view is a silent lie.
 
+{{ if not .EntityStorage }}
 # --- Catalogs (data sources) ---
 
 "Schema catalogs (data sources)"
@@ -430,7 +442,8 @@ type enum_values @view(name: "_schema_enum_values") {
   ordinal: Int!
 }
 
-
+{{ end }}
+{{ if .EntityStorage }}
 # --- Entity storage (CoreDB "catalog" schema) ------------------------------
 # The catalog tables are the base-entity schema store (design 034); they are
 # filled by the entity writer and read here through plain static @view(sql:)
@@ -869,3 +882,4 @@ type entity_annotations
   updated_at: Timestamp
   updated_by: String
 }
+{{ end }}

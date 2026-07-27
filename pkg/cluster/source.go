@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	catalogdb "github.com/hugr-lab/query-engine/pkg/catalog/db"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -19,6 +18,23 @@ import (
 //go:embed schema.graphql
 var schema string
 
+// CatalogProvider is the slice of the catalog storage the cluster needs: the
+// change counter workers poll, the cache invalidation they apply when it moves
+// and the set of catalogs they reconcile their attached sources against. Both
+// catalog storages (the compiled-schema provider and the entity store)
+// implement it, so the cluster source is independent of which one runs.
+type CatalogProvider interface {
+	// GetSchemaVersion returns the cluster-wide schema change counter.
+	GetSchemaVersion(ctx context.Context) (int64, error)
+	// InvalidateAll drops every cached definition (the counter moved).
+	InvalidateAll()
+	// InvalidateCatalog drops the cached definitions of one catalog.
+	InvalidateCatalog(name string)
+	// ActiveCatalogs lists the catalogs that should be attached: stored,
+	// enabled and not suspended.
+	ActiveCatalogs(ctx context.Context) ([]string, error)
+}
+
 // Source is the cluster RuntimeSource.
 // It exposes cluster queries and mutations via GraphQL.
 // Role-aware: management executes operations locally + broadcasts;
@@ -27,7 +43,7 @@ type Source struct {
 	config   ClusterConfig
 	pool     *db.Pool
 	qe       types.Querier
-	provider *catalogdb.Provider
+	provider CatalogProvider
 
 	// coordinator is non-nil only for management role.
 	coordinator *Coordinator
@@ -45,7 +61,7 @@ type Source struct {
 }
 
 // NewSource creates a new cluster runtime source.
-func NewSource(config ClusterConfig, qe types.Querier, provider *catalogdb.Provider) *Source {
+func NewSource(config ClusterConfig, qe types.Querier, provider CatalogProvider) *Source {
 	return &Source{
 		config:     config,
 		qe:         qe,
@@ -155,20 +171,18 @@ func (s *Source) pollSchemaVersion(ctx context.Context) {
 	}
 }
 
-// reconcileLoadedSources compares _schema_catalogs with locally attached sources
-// and attaches/detaches as needed.
+// reconcileLoadedSources compares the catalogs the writer node stores with the
+// locally attached sources and attaches / detaches as needed.
 func (s *Source) reconcileLoadedSources(ctx context.Context) error {
-	catalogs, err := s.provider.ListCatalogs(ctx)
+	catalogs, err := s.provider.ActiveCatalogs(ctx)
 	if err != nil {
 		return fmt.Errorf("reconcile: list catalogs: %w", err)
 	}
 
-	// Build set of expected active catalog names (not disabled, not suspended).
-	expected := make(map[string]bool)
-	for _, c := range catalogs {
-		if !c.Disabled && !c.Suspended {
-			expected[c.Name] = true
-		}
+	// The catalogs the writer node expects this worker to have attached.
+	expected := make(map[string]bool, len(catalogs))
+	for _, name := range catalogs {
+		expected[name] = true
 	}
 
 	// Check each expected source — load if not attached.

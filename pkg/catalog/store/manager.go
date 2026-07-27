@@ -453,6 +453,92 @@ func (s *Store) storedDepsSatisfied(ctx context.Context, name string) (bool, err
 	return unsatisfied == 0, nil
 }
 
+// ActiveCatalogs lists the catalogs that should be attached: stored, loaded,
+// enabled and not suspended (the cluster.CatalogProvider surface — workers
+// reconcile their attached sources against it).
+func (s *Store) ActiveCatalogs(ctx context.Context) ([]string, error) {
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("catalog active sources: %w", err)
+	}
+	defer conn.Close()
+	rows, err := conn.Query(ctx, `SELECT data_source FROM core.catalog.data_source_meta
+		WHERE loaded AND NOT disabled AND NOT suspended ORDER BY data_source`)
+	if err != nil {
+		return nil, fmt.Errorf("catalog active sources: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("catalog active sources: %w", err)
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// CleanOrphanedCatalogs removes the stored schema of every source that is no
+// longer registered: a metadata row with no core.data_sources row and no live
+// handle in this process. Runtime sources have no data_sources row either, so
+// the live handles are what keeps them — they are all added before startup
+// reaches this point.
+func (s *Store) CleanOrphanedCatalogs(ctx context.Context) error {
+	if s.isReadonly {
+		return ErrReadOnly
+	}
+	conn, err := s.pool.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("clean orphaned catalogs: %w", err)
+	}
+	rows, err := conn.Query(ctx, `SELECT m.data_source FROM core.catalog.data_source_meta m
+		LEFT JOIN core.data_sources ds ON ds.name = m.data_source
+		WHERE ds.name IS NULL ORDER BY m.data_source`)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("clean orphaned catalogs: %w", err)
+	}
+	var orphans []string
+	s.catMu.RLock()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			break
+		}
+		if _, live := s.catalogs[name]; live {
+			continue
+		}
+		orphans = append(orphans, name)
+	}
+	s.catMu.RUnlock()
+	err = rows.Err()
+	rows.Close()
+	conn.Close()
+	if err != nil {
+		return fmt.Errorf("clean orphaned catalogs: %w", err)
+	}
+
+	for _, name := range orphans {
+		slog.Info("removing orphaned catalog", "catalog", name)
+		if err := s.deleteSource(ctx, name); err != nil { // invalidates its own cache
+			slog.Error("failed to drop orphaned catalog", "catalog", name, "error", err)
+			continue
+		}
+		s.bumpSchemaVersion(ctx, name)
+	}
+	return nil
+}
+
+// InvalidateAll drops every cached definition — the cluster worker's response
+// to a schema-version change (the rows were rewritten by the writer node).
+func (s *Store) InvalidateAll() { s.invalidateAll() }
+
+// InvalidateCatalog drops the cached definitions a source contributed to. The
+// affected-object closure is not available here (the write happened on another
+// node), so the whole source bucket goes, roots included.
+func (s *Store) InvalidateCatalog(name string) { s.invalidateSource(name, nil) }
+
 // ClearSourceVersion invalidates a source's STORED version so the next load
 // recompiles and rewrites its rows wholesale instead of taking the version gate
 // (_schema_version_clean). The gate compares a content hash, so a row set that

@@ -36,6 +36,13 @@ type CatalogManager interface {
 	IsSuspended(name string) bool
 }
 
+// CatalogChecker reports whether a catalog currently has an active engine.
+// It is the gate the hard-remove UDF gets from the engine (Service implements
+// it), declared here so both catalog storages take the same type.
+type CatalogChecker interface {
+	ExistsCatalog(name string) bool
+}
+
 // VariableTransformer transforms query variables before parsing.
 // The primary implementation is jqVariableTransformer (checks _jq key).
 type VariableTransformer interface {

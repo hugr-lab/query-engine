@@ -7,15 +7,14 @@ import (
 	"fmt"
 
 	"github.com/duckdb/duckdb-go/v2"
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/types"
 )
 
 // CatalogChecker checks whether a catalog (data source) has an active engine.
-type CatalogChecker interface {
-	ExistsCatalog(name string) bool
-}
+type CatalogChecker = catalog.CatalogChecker
 
 // RegisterUDFs registers all schema management UDFs on the Provider's DB pool.
 // The checker is used by _schema_hard_remove to verify the catalog is not loaded.
