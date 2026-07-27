@@ -299,6 +299,104 @@ func TestCatalogQuery_DataObjectLookup(t *testing.T) {
 	}
 }
 
+func TestCatalogQuery_DataObjectQueries(t *testing.T) {
+	ss := newCatalogTestService(t)
+
+	res := runMetaQuery(t, ss, `{
+		orders: _dataObject(name: "orders") {
+			queries { name type rootTypeName }
+		}
+		selectArgs: _dataObject(name: "orders") {
+			queries { name args { name } }
+		}
+		view: _dataObject(name: "sales_by_country") {
+			queries { name type rootTypeName args { name } }
+		}
+		unique: _dataObject(name: "customers") {
+			queries { name type args { name } }
+		}
+	}`)
+
+	queryTypes := func(v any) map[string]string {
+		t.Helper()
+		out := map[string]string{}
+		for _, q := range v.([]map[string]any) {
+			out[q["name"].(string)] = q["type"].(string)
+		}
+		return out
+	}
+
+	orders := queryTypes(asMap(t, res["orders"])["queries"])
+	want := map[string]string{
+		"orders":                    "SELECT",
+		"orders_by_pk":              "SELECT_ONE",
+		"orders_aggregation":        "AGGREGATION",
+		"orders_bucket_aggregation": "BUCKET_AGGREGATION",
+	}
+	for name, wantType := range want {
+		if got := orders[name]; got != wantType {
+			t.Errorf("orders query %q type = %q, want %q (all: %v)", name, got, wantType, orders)
+		}
+	}
+	for _, q := range asMap(t, res["orders"])["queries"].([]map[string]any) {
+		if q["rootTypeName"] != "_module_sales_query" {
+			t.Errorf("query %v rootTypeName = %v, want _module_sales_query", q["name"], q["rootTypeName"])
+		}
+	}
+
+	// The SELECT query carries the standard row-set arguments; that argument
+	// list is what names the next introspection rung (the filter input type).
+	for _, q := range asMap(t, res["selectArgs"])["queries"].([]map[string]any) {
+		if q["name"] != "orders" {
+			continue
+		}
+		args := namesOf(t, q["args"])
+		for _, a := range []string{"filter", "order_by", "limit", "offset"} {
+			if !slices.Contains(args, a) {
+				t.Errorf("orders SELECT args %v missing %q", args, a)
+			}
+		}
+	}
+
+	// A parameterized view exposes its @args input as a query argument.
+	viewQueries := asMap(t, res["view"])["queries"].([]map[string]any)
+	if len(viewQueries) == 0 {
+		t.Fatal("sales_by_country has no queries")
+	}
+	for _, q := range viewQueries {
+		if q["rootTypeName"] != "_module_sales_reports_query" {
+			t.Errorf("view query %v rootTypeName = %v, want _module_sales_reports_query", q["name"], q["rootTypeName"])
+		}
+		if q["name"] != "sales_by_country" {
+			continue
+		}
+		if args := namesOf(t, q["args"]); !slices.Contains(args, "args") {
+			t.Errorf("parameterized view SELECT args %v missing %q", args, "args")
+		}
+	}
+
+	// SELECT_ONE is not only the primary-key lookup: every @unique with a
+	// query_suffix generates one too. Which key a given query uses is readable
+	// only from its arguments, so both must be reported.
+	unique := asMap(t, res["unique"])["queries"].([]map[string]any)
+	byKeyArgs := map[string][]string{}
+	for _, q := range unique {
+		if q["type"] != "SELECT_ONE" {
+			continue
+		}
+		byKeyArgs[q["name"].(string)] = namesOf(t, q["args"])
+	}
+	if len(byKeyArgs) != 2 {
+		t.Fatalf("customers SELECT_ONE queries = %v, want both the pk and the unique lookup", byKeyArgs)
+	}
+	if args := byKeyArgs["customers_by_pk"]; !slices.Contains(args, "id") {
+		t.Errorf("customers_by_pk args %v missing the pk field %q", args, "id")
+	}
+	if args := byKeyArgs["customers_by_name"]; !slices.Contains(args, "name") {
+		t.Errorf("customers_by_name args %v missing the unique field %q", args, "name")
+	}
+}
+
 func TestCatalogQuery_FunctionLookup(t *testing.T) {
 	ss := newCatalogTestService(t)
 
@@ -593,6 +691,44 @@ func TestCatalogQuery_Permissions(t *testing.T) {
 		}
 	})
 
+	t.Run("hidden query field drops only its own entry", func(t *testing.T) {
+		perms := &perm.RolePermissions{
+			Name: "restricted",
+			Permissions: []perm.Permission{
+				{Object: "_module_sales_query", Field: "orders_aggregation", Hidden: true},
+			},
+		}
+		res := runMetaQueryPerm(t, ss, perms, `{
+			_dataObject(name: "orders") { name queries { name } }
+		}`)
+		obj := asMap(t, res["_dataObject"])
+		if obj["name"] != "orders" {
+			t.Fatalf("orders hidden entirely by an aggregation-only rule: %v", obj)
+		}
+		names := namesOf(t, obj["queries"])
+		if slices.Contains(names, "orders_aggregation") {
+			t.Errorf("hidden query leaked into queries %v", names)
+		}
+		if !slices.Contains(names, "orders") || !slices.Contains(names, "orders_by_pk") {
+			t.Errorf("sibling queries dropped with the hidden one: %v", names)
+		}
+	})
+
+	t.Run("hidden select hides the object and its queries", func(t *testing.T) {
+		perms := &perm.RolePermissions{
+			Name: "restricted",
+			Permissions: []perm.Permission{
+				{Object: "data-object:query", Field: "orders", Hidden: true},
+			},
+		}
+		res := runMetaQueryPerm(t, ss, perms, `{
+			_dataObject(name: "orders") { queries { name } }
+		}`)
+		if res["_dataObject"] != nil {
+			t.Errorf("hidden object still exposes queries: %v", res["_dataObject"])
+		}
+	})
+
 	t.Run("full access sees everything", func(t *testing.T) {
 		res := runMetaQuery(t, ss, `{
 			_module(name: "sales") { dataObjects { name } }
@@ -615,15 +751,17 @@ func TestCatalogQuery_SelfIntrospection(t *testing.T) {
 		props: __type(name: "_DataObjectProperties") { name kind }
 		rel: __type(name: "_Relation") { name kind }
 		fn: __type(name: "_Function") { name kind }
+		doq: __type(name: "_DataObjectQuery") { name kind fields { name } }
 		dot: __type(name: "_DataObjectType") { name kind enumValues { name } }
 		ft: __type(name: "_FunctionType") { name kind enumValues { name } }
+		qt: __type(name: "_QueryType") { name kind enumValues { name } }
 		rd: __type(name: "_RelationDirection") { name kind enumValues { name } }
 		rk: __type(name: "_RelationKind") { name kind enumValues { name } }
 	}`)
 
 	for alias, want := range map[string]string{
 		"mod": "_Module", "obj": "_DataObject", "props": "_DataObjectProperties",
-		"rel": "_Relation", "fn": "_Function",
+		"rel": "_Relation", "fn": "_Function", "doq": "_DataObjectQuery",
 	} {
 		got := asMap(t, res[alias])
 		if got["name"] != want || got["kind"] != ast.Object {
@@ -639,9 +777,15 @@ func TestCatalogQuery_SelfIntrospection(t *testing.T) {
 		}
 	}
 
+	doqFields := namesOf(t, asMap(t, res["doq"])["fields"])
+	if !slices.Equal(doqFields, []string{"args", "name", "rootTypeName", "type"}) {
+		t.Errorf("_DataObjectQuery fields = %v", doqFields)
+	}
+
 	for alias, want := range map[string][]string{
 		"dot": {"TABLE", "VIEW"},
 		"ft":  {"FUNCTION", "MUTATION", "SUBSCRIPTION"},
+		"qt":  {"AGGREGATION", "BUCKET_AGGREGATION", "SELECT", "SELECT_ONE"},
 		"rd":  {"BACK", "FORWARD"},
 		"rk":  {"FK", "JOIN", "M2M"},
 	} {

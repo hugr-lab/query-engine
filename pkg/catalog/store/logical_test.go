@@ -76,6 +76,49 @@ func TestLogicalDataObjects(t *testing.T) {
 	assert.Equal(t, []string{"sales_by_country"}, names)
 }
 
+// TestLogicalDataObjectQueries pins the def-level @query markers the store
+// reconstructs — the source _DataObject.queries reads. SELECT_ONE is not only
+// the pk lookup: every @unique(query_suffix:) adds one, and each is keyed by
+// its own constraint fields.
+func TestLogicalDataObjectQueries(t *testing.T) {
+	store, ctx := storeFor(t, genUniqueSchema)
+
+	users := store.DataObject(ctx, "users")
+	require.NotNil(t, users)
+
+	got := map[string]sdl.ObjectQueryType{}
+	for _, q := range users.Queries() {
+		got[q.Name] = q.Type
+	}
+	assert.Equal(t, map[string]sdl.ObjectQueryType{
+		"users":                    sdl.QueryTypeSelect,
+		"users_by_pk":              sdl.QueryTypeSelectOne,
+		"users_by_email":           sdl.QueryTypeSelectOne,
+		"users_by_full_name":       sdl.QueryTypeSelectOne,
+		"users_aggregation":        sdl.QueryTypeAggregate,
+		"users_bucket_aggregation": sdl.QueryTypeAggregateBucket,
+	}, got)
+
+	// Every declared name must exist on the module query root, and its
+	// arguments are what tells the pk lookup from the unique ones.
+	root := store.Type(ctx, "_module_crm_query")
+	require.NotNil(t, root)
+	for name := range got {
+		require.NotNil(t, root.Fields.ForName(name), "query %q missing from the root type", name)
+	}
+	argNames := func(name string) []string {
+		var out []string
+		for _, a := range root.Fields.ForName(name).Arguments {
+			out = append(out, a.Name)
+		}
+		slices.Sort(out)
+		return out
+	}
+	assert.Equal(t, []string{"id"}, argNames("users_by_pk"))
+	assert.Equal(t, []string{"email"}, argNames("users_by_email"))
+	assert.Equal(t, []string{"first_name", "last_name"}, argNames("users_by_full_name"))
+}
+
 // TestLogicalFunctions covers callable-member resolution and kind ordering.
 func TestLogicalFunctions(t *testing.T) {
 	store, ctx := writtenStore(t)

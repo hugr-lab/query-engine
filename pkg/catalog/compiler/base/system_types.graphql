@@ -346,6 +346,20 @@ enum _FunctionType @system {
 }
 
 """
+The kind of a query generated for a data object: SELECT — the row-set query;
+SELECT_ONE — a single-row lookup, by the primary key or by any unique key
+(@unique); AGGREGATION — the whole-set aggregate; BUCKET_AGGREGATION — the
+grouped aggregate. An object may have SEVERAL SELECT_ONE queries; the key each
+one uses is its argument list.
+"""
+enum _QueryType @system {
+	SELECT
+	SELECT_ONE
+	AGGREGATION
+	BUCKET_AGGREGATION
+}
+
+"""
 The perspective of a relation entry: FORWARD — the viewed object is the source
 of the edge; BACK — the viewed object is the destination.
 """
@@ -427,6 +441,11 @@ type _DataObject @system {
 	primaryKey: [String!]!
 	"""Parameterized-view arguments; null when the object is not parameterized."""
 	args: [__InputValue!]
+	"""
+	The generated query fields that return this object (permission-filtered).
+	These are the names to write in a GraphQL query.
+	"""
+	queries: [_DataObjectQuery!]
 	"""The object's fields (permission-filtered, same rules as __Type.fields)."""
 	fields: [__Field!]
 	"""Logical links to other data objects (both directions; hidden endpoints excluded)."""
@@ -435,6 +454,20 @@ type _DataObject @system {
 	dataSourceName: String!
 	"""All contributing sources: owner + declarers of extension-added fields."""
 	dataSources: [String!]!
+}
+
+"""
+A generated query field that returns a data object — the callable entry point
+for reading it.
+"""
+type _DataObjectQuery @system {
+	"""Field name to write in GraphQL — copy verbatim."""
+	name: String!
+	type: _QueryType!
+	"""The generated root type hosting this field (the owning module's query root)."""
+	rootTypeName: String!
+	"""Client-facing arguments; server-injected @arg_default arguments are excluded."""
+	args: [__InputValue!]
 }
 
 """

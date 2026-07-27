@@ -281,6 +281,9 @@ func dataObjectResolver(ctx context.Context, lm catalog.LogicalModel, provider c
 			}
 			return res, nil
 		},
+		"queries": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			return dataObjectQueriesResolver(ctx, lm, provider, obj, field.SelectionSet, maxDepth)
+		},
 		"fields": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return objectFieldsResolver(ctx, provider, def, field, maxDepth)
 		},
@@ -323,6 +326,97 @@ func propertiesResolver(ctx context.Context, obj *sdl.Object, ss ast.SelectionSe
 		"softDelete":   boolField(obj.SoftDelete),
 		"hasVectors":   boolField(obj.HasVectors),
 	}, "_DataObjectProperties")
+}
+
+// dataObjectQueriesResolver lists the generated query fields that return the
+// object — the names an agent writes in a GraphQL query. Each entry is gated
+// by the field's own visibility on the module's query root type, so hiding
+// e.g. only the aggregation query removes just that entry. The root type
+// definition is resolved lazily, on the queries path only.
+func dataObjectQueriesResolver(ctx context.Context, lm catalog.LogicalModel, provider catalog.Provider, obj *sdl.Object, ss ast.SelectionSet, maxDepth int) (any, error) {
+	if maxDepth <= 0 {
+		return nil, nil
+	}
+	queries := obj.Queries()
+	if len(queries) == 0 {
+		return []map[string]any{}, nil
+	}
+	rootName := sdl.ModuleTypeName(sdl.ObjectModule(obj.Definition()), sdl.ModuleQuery)
+	rootDef := lm.Type(ctx, rootName)
+	p := perm.PermissionsFromCtx(ctx)
+
+	res := []map[string]any{}
+	for _, q := range queries {
+		typeText := queryTypeText(q.Type)
+		if typeText == "" {
+			continue
+		}
+		if p != nil {
+			if _, ok := p.Visible(rootName, q.Name); !ok {
+				continue
+			}
+		}
+		var args ast.ArgumentDefinitionList
+		if rootDef != nil {
+			fieldDef := rootDef.Fields.ForName(q.Name)
+			if fieldDef == nil {
+				// The directive names a field the root type does not carry —
+				// never report a name that cannot be written.
+				continue
+			}
+			args = fieldDef.Arguments
+		}
+		data, err := processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
+			"__typename": typeNameResolver,
+			"name": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+				return q.Name, nil
+			},
+			"type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+				return typeText, nil
+			},
+			"rootTypeName": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+				return rootName, nil
+			},
+			"args": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+				if args == nil {
+					return nil, nil
+				}
+				list := []map[string]any{}
+				for _, a := range args {
+					if isArgServerInjected(a.Directives) {
+						continue
+					}
+					argData, err := argumentResolver(ctx, provider, a, field.SelectionSet, maxDepth-1)
+					if err != nil {
+						return nil, err
+					}
+					list = append(list, argData)
+				}
+				return list, nil
+			},
+		}, "_DataObjectQuery")
+		if err != nil {
+			return nil, err
+		}
+		if data != nil {
+			res = append(res, data)
+		}
+	}
+	return res, nil
+}
+
+func queryTypeText(t sdl.ObjectQueryType) string {
+	switch t {
+	case sdl.QueryTypeSelect:
+		return "SELECT"
+	case sdl.QueryTypeSelectOne:
+		return "SELECT_ONE"
+	case sdl.QueryTypeAggregate:
+		return "AGGREGATION"
+	case sdl.QueryTypeAggregateBucket:
+		return "BUCKET_AGGREGATION"
+	}
+	return ""
 }
 
 func relationResolver(ctx context.Context, lm catalog.LogicalModel, provider catalog.Provider, rel *catalog.RelationInfo, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {

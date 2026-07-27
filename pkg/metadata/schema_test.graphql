@@ -74,7 +74,9 @@ extend type Function {
 
 # --- logical-model introspection fixtures (_catalog family) ---
 
-type customers @module(name: "sales") @table(name: "customers") {
+type customers @module(name: "sales")
+  @table(name: "customers")
+  @unique(fields: ["name"], query_suffix: "by_name") {
   id: Int! @pk
   name: String!
   country: String

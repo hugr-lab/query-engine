@@ -928,6 +928,11 @@ type _DataObject @system {
   primaryKey: [String!]!
   properties: _DataObjectProperties!
   """
+  The generated query fields that return this object (permission-filtered).
+  These are the names to write in a GraphQL query.
+  """
+  queries: [_DataObjectQuery!]
+  """
   Logical links to other data objects (both directions; hidden endpoints excluded).
   """
   relations: [_Relation!]
@@ -957,6 +962,25 @@ type _DataObjectProperties @system {
   Soft-delete semantics enabled (@table(soft_delete: true)).
   """
   softDelete: Boolean!
+}
+"""
+A generated query field that returns a data object — the callable entry point
+for reading it.
+"""
+type _DataObjectQuery @system {
+  """
+  Client-facing arguments; server-injected @arg_default arguments are excluded.
+  """
+  args: [__InputValue!]
+  """
+  Field name to write in GraphQL — copy verbatim.
+  """
+  name: String!
+  """
+  The generated root type hosting this field (the owning module's query root).
+  """
+  rootTypeName: String!
+  type: _QueryType!
 }
 """
 The kind of a data object.
@@ -1056,6 +1080,19 @@ type _Module @system {
   The module's generated subscription root type (root module: Subscription).
   """
   subscriptionType: __Type
+}
+"""
+The kind of a query generated for a data object: SELECT — the row-set query;
+SELECT_ONE — a single-row lookup, by the primary key or by any unique key
+(@unique); AGGREGATION — the whole-set aggregate; BUCKET_AGGREGATION — the
+grouped aggregate. An object may have SEVERAL SELECT_ONE queries; the key each
+one uses is its argument list.
+"""
+enum _QueryType @system {
+  AGGREGATION
+  BUCKET_AGGREGATION
+  SELECT
+  SELECT_ONE
 }
 """
 One perspective on a logical edge between two data objects. Relation SQL is never exposed.
