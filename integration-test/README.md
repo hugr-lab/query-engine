@@ -1,10 +1,10 @@
 # Integration Tests
 
-Integration tests for the query engine, covering schema compilation, DB provider, CoreDB schema management, and end-to-end query execution.
+Integration tests for the query engine, covering schema compilation, the catalog storage, CoreDB schema management, and end-to-end query execution.
 
 ```
 integration-test/
-├── catalog/db/     # DB-backed schema provider tests (DuckDB + PostgreSQL)
+├── catalog/entity/ # Entity catalog storage: engine boot, lifecycle, MCP, benches
 ├── cluster/        # Cluster mode integration tests (management + worker nodes)
 ├── compiler/       # Schema compiler golden tests & integration tests
 ├── compare/        # Schema comparison utilities (used by compiler tests)
@@ -15,119 +15,37 @@ integration-test/
 
 ---
 
-## DB Provider Tests
+## Catalog Storage Tests
 
-**Location**: `catalog/db/`
+**Location**: `catalog/entity/`
 
-Tests the `pkg/catalog/db` schema provider against real DuckDB (in-memory) and PostgreSQL (via DuckDB's postgres extension). The provider implements `base.Provider` and `base.MutableProvider` interfaces backed by `_schema_*` tables in CoreDB.
+Boots a real `hugr.Service` on the entity catalog storage (design 034) — the schema of every source lives in the `catalog.*` tables as a logical model and the GraphQL schema is generated from it on the fly. These cover the storage end to end rather than a provider in isolation: runtime sources compile and store, a user source loads and is queryable, the catalog's own state is visible through the `entity_*` views, curation reaches introspection, and the MCP `catalog-*` tools read and rank over it (including under a restricted role).
 
 ### Running
 
 ```bash
-cd integration-test/catalog/db
-
-# Full run: DuckDB + PostgreSQL (starts Docker container)
-./run.sh
-
-# DuckDB only (no Docker needed)
-./run.sh --duckdb
-
-# Keep PostgreSQL container after tests (for debugging)
-./run.sh --keep
-
-# Run directly with go test (DuckDB only)
-CGO_CFLAGS="-O1 -g" go test -tags=duckdb_arrow ./integration-test/catalog/db/ -run TestDuckDB -v
-
-# Run directly with go test (PostgreSQL — requires running PG)
-DBPROVIDER_TEST_PG_DSN="postgres://test:test@localhost:5435/dbprovider_test?sslmode=disable" \
-  CGO_CFLAGS="-O1 -g" go test -tags=duckdb_arrow ./integration-test/catalog/db/ -run TestPostgres -v
+CGO_CFLAGS="-O1 -g" go test -tags=duckdb_arrow ./integration-test/catalog/entity/ -v
 ```
 
-### Docker Setup
+No Docker needed — DuckDB in-memory CoreDB.
 
-```yaml
-# docker-compose.yml — pgvector/pgvector:pg16 on port 5435
-POSTGRES_DB: dbprovider_test
-POSTGRES_USER: test
-POSTGRES_PASSWORD: test
+### Benchmarks
+
+`metapath_bench_test.go` measures the meta-query path every `catalog-*` MCP tool reads, and the tools themselves:
+
+```bash
+CGO_CFLAGS="-O1 -g" go test -tags=duckdb_arrow -run=NONE \
+    -bench=BenchmarkMetaPath ./integration-test/catalog/entity/
 ```
+
+`BenchmarkCatalogTools` has a vector arm that needs a live embedder (`EMBEDDER_URL` + `EMBEDDER_VECTOR_SIZE`) and skips without one; the lexical arm always runs.
 
 ### Environment Variables
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `DBPROVIDER_TEST_PG_DSN` | PostgreSQL connection string | — (tests skip if unset) |
-
-### Test Coverage
-
-All tests run against both DuckDB and PostgreSQL backends (55 total: 30 DuckDB + 25 PostgreSQL).
-
-**DuckDB tests** (`TestDuckDB_*`) — 30 tests:
-
-| Test | Acceptance Criteria |
-|------|-------------------|
-| `ProviderLifecycle` | AC-1 (persist/retrieve), AC-2 (cache hit), AC-5 (drop), AC-7 (stream) |
-| `TypesStreamAndEnums` | AC-7 (Types() iteration with enums) |
-| `PossibleTypesInterface` | AC-8 (interface implementors) |
-| `PossibleTypesUnion` | AC-8 (union members) |
-| `PossibleTypesCache` | AC-8 + cache hit/invalidation |
-| `CacheSelectiveInvalidation` | AC-4 (tag-based invalidation is selective) |
-| `DirectiveHandling` | @drop, @replace, @if_not_exists |
-| `ExtensionFields` | Extension field add/drop/replace |
-| `DirectiveDefinitions` | Directive persistence and retrieval |
-| `QueryAndMutationType` | QueryType/MutationType root types |
-| `TypeWithoutCatalog` | Scalars without @catalog |
-| `ForNameNonExistent` | Returns nil for unknown types |
-| `ProviderWithEmbeddings` | AC-14 (embeddings computed), AC-16 (long_description), AC-17 (recompute) |
-| `ProviderWithoutEmbeddings` | AC-15 (NULL vec when no embedder) |
-| `SummarizedDescriptionPreserved` | AC-6, AC-19 (is_summarized preserved on recompile) |
-| `DisabledCatalog` | AC-9 (disabled catalog hides types) |
-| `DisabledCatalogFieldFiltering` | AC-10 (disabled catalog hides extension fields, keeps base type) |
-| `SetDefinitionDescription` | AC-17 (SetDefinitionDescription recomputes embedding) |
-| `SetFieldDescription` | Field description + embedding update |
-| `SetCatalogDescription` | Catalog description + embedding update |
-| `SetModuleDescription` | Module description update |
-| `DropCatalogDetailedCleanup` | AC-5 (types, fields, args, enum values deleted) |
-| `DropCatalogCascade` | Cascade suspends dependent catalogs |
-| `DropCatalogCleansExtensionFields` | Extension fields removed on catalog drop |
-| `ReconcileModules` | AC-11 (module-catalog link table), AC-13 (modules populated) |
-| `CatalogGetters` | GetCatalog, ListCatalogs, SetCatalogVersion/Disabled/Suspended |
-| `VectorSizeMigration` | AC-20 (vector size migration on startup) |
-| `VectorSizeZero` | No vec columns when VecSize=0 |
-| `AttachedMode` | AC-18 (SQL prefix for attached DuckDB) |
-| `ExecWriteOperations` | INSERT/UPDATE/DELETE through public API |
-
-**PostgreSQL tests** (`TestPostgres_*`) — 25 tests:
-
-Mirror DuckDB tests with writes through `postgres_execute()` and reads through DuckDB's postgres scanner. Verifies data lands in real PostgreSQL tables. Includes direct PG verification queries for key operations.
-
-| Test | Key PG-Specific Verification |
-|------|------------------------------|
-| `ProviderLifecycle` | Fields, arguments, cache, drop — verified in PG |
-| `TypesStreamAndEnums` | Enum persistence in PG |
-| `PossibleTypesInterface` | Interface implementors via PG |
-| `PossibleTypesUnion` | Union members via PG |
-| `DirectiveHandling` | @drop/@replace/@if_not_exists through postgres_execute |
-| `ExtensionFields` | Extension add/drop/replace through PG |
-| `DirectiveDefinitions` | Directive persistence in PG |
-| `QueryAndMutationType` | Root types through PG |
-| `TypeWithoutCatalog` | Scalar without catalog in PG |
-| `ProviderWithEmbeddings` | Embeddings stored in pgvector columns |
-| `ProviderWithoutEmbeddings` | NULL vec in PG |
-| `SummarizedDescriptionPreserved` | is_summarized flag in PG (direct PG UPDATE) |
-| `DisabledCatalog` | Catalog disabled in PG |
-| `DisabledCatalogFieldFiltering` | Field filtering with PG catalog flags |
-| `SetDefinitionDescription` | Description update verified in PG directly |
-| `SetFieldDescription` | Field description verified in PG directly |
-| `SetCatalogDescription` | Catalog description verified in PG directly |
-| `SetModuleDescription` | Module description verified in PG directly |
-| `DropCatalogDetailedCleanup` | Deletion verified in PG (types, fields, args, enums) |
-| `DropCatalogCascade` | Cascade suspension verified in PG |
-| `DropCatalogCleansExtensionFields` | Extension cleanup verified in PG |
-| `ReconcileModules` | Module-catalog links verified in PG |
-| `CatalogGetters` | Version/disabled/suspended/list verified in PG |
-| `SpecialCharacters` | SQL injection safety (quotes in descriptions) |
-| `ExecWriteOperations` | Full CRUD through postgres_execute |
+| `EMBEDDER_URL` | Embedder for the vector-ranking tests and bench arm | — (those tests skip if unset) |
+| `EMBEDDER_VECTOR_SIZE` | Vector dimension, must match the embedder | — |
 
 ---
 

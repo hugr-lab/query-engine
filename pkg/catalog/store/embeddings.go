@@ -9,11 +9,10 @@ import (
 	qetypes "github.com/hugr-lab/query-engine/types"
 )
 
-// The store owns its own copies of the embedding-text helpers rather than
-// importing the retiring catalog/db package: the entity storage is the
-// long-term home of curation, and it must not depend on the compiled provider
-// it replaces. The wording matches catalog/db so seeds and curations produced
-// by either path embed to comparable vectors.
+// The embedding-text helpers below are worded exactly as the retired
+// compiled-schema storage worded them: vectors seeded before the switch stay
+// comparable to the ones seeded after it, so a CoreDB carried across the
+// migration keeps ranking the same.
 
 // embeddingText returns the best available text to embed, falling back through
 // longDesc → desc → syntheticDesc (an empty result means nothing to embed).
@@ -28,8 +27,8 @@ func embeddingText(longDesc, desc, syntheticDesc string) string {
 }
 
 // syntheticDescription builds a fallback description from entity metadata, used
-// when no human-written description is available (mirrors catalog/db) — the
-// seed embedding text for a description-less entity.
+// when no human-written description is available — the seed embedding text for
+// a description-less entity.
 func syntheticDescription(hugrType, entityName, parentName, moduleName, catalog string) string {
 	var parts []string
 	if hugrType != "" {

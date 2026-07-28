@@ -47,9 +47,8 @@ func mcpHandlerWithEmbedder(t testing.TB, vectorSize int, embedderURL string) ht
 func mcpService(t testing.TB, vectorSize int, embedderURL string) (*hugr.Service, http.Handler) {
 	t.Helper()
 	service, err := hugr.New(hugr.Config{
-		DB:             db.Config{Path: ""},
-		CoreDB:         coredb.New(coredb.Config{VectorSize: vectorSize}),
-		CatalogStorage: hugr.CatalogStorageEntity,
+		DB:     db.Config{Path: ""},
+		CoreDB: coredb.New(coredb.Config{VectorSize: vectorSize}),
 		Auth: &auth.Config{
 			Providers: []auth.AuthProvider{
 				auth.NewAnonymous(auth.AnonymousConfig{Allowed: true, Role: "admin"}),

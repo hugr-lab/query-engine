@@ -20,10 +20,6 @@ services:
     environment:
       BIND: ":15100"
       CORE_DB_PATH: "/data/core.duckdb"
-      # Empty (the default) runs the compiled-schema storage; run.sh can be
-      # given CATALOG_STORAGE=entity to exercise the same scenarios against the
-      # entity storage.
-      CATALOG_STORAGE: "${CATALOG_STORAGE:-}"
       ALLOWED_ANONYMOUS: "true"
       ANONYMOUS_ROLE: "admin"
       DB_TIMEZONE: "UTC"

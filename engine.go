@@ -14,7 +14,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	catalogdb "github.com/hugr-lab/query-engine/pkg/catalog/db"
+	catalogstore "github.com/hugr-lab/query-engine/pkg/catalog/store"
 	"github.com/hugr-lab/query-engine/pkg/cluster"
 	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
@@ -49,10 +49,10 @@ type Service struct {
 	embedder *embedding.Source
 	cluster  *cluster.Source
 
-	// catalogProvider is the active catalog storage — the compiled-schema
-	// provider or the entity store, behind the slice of surface the engine
-	// needs (catalog_storage.go).
-	catalogProvider catalogStorage
+	// catalogProvider is the catalog storage: the sources' logical model in the
+	// CoreDB catalog.* tables, from which the served GraphQL schema is
+	// generated on the fly (design 034).
+	catalogProvider *catalogstore.Store
 
 	pendingSources []sources.RuntimeSource
 	initialized    bool
@@ -71,10 +71,6 @@ type Config struct {
 
 	SchemaCacheMaxEntries int           // LRU cache max entries (0 = default 10000)
 	SchemaCacheTTL        time.Duration // LRU cache TTL (0 = default 10m)
-
-	// CatalogStorage selects how the schema is stored in CoreDB.
-	// Empty (the default) keeps the compiled-schema provider.
-	CatalogStorage CatalogStorage
 
 	MCPEnabled bool // Enable MCP endpoint on /mcp
 
@@ -139,15 +135,6 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		})
 	}
 
-	// 2b. Resolve the catalog storage mode. The CoreDB source needs it before
-	//     its own catalog is compiled: the catalog module exposes the views of
-	//     the storage that actually runs (the other half's tables are empty).
-	storageMode, err := s.config.CatalogStorage.resolve()
-	if err != nil {
-		return err
-	}
-	s.config.CoreDB.SetEntityStorage(storageMode == CatalogStorageEntity)
-
 	// 3. Attach CoreDB early — creates the schema tables on first start.
 	//    The DB must exist before creating the catalog storage.
 	err = s.config.CoreDB.Attach(ctx, s.db)
@@ -156,7 +143,7 @@ func (s *Service) Init(ctx context.Context) (err error) {
 	}
 
 	// 3b. Create system embedder from config (if EMBEDDER_URL set).
-	var embedder catalogdb.Embedder
+	var embedder catalogstore.Embedder
 	if s.config.Embedder.URL != "" {
 		src, err := embedding.New(types.DataSource{
 			Name: "_system_embedder",
@@ -173,13 +160,20 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		embedder = src
 	}
 
-	// 4-5. Create the catalog storage (compiled schema by default, entity
-	//      storage when configured) and persist the system types where the
-	//      storage needs them.
+	// 4-5. Create the catalog storage. It keeps the system types (scalars,
+	//      introspection, @system) in memory and never writes them, so there is
+	//      nothing to persist here and nothing for a read-only node to skip.
 	isReadonly := s.config.CoreDB.IsReadonly()
-	provider, err := s.initCatalogStorage(ctx, storageMode, embedder, isReadonly)
+	provider, err := catalogstore.New(ctx, s.db, catalogstore.Config{
+		VecSize:    s.config.Embedder.VectorSize,
+		IsReadonly: isReadonly,
+		Cache: catalogstore.CacheConfig{
+			MaxEntries: s.config.SchemaCacheMaxEntries,
+			TTL:        s.config.SchemaCacheTTL,
+		},
+	}, embedder)
 	if err != nil {
-		return err
+		return fmt.Errorf("create catalog store: %w", err)
 	}
 	s.catalogProvider = provider
 
