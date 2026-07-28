@@ -255,3 +255,75 @@ func TestMCPSearchVectorFieldHits(t *testing.T) {
 		}
 	}
 }
+
+// TestMCPFieldSurfaceOnEntityStorage is the answer to "can an agent drill into
+// the schema here". Before this, the field tools read the compiled-schema
+// views and every one of them failed in entity mode with `Cannot query field
+// "catalog"`, so the ladder stopped at "this object has 13 fields" without
+// ever naming them.
+func TestMCPFieldSurfaceOnEntityStorage(t *testing.T) {
+	h := mcpHandler(t, 0)
+
+	fields := mcpCall(t, h, "catalog-object_fields",
+		map[string]any{"object": "core_data_sources", "limit": 200})
+	items, _ := fields["items"].([]any)
+	require.NotEmpty(t, items, "the data object's fields are reachable on the entity storage")
+
+	var relations int
+	for _, raw := range items {
+		f := raw.(map[string]any)
+		assert.NotEmpty(t, f["name"])
+		assert.NotEmpty(t, f["type"], "field %v has no type", f["name"])
+		if f["field_kind"] == "relation" {
+			relations++
+			assert.NotEmpty(t, f["ref_object"])
+		}
+	}
+	assert.Positive(t, relations, "relation fields are classified here too")
+
+	// Any generated type, including an input object the logical model has no
+	// entry for.
+	filter := mcpCall(t, h, "schema-type_fields",
+		map[string]any{"type_name": "core_data_sources_filter", "limit": 200})
+	filterItems, _ := filter["items"].([]any)
+	require.NotEmpty(t, filterItems, "generated input types are reachable too")
+
+	args := mcpCall(t, h, "schema-field_args", map[string]any{
+		"type_name": "_module_core_query", "fields": []string{"data_sources"},
+	})
+	argItems, _ := args["items"].([]any)
+	require.Len(t, argItems, 1)
+	assert.NotEmpty(t, argItems[0].(map[string]any)["args"])
+}
+
+// TestMCPObjectFieldsRelevance — ranking a wide object's fields by meaning is
+// the reason catalog-object_fields is separate from schema-type_fields. Needs
+// a live embedder.
+func TestMCPObjectFieldsRelevance(t *testing.T) {
+	url, size := liveEmbedder(t)
+	h := mcpHandlerWithEmbedder(t, size, url)
+
+	plain := mcpCall(t, h, "catalog-object_fields",
+		map[string]any{"object": "core_data_sources", "limit": 200})
+	ranked := mcpCall(t, h, "catalog-object_fields", map[string]any{
+		"object": "core_data_sources", "limit": 200,
+		"relevance_query": "how the engine connects to this database",
+	})
+
+	names := func(p map[string]any) []string {
+		items, _ := p["items"].([]any)
+		out := make([]string, 0, len(items))
+		for _, raw := range items {
+			out = append(out, raw.(map[string]any)["name"].(string))
+		}
+		return out
+	}
+	plainNames, rankedNames := names(plain), names(ranked)
+	require.NotEmpty(t, rankedNames)
+	assert.ElementsMatch(t, plainNames, rankedNames,
+		"ranking REORDERS the caller's own visible fields — it must never add or drop one")
+	assert.NotEqual(t, plainNames, rankedNames,
+		"the ranked order must actually differ from schema order")
+	t.Logf("schema order: %v", plainNames)
+	t.Logf("ranked order: %v", rankedNames)
+}

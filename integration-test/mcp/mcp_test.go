@@ -174,9 +174,9 @@ func TestMCP_ToolsList(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	tools := result["tools"].([]any)
 
-	// Should have 18 tools (3 catalog + 1 new schema + 7 discovery + 4 legacy schema + 3 data).
+	// Should have 19 tools: 4 catalog + 4 schema (rebuilt) + 7 legacy discovery + schema-type_info + 3 data.
 	// The discovery-* half is being replaced by catalog-* (design-035).
-	assert.Len(t, tools, 18, "expected 18 MCP tools")
+	assert.Len(t, tools, 19, "expected 19 MCP tools")
 
 	// Verify tool names.
 	toolNames := make(map[string]bool)
@@ -189,6 +189,8 @@ func TestMCP_ToolsList(t *testing.T) {
 		"catalog-describe",
 		"catalog-search",
 		"schema-describe_types",
+		"catalog-object_fields",
+		"schema-field_args",
 		"discovery-search_modules",
 		"discovery-search_data_sources",
 		"discovery-search_module_data_objects",
@@ -198,7 +200,7 @@ func TestMCP_ToolsList(t *testing.T) {
 		"discovery-field_values",
 		"schema-type_info",
 		"schema-type_fields",
-		"schema-describe_fields",
+		
 		"schema-enum_values",
 		"data-inline_graphql_result",
 		"data-execute_mutation",

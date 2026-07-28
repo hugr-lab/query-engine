@@ -209,35 +209,50 @@ Use type_name (e.g. "prefix_tablename"), NOT the module name.`),
 		mcp.WithOutputSchema[TypeInfo](),
 	), s.typeInfo)
 
-	mcpServer.AddTool(mcp.NewTool("schema-type_fields",
-		mcp.WithDescription(`List the fields of a type — LEAN candidate list, no per-field argument trees. MUST call before building any query — field names cannot be guessed.
-Use type_name (e.g. "synthea_patients"), NOT the module name (e.g. NOT "synthea").
-Returns per field: hugr_type (empty=scalar, select=relation, aggregate, bucket_agg, extra_field, function), arguments_count, is_list.
-hugr_type already tells you the argument profile; when you need the EXACT arguments of specific fields (filter inputs, bucket args, function/view params), call schema-describe_fields with those field names.
-Rely on field descriptions to understand semantics — names are often auto-generated.`),
-		mcp.WithString("type_name", mcp.Required(), mcp.Description("Full type name (e.g. prefix_tablename, NOT the module name)")),
-		mcp.WithString("relevance_query", mcp.Description("Rank fields by semantic relevance to this query")),
-		mcp.WithNumber("limit", mcp.Description("Max fields to return (1-200)"), mcp.DefaultNumber(50)),
-		mcp.WithNumber("offset", mcp.Description("Pagination offset"), mcp.DefaultNumber(0)),
-		mcp.WithBoolean("include_description", mcp.Description("Include field descriptions (default false to save context)"), mcp.DefaultBool(false)),
-		mcp.WithOutputSchema[SearchResult[TypeFieldInfo]](),
-	), s.typeFields)
+	mcpServer.AddTool(mcp.NewTool("catalog-object_fields",
+		mcp.WithDescription(`List the fields of a DATA OBJECT — what you can actually select. Call this after catalog-describe told you the query name; describe gives the call signature, this gives the columns.
+field_kind says what each field IS, and they are not all columns: 'column' is a stored value, 'extra' is computed, and 'relation' is a PATH — ref_object names the object it leads to, so selecting that field is how you traverse. is_pk marks the primary key.
+relevance_query ranks the fields by MEANING instead of schema order — use it on a wide table when you know what you want ("diagnosis code", "when it was paid") but not what it is called.
+args_count flags fields that take arguments; call schema-field_args for the ones you will parameterize.
+Fields marked @exclude_mcp by the operator are never listed.`),
+		mcp.WithString("object", mcp.Required(), mcp.Description("The data object's GraphQL type name")),
+		mcp.WithString("relevance_query", mcp.Description("Rank fields by relevance to this description instead of schema order")),
+		mcp.WithString("prefix", mcp.Description("Case-insensitive name prefix filter")),
+		mcp.WithBoolean("include_description", mcp.Description("Include field descriptions"), mcp.DefaultBool(true)),
+		mcp.WithNumber("limit", mcp.Description("Page size (1-200)"), mcp.DefaultNumber(defaultPageLimit)),
+		mcp.WithNumber("offset", mcp.Description("Fields to skip"), mcp.DefaultNumber(0)),
+		mcp.WithOutputSchema[Page[TypeField]](),
+	), s.catalogObjectFields)
 
-	mcpServer.AddTool(mcp.NewTool("schema-describe_fields",
-		mcp.WithDescription(`Return the FULL detail — arguments (name, type, required, description) + description — for SPECIFIC named fields of a type. The describe half of schema-type_fields.
-Call this AFTER schema-type_fields, once you know which field(s) you will use and need their exact arguments: filter inputs, aggregation/bucket args, function parameters, or a parameterized-view's query parameters.
-Scope to the few fields you actually need — this stays tiny even for the wide operator types (_join, _spatial) whose full argument set is large.`),
-		mcp.WithString("type_name", mcp.Required(), mcp.Description("Full type name (e.g. prefix_tablename, NOT the module name)")),
-		mcp.WithArray("fields", mcp.Required(), mcp.Description("Field names to describe (from schema-type_fields output)"), mcp.WithStringItems()),
-		mcp.WithOutputSchema[SearchResult[TypeFieldInfo]](),
-	), s.describeFields)
+	mcpServer.AddTool(mcp.NewTool("schema-type_fields",
+		mcp.WithDescription(`List the members of ANY generated type — a filter input, an aggregation, a mutation input, a module root. This is the tool for a name you got from an error or from a field's type; for a DATA OBJECT use catalog-object_fields, which also ranks by meaning.
+Returns fields for an OBJECT and input fields for an INPUT_OBJECT — the same question either way. No argument trees: args_count flags which fields take arguments, and schema-field_args returns them for the few you name.
+Paginated and deterministic. Use schema-describe_types first if you do not yet know what the name IS.`),
+		mcp.WithString("type_name", mcp.Required(), mcp.Description("Full type name (not a module name)")),
+		mcp.WithString("prefix", mcp.Description("Case-insensitive name prefix filter")),
+		mcp.WithBoolean("include_description", mcp.Description("Include descriptions"), mcp.DefaultBool(true)),
+		mcp.WithNumber("limit", mcp.Description("Page size (1-200)"), mcp.DefaultNumber(defaultPageLimit)),
+		mcp.WithNumber("offset", mcp.Description("Members to skip"), mcp.DefaultNumber(0)),
+		mcp.WithOutputSchema[Page[TypeField]](),
+	), s.schemaTypeFields)
+
+	mcpServer.AddTool(mcp.NewTool("schema-field_args",
+		mcp.WithDescription(`Return the ARGUMENT trees of the few named fields of a type — per argument: name, type and description.
+Kept separate from the field lists on purpose: a field's own line is about ten tokens, its argument tree one to two orders of magnitude more. A relation field carries a whole filter input for the far object plus order_by/limit/offset; the _join field carries the widest argument set in the schema. Name only the fields you will actually parameterize.`),
+		mcp.WithString("type_name", mcp.Required(), mcp.Description("Full type name")),
+		mcp.WithArray("fields", mcp.Required(), mcp.Description("Field names, copied from a field listing"),
+			mcp.Items(map[string]any{"type": "string"})),
+		mcp.WithOutputSchema[FieldArgsResult](),
+	), s.schemaFieldArgs)
 
 	mcpServer.AddTool(mcp.NewTool("schema-enum_values",
-		mcp.WithDescription(`Return enum values for a GraphQL enum type. Use to discover valid enum values before building queries.
-Common enums: OrderDirection (ASC, DESC), TimeExtract (year, month, day, hour, ...), TimeBucket (minute, hour, day, week, month, quarter, year).`),
+		mcp.WithDescription(`Return the values of a GraphQL ENUM — call before writing one into a query, since invalid values fail validation.
+Common enums: OrderDirection (ASC, DESC), TimeExtract, TimeBucket, GeometryType.`),
 		mcp.WithString("type_name", mcp.Required(), mcp.Description("Enum type name")),
-		mcp.WithOutputSchema[EnumValuesResult](),
-	), s.enumValues)
+		mcp.WithNumber("limit", mcp.Description("Page size (1-200)"), mcp.DefaultNumber(defaultPageLimit)),
+		mcp.WithNumber("offset", mcp.Description("Values to skip"), mcp.DefaultNumber(0)),
+		mcp.WithOutputSchema[Page[EnumValue]](),
+	), s.schemaEnumValues)
 
 	// Data tools.
 	mcpServer.AddTool(mcp.NewTool("data-inline_graphql_result",

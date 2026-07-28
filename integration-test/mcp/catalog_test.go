@@ -695,3 +695,197 @@ func TestSchemaDescribeTypes_NoNames(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	assert.Equal(t, true, result["isError"])
 }
+
+// --- the field surface: catalog-object_fields / schema-type_fields ---
+
+type fieldsPage struct {
+	Items []struct {
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		ArgsCount   int    `json:"args_count"`
+		Description string `json:"description"`
+		FieldKind   string `json:"field_kind"`
+		RefObject   string `json:"ref_object"`
+		IsPK        bool   `json:"is_pk"`
+	} `json:"items"`
+	Total   int  `json:"total"`
+	Limit   int  `json:"limit"`
+	Offset  int  `json:"offset"`
+	HasMore bool `json:"has_more"`
+}
+
+func (p fieldsPage) names() []string {
+	out := make([]string, 0, len(p.Items))
+	for _, it := range p.Items {
+		out = append(out, it.Name)
+	}
+	return out
+}
+
+func callFields(t *testing.T, h http.Handler, tool string, args map[string]any) fieldsPage {
+	t.Helper()
+	resp := jsonRPC(t, h, "tools/call", map[string]any{"name": tool, "arguments": args})
+	require.Contains(t, resp, "result", "response: %v", resp)
+	result := resp["result"].(map[string]any)
+	require.NotEqual(t, true, result["isError"], "tool error: %v", result["content"])
+	var page fieldsPage
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	require.NoError(t, json.Unmarshal([]byte(text), &page), "payload: %s", text)
+	return page
+}
+
+// TestCatalogObjectFields — a data object's fields, with the distinction that
+// makes them usable: which ones are paths to somewhere else.
+func TestCatalogObjectFields(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	page := callFields(t, h, "catalog-object_fields",
+		map[string]any{"object": "core_data_sources", "limit": 200})
+	require.NotEmpty(t, page.Items)
+	assert.Equal(t, len(page.Items), page.Total)
+
+	var pk, relations int
+	for _, f := range page.Items {
+		assert.NotEmpty(t, f.Name)
+		assert.NotEmpty(t, f.Type, "field %s has no type", f.Name)
+		assert.Contains(t, []string{"column", "relation", "extra"}, f.FieldKind, "field %s", f.Name)
+		if f.IsPK {
+			pk++
+		}
+		if f.FieldKind == "relation" {
+			relations++
+			assert.NotEmpty(t, f.RefObject, "relation field %s must name where it leads", f.Name)
+		}
+	}
+	assert.Positive(t, pk, "the primary key is marked in the field list")
+	assert.Positive(t, relations, "core_data_sources links to catalogs — that must show as a path")
+
+	// prefix and pagination behave like everywhere else.
+	pref := callFields(t, h, "catalog-object_fields",
+		map[string]any{"object": "core_data_sources", "prefix": "NAM"})
+	require.NotEmpty(t, pref.Items, "prefix is case-insensitive")
+	for _, f := range pref.Items {
+		assert.True(t, strings.HasPrefix(strings.ToLower(f.Name), "nam"))
+	}
+
+	first := callFields(t, h, "catalog-object_fields",
+		map[string]any{"object": "core_data_sources", "limit": 2})
+	assert.Len(t, first.Items, 2)
+	assert.Equal(t, page.Total, first.Total, "total is the full count")
+	assert.True(t, first.HasMore)
+
+	// An unknown object is an error, not an empty list — an empty list would
+	// read as "this object has no fields".
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "catalog-object_fields",
+		"arguments": map[string]any{"object": "no_such_object"},
+	})
+	assert.Equal(t, true, resp["result"].(map[string]any)["isError"])
+}
+
+// TestSchemaTypeFields — the other half: ANY generated type, including the
+// input objects that catalog-object_fields cannot answer for.
+func TestSchemaTypeFields(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	object := callFields(t, h, "schema-type_fields",
+		map[string]any{"type_name": "core_data_sources", "limit": 200})
+	require.NotEmpty(t, object.Items)
+
+	// An INPUT_OBJECT answers with its input fields — the same question.
+	filter := callFields(t, h, "schema-type_fields",
+		map[string]any{"type_name": "core_data_sources_filter", "limit": 200})
+	require.NotEmpty(t, filter.Items, "a filter input must list its members")
+	assert.Contains(t, filter.names(), "name")
+
+	// A module root type is reachable too — this is what an agent lands on
+	// from schema-describe_types.
+	root := callFields(t, h, "schema-type_fields",
+		map[string]any{"type_name": "_module_core_query", "limit": 200})
+	require.NotEmpty(t, root.Items)
+	assert.Contains(t, root.names(), "data_sources", "the module root lists its query fields")
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "schema-type_fields",
+		"arguments": map[string]any{"type_name": "no_such_type"},
+	})
+	assert.Equal(t, true, resp["result"].(map[string]any)["isError"])
+}
+
+// TestSchemaFieldArgs — argument trees, only for the fields asked for. This is
+// the split that keeps a wide type from costing tens of thousands of tokens.
+func TestSchemaFieldArgs(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name": "schema-field_args",
+		"arguments": map[string]any{
+			"type_name": "_module_core_query",
+			"fields":    []string{"data_sources", "no_such_field"},
+		},
+	})
+	result := resp["result"].(map[string]any)
+	require.NotEqual(t, true, result["isError"])
+
+	var out struct {
+		TypeName string `json:"type_name"`
+		Items    []struct {
+			Field string `json:"field"`
+			Args  []struct {
+				Name string `json:"name"`
+				Type string `json:"type"`
+			} `json:"args"`
+		} `json:"items"`
+		NotFound []string `json:"not_found"`
+	}
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	require.NoError(t, json.Unmarshal([]byte(text), &out), "payload: %s", text)
+
+	require.Len(t, out.Items, 1)
+	assert.Equal(t, "data_sources", out.Items[0].Field)
+	assert.Equal(t, []string{"no_such_field"}, out.NotFound)
+
+	var argNames []string
+	for _, a := range out.Items[0].Args {
+		argNames = append(argNames, a.Name)
+		assert.NotEmpty(t, a.Type, "argument %s has no type", a.Name)
+	}
+	assert.Contains(t, argNames, "filter")
+	assert.Contains(t, argNames, "order_by")
+}
+
+// TestSchemaEnumValues — paginated, and a non-enum says so instead of
+// answering empty.
+func TestSchemaEnumValues(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "schema-enum_values",
+		"arguments": map[string]any{"type_name": "GeometryType"},
+	})
+	result := resp["result"].(map[string]any)
+	require.NotEqual(t, true, result["isError"], "%v", result["content"])
+
+	var page struct {
+		Items []struct {
+			Name string `json:"name"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	require.NoError(t, json.Unmarshal([]byte(text), &page))
+	require.NotEmpty(t, page.Items)
+	assert.Equal(t, len(page.Items), page.Total)
+
+	resp = jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "schema-enum_values",
+		"arguments": map[string]any{"type_name": "core_data_sources"},
+	})
+	result = resp["result"].(map[string]any)
+	assert.Equal(t, true, result["isError"])
+	assert.Contains(t, result["content"].([]any)[0].(map[string]any)["text"].(string), "not ENUM")
+}
