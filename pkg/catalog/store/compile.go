@@ -9,9 +9,17 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// partialRules is the write-side compiler: VALIDATE + PREPARE only (prefix,
-// validate, extension merge) — the GENERATE / ASSEMBLE / FINALIZE phases are
-// skipped, so the output is the PHYSICAL base model the store persists.
+// partialRules is the write-side compiler: VALIDATE + PREPARE (prefix,
+// validate, extension merge) plus the two source-facing FINALIZE validators —
+// the GENERATE and ASSEMBLE phases register nothing and the compiler skips an
+// empty phase, so the output is the PHYSICAL base model the store persists.
+//
+// The @join / @function_call validators run LAST, after the definitions are
+// prefixed and merged, and before collect: compileAndWrite returns on a
+// compile error, so a rejected declaration never reaches writeSource. They
+// resolve cross-source targets through the Store itself, passed as the
+// compilation provider (manager.go) — the same on-demand reconstruction the
+// served schema uses.
 func partialRules() []base.Rule {
 	return []base.Rule{
 		&rules.ExtensionValidator{},
@@ -21,6 +29,8 @@ func partialRules() []base.Rule {
 		&rules.InternalExtensionMerger{},
 		&rules.CatalogTagger{},
 		&rules.PrefixPreparer{},
+		&rules.JoinValidator{},
+		&rules.FunctionCallValidator{},
 	}
 }
 

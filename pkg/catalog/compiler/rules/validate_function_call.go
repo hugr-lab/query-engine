@@ -20,6 +20,8 @@ var _ base.BatchRule = (*FunctionCallValidator)(nil)
 // - All required function arguments are provided
 //
 // Runs in FINALIZE phase because Function types are created during GENERATE.
+// On the WRITE path there is no GENERATE — see buildFuncRegistry for where the
+// in-flight functions come from instead.
 type FunctionCallValidator struct{}
 
 func (r *FunctionCallValidator) Name() string     { return "FunctionCallValidator" }
@@ -31,7 +33,7 @@ func (r *FunctionCallValidator) ProcessAll(ctx base.CompilationContext) error {
 	funcRegistry := buildFuncRegistry(ctx)
 
 	for name := range ctx.Objects() {
-		def := ctx.LookupType(name)
+		def := inFlightType(ctx, name)
 		if def == nil {
 			continue
 		}
@@ -47,7 +49,7 @@ func (r *FunctionCallValidator) ProcessAll(ctx base.CompilationContext) error {
 	// local_db_items) are not in ctx.Objects() — they live in output extensions.
 	// We need to propagate @catalog from function definitions to these fields too.
 	for ext := range ctx.OutputExtensions() {
-		def := ctx.LookupType(ext.Name)
+		def := inFlightType(ctx, ext.Name)
 		if def == nil {
 			continue
 		}
@@ -62,13 +64,29 @@ func (r *FunctionCallValidator) ProcessAll(ctx base.CompilationContext) error {
 
 // buildFuncRegistry collects all function fields from Function, MutationFunction,
 // and module function types into a single lookup map by field name.
+//
+// It is the UNION of two halves, in this order:
+//
+//   - the RESOLVED half — whatever LookupType reaches: the assembled roots on
+//     the full pipeline, the target provider's on the write path (the store
+//     synthesizes Function / _module_<m>_function on demand, so already-stored
+//     sources' functions resolve here and a cross-source @function_call works);
+//   - the IN-FLIGHT half — the `extend type Function` / `extend type
+//     MutationFunction` this compilation carries. PREPARE promotes those to
+//     source definitions (prepare_extensions.go:52) and nothing puts them in
+//     the output, so without this half a source's own functions would be
+//     invisible to it on the write path, and on a RELOAD the resolved half
+//     would answer with the source's PREVIOUS functions.
+//
+// The in-flight half is collected last and therefore wins on a name clash —
+// which is what a reload means: the same name, the new definition.
 func buildFuncRegistry(ctx base.CompilationContext) map[string]*ast.FieldDefinition {
 	registry := make(map[string]*ast.FieldDefinition)
 
 	// Collect from root Function type
-	collectFuncsFromType(ctx, "Function", registry)
+	collectFuncsFromType(ctx, base.FunctionTypeName, registry)
 	// Collect from root MutationFunction type
-	collectFuncsFromType(ctx, "MutationFunction", registry)
+	collectFuncsFromType(ctx, base.FunctionMutationTypeName, registry)
 
 	// Collect from module function types: they follow the pattern _module_<name>_function.
 	// Also check parent module paths because functions may be registered at a higher
@@ -101,6 +119,22 @@ func buildFuncRegistry(ctx base.CompilationContext) map[string]*ast.FieldDefinit
 				m := strings.Join(parts[:i], ".")
 				collectModuleFuncs(ctx, m, checked, registry)
 			}
+		}
+	}
+
+	// The in-flight half, last so it wins. Module scoping is NOT applied here:
+	// a promoted definition carries the source's whole function set, module
+	// members included (@module sits on the field, the module roots that would
+	// separate them are a GENERATE artifact). That makes the registry a little
+	// wider than the compiled path's on the write path — it accepts a
+	// @function_call that reaches across modules WITHIN one source — and wide
+	// is the safe direction: it cannot fail a load that works today.
+	for _, def := range ctx.PromotedDefinitions() {
+		if def.Name != base.FunctionTypeName && def.Name != base.FunctionMutationTypeName {
+			continue
+		}
+		for _, f := range def.Fields {
+			registry[f.Name] = f
 		}
 	}
 

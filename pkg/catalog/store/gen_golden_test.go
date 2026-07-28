@@ -16,6 +16,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -143,6 +144,53 @@ func TestGenGoldenHarness(t *testing.T) {
 		"_module_sales_subscription", "_module_sales_reports_mutation"} {
 		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
 		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
+	}
+
+	assertInputTypesSound(t, ctx, store)
+}
+
+// assertInputTypesSound is the invariant ArgumentTypeValidator enforced over
+// compiled output, restated where the schema is now produced: every field
+// argument and every input-object field must name an INPUT type — a scalar, an
+// enum or an input object. An object type leaking into either position is
+// illegal GraphQL and surfaces far from its cause, as "Introspection must
+// provide input type for arguments".
+//
+// The rule could only see one source's compilation; this walks the WHOLE served
+// schema — the reachability closure from its roots — so it also covers what the
+// store assembles across sources.
+func assertInputTypesSound(t *testing.T, ctx context.Context, s *Store) {
+	t.Helper()
+	sound := func(name string) bool {
+		if types.IsScalar(name) {
+			return true
+		}
+		switch name {
+		case "String", "Int", "Float", "Boolean", "ID":
+			return true
+		}
+		def := s.ForName(ctx, name)
+		if def == nil {
+			// Unresolvable from here — absence is another assertion's subject.
+			return true
+		}
+		switch def.Kind {
+		case ast.Scalar, ast.Enum, ast.InputObject:
+			return true
+		}
+		return false
+	}
+	for def := range s.Definitions(ctx) {
+		for _, f := range def.Fields {
+			for _, arg := range f.Arguments {
+				assert.Truef(t, sound(arg.Type.Name()),
+					"%s.%s argument %q: %s is not an input type", def.Name, f.Name, arg.Name, arg.Type.Name())
+			}
+			if def.Kind == ast.InputObject {
+				assert.Truef(t, sound(f.Type.Name()),
+					"input %s.%s: %s is not an input type", def.Name, f.Name, f.Type.Name())
+			}
+		}
 	}
 }
 
@@ -475,18 +523,16 @@ func storeForSources(t *testing.T, fixtures []fixtureSource) (*Store, context.Co
 	store, err := New(ctx, pool, Config{VecSize: 8}, nil)
 	require.NoError(t, err)
 
-	target, err := static.New()
-	require.NoError(t, err)
 	for _, fs := range fixtures {
 		e := fixtureEngine(fs.engineType)
 		src, err := sources.NewStringSource(fs.name, e, fixtureOpts(fs, e), fs.schema)
 		require.NoError(t, err)
-		_, err = compiler.New(partialRules()...).Compile(ctx, target, src, src.CompileOptions())
+		// The STORE is the compile target, as in production (compileAndWrite):
+		// each later source resolves the earlier ones through the store's
+		// on-demand reconstruction — including the module function roots, which
+		// a static seed of raw definitions cannot produce.
+		_, err = compiler.New(partialRules()...).Compile(ctx, store, src, src.CompileOptions())
 		require.NoError(t, err)
-		// Seed ONLY the definitions: later sources need the prior types for
-		// their extends to validate; leftover extensions (e.g. unmerged
-		// same-source virtual-field extends) are collect's job, not the seed's.
-		require.NoError(t, target.Update(ctx, definitionsOnly{src}))
 		d := collect(ctx, src, fs.name)
 		_, err = store.writeSource(ctx, d, SourceState{
 			Name: fs.name, Version: "v1", Engine: string(e.Type()),
@@ -668,6 +714,8 @@ func TestGenGoldenMultiSource(t *testing.T) {
 		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
 		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
 	}
+
+	assertInputTypesSound(t, ctx, store)
 }
 
 // --- frozen snapshots --------------------------------------------------------

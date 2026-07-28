@@ -23,7 +23,10 @@ var _ base.BatchRule = (*JoinValidator)(nil)
 // - References fields exist and types match source fields
 // - SQL-referenced fields are valid
 //
-// Runs in FINALIZE phase so all types are resolved.
+// Runs in FINALIZE phase. On the WRITE path (the store's partial pipeline)
+// GENERATE and ASSEMBLE register no rules and are skipped, so FINALIZE runs
+// straight after PREPARE — over the prefixed, extension-merged definitions the
+// store is about to persist, which is exactly what this rule needs.
 type JoinValidator struct{}
 
 func (r *JoinValidator) Name() string     { return "JoinValidator" }
@@ -31,7 +34,7 @@ func (r *JoinValidator) Phase() base.Phase { return base.PhaseFinalize }
 
 func (r *JoinValidator) ProcessAll(ctx base.CompilationContext) error {
 	for name := range ctx.Objects() {
-		def := ctx.LookupType(name)
+		def := inFlightType(ctx, name)
 		if def == nil {
 			continue
 		}
@@ -62,11 +65,7 @@ func validateJoinField(ctx base.CompilationContext, def *ast.Definition, field *
 	}
 
 	// 2. Validate referenced object exists
-	refDef := ctx.LookupType(refName)
-	if refDef == nil {
-		// Also check source
-		refDef = ctx.Source().ForName(ctx.Context(), refName)
-	}
+	refDef := inFlightType(ctx, refName)
 	if refDef == nil {
 		return gqlerror.ErrorPosf(field.Position,
 			"@join on %s.%s: references object %q not found",
@@ -161,6 +160,28 @@ func validateJoinField(ctx base.CompilationContext, def *ast.Definition, field *
 	return nil
 }
 
+// inFlightType resolves a type the way a validator on the WRITE path needs it:
+// the source's own definitions first, then the compilation output and the
+// target provider.
+//
+// The source half is the only in-flight half the partial pipeline has. It
+// writes nothing to the output, and the provider still serves the PREVIOUS
+// version of the very source being reloaded — so resolving the provider first
+// would validate a renamed column against the stored definition and reject a
+// load that is in fact correct.
+//
+// On the full pipeline this is not a behaviour change: GENERATE adds each
+// source definition to the output BY POINTER (gen_table.go:34, gen_view.go),
+// so both halves are the same object for everything the source declares, and
+// generated-only types — filter inputs, aggregations, module roots — are absent
+// from the source and fall through to LookupType exactly as before.
+func inFlightType(ctx base.CompilationContext, name string) *ast.Definition {
+	if def := ctx.Source().ForName(ctx.Context(), name); def != nil {
+		return def
+	}
+	return ctx.LookupType(name)
+}
+
 // findFieldByPath resolves a dotted field path like "field" or "nested.field"
 // on a definition, traversing object types.
 func findFieldByPath(ctx base.CompilationContext, def *ast.Definition, path string) *ast.FieldDefinition {
@@ -173,7 +194,7 @@ func findFieldByPath(ctx base.CompilationContext, def *ast.Definition, path stri
 		return f
 	}
 	// Traverse into nested object
-	nestedDef := ctx.LookupType(f.Type.Name())
+	nestedDef := inFlightType(ctx, f.Type.Name())
 	if nestedDef == nil {
 		return nil
 	}
@@ -204,7 +225,7 @@ func validateSubQueryField(ctx base.CompilationContext, def *ast.Definition, pat
 			"@join on %s.%s: field %q in %s must be an object type for nested path",
 			objName, fieldName, parts[0], def.Name)
 	}
-	nestedDef := ctx.LookupType(f.Type.Name())
+	nestedDef := inFlightType(ctx, f.Type.Name())
 	if nestedDef == nil {
 		return gqlerror.ErrorPosf(pos,
 			"@join on %s.%s: object %q not found",

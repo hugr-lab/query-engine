@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	catsrc "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
@@ -27,6 +28,21 @@ type orders @module(name: "sales") @table(name: "orders") {
   id: Int! @pk
   amount: Float
   note: String
+}
+`
+
+// managerSchemaBadJoin is managerSchemaV1 with a @join whose references_fields
+// name a column the target does not have — a same-source declaration the write
+// barrier must refuse.
+const managerSchemaBadJoin = `
+type orders @module(name: "sales") @table(name: "orders") {
+  id: Int! @pk
+  amount: Float
+  vip: [vips] @join(references_name: "vips", source_fields: ["id"], references_fields: ["nope"])
+}
+
+type vips @module(name: "sales") @table(name: "vips") {
+  order_id: Int! @pk
 }
 `
 
@@ -129,6 +145,38 @@ func TestManagerAddCatalog(t *testing.T) {
 	v, err := s.GetSchemaVersion(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), v, "add bumps the cluster version counter")
+}
+
+// TestManagerAddRefusesInvalidSchema pins the write barrier: compileAndWrite
+// compiles FIRST, so a declaration that does not validate never reaches
+// writeSource — and the error carries ErrSchemaInvalid, which is what lets the
+// boot path suspend a source instead of dropping its rows.
+func TestManagerAddRefusesInvalidSchema(t *testing.T) {
+	s, ctx := managerStore(t, Config{VecSize: 8})
+
+	// A first load that does not validate writes nothing at all.
+	err := s.AddCatalog(ctx, "bad", stringCatalog(t, "bad", managerSchemaBadJoin))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, catalog.ErrSchemaInvalid)
+	assert.Contains(t, err.Error(), `references field "nope" not found`)
+	assert.False(t, s.ExistsCatalog("bad"))
+	assert.Nil(t, s.ForName(ctx, "orders"))
+	assert.Nil(t, s.ForName(ctx, "vips"))
+
+	// A RELOAD that does not validate leaves the stored version serving.
+	require.NoError(t, s.AddCatalog(ctx, "shop", stringCatalog(t, "shop", managerSchemaV1)))
+	require.NotNil(t, s.ForName(ctx, "orders"))
+
+	err = s.AddCatalog(ctx, "shop", stringCatalog(t, "shop", managerSchemaBadJoin))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, catalog.ErrSchemaInvalid)
+
+	def := s.ForName(ctx, "orders")
+	require.NotNil(t, def, "the stored version still serves")
+	assert.NotNil(t, def.Fields.ForName("amount"))
+	assert.Nil(t, def.Fields.ForName("vip"), "the refused version left no trace")
+	assert.Nil(t, s.ForName(ctx, "vips"))
+	assert.False(t, s.IsSuspended("shop"), "the write path reports; suspending is the caller's call")
 }
 
 func TestManagerAddVersionGate(t *testing.T) {

@@ -77,10 +77,6 @@ func (o *Options) IsCrossCatalogReferencesSupported() bool {
 	return o.Capabilities != nil && o.Capabilities.General.SupportCrossCatalogReferences
 }
 
-func (o *Options) IsTimeTravelSupported() bool {
-	return o.Capabilities != nil && o.Capabilities.General.SupportTimeTravel
-}
-
 // EngineCapabilities declares what an engine supports.
 type EngineCapabilities struct {
 	General EngineGeneralCapabilities

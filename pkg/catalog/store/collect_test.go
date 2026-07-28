@@ -23,6 +23,20 @@ import (
 // definitions merged into the compile target so cross-source extends resolve.
 func partialSource(t *testing.T, name, schema string, seeds ...base.DefinitionsSource) base.ExtensionsSource {
 	t.Helper()
+	return partialSourceOpts(t, name, schema, false, seeds...)
+}
+
+// partialExtensionSource is partialSource for an EXTENSION source. A source
+// that reaches into ANOTHER source — a @join or @function_call whose target
+// belongs to a different catalog — must be one; that is the contract
+// JoinValidator / FunctionCallValidator pin on the write path.
+func partialExtensionSource(t *testing.T, name, schema string, seeds ...base.DefinitionsSource) base.ExtensionsSource {
+	t.Helper()
+	return partialSourceOpts(t, name, schema, true, seeds...)
+}
+
+func partialSourceOpts(t *testing.T, name, schema string, isExtension bool, seeds ...base.DefinitionsSource) base.ExtensionsSource {
+	t.Helper()
 	ctx := context.Background()
 	target, err := static.New()
 	require.NoError(t, err)
@@ -34,6 +48,7 @@ func partialSource(t *testing.T, name, schema string, seeds ...base.DefinitionsS
 		Name:         name,
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
+		IsExtension:  isExtension,
 	}, schema)
 	require.NoError(t, err)
 	_, err = compiler.New(partialRules()...).Compile(ctx, target, src, src.CompileOptions())

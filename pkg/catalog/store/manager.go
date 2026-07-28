@@ -216,7 +216,9 @@ func (s *Store) IsSuspended(name string) bool {
 func (s *Store) compileAndWrite(ctx context.Context, name string, cat catsrc.Catalog, state *SourceState) error {
 	compiled, err := compiler.New(partialRules()...).Compile(ctx, s, cat, cat.CompileOptions())
 	if err != nil {
-		return fmt.Errorf("compile catalog %q: %w", name, err)
+		// Tagged so the boot path can tell a bad declaration from an
+		// unreachable source and suspend instead of dropping the rows.
+		return fmt.Errorf("compile catalog %q: %w: %w", name, catalog.ErrSchemaInvalid, err)
 	}
 	if dc, ok := compiled.(base.DependentCompiledCatalog); ok {
 		state.Dependencies = dc.Dependencies()

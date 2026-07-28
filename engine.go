@@ -3,6 +3,7 @@ package hugr
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -298,10 +299,22 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		return fmt.Errorf("load data sources: %w", err)
 	}
 
-	// 15. Disable catalogs for data sources that failed to load.
+	// 15. Take catalogs of data sources that failed to load out of the served
+	//     schema. A source whose own SDL no longer validates keeps its rows and
+	//     is only SUSPENDED: the declaration is fixable (edit the SDL, reload)
+	//     and dropping the model would take the annotation overlay's anchors
+	//     with it. Anything else — a source we cannot reach or read — is
+	//     removed, as before.
 	if !isReadonly && !s.config.Cluster.IsWorker() {
-		for name, ok := range loaded {
-			if ok {
+		for name, loadErr := range loaded {
+			if loadErr == nil {
+				continue
+			}
+			if errors.Is(loadErr, catalog.ErrSchemaInvalid) {
+				slog.Warn("suspending catalog: data source schema is invalid", "name", name, "error", loadErr)
+				if err := s.catalogProvider.SuspendCatalog(ctx, name); err != nil {
+					slog.Error("failed to suspend catalog for data source", "name", name, "error", err)
+				}
 				continue
 			}
 			slog.Info("disabling catalog for failed data source", "name", name)
@@ -311,11 +324,13 @@ func (s *Service) Init(ctx context.Context) (err error) {
 		}
 	}
 
-	// 16. If some data sources failed to load, fail startup cluster node
+	// 16. If some data sources failed to load, fail startup cluster node.
+	//     These nodes never compile (skipCatalogOps), so the failure here is
+	//     always a connection one — the schema they serve was written elsewhere.
 	if isReadonly || s.config.Cluster.IsWorker() {
-		for name, ok := range loaded {
-			if !ok {
-				return fmt.Errorf("failed to load data source %s: see previous logs for details", name)
+		for name, loadErr := range loaded {
+			if loadErr != nil {
+				return fmt.Errorf("failed to load data source %s: %w", name, loadErr)
 			}
 		}
 	}

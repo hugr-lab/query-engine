@@ -109,10 +109,9 @@ func (s *Store) Types(ctx context.Context) iter.Seq2[string, *ast.Definition] {
 }
 
 // Definitions enumerates every compiled definition the schema serves, by name.
-// The db provider lists a stored table; the entity store synthesizes derived
-// types on demand, so there is no table to list — the set is the reachability
-// closure of the schema from its roots (schemaTypeNames), each name resolved
-// through ForName.
+// The store synthesizes derived types on demand, so there is no table to list —
+// the set is the reachability closure of the schema from its roots
+// (schemaTypeNames), each name resolved through ForName.
 func (s *Store) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {
 	return func(yield func(*ast.Definition) bool) {
 		for _, name := range s.schemaTypeNames(ctx) {

@@ -18,6 +18,13 @@ var (
 	// Service sits over a provider that is not a CatalogManager — a static
 	// schema, or a read-only view of one someone else writes.
 	ErrCatalogNotManaged = errors.New("catalog provider does not manage catalogs")
+	// ErrSchemaInvalid marks a load that failed because the source's OWN
+	// declaration does not validate — not because the source could not be
+	// reached. The boot path distinguishes the two: a schema a deployment can
+	// fix by editing SDL must not cost it the stored model (and with it the
+	// annotation overlay's anchors), so such a source is suspended rather than
+	// removed.
+	ErrSchemaInvalid = errors.New("catalog schema is invalid")
 )
 
 // Service holds dependencies for query parsing: Provider, Validator, VariableTransformer.
