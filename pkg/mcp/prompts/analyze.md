@@ -3,8 +3,8 @@ You are performing a **data analysis** task. Your goal is to explore the data, f
 ## Approach
 
 1. **Understand the question** — identify entities, metrics, dimensions, time ranges, and filters.
-2. **Discover schema** — use `discovery-search_modules` → `discovery-search_module_data_objects` → `schema-type_fields` to find relevant tables and fields.
-3. **Explore data** — use `discovery-field_values` to understand distributions, categories, and value ranges before building queries.
+2. **Discover schema** — `catalog-search` to find the relevant objects by meaning, `catalog-describe` for the query names to write, `catalog-object_fields` for the columns.
+3. **Explore data** — `data-field_values` to understand distributions, categories and value ranges before building queries.
 4. **Build analytical queries** — prefer aggregations and bucket aggregations over raw data:
    - Use `_aggregation` for summary stats (count, sum, avg, min, max)
    - Use `_bucket_aggregation` for GROUP BY analysis (breakdowns by category, time, geography)

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -333,4 +334,59 @@ func TestMCP_ValidateInvalidQuery(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(textContent), &validResult))
 	assert.Equal(t, false, validResult["ok"])
 	assert.Contains(t, validResult, "error")
+}
+
+// TestMCP_DocsNameOnlyRealTools guards the embedded prose — instructions,
+// prompts and resources — against naming a tool that does not exist. That rot
+// is silent: the text still reads fine, and the agent only finds out when the
+// call comes back "tool not found". It has already happened once in this
+// redesign, when the descriptions referenced catalog-object_fields for two
+// steps before it was written.
+func TestMCP_DocsNameOnlyRealTools(t *testing.T) {
+	h := handler(t)
+
+	init := jsonRPC(t, h, "initialize", map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "1.0"},
+	})
+	registered := map[string]bool{}
+	for _, tool := range jsonRPC(t, h, "tools/list", nil)["result"].(map[string]any)["tools"].([]any) {
+		registered[tool.(map[string]any)["name"].(string)] = true
+	}
+	require.NotEmpty(t, registered)
+
+	texts := map[string]string{}
+	if s, ok := init["result"].(map[string]any)["instructions"].(string); ok {
+		texts["instructions"] = s
+	}
+	require.NotEmpty(t, texts["instructions"], "instructions must be served on initialize")
+
+	for _, p := range jsonRPC(t, h, "prompts/list", nil)["result"].(map[string]any)["prompts"].([]any) {
+		name := p.(map[string]any)["name"].(string)
+		res := jsonRPC(t, h, "prompts/get", map[string]any{"name": name})
+		for _, m := range res["result"].(map[string]any)["messages"].([]any) {
+			texts["prompt:"+name] += m.(map[string]any)["content"].(map[string]any)["text"].(string)
+		}
+	}
+	for _, r := range jsonRPC(t, h, "resources/list", nil)["result"].(map[string]any)["resources"].([]any) {
+		uri := r.(map[string]any)["uri"].(string)
+		res := jsonRPC(t, h, "resources/read", map[string]any{"uri": uri})
+		for _, c := range res["result"].(map[string]any)["contents"].([]any) {
+			texts["resource:"+uri] += c.(map[string]any)["text"].(string)
+		}
+	}
+	require.Greater(t, len(texts), 5, "prompts and resources must be readable")
+
+	// Tool names are written in backticks in this prose; requiring that keeps
+	// ordinary hyphenated English ("schema-defined", "data-input shape") out.
+	toolRef := regexp.MustCompile("`((?:catalog|schema|data|discovery)-[a-z_]+)")
+	seen := 0
+	for where, text := range texts {
+		for _, m := range toolRef.FindAllStringSubmatch(text, -1) {
+			seen++
+			assert.True(t, registered[m[1]], "%s references unregistered tool %q", where, m[1])
+		}
+	}
+	assert.Greater(t, seen, 20, "the prose must actually name tools — otherwise this test checks nothing")
 }
