@@ -1,0 +1,2070 @@
+# Golden snapshot of the generated schema — authored by the schema
+# compiler, regenerate with UPDATE_GOLDEN=1. One section per definition
+# the entity store must reproduce; see gen_golden_test.go.
+
+# === shop_items
+type shop_items @catalog(engine: "duckdb", name: "shop") @data_input(name: "shop_items_mut_data") @data_input(name: "shop_items_mut_input_data") @filter_input(name: "shop_items_filter") @filter_list_input(name: "shop_items_list_filter") @module(name: "shop") @mutation(data_input: "", name: "delete_items", type: DELETE) @mutation(data_input: "shop_items_mut_data", name: "update_items", type: UPDATE) @mutation(data_input: "shop_items_mut_input_data", name: "insert_items", type: INSERT) @original_name(name: "items") @query(name: "items", type: SELECT) @query(name: "items_aggregation", type: AGGREGATE) @query(name: "items_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "items_by_pk", type: SELECT_ONE) @references(description: "", is_m2m: false, m2m_name: "", name: "shop_categories_category_id", query: "category", references_description: "", references_fields: ["id"], references_name: "shop_categories", references_query: "items", source_fields: ["category_id"]) @table(name: "items") {
+  _join(fields: [String!]!): _join
+  category(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): shop_categories @catalog(engine: "duckdb", name: "shop") @references_query(is_m2m: false, m2m_name: "", name: "shop_categories_category_id", references_name: "shop_categories")
+  category_id: Int @field_references(field: "id", query: "category", references_name: "shop_categories", references_query: "items")
+  id: Int! @pk
+  label: String @catalog(engine: "duckdb", name: "shop") @dependency(name: "ext") @function_call(args: {id:"id"}, module: "shop", references_name: "item_label")
+  name: String!
+  note: String @dependency(name: "ext")
+  """
+  The item price
+  """
+  price: Float
+  similar: [shop_items] @catalog(engine: "duckdb", name: "func") @dependency(name: "ext") @table_function_call_join(args: {item_id:"id"}, references_name: "similar_items")
+  """
+  The aggregation for similar
+  """
+  similar_aggregation: _shop_items_aggregation @aggregation_query(is_bucket: false, name: "similar") @catalog(engine: "duckdb", name: "func") @dependency(name: "ext")
+  """
+  The bucket aggregation for similar
+  """
+  similar_bucket_aggregation: [_shop_items_aggregation_bucket] @aggregation_query(is_bucket: true, name: "similar") @catalog(engine: "duckdb", name: "func") @dependency(name: "ext")
+}
+
+# === shop_categories
+type shop_categories @catalog(engine: "duckdb", name: "shop") @data_input(name: "shop_categories_mut_data") @data_input(name: "shop_categories_mut_input_data") @filter_input(name: "shop_categories_filter") @module(name: "shop") @mutation(data_input: "", name: "delete_categories", type: DELETE) @mutation(data_input: "shop_categories_mut_data", name: "update_categories", type: UPDATE) @mutation(data_input: "shop_categories_mut_input_data", name: "insert_categories", type: INSERT) @original_name(name: "categories") @query(name: "categories", type: SELECT) @query(name: "categories_aggregation", type: AGGREGATE) @query(name: "categories_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "categories_by_pk", type: SELECT_ONE) @table(name: "categories") {
+  _join(fields: [String!]!): _join
+  id: Int! @pk
+  items(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [shop_items] @catalog(engine: "duckdb", name: "shop") @references_query(is_m2m: false, m2m_name: "", name: "shop_categories_category_id", references_name: "shop_items")
+  """
+  The aggregation for items
+  """
+  items_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_items_aggregation @aggregation_query(is_bucket: false, name: "items") @catalog(engine: "duckdb", name: "shop")
+  """
+  The bucket aggregation for items
+  """
+  items_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_shop_items_aggregation_bucket] @aggregation_query(is_bucket: true, name: "items") @catalog(engine: "duckdb", name: "shop")
+  title: String!
+}
+
+# === shop_items_filter
+"""
+Filter for shop_items objects
+"""
+input shop_items_filter @catalog(engine: "duckdb", name: "shop") @filter_input(name: "shop_items") {
+  _and: [shop_items_filter]
+  _not: shop_items_filter
+  _or: [shop_items_filter]
+  category: shop_categories_filter @catalog(engine: "duckdb", name: "shop") @references_query(is_m2m: false, m2m_name: "", name: "shop_categories_category_id", references_name: "shop_categories")
+  category_id: IntFilter @field_references(field: "id", query: "category", references_name: "shop_categories", references_query: "items")
+  id: IntFilter @pk
+  name: StringFilter
+  """
+  The item price
+  """
+  price: FloatFilter
+}
+
+# === shop_categories_filter
+"""
+Filter for shop_categories objects
+"""
+input shop_categories_filter @catalog(engine: "duckdb", name: "shop") @filter_input(name: "shop_categories") {
+  _and: [shop_categories_filter]
+  _not: shop_categories_filter
+  _or: [shop_categories_filter]
+  id: IntFilter @pk
+  items: shop_items_list_filter @catalog(engine: "duckdb", name: "shop") @references_query(is_m2m: false, m2m_name: "", name: "shop_categories_category_id", references_name: "shop_items")
+  title: StringFilter
+}
+
+# === shop_items_list_filter
+input shop_items_list_filter @catalog(engine: "duckdb", name: "shop") @filter_list_input(name: "shop_items") {
+  all_of: shop_items_filter
+  any_of: shop_items_filter
+  none_of: shop_items_filter
+}
+
+# === shop_items_mut_input_data
+input shop_items_mut_input_data @catalog(engine: "duckdb", name: "shop") @data_input(name: "shop_items") {
+  category: shop_categories_mut_input_data
+  category_id: Int
+  id: Int
+  name: String
+  price: Float
+}
+
+# === shop_items_mut_data
+input shop_items_mut_data @catalog(engine: "duckdb", name: "shop") @data_input(name: "shop_items") {
+  category_id: Int
+  id: Int
+  name: String
+  price: Float
+}
+
+# === _shop_items_aggregation
+type _shop_items_aggregation @aggregation(is_bucket: false, level: 1, name: "shop_items") @catalog(engine: "duckdb", name: "shop") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  category(
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean
+  ): _shop_categories_aggregation @field_aggregation(name: "category")
+  category_id: IntAggregation @field_aggregation(name: "category_id")
+  id: IntAggregation @field_aggregation(name: "id")
+  label: StringAggregation @dependency(name: "ext") @field_aggregation(name: "label")
+  name: StringAggregation @field_aggregation(name: "name")
+  price: FloatAggregation @field_aggregation(name: "price")
+  similar: _shop_items_aggregation @dependency(name: "ext") @field_aggregation(name: "similar")
+  similar_aggregation: _shop_items_aggregation_sub_aggregation @dependency(name: "ext") @field_aggregation(name: "similar")
+}
+
+# === _shop_items_aggregation_sub_aggregation
+type _shop_items_aggregation_sub_aggregation @aggregation(is_bucket: false, level: 2, name: "_shop_items_aggregation") @catalog(engine: "duckdb", name: "shop") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  category_id: IntSubAggregation @field_aggregation(name: "category_id")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  name: StringSubAggregation @field_aggregation(name: "name")
+  price: FloatSubAggregation @field_aggregation(name: "price")
+}
+
+# === _shop_categories_aggregation
+type _shop_categories_aggregation @aggregation(is_bucket: false, level: 1, name: "shop_categories") @catalog(engine: "duckdb", name: "shop") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  id: IntAggregation @field_aggregation(name: "id")
+  items(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_items_aggregation @field_aggregation(name: "items")
+  items_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_items_aggregation_sub_aggregation @field_aggregation(name: "items")
+  title: StringAggregation @field_aggregation(name: "title")
+}
+
+# === logs
+type logs @catalog(engine: "duckdb", name: "ro") @filter_input(name: "logs_filter") @module(name: "ro_mod") @query(name: "logs", type: SELECT) @query(name: "logs_aggregation", type: AGGREGATE) @query(name: "logs_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "logs_by_pk", type: SELECT_ONE) @table(name: "logs") {
+  _join(fields: [String!]!): _join
+  id: Int! @pk
+  message: String
+}
+
+# === logs_filter
+"""
+Filter for logs objects
+"""
+input logs_filter @catalog(engine: "duckdb", name: "ro") @filter_input(name: "logs") {
+  _and: [logs_filter]
+  _not: logs_filter
+  _or: [logs_filter]
+  id: IntFilter @pk
+  message: StringFilter
+}
+
+# === _logs_aggregation
+type _logs_aggregation @aggregation(is_bucket: false, level: 1, name: "logs") @catalog(engine: "duckdb", name: "ro") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  id: IntAggregation @field_aggregation(name: "id")
+  message: StringAggregation @field_aggregation(name: "message")
+}
+
+# === audit_events
+type audit_events @catalog(engine: "duckdb", name: "audit") @data_input(name: "audit_events_mut_data") @data_input(name: "audit_events_mut_input_data") @filter_input(name: "audit_events_filter") @module(name: "audit") @mutation(data_input: "", name: "delete_audit_events", type: DELETE) @mutation(data_input: "audit_events_mut_data", name: "update_audit_events", type: UPDATE) @mutation(data_input: "audit_events_mut_input_data", name: "insert_audit_events", type: INSERT) @query(name: "audit_events", type: SELECT) @query(name: "audit_events_aggregation", type: AGGREGATE) @query(name: "audit_events_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "audit_events_by_pk", type: SELECT_ONE) @table(name: "audit_events") {
+  _join(fields: [String!]!): _join
+  id: Int! @pk
+  log_id: Int
+  logs(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [logs] @catalog(engine: "duckdb", name: "ro") @dependency(name: "ext") @join(references_fields: ["id"], references_name: "logs", source_fields: ["log_id"])
+  """
+  The aggregation for logs
+  """
+  logs_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _logs_aggregation @aggregation_query(is_bucket: false, name: "logs") @catalog(engine: "duckdb", name: "ro") @dependency(name: "ext")
+  """
+  The bucket aggregation for logs
+  """
+  logs_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_logs_aggregation_bucket] @aggregation_query(is_bucket: true, name: "logs") @catalog(engine: "duckdb", name: "ro") @dependency(name: "ext")
+}
+
+# === _audit_events_aggregation
+type _audit_events_aggregation @aggregation(is_bucket: false, level: 1, name: "audit_events") @catalog(engine: "duckdb", name: "audit") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  id: IntAggregation @field_aggregation(name: "id")
+  log_id: IntAggregation @field_aggregation(name: "log_id")
+  logs(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _logs_aggregation @dependency(name: "ext") @field_aggregation(name: "logs")
+  logs_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _logs_aggregation_sub_aggregation @dependency(name: "ext") @field_aggregation(name: "logs")
+}
+
+# === shop_overview
+type shop_overview @catalog(engine: "duckdb", name: "ext") @dependency(name: "shop") @filter_input(name: "shop_overview_filter") @query(name: "shop_overview", type: SELECT) @query(name: "shop_overview_aggregation", type: AGGREGATE) @query(name: "shop_overview_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "shop_overview_by_pk", type: SELECT_ONE) @view(name: "shop_overview", sql: "SELECT category_id, count(*) AS items_count FROM shop.main.items GROUP BY category_id") {
+  _join(fields: [String!]!): _join @dependency(name: "ext")
+  category_id: Int @pk
+  items_count: BigInt
+}
+
+# === shop_overview_filter
+"""
+Filter for shop_overview objects
+"""
+input shop_overview_filter @catalog(engine: "duckdb", name: "ext") @filter_input(name: "shop_overview") {
+  _and: [shop_overview_filter]
+  _not: shop_overview_filter
+  _or: [shop_overview_filter]
+  category_id: IntFilter @pk
+  items_count: BigIntFilter
+}
+
+# === _shop_overview_aggregation
+type _shop_overview_aggregation @aggregation(is_bucket: false, level: 1, name: "shop_overview") @catalog(engine: "duckdb", name: "ext") {
+  _join(fields: [String!]!): _join_aggregation @dependency(name: "ext") @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  category_id: IntAggregation @field_aggregation(name: "category_id")
+  items_count: BigIntAggregation @field_aggregation(name: "items_count")
+}
+
+# === Query
+type Query @system {
+  """
+  Logical-model introspection: the root module tree (name "").
+  Resolved on the metadata path, like __schema/__type.
+  """
+  _catalog: _Module @system
+  """
+  Logical-model introspection: data object by GraphQL type name;
+  null for non-data-object types.
+  """
+  _dataObject(name: String!): _DataObject @system
+  """
+  Logical-model introspection: data source by name; null when absent,
+  inactive or contributing nothing visible.
+  """
+  _dataSource(name: String!): _DataSource @system
+  """
+  Logical-model introspection: the attached data sources that contribute
+  anything visible to the caller.
+  """
+  _dataSources: [_DataSource!] @system
+  """
+  Logical-model introspection: callable member (function/mutation/subscription)
+  of a module; module "" = root-level functions.
+  """
+  _function(module: String!, name: String!): _Function @system
+  """
+  Logical-model introspection: direct module lookup; "" = the root module.
+  """
+  _module(name: String!): _Module @system
+  """
+  Logical-model introspection: GraphQL type definitions of the logical
+  model. SOURCE (default) lists the residual base types defined by data
+  sources — structural objects, inputs, enums — excluding data objects,
+  module roots and compiler-generated helper types; SYSTEM lists the
+  engine-defined types (scalars, introspection and hugr system SDL).
+  """
+  _types(scope: _TypeScope = SOURCE): [__Type!] @system
+  audit: _module_audit_query @module_catalog(name: "audit")
+  """
+  Functions
+  """
+  function: Function @module_catalog(name: "func") @module_catalog(name: "shop") @system
+  """
+  H3 aggregation query
+  """
+  h3(
+    """
+    H3 resolution to use for the query
+    """
+    resolution: Int!
+  ): [_h3_query] @system
+  """
+  Performs jq query on result set
+  Results will be placed in 'extension' field by field or alias name
+  """
+  jq(include_origin: Boolean = false, query: String!): Query @system
+  ro_mod: _module_ro_mod_query @module_catalog(name: "ro")
+  shop: _module_shop_query @module_catalog(name: "shop")
+  shop_overview(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_overview_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [shop_overview] @catalog(engine: "duckdb", name: "ext") @dependency(name: "ext") @query(name: "shop_overview", type: SELECT)
+  """
+  The aggregation for shop_overview
+  """
+  shop_overview_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_overview_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_overview_aggregation @aggregation_query(is_bucket: false, name: "shop_overview") @catalog(engine: "duckdb", name: "ext") @dependency(name: "ext")
+  """
+  The aggregation for shop_overview
+  """
+  shop_overview_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_overview_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_shop_overview_aggregation_bucket] @aggregation_query(is_bucket: true, name: "shop_overview") @catalog(engine: "duckdb", name: "ext") @dependency(name: "ext")
+  shop_overview_by_pk(category_id: Int!): shop_overview @catalog(engine: "duckdb", name: "ext") @dependency(name: "ext") @query(name: "shop_overview", type: SELECT_ONE)
+}
+
+# === Mutation
+type Mutation @system {
+  audit: _module_audit_mutation @module_catalog(name: "audit")
+  function: MutationFunction @system
+  shop: _module_shop_mutation @module_catalog(name: "shop")
+}
+
+# === Function
+type Function @system {
+  """
+  The root function object of the module shop
+  """
+  shop: _module_shop_function @module_catalog(name: "shop")
+  similar_items(item_id: Int!, limit: Int = 5): [shop_items] @catalog(engine: "duckdb", name: "func") @function(name: "similar_items")
+  similar_items_aggregation(item_id: Int!, limit: Int = 5): _shop_items_aggregation @aggregation_query(is_bucket: false, name: "similar_items") @catalog(engine: "duckdb", name: "func")
+  similar_items_bucket_aggregation(item_id: Int!, limit: Int = 5): [_shop_items_aggregation_bucket] @aggregation_query(is_bucket: true, name: "similar_items") @catalog(engine: "duckdb", name: "func")
+  """
+  The root function object of the module tools
+  """
+  tools: _module_tools_function @module_catalog(name: "func")
+}
+
+# === _module_shop_query
+type _module_shop_query @module_catalog(name: "shop") @module_root(name: "shop", type: QUERY) {
+  categories(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_categories_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [shop_categories] @catalog(engine: "duckdb", name: "shop") @query(name: "shop_categories", type: SELECT)
+  """
+  The aggregation for categories
+  """
+  categories_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_categories_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_categories_aggregation @aggregation_query(is_bucket: false, name: "categories") @catalog(engine: "duckdb", name: "shop")
+  """
+  The aggregation for categories
+  """
+  categories_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_categories_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_shop_categories_aggregation_bucket] @aggregation_query(is_bucket: true, name: "categories") @catalog(engine: "duckdb", name: "shop")
+  categories_by_pk(id: Int!): shop_categories @catalog(engine: "duckdb", name: "shop") @query(name: "shop_categories", type: SELECT_ONE)
+  items(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [shop_items] @catalog(engine: "duckdb", name: "shop") @query(name: "shop_items", type: SELECT)
+  """
+  The aggregation for items
+  """
+  items_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_items_aggregation @aggregation_query(is_bucket: false, name: "items") @catalog(engine: "duckdb", name: "shop")
+  """
+  The aggregation for items
+  """
+  items_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_shop_items_aggregation_bucket] @aggregation_query(is_bucket: true, name: "items") @catalog(engine: "duckdb", name: "shop")
+  items_by_pk(id: Int!): shop_items @catalog(engine: "duckdb", name: "shop") @query(name: "shop_items", type: SELECT_ONE)
+}
+
+# === _module_shop_mutation
+type _module_shop_mutation @module_catalog(name: "shop") @module_root(name: "shop", type: MUTATION) {
+  delete_categories(filter: shop_categories_filter): OperationResult @catalog(engine: "duckdb", name: "shop") @mutation(data_input: "", name: "shop_categories", type: DELETE)
+  delete_items(filter: shop_items_filter): OperationResult @catalog(engine: "duckdb", name: "shop") @mutation(data_input: "", name: "shop_items", type: DELETE)
+  insert_categories(data: shop_categories_mut_input_data!): shop_categories @catalog(engine: "duckdb", name: "shop") @mutation(data_input: "shop_categories_mut_input_data", name: "shop_categories", type: INSERT)
+  insert_items(data: shop_items_mut_input_data!): shop_items @catalog(engine: "duckdb", name: "shop") @mutation(data_input: "shop_items_mut_input_data", name: "shop_items", type: INSERT)
+  update_categories(data: shop_categories_mut_data!, filter: shop_categories_filter): OperationResult @catalog(engine: "duckdb", name: "shop") @mutation(data_input: "shop_categories_mut_data", name: "shop_categories", type: UPDATE)
+  update_items(data: shop_items_mut_data!, filter: shop_items_filter): OperationResult @catalog(engine: "duckdb", name: "shop") @mutation(data_input: "shop_items_mut_data", name: "shop_items", type: UPDATE)
+}
+
+# === _module_shop_function
+type _module_shop_function @module_catalog(name: "shop") @module_root(name: "shop", type: FUNCTION) {
+  item_label(id: Int!): String @catalog(engine: "duckdb", name: "shop") @function(name: "item_label") @module(name: "shop")
+}
+
+# === _module_tools_function
+type _module_tools_function @module_catalog(name: "func") @module_root(name: "tools", type: FUNCTION) {
+  slugify(s: String!): String @catalog(engine: "duckdb", name: "func") @function(name: "slugify") @module(name: "tools")
+}
+
+# === _module_ro_mod_query
+type _module_ro_mod_query @module_catalog(name: "ro") @module_root(name: "ro_mod", type: QUERY) {
+  logs(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [logs] @catalog(engine: "duckdb", name: "ro") @query(name: "logs", type: SELECT)
+  """
+  The aggregation for logs
+  """
+  logs_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _logs_aggregation @aggregation_query(is_bucket: false, name: "logs") @catalog(engine: "duckdb", name: "ro")
+  """
+  The aggregation for logs
+  """
+  logs_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_logs_aggregation_bucket] @aggregation_query(is_bucket: true, name: "logs") @catalog(engine: "duckdb", name: "ro")
+  logs_by_pk(id: Int!): logs @catalog(engine: "duckdb", name: "ro") @query(name: "logs", type: SELECT_ONE)
+}
+
+# === _module_audit_query
+type _module_audit_query @module_catalog(name: "audit") @module_root(name: "audit", type: QUERY) {
+  audit_events(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: audit_events_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [audit_events] @catalog(engine: "duckdb", name: "audit") @query(name: "audit_events", type: SELECT)
+  """
+  The aggregation for audit_events
+  """
+  audit_events_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: audit_events_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _audit_events_aggregation @aggregation_query(is_bucket: false, name: "audit_events") @catalog(engine: "duckdb", name: "audit")
+  """
+  The aggregation for audit_events
+  """
+  audit_events_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: audit_events_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_audit_events_aggregation_bucket] @aggregation_query(is_bucket: true, name: "audit_events") @catalog(engine: "duckdb", name: "audit")
+  audit_events_by_pk(id: Int!): audit_events @catalog(engine: "duckdb", name: "audit") @query(name: "audit_events", type: SELECT_ONE)
+}
+
+# === _join
+type _join @system {
+  audit_events(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: audit_events_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [audit_events] @catalog(engine: "duckdb", name: "audit") @query(name: "audit_events", type: SELECT)
+  audit_events_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: audit_events_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _audit_events_aggregation @aggregation_query(is_bucket: false, name: "audit_events") @catalog(engine: "duckdb", name: "audit")
+  audit_events_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: audit_events_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_audit_events_aggregation_bucket] @aggregation_query(is_bucket: true, name: "audit_events") @catalog(engine: "duckdb", name: "audit")
+  logs(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [logs] @catalog(engine: "duckdb", name: "ro") @query(name: "logs", type: SELECT)
+  logs_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _logs_aggregation @aggregation_query(is_bucket: false, name: "logs") @catalog(engine: "duckdb", name: "ro")
+  logs_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_logs_aggregation_bucket] @aggregation_query(is_bucket: true, name: "logs") @catalog(engine: "duckdb", name: "ro")
+  shop_categories(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_categories_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [shop_categories] @catalog(engine: "duckdb", name: "shop") @query(name: "shop_categories", type: SELECT)
+  shop_categories_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_categories_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_categories_aggregation @aggregation_query(is_bucket: false, name: "shop_categories") @catalog(engine: "duckdb", name: "shop")
+  shop_categories_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_categories_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_shop_categories_aggregation_bucket] @aggregation_query(is_bucket: true, name: "shop_categories") @catalog(engine: "duckdb", name: "shop")
+  shop_items(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [shop_items] @catalog(engine: "duckdb", name: "shop") @query(name: "shop_items", type: SELECT)
+  shop_items_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_items_aggregation @aggregation_query(is_bucket: false, name: "shop_items") @catalog(engine: "duckdb", name: "shop")
+  shop_items_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_shop_items_aggregation_bucket] @aggregation_query(is_bucket: true, name: "shop_items") @catalog(engine: "duckdb", name: "shop")
+  shop_overview(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_overview_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [shop_overview] @catalog(engine: "duckdb", name: "ext") @dependency(name: "ext") @query(name: "shop_overview", type: SELECT)
+  shop_overview_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_overview_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_overview_aggregation @aggregation_query(is_bucket: false, name: "shop_overview") @catalog(engine: "duckdb", name: "ext") @dependency(name: "ext")
+  shop_overview_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_overview_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_shop_overview_aggregation_bucket] @aggregation_query(is_bucket: true, name: "shop_overview") @catalog(engine: "duckdb", name: "ext") @dependency(name: "ext")
+}
+
+# === _join_aggregation
+type _join_aggregation @aggregation(is_bucket: false, level: 1, name: "_join") {
+  audit_events(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: audit_events_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _audit_events_aggregation @aggregation_query(is_bucket: false, name: "audit_events") @catalog(engine: "duckdb", name: "audit") @field_aggregation(name: "audit_events")
+  logs(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: logs_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _logs_aggregation @aggregation_query(is_bucket: false, name: "logs") @catalog(engine: "duckdb", name: "ro") @field_aggregation(name: "logs")
+  shop_categories(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_categories_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_categories_aggregation @aggregation_query(is_bucket: false, name: "shop_categories") @catalog(engine: "duckdb", name: "shop") @field_aggregation(name: "shop_categories")
+  shop_items(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_items_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_items_aggregation @aggregation_query(is_bucket: false, name: "shop_items") @catalog(engine: "duckdb", name: "shop") @field_aggregation(name: "shop_items")
+  shop_overview(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: shop_overview_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _shop_overview_aggregation @aggregation_query(is_bucket: false, name: "shop_overview") @catalog(engine: "duckdb", name: "ext") @dependency(name: "ext") @field_aggregation(name: "shop_overview")
+}

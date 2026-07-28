@@ -1,0 +1,117 @@
+# Golden snapshot of the generated schema — authored by the schema
+# compiler, regenerate with UPDATE_GOLDEN=1. One section per definition
+# the entity store must reproduce; see gen_golden_test.go.
+
+# === users
+type users @catalog(engine: "duckdb", name: "test") @data_input(name: "users_mut_data") @data_input(name: "users_mut_input_data") @filter_input(name: "users_filter") @module(name: "crm") @mutation(data_input: "", name: "delete_users", type: DELETE) @mutation(data_input: "users_mut_data", name: "update_users", type: UPDATE) @mutation(data_input: "users_mut_input_data", name: "insert_users", type: INSERT) @query(name: "users", type: SELECT) @query(name: "users_aggregation", type: AGGREGATE) @query(name: "users_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "users_by_email", type: SELECT_ONE) @query(name: "users_by_full_name", type: SELECT_ONE) @query(name: "users_by_pk", type: SELECT_ONE) @table(name: "users") @unique(fields: ["email"], query_suffix: "by_email") @unique(fields: ["first_name","last_name"], query_suffix: "by_full_name") {
+  _join(fields: [String!]!): _join
+  email: String!
+  first_name: String!
+  id: Int! @pk
+  last_name: String!
+}
+
+# === users_filter
+"""
+Filter for users objects
+"""
+input users_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "users") {
+  _and: [users_filter]
+  _not: users_filter
+  _or: [users_filter]
+  email: StringFilter
+  first_name: StringFilter
+  id: IntFilter @pk
+  last_name: StringFilter
+}
+
+# === _module_crm_query
+type _module_crm_query @module_catalog(name: "test") @module_root(name: "crm", type: QUERY) {
+  users(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: users_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [users] @catalog(engine: "duckdb", name: "test") @query(name: "users", type: SELECT)
+  """
+  The aggregation for users
+  """
+  users_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: users_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _users_aggregation @aggregation_query(is_bucket: false, name: "users") @catalog(engine: "duckdb", name: "test")
+  """
+  The aggregation for users
+  """
+  users_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: users_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_users_aggregation_bucket] @aggregation_query(is_bucket: true, name: "users") @catalog(engine: "duckdb", name: "test")
+  users_by_email(email: String!): users @catalog(engine: "duckdb", name: "test") @query(name: "users", type: SELECT_ONE)
+  users_by_full_name(first_name: String!, last_name: String!): users @catalog(engine: "duckdb", name: "test") @query(name: "users", type: SELECT_ONE)
+  users_by_pk(id: Int!): users @catalog(engine: "duckdb", name: "test") @query(name: "users", type: SELECT_ONE)
+}

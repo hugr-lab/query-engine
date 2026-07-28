@@ -1,0 +1,194 @@
+# Golden snapshot of the generated schema — authored by the schema
+# compiler, regenerate with UPDATE_GOLDEN=1. One section per definition
+# the entity store must reproduce; see gen_golden_test.go.
+
+# === ProductSpecs
+type ProductSpecs @catalog(engine: "duckdb", name: "test") {
+  labels: [String]
+  size: BoxSize
+  weight: Float
+}
+
+# === BoxSize
+type BoxSize @catalog(engine: "duckdb", name: "test") {
+  h: Float
+  w: Float
+}
+
+# === ProductVariant
+type ProductVariant @catalog(engine: "duckdb", name: "test") {
+  price: Float
+  sku: String!
+}
+
+# === products_filter
+"""
+Filter for products objects
+"""
+input products_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "products") {
+  _and: [products_filter]
+  _not: products_filter
+  _or: [products_filter]
+  id: IntFilter @pk
+  name: StringFilter
+  specs: ProductSpecs_filter
+  tags: StringListFilter
+  variants: ProductVariant_list_filter
+}
+
+# === ProductSpecs_filter
+input ProductSpecs_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "ProductSpecs") {
+  _and: [ProductSpecs_filter]
+  _not: ProductSpecs_filter
+  _or: [ProductSpecs_filter]
+  labels: StringListFilter
+  weight: FloatFilter
+}
+
+# === BoxSize_filter
+input BoxSize_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "BoxSize") {
+  _and: [BoxSize_filter]
+  _not: BoxSize_filter
+  _or: [BoxSize_filter]
+  h: FloatFilter
+  w: FloatFilter
+}
+
+# === ProductVariant_filter
+input ProductVariant_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "ProductVariant") {
+  _and: [ProductVariant_filter]
+  _not: ProductVariant_filter
+  _or: [ProductVariant_filter]
+  price: FloatFilter
+  sku: StringFilter
+}
+
+# === ProductVariant_list_filter
+input ProductVariant_list_filter @catalog(engine: "duckdb", name: "test") @filter_list_input(name: "ProductVariant") {
+  all_of: ProductVariant_filter
+  any_of: ProductVariant_filter
+  none_of: ProductVariant_filter
+}
+
+# === products_mut_input_data
+input products_mut_input_data @catalog(engine: "duckdb", name: "test") @data_input(name: "products") {
+  id: Int
+  name: String
+  specs: ProductSpecs_mut_input_data
+  tags: [String]
+  variants: [ProductVariant_mut_input_data]
+}
+
+# === products_mut_data
+input products_mut_data @catalog(engine: "duckdb", name: "test") @data_input(name: "products") {
+  id: Int
+  name: String
+  specs: ProductSpecs_mut_data
+  tags: [String]
+  variants: [ProductVariant_mut_data]
+}
+
+# === ProductSpecs_mut_input_data
+input ProductSpecs_mut_input_data @catalog(engine: "duckdb", name: "test") @data_input(name: "ProductSpecs") {
+  labels: [String]
+  size: BoxSize_mut_input_data
+  weight: Float
+}
+
+# === ProductSpecs_mut_data
+input ProductSpecs_mut_data @catalog(engine: "duckdb", name: "test") @data_input(name: "ProductSpecs") {
+  labels: [String]
+  size: BoxSize_mut_data
+  weight: Float
+}
+
+# === BoxSize_mut_input_data
+input BoxSize_mut_input_data @catalog(engine: "duckdb", name: "test") @data_input(name: "BoxSize") {
+  h: Float
+  w: Float
+}
+
+# === ProductVariant_mut_input_data
+input ProductVariant_mut_input_data @catalog(engine: "duckdb", name: "test") @data_input(name: "ProductVariant") {
+  price: Float
+  sku: String
+}
+
+# === _products_aggregation
+type _products_aggregation @aggregation(is_bucket: false, level: 1, name: "products") @catalog(engine: "duckdb", name: "test") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  id: IntAggregation @field_aggregation(name: "id")
+  name: StringAggregation @field_aggregation(name: "name")
+  specs: _ProductSpecs_aggregation @field_aggregation(name: "specs")
+}
+
+# === _products_aggregation_bucket
+"""
+Bucket aggregation for products
+"""
+type _products_aggregation_bucket @aggregation(is_bucket: true, level: 1, name: "products") @catalog(engine: "duckdb", name: "test") {
+  """
+  The aggregations of the bucket
+  """
+  aggregations(
+    """
+    Filter
+    """
+    filter: products_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _products_aggregation
+  """
+  The key of the bucket
+  """
+  key: products
+}
+
+# === _products_aggregation_sub_aggregation
+type _products_aggregation_sub_aggregation @aggregation(is_bucket: false, level: 2, name: "_products_aggregation") @catalog(engine: "duckdb", name: "test") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  name: StringSubAggregation @field_aggregation(name: "name")
+  specs: _ProductSpecs_aggregation_sub_aggregation @field_aggregation(name: "specs")
+}
+
+# === _ProductSpecs_aggregation
+type _ProductSpecs_aggregation @aggregation(is_bucket: false, level: 1, name: "ProductSpecs") @catalog(engine: "duckdb", name: "test") {
+  _rows_count: BigInt
+  size: _BoxSize_aggregation @field_aggregation(name: "size")
+  weight: FloatAggregation @field_aggregation(name: "weight")
+}
+
+# === _ProductSpecs_aggregation_sub_aggregation
+type _ProductSpecs_aggregation_sub_aggregation @aggregation(is_bucket: false, level: 2, name: "_ProductSpecs_aggregation") @catalog(engine: "duckdb", name: "test") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  weight: FloatSubAggregation @field_aggregation(name: "weight")
+}
+
+# === _BoxSize_aggregation
+type _BoxSize_aggregation @aggregation(is_bucket: false, level: 1, name: "BoxSize") @catalog(engine: "duckdb", name: "test") {
+  _rows_count: BigInt
+  h: FloatAggregation @field_aggregation(name: "h")
+  w: FloatAggregation @field_aggregation(name: "w")
+}
+
+# === _ProductVariant_aggregation
+type _ProductVariant_aggregation @aggregation(is_bucket: false, level: 1, name: "ProductVariant") @catalog(engine: "duckdb", name: "test") {
+  _rows_count: BigInt
+  price: FloatAggregation @field_aggregation(name: "price")
+  sku: StringAggregation @field_aggregation(name: "sku")
+}
+
+# === products
+type products @catalog(engine: "duckdb", name: "test") @data_input(name: "products_mut_data") @data_input(name: "products_mut_input_data") @filter_input(name: "products_filter") @module(name: "sales") @mutation(data_input: "", name: "delete_products", type: DELETE) @mutation(data_input: "products_mut_data", name: "update_products", type: UPDATE) @mutation(data_input: "products_mut_input_data", name: "insert_products", type: INSERT) @query(name: "products", type: SELECT) @query(name: "products_aggregation", type: AGGREGATE) @query(name: "products_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "products_by_pk", type: SELECT_ONE) @table(name: "products") {
+  _join(fields: [String!]!): _join
+  id: Int! @pk
+  name: String!
+  specs: ProductSpecs
+  tags: [String]
+  variants: [ProductVariant]
+}

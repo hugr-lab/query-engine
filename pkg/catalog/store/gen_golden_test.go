@@ -5,6 +5,8 @@ package store
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -132,7 +134,7 @@ func TestGenGoldenHarness(t *testing.T) {
 		}
 	}
 
-	assertGenParity(t, ctx, store, ref, genParityNames)
+	assertGenParity(t, ctx, store, ref, "harness", genParityNames)
 
 	// Negative parity: names the compiler does NOT generate must stay absent
 	// on the store side too (views take no mutation inputs; no subscriptions
@@ -180,7 +182,7 @@ func TestGenGoldenStructs(t *testing.T) {
 	store, ctx := storeFor(t, genStructSchema)
 	ref := goldenRef(t, "test", genStructSchema)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, ref, "structs", []string{
 		// Residual passthrough types (stored SDL vs compiler passthrough).
 		"ProductSpecs",
 		"BoxSize",
@@ -251,7 +253,7 @@ func TestGenGoldenVector(t *testing.T) {
 	store, ctx := storeFor(t, genVectorSchema)
 	ref := goldenRef(t, "test", genVectorSchema)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, ref, "vector", []string{
 		"docs",
 		"notes",
 		"docs_filter",
@@ -298,7 +300,7 @@ func TestGenGoldenCube(t *testing.T) {
 	store, ctx := storeFor(t, genCubeSchema)
 	ref := goldenRef(t, "test", genCubeSchema)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, ref, "cube", []string{
 		"sales_cube",
 		"readings",
 		"sales_cube_filter",
@@ -331,7 +333,7 @@ func TestGenGoldenUnique(t *testing.T) {
 	store, ctx := storeFor(t, genUniqueSchema)
 	ref := goldenRef(t, "test", genUniqueSchema)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, ref, "unique", []string{
 		"users",
 		"users_filter",
 		"_module_crm_query",
@@ -365,7 +367,7 @@ func TestGenGoldenTFCJ(t *testing.T) {
 	store, ctx := storeFor(t, genTFCJSchema)
 	ref := goldenRef(t, "test", genTFCJSchema)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, ref, "tfcj", []string{
 		"airports",
 		"airports_filter",
 		"_airports_aggregation",
@@ -571,7 +573,7 @@ func TestGenGoldenMultiSource(t *testing.T) {
 	store, ctx := storeForSources(t, genMultiFixtures)
 	ref := goldenRefSources(t, genMultiFixtures)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, ref, "multi", []string{
 		// Prefixed objects: @original_name, markers with ORIGINAL names,
 		// prefixed nav/derived names, the extension field on shop_items.
 		"shop_items",
@@ -624,27 +626,116 @@ func TestGenGoldenMultiSource(t *testing.T) {
 	}
 }
 
-// assertGenParity: each covered name must be served by the store structurally
-// identical to the fully-compiled reference (member order is not part of the
-// contract — definitions are normalized before comparison). The comparison is
-// against the store's PRE-FINALISE generation (forNameRaw): the store enriches
-// descriptions on synthetic query members beyond the retiring compiler, and
-// that store-only enrichment is verified separately (descriptions_test.go), not
-// by the base-generation oracle.
-func assertGenParity(t *testing.T, ctx context.Context, s *Store, ref *static.Provider, names []string) {
+// --- frozen snapshots --------------------------------------------------------
+//
+// The oracle for the generation layer used to be the compiler itself: the same
+// fixture compiled with the FULL rule set, compared definition by definition.
+// Design-036 retires that rule set, so the oracle is FROZEN into
+// testdata/golden — text AUTHORED BY THE COMPILER, regenerated with
+// UPDATE_GOLDEN=1. While the rule set is still here every assertion checks the
+// snapshot against BOTH sides, so a drifted snapshot fails instead of being
+// silently rewritten; once the rules go, the reference half drops out and the
+// frozen text carries the contract alone.
+
+const goldenDir = "testdata/golden"
+
+// goldenMark opens a named section inside a fixture snapshot.
+const goldenMark = "# === "
+
+func goldenPath(fixture string) string {
+	return filepath.Join(goldenDir, fixture+".graphql")
+}
+
+// readGoldenSections parses a fixture snapshot into name → normalized SDL.
+func readGoldenSections(t *testing.T, fixture string) map[string]string {
 	t.Helper()
+	raw, err := os.ReadFile(goldenPath(fixture))
+	if err != nil {
+		t.Fatalf("read golden %q: %v (UPDATE_GOLDEN=1 to create)", fixture, err)
+	}
+	out := map[string]string{}
+	name := ""
+	var body strings.Builder
+	flush := func() {
+		if name != "" {
+			out[name] = strings.TrimSpace(body.String()) + "\n"
+		}
+		body.Reset()
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if after, ok := strings.CutPrefix(line, goldenMark); ok {
+			flush()
+			name = strings.TrimSpace(after)
+			continue
+		}
+		body.WriteString(line)
+		body.WriteString("\n")
+	}
+	flush()
+	return out
+}
+
+// writeGoldenSections rewrites a fixture snapshot, sections in the given order.
+func writeGoldenSections(t *testing.T, fixture string, names []string, sdl map[string]string) {
+	t.Helper()
+	var buf strings.Builder
+	buf.WriteString("# Golden snapshot of the generated schema — authored by the schema\n")
+	buf.WriteString("# compiler, regenerate with UPDATE_GOLDEN=1. One section per definition\n")
+	buf.WriteString("# the entity store must reproduce; see gen_golden_test.go.\n")
+	for _, name := range names {
+		s, ok := sdl[name]
+		if !ok {
+			continue
+		}
+		buf.WriteString("\n")
+		buf.WriteString(goldenMark)
+		buf.WriteString(name)
+		buf.WriteString("\n")
+		buf.WriteString(s)
+	}
+	require.NoError(t, os.MkdirAll(goldenDir, 0o755))
+	require.NoError(t, os.WriteFile(goldenPath(fixture), []byte(buf.String()), 0o644))
+}
+
+// assertGenParity: each covered name must be served by the store structurally
+// identical to the frozen snapshot (member order is not part of the contract —
+// definitions are normalized before comparison). The comparison is against the
+// store's PRE-FINALISE generation (forNameRaw): the store enriches descriptions
+// on synthetic query members beyond the retiring compiler, and that store-only
+// enrichment is verified separately (descriptions_test.go), not by the
+// base-generation oracle.
+func assertGenParity(t *testing.T, ctx context.Context, s *Store, ref *static.Provider, fixture string, names []string) {
+	t.Helper()
+
+	golden := map[string]string{}
+	if os.Getenv("UPDATE_GOLDEN") != "" {
+		for _, name := range names {
+			want := ref.ForName(ctx, name)
+			require.NotNil(t, want, "reference must contain %s", name)
+			golden[name] = goldenSDL(want)
+		}
+		writeGoldenSections(t, fixture, names, golden)
+	} else {
+		golden = readGoldenSections(t, fixture)
+	}
+
 	for _, name := range names {
 		// Per-name asserts (no require): one missing name must not hide the
 		// diffs of the remaining ones.
-		want := ref.ForName(ctx, name)
-		if !assert.NotNil(t, want, "reference must contain %s", name) {
+		want, ok := golden[name]
+		if !assert.True(t, ok, "golden %q has no section for %s (UPDATE_GOLDEN=1 to add)", fixture, name) {
 			continue
+		}
+		// The snapshot was authored by the compiler — while the full rule set
+		// is still compiled in, prove the frozen text has not drifted from it.
+		if def := ref.ForName(ctx, name); assert.NotNil(t, def, "reference must contain %s", name) {
+			assert.Equal(t, want, goldenSDL(def), "snapshot drifted from the compiler for %s", name)
 		}
 		got := s.forNameRaw(ctx, name)
 		if !assert.NotNil(t, got, "store must serve %s", name) {
 			continue
 		}
-		assert.Equal(t, goldenSDL(want), goldenSDL(got), "definition parity for %s", name)
+		assert.Equal(t, want, goldenSDL(got), "definition parity for %s", name)
 	}
 }
 

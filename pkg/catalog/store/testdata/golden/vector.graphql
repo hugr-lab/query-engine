@@ -1,0 +1,897 @@
+# Golden snapshot of the generated schema — authored by the schema
+# compiler, regenerate with UPDATE_GOLDEN=1. One section per definition
+# the entity store must reproduce; see gen_golden_test.go.
+
+# === docs
+type docs @catalog(engine: "duckdb", name: "test") @data_input(name: "docs_mut_data") @data_input(name: "docs_mut_input_data") @filter_input(name: "docs_filter") @module(name: "ai") @mutation(data_input: "", name: "delete_docs", type: DELETE) @mutation(data_input: "docs_mut_data", name: "update_docs", type: UPDATE) @mutation(data_input: "docs_mut_input_data", name: "insert_docs", type: INSERT) @query(name: "docs", type: SELECT) @query(name: "docs_aggregation", type: AGGREGATE) @query(name: "docs_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "docs_by_pk", type: SELECT_ONE) @table(name: "docs") {
+  _join(fields: [String!]!): _join
+  """
+  Calculate distance for vector field vec
+  """
+  _vec_distance(
+    """
+    Distance metric to use
+    """
+    distance: VectorDistanceType!
+
+    """
+    Vector to calculate distance to
+    """
+    vector: Vector!
+  ): Float @extra_field(base_field: "vec", base_type: Vector, name: "VectorDistance") @sql(exp: "[vec]")
+  id: Int! @pk
+  title: String!
+  vec: Vector @dim(len: 8)
+}
+
+# === notes
+type notes @catalog(engine: "duckdb", name: "test") @data_input(name: "notes_mut_data") @data_input(name: "notes_mut_input_data") @embeddings(distance: Cosine, model: "openai", vector: "vec") @filter_input(name: "notes_filter") @module(name: "ai") @mutation(data_input: "", name: "delete_notes", type: DELETE) @mutation(data_input: "notes_mut_data", name: "update_notes", type: UPDATE) @mutation(data_input: "notes_mut_input_data", name: "insert_notes", type: INSERT) @query(name: "notes", type: SELECT) @query(name: "notes_aggregation", type: AGGREGATE) @query(name: "notes_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "notes_by_pk", type: SELECT_ONE) @table(name: "notes") {
+  """
+  Calculate vector distance to the specified vector for field vec
+  """
+  _distance_to_query(
+    """
+    Query to calculate distance to
+    """
+    query: String!
+  ): Float @extra_field(base_field: "vec", base_type: Vector, name: "QueryEmbeddingDistance") @sql(exp: "[vec]")
+  _join(fields: [String!]!): _join
+  """
+  Calculate distance for vector field vec
+  """
+  _vec_distance(
+    """
+    Distance metric to use
+    """
+    distance: VectorDistanceType!
+
+    """
+    Vector to calculate distance to
+    """
+    vector: Vector!
+  ): Float @extra_field(base_field: "vec", base_type: Vector, name: "VectorDistance") @sql(exp: "[vec]")
+  body: String
+  id: Int! @pk
+  vec: Vector @dim(len: 8)
+}
+
+# === docs_filter
+"""
+Filter for docs objects
+"""
+input docs_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "docs") {
+  _and: [docs_filter]
+  _not: docs_filter
+  _or: [docs_filter]
+  id: IntFilter @pk
+  title: StringFilter
+  vec: VectorFilter
+}
+
+# === notes_filter
+"""
+Filter for notes objects
+"""
+input notes_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "notes") {
+  _and: [notes_filter]
+  _not: notes_filter
+  _or: [notes_filter]
+  body: StringFilter
+  id: IntFilter @pk
+  vec: VectorFilter
+}
+
+# === docs_mut_input_data
+input docs_mut_input_data @catalog(engine: "duckdb", name: "test") @data_input(name: "docs") {
+  id: Int
+  title: String
+  vec: Vector
+}
+
+# === notes_mut_input_data
+input notes_mut_input_data @catalog(engine: "duckdb", name: "test") @data_input(name: "notes") {
+  body: String
+  id: Int
+  vec: Vector
+}
+
+# === notes_mut_data
+input notes_mut_data @catalog(engine: "duckdb", name: "test") @data_input(name: "notes") {
+  body: String
+  id: Int
+  vec: Vector
+}
+
+# === _docs_aggregation
+type _docs_aggregation @aggregation(is_bucket: false, level: 1, name: "docs") @catalog(engine: "duckdb", name: "test") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  _vec_distance(
+    """
+    Distance metric to use
+    """
+    distance: VectorDistanceType!
+
+    """
+    Vector to calculate distance to
+    """
+    vector: Vector!
+  ): FloatAggregation @field_aggregation(name: "_vec_distance")
+  id: IntAggregation @field_aggregation(name: "id")
+  title: StringAggregation @field_aggregation(name: "title")
+}
+
+# === _notes_aggregation
+type _notes_aggregation @aggregation(is_bucket: false, level: 1, name: "notes") @catalog(engine: "duckdb", name: "test") {
+  _distance_to_query(query: String!): FloatAggregation @field_aggregation(name: "_distance_to_query")
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  _vec_distance(
+    """
+    Distance metric to use
+    """
+    distance: VectorDistanceType!
+
+    """
+    Vector to calculate distance to
+    """
+    vector: Vector!
+  ): FloatAggregation @field_aggregation(name: "_vec_distance")
+  body: StringAggregation @field_aggregation(name: "body")
+  id: IntAggregation @field_aggregation(name: "id")
+}
+
+# === _notes_aggregation_sub_aggregation
+type _notes_aggregation_sub_aggregation @aggregation(is_bucket: false, level: 2, name: "_notes_aggregation") @catalog(engine: "duckdb", name: "test") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  _vec_distance(
+    """
+    Distance metric to use
+    """
+    distance: VectorDistanceType!
+
+    """
+    Vector to calculate distance to
+    """
+    vector: Vector!
+  ): FloatSubAggregation @field_aggregation(name: "_vec_distance")
+  body: StringSubAggregation @field_aggregation(name: "body")
+  id: IntSubAggregation @field_aggregation(name: "id")
+}
+
+# === _join
+type _join @system {
+  docs(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: docs_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): [docs] @catalog(engine: "duckdb", name: "test") @query(name: "docs", type: SELECT)
+  docs_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: docs_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): _docs_aggregation @aggregation_query(is_bucket: false, name: "docs") @catalog(engine: "duckdb", name: "test")
+  docs_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: docs_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): [_docs_aggregation_bucket] @aggregation_query(is_bucket: true, name: "docs") @catalog(engine: "duckdb", name: "test")
+  notes(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: notes_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for semantic similarity
+    """
+    semantic: SemanticSearchInput
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): [notes] @catalog(engine: "duckdb", name: "test") @query(name: "notes", type: SELECT)
+  notes_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: notes_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for semantic similarity
+    """
+    semantic: SemanticSearchInput
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): _notes_aggregation @aggregation_query(is_bucket: false, name: "notes") @catalog(engine: "duckdb", name: "test")
+  notes_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: notes_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for semantic similarity
+    """
+    semantic: SemanticSearchInput
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): [_notes_aggregation_bucket] @aggregation_query(is_bucket: true, name: "notes") @catalog(engine: "duckdb", name: "test")
+}
+
+# === _join_aggregation
+type _join_aggregation @aggregation(is_bucket: false, level: 1, name: "_join") {
+  docs(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: docs_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): _docs_aggregation @aggregation_query(is_bucket: false, name: "docs") @catalog(engine: "duckdb", name: "test") @field_aggregation(name: "docs")
+  notes(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+  fields: [String!]!,
+    """
+    Filter
+    """
+    filter: notes_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for semantic similarity
+    """
+    semantic: SemanticSearchInput
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): _notes_aggregation @aggregation_query(is_bucket: false, name: "notes") @catalog(engine: "duckdb", name: "test") @field_aggregation(name: "notes")
+}
+
+# === _module_ai_query
+type _module_ai_query @module_catalog(name: "test") @module_root(name: "ai", type: QUERY) {
+  docs(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: docs_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): [docs] @catalog(engine: "duckdb", name: "test") @query(name: "docs", type: SELECT)
+  """
+  The aggregation for docs
+  """
+  docs_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: docs_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): _docs_aggregation @aggregation_query(is_bucket: false, name: "docs") @catalog(engine: "duckdb", name: "test")
+  """
+  The aggregation for docs
+  """
+  docs_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: docs_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): [_docs_aggregation_bucket] @aggregation_query(is_bucket: true, name: "docs") @catalog(engine: "duckdb", name: "test")
+  docs_by_pk(id: Int!): docs @catalog(engine: "duckdb", name: "test") @query(name: "docs", type: SELECT_ONE)
+  notes(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: notes_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for semantic similarity, works only for single object queries. Uses the OpenAI API to compute embeddings and find the most relevant object.
+    """
+    semantic: SemanticSearchInput
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): [notes] @catalog(engine: "duckdb", name: "test") @query(name: "notes", type: SELECT)
+  """
+  The aggregation for notes
+  """
+  notes_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: notes_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for semantic similarity, works only for single object queries. Uses the OpenAI API to compute embeddings and find the most relevant object.
+    """
+    semantic: SemanticSearchInput
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): _notes_aggregation @aggregation_query(is_bucket: false, name: "notes") @catalog(engine: "duckdb", name: "test")
+  """
+  The aggregation for notes
+  """
+  notes_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: notes_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+
+    """
+    Search for semantic similarity, works only for single object queries. Uses the OpenAI API to compute embeddings and find the most relevant object.
+    """
+    semantic: SemanticSearchInput
+
+    """
+    Search for vector similarity
+    """
+    similarity: VectorSearchInput
+  ): [_notes_aggregation_bucket] @aggregation_query(is_bucket: true, name: "notes") @catalog(engine: "duckdb", name: "test")
+  notes_by_pk(id: Int!): notes @catalog(engine: "duckdb", name: "test") @query(name: "notes", type: SELECT_ONE)
+}
+
+# === _module_ai_mutation
+type _module_ai_mutation @module_catalog(name: "test") @module_root(name: "ai", type: MUTATION) {
+  delete_docs(filter: docs_filter): OperationResult @catalog(engine: "duckdb", name: "test") @mutation(data_input: "", name: "docs", type: DELETE)
+  delete_notes(filter: notes_filter): OperationResult @catalog(engine: "duckdb", name: "test") @mutation(data_input: "", name: "notes", type: DELETE)
+  insert_docs(data: docs_mut_input_data!): docs @catalog(engine: "duckdb", name: "test") @mutation(data_input: "docs_mut_input_data", name: "docs", type: INSERT)
+  insert_notes(data: notes_mut_input_data,
+    """
+    INSERT summary embedding
+    """
+    summary: String
+  ): notes @catalog(engine: "duckdb", name: "test") @mutation(data_input: "notes_mut_input_data", name: "notes", type: INSERT)
+  update_docs(data: docs_mut_data!, filter: docs_filter): OperationResult @catalog(engine: "duckdb", name: "test") @mutation(data_input: "docs_mut_data", name: "docs", type: UPDATE)
+  update_notes(data: notes_mut_data, filter: notes_filter,
+    """
+    UPDATE summary embedding
+    """
+    summary: String
+  ): OperationResult @catalog(engine: "duckdb", name: "test") @mutation(data_input: "notes_mut_data", name: "notes", type: UPDATE)
+}
+
+# === _module_ai_subscription
+type _module_ai_subscription @module_catalog(name: "test") @module_root(name: "ai", type: SUBSCRIPTION) {
+  note_stream(note_id: Int!): notes @catalog(engine: "duckdb", name: "test") @module(name: "ai") @subscription
+}
+
+# === Subscription
+type Subscription @system {
+  ai: _module_ai_subscription @module_catalog(name: "test")
+  heartbeat(interval_ms: Int): String
+  """
+  Stream results of a regular query. If interval is set, re-executes periodically.
+  """
+  query(
+    """
+    Max number of executions. 0 = unlimited (until client cancels).
+    """
+    count: Int = 0
+
+    """
+    Re-execution interval. If unset, query executes once and streams results.
+    """
+    interval: Interval
+  ): Query @system
+}
+
+# === Query
+type Query @system {
+  """
+  Logical-model introspection: the root module tree (name "").
+  Resolved on the metadata path, like __schema/__type.
+  """
+  _catalog: _Module @system
+  """
+  Logical-model introspection: data object by GraphQL type name;
+  null for non-data-object types.
+  """
+  _dataObject(name: String!): _DataObject @system
+  """
+  Logical-model introspection: data source by name; null when absent,
+  inactive or contributing nothing visible.
+  """
+  _dataSource(name: String!): _DataSource @system
+  """
+  Logical-model introspection: the attached data sources that contribute
+  anything visible to the caller.
+  """
+  _dataSources: [_DataSource!] @system
+  """
+  Logical-model introspection: callable member (function/mutation/subscription)
+  of a module; module "" = root-level functions.
+  """
+  _function(module: String!, name: String!): _Function @system
+  """
+  Logical-model introspection: direct module lookup; "" = the root module.
+  """
+  _module(name: String!): _Module @system
+  """
+  Logical-model introspection: GraphQL type definitions of the logical
+  model. SOURCE (default) lists the residual base types defined by data
+  sources — structural objects, inputs, enums — excluding data objects,
+  module roots and compiler-generated helper types; SYSTEM lists the
+  engine-defined types (scalars, introspection and hugr system SDL).
+  """
+  _types(scope: _TypeScope = SOURCE): [__Type!] @system
+  ai: _module_ai_query @module_catalog(name: "test")
+  function: Function @system
+  """
+  H3 aggregation query
+  """
+  h3(
+    """
+    H3 resolution to use for the query
+    """
+    resolution: Int!
+  ): [_h3_query] @system
+  """
+  Performs jq query on result set
+  Results will be placed in 'extension' field by field or alias name
+  """
+  jq(include_origin: Boolean = false, query: String!): Query @system
+}
