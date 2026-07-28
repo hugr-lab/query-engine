@@ -210,12 +210,16 @@ func reindexQueries(dataSource string) []string {
 			join(lit(kindDataObject), `o.name`) +
 			scoped("", "o.data_source"),
 
-		// Object fields (columns and declared virtual fields).
+		// Object fields (columns and declared virtual fields) — DATA OBJECTS
+		// only, and never an @exclude_mcp field: the same scope
+		// collectSeedEntities seeds, so a reindex cannot resurrect vectors the
+		// seed path deliberately skips.
 		`SELECT ` + lit(kindField) + `, ` + fieldKeyExpr + `, f.type_name, ` + curated + `, coalesce(f.description, ''),
 			'', f.name, f.type_name, '', f.data_source
-		FROM core.catalog.fields f` +
+		FROM core.catalog.fields f
+		JOIN core.catalog.data_objects o ON o.name = f.type_name` +
 			join(lit(kindField), fieldKeyExpr) +
-			scoped("", "f.data_source"),
+			scoped(` WHERE `+notExcludedFromMCP("f.properties"), "f.data_source"),
 
 		// Relation navigation fields, both legs (generated fields with no row in
 		// catalog.fields — their SDL default lives on the relation).
@@ -242,12 +246,8 @@ func reindexQueries(dataSource string) []string {
 			join(`fn.kind`, functionKeyExpr) +
 			scoped("", "fn.data_source"),
 
-		// Residual source types.
-		`SELECT ` + lit(kindType) + `, t.name, '', ` + curated + `, coalesce(t.description, ''),
-			'', t.name, '', t.module, t.data_source
-		FROM core.catalog.types t` +
-			join(lit(kindType), `t.name`) +
-			scoped("", "t.data_source"),
+		// Residual source types are NOT indexed (design-035): reachable from the
+		// object that uses them, never a search target.
 	}
 
 	if dataSource != "" {
@@ -260,6 +260,14 @@ func reindexQueries(dataSource string) []string {
 		FROM core.catalog.annotations a
 		WHERE a.entity_kind IN (`+lit(kindGQLType)+`, `+lit(kindGQLField)+`, `+lit(kindGQLArgument)+`)
 		AND (a.description IS NOT NULL OR a.long_description IS NOT NULL)`)
+}
+
+// notExcludedFromMCP is the SQL half of the @exclude_mcp seed exclusion (the
+// Go half is seedableField). The property is omitempty, so an unmarked field
+// has no key at all — hence the COALESCE default. Same JSON idiom the m2m
+// probe uses (relations.go), which is the shape pinned as cross-engine.
+func notExcludedFromMCP(column string) string {
+	return `NOT COALESCE(json_extract_string(` + column + `::JSON, '$.exclude_mcp') = 'true', false)`
 }
 
 // moduleScope restricts the module enumeration to the modules a source

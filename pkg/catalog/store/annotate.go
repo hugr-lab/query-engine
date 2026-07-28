@@ -96,15 +96,20 @@ func (s *Store) SetArgumentDescription(ctx context.Context, typeName, fieldName,
 
 // curate upserts one annotation row and runs the caller's cache eviction (nil
 // when the curation has no ForName surface). The embedding vector is computed
-// from the curated text (nil when embeddings are off or the text is empty — a
-// clear); the upsert then preserves any existing seed vector.
+// from the curated text (nil when embeddings are off, the text is empty — a
+// clear — or the kind is not in the vector index scope); the upsert then
+// preserves any existing seed vector.
 func (s *Store) curate(ctx context.Context, kind, key, parent, desc, longDesc string, evict func()) error {
 	if s.isReadonly {
 		return errReadonly
 	}
-	vec, err := s.embed(ctx, embeddingText(longDesc, desc, ""))
-	if err != nil {
-		return err
+	var vec qetypes.Vector
+	if indexedKind(kind) {
+		v, err := s.embed(ctx, embeddingText(longDesc, desc, ""))
+		if err != nil {
+			return err
+		}
+		vec = v
 	}
 	if err := s.upsertAnnotation(ctx, kind, key, parent, desc, longDesc, vec); err != nil {
 		return err

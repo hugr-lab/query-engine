@@ -115,9 +115,15 @@ func New(config Config) (*Service, error) {
 }
 
 func (s *Service) Init(ctx context.Context) (err error) {
-	// 0. Validate MCP config — fail fast before expensive operations.
+	// 0. MCP without an embedder is a DEGRADED mode, not a misconfiguration:
+	// the structural half (enumerate, describe, introspect) reads the catalog
+	// through the metadata path and needs no vectors at all. Only relevance
+	// ranking does, and it falls back to lexical matching. Refusing to start
+	// would make the whole surface unavailable to a deployment that only
+	// wants the map.
 	if s.config.MCPEnabled && s.config.Embedder.URL == "" {
-		return fmt.Errorf("MCP endpoint requires system embedder (EMBEDDER_URL)")
+		slog.Warn("MCP enabled without a system embedder (EMBEDDER_URL): " +
+			"semantic search degrades to lexical matching")
 	}
 
 	// 1. Connect to DuckDB.

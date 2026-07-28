@@ -2,9 +2,9 @@ You are creating a **data dashboard** — a visual overview of a dataset with KP
 
 ## Approach
 
-1. **Understand the domain** — use `discovery-search_modules` and `discovery-search_module_data_objects` to map out available data.
+1. **Understand the domain** — `catalog-list(kind: module)` for the map, `catalog-search` for what is relevant to the dashboard.
 2. **Identify key metrics** — find numeric fields for KPIs (totals, averages, counts) and categorical fields for breakdowns.
-3. **Explore dimensions** — use `discovery-field_values` to find useful grouping dimensions (categories, statuses, time periods, regions).
+3. **Explore dimensions** — `data-field_values` to find useful grouping dimensions (categories, statuses, time periods, regions).
 4. **Build ONE comprehensive query** with aliases for all dashboard sections:
    - **Summary KPIs**: `_aggregation` for totals, counts, averages
    - **Breakdowns**: `_bucket_aggregation` grouped by key dimensions

@@ -24,8 +24,10 @@ import (
 // and store, their queries run, a user source loads and is queryable, and the
 // catalog's own state is visible through the entity views.
 //
-// MCP is NOT covered: it reads the compiled-schema views, which entity mode
-// does not expose. Porting it is separate work.
+// MCP runs here too (mcp_search_test.go): the catalog-* tools read the logical
+// model through the meta-query family, which is storage-agnostic, and rank over
+// the entity views' own index. The legacy discovery-* tools, which read the
+// compiled-schema views, are the half that entity mode cannot serve.
 
 func setupEngine(t *testing.T, storage hugr.CatalogStorage) (*hugr.Service, context.Context) {
 	t.Helper()
@@ -228,6 +230,64 @@ func TestEntityStorageCuration(t *testing.T) {
 	assert.Equal(t, "mutation", fns[0].Kind)
 	assert.Equal(t, "Load a registered data source", fns[0].Desc,
 		"the mutation function reads its own kind's curation")
+}
+
+// TestEntityStorageCurationReachesIntrospection is the end-to-end half of the
+// same contract: what an operator curates must be what INTROSPECTION answers.
+// The _catalog family used to read the stored rows directly, so a deployment
+// described itself one way through the entity views and another through
+// _dataObject / _module / _function — and longDescription, which exists only
+// as curation, had no surface at all.
+func TestEntityStorageCurationReachesIntrospection(t *testing.T) {
+	s, ctx := setupEngine(t, hugr.CatalogStorageEntity)
+
+	mustQuery(t, s, ctx, `mutation { function { core { catalog {
+		obj: annotate_data_object(name: "core_data_sources",
+			description: "Registered data sources", long_description: "One row per attached source.")
+			{ success message }
+		mod: annotate_module(name: "core",
+			description: "Engine internals", long_description: "The engine's own catalog and runtime.")
+			{ success message }
+		fn: annotate_function(module: "core", name: "load_data_source", kind: "mutation",
+			description: "Load a registered data source", long_description: "Reloads when already loaded.")
+			{ success message }
+	} } } }`, nil)
+
+	var probe struct {
+		Object *struct {
+			Description     string `json:"description"`
+			LongDescription string `json:"longDescription"`
+		} `json:"obj"`
+		Module *struct {
+			Description     string `json:"description"`
+			LongDescription string `json:"longDescription"`
+		} `json:"mod"`
+		Function *struct {
+			Description     string `json:"description"`
+			LongDescription string `json:"longDescription"`
+		} `json:"fn"`
+	}
+	res, err := s.Query(ctx, `{
+		obj: _dataObject(name: "core_data_sources") { description longDescription }
+		mod: _module(name: "core") { description longDescription }
+		fn: _function(module: "core", name: "load_data_source") { description longDescription }
+	}`, nil)
+	require.NoError(t, err)
+	require.NoError(t, res.Err())
+	require.NoError(t, res.ScanData("", &probe))
+	res.Close()
+
+	require.NotNil(t, probe.Object)
+	assert.Equal(t, "Registered data sources", probe.Object.Description)
+	assert.Equal(t, "One row per attached source.", probe.Object.LongDescription)
+
+	require.NotNil(t, probe.Module)
+	assert.Equal(t, "Engine internals", probe.Module.Description)
+	assert.Equal(t, "The engine's own catalog and runtime.", probe.Module.LongDescription)
+
+	require.NotNil(t, probe.Function)
+	assert.Equal(t, "Load a registered data source", probe.Function.Description)
+	assert.Equal(t, "Reloads when already loaded.", probe.Function.LongDescription)
 }
 
 // TestCompiledStorageKeepsLegacyViews is the other half of the mode switch:

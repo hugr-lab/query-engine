@@ -60,6 +60,7 @@ type genContext struct {
 	relDst      map[string][]*relationEdge
 	nameRows    map[string][]string         // queryNames, by SQL text
 	moduleInfos map[string][]*moduleInfoRow // queryModuleInfos, by SQL text
+	dataSources map[string][]*dataSourceRow // readDataSources, by SQL text
 	functions   map[string][]*function      // readFunctions, by module
 	function    map[string]*function        // readFunction, by module\x1fname (nil = absent)
 	typeRows    map[string]*typeRow         // readType, by name (nil = absent)

@@ -27,12 +27,14 @@ const (
 	MetadataSchemaQuery     = base.MetadataSchemaQuery
 	MetadataTypeQuery       = base.MetadataTypeQuery
 	MetadataTypeNameQuery   = base.MetadataTypeNameQuery
-	MetadataCatalogQuery    = base.MetadataCatalogQuery
-	MetadataModuleQuery     = base.MetadataModuleQuery
-	MetadataDataObjectQuery = base.MetadataDataObjectQuery
-	MetadataFunctionQuery   = base.MetadataFunctionQuery
-	MetadataTypesQuery      = base.MetadataTypesQuery
-	JQTransformQueryName    = base.JQTransformQueryName
+	MetadataCatalogQuery     = base.MetadataCatalogQuery
+	MetadataModuleQuery      = base.MetadataModuleQuery
+	MetadataDataObjectQuery  = base.MetadataDataObjectQuery
+	MetadataFunctionQuery    = base.MetadataFunctionQuery
+	MetadataTypesQuery       = base.MetadataTypesQuery
+	MetadataDataSourceQuery  = base.MetadataDataSourceQuery
+	MetadataDataSourcesQuery = base.MetadataDataSourcesQuery
+	JQTransformQueryName     = base.JQTransformQueryName
 )
 
 func QueryRequestInfo(ss ast.SelectionSet) ([]QueryRequest, QueryType) {
@@ -59,7 +61,9 @@ func QueryRequestInfo(ss ast.SelectionSet) ([]QueryRequest, QueryType) {
 			field.Name == MetadataModuleQuery ||
 			field.Name == MetadataDataObjectQuery ||
 			field.Name == MetadataFunctionQuery ||
-			field.Name == MetadataTypesQuery {
+			field.Name == MetadataTypesQuery ||
+			field.Name == MetadataDataSourceQuery ||
+			field.Name == MetadataDataSourcesQuery {
 			resolvers = append(resolvers, QueryRequest{
 				Name:      field.Alias,
 				Field:     field,

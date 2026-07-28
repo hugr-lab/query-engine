@@ -76,6 +76,194 @@ func TestLogicalDataObjects(t *testing.T) {
 	assert.Equal(t, []string{"sales_by_country"}, names)
 }
 
+// TestLogicalDataObjectQueries pins the def-level @query markers the store
+// reconstructs — the source _DataObject.queries reads. SELECT_ONE is not only
+// the pk lookup: every @unique(query_suffix:) adds one, and each is keyed by
+// its own constraint fields.
+func TestLogicalDataObjectQueries(t *testing.T) {
+	store, ctx := storeFor(t, genUniqueSchema)
+
+	users := store.DataObject(ctx, "users")
+	require.NotNil(t, users)
+
+	got := map[string]sdl.ObjectQueryType{}
+	for _, q := range users.Queries() {
+		got[q.Name] = q.Type
+	}
+	assert.Equal(t, map[string]sdl.ObjectQueryType{
+		"users":                    sdl.QueryTypeSelect,
+		"users_by_pk":              sdl.QueryTypeSelectOne,
+		"users_by_email":           sdl.QueryTypeSelectOne,
+		"users_by_full_name":       sdl.QueryTypeSelectOne,
+		"users_aggregation":        sdl.QueryTypeAggregate,
+		"users_bucket_aggregation": sdl.QueryTypeAggregateBucket,
+	}, got)
+
+	// Every declared name must exist on the module query root, and its
+	// arguments are what tells the pk lookup from the unique ones.
+	root := store.Type(ctx, "_module_crm_query")
+	require.NotNil(t, root)
+	for name := range got {
+		require.NotNil(t, root.Fields.ForName(name), "query %q missing from the root type", name)
+	}
+	argNames := func(name string) []string {
+		var out []string
+		for _, a := range root.Fields.ForName(name).Arguments {
+			out = append(out, a.Name)
+		}
+		slices.Sort(out)
+		return out
+	}
+	assert.Equal(t, []string{"id"}, argNames("users_by_pk"))
+	assert.Equal(t, []string{"email"}, argNames("users_by_email"))
+	assert.Equal(t, []string{"first_name", "last_name"}, argNames("users_by_full_name"))
+}
+
+// TestLogicalDataSources covers the data-source entity: the flags the entity
+// storage records (which the compiled schema cannot), the curation overlay,
+// the DIRECT-member module list, and the activity gate.
+func TestLogicalDataSources(t *testing.T) {
+	store, ctx := writtenStore(t)
+
+	// A second, read-only source so the flags are not all false by default.
+	d := collect(ctx, partialSource(t, "ro", `
+type gauges @module(name: "ops") @table(name: "gauges") {
+  id: Int! @pk
+  value: Float
+}
+`), "ro")
+	_, err := store.writeSource(ctx, d, SourceState{
+		Name: "ro", Version: "v1", Engine: "postgres",
+		ReadOnly: true, AsModule: true, IsExtension: true, Loaded: true,
+	})
+	require.NoError(t, err)
+
+	var names []string
+	for ds := range store.DataSources(ctx) {
+		names = append(names, ds.Name)
+	}
+	assert.Equal(t, []string{"ro", "test"}, names, "ordered by name")
+
+	ro := store.DataSource(ctx, "ro")
+	require.NotNil(t, ro)
+	assert.Equal(t, "postgres", ro.Engine)
+	require.NotNil(t, ro.ReadOnly)
+	assert.True(t, *ro.ReadOnly, "the entity storage records the flags the compiled schema loses")
+	assert.True(t, *ro.AsModule)
+	assert.True(t, *ro.IsExtension)
+	assert.Equal(t, []string{"ops"}, ro.Modules, "direct members only, no ancestors")
+
+	main := store.DataSource(ctx, "test")
+	require.NotNil(t, main)
+	require.NotNil(t, main.ReadOnly)
+	assert.False(t, *main.ReadOnly)
+	assert.Equal(t, []string{"sales", "sales.reports"}, main.Modules)
+
+	// Curation is the point of the logical model: a curated description must
+	// reach introspection, not just the entity_data_sources view.
+	require.NoError(t, store.SetDataSourceDescription(ctx, "ro", "Operational gauges", "Long form."))
+	curated := store.DataSource(ctx, "ro")
+	require.NotNil(t, curated)
+	assert.Equal(t, "Operational gauges", curated.Description)
+	assert.Equal(t, "Long form.", curated.LongDescription)
+
+	assert.Nil(t, store.DataSource(ctx, "nope"))
+	assert.Nil(t, store.DataSource(ctx, ""))
+}
+
+// TestLogicalCurationOverlay pins that the LOGICAL-MODEL surface serves the
+// curated text, not the stored row. The overlay used to be applied only in
+// ForName, so _catalog / _module / _dataObject / _function answered with raw
+// descriptions while the entity_* views answered with curated ones — the same
+// deployment describing itself two different ways depending on the door.
+// Long descriptions exist ONLY as curation and had no surface at all.
+func TestLogicalCurationOverlay(t *testing.T) {
+	store, ctx := writtenStore(t)
+
+	require.NoError(t, store.SetDataObjectDescription(ctx, "orders", "Curated orders", "The long form of orders."))
+	require.NoError(t, store.SetModuleDescription(ctx, "sales", "Curated sales", "The long form of sales."))
+	require.NoError(t, store.SetFunctionDescription(ctx, "sales", "order_status", "function",
+		"Curated status", "The long form of order_status."))
+
+	obj := store.DataObject(ctx, "orders")
+	require.NotNil(t, obj)
+	assert.Equal(t, "Curated orders", obj.Definition().Description)
+	assert.Equal(t, "The long form of orders.", obj.LongDescription)
+
+	mod := store.Module(ctx, "sales")
+	require.NotNil(t, mod)
+	assert.Equal(t, "Curated sales", mod.Description)
+	assert.Equal(t, "The long form of sales.", mod.LongDescription)
+
+	fn := store.Function(ctx, "sales", "order_status")
+	require.NotNil(t, fn)
+	assert.Equal(t, "Curated status", fn.Field.Description)
+	assert.Equal(t, "The long form of order_status.", fn.LongDescription)
+
+	// The batch (listing) paths carry the overlay too — they read it once for
+	// the whole listing rather than once per entity.
+	found := false
+	for o := range store.DataObjects(ctx, "sales") {
+		if o.Definition().Name == "orders" {
+			found = true
+			assert.Equal(t, "Curated orders", o.Definition().Description)
+			assert.Equal(t, "The long form of orders.", o.LongDescription)
+		}
+	}
+	assert.True(t, found, "orders listed in sales")
+
+	found = false
+	for m := range store.Modules(ctx, "") {
+		if m.Name == "sales" {
+			found = true
+			assert.Equal(t, "Curated sales", m.Description)
+			assert.Equal(t, "The long form of sales.", m.LongDescription)
+		}
+	}
+	assert.True(t, found, "sales listed under the root")
+
+	found = false
+	for e := range store.Functions(ctx, "sales") {
+		if e.Field.Name == "order_status" {
+			found = true
+			assert.Equal(t, "Curated status", e.Field.Description)
+			assert.Equal(t, "The long form of order_status.", e.LongDescription)
+		}
+	}
+	assert.True(t, found, "order_status listed in sales")
+}
+
+// TestLogicalCurationPerFunctionKind — a name declared in two root namespaces
+// carries two independent curations, and each entry must get its own.
+func TestLogicalCurationPerFunctionKind(t *testing.T) {
+	store, ctx := storeFor(t, `
+type readings @module(name: "iot") @table(name: "readings") {
+  id: Int! @pk
+}
+
+extend type Function {
+  stream(id: Int!): String @module(name: "iot") @function(name: "stream")
+}
+
+extend type Subscription {
+  stream(id: Int!): String @module(name: "iot") @function(name: "stream")
+}
+`)
+	require.NoError(t, store.SetFunctionDescription(ctx, "iot", "stream", "function", "The query form", ""))
+	require.NoError(t, store.SetFunctionDescription(ctx, "iot", "stream", "subscription", "The streaming form", ""))
+
+	got := map[sdl.ModuleObjectType]string{}
+	for e := range store.Functions(ctx, "iot") {
+		if e.Field.Name == "stream" {
+			got[e.Kind] = e.Field.Description
+		}
+	}
+	assert.Equal(t, map[sdl.ModuleObjectType]string{
+		sdl.ModuleFunction:     "The query form",
+		sdl.ModuleSubscription: "The streaming form",
+	}, got)
+}
+
 // TestLogicalFunctions covers callable-member resolution and kind ordering.
 func TestLogicalFunctions(t *testing.T) {
 	store, ctx := writtenStore(t)

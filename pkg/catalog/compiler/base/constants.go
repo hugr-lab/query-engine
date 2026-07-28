@@ -164,6 +164,11 @@ const (
 const (
 	ObjectQueryByPKSuffix = "_by_pk"
 	StubFieldName         = "_stub"
+	// PlaceholderFieldName is the member introspection injects when a type
+	// would otherwise expose none — the GraphQL spec requires an OBJECT type
+	// to have at least one field, and a role may have been denied all of them.
+	// It is synthetic: nothing can select it, so a field listing must drop it.
+	PlaceholderFieldName = "_placeholder"
 )
 
 // Query type text constants (for @query directive "type" argument).

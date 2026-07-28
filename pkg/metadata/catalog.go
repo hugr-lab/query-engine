@@ -77,6 +77,43 @@ func processFunctionQuery(ctx context.Context, provider catalog.Provider, field 
 	return functionResolver(ctx, lm, provider, entry, field.SelectionSet, maxDepth)
 }
 
+func processDataSourcesQuery(ctx context.Context, provider catalog.Provider, field *ast.Field, maxDepth int) (any, error) {
+	if maxDepth <= 0 {
+		return nil, nil
+	}
+	lm := catalog.LogicalModelFromProvider(provider)
+	res := []map[string]any{}
+	for ds := range lm.DataSources(ctx) {
+		if !dataSourceVisible(ctx, lm, ds) {
+			continue
+		}
+		data, err := dataSourceResolver(ctx, ds, field.SelectionSet)
+		if err != nil {
+			return nil, err
+		}
+		if data != nil {
+			res = append(res, data)
+		}
+	}
+	return res, nil
+}
+
+func processDataSourceQuery(ctx context.Context, provider catalog.Provider, field *ast.Field, maxDepth int, vars map[string]any) (any, error) {
+	name, ok := metaStringArg(field, vars, "name")
+	if !ok {
+		return nil, ErrInvalidTypeQuery
+	}
+	if name == "" || maxDepth <= 0 {
+		return nil, nil
+	}
+	lm := catalog.LogicalModelFromProvider(provider)
+	ds := lm.DataSource(ctx, name)
+	if ds == nil || !dataSourceVisible(ctx, lm, ds) {
+		return nil, nil
+	}
+	return dataSourceResolver(ctx, ds, field.SelectionSet)
+}
+
 // processTypesQuery resolves _types — the GraphQL type definitions of the
 // logical model. scope: SOURCE (default) = residual base types defined by
 // data sources (the future entity-storage types table); SYSTEM = the
@@ -153,9 +190,7 @@ func moduleResolver(ctx context.Context, lm catalog.LogicalModel, provider catal
 		"description": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return info.Description, nil
 		},
-		"longDescription": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			return nil, nil
-		},
+		"longDescription": nullableText(info.LongDescription),
 		"dataSources": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			if info.DataSources == nil {
 				return []string{}, nil
@@ -240,9 +275,7 @@ func dataObjectResolver(ctx context.Context, lm catalog.LogicalModel, provider c
 		"description": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return def.Description, nil
 		},
-		"longDescription": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			return nil, nil
-		},
+		"longDescription": nullableText(obj.LongDescription),
 		"moduleName": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return sdl.ObjectModule(def), nil
 		},
@@ -280,6 +313,9 @@ func dataObjectResolver(ctx context.Context, lm catalog.LogicalModel, provider c
 				res = append(res, data)
 			}
 			return res, nil
+		},
+		"queries": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			return dataObjectQueriesResolver(ctx, lm, provider, obj, field.SelectionSet, maxDepth)
 		},
 		"fields": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return objectFieldsResolver(ctx, provider, def, field, maxDepth)
@@ -323,6 +359,141 @@ func propertiesResolver(ctx context.Context, obj *sdl.Object, ss ast.SelectionSe
 		"softDelete":   boolField(obj.SoftDelete),
 		"hasVectors":   boolField(obj.HasVectors),
 	}, "_DataObjectProperties")
+}
+
+// dataObjectQueriesResolver lists the generated query fields that return the
+// object — the names an agent writes in a GraphQL query. Each entry is gated
+// by the field's own visibility on the module's query root type, so hiding
+// e.g. only the aggregation query removes just that entry. The root type
+// definition is resolved lazily, on the queries path only.
+func dataObjectQueriesResolver(ctx context.Context, lm catalog.LogicalModel, provider catalog.Provider, obj *sdl.Object, ss ast.SelectionSet, maxDepth int) (any, error) {
+	if maxDepth <= 0 {
+		return nil, nil
+	}
+	queries := obj.Queries()
+	if len(queries) == 0 {
+		return []map[string]any{}, nil
+	}
+	rootName := sdl.ModuleTypeName(sdl.ObjectModule(obj.Definition()), sdl.ModuleQuery)
+	rootDef := lm.Type(ctx, rootName)
+	p := perm.PermissionsFromCtx(ctx)
+
+	res := []map[string]any{}
+	for _, q := range queries {
+		typeText := queryTypeText(q.Type)
+		if typeText == "" {
+			continue
+		}
+		if p != nil {
+			if _, ok := p.Visible(rootName, q.Name); !ok {
+				continue
+			}
+		}
+		var args ast.ArgumentDefinitionList
+		if rootDef != nil {
+			fieldDef := rootDef.Fields.ForName(q.Name)
+			if fieldDef == nil {
+				// The directive names a field the root type does not carry —
+				// never report a name that cannot be written.
+				continue
+			}
+			args = fieldDef.Arguments
+		}
+		data, err := processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
+			"__typename": typeNameResolver,
+			"name": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+				return q.Name, nil
+			},
+			"type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+				return typeText, nil
+			},
+			"rootTypeName": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+				return rootName, nil
+			},
+			"args": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+				if args == nil {
+					return nil, nil
+				}
+				list := []map[string]any{}
+				for _, a := range args {
+					if isArgServerInjected(a.Directives) {
+						continue
+					}
+					argData, err := argumentResolver(ctx, provider, a, field.SelectionSet, maxDepth-1)
+					if err != nil {
+						return nil, err
+					}
+					list = append(list, argData)
+				}
+				return list, nil
+			},
+		}, "_DataObjectQuery")
+		if err != nil {
+			return nil, err
+		}
+		if data != nil {
+			res = append(res, data)
+		}
+	}
+	return res, nil
+}
+
+// nullableText serves a curated text field: absent curation reads as GraphQL
+// null, not as an empty string, so a client can tell "nothing was curated"
+// from "curated as empty".
+func nullableText(v string) fieldResolverFunc {
+	return func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+		if v == "" {
+			return nil, nil
+		}
+		return v, nil
+	}
+}
+
+func queryTypeText(t sdl.ObjectQueryType) string {
+	switch t {
+	case sdl.QueryTypeSelect:
+		return "SELECT"
+	case sdl.QueryTypeSelectOne:
+		return "SELECT_ONE"
+	case sdl.QueryTypeAggregate:
+		return "AGGREGATION"
+	case sdl.QueryTypeAggregateBucket:
+		return "BUCKET_AGGREGATION"
+	}
+	return ""
+}
+
+func dataSourceResolver(ctx context.Context, ds *catalog.DataSourceInfo, ss ast.SelectionSet) (map[string]any, error) {
+	// The three flags are nullable on purpose: nil = the catalog storage does
+	// not record them (see catalog.DataSourceInfo), which must not read as false.
+	flag := func(v *bool) fieldResolverFunc {
+		return func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			if v == nil {
+				return nil, nil
+			}
+			return *v, nil
+		}
+	}
+	text := nullableText
+	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
+		"__typename": typeNameResolver,
+		"name": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			return ds.Name, nil
+		},
+		"engine":          text(ds.Engine),
+		"description":     text(ds.Description),
+		"longDescription": text(ds.LongDescription),
+		"readOnly":        flag(ds.ReadOnly),
+		"asModule":        flag(ds.AsModule),
+		"isExtension":     flag(ds.IsExtension),
+		"modules": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
+			if ds.Modules == nil {
+				return []string{}, nil
+			}
+			return ds.Modules, nil
+		},
+	}, "_DataSource")
 }
 
 func relationResolver(ctx context.Context, lm catalog.LogicalModel, provider catalog.Provider, rel *catalog.RelationInfo, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
@@ -393,9 +564,7 @@ func functionResolver(ctx context.Context, lm catalog.LogicalModel, provider cat
 		"description": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return entry.Field.Description, nil
 		},
-		"longDescription": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			return nil, nil
-		},
+		"longDescription": nullableText(entry.LongDescription),
 		"moduleName": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			return entry.Module, nil
 		},
@@ -552,6 +721,30 @@ func relationVisible(ctx context.Context, lm catalog.LogicalModel, rel *catalog.
 		}
 	}
 	return true
+}
+
+// dataSourceVisible reports whether a data source still contributes anything
+// the request may see — the same "has visible content" rule modules use. A
+// source that places no members of its own (a pure extension, which only adds
+// FIELDS to other sources' objects) has nothing to gate on and stays visible.
+func dataSourceVisible(ctx context.Context, lm catalog.LogicalModel, ds *catalog.DataSourceInfo) bool {
+	p := perm.PermissionsFromCtx(ctx)
+	if p == nil || len(ds.Modules) == 0 {
+		return true
+	}
+	for _, module := range ds.Modules {
+		for obj := range lm.DataObjects(ctx, module) {
+			if obj.Catalog == ds.Name && dataObjectVisible(ctx, obj) {
+				return true
+			}
+		}
+		for entry := range lm.Functions(ctx, module) {
+			if entry.DataSource == ds.Name && functionVisible(ctx, entry) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // moduleHasVisibleContent reports whether a module still has any visible data

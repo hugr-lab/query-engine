@@ -34,6 +34,11 @@ type Object struct {
 	HasVectors    bool
 	functionCall  bool
 
+	// LongDescription is the curated long form of the object's description.
+	// It has no SDL equivalent, so DataObjectInfo cannot derive it — the
+	// catalog storage sets it when it has a curation layer.
+	LongDescription string
+
 	def *ast.Definition
 }
 

@@ -64,6 +64,17 @@ const (
 	kindGQLArgument = "gql_argument"
 )
 
+// indexedKind reports whether an annotation kind carries a search vector.
+// Only kindType is out: a residual source type is reached deterministically
+// from the data object that uses it, so it is never a search target
+// (design-035 vector index scope — the same decision seedableField and the
+// reindex enumeration implement). Its CURATION is unaffected: the description
+// overlay lives in the text columns and entity_types still coalesces it; only
+// the embedder call, and the vector nothing would read, are skipped.
+func indexedKind(kind string) bool {
+	return kind != kindType
+}
+
 // functionAnnotationKind normalizes a function kind into its annotation kind
 // (the same value — see the kind constants). An empty kind means the
 // query-function default, which is also what the rows written before the kind
@@ -281,39 +292,68 @@ func (g *genContext) readAnnotationsByName(ctx context.Context, typeName string)
 	return out, nil
 }
 
-// readFunctionAnnotations loads the curated descriptions of one function kind
-// for the given exact entity keys, returning key → description.
-func (g *genContext) readFunctionAnnotations(ctx context.Context, fnKind string, keys []string) (map[string]string, error) {
+// curation is one entity's curated text: the short description that overrides
+// the SDL one, and the long form that exists ONLY here (no SDL equivalent).
+type curation struct {
+	description     string
+	longDescription string
+}
+
+// readCurations loads the curated texts of ONE annotation kind for the given
+// exact entity keys, returning key → curation. Seed rows (both texts NULL)
+// never appear. This is the batch read behind every logical-model overlay:
+// one query per kind per listing, so serving curation costs no round trip per
+// entity.
+func (g *genContext) readCurations(ctx context.Context, kind string, keys []string) (map[string]curation, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
 	conn, err := g.s.pool.Conn(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("read function annotations: %w", err)
+		return nil, fmt.Errorf("read %s curations: %w", kind, err)
 	}
 	defer conn.Close()
 	quoted := make([]string, len(keys))
 	for i, k := range keys {
 		quoted[i] = lit(k)
 	}
-	rows, err := conn.Query(ctx, `SELECT entity_key, description
+	rows, err := conn.Query(ctx, `SELECT entity_key, description, long_description
 		FROM core.catalog.annotations
-		WHERE entity_kind = `+lit(fnKind)+` AND description IS NOT NULL
+		WHERE entity_kind = `+lit(kind)+`
+		  AND (description IS NOT NULL OR long_description IS NOT NULL)
 		  AND entity_key IN (`+strings.Join(quoted, ", ")+`)`)
 	if err != nil {
-		return nil, fmt.Errorf("read function annotations: %w", err)
+		return nil, fmt.Errorf("read %s curations: %w", kind, err)
 	}
 	defer rows.Close()
-	out := map[string]string{}
+	out := map[string]curation{}
 	for rows.Next() {
 		var key string
-		var desc sql.NullString
-		if err := rows.Scan(&key, &desc); err != nil {
-			return nil, fmt.Errorf("read function annotations: %w", err)
+		var desc, longDesc sql.NullString
+		if err := rows.Scan(&key, &desc, &longDesc); err != nil {
+			return nil, fmt.Errorf("read %s curations: %w", kind, err)
 		}
-		if desc.Valid {
-			out[key] = desc.String
-		}
+		out[key] = curation{description: desc.String, longDescription: longDesc.String}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("read function annotations: %w", err)
+		return nil, fmt.Errorf("read %s curations: %w", kind, err)
+	}
+	return out, nil
+}
+
+// readFunctionAnnotations loads the curated descriptions of one function kind
+// for the given exact entity keys, returning key → description. This feeds the
+// GENERATED root-type overlay, which has no long-description surface.
+func (g *genContext) readFunctionAnnotations(ctx context.Context, fnKind string, keys []string) (map[string]string, error) {
+	rows, err := g.readCurations(ctx, fnKind, keys)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for key, c := range rows {
+		if c.description != "" {
+			out[key] = c.description
+		}
 	}
 	return out, nil
 }

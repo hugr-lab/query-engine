@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -174,8 +175,10 @@ func TestMCP_ToolsList(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	tools := result["tools"].([]any)
 
-	// Should have 14 tools (7 discovery + 4 schema + 3 data).
-	assert.Len(t, tools, 14, "expected 14 MCP tools")
+	// The whole surface: 4 catalog + 4 schema + 4 data. The discovery-* family
+	// and schema-type_info are gone — they read the compiled-schema views,
+	// which the entity storage does not expose (design-035).
+	assert.Len(t, tools, 12, "expected 12 MCP tools")
 
 	// Verify tool names.
 	toolNames := make(map[string]bool)
@@ -184,20 +187,26 @@ func TestMCP_ToolsList(t *testing.T) {
 		toolNames[tm["name"].(string)] = true
 	}
 	expectedTools := []string{
-		"discovery-search_modules",
-		"discovery-search_data_sources",
-		"discovery-search_module_data_objects",
-		"discovery-describe_data_objects",
-		"discovery-search_module_functions",
-		"discovery-describe_functions",
-		"discovery-field_values",
-		"schema-type_info",
+		"catalog-list",
+		"catalog-describe",
+		"catalog-search",
+		"catalog-object_fields",
+		"schema-describe_types",
 		"schema-type_fields",
-		"schema-describe_fields",
+		"schema-field_args",
 		"schema-enum_values",
+		"data-field_values",
 		"data-inline_graphql_result",
 		"data-execute_mutation",
 		"data-validate_graphql_query",
+	}
+	for _, gone := range []string{
+		"discovery-search_modules", "discovery-search_data_sources",
+		"discovery-search_module_data_objects", "discovery-describe_data_objects",
+		"discovery-search_module_functions", "discovery-describe_functions",
+		"discovery-field_values", "schema-type_info", "schema-describe_fields",
+	} {
+		assert.False(t, toolNames[gone], "removed tool still registered: %s", gone)
 	}
 	for _, name := range expectedTools {
 		assert.True(t, toolNames[name], "missing tool: %s", name)
@@ -275,65 +284,6 @@ func TestMCP_InlineGraphQLResult(t *testing.T) {
 	assert.Contains(t, queryResult, "original_size")
 }
 
-func TestMCP_SchemaTypeInfo(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	// Query a known type from the core catalog.
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "schema-type_info",
-		"arguments": map[string]any{
-			"type_name": "core_data_sources",
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-
-	textContent := content[0].(map[string]any)["text"].(string)
-	t.Logf("type_info response: %.500s", textContent)
-	var typeInfo map[string]any
-	require.NoError(t, json.Unmarshal([]byte(textContent), &typeInfo))
-	assert.Equal(t, "core_data_sources", typeInfo["name"])
-	assert.Contains(t, typeInfo, "fields_total")
-	assert.Contains(t, typeInfo, "has_geometry_field")
-	assert.Contains(t, typeInfo, "has_field_with_arguments")
-}
-
-func TestMCP_SchemaTypeFields(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "schema-type_fields",
-		"arguments": map[string]any{
-			"type_name": "core_data_sources",
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-
-	textContent := content[0].(map[string]any)["text"].(string)
-	t.Logf("type_fields response text: %.500s", textContent)
-	var fieldsResult map[string]any
-	require.NoError(t, json.Unmarshal([]byte(textContent), &fieldsResult))
-	assert.Contains(t, fieldsResult, "total")
-	assert.Contains(t, fieldsResult, "returned")
-	assert.Contains(t, fieldsResult, "items")
-	items := fieldsResult["items"].([]any)
-	assert.Greater(t, len(items), 0, "core_data_sources should have fields")
-	// Check that each field has required fields.
-	first := items[0].(map[string]any)
-	assert.Contains(t, first, "name")
-	assert.Contains(t, first, "field_type")
-	assert.Contains(t, first, "hugr_type")
-	assert.Contains(t, first, "is_list")
-	assert.Contains(t, first, "arguments_count")
-}
-
 func TestMCP_PromptGet(t *testing.T) {
 	h := handler(t)
 	mcpInit(t, h)
@@ -364,149 +314,6 @@ func TestMCP_ResourceRead(t *testing.T) {
 	assert.Contains(t, first["text"].(string), "Hugr")
 }
 
-func TestMCP_SchemaEnumValues(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "schema-enum_values",
-		"arguments": map[string]any{
-			"type_name": "GeometryType",
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-
-	textContent := content[0].(map[string]any)["text"].(string)
-	t.Logf("enum_values response: %.500s", textContent)
-	var enumResult map[string]any
-	require.NoError(t, json.Unmarshal([]byte(textContent), &enumResult))
-	assert.Equal(t, "GeometryType", enumResult["name"])
-	assert.Contains(t, enumResult, "values")
-	values := enumResult["values"].([]any)
-	assert.Greater(t, len(values), 0, "enum should have values")
-}
-
-func TestMCP_SchemaEnumValues_NotEnum(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "schema-enum_values",
-		"arguments": map[string]any{
-			"type_name": "core_data_sources",
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-
-	textContent := content[0].(map[string]any)["text"].(string)
-	assert.Contains(t, textContent, "not ENUM")
-}
-
-func TestMCP_FieldValues(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "discovery-field_values",
-		"arguments": map[string]any{
-			"object_name": "core_data_sources",
-			"field_name":  "type",
-			"limit":       5,
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-
-	textContent := content[0].(map[string]any)["text"].(string)
-	t.Logf("field_values response: %.500s", textContent)
-	// Should return values or an error message (not panic)
-	assert.NotEmpty(t, textContent)
-}
-
-func TestMCP_DiscoverySearchModules(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	// Without embeddings, search should return an error, not panic.
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "discovery-search_modules",
-		"arguments": map[string]any{
-			"query": "data sources",
-			"top_k": 3,
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-	// Should not panic — returns error or empty result
-	t.Logf("search_modules (no embeddings): %.300s", content[0].(map[string]any)["text"])
-}
-
-func TestMCP_DiscoverySearchDataSources(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "discovery-search_data_sources",
-		"arguments": map[string]any{
-			"query": "postgres",
-			"top_k": 3,
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-	t.Logf("search_data_sources (no embeddings): %.300s", content[0].(map[string]any)["text"])
-}
-
-func TestMCP_DiscoverySearchModuleDataObjects(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "discovery-search_module_data_objects",
-		"arguments": map[string]any{
-			"module": "core",
-			"query":  "data sources",
-			"top_k":  3,
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-	t.Logf("search_module_data_objects (no embeddings): %.300s", content[0].(map[string]any)["text"])
-}
-
-func TestMCP_DiscoverySearchModuleFunctions(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "discovery-search_module_functions",
-		"arguments": map[string]any{
-			"module": "core",
-			"query":  "load",
-			"top_k":  3,
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-	t.Logf("search_module_functions (no embeddings): %.300s", content[0].(map[string]any)["text"])
-}
-
 func TestMCP_ValidateInvalidQuery(t *testing.T) {
 	h := handler(t)
 	mcpInit(t, h)
@@ -527,4 +334,163 @@ func TestMCP_ValidateInvalidQuery(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(textContent), &validResult))
 	assert.Equal(t, false, validResult["ok"])
 	assert.Contains(t, validResult, "error")
+}
+
+// TestMCP_DocsNameOnlyRealTools guards the embedded prose — instructions,
+// prompts and resources — against naming a tool that does not exist. That rot
+// is silent: the text still reads fine, and the agent only finds out when the
+// call comes back "tool not found". It has already happened once in this
+// redesign, when the descriptions referenced catalog-object_fields for two
+// steps before it was written.
+func TestMCP_DocsNameOnlyRealTools(t *testing.T) {
+	h := handler(t)
+
+	init := jsonRPC(t, h, "initialize", map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "1.0"},
+	})
+	tools := jsonRPC(t, h, "tools/list", nil)["result"].(map[string]any)["tools"].([]any)
+	registered := map[string]bool{}
+	for _, tool := range tools {
+		registered[tool.(map[string]any)["name"].(string)] = true
+	}
+	require.NotEmpty(t, registered)
+
+	texts := map[string]string{}
+	if s, ok := init["result"].(map[string]any)["instructions"].(string); ok {
+		texts["instructions"] = s
+	}
+	require.NotEmpty(t, texts["instructions"], "instructions must be served on initialize")
+
+	for _, p := range jsonRPC(t, h, "prompts/list", nil)["result"].(map[string]any)["prompts"].([]any) {
+		name := p.(map[string]any)["name"].(string)
+		res := jsonRPC(t, h, "prompts/get", map[string]any{"name": name})
+		for _, m := range res["result"].(map[string]any)["messages"].([]any) {
+			texts["prompt:"+name] += m.(map[string]any)["content"].(map[string]any)["text"].(string)
+		}
+	}
+	for _, r := range jsonRPC(t, h, "resources/list", nil)["result"].(map[string]any)["resources"].([]any) {
+		uri := r.(map[string]any)["uri"].(string)
+		res := jsonRPC(t, h, "resources/read", map[string]any{"uri": uri})
+		for _, c := range res["result"].(map[string]any)["contents"].([]any) {
+			texts["resource:"+uri] += c.(map[string]any)["text"].(string)
+		}
+	}
+	require.Greater(t, len(texts), 5, "prompts and resources must be readable")
+
+	// Tool names are written in backticks in this prose; requiring that keeps
+	// ordinary hyphenated English ("schema-defined", "data-input shape") out.
+	toolRef := regexp.MustCompile("`((?:catalog|schema|data|discovery)-[a-z_]+)")
+	seen := 0
+	for where, text := range texts {
+		for _, m := range toolRef.FindAllStringSubmatch(text, -1) {
+			seen++
+			assert.True(t, registered[m[1]], "%s references unregistered tool %q", where, m[1])
+		}
+	}
+	assert.Greater(t, seen, 20, "the prose must actually name tools — otherwise this test checks nothing")
+
+	// The tool descriptions route between tools too — and there the names are
+	// bare, so the check above never saw them. It missed a real one: after the
+	// legacy family was deleted, data-execute_mutation still sent the agent to
+	// discovery-describe_data_objects for the input shape. Bare matching is the
+	// price: a description may not spell ordinary English with these prefixes
+	// ("data-input shape" → "data input shape").
+	bareRef := regexp.MustCompile(`\b((?:catalog|schema|data|discovery)-[a-z_]+)`)
+	seen = 0
+	for _, tool := range tools {
+		tool := tool.(map[string]any)
+		name, _ := tool["name"].(string)
+		text, _ := tool["description"].(string)
+		if props, ok := tool["inputSchema"].(map[string]any)["properties"].(map[string]any); ok {
+			for arg, spec := range props {
+				d, _ := spec.(map[string]any)["description"].(string)
+				text += "\n" + arg + ": " + d
+			}
+		}
+		for _, m := range bareRef.FindAllStringSubmatch(text, -1) {
+			seen++
+			assert.True(t, registered[m[1]], "the description of %s references unregistered tool %q", name, m[1])
+		}
+	}
+	assert.Greater(t, seen, 12, "the descriptions must actually name tools — otherwise this test checks nothing")
+}
+
+// TestMCP_UnknownNameAnswersInWords — a name the engine will not resolve is
+// the most common thing an agent hands these tools: a guessed type name, a
+// misremembered object, or one its role may not see. What it must get back is
+// which name failed — not the engine's scan error.
+//
+// That is not free. A null meta lookup never reaches the response as a JSON
+// null: the engine drops a nil result before it gets there, and collapses a
+// single-key null response to a nil data map, so scanning by path answers
+// "wrong data path" or "no data" depending on AllowParallel. Every one of
+// these tools scans the root and reports the ABSENCE instead.
+func TestMCP_UnknownNameAnswersInWords(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	for _, tc := range []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"catalog-object_fields", map[string]any{"object": "no_such_object"}, `data object "no_such_object" not found`},
+		{"schema-type_fields", map[string]any{"type_name": "no_such_type"}, `type "no_such_type" not found`},
+		{"schema-field_args", map[string]any{"type_name": "no_such_type", "fields": []string{"x"}}, `type "no_such_type" not found`},
+		{"schema-enum_values", map[string]any{"type_name": "no_such_type"}, `type "no_such_type" not found`},
+		{"data-field_values", map[string]any{"object_name": "no_such_object", "field_name": "x"}, `data object "no_such_object" not found`},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			resp := jsonRPC(t, h, "tools/call", map[string]any{"name": tc.tool, "arguments": tc.args})
+			result := resp["result"].(map[string]any)
+			require.Equal(t, true, result["isError"], "an unresolvable name must be an error")
+			text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+			assert.Contains(t, text, tc.want)
+			assert.Contains(t, text, "not visible to you",
+				"the message must say the name may simply be hidden — the tools cannot tell the two apart")
+		})
+	}
+}
+
+// TestMCP_ListRefusesAMeaninglessScope — a data source is not a member of a
+// module, it contributes to several. Accepting the argument and ignoring it
+// would answer a different question than the one asked.
+func TestMCP_ListRefusesAMeaninglessScope(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "catalog-list",
+		"arguments": map[string]any{"kind": "data_source", "module": "core"},
+	})
+	result := resp["result"].(map[string]any)
+	require.Equal(t, true, result["isError"])
+	assert.Contains(t, result["content"].([]any)[0].(map[string]any)["text"].(string),
+		"module does not scope data sources")
+
+	// Without the scope it still answers.
+	resp = jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "catalog-list",
+		"arguments": map[string]any{"kind": "data_source"},
+	})
+	assert.NotEqual(t, true, resp["result"].(map[string]any)["isError"])
+}
+
+// TestMCP_ZeroLimitMeansUnspecified — an explicit limit: 0 used to clamp to a
+// ONE-item page, which reads as "that is all there is".
+func TestMCP_ZeroLimitMeansUnspecified(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "catalog-list",
+		"arguments": map[string]any{"kind": "data_object", "limit": 0},
+	})
+	result := resp["result"].(map[string]any)
+	require.NotEqual(t, true, result["isError"])
+	var page map[string]any
+	require.NoError(t, json.Unmarshal([]byte(result["content"].([]any)[0].(map[string]any)["text"].(string)), &page))
+	assert.EqualValues(t, 50, page["limit"], "0 must read as unspecified and take the default")
 }

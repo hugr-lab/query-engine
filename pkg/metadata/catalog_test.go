@@ -299,6 +299,208 @@ func TestCatalogQuery_DataObjectLookup(t *testing.T) {
 	}
 }
 
+func TestCatalogQuery_DataObjectQueries(t *testing.T) {
+	ss := newCatalogTestService(t)
+
+	res := runMetaQuery(t, ss, `{
+		orders: _dataObject(name: "orders") {
+			queries { name type rootTypeName }
+		}
+		selectArgs: _dataObject(name: "orders") {
+			queries { name args { name } }
+		}
+		view: _dataObject(name: "sales_by_country") {
+			queries { name type rootTypeName args { name } }
+		}
+		unique: _dataObject(name: "customers") {
+			queries { name type args { name } }
+		}
+	}`)
+
+	queryTypes := func(v any) map[string]string {
+		t.Helper()
+		out := map[string]string{}
+		for _, q := range v.([]map[string]any) {
+			out[q["name"].(string)] = q["type"].(string)
+		}
+		return out
+	}
+
+	orders := queryTypes(asMap(t, res["orders"])["queries"])
+	want := map[string]string{
+		"orders":                    "SELECT",
+		"orders_by_pk":              "SELECT_ONE",
+		"orders_aggregation":        "AGGREGATION",
+		"orders_bucket_aggregation": "BUCKET_AGGREGATION",
+	}
+	for name, wantType := range want {
+		if got := orders[name]; got != wantType {
+			t.Errorf("orders query %q type = %q, want %q (all: %v)", name, got, wantType, orders)
+		}
+	}
+	for _, q := range asMap(t, res["orders"])["queries"].([]map[string]any) {
+		if q["rootTypeName"] != "_module_sales_query" {
+			t.Errorf("query %v rootTypeName = %v, want _module_sales_query", q["name"], q["rootTypeName"])
+		}
+	}
+
+	// The SELECT query carries the standard row-set arguments; that argument
+	// list is what names the next introspection rung (the filter input type).
+	for _, q := range asMap(t, res["selectArgs"])["queries"].([]map[string]any) {
+		if q["name"] != "orders" {
+			continue
+		}
+		args := namesOf(t, q["args"])
+		for _, a := range []string{"filter", "order_by", "limit", "offset"} {
+			if !slices.Contains(args, a) {
+				t.Errorf("orders SELECT args %v missing %q", args, a)
+			}
+		}
+	}
+
+	// A parameterized view exposes its @args input as a query argument.
+	viewQueries := asMap(t, res["view"])["queries"].([]map[string]any)
+	if len(viewQueries) == 0 {
+		t.Fatal("sales_by_country has no queries")
+	}
+	for _, q := range viewQueries {
+		if q["rootTypeName"] != "_module_sales_reports_query" {
+			t.Errorf("view query %v rootTypeName = %v, want _module_sales_reports_query", q["name"], q["rootTypeName"])
+		}
+		if q["name"] != "sales_by_country" {
+			continue
+		}
+		if args := namesOf(t, q["args"]); !slices.Contains(args, "args") {
+			t.Errorf("parameterized view SELECT args %v missing %q", args, "args")
+		}
+	}
+
+	// SELECT_ONE is not only the primary-key lookup: every @unique with a
+	// query_suffix generates one too. Which key a given query uses is readable
+	// only from its arguments, so both must be reported.
+	unique := asMap(t, res["unique"])["queries"].([]map[string]any)
+	byKeyArgs := map[string][]string{}
+	for _, q := range unique {
+		if q["type"] != "SELECT_ONE" {
+			continue
+		}
+		byKeyArgs[q["name"].(string)] = namesOf(t, q["args"])
+	}
+	if len(byKeyArgs) != 2 {
+		t.Fatalf("customers SELECT_ONE queries = %v, want both the pk and the unique lookup", byKeyArgs)
+	}
+	if args := byKeyArgs["customers_by_pk"]; !slices.Contains(args, "id") {
+		t.Errorf("customers_by_pk args %v missing the pk field %q", args, "id")
+	}
+	if args := byKeyArgs["customers_by_name"]; !slices.Contains(args, "name") {
+		t.Errorf("customers_by_name args %v missing the unique field %q", args, "name")
+	}
+}
+
+func TestCatalogQuery_DataSources(t *testing.T) {
+	ss := newCatalogTestService(t)
+
+	res := runMetaQuery(t, ss, `{
+		_dataSources { name engine modules readOnly asModule isExtension }
+		one: _dataSource(name: "test") { name modules }
+		missing: _dataSource(name: "nope") { name }
+		empty: _dataSource(name: "") { name }
+	}`)
+
+	list := res["_dataSources"].([]map[string]any)
+	if len(list) != 1 || list[0]["name"] != "test" {
+		t.Fatalf("_dataSources = %v, want the single 'test' source", list)
+	}
+	if list[0]["engine"] != "duckdb" {
+		t.Errorf("engine = %v, want duckdb", list[0]["engine"])
+	}
+	mods, ok := list[0]["modules"].([]string)
+	if !ok {
+		t.Fatalf("modules = %T, want []string", list[0]["modules"])
+	}
+	// Modules where the source places DIRECT members — "events" comes from a
+	// subscription alone, so functions count, not just data objects.
+	if !slices.Equal(mods, []string{"core", "events", "sales", "sales.reports"}) {
+		t.Errorf("modules = %v", mods)
+	}
+	// The compiled schema records no load-state flags — nil must not read as
+	// false, or an agent would take "not read-only" for a fact.
+	for _, f := range []string{"readOnly", "asModule", "isExtension"} {
+		if list[0][f] != nil {
+			t.Errorf("%s = %v on the compiled provider, want null (not recorded)", f, list[0][f])
+		}
+	}
+
+	if one := asMap(t, res["one"]); one["name"] != "test" {
+		t.Errorf("_dataSource(test) = %v", one)
+	}
+	if res["missing"] != nil {
+		t.Errorf("unknown data source = %v, want nil", res["missing"])
+	}
+	if res["empty"] != nil {
+		t.Errorf(`_dataSource(name: "") = %v, want nil`, res["empty"])
+	}
+}
+
+// TestCatalogQuery_DataSourceVisibility uses a second, single-object source so
+// the "contributes nothing visible" branch can be exercised by hiding ONE
+// object — the rule is per source, not per deployment.
+func TestCatalogQuery_DataSourceVisibility(t *testing.T) {
+	provider, err := static.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ss := catalog.NewService(provider)
+	e := &engines.DuckDB{}
+	add := func(name, data string) {
+		t.Helper()
+		cat, err := sources.NewStringSource(name, e, compiler.Options{
+			Name:         name,
+			EngineType:   string(e.Type()),
+			Capabilities: e.Capabilities(),
+		}, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = ss.AddCatalog(context.Background(), name, cat); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("test", testSchemaData)
+	add("extra", `
+type widgets @module(name: "wh") @table(name: "widgets") {
+  id: Int! @pk
+  label: String
+}
+`)
+
+	all := namesOf(t, runMetaQuery(t, ss, `{ _dataSources { name } }`)["_dataSources"])
+	if !slices.Equal(all, []string{"extra", "test"}) {
+		t.Fatalf("_dataSources = %v, want both sources sorted", all)
+	}
+
+	perms := &perm.RolePermissions{
+		Name: "restricted",
+		Permissions: []perm.Permission{
+			{Object: "data-object:query", Field: "widgets", Hidden: true},
+		},
+	}
+	res := runMetaQueryPerm(t, ss, perms, `{
+		_dataSources { name }
+		gone: _dataSource(name: "extra") { name }
+		kept: _dataSource(name: "test") { name }
+	}`)
+	if names := namesOf(t, res["_dataSources"]); !slices.Equal(names, []string{"test"}) {
+		t.Errorf("_dataSources = %v, want only test — extra contributes nothing visible", names)
+	}
+	if res["gone"] != nil {
+		t.Errorf("_dataSource(extra) = %v, want nil", res["gone"])
+	}
+	if res["kept"] == nil {
+		t.Error("_dataSource(test) = nil, want visible")
+	}
+}
+
 func TestCatalogQuery_FunctionLookup(t *testing.T) {
 	ss := newCatalogTestService(t)
 
@@ -593,6 +795,57 @@ func TestCatalogQuery_Permissions(t *testing.T) {
 		}
 	})
 
+	t.Run("hidden query field drops only its own entry", func(t *testing.T) {
+		perms := &perm.RolePermissions{
+			Name: "restricted",
+			Permissions: []perm.Permission{
+				{Object: "_module_sales_query", Field: "orders_aggregation", Hidden: true},
+			},
+		}
+		res := runMetaQueryPerm(t, ss, perms, `{
+			_dataObject(name: "orders") { name queries { name } }
+		}`)
+		obj := asMap(t, res["_dataObject"])
+		if obj["name"] != "orders" {
+			t.Fatalf("orders hidden entirely by an aggregation-only rule: %v", obj)
+		}
+		names := namesOf(t, obj["queries"])
+		if slices.Contains(names, "orders_aggregation") {
+			t.Errorf("hidden query leaked into queries %v", names)
+		}
+		if !slices.Contains(names, "orders") || !slices.Contains(names, "orders_by_pk") {
+			t.Errorf("sibling queries dropped with the hidden one: %v", names)
+		}
+	})
+
+	t.Run("hidden select hides the object and its queries", func(t *testing.T) {
+		perms := &perm.RolePermissions{
+			Name: "restricted",
+			Permissions: []perm.Permission{
+				{Object: "data-object:query", Field: "orders", Hidden: true},
+			},
+		}
+		res := runMetaQueryPerm(t, ss, perms, `{
+			_dataObject(name: "orders") { queries { name } }
+		}`)
+		if res["_dataObject"] != nil {
+			t.Errorf("hidden object still exposes queries: %v", res["_dataObject"])
+		}
+	})
+
+	t.Run("data source survives on one visible member", func(t *testing.T) {
+		perms := &perm.RolePermissions{
+			Name: "restricted",
+			Permissions: []perm.Permission{
+				{Object: "data-object:query", Field: "orders", Hidden: true},
+			},
+		}
+		res := runMetaQueryPerm(t, ss, perms, `{ _dataSources { name } }`)
+		if names := namesOf(t, res["_dataSources"]); !slices.Contains(names, "test") {
+			t.Errorf("_dataSources = %v, want test to survive", names)
+		}
+	})
+
 	t.Run("full access sees everything", func(t *testing.T) {
 		res := runMetaQuery(t, ss, `{
 			_module(name: "sales") { dataObjects { name } }
@@ -615,15 +868,19 @@ func TestCatalogQuery_SelfIntrospection(t *testing.T) {
 		props: __type(name: "_DataObjectProperties") { name kind }
 		rel: __type(name: "_Relation") { name kind }
 		fn: __type(name: "_Function") { name kind }
+		doq: __type(name: "_DataObjectQuery") { name kind fields { name } }
+		ds: __type(name: "_DataSource") { name kind fields { name } }
 		dot: __type(name: "_DataObjectType") { name kind enumValues { name } }
 		ft: __type(name: "_FunctionType") { name kind enumValues { name } }
+		qt: __type(name: "_QueryType") { name kind enumValues { name } }
 		rd: __type(name: "_RelationDirection") { name kind enumValues { name } }
 		rk: __type(name: "_RelationKind") { name kind enumValues { name } }
 	}`)
 
 	for alias, want := range map[string]string{
 		"mod": "_Module", "obj": "_DataObject", "props": "_DataObjectProperties",
-		"rel": "_Relation", "fn": "_Function",
+		"rel": "_Relation", "fn": "_Function", "doq": "_DataObjectQuery",
+		"ds": "_DataSource",
 	} {
 		got := asMap(t, res[alias])
 		if got["name"] != want || got["kind"] != ast.Object {
@@ -639,9 +896,23 @@ func TestCatalogQuery_SelfIntrospection(t *testing.T) {
 		}
 	}
 
+	doqFields := namesOf(t, asMap(t, res["doq"])["fields"])
+	if !slices.Equal(doqFields, []string{"args", "name", "rootTypeName", "type"}) {
+		t.Errorf("_DataObjectQuery fields = %v", doqFields)
+	}
+
+	dsFields := namesOf(t, asMap(t, res["ds"])["fields"])
+	for _, want := range []string{"name", "engine", "description", "longDescription",
+		"readOnly", "asModule", "isExtension", "modules"} {
+		if !slices.Contains(dsFields, want) {
+			t.Errorf("_DataSource fields %v missing %q", dsFields, want)
+		}
+	}
+
 	for alias, want := range map[string][]string{
 		"dot": {"TABLE", "VIEW"},
 		"ft":  {"FUNCTION", "MUTATION", "SUBSCRIPTION"},
+		"qt":  {"AGGREGATION", "BUCKET_AGGREGATION", "SELECT", "SELECT_ONE"},
 		"rd":  {"BACK", "FORWARD"},
 		"rk":  {"FK", "JOIN", "M2M"},
 	} {
@@ -655,12 +926,13 @@ func TestCatalogQuery_SelfIntrospection(t *testing.T) {
 		}
 	}
 
-	// The four root meta queries are ordinary (single-underscore) system
-	// fields of Query — they MUST appear in standard introspection so
-	// GraphiQL/codegen can autocomplete and validate them (SC-006).
+	// The root meta queries are ordinary (single-underscore) system fields of
+	// Query — they MUST appear in standard introspection so GraphiQL/codegen
+	// can autocomplete and validate them (SC-006).
 	q := runMetaQuery(t, ss, `{ __type(name: "Query") { fields { name } } }`)
 	queryFields := namesOf(t, asMap(t, q["__type"])["fields"])
-	for _, want := range []string{"_catalog", "_module", "_dataObject", "_function"} {
+	for _, want := range []string{"_catalog", "_module", "_dataObject", "_function",
+		"_dataSource", "_dataSources"} {
 		if !slices.Contains(queryFields, want) {
 			t.Errorf("Query introspection fields missing %q", want)
 		}

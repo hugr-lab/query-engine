@@ -122,6 +122,77 @@ func TestSeedNoEmbedderNoop(t *testing.T) {
 
 // seedV2Schema is the collectTestSchema source rewritten to a single table —
 // the reload fixture that DROPS the other objects, functions and types.
+// seedScopeSchema pairs a data object carrying an @exclude_mcp field with a
+// residual struct type of its own.
+const seedScopeSchema = `
+type profiles @module(name: "crm") @table(name: "profiles") {
+  id: Int! @pk
+  email: String!
+  secret_token: String @exclude_mcp
+  address: address_info
+}
+
+type address_info {
+  city: String
+  zip: String
+}
+`
+
+// TestSeedScopeNarrowing pins the design-035 vector index scope: only entities
+// an agent searches BY MEANING get a vector. Residual source types and their
+// fields are reachable deterministically from the object that uses them, and an
+// @exclude_mcp field could only ever produce a hit the search path must drop.
+func TestSeedScopeNarrowing(t *testing.T) {
+	ctx := context.Background()
+	pool, err := db.NewPool("")
+	require.NoError(t, err)
+	t.Cleanup(func() { pool.Close() })
+	require.NoError(t, coredb.New(coredb.Config{VectorSize: 8}).Attach(ctx, pool))
+	store, err := New(ctx, pool, Config{VecSize: 8}, fakeEmbedder{dim: 8})
+	require.NoError(t, err)
+
+	d := collect(ctx, partialSource(t, "test", seedScopeSchema), "test")
+	require.Contains(t, d.types, "address_info", "fixture must carry a residual struct type")
+	_, err = store.writeSource(ctx, d, SourceState{
+		Name: "test", Version: "v1", Engine: "duckdb", Loaded: true,
+	})
+	require.NoError(t, err)
+
+	indexed := func() []string {
+		return rows(t, pool, `SELECT entity_kind, entity_key FROM core.catalog.annotations
+			WHERE vec IS NOT NULL ORDER BY entity_kind, entity_key`)
+	}
+	assert.Equal(t, []string{
+		"data_object|profiles",
+		"data_source|test",
+		// profiles.address is a field OF a data object and keeps its vector
+		// even though its TYPE is a struct; what the struct drops is its own
+		// members (address_info.city / .zip).
+		"field|profiles.address",
+		"field|profiles.email",
+		"field|profiles.id",
+		"module|crm",
+	}, indexed(),
+		"no residual type, no struct fields, no @exclude_mcp field")
+
+	// A reindex must not resurrect what the seed path skips — the two scopes
+	// are one decision expressed twice (Go for seeds, SQL for reindex).
+	n, err := store.ReindexEmbeddings(ctx, "", 0)
+	require.NoError(t, err)
+	assert.NotZero(t, n)
+	assert.Equal(t, []string{
+		"data_object|profiles",
+		"data_source|test",
+		// profiles.address is a field OF a data object and keeps its vector
+		// even though its TYPE is a struct; what the struct drops is its own
+		// members (address_info.city / .zip).
+		"field|profiles.address",
+		"field|profiles.email",
+		"field|profiles.id",
+		"module|crm",
+	}, indexed(), "reindex holds the same scope")
+}
+
 const seedV2Schema = `
 type customers @module(name: "sales") @table(name: "customers") {
   id: Int! @pk

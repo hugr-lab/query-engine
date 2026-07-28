@@ -34,9 +34,7 @@ func (s *Service) ContextWithPermissions(ctx context.Context) (context.Context, 
 
 func (s *Service) RolePermissions(ctx context.Context) (RolePermissions, error) {
 	if auth.IsFullAccess(ctx) {
-		return RolePermissions{
-			Name: "admin",
-		}, nil
+		return fullAccess, nil
 	}
 	info := auth.AuthInfoFromContext(ctx)
 	if info == nil {
