@@ -113,11 +113,20 @@ type ProductMetadata {
 }
 
 type product_details @table(name: "product_details") {
+    # Two references on one column: the ordinary one to products, and a FORWARD
+    # single reference whose target is the parameterized view — that field has
+    # to carry the view's args too, cardinality does not change who needs
+    # parameterizing.
     product_id: Int! @pk @field_references(
         field: "id"
         references_name: "products"
         query: "product"
         references_query: "details"
+    ) @field_references(
+        field: "id"
+        references_name: "products_in_price_range"
+        query: "in_range"
+        references_query: "details_in_range"
     )
     specs: ProductSpecs
     metadata: ProductMetadata

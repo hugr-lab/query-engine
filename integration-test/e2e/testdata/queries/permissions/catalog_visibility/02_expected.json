@@ -37,7 +37,15 @@
       ]
     },
     "rels": {
-      "relations": []
+      "relations": [
+        {
+          "dataObject": {
+            "name": "pg_store_products_in_price_range"
+          },
+          "kind": "FK",
+          "name": "pg_store_products_in_price_range_product_id"
+        }
+      ]
     }
   }
 }

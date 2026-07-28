@@ -1,0 +1,11 @@
+# Requiredness holds on a forward single reference too.
+{
+  pg_store {
+    product_details(filter: { product_id: { eq: 2 } }) {
+      product_id
+      in_range {
+        id
+      }
+    }
+  }
+}

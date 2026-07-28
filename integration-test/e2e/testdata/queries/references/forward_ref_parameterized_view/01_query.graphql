@@ -1,0 +1,17 @@
+# A FORWARD single reference whose target is a parameterized view: the view
+# still needs its parameters, so the field carries args exactly as a list
+# reference does. Products 1 and 5 are priced outside the range, so they show
+# the other half of the contract — the parent row survives and the reference
+# is null, rather than the parent disappearing.
+{
+  pg_store {
+    product_details(filter: { product_id: { in: [1, 2, 5] } }, order_by: [{field: "product_id", direction: ASC}]) {
+      product_id
+      in_range(args: { min_price: 20.0, max_price: 60.0 }) {
+        id
+        name
+        price
+      }
+    }
+  }
+}
