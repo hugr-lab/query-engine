@@ -24,8 +24,10 @@ import (
 // and store, their queries run, a user source loads and is queryable, and the
 // catalog's own state is visible through the entity views.
 //
-// MCP is NOT covered: it reads the compiled-schema views, which entity mode
-// does not expose. Porting it is separate work.
+// MCP runs here too (mcp_search_test.go): the catalog-* tools read the logical
+// model through the meta-query family, which is storage-agnostic, and rank over
+// the entity views' own index. The legacy discovery-* tools, which read the
+// compiled-schema views, are the half that entity mode cannot serve.
 
 func setupEngine(t *testing.T, storage hugr.CatalogStorage) (*hugr.Service, context.Context) {
 	t.Helper()

@@ -32,7 +32,9 @@ type Server struct {
 	http    *server.StreamableHTTPServer
 }
 
-// New creates a new MCP server backed by the given query engine.
+// New creates a new MCP server backed by the given query engine. Everything —
+// including the permission filter on the search path — goes through the
+// querier, so MCP holds no copy of the engine's access policy.
 func New(querier types.Querier, mcpServer *server.MCPServer, debug bool) *Server {
 	if mcpServer == nil {
 		mcpServer = server.NewMCPServer(
@@ -84,6 +86,25 @@ Names that do not exist, and names the caller may not see, both come back in not
 		mcp.WithNumber("relations_offset", mcp.Description("Relations to skip, per described object"), mcp.DefaultNumber(0)),
 		mcp.WithOutputSchema[DescribeResult](),
 	), s.catalogDescribe)
+
+	mcpServer.AddTool(mcp.NewTool("catalog-search",
+		mcp.WithDescription(`Find things by MEANING when you know what you want but not what this deployment calls it. Describe the data in your own words ("customer orders with payment status", "where is the diagnosis code").
+Searches modules, data sources, data objects, functions and FIELDS at once; narrow with 'kinds'. Every hit carries the module to nest it in and a next_call naming the exact tool to run next.
+Field hits are the reason to search rather than list: a data object's fields are not all columns. field_kind says which — 'column' is a stored value, 'extra' is computed, and 'relation' is a PATH: ref_object names the object it navigates to, so selecting that field is how you get there. Narrow with 'field_kinds' if navigation hits are noise.
+'lexical': true means this deployment has no vector index, so ranking fell back to substring matching — prefer exact terms and expect cruder results.
+Results are filtered to what YOU may see; filtered_out counts what was dropped, which distinguishes "nothing matches" from "nothing you may see matches".
+Use catalog-list when you want the complete map instead of the relevant few.`),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Natural-language description of the data you are looking for")),
+		mcp.WithArray("kinds", mcp.Description("Restrict to these kinds (default: all)"),
+			mcp.Items(map[string]any{"type": "string", "enum": searchKinds})),
+		mcp.WithArray("field_kinds", mcp.Description("For field hits: column | relation | extra (default: all)"),
+			mcp.Items(map[string]any{"type": "string", "enum": fieldKinds})),
+		mcp.WithString("module", mcp.Description("Restrict to this module's subtree")),
+		mcp.WithNumber("limit", mcp.Description("Page size (1-200)"), mcp.DefaultNumber(defaultPageLimit)),
+		mcp.WithNumber("offset", mcp.Description("Hits to skip"), mcp.DefaultNumber(0)),
+		mcp.WithNumber("min_score", mcp.Description("Drop hits below this score (0-1)"), mcp.DefaultNumber(0)),
+		mcp.WithOutputSchema[SearchResultPage](),
+	), s.catalogSearch)
 
 	// Discovery tools.
 	mcpServer.AddTool(mcp.NewTool("discovery-search_modules",

@@ -442,3 +442,139 @@ func TestCatalogList_BadKind(t *testing.T) {
 	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
 	assert.Contains(t, text, "data_object", "the error must list the valid kinds")
 }
+
+// --- catalog-search ---
+
+type searchPage struct {
+	Items []struct {
+		Kind        string  `json:"kind"`
+		Name        string  `json:"name"`
+		Module      string  `json:"module"`
+		DataSource  string  `json:"data_source"`
+		Description string  `json:"description"`
+		Score       float64 `json:"score"`
+		Object      string  `json:"object"`
+		FieldKind   string  `json:"field_kind"`
+		HugrType    string  `json:"hugr_type"`
+		RefObject   string  `json:"ref_object"`
+		NextCall    string  `json:"next_call"`
+	} `json:"items"`
+	Limit    int  `json:"limit"`
+	Offset   int  `json:"offset"`
+	HasMore  bool `json:"has_more"`
+	Filtered int  `json:"filtered_out"`
+	Lexical  bool `json:"lexical"`
+}
+
+func catalogSearch(t *testing.T, h http.Handler, args map[string]any) searchPage {
+	t.Helper()
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "catalog-search",
+		"arguments": args,
+	})
+	require.Contains(t, resp, "result", "response: %v", resp)
+	result := resp["result"].(map[string]any)
+	require.NotEqual(t, true, result["isError"], "tool error: %v", result["content"])
+	var page searchPage
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	require.NoError(t, json.Unmarshal([]byte(text), &page), "payload: %s", text)
+	return page
+}
+
+// TestCatalogSearch_LexicalFallback — with no embedder configured there is no
+// vector index, and the tool must still answer rather than fail. It says so in
+// the payload, so an agent knows to prefer exact terms.
+func TestCatalogSearch_LexicalFallback(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	page := catalogSearch(t, h, map[string]any{"query": "data sources"})
+	assert.True(t, page.Lexical, "no EMBEDDER_URL in this deployment — ranking must degrade, not fail")
+	require.NotEmpty(t, page.Items, "the fallback still finds the obvious match")
+
+	var found bool
+	for _, hit := range page.Items {
+		assert.Positive(t, hit.Score)
+		assert.NotEmpty(t, hit.NextCall, "every hit names the tool that turns it into something callable")
+		if hit.Name == "core_data_sources" {
+			found = true
+			assert.Equal(t, "data_object", hit.Kind)
+			assert.Equal(t, "core", hit.Module)
+		}
+	}
+	assert.True(t, found, "core_data_sources should rank for \"data sources\"")
+
+	// Ranked order is descending by score.
+	for i := 1; i < len(page.Items); i++ {
+		assert.GreaterOrEqual(t, page.Items[i-1].Score, page.Items[i].Score)
+	}
+}
+
+// TestCatalogSearch_Kinds — the vocabulary narrows, and an unknown kind is an
+// error that names the valid ones.
+func TestCatalogSearch_Kinds(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	page := catalogSearch(t, h, map[string]any{"query": "load data source", "kinds": []string{"function"}})
+	require.NotEmpty(t, page.Items)
+	for _, hit := range page.Items {
+		assert.Equal(t, "function", hit.Kind)
+	}
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "catalog-search",
+		"arguments": map[string]any{"query": "x", "kinds": []string{"tables"}},
+	})
+	result := resp["result"].(map[string]any)
+	assert.Equal(t, true, result["isError"])
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	assert.Contains(t, text, "field", "the error lists the valid kinds")
+}
+
+// TestCatalogSearch_Paging and empty query.
+func TestCatalogSearch_PagingAndValidation(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	first := catalogSearch(t, h, map[string]any{"query": "data", "limit": 1})
+	require.Len(t, first.Items, 1)
+	assert.Equal(t, 1, first.Limit)
+
+	if first.HasMore {
+		second := catalogSearch(t, h, map[string]any{"query": "data", "limit": 1, "offset": 1})
+		require.Len(t, second.Items, 1)
+		assert.NotEqual(t, first.Items[0].Name, second.Items[0].Name, "offset moves the window")
+	}
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "catalog-search",
+		"arguments": map[string]any{"query": "   "},
+	})
+	result := resp["result"].(map[string]any)
+	assert.Equal(t, true, result["isError"], "a blank query is an error, not an empty page")
+}
+
+// TestCatalogSearch_ModuleScope — "" is the root module and every module is a
+// submodule of it, so scoping by "" must widen to everything, not narrow to
+// nothing.
+func TestCatalogSearch_ModuleScope(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	all := catalogSearch(t, h, map[string]any{"query": "data", "limit": 200})
+	root := catalogSearch(t, h, map[string]any{"query": "data", "limit": 200, "module": ""})
+	assert.Equal(t, len(all.Items), len(root.Items), `module:"" is the root — the whole tree`)
+
+	scoped := catalogSearch(t, h, map[string]any{"query": "data", "limit": 200, "module": "core"})
+	for _, hit := range scoped.Items {
+		if hit.Kind == "data_source" {
+			continue
+		}
+		if hit.Kind == "module" {
+			assert.True(t, hit.Name == "core" || strings.HasPrefix(hit.Name, "core."), "got %q", hit.Name)
+			continue
+		}
+		assert.True(t, hit.Module == "core" || strings.HasPrefix(hit.Module, "core."), "got %q", hit.Module)
+	}
+}
