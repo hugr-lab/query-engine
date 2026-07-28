@@ -415,3 +415,76 @@ func TestPermissionMatrix_NoDataAccessStillExplores(t *testing.T) {
 	require.Equal(t, true, result["isError"], "reading rows must still be refused")
 	assert.Contains(t, result["content"].([]any)[0].(map[string]any)["text"].(string), "forbidden")
 }
+
+// blindRole hides EVERY field of a visible object. Introspection then has to
+// inject a placeholder to keep the type from having zero fields (the GraphQL
+// spec requires at least one), and that synthetic member must not reach an
+// agent: nothing can select it.
+const blindRole = "mcp_blind"
+
+var (
+	blindOnce  sync.Once
+	blindPerms *perm.RolePermissions
+	blindErr   error
+)
+
+func blinded(t *testing.T) http.Handler {
+	t.Helper()
+	blindOnce.Do(func() {
+		ctx := auth.ContextWithFullAccess(context.Background())
+		res, err := testService.Query(ctx, `mutation ($name: String!) {
+			core {
+				insert_roles(data: {
+					name: $name
+					description: "every field of one object hidden"
+					permissions: [
+						{type_name: "`+visibleObject+`", field_name: "*", hidden: true}
+					]
+				}) { name }
+			}
+		}`, map[string]any{"name": blindRole})
+		if err != nil {
+			blindErr = err
+			return
+		}
+		res.Close()
+		p, err := perm.New(testService).RolePermissions(
+			auth.ContextWithAuthInfo(context.Background(), &auth.AuthInfo{Role: blindRole}),
+		)
+		if err != nil {
+			blindErr = err
+			return
+		}
+		blindPerms = &p
+	})
+	require.NoError(t, blindErr)
+	require.NotNil(t, blindPerms)
+	return roleHandler(t, blindPerms)
+}
+
+// TestPermissionMatrix_NoSyntheticFields — an empty field list must come back
+// empty, not carrying the placeholder introspection uses to satisfy the spec.
+func TestPermissionMatrix_NoSyntheticFields(t *testing.T) {
+	admin, role := handler(t), blinded(t)
+	mcpInit(t, admin)
+	mcpInit(t, role)
+
+	full := callFields(t, admin, "catalog-object_fields", map[string]any{"object": visibleObject, "limit": 200})
+	require.NotEmpty(t, full.Items, "the object has fields unrestricted")
+
+	mine := callFields(t, role, "catalog-object_fields", map[string]any{"object": visibleObject, "limit": 200})
+	assert.Empty(t, mine.Items, "every field is hidden, so the list is empty: %v", mine.names())
+	assert.NotContains(t, mine.names(), "_placeholder")
+	assert.NotContains(t, mine.names(), "_stub")
+
+	// The same through the generated-type surface.
+	byType := callFields(t, role, "schema-type_fields", map[string]any{"type_name": visibleObject, "limit": 200})
+	assert.NotContains(t, byType.names(), "_placeholder")
+
+	// And describe's count must agree with what object_fields would list —
+	// a count the next call cannot reproduce is worse than no count.
+	got := catalogDescribe(t, role, map[string]any{"kind": "data_object", "names": []string{visibleObject}})
+	require.Len(t, got.Items, 1)
+	assert.Equal(t, len(mine.Items), got.Items[0].FieldsCount,
+		"fields_count must count what catalog-object_fields lists")
+}

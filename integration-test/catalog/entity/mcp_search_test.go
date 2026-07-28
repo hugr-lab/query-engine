@@ -256,12 +256,68 @@ func TestMCPSearchVectorFieldHits(t *testing.T) {
 		assert.Equal(t, "field", hit["kind"])
 		assert.NotEmpty(t, hit["object"], "a field hit must name its owning object")
 		assert.NotEmpty(t, hit["hugr_type"], "a field hit must carry its type")
+		assert.NotEmpty(t, hit["module"], "a field hit takes the module of its owner — without it the hit cannot be nested")
 		assert.Contains(t, []any{"column", "relation", "extra"}, hit["field_kind"])
 		if hit["field_kind"] == "relation" {
 			assert.NotEmpty(t, hit["ref_object"],
 				"a relation hit is a PATH — it must name where it leads")
 		}
+
+		// The two field surfaces must classify the same field the same way.
+		// They ask different sources — search verifies through the owner
+		// object, object_fields walks the compiled type — so this is a real
+		// agreement check, not a tautology.
+		fields := mcpCall(t, h, "catalog-object_fields",
+			map[string]any{"object": hit["object"], "limit": 200})
+		var listed map[string]any
+		for _, f := range fields["items"].([]any) {
+			if f.(map[string]any)["name"] == hit["name"] {
+				listed = f.(map[string]any)
+				break
+			}
+		}
+		require.NotNil(t, listed, "search hit %v.%v is missing from the object's own field list",
+			hit["object"], hit["name"])
+		assert.Equal(t, listed["field_kind"], hit["field_kind"],
+			"%v.%v: catalog-object_fields says %v, search says %v",
+			hit["object"], hit["name"], listed["field_kind"], hit["field_kind"])
 	}
+}
+
+// TestMCPSearchFieldHitsHonourModuleScope — a field carries no module of its
+// own (entity_fields has no such column); it belongs to whatever module owns
+// its data object. Scoping the search by module used to be applied to the raw
+// ranked hit, where that field is still empty, so ANY module argument erased
+// every field hit — silently, and exactly in the deployments big enough to
+// need the scope.
+func TestMCPSearchFieldHitsHonourModuleScope(t *testing.T) {
+	url, size := liveEmbedder(t)
+	h := mcpHandlerWithEmbedder(t, size, url)
+
+	const query = "connection string to reach the database"
+	unscoped := mcpCall(t, h, "catalog-search", map[string]any{
+		"query": query, "kinds": []string{"field"}, "limit": 20,
+	})
+	require.NotEmpty(t, unscoped["items"], "no field hits at all — the index is not being ranked")
+
+	scoped := mcpCall(t, h, "catalog-search", map[string]any{
+		"query": query, "kinds": []string{"field"}, "module": "core", "limit": 20,
+	})
+	items, _ := scoped["items"].([]any)
+	require.NotEmpty(t, items, "scoping to a module that owns the objects must not erase field hits")
+	for _, raw := range items {
+		hit := raw.(map[string]any)
+		module, _ := hit["module"].(string)
+		assert.True(t, module == "core" || strings.HasPrefix(module, "core."),
+			"hit %v.%v is in module %q, outside the requested subtree",
+			hit["object"], hit["name"], module)
+	}
+
+	// A module that owns nothing must answer empty rather than everything.
+	none := mcpCall(t, h, "catalog-search", map[string]any{
+		"query": query, "kinds": []string{"field"}, "module": "no.such.module", "limit": 20,
+	})
+	assert.Empty(t, none["items"], "an unknown module scope must not fall back to the whole tree")
 }
 
 // TestMCPFieldSurfaceOnEntityStorage is the answer to "can an agent drill into

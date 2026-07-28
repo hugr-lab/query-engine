@@ -157,12 +157,15 @@ func (s *Server) catalogList(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		return toolResultError(fmt.Sprintf("kind must be one of %s", strings.Join(catalogKinds, ", "))), nil
 	}
 	module := req.GetString("module", "")
-	prefix := strings.ToLower(req.GetString("prefix", ""))
-	limit := req.GetInt("limit", defaultPageLimit)
-	if limit <= 0 || limit > maxPageLimit {
-		limit = min(maxPageLimit, max(1, limit))
+	if kind == kindDataSource && module != "" {
+		// A source is not a member of a module — it CONTRIBUTES to several.
+		// Silently ignoring the scope would answer a different question than
+		// the one asked.
+		return toolResultError("module does not scope data sources — a source contributes to several; " +
+			"list the module's members instead (kind: data_object | function), or read 'modules' on each source"), nil
 	}
-	offset := max(0, req.GetInt("offset", 0))
+	prefix := strings.ToLower(req.GetString("prefix", ""))
+	limit, offset := pageArgsOf(req)
 
 	items, truncated, err := s.catalogItems(ctx, kind, module)
 	if err != nil {

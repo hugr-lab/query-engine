@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -61,7 +62,7 @@ Scope with 'module' (walks that subtree, including submodules) and 'prefix' (cas
 Use catalog-search instead when you know WHAT you want but not what it is called.`),
 		mcp.WithString("kind", mcp.Required(), mcp.Description("module | data_source | data_object | function"),
 			mcp.Enum(catalogKinds...)),
-		mcp.WithString("module", mcp.Description(`Restrict to this module's subtree; "" (default) walks everything`)),
+		mcp.WithString("module", mcp.Description(`Restrict to this module's subtree; "" (default) walks everything. Not accepted for kind=data_source — a source contributes to several modules rather than belonging to one`)),
 		mcp.WithString("prefix", mcp.Description("Case-insensitive name prefix filter")),
 		mcp.WithNumber("limit", mcp.Description("Page size (1-200)"), mcp.DefaultNumber(defaultPageLimit)),
 		mcp.WithNumber("offset", mcp.Description("Items to skip"), mcp.DefaultNumber(0)),
@@ -328,6 +329,38 @@ func (s *Server) queryScan(ctx context.Context, gql string, vars map[string]any,
 	}
 	defer res.Close()
 	return res.ScanData(path, target)
+}
+
+// queryScanLookup executes a SINGLE-lookup query — one aliased root field that
+// the engine may resolve to null — and reports whether it was served at all.
+//
+// A null does not arrive as a JSON null. The engine drops a nil result before
+// it reaches the response (query.go, processQuerySequential: "res == nil &&
+// ext == nil → continue"), and on the parallel path the key is set but a
+// single-key null response collapses the whole data map to nil (query.go, the
+// len(data) == 1 check). So a path scan answers "wrong data path" or "no data"
+// depending on AllowParallel, and a tool that scanned by path would hand the
+// agent that engine error instead of saying which name it could not resolve.
+//
+// Scanning the ROOT sidesteps both: an unserved alias is simply missing, and
+// the two errors mean the same thing here. Absent is NOT distinguishable from
+// "hidden from this caller" — by design, that is what the tools report.
+func (s *Server) queryScanLookup(ctx context.Context, gql string, vars map[string]any, alias string, target any) (bool, error) {
+	root := map[string]json.RawMessage{}
+	switch err := s.queryScan(ctx, gql, vars, "", &root); {
+	case errors.Is(err, types.ErrNoData), errors.Is(err, types.ErrWrongDataPath):
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	raw, ok := root[alias]
+	if !ok || len(raw) == 0 || string(raw) == "null" {
+		return false, nil
+	}
+	if err := json.Unmarshal(raw, target); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // queryScanAdmin executes a catalog query with full access (no permission

@@ -416,3 +416,81 @@ func TestMCP_DocsNameOnlyRealTools(t *testing.T) {
 	}
 	assert.Greater(t, seen, 12, "the descriptions must actually name tools — otherwise this test checks nothing")
 }
+
+// TestMCP_UnknownNameAnswersInWords — a name the engine will not resolve is
+// the most common thing an agent hands these tools: a guessed type name, a
+// misremembered object, or one its role may not see. What it must get back is
+// which name failed — not the engine's scan error.
+//
+// That is not free. A null meta lookup never reaches the response as a JSON
+// null: the engine drops a nil result before it gets there, and collapses a
+// single-key null response to a nil data map, so scanning by path answers
+// "wrong data path" or "no data" depending on AllowParallel. Every one of
+// these tools scans the root and reports the ABSENCE instead.
+func TestMCP_UnknownNameAnswersInWords(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	for _, tc := range []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"catalog-object_fields", map[string]any{"object": "no_such_object"}, `data object "no_such_object" not found`},
+		{"schema-type_fields", map[string]any{"type_name": "no_such_type"}, `type "no_such_type" not found`},
+		{"schema-field_args", map[string]any{"type_name": "no_such_type", "fields": []string{"x"}}, `type "no_such_type" not found`},
+		{"schema-enum_values", map[string]any{"type_name": "no_such_type"}, `type "no_such_type" not found`},
+		{"data-field_values", map[string]any{"object_name": "no_such_object", "field_name": "x"}, `data object "no_such_object" not found`},
+	} {
+		t.Run(tc.tool, func(t *testing.T) {
+			resp := jsonRPC(t, h, "tools/call", map[string]any{"name": tc.tool, "arguments": tc.args})
+			result := resp["result"].(map[string]any)
+			require.Equal(t, true, result["isError"], "an unresolvable name must be an error")
+			text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+			assert.Contains(t, text, tc.want)
+			assert.Contains(t, text, "not visible to you",
+				"the message must say the name may simply be hidden — the tools cannot tell the two apart")
+		})
+	}
+}
+
+// TestMCP_ListRefusesAMeaninglessScope — a data source is not a member of a
+// module, it contributes to several. Accepting the argument and ignoring it
+// would answer a different question than the one asked.
+func TestMCP_ListRefusesAMeaninglessScope(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "catalog-list",
+		"arguments": map[string]any{"kind": "data_source", "module": "core"},
+	})
+	result := resp["result"].(map[string]any)
+	require.Equal(t, true, result["isError"])
+	assert.Contains(t, result["content"].([]any)[0].(map[string]any)["text"].(string),
+		"module does not scope data sources")
+
+	// Without the scope it still answers.
+	resp = jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "catalog-list",
+		"arguments": map[string]any{"kind": "data_source"},
+	})
+	assert.NotEqual(t, true, resp["result"].(map[string]any)["isError"])
+}
+
+// TestMCP_ZeroLimitMeansUnspecified — an explicit limit: 0 used to clamp to a
+// ONE-item page, which reads as "that is all there is".
+func TestMCP_ZeroLimitMeansUnspecified(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "catalog-list",
+		"arguments": map[string]any{"kind": "data_object", "limit": 0},
+	})
+	result := resp["result"].(map[string]any)
+	require.NotEqual(t, true, result["isError"])
+	var page map[string]any
+	require.NoError(t, json.Unmarshal([]byte(result["content"].([]any)[0].(map[string]any)["text"].(string)), &page))
+	assert.EqualValues(t, 50, page["limit"], "0 must read as unspecified and take the default")
+}

@@ -114,11 +114,7 @@ func (s *Server) catalogSearch(ctx context.Context, req mcp.CallToolRequest) (*m
 		fKinds = fieldKinds
 	}
 	module := req.GetString("module", "")
-	limit := req.GetInt("limit", defaultPageLimit)
-	if limit <= 0 || limit > maxPageLimit {
-		limit = min(maxPageLimit, max(1, limit))
-	}
-	offset := max(0, req.GetInt("offset", 0))
+	limit, offset := pageArgsOf(req)
 	minScore := req.GetFloat("min_score", 0)
 
 	candidates := min(searchMaxCandidates, (limit+offset)*searchOverfetch)
@@ -128,7 +124,7 @@ func (s *Server) catalogSearch(ctx context.Context, req mcp.CallToolRequest) (*m
 		return toolResultError(err.Error()), nil
 	}
 
-	kept, filtered := s.filterHits(ctx, hits, fKinds, offset+limit)
+	kept, filtered, exhausted := s.filterHits(ctx, hits, fKinds, module, offset+limit)
 	if minScore > 0 {
 		kept = slices.DeleteFunc(kept, func(h SearchHit) bool { return h.Score < minScore })
 	}
@@ -141,8 +137,12 @@ func (s *Server) catalogSearch(ctx context.Context, req mcp.CallToolRequest) (*m
 	}
 	return toolResultJSON(SearchResultPage{
 		Items: page, Limit: limit, Offset: start,
-		HasMore: end < len(kept), Filtered: filtered,
-		Lexical: reason != "", LexicalReason: reason,
+		// Unverified candidates left over count as more: the next page may
+		// still come back empty, which ends the walk honestly, whereas a false
+		// "no more" ends it early and silently.
+		HasMore:  end < len(kept) || !exhausted,
+		Filtered: filtered,
+		Lexical:  reason != "", LexicalReason: reason,
 	}), nil
 }
 
@@ -294,6 +294,12 @@ func distanceToScore(d float64) float64 {
 // inModule scopes a hit to a module SUBTREE. "" is the root module, and every
 // other module is a submodule of it, so scoping by "" is the whole tree —
 // stated here rather than left to the caller's nil-check.
+//
+// A FIELD hit cannot be scoped here: the index has no module for a field
+// (entity_fields carries none — a field belongs to whatever module owns its
+// data object), so its Module is empty until enrichField reads it off the
+// owner. Scoping it at this point would drop every field hit the moment a
+// module is given. inModuleSubtree does the same test after enrichment.
 func inModule(h SearchHit, module string) bool {
 	if module == "" {
 		return true
@@ -303,8 +309,15 @@ func inModule(h SearchHit, module string) bool {
 		return h.Name == module || strings.HasPrefix(h.Name, module+".")
 	case kindDataSource:
 		return true // a source is not module-scoped; leave it to the caller
+	case kindField:
+		return true // deferred: the module comes from the owner object
 	}
-	return h.Module == module || strings.HasPrefix(h.Module, module+".")
+	return inModuleSubtree(h.Module, module)
+}
+
+// inModuleSubtree reports whether owner is module or one of its submodules.
+func inModuleSubtree(owner, module string) bool {
+	return owner == module || strings.HasPrefix(owner, module+".")
 }
 
 // filterHits is what makes the privileged read safe: every candidate is
@@ -318,22 +331,35 @@ func inModule(h SearchHit, module string) bool {
 // Candidates are verified in ranked order, a chunk at a time, and the walk
 // stops as soon as the page is full — a role that may see everything pays for
 // one chunk, not for the whole overfetched window.
-func (s *Server) filterHits(ctx context.Context, hits []SearchHit, fKinds []string, need int) ([]SearchHit, int) {
-	kept := make([]SearchHit, 0, min(need, len(hits)))
-	filtered := 0
-	for start := 0; start < len(hits) && len(kept) < need; start += verifyChunk {
+//
+// The count it returns is DENIALS only. Narrowing the caller asked for
+// (field_kinds, module) drops hits too, but reporting those as filtered_out
+// would read as "there is data here you may not see" — the opposite of what
+// happened.
+//
+// It also reports whether the candidate list was EXHAUSTED. Stopping early
+// leaves unverified candidates behind, and a page that happens to end exactly
+// on the last verified hit would otherwise claim there is nothing more.
+func (s *Server) filterHits(ctx context.Context, hits []SearchHit, fKinds []string, module string, need int) (
+	kept []SearchHit, filtered int, exhausted bool,
+) {
+	kept = make([]SearchHit, 0, min(need, len(hits)))
+	start := 0
+	for ; start < len(hits) && len(kept) < need; start += verifyChunk {
 		chunk := hits[start:min(start+verifyChunk, len(hits))]
-		survived, err := s.verifyChunk(ctx, chunk, fKinds)
+		survived, denied, err := s.verifyChunk(ctx, chunk, fKinds, module)
 		if err != nil {
-			// A verification failure must not become an unfiltered answer.
+			// A verification failure must not become an unfiltered answer. It
+			// counts as filtered: the answer IS short, and silently pretending
+			// otherwise is what the count exists to prevent.
 			slog.Warn("MCP catalog-search: verification failed, dropping the chunk", "error", err)
 			filtered += len(chunk)
 			continue
 		}
-		filtered += len(chunk) - len(survived)
+		filtered += denied
 		kept = append(kept, survived...)
 	}
-	return kept, filtered
+	return kept, filtered, start >= len(hits)
 }
 
 // verifyChunk is the batch: one aliased meta query per chunk, in the caller's
@@ -360,6 +386,13 @@ type verifyObject struct {
 		Name       string      `json:"name"`
 		McpExclude bool        `json:"mcp_exclude"`
 		Type       *gqlTypeRef `json:"type"`
+		// Args is selected for ONE reason: a field that takes arguments is
+		// computed, and that is what tells an extra field from a column. The
+		// classifier is shared with catalog-object_fields, so both surfaces
+		// must feed it the same inputs.
+		Args []struct {
+			Name string `json:"name"`
+		} `json:"args"`
 	} `json:"fields"`
 	Relations []struct {
 		FieldName  string `json:"fieldName"`
@@ -369,7 +402,19 @@ type verifyObject struct {
 	} `json:"relations"`
 }
 
-func (s *Server) verifyChunk(ctx context.Context, hits []SearchHit, fKinds []string) ([]SearchHit, error) {
+// verdict is why a candidate did or did not make the page. Denied and
+// narrowed are counted differently — see filterHits.
+type verdict int
+
+const (
+	verdictKept verdict = iota
+	// verdictDenied — the engine did not serve it to this caller.
+	verdictDenied
+	// verdictNarrowed — the caller's own field_kinds/module scoping removed it.
+	verdictNarrowed
+)
+
+func (s *Server) verifyChunk(ctx context.Context, hits []SearchHit, fKinds []string, module string) ([]SearchHit, int, error) {
 	var sig, body strings.Builder
 	vars := map[string]any{}
 	// Field hits are verified through their OWNER object, deduplicated: many
@@ -401,18 +446,18 @@ func (s *Server) verifyChunk(ctx context.Context, hits []SearchHit, fKinds []str
 				continue
 			}
 			owners[hit.Object] = i
-			fmt.Fprintf(&body, "h%d: _dataObject(name: %s) { name moduleName fields { name mcp_exclude %s } relations { fieldName dataObject { name } } }\n",
+			fmt.Fprintf(&body, "h%d: _dataObject(name: %s) { name moduleName fields { name mcp_exclude args { name } %s } relations { fieldName dataObject { name } } }\n",
 				i, arg(hit.Object), typeRefSelection)
 		}
 	}
 	if body.Len() == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 
 	batch := map[string]json.RawMessage{}
 	gql := "query(" + sig.String() + ") {\n" + body.String() + "}"
 	if err := s.queryScan(ctx, gql, vars, "", &batch); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	objects := map[string]*verifyObject{}
@@ -429,76 +474,112 @@ func (s *Server) verifyChunk(ctx context.Context, hits []SearchHit, fKinds []str
 	}
 
 	out := make([]SearchHit, 0, len(hits))
+	denied := 0
 	for i, hit := range hits {
 		if hit.Kind == kindField {
-			enriched, ok := enrichField(hit, objects[hit.Object], fKinds)
-			if !ok {
-				continue
+			enriched, v := enrichField(hit, objects[hit.Object], fKinds, module)
+			switch v {
+			case verdictDenied:
+				denied++
+			case verdictKept:
+				out = append(out, enriched)
 			}
-			out = append(out, enriched)
 			continue
 		}
 		raw, ok := batch[fmt.Sprintf("h%d", i)]
 		if !ok || len(raw) == 0 || string(raw) == "null" {
+			denied++
 			continue
 		}
 		if hit.Kind == kindModule {
 			var mod verifyModule
 			if err := json.Unmarshal(raw, &mod); err != nil {
+				denied++
 				continue
 			}
 			// A direct module lookup resolves even when everything inside is
 			// hidden — listings are what omit empty modules. Ask the engine
 			// for the contents and treat "nothing visible" as invisible.
 			if len(mod.DataObjects)+len(mod.Functions)+len(mod.Modules) == 0 {
+				denied++
 				continue
 			}
 		}
 		out = append(out, withNextCall(hit))
 	}
-	return out, nil
+	return out, denied, nil
 }
 
 // enrichField turns a raw field hit into a readable one — or drops it when the
 // owner is invisible, the field is not in the object the caller sees (which
-// covers @exclude_mcp and field-level rules alike), or its kind was filtered out.
-func enrichField(hit SearchHit, obj *verifyObject, fKinds []string) (SearchHit, bool) {
+// covers @exclude_mcp and field-level rules alike), or the caller's own
+// narrowing removed it.
+//
+// This is also where a field hit finally gets a MODULE: the index has none,
+// because a field belongs to whatever module owns its data object. So the
+// module scope is applied here rather than at ranking time.
+func enrichField(hit SearchHit, obj *verifyObject, fKinds []string, module string) (SearchHit, verdict) {
 	if obj == nil {
-		return hit, false
+		return hit, verdictDenied
 	}
 	var found bool
+	var args int
 	for _, f := range obj.Fields {
 		if f.Name != hit.Name {
 			continue
 		}
 		if f.McpExclude {
-			return hit, false
+			return hit, verdictDenied
 		}
 		found = true
 		hit.HugrType = f.Type.String()
+		args = len(f.Args)
 		break
 	}
 	if !found {
-		return hit, false
+		return hit, verdictDenied
 	}
 	hit.Module = obj.ModuleName
-	hit.FieldKind = fieldKindColumn
 	for _, r := range obj.Relations {
 		if r.FieldName == hit.Name && r.DataObject != nil {
-			hit.FieldKind = fieldKindRelation
 			hit.RefObject = r.DataObject.Name
 			break
 		}
 	}
-	if hit.FieldKind == fieldKindColumn && strings.HasPrefix(hit.HugrType, "[") {
-		// A list-typed field that is not a declared relation is a computed
-		// or joined extra rather than a stored column.
-		hit.FieldKind = fieldKindExtra
+	hit.FieldKind = classifyFieldKind(hit.HugrType, args, hit.RefObject != "")
+
+	if module != "" && !inModuleSubtree(hit.Module, module) {
+		return hit, verdictNarrowed
 	}
 	if !slices.Contains(fKinds, hit.FieldKind) {
-		return hit, false
+		return hit, verdictNarrowed
 	}
-	return withNextCall(hit), true
+	return withNextCall(hit), verdictKept
+}
+
+// classifyFieldKind is the ONE classifier both field surfaces use, so the same
+// field never comes back as a column from search and an extra from
+// catalog-object_fields.
+//
+// A declared relation is a PATH. Anything that takes ARGUMENTS is computed —
+// a @function_call or @table_function_call_join field, an aggregation — and so
+// is a list-typed field that is not a relation. Everything else is a stored
+// value.
+//
+// Note for the entity storage: generated members (the _aggregation fields,
+// _join) are not in catalog.fields and therefore never in the vector index, so
+// search can only ever hit a stored column, a declared virtual field or a
+// relation leg. The classifier still has to agree on all of them, because
+// catalog-object_fields walks the COMPILED type, where the generated members
+// are present.
+func classifyFieldKind(hugrType string, args int, isRelation bool) string {
+	switch {
+	case isRelation:
+		return fieldKindRelation
+	case args > 0 || strings.HasPrefix(hugrType, "["):
+		return fieldKindExtra
+	}
+	return fieldKindColumn
 }
 
 // withNextCall names the rung that turns a hit into something callable.

@@ -180,7 +180,8 @@ type metaDescribedObject struct {
 		} `json:"through"`
 	} `json:"relations"`
 	Fields []struct {
-		Name string `json:"name"`
+		Name       string `json:"name"`
+		McpExclude bool   `json:"mcp_exclude"`
 	} `json:"fields"`
 }
 
@@ -225,7 +226,7 @@ const describeObjectSelection = `name type description longDescription moduleNam
 	args { name description ` + typeRefSelection + ` }
 	queries { name type rootTypeName args { name ` + typeRefSelection + ` } }
 	relations { name direction kind fieldName dataObject { name } through { name } }
-	fields { name }`
+	fields { name mcp_exclude }`
 
 const describeFunctionSelection = `name type description longDescription moduleName dataSourceName isTable
 	args { name description ` + typeRefSelection + ` }
@@ -250,11 +251,8 @@ func (s *Server) catalogDescribe(ctx context.Context, req mcp.CallToolRequest) (
 	}
 	module := req.GetString("module", "")
 	rel := pageArgs{
-		limit:  req.GetInt("relations_limit", defaultRelationsLimit),
+		limit:  clampLimit(req.GetInt("relations_limit", defaultRelationsLimit), defaultRelationsLimit),
 		offset: max(0, req.GetInt("relations_offset", 0)),
-	}
-	if rel.limit <= 0 || rel.limit > maxPageLimit {
-		rel.limit = min(maxPageLimit, max(1, rel.limit))
 	}
 
 	res, err := s.describe(ctx, kind, module, names, rel)
@@ -276,26 +274,24 @@ type pageArgs struct {
 func (s *Server) describe(ctx context.Context, kind, module string, names []string, rel pageArgs) (*DescribeResult, error) {
 	var (
 		sel     string
-		root    string
 		perName func(i int) string
 	)
 	vars := map[string]any{}
 	switch kind {
 	case kindDataObject:
-		sel, root = describeObjectSelection, "_dataObject"
+		sel = describeObjectSelection
 		perName = func(i int) string { return fmt.Sprintf("_dataObject(name: $n%d)", i) }
 	case kindFunction:
-		sel, root = describeFunctionSelection, "_function"
+		sel = describeFunctionSelection
 		vars["m"] = module
 		perName = func(i int) string { return fmt.Sprintf("_function(module: $m, name: $n%d)", i) }
 	case kindModule:
-		sel, root = describeModuleSelection, "_module"
+		sel = describeModuleSelection
 		perName = func(i int) string { return fmt.Sprintf("_module(name: $n%d)", i) }
 	case kindDataSource:
-		sel, root = describeDataSourceSelection, "_dataSource"
+		sel = describeDataSourceSelection
 		perName = func(i int) string { return fmt.Sprintf("_dataSource(name: $n%d)", i) }
 	}
-	_ = root
 
 	var sig, body strings.Builder
 	for i, name := range names {
@@ -364,7 +360,10 @@ func describeObject(o *metaDescribedObject, rel pageArgs) CatalogDescription {
 		Description: o.Description, LongDescription: o.LongDescription,
 		Module: o.ModuleName, DataSource: o.DataSourceName, DataSources: o.DataSources,
 		PrimaryKey: o.PrimaryKey, Args: describedArgs(o.Args),
-		FieldsCount: len(o.Fields),
+		// Counted the way catalog-object_fields LISTS them: an @exclude_mcp
+		// field and a synthetic placeholder are not fields an agent can ask
+		// for, and a count the next call cannot reproduce is worse than none.
+		FieldsCount: countListableFields(o),
 		Properties: &ObjectProperties{
 			IsCube: o.Properties.IsCube, IsM2M: o.Properties.IsM2M,
 			IsHypertable: o.Properties.IsHypertable, SoftDelete: o.Properties.SoftDelete,
@@ -392,6 +391,17 @@ func describeObject(o *metaDescribedObject, rel pageArgs) CatalogDescription {
 		d.Relations = append(d.Relations, entry)
 	}
 	return d
+}
+
+func countListableFields(o *metaDescribedObject) int {
+	n := 0
+	for _, f := range o.Fields {
+		if f.McpExclude || isPlaceholderField(f.Name) {
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 func describeFunction(f *metaDescribedFunction) CatalogDescription {

@@ -219,7 +219,7 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 			// GraphQL spec requires INPUT_OBJECT types to have at least one field.
 			if len(res) == 0 {
 				placeholder := &ast.FieldDefinition{
-					Name: "_placeholder",
+					Name: base.PlaceholderFieldName,
 					Type: ast.NamedType("Boolean", &ast.Position{}),
 				}
 				data, err := inputValueResolver(ctx, provider, placeholder, field.SelectionSet, maxDepth-1)
@@ -532,7 +532,7 @@ func objectFieldsResolver(ctx context.Context, provider catalog.Provider, def *a
 	// Add a placeholder when all fields were filtered out or the type is empty.
 	if len(res) == 0 {
 		placeholder := &ast.FieldDefinition{
-			Name: "_placeholder",
+			Name: base.PlaceholderFieldName,
 			Type: ast.NamedType("Boolean", &ast.Position{}),
 		}
 		data, err := fieldResolver(ctx, provider, placeholder, field.SelectionSet, maxDepth-1)
@@ -572,7 +572,7 @@ func introspectionFieldVisible(ctx context.Context, provider catalog.Provider, d
 // isPlaceholderField returns true for stub/placeholder field names used as
 // parser placeholders in shared system types.
 func isPlaceholderField(name string) bool {
-	return name == "_stub" || name == "_placeholder"
+	return name == base.StubFieldName || name == base.PlaceholderFieldName
 }
 
 // isArgServerInjected returns true if the argument or input field is marked

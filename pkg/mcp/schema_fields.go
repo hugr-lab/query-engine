@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -106,15 +107,15 @@ func (s *Server) catalogObjectFields(ctx context.Context, req mcp.CallToolReques
 	limit, offset := pageArgsOf(req)
 
 	var node metaObjectFieldsNode
-	err := s.queryScan(ctx, `query($n: String!) { _dataObject(name: $n) {
+	found, err := s.queryScanLookup(ctx, `query($n: String!) { obj: _dataObject(name: $n) {
 		name primaryKey
 		fields { name description mcp_exclude `+typeRefSelection+` args { name } }
 		relations { fieldName dataObject { name } }
-	} }`, map[string]any{"n": object}, "_dataObject", &node)
+	} }`, map[string]any{"n": object}, "obj", &node)
 	if err != nil {
 		return toolResultError(err.Error()), nil
 	}
-	if node.Name == "" {
+	if !found {
 		return toolResultError(fmt.Sprintf("data object %q not found, or not visible to you", object)), nil
 	}
 
@@ -127,7 +128,7 @@ func (s *Server) catalogObjectFields(ctx context.Context, req mcp.CallToolReques
 
 	items := make([]TypeField, 0, len(node.Fields))
 	for _, f := range node.Fields {
-		if f.McpExclude {
+		if f.McpExclude || isPlaceholderField(f.Name) {
 			continue
 		}
 		if prefix != "" && !strings.HasPrefix(strings.ToLower(f.Name), prefix) {
@@ -140,13 +141,8 @@ func (s *Server) catalogObjectFields(ctx context.Context, req mcp.CallToolReques
 		if includeDesc {
 			item.Description = f.Description
 		}
-		if ref, ok := refByField[f.Name]; ok {
-			item.FieldKind, item.RefObject = fieldKindRelation, ref
-		} else if len(f.Args) > 0 || strings.HasPrefix(item.Type, "[") {
-			item.FieldKind = fieldKindExtra
-		} else {
-			item.FieldKind = fieldKindColumn
-		}
+		item.RefObject = refByField[f.Name]
+		item.FieldKind = classifyFieldKind(item.Type, len(f.Args), item.RefObject != "")
 		items = append(items, item)
 	}
 
@@ -204,21 +200,24 @@ func (s *Server) schemaTypeFields(ctx context.Context, req mcp.CallToolRequest) 
 	limit, offset := pageArgsOf(req)
 
 	var node metaTypeFieldsNode
-	err := s.queryScan(ctx, `query($n: String!) { __type(name: $n) {
+	found, err := s.queryScanLookup(ctx, `query($n: String!) { t: __type(name: $n) {
 		name kind
 		fields { name description mcp_exclude `+typeRefSelection+` args { name } }
 		inputFields { name description `+typeRefSelection+` }
-	} }`, map[string]any{"n": typeName}, "__type", &node)
+	} }`, map[string]any{"n": typeName}, "t", &node)
 	if err != nil {
 		return toolResultError(err.Error()), nil
 	}
-	if node.Name == "" {
+	if !found {
 		return toolResultError(fmt.Sprintf("type %q not found, or not visible to you", typeName)), nil
 	}
 
 	items := []TypeField{}
 	add := func(name, desc, typ string, args int) {
 		if prefix != "" && !strings.HasPrefix(strings.ToLower(name), prefix) {
+			return
+		}
+		if isPlaceholderField(name) {
 			return
 		}
 		f := TypeField{Name: name, Type: typ, ArgsCount: args}
@@ -260,13 +259,13 @@ func (s *Server) schemaFieldArgs(ctx context.Context, req mcp.CallToolRequest) (
 			Args []metaInputValue `json:"args"`
 		} `json:"fields"`
 	}
-	err := s.queryScan(ctx, `query($n: String!) { __type(name: $n) {
+	found, err := s.queryScanLookup(ctx, `query($n: String!) { t: __type(name: $n) {
 		name fields { name args { name description `+typeRefSelection+` } }
-	} }`, map[string]any{"n": typeName}, "__type", &node)
+	} }`, map[string]any{"n": typeName}, "t", &node)
 	if err != nil {
 		return toolResultError(err.Error()), nil
 	}
-	if node.Name == "" {
+	if !found {
 		return toolResultError(fmt.Sprintf("type %q not found, or not visible to you", typeName)), nil
 	}
 
@@ -305,13 +304,13 @@ func (s *Server) schemaEnumValues(ctx context.Context, req mcp.CallToolRequest) 
 			DeprecationReason string `json:"deprecationReason"`
 		} `json:"enumValues"`
 	}
-	err := s.queryScan(ctx, `query($n: String!) { __type(name: $n) {
+	found, err := s.queryScanLookup(ctx, `query($n: String!) { t: __type(name: $n) {
 		name kind enumValues { name description isDeprecated }
-	} }`, map[string]any{"n": typeName}, "__type", &node)
+	} }`, map[string]any{"n": typeName}, "t", &node)
 	if err != nil {
 		return toolResultError(err.Error()), nil
 	}
-	if node.Name == "" {
+	if !found {
 		return toolResultError(fmt.Sprintf("type %q not found, or not visible to you", typeName)), nil
 	}
 	if node.Kind != "ENUM" {
@@ -328,11 +327,29 @@ func (s *Server) schemaEnumValues(ctx context.Context, req mcp.CallToolRequest) 
 	return toolResultJSON(paginate(items, limit, offset, false)), nil
 }
 
+// isPlaceholderField reports the synthetic members introspection injects to
+// keep a type from having zero fields (pkg/metadata). A type whose every real
+// field the caller may not see comes back carrying only those — listing them
+// would offer an agent a field that cannot be selected.
+func isPlaceholderField(name string) bool {
+	return name == base.StubFieldName || name == base.PlaceholderFieldName
+}
+
 // pageArgsOf reads the shared pagination arguments, clamped to the hard cap.
 func pageArgsOf(req mcp.CallToolRequest) (limit, offset int) {
-	limit = req.GetInt("limit", defaultPageLimit)
-	if limit <= 0 || limit > maxPageLimit {
-		limit = min(maxPageLimit, max(1, limit))
+	return clampLimit(req.GetInt("limit", defaultPageLimit), defaultPageLimit),
+		max(0, req.GetInt("offset", 0))
+}
+
+// clampLimit bounds a requested page size. A non-positive limit reads as
+// "unspecified" and takes the default: clamping it to 1 would answer a
+// one-item page to a caller who passed 0 meaning "no opinion".
+func clampLimit(n, def int) int {
+	switch {
+	case n <= 0:
+		return def
+	case n > maxPageLimit:
+		return maxPageLimit
 	}
-	return limit, max(0, req.GetInt("offset", 0))
+	return n
 }
