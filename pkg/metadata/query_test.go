@@ -8,7 +8,6 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
-	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 
 	_ "embed"
@@ -18,11 +17,7 @@ import (
 var testSchemaData string
 
 func TestProcessQuery(t *testing.T) {
-	provider, err := static.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	ss := catalog.NewService(provider)
+	ss := catalog.NewService(newStoreProvider(t))
 	e := &engines.DuckDB{}
 	cat, err := sources.NewStringSource("test", e, compiler.Options{
 		Name:         "test",

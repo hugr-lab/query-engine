@@ -6,11 +6,13 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
-	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	catalogstore "github.com/hugr-lab/query-engine/pkg/catalog/store"
+	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
+	"github.com/hugr-lab/query-engine/pkg/db"
+	"github.com/hugr-lab/query-engine/pkg/engines"
 )
 
 const testSchemaData = `
@@ -57,18 +59,21 @@ const testSchemaData = `
 	}
 `
 
+// Type names collide with testSchemaData on purpose — the prefix disambiguates
+// them. Function FIELD names are not prefixed, and a root function name is one
+// GraphQL root field, so they carry the prefix by hand.
 const testPGSchemaData = `
 	extend type Function {
-		func_scalar_string(arg1: String, arg2:Int): String
+		pg_func_scalar_string(arg1: String, arg2:Int): String
 			@function(name: "test_pg_func_scalar_string")
 
-		func_scalar_array(arg1: Int, arg2:Int): [Int]
+		pg_func_scalar_array(arg1: Int, arg2:Int): [Int]
 			@function(name: "func_scalar_int", sql: "func_scalar_int(0, [arg1], [arg2])")
 
-		func_scalar_object(arg1: Int, arg2:Int): test_object
+		pg_func_scalar_object(arg1: Int, arg2:Int): test_object
 			@function(name: "func_scalar_object", sql: "func_scalar_object(0, [arg1], [arg2])")
 
-		func_table_object(arg1: Int, arg2:Int): [test_object]
+		pg_func_table_object(arg1: Int, arg2:Int): [test_object]
 			@function(name: "func_table_object", sql: "func_table_object(0, [arg1], [arg2])")
 	}
 
@@ -95,9 +100,9 @@ const testPGSchemaData = `
 		field2: Int
 		nested_field: test_object
 		nested_array_field: [nested_object2]
-		field_func_call(arg1: String, arg2:Int): String @function_call(references_name: "func_scalar_string")
-		field_func_call_fields: [Int] @function_call(references_name: "func_scalar_array", args: {arg1: "field2", arg2: "field2"})
-		func_table_object(arg2:Int): [test_object] @function_call(references_name: "func_table_object", args: {arg1: "field2"})
+		field_func_call(arg1: String, arg2:Int): String @function_call(references_name: "pg_func_scalar_string")
+		field_func_call_fields: [Int] @function_call(references_name: "pg_func_scalar_array", args: {arg1: "field2", arg2: "field2"})
+		pg_func_table_object(arg2:Int): [test_object] @function_call(references_name: "pg_func_table_object", args: {arg1: "field2"})
 	}
 `
 
@@ -107,9 +112,22 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	provider, err := static.New()
+	// The entity catalog storage over a fresh in-memory CoreDB: it is both the
+	// Provider and the CatalogManager, so AddCatalog below runs the real write
+	// path — the storage is what compiles a schema.
+	ctx := context.Background()
+	pool, err := db.NewPool("")
 	if err != nil {
-		fmt.Printf("Failed to init static provider: %v", err)
+		fmt.Printf("Failed to open pool: %v", err)
+		os.Exit(1)
+	}
+	if err = coredb.New(coredb.Config{VectorSize: 8}).Attach(ctx, pool); err != nil {
+		fmt.Printf("Failed to attach CoreDB: %v", err)
+		os.Exit(1)
+	}
+	provider, err := catalogstore.New(ctx, pool, catalogstore.Config{VecSize: 8}, nil)
+	if err != nil {
+		fmt.Printf("Failed to init catalog store: %v", err)
 		os.Exit(1)
 	}
 	ss := catalog.NewService(provider)
@@ -150,5 +168,7 @@ func TestMain(m *testing.M) {
 	testSchemaService = ss
 	testService = New(ss, nil)
 
-	os.Exit(m.Run())
+	code := m.Run()
+	pool.Close()
+	os.Exit(code)
 }

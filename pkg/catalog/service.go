@@ -2,14 +2,22 @@ package catalog
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"sync"
 
-	"github.com/hugr-lab/query-engine/pkg/engines"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/validator"
 	"github.com/hugr-lab/query-engine/pkg/catalog/validator/rules"
+	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/vektah/gqlparser/v2/ast"
+)
+
+var (
+	ErrCatalogNotFound = errors.New("catalog not found")
+	// ErrCatalogNotManaged is returned by the lifecycle methods when the
+	// Service sits over a provider that is not a CatalogManager — a static
+	// schema, or a read-only view of one someone else writes.
+	ErrCatalogNotManaged = errors.New("catalog provider does not manage catalogs")
 )
 
 // Service holds dependencies for query parsing: Provider, Validator, VariableTransformer.
@@ -42,11 +50,13 @@ func WithServiceVarTransformer(t VariableTransformer) ServiceOption {
 }
 
 // NewService creates a Service with the given provider and options.
+//
+// The provider doubles as the catalog manager when it is one — the catalog
+// storage is. Over a provider that is not (a static schema in a test, a
+// cluster worker's read-only view), the lifecycle methods report
+// ErrCatalogNotManaged and everything on the read path works unchanged.
 func NewService(p Provider, opts ...ServiceOption) *Service {
-	m, ok := p.(CatalogManager)
-	if !ok {
-		m = newMemoryCatalogManager(p, compiler.New(compiler.GlobalRules()...))
-	}
+	m, _ := p.(CatalogManager)
 	s := &Service{
 		provider: p,
 		manager:  m,
@@ -81,9 +91,6 @@ func (s *Service) SetProvider(p Provider) {
 	defer s.mu.Unlock()
 
 	s.provider = p
-	if m, ok := s.manager.(*memoryCatalog); ok {
-		m.SetProvider(p)
-	}
 }
 
 // Provider returns the current Provider.
@@ -172,6 +179,9 @@ func (s *Service) AddCatalog(ctx context.Context, name string, catalog Catalog) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.manager == nil {
+		return ErrCatalogNotManaged
+	}
 	s.engines[name] = catalog.Engine()
 	return s.manager.AddCatalog(ctx, name, catalog)
 }
@@ -202,13 +212,16 @@ func (s *Service) ExistsCatalog(name string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return s.manager.ExistsCatalog(name)
+	return s.manager != nil && s.manager.ExistsCatalog(name)
 }
 
 func (s *Service) ReloadCatalog(ctx context.Context, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.manager == nil {
+		return ErrCatalogNotManaged
+	}
 	return s.manager.ReloadCatalog(ctx, name)
 }
 
@@ -216,6 +229,9 @@ func (s *Service) SuspendCatalog(ctx context.Context, name string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.manager == nil {
+		return ErrCatalogNotManaged
+	}
 	return s.manager.SuspendCatalog(ctx, name)
 }
 
@@ -223,6 +239,9 @@ func (s *Service) ReactivateCatalog(ctx context.Context, name string, catalog Ca
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.manager == nil {
+		return ErrCatalogNotManaged
+	}
 	return s.manager.ReactivateCatalog(ctx, name, catalog)
 }
 
@@ -230,7 +249,7 @@ func (s *Service) IsSuspended(name string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return s.manager.IsSuspended(name)
+	return s.manager != nil && s.manager.IsSuspended(name)
 }
 
 // Schema access

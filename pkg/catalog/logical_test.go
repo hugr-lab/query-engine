@@ -9,7 +9,9 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
-	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	catalogstore "github.com/hugr-lab/query-engine/pkg/catalog/store"
+	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 )
 
@@ -94,13 +96,30 @@ extend type Subscription {
 }
 `
 
-func newLogicalTestProvider(t *testing.T) catalog.Provider {
+// newStoreProvider spins the entity catalog storage over a fresh in-memory
+// CoreDB. It is both the Provider and the CatalogManager, so AddCatalog runs
+// the real write path — the storage is what compiles a schema.
+func newStoreProvider(t *testing.T) *catalogstore.Store {
 	t.Helper()
-	provider, err := static.New()
+	ctx := context.Background()
+	pool, err := db.NewPool("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ss := catalog.NewService(provider)
+	t.Cleanup(func() { pool.Close() })
+	if err := coredb.New(coredb.Config{VectorSize: 8}).Attach(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	store, err := catalogstore.New(ctx, pool, catalogstore.Config{VecSize: 8}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+func newLogicalTestProvider(t *testing.T) catalog.Provider {
+	t.Helper()
+	ss := catalog.NewService(newStoreProvider(t))
 	e := &engines.DuckDB{}
 	cat, err := sources.NewStringSource("test", e, compiler.Options{
 		Name:         "test",

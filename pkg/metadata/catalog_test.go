@@ -8,19 +8,38 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
-	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	catalogstore "github.com/hugr-lab/query-engine/pkg/catalog/store"
+	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-func newCatalogTestService(t *testing.T) *catalog.Service {
+// newStoreProvider spins the entity catalog storage over a fresh in-memory
+// CoreDB. It is both the Provider and the CatalogManager, so AddCatalog runs
+// the real write path — the storage is what compiles a schema.
+func newStoreProvider(t *testing.T) *catalogstore.Store {
 	t.Helper()
-	provider, err := static.New()
+	ctx := context.Background()
+	pool, err := db.NewPool("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ss := catalog.NewService(provider)
+	t.Cleanup(func() { pool.Close() })
+	if err := coredb.New(coredb.Config{VectorSize: 8}).Attach(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	store, err := catalogstore.New(ctx, pool, catalogstore.Config{VecSize: 8}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+func newCatalogTestService(t *testing.T) *catalog.Service {
+	t.Helper()
+	ss := catalog.NewService(newStoreProvider(t))
 	e := &engines.DuckDB{}
 	cat, err := sources.NewStringSource("test", e, compiler.Options{
 		Name:         "test",
@@ -423,11 +442,13 @@ func TestCatalogQuery_DataSources(t *testing.T) {
 	if !slices.Equal(mods, []string{"core", "events", "sales", "sales.reports"}) {
 		t.Errorf("modules = %v", mods)
 	}
-	// The compiled schema records no load-state flags — nil must not read as
-	// false, or an agent would take "not read-only" for a fact.
+	// The entity storage RECORDS the load-state flags, so they come back as
+	// facts rather than nulls. Their truthful value is asserted by
+	// TestCatalogQuery_DataSourceFlags — here they must merely be present, so
+	// a storage that forgot to record them cannot pass as "all false".
 	for _, f := range []string{"readOnly", "asModule", "isExtension"} {
-		if list[0][f] != nil {
-			t.Errorf("%s = %v on the compiled provider, want null (not recorded)", f, list[0][f])
+		if list[0][f] != false {
+			t.Errorf("%s = %v, want a recorded false", f, list[0][f])
 		}
 	}
 
@@ -442,15 +463,50 @@ func TestCatalogQuery_DataSources(t *testing.T) {
 	}
 }
 
+// TestCatalogQuery_DataSourceFlags pins that the flags carry the source's
+// declared load state, not a zero value: a read-only as-module source reports
+// readOnly and asModule true. Under the compiled-schema storage this could not
+// be asked at all — the walk adapter left all three nil.
+func TestCatalogQuery_DataSourceFlags(t *testing.T) {
+	ss := catalog.NewService(newStoreProvider(t))
+	e := &engines.DuckDB{}
+	cat, err := sources.NewStringSource("ro", e, compiler.Options{
+		Name:         "ro",
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+		ReadOnly:     true,
+		AsModule:     true,
+	}, `
+type widgets @table(name: "widgets") {
+  id: Int! @pk
+  label: String
+}
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = ss.AddCatalog(context.Background(), "ro", cat); err != nil {
+		t.Fatal(err)
+	}
+
+	list := runMetaQuery(t, ss, `{
+		_dataSources { name readOnly asModule isExtension }
+	}`)["_dataSources"].([]map[string]any)
+	if len(list) != 1 {
+		t.Fatalf("_dataSources = %v, want the single 'ro' source", list)
+	}
+	for f, want := range map[string]bool{"readOnly": true, "asModule": true, "isExtension": false} {
+		if list[0][f] != want {
+			t.Errorf("%s = %v, want %v", f, list[0][f], want)
+		}
+	}
+}
+
 // TestCatalogQuery_DataSourceVisibility uses a second, single-object source so
 // the "contributes nothing visible" branch can be exercised by hiding ONE
 // object — the rule is per source, not per deployment.
 func TestCatalogQuery_DataSourceVisibility(t *testing.T) {
-	provider, err := static.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	ss := catalog.NewService(provider)
+	ss := catalog.NewService(newStoreProvider(t))
 	e := &engines.DuckDB{}
 	add := func(name, data string) {
 		t.Helper()
