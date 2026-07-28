@@ -106,6 +106,19 @@ Use catalog-list when you want the complete map instead of the relevant few.`),
 		mcp.WithOutputSchema[SearchResultPage](),
 	), s.catalogSearch)
 
+	mcpServer.AddTool(mcp.NewTool("schema-describe_types",
+		mcp.WithDescription(`Identify bare TYPE names — the ones that turn up in an error message, in a field's type, or in an argument like shop_items_filter — when you do not yet know what they are.
+Answers what the name IS: kind (OBJECT / INPUT_OBJECT / ENUM / SCALAR / …), description and member COUNTS. Not the members: call schema-type_fields or schema-enum_values for those.
+It is also the router between the two tool families:
+- the name is a data object → logical_kind=data_object, and next_call points at catalog-describe.
+- the name was GENERATED from one (a filter, an aggregation, an insert/update input) → derived_from names the base object and 'role' says what the type is for, so you learn which object you are actually filtering.
+- the name is a module root type (_module_<mod>_query and friends) → logical_kind=module_root.
+Batched: pass every unknown name at once. Names that do not exist, and names you may not see, both come back in not_found.`),
+		mcp.WithArray("names", mcp.Required(), mcp.Description("Type names, copied verbatim"),
+			mcp.Items(map[string]any{"type": "string"})),
+		mcp.WithOutputSchema[TypeDescriptions](),
+	), s.schemaDescribeTypes)
+
 	// Discovery tools.
 	mcpServer.AddTool(mcp.NewTool("discovery-search_modules",
 		mcp.WithDescription(`Search modules by natural language. Returns top-K modules ranked by semantic relevance.

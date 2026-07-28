@@ -578,3 +578,120 @@ func TestCatalogSearch_ModuleScope(t *testing.T) {
 		assert.True(t, hit.Module == "core" || strings.HasPrefix(hit.Module, "core."), "got %q", hit.Module)
 	}
 }
+
+// --- schema-describe_types ---
+
+type typeDescriptions struct {
+	Items []struct {
+		Name             string `json:"name"`
+		Kind             string `json:"kind"`
+		Description      string `json:"description"`
+		FieldsCount      int    `json:"fields_count"`
+		InputFieldsCount int    `json:"input_fields_count"`
+		EnumValuesCount  int    `json:"enum_values_count"`
+		LogicalKind      string `json:"logical_kind"`
+		Module           string `json:"module"`
+		DerivedFrom      string `json:"derived_from"`
+		Role             string `json:"role"`
+		NextCall         string `json:"next_call"`
+	} `json:"items"`
+	NotFound []string `json:"not_found"`
+}
+
+func describeTypes(t *testing.T, h http.Handler, names ...string) typeDescriptions {
+	t.Helper()
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "schema-describe_types",
+		"arguments": map[string]any{"names": names},
+	})
+	require.Contains(t, resp, "result", "response: %v", resp)
+	result := resp["result"].(map[string]any)
+	require.NotEqual(t, true, result["isError"], "tool error: %v", result["content"])
+	var out typeDescriptions
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	require.NoError(t, json.Unmarshal([]byte(text), &out), "payload: %s", text)
+	return out
+}
+
+// TestSchemaDescribeTypes_Routing is the reason the tool exists: a bare name
+// must lead somewhere. A data object routes to catalog-describe; a type
+// GENERATED from one names the object it was generated from, which is the
+// question an agent staring at "core_data_sources_filter" actually has.
+func TestSchemaDescribeTypes_Routing(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	res := describeTypes(t, h,
+		"core_data_sources",
+		"core_data_sources_filter",
+		"_core_data_sources_aggregation",
+		"_module_core_query",
+		"no_such_type",
+	)
+	require.Equal(t, []string{"no_such_type"}, res.NotFound)
+	require.Len(t, res.Items, 4)
+
+	byName := map[string]int{}
+	for i, it := range res.Items {
+		byName[it.Name] = i
+	}
+
+	obj := res.Items[byName["core_data_sources"]]
+	assert.Equal(t, "OBJECT", obj.Kind)
+	assert.Equal(t, "data_object", obj.LogicalKind)
+	assert.Equal(t, "core", obj.Module)
+	assert.Positive(t, obj.FieldsCount, "counts, not members")
+	assert.Contains(t, obj.NextCall, "catalog-describe")
+
+	filter := res.Items[byName["core_data_sources_filter"]]
+	assert.Equal(t, "INPUT_OBJECT", filter.Kind)
+	assert.Empty(t, filter.LogicalKind, "a filter is not itself a logical entity")
+	assert.Equal(t, "core_data_sources", filter.DerivedFrom,
+		"the agent is filtering THIS object — that is the fact it came for")
+	assert.Equal(t, "filter", filter.Role)
+	assert.Contains(t, filter.NextCall, "core_data_sources")
+
+	agg := res.Items[byName["_core_data_sources_aggregation"]]
+	assert.Equal(t, "core_data_sources", agg.DerivedFrom)
+	assert.Equal(t, "aggregation", agg.Role)
+
+	root := res.Items[byName["_module_core_query"]]
+	assert.Equal(t, "module_root", root.LogicalKind)
+	assert.Contains(t, root.NextCall, "catalog-list")
+}
+
+// TestSchemaDescribeTypes_NoFalseDerivation — the inverse mapping must not
+// invent a base object for a type that merely ends in a familiar suffix. The
+// round-trip through the compiler's own naming is what makes that safe.
+func TestSchemaDescribeTypes_NoFalseDerivation(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	// A scalar filter input is named like a filter but derives from nothing.
+	res := describeTypes(t, h, "StringFilter", "GeometryType")
+	require.Empty(t, res.NotFound, "the fixture must actually contain these types")
+	require.Len(t, res.Items, 2, "otherwise this test asserts nothing")
+	for _, it := range res.Items {
+		assert.Empty(t, it.DerivedFrom, "%s must not claim a base object", it.Name)
+		assert.Empty(t, it.LogicalKind, "%s is not a logical entity", it.Name)
+	}
+	for _, it := range res.Items {
+		if it.Kind == "ENUM" {
+			assert.Positive(t, it.EnumValuesCount)
+			assert.Contains(t, it.NextCall, "schema-enum_values")
+		}
+	}
+}
+
+// TestSchemaDescribeTypes_NoNames — the argument is required.
+func TestSchemaDescribeTypes_NoNames(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name":      "schema-describe_types",
+		"arguments": map[string]any{},
+	})
+	result := resp["result"].(map[string]any)
+	assert.Equal(t, true, result["isError"])
+}
