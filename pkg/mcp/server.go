@@ -202,7 +202,7 @@ Mutations mirror queries — modules are nested fields, the operation MUST start
     mutation { module { delete_<Object>(filter: {...}) { affected_rows } } }
 - mutation functions are nested under 'function':
     mutation { function { module { <mutation_func>(args) { ... } } } }
-Field names are <Object> with the catalog prefix; get the exact mutation field names, the data-input shape, and the filter shape from discovery-describe_data_objects / discovery-describe_functions (or schema-describe_fields) BEFORE calling. Prefer the 'variables' argument for the data payload. If the result is truncated, raise max_result_size or use jq_transform.`),
+Field names are <Object> with the catalog prefix. BEFORE calling: catalog-describe names the object and its module, schema-type_fields on the module's mutation root type gives the exact insert_/update_/delete_ field, and schema-type_fields on the data input and filter types gives their shape (schema-describe_types identifies a type name you do not recognise). Prefer the 'variables' argument for the data payload. If the result is truncated, raise max_result_size or use jq_transform.`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("GraphQL mutation (operation must start with 'mutation')")),
 		mcp.WithObject("variables", mcp.Description("Mutation variables (use for the data payload / filter)")),
 		mcp.WithString("jq_transform", mcp.Description("JQ expression to apply to result")),

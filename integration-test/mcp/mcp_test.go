@@ -350,8 +350,9 @@ func TestMCP_DocsNameOnlyRealTools(t *testing.T) {
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "1.0"},
 	})
+	tools := jsonRPC(t, h, "tools/list", nil)["result"].(map[string]any)["tools"].([]any)
 	registered := map[string]bool{}
-	for _, tool := range jsonRPC(t, h, "tools/list", nil)["result"].(map[string]any)["tools"].([]any) {
+	for _, tool := range tools {
 		registered[tool.(map[string]any)["name"].(string)] = true
 	}
 	require.NotEmpty(t, registered)
@@ -389,4 +390,29 @@ func TestMCP_DocsNameOnlyRealTools(t *testing.T) {
 		}
 	}
 	assert.Greater(t, seen, 20, "the prose must actually name tools — otherwise this test checks nothing")
+
+	// The tool descriptions route between tools too — and there the names are
+	// bare, so the check above never saw them. It missed a real one: after the
+	// legacy family was deleted, data-execute_mutation still sent the agent to
+	// discovery-describe_data_objects for the input shape. Bare matching is the
+	// price: a description may not spell ordinary English with these prefixes
+	// ("data-input shape" → "data input shape").
+	bareRef := regexp.MustCompile(`\b((?:catalog|schema|data|discovery)-[a-z_]+)`)
+	seen = 0
+	for _, tool := range tools {
+		tool := tool.(map[string]any)
+		name, _ := tool["name"].(string)
+		text, _ := tool["description"].(string)
+		if props, ok := tool["inputSchema"].(map[string]any)["properties"].(map[string]any); ok {
+			for arg, spec := range props {
+				d, _ := spec.(map[string]any)["description"].(string)
+				text += "\n" + arg + ": " + d
+			}
+		}
+		for _, m := range bareRef.FindAllStringSubmatch(text, -1) {
+			seen++
+			assert.True(t, registered[m[1]], "the description of %s references unregistered tool %q", name, m[1])
+		}
+	}
+	assert.Greater(t, seen, 12, "the descriptions must actually name tools — otherwise this test checks nothing")
 }
