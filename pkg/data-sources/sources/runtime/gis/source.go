@@ -3,7 +3,7 @@ package gis
 import (
 	"context"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -53,7 +53,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 
 func (s *Source) Catalog(ctx context.Context) (sources.Catalog, error) {
 	e := engines.NewDuckDB()
-	opts := compiler.Options{
+	opts := base.Options{
 		Name:         s.Name(),
 		Prefix:       "core_gis",
 		ReadOnly:     s.IsReadonly(),

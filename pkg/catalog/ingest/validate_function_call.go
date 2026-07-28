@@ -1,4 +1,4 @@
-package rules
+package ingest
 
 import (
 	"strings"
@@ -24,7 +24,7 @@ var _ base.BatchRule = (*FunctionCallValidator)(nil)
 // in-flight functions come from instead.
 type FunctionCallValidator struct{}
 
-func (r *FunctionCallValidator) Name() string     { return "FunctionCallValidator" }
+func (r *FunctionCallValidator) Name() string      { return "FunctionCallValidator" }
 func (r *FunctionCallValidator) Phase() base.Phase { return base.PhaseFinalize }
 
 func (r *FunctionCallValidator) ProcessAll(ctx base.CompilationContext) error {
@@ -302,7 +302,6 @@ func validateFuncCallField(ctx base.CompilationContext, def *ast.Definition, fie
 
 	return nil
 }
-
 
 // extractArgsMap extracts the args map from a function_call/table_function_call_join directive.
 // The args argument is an object value like: args: {code: "iata_code", radius: "distance"}

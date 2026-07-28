@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	catalogstore "github.com/hugr-lab/query-engine/pkg/catalog/store"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
@@ -41,7 +41,7 @@ func newCatalogTestService(t *testing.T) *catalog.Service {
 	t.Helper()
 	ss := catalog.NewService(newStoreProvider(t))
 	e := &engines.DuckDB{}
-	cat, err := sources.NewStringSource("test", e, compiler.Options{
+	cat, err := sources.NewStringSource("test", e, base.Options{
 		Name:         "test",
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
@@ -470,7 +470,7 @@ func TestCatalogQuery_DataSources(t *testing.T) {
 func TestCatalogQuery_DataSourceFlags(t *testing.T) {
 	ss := catalog.NewService(newStoreProvider(t))
 	e := &engines.DuckDB{}
-	cat, err := sources.NewStringSource("ro", e, compiler.Options{
+	cat, err := sources.NewStringSource("ro", e, base.Options{
 		Name:         "ro",
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
@@ -510,7 +510,7 @@ func TestCatalogQuery_DataSourceVisibility(t *testing.T) {
 	e := &engines.DuckDB{}
 	add := func(name, data string) {
 		t.Helper()
-		cat, err := sources.NewStringSource(name, e, compiler.Options{
+		cat, err := sources.NewStringSource(name, e, base.Options{
 			Name:         name,
 			EngineType:   string(e.Type()),
 			Capabilities: e.Capabilities(),

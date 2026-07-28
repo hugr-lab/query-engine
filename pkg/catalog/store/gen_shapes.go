@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -186,7 +185,7 @@ var selectShape = queryShape{
 			Name:        t.queryName(),
 			Description: t.row.Description,
 			Type:        ast.ListType(ast.NamedType(t.row.Name, reconPos), reconPos),
-			Arguments:   appendRootVectorArgs(t, rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
+			Arguments:   appendRootVectorArgs(t, QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
 			Directives:  ast.DirectiveList{rootQueryMarker(t, "SELECT"), t.rootCatalog()},
 			Position:    reconPos,
 		}}
@@ -244,7 +243,7 @@ var aggregateShape = queryShape{
 			Name:        qn + "_aggregation",
 			Description: "The aggregation for " + qn,
 			Type:        ast.NamedType("_"+t.row.Name+"_aggregation", reconPos),
-			Arguments:   appendRootVectorArgs(t, rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
+			Arguments:   appendRootVectorArgs(t, QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
 			Directives:  ast.DirectiveList{rootAggMarker(qn, false), t.rootCatalog()},
 			Position:    reconPos,
 		}}
@@ -264,7 +263,7 @@ var bucketAggShape = queryShape{
 			Name:        qn + "_bucket_aggregation",
 			Description: "The aggregation for " + qn,
 			Type:        ast.ListType(ast.NamedType("_"+t.row.Name+"_aggregation_bucket", reconPos), reconPos),
-			Arguments:   appendRootVectorArgs(t, rules.QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
+			Arguments:   appendRootVectorArgs(t, QueryArgsWithViewArgs(t.objInfo(), t.row.Name+filterSuffix, reconPos)),
 			Directives:  ast.DirectiveList{rootAggMarker(qn, true), t.rootCatalog()},
 			Position:    reconPos,
 		}}

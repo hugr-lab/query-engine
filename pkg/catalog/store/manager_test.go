@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	catsrc "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -93,7 +93,7 @@ func managerStoreEmbedded(t *testing.T, cfg Config, e Embedder) (*Store, context
 func stringCatalog(t *testing.T, name, schema string) *catsrc.StringSource {
 	t.Helper()
 	e := &engines.DuckDB{}
-	src, err := catsrc.NewStringSource(name, e, compiler.Options{
+	src, err := catsrc.NewStringSource(name, e, base.Options{
 		Name:         name,
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
@@ -106,7 +106,7 @@ func stringCatalog(t *testing.T, name, schema string) *catsrc.StringSource {
 func stringExtCatalog(t *testing.T, name, schema string) *catsrc.StringSource {
 	t.Helper()
 	e := &engines.DuckDB{}
-	src, err := catsrc.NewStringSource(name, e, compiler.Options{
+	src, err := catsrc.NewStringSource(name, e, base.Options{
 		Name:         name,
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),

@@ -1,6 +1,6 @@
 package engines
 
-import "github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+import "github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 
 // HTTP Engine is a query engine for HTTP data sources.
 
@@ -18,9 +18,9 @@ func (e *MssqlEngine) Type() Type {
 	return TypeMssql
 }
 
-func (e *MssqlEngine) Capabilities() *compiler.EngineCapabilities {
-	return &compiler.EngineCapabilities{
-		General: compiler.EngineGeneralCapabilities{
+func (e *MssqlEngine) Capabilities() *base.EngineCapabilities {
+	return &base.EngineCapabilities{
+		General: base.EngineGeneralCapabilities{
 			SupportDefaultSequences: false,
 			UnsupportedTypes: []string{
 				"IntRange", "BigIntRange", "TimestampRange",
@@ -29,15 +29,15 @@ func (e *MssqlEngine) Capabilities() *compiler.EngineCapabilities {
 			UnsupportStructuredTypes: true,
 			UnsupportArrays:          true,
 		},
-		Insert: compiler.EngineInsertCapabilities{
+		Insert: base.EngineInsertCapabilities{
 			Insert:           true,
 			Returning:        true,
 			InsertReferences: true,
 		},
-		Update: compiler.EngineUpdateCapabilities{
+		Update: base.EngineUpdateCapabilities{
 			Update: true,
 		},
-		Delete: compiler.EngineDeleteCapabilities{
+		Delete: base.EngineDeleteCapabilities{
 			Delete: true,
 		},
 	}

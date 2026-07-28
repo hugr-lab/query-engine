@@ -1,4 +1,4 @@
-package rules
+package ingest
 
 import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
@@ -24,7 +24,7 @@ var _ base.BatchRule = (*InternalExtensionMerger)(nil)
 // DefinitionRules (like FunctionRule) can process it.
 type InternalExtensionMerger struct{}
 
-func (r *InternalExtensionMerger) Name() string     { return "InternalExtensionMerger" }
+func (r *InternalExtensionMerger) Name() string      { return "InternalExtensionMerger" }
 func (r *InternalExtensionMerger) Phase() base.Phase { return base.PhasePrepare }
 
 func (r *InternalExtensionMerger) ProcessAll(ctx base.CompilationContext) error {
@@ -71,8 +71,8 @@ func (r *InternalExtensionMerger) ProcessAll(ctx base.CompilationContext) error 
 			continue // unknown type — cross-catalog or not yet compiled
 		}
 
-		// All other provider types: pass through as extensions so Provider.Update()
-		// merges the fields. AddExtension() handles @dependency tagging when IsExtension=true.
+		// All other provider types: pass through as extensions for the consumer
+		// to merge. AddExtension() handles @dependency tagging when IsExtension=true.
 		// Filter out _stub/_placeholder fields before passing to AddExtension.
 		ctx.AddExtension(filterStubFields(ext))
 	}

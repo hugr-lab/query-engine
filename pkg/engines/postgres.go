@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
@@ -37,22 +36,22 @@ func (e *Postgres) Type() Type {
 	return TypePostgres
 }
 
-func (e *Postgres) Capabilities() *compiler.EngineCapabilities {
-	return &compiler.EngineCapabilities{
-		General: compiler.EngineGeneralCapabilities{
+func (e *Postgres) Capabilities() *base.EngineCapabilities {
+	return &base.EngineCapabilities{
+		General: base.EngineGeneralCapabilities{
 			SupportDefaultSequences: true,
 		},
-		Insert: compiler.EngineInsertCapabilities{
+		Insert: base.EngineInsertCapabilities{
 			Insert:           true,
 			Returning:        true,
 			InsertReferences: true,
 		},
-		Update: compiler.EngineUpdateCapabilities{
+		Update: base.EngineUpdateCapabilities{
 			Update:           true,
 			UpdatePKColumns:  true,
 			UpdateWithoutPKs: true,
 		},
-		Delete: compiler.EngineDeleteCapabilities{
+		Delete: base.EngineDeleteCapabilities{
 			Delete:           true,
 			DeleteWithoutPKs: true,
 		},

@@ -7,7 +7,7 @@ import (
 	_ "embed"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	catalogstore "github.com/hugr-lab/query-engine/pkg/catalog/store"
@@ -43,7 +43,7 @@ func newStoreProvider(t *testing.T) *catalogstore.Store {
 func Test_processQuery(t *testing.T) {
 	ss := catalog.NewService(newStoreProvider(t))
 	e := engines.NewDuckDB()
-	cat, err := sources.NewStringSource("core", e, compiler.Options{
+	cat, err := sources.NewStringSource("core", e, base.Options{
 		Name:         "core",
 		EngineType:   string(e.Type()),
 		AsModule:     true,

@@ -7,7 +7,7 @@ import (
 	"iter"
 	"strconv"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -20,13 +20,13 @@ type StringSource struct {
 	name     string
 	desc     string
 	rawSrcs  []string
-	opts     compiler.Options
+	opts     base.Options
 	provider *static.DocProvider
 	engine   engines.Engine
 	version  string
 }
 
-func NewStringSource(name string, engine engines.Engine, opts compiler.Options, sources ...string) (*StringSource, error) {
+func NewStringSource(name string, engine engines.Engine, opts base.Options, sources ...string) (*StringSource, error) {
 	s := &StringSource{
 		name:    name,
 		opts:    opts,
@@ -92,10 +92,10 @@ func (s *StringSource) DefinitionExtensions(ctx context.Context, name string) it
 	return s.provider.DefinitionExtensions(ctx, name)
 }
 
-func (s *StringSource) Name() string                      { return s.opts.Name }
-func (s *StringSource) Description() string               { return s.desc }
-func (s *StringSource) CompileOptions() compiler.Options   { return s.opts }
-func (s *StringSource) Engine() engines.Engine             { return s.engine }
+func (s *StringSource) Name() string                 { return s.opts.Name }
+func (s *StringSource) Description() string          { return s.desc }
+func (s *StringSource) CompileOptions() base.Options { return s.opts }
+func (s *StringSource) Engine() engines.Engine       { return s.engine }
 
 func (s *StringSource) Version(_ context.Context) (string, error) {
 	return s.version, nil

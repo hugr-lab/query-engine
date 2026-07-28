@@ -1,4 +1,4 @@
-package rules
+package ingest
 
 import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
@@ -9,7 +9,7 @@ var _ base.BatchRule = (*CatalogTagger)(nil)
 
 type CatalogTagger struct{}
 
-func (r *CatalogTagger) Name() string     { return "CatalogTagger" }
+func (r *CatalogTagger) Name() string      { return "CatalogTagger" }
 func (r *CatalogTagger) Phase() base.Phase { return base.PhasePrepare }
 
 func (r *CatalogTagger) ProcessAll(ctx base.CompilationContext) error {
@@ -28,4 +28,3 @@ func (r *CatalogTagger) ProcessAll(ctx base.CompilationContext) error {
 	}
 	return nil
 }
-

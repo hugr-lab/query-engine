@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	catalogstore "github.com/hugr-lab/query-engine/pkg/catalog/store"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
@@ -133,7 +133,7 @@ func TestMain(m *testing.M) {
 	ss := catalog.NewService(provider)
 
 	e := &engines.DuckDB{}
-	cat, err := sources.NewStringSource("test", e, compiler.Options{
+	cat, err := sources.NewStringSource("test", e, base.Options{
 		Name:         "test",
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
@@ -149,7 +149,7 @@ func TestMain(m *testing.M) {
 	}
 
 	pe := &engines.Postgres{}
-	pgCat, err := sources.NewStringSource("pg_test", pe, compiler.Options{
+	pgCat, err := sources.NewStringSource("pg_test", pe, base.Options{
 		Name:         "pg_test",
 		Prefix:       "pg",
 		EngineType:   string(pe.Type()),

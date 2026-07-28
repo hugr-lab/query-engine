@@ -1,4 +1,4 @@
-package compiler
+package ingest
 
 import (
 	"context"
@@ -6,37 +6,29 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-func init() {
-	RegisterRules(rules.RegisterAll()...)
-}
-
 // Catalog is a source of definitions with compile options.
-// Used by pkg/schema to pass catalog sources to compilation.
 type Catalog interface {
 	base.DefinitionsSource
-	CompileOptions() Options
+	CompileOptions() base.Options
 }
 
-// Compile is a convenience function that creates a Compiler from GlobalRules()
-// and compiles the given source against the target schema.
-func Compile(ctx context.Context, provider base.Provider, source base.DefinitionsSource, opts Options) (base.CompiledCatalog, error) {
-	c := New(GlobalRules()...)
-	return c.Compile(ctx, provider, source, opts)
-}
-
-// Compiler orchestrates 5-phase rule-based schema compilation.
-type Compiler struct {
+// Pipeline runs a rule set over one source's SDL, in phase order.
+//
+// There used to be a package-level Compile() over a mutable global rule
+// registry, filled from init(). With a single rule set left there is nothing to
+// register and nothing to choose: New(Default()...) is the pipeline, and a test
+// that wants a subset passes one explicitly.
+type Pipeline struct {
 	rules map[base.Phase][]base.Rule
 }
 
-// New creates a Compiler with the given rules sorted by phase.
-func New(rules ...base.Rule) *Compiler {
-	c := &Compiler{
+// New creates a Pipeline with the given rules sorted by phase.
+func New(rules ...base.Rule) *Pipeline {
+	c := &Pipeline{
 		rules: make(map[base.Phase][]base.Rule),
 	}
 	for _, r := range rules {
@@ -45,9 +37,13 @@ func New(rules ...base.Rule) *Compiler {
 	return c
 }
 
-// Compile executes 5-phase compilation of source definitions against the target schema.
-// Returns a CompiledCatalog (DDL feed) that can be applied via Provider.Update().
-func (c *Compiler) Compile(
+// Compile runs the phases over the source's definitions against the target
+// schema. VALIDATE and PREPARE mutate those definitions IN PLACE — prefix,
+// catalog tag, merged extensions — and the returned CompiledCatalog carries
+// what could not go in place: the extensions and the dependency set. GENERATE
+// and ASSEMBLE have no rules and are skipped; the served GraphQL surface is
+// generated on read by the catalog storage.
+func (c *Pipeline) Compile(
 	ctx context.Context,
 	schema base.Provider,
 	source base.DefinitionsSource,

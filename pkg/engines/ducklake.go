@@ -3,7 +3,7 @@ package engines
 import (
 	"context"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -27,7 +27,7 @@ func NewDuckLake() *DuckLake {
 
 func (e *DuckLake) Type() Type { return TypeDuckLake }
 
-func (e *DuckLake) Capabilities() *compiler.EngineCapabilities {
+func (e *DuckLake) Capabilities() *base.EngineCapabilities {
 	dbCaps := e.duckdb.Capabilities()
 	caps := *dbCaps // defensive copy
 	caps.General.SupportTimeTravel = true

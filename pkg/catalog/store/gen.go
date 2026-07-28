@@ -21,9 +21,11 @@ import (
 //   - new shared system type       → sharedTypeRules
 //   - new module-root contribution → rootRules
 //
-// The registries read ONLY store models through genContext, never SQL — the
-// long-term home of this file is the compiler package (schema logic with the
-// rules, storage in store), and that split keeps the move mechanical.
+// The registries read ONLY store models through genContext, never SQL. That was
+// once meant to allow moving this file next to the compiler's GENERATE rules;
+// design-036 deleted those instead, so generation lives here for good — the
+// discipline is still worth keeping, since it is what makes a rule testable
+// without a database.
 
 // genContext is the READ SESSION of one resolution request: the narrow
 // surface the generation registries work against, with the request's reader
@@ -122,12 +124,13 @@ var queryShapes = []queryShape{
 	deleteShape,
 }
 
-// The argProfiles/argDecorators axis (§3.2) lives in compiler/rules — ONE
-// source of truth shared with the compiled path: QueryArgsWithViewArgs
-// (Root, view args prepended), SubQueryArgs, AggRefArgs, AggSubRefArgs,
-// JoinObject*/SpatialObject* profiles and the VectorSearchArgs decorator
-// (similarity/semantic). A new argument = one decorator function there,
-// appended by the shape/field/shared rule that owns the member.
+// The argProfiles/argDecorators axis (§3.2) lives in gen_args.go, which used to
+// be shared with the compiled path and is now this package's own:
+// QueryArgsWithViewArgs (Root, view args prepended), SubQueryArgsWithViewArgs,
+// AggRefArgs, AggSubRefArgs, JoinObject*/SpatialObject* profiles and the
+// VectorSearchArgs decorator (similarity/semantic). A new argument = one
+// decorator function there, appended by the shape/field/shared rule that owns
+// the member.
 
 // fieldRule (§3.3) contributes generated members to the reconstructed data
 // object: nav fields from relations, subquery args on virtual fields, the

@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/ingest"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,7 +31,7 @@ func TestCatalogSchemaModule(t *testing.T) {
 	target, err := static.New()
 	require.NoError(t, err)
 
-	_, err = compiler.New(compiler.GlobalRules()...).Compile(ctx, target, cat, cat.CompileOptions())
+	_, err = ingest.New(ingest.Default()...).Compile(ctx, target, cat, cat.CompileOptions())
 	require.NoError(t, err)
 
 	es, ok := cat.(base.ExtensionsSource)

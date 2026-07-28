@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/ingest"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -48,14 +48,14 @@ func partialSourceOpts(t *testing.T, name, schema string, isExtension bool, seed
 		}
 	}
 	e := &engines.DuckDB{}
-	src, err := sources.NewStringSource(name, e, compiler.Options{
+	src, err := sources.NewStringSource(name, e, base.Options{
 		Name:         name,
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
 		IsExtension:  isExtension,
 	}, schema)
 	require.NoError(t, err)
-	_, err = compiler.New(partialRules()...).Compile(ctx, target, src, src.CompileOptions())
+	_, err = ingest.New(ingest.Default()...).Compile(ctx, target, src, src.CompileOptions())
 	require.NoError(t, err)
 	return src
 }
@@ -281,11 +281,11 @@ func TestCollectPrefixedOriginalName(t *testing.T) {
 	target, err := static.New()
 	require.NoError(t, err)
 	e := &engines.DuckDB{}
-	src, err := sources.NewStringSource("shop", e, compiler.Options{
+	src, err := sources.NewStringSource("shop", e, base.Options{
 		Name: "shop", Prefix: "shop", EngineType: string(e.Type()), Capabilities: e.Capabilities(),
 	}, `type products @module(name: "shop") @table(name: "products") { id: Int! @pk }`)
 	require.NoError(t, err)
-	_, err = compiler.New(partialRules()...).Compile(ctx, target, src, src.CompileOptions())
+	_, err = ingest.New(ingest.Default()...).Compile(ctx, target, src, src.CompileOptions())
 	require.NoError(t, err)
 
 	d := collect(ctx, src, "shop")

@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 
@@ -103,9 +102,9 @@ func DescribeDataSource(ctx context.Context, qe types.Querier, name string) (*DB
 // DBInfo holds database introspection results and implements catalog.Catalog directly.
 // Call Build() after deserialization to initialize the catalog provider.
 type DBInfo struct {
-	InfoName string         `json:"name"`
-	InfoDesc string         `json:"description"`
-	Type     string         `json:"type"` // e.g., "mysql", "postgres", "duckdb", "memory", etc.
+	InfoName   string         `json:"name"`
+	InfoDesc   string         `json:"description"`
+	Type       string         `json:"type"` // e.g., "mysql", "postgres", "duckdb", "memory", etc.
 	SchemaInfo []DBSchemaInfo `json:"schemas"`
 
 	// DefaultSchema is the schema the data source connection is scoped to
@@ -115,14 +114,14 @@ type DBInfo struct {
 	DefaultSchema string `json:"default_schema,omitempty"`
 
 	// Catalog fields, populated by Build().
-	opts     compiler.Options
+	opts     base.Options
 	provider *static.DocProvider
 	engine   engines.Engine
 	version  string
 }
 
 // Build initializes DBInfo as a Catalog from its introspected schema info.
-func (s *DBInfo) Build(ctx context.Context, engine engines.Engine, opts compiler.Options) error {
+func (s *DBInfo) Build(ctx context.Context, engine engines.Engine, opts base.Options) error {
 	doc, err := s.schemaDocument(ctx)
 	if err != nil {
 		return err
@@ -230,10 +229,10 @@ func (s *DBInfo) DefinitionExtensions(ctx context.Context, name string) iter.Seq
 	return s.provider.DefinitionExtensions(ctx, name)
 }
 
-func (s *DBInfo) Name() string                    { return s.opts.Name }
-func (s *DBInfo) Description() string             { return s.InfoDesc }
-func (s *DBInfo) CompileOptions() compiler.Options { return s.opts }
-func (s *DBInfo) Engine() engines.Engine           { return s.engine }
+func (s *DBInfo) Name() string                 { return s.opts.Name }
+func (s *DBInfo) Description() string          { return s.InfoDesc }
+func (s *DBInfo) CompileOptions() base.Options { return s.opts }
+func (s *DBInfo) Engine() engines.Engine       { return s.engine }
 
 func (s *DBInfo) Version(_ context.Context) (string, error) {
 	return s.version, nil
@@ -696,4 +695,3 @@ func dataObjectName(schema, name string) string {
 	}
 	return engines.Ident(schema) + "." + engines.Ident(name)
 }
-

@@ -1,8 +1,8 @@
-package rules
+package ingest
 
 import "github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 
-// RegisterAll returns the built-in rules in phase order.
+// Default returns the built-in rules in phase order — the whole pipeline.
 //
 // What is left after design-036 is the WRITE-side pipeline: validate a
 // source's SDL, merge its own extensions, tag the catalog, apply the prefix,
@@ -10,8 +10,8 @@ import "github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 // field — @join and @function_call. The output is the PHYSICAL model the
 // catalog storage persists; the served GraphQL surface is generated on read
 // from `catalog.*`, which is why the GENERATE / ASSEMBLE phases have no rules
-// at all and the compiler skips them.
-func RegisterAll() []base.Rule {
+// at all and the pipeline skips them.
+func Default() []base.Rule {
 	return []base.Rule{
 		// VALIDATE phase
 		&ExtensionValidator{},

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/ingest"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
@@ -458,8 +458,8 @@ func fixtureEngine(engineType string) engines.Engine {
 	}
 }
 
-func fixtureOpts(fs fixtureSource, e engines.Engine) compiler.Options {
-	return compiler.Options{
+func fixtureOpts(fs fixtureSource, e engines.Engine) base.Options {
+	return base.Options{
 		Name:         fs.name,
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
@@ -491,7 +491,7 @@ func storeForSources(t *testing.T, fixtures []fixtureSource) (*Store, context.Co
 		// each later source resolves the earlier ones through the store's
 		// on-demand reconstruction — including the module function roots, which
 		// a static seed of raw definitions cannot produce.
-		_, err = compiler.New(partialRules()...).Compile(ctx, store, src, src.CompileOptions())
+		_, err = ingest.New(ingest.Default()...).Compile(ctx, store, src, src.CompileOptions())
 		require.NoError(t, err)
 		d := collect(ctx, src, fs.name)
 		_, err = store.writeSource(ctx, d, SourceState{

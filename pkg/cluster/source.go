@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -126,7 +126,7 @@ func (s *Source) Close() error {
 
 func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
 	e := engines.NewDuckDB()
-	opts := compiler.Options{
+	opts := base.Options{
 		Name:         s.Name(),
 		Prefix:       "core_cluster",
 		ReadOnly:     s.IsReadonly(),

@@ -8,7 +8,7 @@ import (
 	"iter"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -24,14 +24,14 @@ type URISource struct {
 	pool     *db.Pool
 	path     string
 	isFile   bool
-	opts     compiler.Options
+	opts     base.Options
 	desc     string
 	provider *static.DocProvider
 	engine   engines.Engine
 	version  string
 }
 
-func NewURISource(pool *db.Pool, path string, isFile bool, engine engines.Engine, opts compiler.Options) *URISource {
+func NewURISource(pool *db.Pool, path string, isFile bool, engine engines.Engine, opts base.Options) *URISource {
 	return &URISource{pool: pool, path: path, isFile: isFile, opts: opts, engine: engine}
 }
 
@@ -121,10 +121,10 @@ func (s *URISource) DefinitionExtensions(ctx context.Context, name string) iter.
 	return s.provider.DefinitionExtensions(ctx, name)
 }
 
-func (s *URISource) Name() string                      { return s.opts.Name }
-func (s *URISource) Description() string               { return s.desc }
-func (s *URISource) CompileOptions() compiler.Options   { return s.opts }
-func (s *URISource) Engine() engines.Engine             { return s.engine }
+func (s *URISource) Name() string                 { return s.opts.Name }
+func (s *URISource) Description() string          { return s.desc }
+func (s *URISource) CompileOptions() base.Options { return s.opts }
+func (s *URISource) Engine() engines.Engine       { return s.engine }
 
 func (s *URISource) Version(_ context.Context) (string, error) {
 	return s.version, nil

@@ -3,13 +3,13 @@ package sources
 import (
 	"context"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/ingest"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 )
 
 type Catalog interface {
-	compiler.Catalog
+	ingest.Catalog
 
 	Name() string
 	Description() string

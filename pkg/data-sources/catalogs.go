@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/types"
@@ -61,7 +61,7 @@ func (s *Service) catalogSource(ctx context.Context, ds Source, self bool) (cat 
 	return sources.NewMergedCatalog(ds.Engine(), opts, def.Description, cc...), nil
 }
 
-func (s *Service) loadCatalogSource(ctx context.Context, t types.CatalogSourceType, path string, engine engines.Engine, opts compiler.Options) (sources.Catalog, error) {
+func (s *Service) loadCatalogSource(ctx context.Context, t types.CatalogSourceType, path string, engine engines.Engine, opts base.Options) (sources.Catalog, error) {
 	switch t {
 	case sources.FileSourceType:
 		// check if path is a valid directory
@@ -84,13 +84,13 @@ func (s *Service) loadCatalogSource(ctx context.Context, t types.CatalogSourceTy
 	}
 }
 
-func compileOptions(ds Source) compiler.Options {
+func compileOptions(ds Source) base.Options {
 	def := ds.Definition()
 	isExt := false
 	if ext, ok := ds.(ExtensionSource); ok {
 		isExt = ext.IsExtension()
 	}
-	return compiler.Options{
+	return base.Options{
 		Name:         def.Name,
 		ReadOnly:     def.ReadOnly,
 		Prefix:       def.Prefix,

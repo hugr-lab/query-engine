@@ -1,4 +1,4 @@
-package rules
+package ingest
 
 import (
 	"regexp"
@@ -29,7 +29,7 @@ var _ base.BatchRule = (*JoinValidator)(nil)
 // store is about to persist, which is exactly what this rule needs.
 type JoinValidator struct{}
 
-func (r *JoinValidator) Name() string     { return "JoinValidator" }
+func (r *JoinValidator) Name() string      { return "JoinValidator" }
 func (r *JoinValidator) Phase() base.Phase { return base.PhaseFinalize }
 
 func (r *JoinValidator) ProcessAll(ctx base.CompilationContext) error {

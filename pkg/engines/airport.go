@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 )
 
 type AirportEngine struct {
@@ -23,7 +23,7 @@ func (e *AirportEngine) Type() Type {
 	return TypeAirport
 }
 
-func (e *AirportEngine) Capabilities() *compiler.EngineCapabilities {
+func (e *AirportEngine) Capabilities() *base.EngineCapabilities {
 	cap := e.DuckDB.Capabilities()
 	cap.General.SupportDefaultSequences = false
 	return cap

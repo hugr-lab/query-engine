@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -183,7 +183,7 @@ func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
 }
 
 func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
-	opts := compiler.Options{
+	opts := base.Options{
 		Name:         s.Name(),
 		Prefix:       "core",
 		AsModule:     s.AsModule(),

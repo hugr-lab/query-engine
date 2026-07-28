@@ -1,4 +1,4 @@
-package rules
+package ingest
 
 import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"

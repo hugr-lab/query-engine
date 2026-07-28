@@ -1,4 +1,4 @@
-package compiler
+package ingest
 
 import (
 	"context"
@@ -11,8 +11,10 @@ import (
 var _ base.CompiledCatalog = (*compiledCatalog)(nil)
 var _ base.DependentCompiledCatalog = (*compiledCatalog)(nil)
 
-// compiledCatalog implements base.CompiledCatalog as a DDL feed
-// consumable by static.Provider.Update().
+// compiledCatalog is what the pipeline returns: the extensions it could not
+// merge in place (cross-source `extend type`, module roots) and the dependency
+// set. Its definitions half is empty — the source's own definitions are mutated
+// in place and read from the source, not from here.
 type compiledCatalog struct {
 	output *indexedOutput
 }

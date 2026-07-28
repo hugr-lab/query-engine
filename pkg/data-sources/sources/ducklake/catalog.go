@@ -6,7 +6,7 @@ import (
 	"iter"
 	"strconv"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -37,7 +37,7 @@ func (s *Source) CatalogSource(ctx context.Context, pool *db.Pool) (cs.Catalog, 
 	doc := GenerateSchemaDocumentFull(result.Tables, result.Views)
 	version := ContentHashFull(result.Tables, result.Views)
 
-	opts := compiler.Options{
+	opts := base.Options{
 		Name:         s.ds.Name,
 		ReadOnly:     s.ds.ReadOnly,
 		Prefix:       s.ds.Prefix,
@@ -64,7 +64,7 @@ func (s *Source) CatalogSource(ctx context.Context, pool *db.Pool) (cs.Catalog, 
 type duckLakeCatalog struct {
 	name     string
 	desc     string
-	opts     compiler.Options
+	opts     base.Options
 	engine   engines.Engine
 	provider *static.DocProvider
 	version  string
@@ -73,10 +73,10 @@ type duckLakeCatalog struct {
 	prefix string
 }
 
-func (c *duckLakeCatalog) Name() string                     { return c.name }
-func (c *duckLakeCatalog) Description() string              { return c.desc }
-func (c *duckLakeCatalog) CompileOptions() compiler.Options { return c.opts }
-func (c *duckLakeCatalog) Engine() engines.Engine           { return c.engine }
+func (c *duckLakeCatalog) Name() string                 { return c.name }
+func (c *duckLakeCatalog) Description() string          { return c.desc }
+func (c *duckLakeCatalog) CompileOptions() base.Options { return c.opts }
+func (c *duckLakeCatalog) Engine() engines.Engine       { return c.engine }
 
 func (c *duckLakeCatalog) Version(ctx context.Context) (string, error) {
 	// Check DuckLake schema version from metadata

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	catalogstore "github.com/hugr-lab/query-engine/pkg/catalog/store"
@@ -121,7 +121,7 @@ func newLogicalTestProvider(t *testing.T) catalog.Provider {
 	t.Helper()
 	ss := catalog.NewService(newStoreProvider(t))
 	e := &engines.DuckDB{}
-	cat, err := sources.NewStringSource("test", e, compiler.Options{
+	cat, err := sources.NewStringSource("test", e, base.Options{
 		Name:         "test",
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),

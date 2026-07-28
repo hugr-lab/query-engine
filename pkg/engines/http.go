@@ -1,6 +1,6 @@
 package engines
 
-import "github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+import "github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 
 // HTTP Engine is a query engine for HTTP data sources.
 
@@ -18,16 +18,16 @@ func (e *HttpEngine) Type() Type {
 	return TypeHttp
 }
 
-func (e *HttpEngine) Capabilities() *compiler.EngineCapabilities {
-	return &compiler.EngineCapabilities{
-		General: compiler.EngineGeneralCapabilities{
+func (e *HttpEngine) Capabilities() *base.EngineCapabilities {
+	return &base.EngineCapabilities{
+		General: base.EngineGeneralCapabilities{
 			SupportDefaultSequences: true,
 			UnsupportedTypes: []string{
 				"IntRange", "BigIntRange", "TimestampRange",
 			},
 			UnsupportTables: true,
 		},
-		Insert: compiler.EngineInsertCapabilities{
+		Insert: base.EngineInsertCapabilities{
 			Insert:           false,
 			Returning:        true,
 			InsertReferences: true,

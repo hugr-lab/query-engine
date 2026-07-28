@@ -1,4 +1,4 @@
-package rules
+package ingest
 
 import (
 	"strings"
@@ -17,7 +17,7 @@ var _ base.BatchRule = (*ExtensionValidator)(nil)
 //   - Cannot contain modules, functions, system types, or scalars
 type ExtensionValidator struct{}
 
-func (r *ExtensionValidator) Name() string     { return "ExtensionValidator" }
+func (r *ExtensionValidator) Name() string      { return "ExtensionValidator" }
 func (r *ExtensionValidator) Phase() base.Phase { return base.PhaseValidate }
 
 func (r *ExtensionValidator) ProcessAll(ctx base.CompilationContext) error {
@@ -53,7 +53,7 @@ var _ base.BatchRule = (*DependencyCollector)(nil)
 // DefinitionRules only iterate source.Definitions(), missing extensions entirely.
 type DependencyCollector struct{}
 
-func (r *DependencyCollector) Name() string     { return "DependencyCollector" }
+func (r *DependencyCollector) Name() string      { return "DependencyCollector" }
 func (r *DependencyCollector) Phase() base.Phase { return base.PhaseValidate }
 
 func (r *DependencyCollector) ProcessAll(ctx base.CompilationContext) error {

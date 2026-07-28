@@ -1,30 +1,19 @@
-package rules
+package store
 
 import (
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// What is left here after design-036 deleted the GENERATE rules falls in two
-// halves: catalogDirective, which belongs to the PREPARE rule that uses it, and
-// the exported argument builders, whose only callers are now the catalog
-// storage's on-read generators (store/gen_*). The split is the subject of the
-// next step; the file is pruned to exactly those two.
-
-// --- Directive builders ---
-
-// catalogDirective creates a @catalog directive with name and engine.
-func catalogDirective(name, engine string) *ast.Directive {
-	pos := &ast.Position{Src: &ast.Source{Name: "compiled-instruction"}}
-	return &ast.Directive{
-		Name: "catalog",
-		Arguments: ast.ArgumentList{
-			{Name: "name", Value: &ast.Value{Raw: name, Kind: ast.StringValue, Position: pos}, Position: pos},
-			{Name: "engine", Value: &ast.Value{Raw: engine, Kind: ast.StringValue, Position: pos}, Position: pos},
-		},
-		Position: pos,
-	}
-}
+// The SDL argument builders for the generated query surface. They were written
+// for the compiler's GENERATE rules; design-036 deleted those, and the store's
+// on-read generators (gen_*.go) are the only callers left — so they live here,
+// next to the code that uses them, instead of in a package the store imports
+// for nothing else.
+//
+// They stay EXPORTED: the names are the shape of the generated surface, and
+// keeping them greppable across the store's generators is worth more than the
+// package-private scoping.
 
 // --- Argument definition builders ---
 
