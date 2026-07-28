@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -53,16 +54,24 @@ func (s *Server) dataFieldValues(ctx context.Context, req mcp.CallToolRequest) (
 			Type *gqlTypeRef `json:"type"`
 		} `json:"fields"`
 	}
-	err := s.queryScan(ctx, `query($n: String!) { _dataObject(name: $n) {
+	// Scanned from the ROOT into a raw envelope: an object the caller may not
+	// see resolves to null, and a null at a named path is a scan error whose
+	// message ("wrong data path") says nothing an agent can act on.
+	root := map[string]json.RawMessage{}
+	err := s.queryScan(ctx, `query($n: String!) { obj: _dataObject(name: $n) {
 		name moduleName
 		queries { name type }
 		fields { name `+typeRefSelection+` }
-	} }`, map[string]any{"n": object}, "_dataObject", &node)
+	} }`, map[string]any{"n": object}, "", &root)
 	if err != nil {
 		return toolResultError(err.Error()), nil
 	}
-	if node.Name == "" {
+	found, ok := root["obj"]
+	if !ok || len(found) == 0 || string(found) == "null" {
 		return toolResultError(fmt.Sprintf("data object %q not found, or not visible to you", object)), nil
+	}
+	if err := json.Unmarshal(found, &node); err != nil {
+		return toolResultError(err.Error()), nil
 	}
 
 	var fieldType string

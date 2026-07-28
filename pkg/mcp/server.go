@@ -330,9 +330,11 @@ func (s *Server) queryScan(ctx context.Context, gql string, vars map[string]any,
 	return res.ScanData(path, target)
 }
 
-// queryScanAdmin executes a catalog query with full access (no permission filtering).
-// Used for MCP discovery tools that need to see all catalog metadata.
-// Filtering is applied after fetch by the MCP permission layer.
+// queryScanAdmin executes a catalog query with full access (no permission
+// filtering). Used by the search path to READ THE INDEX: the catalog views are
+// ordinary data objects, and a role may well be denied them while still being
+// entitled to use MCP. Nothing it returns reaches the client without passing
+// filterHits, which re-asks the engine in the caller's own context.
 func (s *Server) queryScanAdmin(ctx context.Context, gql string, vars map[string]any, path string, target any) error {
 	return s.queryScan(auth.ContextWithFullAccess(ctx), gql, vars, path, target)
 }

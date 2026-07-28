@@ -38,6 +38,14 @@ func mcpHandler(t testing.TB, vectorSize int) http.Handler {
 
 func mcpHandlerWithEmbedder(t testing.TB, vectorSize int, embedderURL string) http.Handler {
 	t.Helper()
+	_, h := mcpService(t, vectorSize, embedderURL)
+	return h
+}
+
+// mcpService is the same setup, handing back the engine as well — the
+// permission tests need it to create roles.
+func mcpService(t testing.TB, vectorSize int, embedderURL string) (*hugr.Service, http.Handler) {
+	t.Helper()
 	service, err := hugr.New(hugr.Config{
 		DB:             db.Config{Path: ""},
 		CoreDB:         coredb.New(coredb.Config{VectorSize: vectorSize}),
@@ -53,7 +61,7 @@ func mcpHandlerWithEmbedder(t testing.TB, vectorSize int, embedderURL string) ht
 	require.NoError(t, err)
 	t.Cleanup(func() { service.Close() })
 	require.NoError(t, service.Init(context.Background()))
-	return mcpserver.New(service, nil, false).Handler()
+	return service, mcpserver.New(service, nil, false).Handler()
 }
 
 // liveEmbedder returns the configured embedder, or skips: the vector path
