@@ -1,0 +1,13 @@
+# The view's input has NonNull members, so args is REQUIRED on the navigation
+# field exactly as it is on the root query: omitting it must fail validation,
+# not silently run the view without parameters.
+{
+  pg_store {
+    products(filter: { id: { eq: 2 } }) {
+      id
+      in_price_range {
+        id
+      }
+    }
+  }
+}

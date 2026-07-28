@@ -1,0 +1,14 @@
+# The aggregation twin runs the same view, so it takes the same arguments.
+{
+  pg_store {
+    products(filter: { id: { in: [2, 3] } }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      in_price_range_aggregation(args: { min_price: 20.0, max_price: 60.0 }) {
+        _rows_count
+        price {
+          max
+        }
+      }
+    }
+  }
+}

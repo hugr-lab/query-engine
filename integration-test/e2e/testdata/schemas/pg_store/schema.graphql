@@ -75,11 +75,20 @@ type products_for_current_user @view(
     category_id: Int!
 }
 
+# A parameterized view that REFERENCES a table: products gets a back
+# navigation field whose target is this view, so that field must accept the
+# view's args alongside the standard query arguments — there is nowhere else
+# to pass them.
 type products_in_price_range @view(
     name: "products_in_price_range"
     sql: "SELECT id, name, price FROM products WHERE price >= [$min_price] AND price <= [$max_price]"
 ) @args(name: "price_range_args") {
-    id: Int! @pk
+    id: Int! @pk @field_references(
+        field: "id"
+        references_name: "products"
+        query: "product"
+        references_query: "in_price_range"
+    )
     name: String!
     price: Float!
 }

@@ -1,0 +1,13 @@
+{
+  "errors": [
+    {
+      "locations": [
+        {
+          "column": 7,
+          "line": 8
+        }
+      ],
+      "message": "Field \"in_price_range\" argument \"args\" of type \"pg_store_price_range_args!\" is required, but it was not provided."
+    }
+  ]
+}

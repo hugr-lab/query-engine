@@ -115,17 +115,17 @@
           }
         },
         {
-          "name": "details",
+          "name": "in_price_range",
           "type": {
             "kind": "LIST",
             "name": null
           }
         },
         {
-          "name": "details_aggregation",
+          "name": "in_price_range_aggregation",
           "type": {
             "kind": "OBJECT",
-            "name": "_pg_store_product_details_aggregation"
+            "name": "_pg_store_products_in_price_range_aggregation"
           }
         },
         {
@@ -143,7 +143,7 @@
           }
         },
         {
-          "name": "details_bucket_aggregation",
+          "name": "in_price_range_bucket_aggregation",
           "type": {
             "kind": "LIST",
             "name": null
@@ -154,6 +154,27 @@
           "type": {
             "kind": "SCALAR",
             "name": "Int"
+          }
+        },
+        {
+          "name": "details",
+          "type": {
+            "kind": "LIST",
+            "name": null
+          }
+        },
+        {
+          "name": "details_aggregation",
+          "type": {
+            "kind": "OBJECT",
+            "name": "_pg_store_product_details_aggregation"
+          }
+        },
+        {
+          "name": "details_bucket_aggregation",
+          "type": {
+            "kind": "LIST",
+            "name": null
           }
         },
         {

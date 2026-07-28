@@ -133,7 +133,18 @@ func QueryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Po
 
 // SubQueryArgs returns the standard query arguments for sub-queries (references).
 func SubQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
-	args := queryArgs(filterName, pos)
+	return SubQueryArgsWithViewArgs(nil, filterName, pos)
+}
+
+// SubQueryArgsWithViewArgs is SubQueryArgs for a sub-query whose target may be
+// a PARAMETERIZED VIEW, and it takes the view's args exactly as the root query
+// does. A nested field is the ONLY place those arguments can be passed — there
+// is no root query in the path — so without this the view is unreachable
+// through the reference: a back navigation field on a table that a
+// parameterized view references could not be given the view's parameters at
+// all.
+func SubQueryArgsWithViewArgs(info *base.ObjectInfo, filterName string, pos *ast.Position) ast.ArgumentDefinitionList {
+	args := QueryArgsWithViewArgs(info, filterName, pos)
 	args = append(args,
 		&ast.ArgumentDefinition{
 			Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", pos), Position: pos,
@@ -150,6 +161,38 @@ func SubQueryArgs(filterName string, pos *ast.Position) ast.ArgumentDefinitionLi
 		},
 	)
 	return args
+}
+
+// ViewArgsArgument returns the "args" argument for a field whose TARGET is a
+// parameterized view, or nil when it is not one.
+//
+// Every field that reaches a parameterized view needs it — a navigation field,
+// its aggregation twins, a @join, a sub-aggregation member — because the view
+// cannot run without its parameters and a nested field is the only place to
+// pass them. Requiredness is the same rule the root query follows: an input
+// with a NonNull member makes args itself NonNull, so "you must parameterize
+// this view" is stated once and enforced everywhere it is reachable.
+func ViewArgsArgument(info *base.ObjectInfo, pos *ast.Position) *ast.ArgumentDefinition {
+	if info == nil || info.InputArgsName == "" {
+		return nil
+	}
+	argType := ast.NamedType(info.InputArgsName, pos)
+	if info.RequiredArgs {
+		argType = ast.NonNullNamedType(info.InputArgsName, pos)
+	}
+	return &ast.ArgumentDefinition{
+		Name: "args", Description: base.DescArgs, Type: argType, Position: pos,
+	}
+}
+
+// PrependViewArgs puts the target's view args in front of an argument list.
+// A no-op for a target that is not a parameterized view.
+func PrependViewArgs(info *base.ObjectInfo, args ast.ArgumentDefinitionList, pos *ast.Position) ast.ArgumentDefinitionList {
+	arg := ViewArgsArgument(info, pos)
+	if arg == nil {
+		return args
+	}
+	return append(ast.ArgumentDefinitionList{arg}, args...)
 }
 
 // CloneArgDefs creates a shallow copy of an argument definition list.

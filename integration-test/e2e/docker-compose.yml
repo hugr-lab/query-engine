@@ -78,6 +78,10 @@ services:
     ports: ["15000:15000"]
     environment:
       BIND: ":15000"
+      # Empty (the default) runs the compiled-schema storage; run.sh can be
+      # given CATALOG_STORAGE=entity to exercise the same scenarios against
+      # the entity storage.
+      CATALOG_STORAGE: "${CATALOG_STORAGE:-}"
       DB_PATH: ""
       DB_ALLOWED_DIRECTORIES: "/workspace"
       CORE_DB_PATH: ""
@@ -123,6 +127,10 @@ services:
     ports: ["15001:15001"]
     environment:
       BIND: ":15001"
+      # Empty (the default) runs the compiled-schema storage; run.sh can be
+      # given CATALOG_STORAGE=entity to exercise the same scenarios against
+      # the entity storage.
+      CATALOG_STORAGE: "${CATALOG_STORAGE:-}"
       DB_PATH: ""
       DB_ALLOWED_DIRECTORIES: "/workspace"
       CORE_DB_PATH: "postgres://test:test@core-postgres:5432/coredb_e2e"
@@ -155,6 +163,10 @@ services:
     ports: ["15010:15010"]
     environment:
       BIND: ":15010"
+      # Empty (the default) runs the compiled-schema storage; run.sh can be
+      # given CATALOG_STORAGE=entity to exercise the same scenarios against
+      # the entity storage.
+      CATALOG_STORAGE: "${CATALOG_STORAGE:-}"
       DB_PATH: ""
       DB_ALLOWED_DIRECTORIES: "/workspace"
       CORE_DB_PATH: "postgres://test:test@core-postgres:5432/coredb_cluster"
@@ -191,6 +203,10 @@ services:
     ports: ["15011:15011"]
     environment:
       BIND: ":15011"
+      # Empty (the default) runs the compiled-schema storage; run.sh can be
+      # given CATALOG_STORAGE=entity to exercise the same scenarios against
+      # the entity storage.
+      CATALOG_STORAGE: "${CATALOG_STORAGE:-}"
       DB_PATH: ""
       DB_ALLOWED_DIRECTORIES: "/workspace"
       CORE_DB_PATH: "postgres://test:test@core-postgres:5432/coredb_cluster"
@@ -229,6 +245,10 @@ services:
     ports: ["15012:15012"]
     environment:
       BIND: ":15012"
+      # Empty (the default) runs the compiled-schema storage; run.sh can be
+      # given CATALOG_STORAGE=entity to exercise the same scenarios against
+      # the entity storage.
+      CATALOG_STORAGE: "${CATALOG_STORAGE:-}"
       DB_PATH: ""
       DB_ALLOWED_DIRECTORIES: "/workspace"
       CORE_DB_PATH: "postgres://test:test@core-postgres:5432/coredb_cluster"

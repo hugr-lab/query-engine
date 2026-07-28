@@ -1,0 +1,16 @@
+# A parameterized view references products, so products carries a back
+# navigation field pointing AT the view. The view cannot run without its
+# arguments, and this field is the only place to pass them.
+{
+  pg_store {
+    products(filter: { id: { in: [1, 2, 3] } }, order_by: [{field: "id", direction: ASC}]) {
+      id
+      name
+      in_price_range(args: { min_price: 20.0, max_price: 60.0 }, order_by: [{field: "id", direction: ASC}]) {
+        id
+        name
+        price
+      }
+    }
+  }
+}

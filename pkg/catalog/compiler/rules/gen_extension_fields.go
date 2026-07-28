@@ -119,7 +119,7 @@ func processExtensionJoinField(ctx base.CompilationContext, parentName string, f
 			{
 				Name:      f.Name,
 				Type:      ast.NamedType(targetAggName, pos),
-				Arguments: AggRefArgs(targetFilterName, pos),
+				Arguments: PrependViewArgs(ctx.GetObject(targetName), AggRefArgs(targetFilterName, pos), pos),
 				Directives: ast.DirectiveList{
 					fieldAggregationDirective(f.Name, pos),
 				},
@@ -128,7 +128,7 @@ func processExtensionJoinField(ctx base.CompilationContext, parentName string, f
 			{
 				Name:      f.Name + "_aggregation",
 				Type:      ast.NamedType(subAggName, pos),
-				Arguments: AggSubRefArgs(targetFilterName, pos),
+				Arguments: PrependViewArgs(ctx.GetObject(targetName), AggSubRefArgs(targetFilterName, pos), pos),
 				Directives: ast.DirectiveList{
 					fieldAggregationDirective(f.Name, pos),
 				},
@@ -345,12 +345,12 @@ func ProcessExtensionReferences(ctx base.CompilationContext, ext *ast.Definition
 	var forwardArgs ast.ArgumentDefinitionList
 	if isM2MRef {
 		forwardType = ast.ListType(ast.NamedType(refName, pos), pos)
-		forwardArgs = SubQueryArgs(targetFilterName, pos)
+		forwardArgs = SubQueryArgsWithViewArgs(ctx.GetObject(refName), targetFilterName, pos)
 	} else {
 		forwardType = &ast.Type{NamedType: refName}
-		forwardArgs = ast.ArgumentDefinitionList{
+		forwardArgs = PrependViewArgs(ctx.GetObject(refName), ast.ArgumentDefinitionList{
 			{Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", pos), Position: pos},
-		}
+		}, pos)
 	}
 
 	forwardExt := &ast.Definition{
@@ -395,7 +395,7 @@ func ProcessExtensionReferences(ctx base.CompilationContext, ext *ast.Definition
 				{
 					Name:      refQuery,
 					Type:      ast.ListType(ast.NamedType(ext.Name, pos), pos),
-					Arguments: SubQueryArgs(sourceFilterName, pos),
+					Arguments: SubQueryArgsWithViewArgs(ctx.GetObject(ext.Name), sourceFilterName, pos),
 					Directives: ast.DirectiveList{
 						backRefQueryDir,
 						targetCatalogDirective(sourceDef),

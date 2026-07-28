@@ -283,19 +283,23 @@ func dependencyDirective(name string) *ast.Directive {
 // reads as a bare field). The lookup runs through the memoized session
 // readers, so the target's source lands in the provenance set either way — a
 // target flag flip evicts the cached definition.
-func (g *genContext) joinMachineryTarget(ctx context.Context, f *field) (string, bool, error) {
+//
+// The target ROW comes back with it: whether the join field takes an `args`
+// argument depends on the target being a parameterized view, which only the
+// row knows.
+func (g *genContext) joinMachineryTarget(ctx context.Context, f *field) (*dataObject, bool, error) {
 	target := parseFieldType(f.FieldType).Name()
 	row, err := g.readDataObject(ctx, target)
 	if err != nil {
-		return "", false, err
+		return nil, false, err
 	}
 	if row == nil {
-		return target, false, nil
+		return nil, false, nil
 	}
 	if f.DependencyDataSource == "" && row.DataSource != f.DataSource {
-		return target, false, nil
+		return row, false, nil
 	}
-	return target, true, nil
+	return row, true, nil
 }
 
 // activeSource is the per-source meta the generation layer branches on
