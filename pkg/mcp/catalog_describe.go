@@ -65,7 +65,8 @@ type CatalogDescription struct {
 	FunctionsCount   *int `json:"functions_count,omitempty"`
 	SubmodulesCount  *int `json:"submodules_count,omitempty"`
 
-	// Data source.
+	// Data source. Pointers so that false is reported for a data source and the
+	// field is absent for every other kind.
 	Engine      string   `json:"engine,omitempty"`
 	ReadOnly    *bool    `json:"read_only,omitempty"`
 	AsModule    *bool    `json:"as_module,omitempty"`
@@ -428,7 +429,7 @@ func describeDataSource(ds *metaDescribedDataSource) CatalogDescription {
 	return CatalogDescription{
 		Kind: kindDataSource, Name: ds.Name, Engine: ds.Engine,
 		Description: ds.Description, LongDescription: ds.LongDescription,
-		ReadOnly: ds.ReadOnly, AsModule: ds.AsModule, IsExtension: ds.IsExtension,
+		ReadOnly: &ds.ReadOnly, AsModule: &ds.AsModule, IsExtension: &ds.IsExtension,
 		Modules: ds.Modules,
 	}
 }

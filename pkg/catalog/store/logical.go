@@ -676,15 +676,14 @@ func (g *genContext) dataSourceInfo(ctx context.Context, row *dataSourceRow) (*c
 	if err != nil {
 		return nil, err
 	}
-	readOnly, asModule, isExtension := row.ReadOnly, row.AsModule, row.IsExtension
 	return &catalog.DataSourceInfo{
 		Name:            row.Name,
 		Engine:          row.Engine,
 		Description:     row.Description,
 		LongDescription: row.LongDescription,
-		ReadOnly:        &readOnly,
-		AsModule:        &asModule,
-		IsExtension:     &isExtension,
+		ReadOnly:        row.ReadOnly,
+		AsModule:        row.AsModule,
+		IsExtension:     row.IsExtension,
 		Modules:         modules,
 	}, nil
 }

@@ -20,7 +20,10 @@ import (
 // absent, disabled elements stay visible, full-access contexts see everything.
 
 func processCatalogQuery(ctx context.Context, provider catalog.Provider, field *ast.Field, maxDepth int) (any, error) {
-	lm := catalog.LogicalModelFromProvider(provider)
+	lm, err := catalog.LogicalModelFromProvider(provider)
+	if err != nil {
+		return nil, err
+	}
 	info := lm.Module(ctx, "")
 	if info == nil {
 		return nil, nil
@@ -33,7 +36,10 @@ func processModuleQuery(ctx context.Context, provider catalog.Provider, field *a
 	if !ok {
 		return nil, ErrInvalidTypeQuery
 	}
-	lm := catalog.LogicalModelFromProvider(provider)
+	lm, err := catalog.LogicalModelFromProvider(provider)
+	if err != nil {
+		return nil, err
+	}
 	info := lm.Module(ctx, name)
 	if info == nil {
 		return nil, nil
@@ -49,7 +55,10 @@ func processDataObjectQuery(ctx context.Context, provider catalog.Provider, fiel
 	if name == "" {
 		return nil, nil
 	}
-	lm := catalog.LogicalModelFromProvider(provider)
+	lm, err := catalog.LogicalModelFromProvider(provider)
+	if err != nil {
+		return nil, err
+	}
 	obj := lm.DataObject(ctx, name)
 	if obj == nil || !dataObjectVisible(ctx, obj) {
 		return nil, nil
@@ -69,7 +78,10 @@ func processFunctionQuery(ctx context.Context, provider catalog.Provider, field 
 	if name == "" {
 		return nil, nil
 	}
-	lm := catalog.LogicalModelFromProvider(provider)
+	lm, err := catalog.LogicalModelFromProvider(provider)
+	if err != nil {
+		return nil, err
+	}
 	entry := lm.Function(ctx, module, name)
 	if entry == nil || !functionVisible(ctx, entry) {
 		return nil, nil
@@ -81,7 +93,10 @@ func processDataSourcesQuery(ctx context.Context, provider catalog.Provider, fie
 	if maxDepth <= 0 {
 		return nil, nil
 	}
-	lm := catalog.LogicalModelFromProvider(provider)
+	lm, err := catalog.LogicalModelFromProvider(provider)
+	if err != nil {
+		return nil, err
+	}
 	res := []map[string]any{}
 	for ds := range lm.DataSources(ctx) {
 		if !dataSourceVisible(ctx, lm, ds) {
@@ -106,7 +121,10 @@ func processDataSourceQuery(ctx context.Context, provider catalog.Provider, fiel
 	if name == "" || maxDepth <= 0 {
 		return nil, nil
 	}
-	lm := catalog.LogicalModelFromProvider(provider)
+	lm, err := catalog.LogicalModelFromProvider(provider)
+	if err != nil {
+		return nil, err
+	}
 	ds := lm.DataSource(ctx, name)
 	if ds == nil || !dataSourceVisible(ctx, lm, ds) {
 		return nil, nil
@@ -128,7 +146,10 @@ func processTypesQuery(ctx context.Context, provider catalog.Provider, field *as
 			}
 		}
 	}
-	lm := catalog.LogicalModelFromProvider(provider)
+	lm, err := catalog.LogicalModelFromProvider(provider)
+	if err != nil {
+		return nil, err
+	}
 	typesIter := lm.SourceTypes(ctx)
 	if scope == "SYSTEM" {
 		typesIter = lm.SystemTypes(ctx)
@@ -465,14 +486,9 @@ func queryTypeText(t sdl.ObjectQueryType) string {
 }
 
 func dataSourceResolver(ctx context.Context, ds *catalog.DataSourceInfo, ss ast.SelectionSet) (map[string]any, error) {
-	// The three flags are nullable on purpose: nil = the catalog storage does
-	// not record them (see catalog.DataSourceInfo), which must not read as false.
-	flag := func(v *bool) fieldResolverFunc {
+	flag := func(v bool) fieldResolverFunc {
 		return func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			if v == nil {
-				return nil, nil
-			}
-			return *v, nil
+			return v, nil
 		}
 	}
 	text := nullableText

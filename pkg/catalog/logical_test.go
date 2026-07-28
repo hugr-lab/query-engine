@@ -136,7 +136,10 @@ func newLogicalTestProvider(t *testing.T) catalog.Provider {
 }
 
 func TestLogicalModelFromProvider(t *testing.T) {
-	lm := catalog.LogicalModelFromProvider(newLogicalTestProvider(t))
+	lm, err := catalog.LogicalModelFromProvider(newLogicalTestProvider(t))
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := t.Context()
 
 	t.Run("root module", func(t *testing.T) {

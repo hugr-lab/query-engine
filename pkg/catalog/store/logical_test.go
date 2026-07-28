@@ -147,16 +147,14 @@ type gauges @module(name: "ops") @table(name: "gauges") {
 	ro := store.DataSource(ctx, "ro")
 	require.NotNil(t, ro)
 	assert.Equal(t, "postgres", ro.Engine)
-	require.NotNil(t, ro.ReadOnly)
-	assert.True(t, *ro.ReadOnly, "the entity storage records the flags the compiled schema loses")
-	assert.True(t, *ro.AsModule)
-	assert.True(t, *ro.IsExtension)
+	assert.True(t, ro.ReadOnly, "the flags are recorded, not inferred")
+	assert.True(t, ro.AsModule)
+	assert.True(t, ro.IsExtension)
 	assert.Equal(t, []string{"ops"}, ro.Modules, "direct members only, no ancestors")
 
 	main := store.DataSource(ctx, "test")
 	require.NotNil(t, main)
-	require.NotNil(t, main.ReadOnly)
-	assert.False(t, *main.ReadOnly)
+	assert.False(t, main.ReadOnly)
 	assert.Equal(t, []string{"sales", "sales.reports"}, main.Modules)
 
 	// Curation is the point of the logical model: a curated description must

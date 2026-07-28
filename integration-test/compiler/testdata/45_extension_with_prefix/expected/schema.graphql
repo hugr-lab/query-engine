@@ -1032,18 +1032,18 @@ DSN) are deliberately NOT exposed.
 """
 type _DataSource @system {
   """
-  The source is exposed as a module of its own (null: not recorded).
+  The source is exposed as a module of its own.
   """
-  asModule: Boolean
+  asModule: Boolean!
   description: String
   """
-  The source's engine type string; null when the catalog storage does not record it.
+  The source's engine type string.
   """
   engine: String
   """
-  The source extends other sources' objects (null: not recorded).
+  The source extends other sources' objects.
   """
-  isExtension: Boolean
+  isExtension: Boolean!
   """
   Curated/summarized long description.
   """
@@ -1057,10 +1057,9 @@ type _DataSource @system {
   """
   name: String!
   """
-  Mutations are not generated for this source. Null means the catalog
-  storage does not record the flag — NOT that mutations are available.
+  Mutations are not generated for this source.
   """
-  readOnly: Boolean
+  readOnly: Boolean!
 }
 """
 A callable member of a module: a query function, a mutation, or a subscription.
