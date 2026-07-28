@@ -4,7 +4,6 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -334,23 +333,18 @@ func (s *Server) queryScan(ctx context.Context, gql string, vars map[string]any,
 // queryScanLookup executes a SINGLE-lookup query — one aliased root field that
 // the engine may resolve to null — and reports whether it was served at all.
 //
-// A null does not arrive as a JSON null. The engine drops a nil result before
-// it reaches the response (query.go, processQuerySequential: "res == nil &&
-// ext == nil → continue"), and on the parallel path the key is set but a
-// single-key null response collapses the whole data map to nil (query.go, the
-// len(data) == 1 check). So a path scan answers "wrong data path" or "no data"
-// depending on AllowParallel, and a tool that scanned by path would hand the
-// agent that engine error instead of saying which name it could not resolve.
+// The alias is read off the ROOT rather than scanned by path, because a null
+// AT a path is not something ScanData can report: it walks into the value and
+// answers ErrNoData, the same error a broken response gives. Here the two must
+// stay apart — "no such name, or not yours" is an answer the agent can act on,
+// and an engine failure is not.
 //
-// Scanning the ROOT sidesteps both: an unserved alias is simply missing, and
-// the two errors mean the same thing here. Absent is NOT distinguishable from
-// "hidden from this caller" — by design, that is what the tools report.
+// (Until the null-response fix this also had to tolerate the path scan failing
+// outright, because a resolved-to-null field never reached the response at
+// all. It does now, so a scan error is once again just an error.)
 func (s *Server) queryScanLookup(ctx context.Context, gql string, vars map[string]any, alias string, target any) (bool, error) {
 	root := map[string]json.RawMessage{}
-	switch err := s.queryScan(ctx, gql, vars, "", &root); {
-	case errors.Is(err, types.ErrNoData), errors.Is(err, types.ErrWrongDataPath):
-		return false, nil
-	case err != nil:
+	if err := s.queryScan(ctx, gql, vars, "", &root); err != nil {
 		return false, err
 	}
 	raw, ok := root[alias]

@@ -105,13 +105,6 @@ func (s *Service) processQuery(ctx context.Context, provider catalog.Provider, o
 		types.DataClose(data)
 		return nil, nil, err
 	}
-	if len(data) == 1 {
-		for _, v := range data {
-			if v == nil {
-				data = nil
-			}
-		}
-	}
 	if len(extensions) == 0 && op.Definition.Directives.ForName(base.StatsDirectiveName) == nil {
 		return data, nil, nil
 	}
@@ -223,7 +216,12 @@ func (s *Service) processQuerySequential(ctx context.Context,
 		if err != nil {
 			return err
 		}
-		if res == nil && ext == nil {
+		// A resolved-to-null field must still reach the response as an explicit
+		// null — the client asked for it, so the spec says it appears. Only a
+		// query that produced NEITHER data nor extensions is skipped, and
+		// QueryTypeNone is exactly that: a grouping node whose children were
+		// already sent with a deeper path.
+		if res == nil && ext == nil && query.QueryType == base.QueryTypeNone {
 			continue
 		}
 		select {
