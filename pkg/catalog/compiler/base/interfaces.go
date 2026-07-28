@@ -101,11 +101,8 @@ type GraphQLAnnotator interface {
 	SetArgumentDescription(ctx context.Context, typeName, fieldName, argName, desc, longDesc string) error
 }
 
-// SuspendableProvider is optionally implemented by providers that support
-// suspending/resuming catalogs without physically removing schema data.
-// The DB provider sets a suspended flag and invalidates the cache;
-// the static provider falls back to DropCatalog.
-type SuspendableProvider interface {
-	SuspendCatalog(ctx context.Context, name string) error
-	ResumeCatalog(ctx context.Context, name string) error
-}
+// SuspendableProvider described the two providers this seam existed for: the
+// compiled-schema one, which set a flag and dropped its cache, and the static
+// one, which fell back to DropCatalog. Neither exists any more — suspending a
+// source is a catalog.CatalogManager operation on the storage, and the static
+// provider is read-only.

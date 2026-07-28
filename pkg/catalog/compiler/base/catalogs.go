@@ -27,9 +27,15 @@ func FieldDefDependency(field *ast.FieldDefinition) string {
 	return DirectiveArgString(field.Directives.ForName(DependencyDirectiveName), "name")
 }
 
-func EnumValueCatalog(enumValue *ast.EnumValueDefinition) string {
-	return DirectiveArgString(enumValue.Directives.ForName(CatalogDirectiveName), "name")
-}
+// EnumValueCatalog is gone with DropCatalog, its only caller: attributing an
+// enum value to a source mattered only while a schema container had to take one
+// source's definitions back out of a merged whole.
+//
+// DefinitionCatalogEngine, DefinitionModuleCatalogs and FieldDefModuleCatalogs
+// below are likewise reader-only and lost their callers earlier in design-036,
+// with the compiled-schema provider and the GENERATE rules. The @module_catalog
+// DIRECTIVE is still live — the storage EMITS it on module roots (gen_roots.go)
+// — nothing reads it back. Sweeping them belongs with the package move.
 
 // DefinitionModuleCatalogs returns all catalog names from @module_catalog directives on a definition.
 func DefinitionModuleCatalogs(def *ast.Definition) []string {

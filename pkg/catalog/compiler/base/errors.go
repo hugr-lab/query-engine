@@ -1,16 +1,15 @@
 package base
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
-var (
-	ErrDefinitionNotFound = errors.New("definition not found")
-)
+// ErrDefinitionNotFound went with the static provider's write surface — the
+// setters and Drop* methods that returned it. A missing definition on the read
+// path is a nil, not an error.
 
 func ErrorPosf(pos *ast.Position, format string, args ...any) *gqlerror.Error {
 	if pos == nil || pos.Src == nil {
