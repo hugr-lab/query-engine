@@ -44,17 +44,17 @@ type CatalogDescription struct {
 	DataSource      string `json:"data_source,omitempty"`
 
 	// Data object.
-	Type           string             `json:"type,omitempty"        jsonschema_description:"TABLE or VIEW"`
-	Queries        []DescribedQuery   `json:"queries,omitempty"     jsonschema_description:"The query field names to WRITE in GraphQL — copy verbatim, nested in the module path"`
-	PrimaryKey     []string           `json:"primary_key,omitempty"`
-	Properties     *ObjectProperties  `json:"properties,omitempty"`
+	Type            string              `json:"type,omitempty"        jsonschema_description:"TABLE or VIEW"`
+	Queries         []DescribedQuery    `json:"queries,omitempty"     jsonschema_description:"The query field names to WRITE in GraphQL — copy verbatim, nested in the module path"`
+	PrimaryKey      []string            `json:"primary_key,omitempty"`
+	Properties      *ObjectProperties   `json:"properties,omitempty"`
 	Args            []DescribedArg      `json:"args,omitempty"        jsonschema_description:"Parameterized-view arguments — pass them as the query's args:{...}"`
 	Relations       []DescribedRelation `json:"relations,omitempty"`
 	RelationsTotal  int                 `json:"relations_total,omitempty"`
 	RelationsOffset int                 `json:"relations_offset,omitempty"`
 	RelationsMore   bool                `json:"relations_has_more,omitempty" jsonschema_description:"Call again with a larger relations_offset for the rest"`
-	FieldsCount    int                `json:"fields_count,omitempty" jsonschema_description:"Call catalog-object_fields for the fields themselves"`
-	DataSources    []string           `json:"data_sources,omitempty" jsonschema_description:"Every source contributing to this object — more than one means extensions added fields"`
+	FieldsCount     int                 `json:"fields_count,omitempty" jsonschema_description:"Call catalog-object_fields for the fields themselves"`
+	DataSources     []string            `json:"data_sources,omitempty" jsonschema_description:"Every source contributing to this object — more than one means extensions added fields"`
 
 	// Function.
 	Returns string `json:"returns,omitempty"`
@@ -145,12 +145,12 @@ func describedArgs(in []metaInputValue) []DescribedArg {
 }
 
 type metaDescribedObject struct {
-	Name            string `json:"name"`
-	Type            string `json:"type"`
-	Description     string `json:"description"`
-	LongDescription string `json:"longDescription"`
-	ModuleName      string `json:"moduleName"`
-	DataSourceName  string `json:"dataSourceName"`
+	Name            string   `json:"name"`
+	Type            string   `json:"type"`
+	Description     string   `json:"description"`
+	LongDescription string   `json:"longDescription"`
+	ModuleName      string   `json:"moduleName"`
+	DataSourceName  string   `json:"dataSourceName"`
 	DataSources     []string `json:"dataSources"`
 	PrimaryKey      []string `json:"primaryKey"`
 	Properties      struct {

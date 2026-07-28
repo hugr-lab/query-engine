@@ -174,9 +174,10 @@ func TestMCP_ToolsList(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	tools := result["tools"].([]any)
 
-	// Should have 19 tools: 4 catalog + 4 schema (rebuilt) + 7 legacy discovery + schema-type_info + 3 data.
-	// The discovery-* half is being replaced by catalog-* (design-035).
-	assert.Len(t, tools, 19, "expected 19 MCP tools")
+	// The whole surface: 4 catalog + 4 schema + 4 data. The discovery-* family
+	// and schema-type_info are gone — they read the compiled-schema views,
+	// which the entity storage does not expose (design-035).
+	assert.Len(t, tools, 12, "expected 12 MCP tools")
 
 	// Verify tool names.
 	toolNames := make(map[string]bool)
@@ -188,23 +189,23 @@ func TestMCP_ToolsList(t *testing.T) {
 		"catalog-list",
 		"catalog-describe",
 		"catalog-search",
-		"schema-describe_types",
 		"catalog-object_fields",
-		"schema-field_args",
-		"discovery-search_modules",
-		"discovery-search_data_sources",
-		"discovery-search_module_data_objects",
-		"discovery-describe_data_objects",
-		"discovery-search_module_functions",
-		"discovery-describe_functions",
-		"discovery-field_values",
-		"schema-type_info",
+		"schema-describe_types",
 		"schema-type_fields",
-		
+		"schema-field_args",
 		"schema-enum_values",
+		"data-field_values",
 		"data-inline_graphql_result",
 		"data-execute_mutation",
 		"data-validate_graphql_query",
+	}
+	for _, gone := range []string{
+		"discovery-search_modules", "discovery-search_data_sources",
+		"discovery-search_module_data_objects", "discovery-describe_data_objects",
+		"discovery-search_module_functions", "discovery-describe_functions",
+		"discovery-field_values", "schema-type_info", "schema-describe_fields",
+	} {
+		assert.False(t, toolNames[gone], "removed tool still registered: %s", gone)
 	}
 	for _, name := range expectedTools {
 		assert.True(t, toolNames[name], "missing tool: %s", name)
@@ -282,65 +283,6 @@ func TestMCP_InlineGraphQLResult(t *testing.T) {
 	assert.Contains(t, queryResult, "original_size")
 }
 
-func TestMCP_SchemaTypeInfo(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	// Query a known type from the core catalog.
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "schema-type_info",
-		"arguments": map[string]any{
-			"type_name": "core_data_sources",
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-
-	textContent := content[0].(map[string]any)["text"].(string)
-	t.Logf("type_info response: %.500s", textContent)
-	var typeInfo map[string]any
-	require.NoError(t, json.Unmarshal([]byte(textContent), &typeInfo))
-	assert.Equal(t, "core_data_sources", typeInfo["name"])
-	assert.Contains(t, typeInfo, "fields_total")
-	assert.Contains(t, typeInfo, "has_geometry_field")
-	assert.Contains(t, typeInfo, "has_field_with_arguments")
-}
-
-func TestMCP_SchemaTypeFields(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "schema-type_fields",
-		"arguments": map[string]any{
-			"type_name": "core_data_sources",
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-
-	textContent := content[0].(map[string]any)["text"].(string)
-	t.Logf("type_fields response text: %.500s", textContent)
-	var fieldsResult map[string]any
-	require.NoError(t, json.Unmarshal([]byte(textContent), &fieldsResult))
-	assert.Contains(t, fieldsResult, "total")
-	assert.Contains(t, fieldsResult, "returned")
-	assert.Contains(t, fieldsResult, "items")
-	items := fieldsResult["items"].([]any)
-	assert.Greater(t, len(items), 0, "core_data_sources should have fields")
-	// Check that each field has required fields.
-	first := items[0].(map[string]any)
-	assert.Contains(t, first, "name")
-	assert.Contains(t, first, "field_type")
-	assert.Contains(t, first, "hugr_type")
-	assert.Contains(t, first, "is_list")
-	assert.Contains(t, first, "arguments_count")
-}
-
 func TestMCP_PromptGet(t *testing.T) {
 	h := handler(t)
 	mcpInit(t, h)
@@ -369,149 +311,6 @@ func TestMCP_ResourceRead(t *testing.T) {
 
 	first := contents[0].(map[string]any)
 	assert.Contains(t, first["text"].(string), "Hugr")
-}
-
-func TestMCP_SchemaEnumValues(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "schema-enum_values",
-		"arguments": map[string]any{
-			"type_name": "GeometryType",
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-
-	textContent := content[0].(map[string]any)["text"].(string)
-	t.Logf("enum_values response: %.500s", textContent)
-	var enumResult map[string]any
-	require.NoError(t, json.Unmarshal([]byte(textContent), &enumResult))
-	assert.Equal(t, "GeometryType", enumResult["name"])
-	assert.Contains(t, enumResult, "values")
-	values := enumResult["values"].([]any)
-	assert.Greater(t, len(values), 0, "enum should have values")
-}
-
-func TestMCP_SchemaEnumValues_NotEnum(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "schema-enum_values",
-		"arguments": map[string]any{
-			"type_name": "core_data_sources",
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-
-	textContent := content[0].(map[string]any)["text"].(string)
-	assert.Contains(t, textContent, "not ENUM")
-}
-
-func TestMCP_FieldValues(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "discovery-field_values",
-		"arguments": map[string]any{
-			"object_name": "core_data_sources",
-			"field_name":  "type",
-			"limit":       5,
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-
-	textContent := content[0].(map[string]any)["text"].(string)
-	t.Logf("field_values response: %.500s", textContent)
-	// Should return values or an error message (not panic)
-	assert.NotEmpty(t, textContent)
-}
-
-func TestMCP_DiscoverySearchModules(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	// Without embeddings, search should return an error, not panic.
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "discovery-search_modules",
-		"arguments": map[string]any{
-			"query": "data sources",
-			"top_k": 3,
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-	// Should not panic — returns error or empty result
-	t.Logf("search_modules (no embeddings): %.300s", content[0].(map[string]any)["text"])
-}
-
-func TestMCP_DiscoverySearchDataSources(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "discovery-search_data_sources",
-		"arguments": map[string]any{
-			"query": "postgres",
-			"top_k": 3,
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-	t.Logf("search_data_sources (no embeddings): %.300s", content[0].(map[string]any)["text"])
-}
-
-func TestMCP_DiscoverySearchModuleDataObjects(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "discovery-search_module_data_objects",
-		"arguments": map[string]any{
-			"module": "core",
-			"query":  "data sources",
-			"top_k":  3,
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-	t.Logf("search_module_data_objects (no embeddings): %.300s", content[0].(map[string]any)["text"])
-}
-
-func TestMCP_DiscoverySearchModuleFunctions(t *testing.T) {
-	h := handler(t)
-	mcpInit(t, h)
-
-	resp := jsonRPC(t, h, "tools/call", map[string]any{
-		"name": "discovery-search_module_functions",
-		"arguments": map[string]any{
-			"module": "core",
-			"query":  "load",
-			"top_k":  3,
-		},
-	})
-	require.Contains(t, resp, "result")
-	result := resp["result"].(map[string]any)
-	content := result["content"].([]any)
-	require.NotEmpty(t, content)
-	t.Logf("search_module_functions (no embeddings): %.300s", content[0].(map[string]any)["text"])
 }
 
 func TestMCP_ValidateInvalidQuery(t *testing.T) {

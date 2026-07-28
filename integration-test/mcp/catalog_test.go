@@ -889,3 +889,48 @@ func TestSchemaEnumValues(t *testing.T) {
 	assert.Equal(t, true, result["isError"])
 	assert.Contains(t, result["content"].([]any)[0].(map[string]any)["text"].(string), "not ENUM")
 }
+
+// TestDataFieldValues — the renamed data tool. It RUNS a query, so the point
+// is that it resolves the module nesting and the aggregation query names from
+// the logical model rather than from the compiled views it used to read.
+func TestDataFieldValues(t *testing.T) {
+	h := handler(t)
+	mcpInit(t, h)
+
+	resp := jsonRPC(t, h, "tools/call", map[string]any{
+		"name": "data-field_values",
+		"arguments": map[string]any{
+			"object_name": "core_data_sources", "field_name": "type",
+			"limit": 5, "calculate_stats": true,
+		},
+	})
+	result := resp["result"].(map[string]any)
+	require.NotEqual(t, true, result["isError"], "tool error: %v", result["content"])
+
+	var out struct {
+		Object string `json:"object"`
+		Field  string `json:"field"`
+		Values []struct {
+			Value any `json:"value"`
+			Rows  int `json:"rows"`
+		} `json:"values"`
+		Stats map[string]any `json:"stats"`
+	}
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	require.NoError(t, json.Unmarshal([]byte(text), &out), "payload: %s", text)
+	assert.Equal(t, "core_data_sources", out.Object)
+	assert.Equal(t, "type", out.Field)
+
+	// An unknown field is named as such instead of running a query that fails
+	// with a GraphQL validation error the agent cannot act on.
+	resp = jsonRPC(t, h, "tools/call", map[string]any{
+		"name": "data-field_values",
+		"arguments": map[string]any{
+			"object_name": "core_data_sources", "field_name": "no_such_field",
+		},
+	})
+	result = resp["result"].(map[string]any)
+	require.Equal(t, true, result["isError"])
+	assert.Contains(t, result["content"].([]any)[0].(map[string]any)["text"].(string),
+		"catalog-object_fields", "the error names the tool that lists the real fields")
+}

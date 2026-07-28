@@ -282,6 +282,15 @@ func lexicalScore(terms []string, name, description string) float64 {
 	return min(1, score/float64(len(terms)))
 }
 
+// distanceToScore converts an embedding distance (0 = identical) into a 0-1
+// score where higher is better, which is what a client can reason about.
+func distanceToScore(d float64) float64 {
+	if d < 0 {
+		return 0
+	}
+	return 1 - d
+}
+
 // inModule scopes a hit to a module SUBTREE. "" is the root module, and every
 // other module is a submodule of it, so scoping by "" is the whole tree —
 // stated here rather than left to the caller's nil-check.

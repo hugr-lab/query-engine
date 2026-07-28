@@ -119,96 +119,6 @@ Batched: pass every unknown name at once. Names that do not exist, and names you
 		mcp.WithOutputSchema[TypeDescriptions](),
 	), s.schemaDescribeTypes)
 
-	// Discovery tools.
-	mcpServer.AddTool(mcp.NewTool("discovery-search_modules",
-		mcp.WithDescription(`Search modules by natural language. Returns top-K modules ranked by semantic relevance.
-Use as FIRST STEP to find which module contains the data you need.
-Each module is a namespace: query { module { submodule { ... } } }.`),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Natural language search query describing what data you need")),
-		mcp.WithNumber("top_k", mcp.Description("Number of results (1-50)"), mcp.DefaultNumber(5)),
-		mcp.WithNumber("min_score", mcp.Description("Minimum relevance score (0-1)"), mcp.DefaultNumber(0.3)),
-		mcp.WithOutputSchema[SearchResult[ModuleSearchItem]](),
-	), s.searchModules)
-
-	mcpServer.AddTool(mcp.NewTool("discovery-search_data_sources",
-		mcp.WithDescription(`Search data sources by natural language. Returns sources with type (duckdb/postgres/http) and read-only info.`),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Natural language search query describing what data you need")),
-		mcp.WithNumber("top_k", mcp.Description("Number of results (1-50)"), mcp.DefaultNumber(5)),
-		mcp.WithNumber("min_score", mcp.Description("Minimum relevance score (0-1)"), mcp.DefaultNumber(0.3)),
-		mcp.WithOutputSchema[SearchResult[DataSourceSearchItem]](),
-	), s.searchDataSources)
-
-	mcpServer.AddTool(mcp.NewTool("discovery-search_module_data_objects",
-		mcp.WithDescription(`Search tables/views by natural-language query — a LEAN candidate list. Per object: type name (for schema-type_fields), object_type (table|view), parameterized (view takes query params), has_geometry, module + catalog (data source), fields_count, and the queries[] with each query's return_type. For the full per-query arguments (incl. parameterized-view params) call discovery-describe_data_objects.
-Each data object has 4 query fields: <name>, <name>_by_pk, <name>_aggregation, <name>_bucket_aggregation.
-IMPORTANT: use query field names from 'queries' array to build GraphQL, not the type name; the module is REQUIRED to nest the query.
-NOTE: aggregation and bucket_aggregation are data object queries, NOT functions — do not use discovery-search_module_functions for them.
-
-The 'module' parameter is REQUIRED but may be an empty string. Filter semantics:
-  module=""  + include_sub_modules=false → root namespace only (objects with module=="")
-  module=""  + include_sub_modules=true  → whole catalogue (no module filter)
-  module="x" + include_sub_modules=false → strict eq match on module
-  module="x" + include_sub_modules=true  → prefix match (x and its sub-modules)`),
-		mcp.WithString("module", mcp.Required(), mcp.Description("Module path to narrow the search. Empty string is allowed: combined with include_sub_modules=true searches the whole catalogue; with include_sub_modules=false matches only root-level objects.")),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Natural language query describing what tables/views you need")),
-		mcp.WithNumber("top_k", mcp.Description("Number of results (1-50)"), mcp.DefaultNumber(5)),
-		mcp.WithNumber("min_score", mcp.Description("Minimum relevance score (0-1)"), mcp.DefaultNumber(0.3)),
-		mcp.WithBoolean("include_sub_modules", mcp.Description("Include sub-module data objects (see filter semantics in description)"), mcp.DefaultBool(true)),
-		mcp.WithOutputSchema[SearchResult[DataObjectSearchItem]](),
-	), s.searchModuleDataObjects)
-
-	mcpServer.AddTool(mcp.NewTool("discovery-describe_data_objects",
-		mcp.WithDescription(`Return the FULL catalogue record for EXACT-name data objects — the describe half of the data-object surface. Deterministic lookup (no semantic scoring), BATCHED: pass every type name you already know in one call. Type names carry the catalog prefix and are globally unique, so no module hint is needed.
-Use this once you know which objects you'll query (from a prior search, the user's literal input, a stored reference). Beyond the search shape, each query additionally carries query_root (the GraphQL type hosting the query field) and its arguments — including a parameterized view's params (args: <view>_args) — so you can build the call directly.
-Names that don't resolve to a visible table/view are skipped; an all-miss request returns a structured not_found error.`),
-		mcp.WithArray("names", mcp.Required(), mcp.Description("Type names with the catalog prefix (e.g. prefix_tablename), as listed in DataObjectSearchItem.Name."), mcp.WithStringItems()),
-		mcp.WithOutputSchema[SearchResult[DataObjectSearchItem]](),
-	), s.describeDataObjects)
-
-	mcpServer.AddTool(mcp.NewTool("discovery-search_module_functions",
-		mcp.WithDescription(`Search custom functions in a module — a LEAN candidate list. Functions are separate from data objects: custom computed endpoints.
-Per function: name, module, description, is_mutation, is_list, return_type, arguments_count. For the full signature (argument names/types + return type fields) call discovery-describe_functions with the names you'll use.
-Functions are called via: query { function { module { func_name(args) { fields } } }
-NOTE: do NOT search here for aggregation/bucket_aggregation — those are data object queries found via discovery-search_module_data_objects.`),
-		mcp.WithString("module", mcp.Required(), mcp.Description("Module name to search within")),
-		mcp.WithString("query", mcp.Required(), mcp.Description("Natural language query describing what functions you need")),
-		mcp.WithNumber("top_k", mcp.Description("Number of results (1-50)"), mcp.DefaultNumber(10)),
-		mcp.WithBoolean("include_mutations", mcp.Description("Include mutation functions"), mcp.DefaultBool(false)),
-		mcp.WithBoolean("include_sub_modules", mcp.Description("Include sub-module functions"), mcp.DefaultBool(true)),
-		mcp.WithOutputSchema[SearchResult[FunctionSearchItem]](),
-	), s.searchModuleFunctions)
-
-	mcpServer.AddTool(mcp.NewTool("discovery-describe_functions",
-		mcp.WithDescription(`Return the FULL signature — arguments (name, type, required, description) + the return type with its top fields — for the named functions in a module. The describe half of discovery-search_module_functions.
-BATCHED: pass every function name you'll call in one request. Function names are NOT globally unique, so a module is required (sub-modules are searched too); both query and mutation functions are matched.
-Call this after search, once you know which functions you'll use. Names that don't resolve are skipped; an all-miss request returns a structured not_found error.`),
-		mcp.WithString("module", mcp.Required(), mcp.Description("Module the functions live in (sub-modules included)")),
-		mcp.WithArray("names", mcp.Required(), mcp.Description("Function field names to describe (from discovery-search_module_functions output)"), mcp.WithStringItems()),
-		mcp.WithOutputSchema[SearchResult[FunctionSearchItem]](),
-	), s.describeFunctions)
-
-	mcpServer.AddTool(mcp.NewTool("discovery-field_values",
-		mcp.WithDescription(`Return top distinct values and optional stats for a scalar field. Use to understand data distribution before building filters.
-Stats (min/max/avg) are only available for numeric and timestamp fields, not for strings.
-ALWAYS check field values before building filters with specific values (categories, statuses, etc.).`),
-		mcp.WithString("object_name", mcp.Required(), mcp.Description("Data object type name (e.g. prefix_tablename)")),
-		mcp.WithString("field_name", mcp.Required(), mcp.Description("Field name to analyze")),
-		mcp.WithNumber("limit", mcp.Description("Number of top values (1-100)"), mcp.DefaultNumber(10)),
-		mcp.WithBoolean("calculate_stats", mcp.Description("Include min/max/avg/distinct_count (only for numeric/timestamp fields)"), mcp.DefaultBool(false)),
-		mcp.WithObject("filter", mcp.Description("Optional filter object to narrow data before aggregation")),
-		mcp.WithOutputSchema[FieldValuesResult](),
-	), s.fieldValues)
-
-	// Schema introspection tools.
-	mcpServer.AddTool(mcp.NewTool("schema-type_info",
-		mcp.WithDescription(`Return high-level metadata for a type: kind, module, catalog, field count, geometry/argument presence.
-Use type_name (e.g. "prefix_tablename"), NOT the module name.`),
-		mcp.WithString("type_name", mcp.Required(), mcp.Description("Full type name (e.g. prefix_tablename, NOT the module name)")),
-		mcp.WithBoolean("with_description", mcp.Description("Include short description"), mcp.DefaultBool(true)),
-		mcp.WithBoolean("with_long_description", mcp.Description("Include long description (verbose, uses more context)"), mcp.DefaultBool(false)),
-		mcp.WithOutputSchema[TypeInfo](),
-	), s.typeInfo)
-
 	mcpServer.AddTool(mcp.NewTool("catalog-object_fields",
 		mcp.WithDescription(`List the fields of a DATA OBJECT — what you can actually select. Call this after catalog-describe told you the query name; describe gives the call signature, this gives the columns.
 field_kind says what each field IS, and they are not all columns: 'column' is a stored value, 'extra' is computed, and 'relation' is a PATH — ref_object names the object it leads to, so selecting that field is how you traverse. is_pk marks the primary key.
@@ -254,7 +164,17 @@ Common enums: OrderDirection (ASC, DESC), TimeExtract, TimeBucket, GeometryType.
 		mcp.WithOutputSchema[Page[EnumValue]](),
 	), s.schemaEnumValues)
 
-	// Data tools.
+	mcpServer.AddTool(mcp.NewTool("data-field_values",
+		mcp.WithDescription(`Show what is actually IN a field: its most common values with row counts, and optionally min/max/avg. Use it before writing a filter, so you match values that exist instead of guessing their spelling or range.
+This RUNS A QUERY over the data under your own permissions — it is not schema introspection. Pass 'filter' to scope it to a subset.`),
+		mcp.WithString("object_name", mcp.Required(), mcp.Description("The data object's GraphQL type name")),
+		mcp.WithString("field_name", mcp.Required(), mcp.Description("Field to summarise")),
+		mcp.WithNumber("limit", mcp.Description("Distinct values to return (1-100)"), mcp.DefaultNumber(10)),
+		mcp.WithBoolean("calculate_stats", mcp.Description("Also compute min/max/avg where the type allows"), mcp.DefaultBool(false)),
+		mcp.WithObject("filter", mcp.Description("Scope the summary, same shape as the object's query filter")),
+		mcp.WithOutputSchema[FieldValues](),
+	), s.dataFieldValues)
+
 	mcpServer.AddTool(mcp.NewTool("data-inline_graphql_result",
 		mcp.WithDescription(`Execute a GraphQL query and return JSON result with optional jq transform.
 If result is truncated (is_truncated=true), increase max_result_size (up to 10000) or use jq_transform to reduce output.
