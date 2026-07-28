@@ -4,6 +4,7 @@ package hugr
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
@@ -65,20 +66,41 @@ func TestNullFieldReachesTheResponse(t *testing.T) {
 			}
 
 			// Scanning INTO the null still reports no data — that is what
-			// ScanData means by a nil value, and callers that need to tell
-			// "served null" from "no answer" read the parent instead.
+			// ScanData documents a nil leaf to mean, and callers that need to
+			// tell "served null" from "no answer" read the parent instead.
 			var node struct {
 				Name string `json:"name"`
 			}
-			if err := res.ScanData("_dataObject", &node); err == nil {
-				t.Fatal("scanning into a null must not succeed")
-			} else if !isNoData(err) {
+			if err := res.ScanData("_dataObject", &node); !errors.Is(err, types.ErrNoData) {
 				t.Fatalf("scanning into a null: got %v, want ErrNoData", err)
+			}
+
+			// The same for a DATA query that matched nothing. This is not the
+			// path the bug was found on, but it is the same defect:
+			// processDataQuery returns nil on sql.ErrNoRows, so a by-pk lookup
+			// that found no row was losing its key too, and a client could not
+			// tell "no such row" from "something went wrong".
+			res2, err := service.Query(ctx,
+				`{ core { data_sources_by_pk(name: "no_such_source") { name } } }`, nil)
+			if err != nil {
+				t.Fatalf("by-pk query: %v", err)
+			}
+			if rerr := res2.Err(); rerr != nil {
+				t.Fatalf("by-pk response error: %v", rerr)
+			}
+			defer res2.Close()
+
+			core, ok := res2.Data["core"].(map[string]any)
+			if !ok {
+				t.Fatalf("core is missing from the response: %v", res2.Data)
+			}
+			v, ok = core["data_sources_by_pk"]
+			if !ok {
+				t.Fatalf("a by-pk lookup that matched nothing lost its key: %v", core)
+			}
+			if v != nil {
+				t.Fatalf("data_sources_by_pk = %v, want null", v)
 			}
 		})
 	}
-}
-
-func isNoData(err error) bool {
-	return err == types.ErrNoData
 }
