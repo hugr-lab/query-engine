@@ -235,27 +235,24 @@ func (s *Server) rankLexically(ctx context.Context, query string, kinds []string
 	terms := strings.Fields(needle)
 	var hits []SearchHit
 
-	for _, kind := range kinds {
-		if kind == kindField {
-			// Fields have no structural enumeration that is not per object;
-			// without vectors they are out of reach, and saying so beats
-			// walking every object in the deployment.
+	// Fields have no structural enumeration that is not per object; without
+	// vectors they are out of reach, and dropping them beats walking every
+	// object in the deployment.
+	structural := slices.DeleteFunc(slices.Clone(kinds), func(k string) bool { return k == kindField })
+	// ONE walk for every kind asked for — the tree-backed kinds share it.
+	items, _, err := s.catalogItemsOf(ctx, structural, module)
+	if err != nil {
+		return nil, err
+	}
+	for _, it := range items {
+		score := lexicalScore(terms, it.Name, it.Description)
+		if score == 0 {
 			continue
 		}
-		items, _, err := s.catalogItems(ctx, kind, module)
-		if err != nil {
-			return nil, err
-		}
-		for _, it := range items {
-			score := lexicalScore(terms, it.Name, it.Description)
-			if score == 0 {
-				continue
-			}
-			hits = append(hits, SearchHit{
-				Kind: kind, Name: it.Name, Module: it.Module,
-				DataSource: it.DataSource, Description: it.Description, Score: score,
-			})
-		}
+		hits = append(hits, SearchHit{
+			Kind: it.Kind, Name: it.Name, Module: it.Module,
+			DataSource: it.DataSource, Description: it.Description, Score: score,
+		})
 	}
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
 	if len(hits) > limit {

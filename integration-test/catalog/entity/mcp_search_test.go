@@ -4,10 +4,13 @@ package entity_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -28,7 +31,12 @@ import (
 // and in every deployment. lexical_reason is what makes the two
 // distinguishable, and this test reads it.
 
-func mcpHandler(t *testing.T, vectorSize int) http.Handler {
+func mcpHandler(t testing.TB, vectorSize int) http.Handler {
+	t.Helper()
+	return mcpHandlerWithEmbedder(t, vectorSize, "")
+}
+
+func mcpHandlerWithEmbedder(t testing.TB, vectorSize int, embedderURL string) http.Handler {
 	t.Helper()
 	service, err := hugr.New(hugr.Config{
 		DB:             db.Config{Path: ""},
@@ -39,15 +47,33 @@ func mcpHandler(t *testing.T, vectorSize int) http.Handler {
 				auth.NewAnonymous(auth.AnonymousConfig{Allowed: true, Role: "admin"}),
 			},
 		},
+		Embedder:   hugr.EmbedderConfig{URL: embedderURL, VectorSize: vectorSize},
 		MCPEnabled: true,
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() { service.Close() })
-	require.NoError(t, service.Init(t.Context()))
-	return mcpserver.New(service, nil, true).Handler()
+	require.NoError(t, service.Init(context.Background()))
+	return mcpserver.New(service, nil, false).Handler()
 }
 
-func mcpCall(t *testing.T, h http.Handler, tool string, args map[string]any) map[string]any {
+// liveEmbedder returns the configured embedder, or skips: the vector path
+// cannot be exercised without one, and pretending otherwise — asserting only
+// that the query validates — is what let the fallback hide everything.
+func liveEmbedder(t testing.TB) (string, int) {
+	t.Helper()
+	url := os.Getenv("EMBEDDER_URL")
+	if url == "" {
+		t.Skip("set EMBEDDER_URL (and EMBEDDER_VECTOR_SIZE) to exercise vector ranking")
+	}
+	size := 0
+	if v := os.Getenv("EMBEDDER_VECTOR_SIZE"); v != "" {
+		fmt.Sscanf(v, "%d", &size)
+	}
+	require.Positive(t, size, "EMBEDDER_VECTOR_SIZE must be set alongside EMBEDDER_URL")
+	return url, size
+}
+
+func mcpCall(t testing.TB, h http.Handler, tool string, args map[string]any) map[string]any {
 	t.Helper()
 	call := func(method string, params any) map[string]any {
 		body, err := json.Marshal(map[string]any{
@@ -150,4 +176,82 @@ func TestMCPListAndDescribeOnEntityStorage(t *testing.T) {
 	require.Len(t, described, 1)
 	queries, _ := described[0].(map[string]any)["queries"].([]any)
 	assert.NotEmpty(t, queries, "the entity storage reconstructs the query field names too")
+}
+
+// TestMCPSearchVectorRanking is the one test that actually RANKS. Everything
+// else about search survives without an embedder, which is exactly why the
+// vector path could rot unnoticed: the fallback answers, the tool looks fine,
+// and nothing ever ran the query that matters.
+//
+// It needs a live embedder (EMBEDDER_URL) and skips without one.
+func TestMCPSearchVectorRanking(t *testing.T) {
+	url, size := liveEmbedder(t)
+	h := mcpHandlerWithEmbedder(t, size, url)
+
+	payload := mcpCall(t, h, "catalog-search", map[string]any{
+		"query": "where are the attached databases described",
+		"limit": 10,
+	})
+
+	reason, _ := payload["lexical_reason"].(string)
+	require.Empty(t, reason, "vector ranking must be the path taken, not the fallback")
+	require.NotEqual(t, true, payload["lexical"], "the answer must not be marked lexical")
+
+	items, _ := payload["items"].([]any)
+	require.NotEmpty(t, items, "vector ranking returned nothing")
+
+	// The query shares no substring with the answer — that is the point. A
+	// lexical ranker scores 0 for "where are the attached databases described"
+	// against "core_data_sources"; only an embedding connects them.
+	var names []string
+	var lastScore float64 = 2
+	for _, raw := range items {
+		hit := raw.(map[string]any)
+		names = append(names, hit["name"].(string))
+		score := hit["score"].(float64)
+		assert.LessOrEqual(t, score, lastScore, "hits must come back ordered by score")
+		lastScore = score
+		assert.NotEmpty(t, hit["next_call"], "every hit names the next rung")
+	}
+	t.Logf("semantic hits: %v", names)
+
+	var found bool
+	for _, n := range names {
+		if strings.Contains(n, "data_source") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "semantic search should reach the data-source catalog for %q, got %v",
+		"where are the attached databases described", names)
+}
+
+// TestMCPSearchVectorFieldHits — field hits are the reason to search rather
+// than list, and they are also the only hits the lexical fallback cannot
+// produce at all. This is the only place they are exercised.
+func TestMCPSearchVectorFieldHits(t *testing.T) {
+	url, size := liveEmbedder(t)
+	h := mcpHandlerWithEmbedder(t, size, url)
+
+	payload := mcpCall(t, h, "catalog-search", map[string]any{
+		"query": "connection string to reach the database",
+		"kinds": []string{"field"},
+		"limit": 10,
+	})
+	require.Empty(t, payload["lexical_reason"])
+
+	items, _ := payload["items"].([]any)
+	require.NotEmpty(t, items, "no field hits — the entity_fields index is not being ranked")
+
+	for _, raw := range items {
+		hit := raw.(map[string]any)
+		assert.Equal(t, "field", hit["kind"])
+		assert.NotEmpty(t, hit["object"], "a field hit must name its owning object")
+		assert.NotEmpty(t, hit["hugr_type"], "a field hit must carry its type")
+		assert.Contains(t, []any{"column", "relation", "extra"}, hit["field_kind"])
+		if hit["field_kind"] == "relation" {
+			assert.NotEmpty(t, hit["ref_object"],
+				"a relation hit is a PATH — it must name where it leads")
+		}
+	}
 }

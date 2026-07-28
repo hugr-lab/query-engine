@@ -129,7 +129,6 @@ func moduleWalkQuery(payload string) string {
 }
 
 const (
-	modulePayload     = "dataObjects { name } functions { name }"
 	dataObjectPayload = "dataObjects { name type moduleName dataSourceName description }"
 	functionPayload   = "functions { name type moduleName dataSourceName description }"
 )
@@ -177,17 +176,98 @@ func (s *Server) catalogList(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	return toolResultJSON(paginate(items, limit, offset, truncated)), nil
 }
 
-// catalogItems reads one kind's full permission-filtered enumeration. The read
-// runs in the CALLER's context: the meta-query family hides what the role may
-// not see, so there is nothing left to filter here.
+// catalogItems reads one kind's full permission-filtered enumeration.
 func (s *Server) catalogItems(ctx context.Context, kind, module string) ([]CatalogItem, bool, error) {
-	if kind == kindDataSource {
+	return s.catalogItemsOf(ctx, []string{kind}, module)
+}
+
+// catalogItemsOf enumerates SEVERAL kinds in ONE module walk. The three
+// tree-backed kinds share the same traversal, and asking for them separately
+// pays for it once each — which is what made the lexical search fallback cost
+// as much as embedding the query and scanning the whole index.
+//
+// The read runs in the CALLER's context: the meta-query family hides what the
+// role may not see, so there is nothing left to filter here.
+func (s *Server) catalogItemsOf(ctx context.Context, kinds []string, module string) ([]CatalogItem, bool, error) {
+	var items []CatalogItem
+	truncated := false
+
+	if slices.Contains(kinds, kindDataSource) {
+		sources, err := s.dataSourceItems(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+		items = append(items, sources...)
+	}
+
+	var payload []string
+	wantModule := slices.Contains(kinds, kindModule)
+	wantObjects := slices.Contains(kinds, kindDataObject)
+	wantFunctions := slices.Contains(kinds, kindFunction)
+	switch {
+	case wantObjects:
+		payload = append(payload, dataObjectPayload)
+	case wantModule:
+		payload = append(payload, "dataObjects { name }")
+	}
+	switch {
+	case wantFunctions:
+		payload = append(payload, functionPayload)
+	case wantModule:
+		payload = append(payload, "functions { name }")
+	}
+
+	if len(payload) > 0 {
+		var root metaModuleNode
+		err := s.queryScan(ctx, moduleWalkQuery(strings.Join(payload, " ")),
+			map[string]any{"module": module}, "_module", &root)
+		if err != nil {
+			return nil, false, err
+		}
+		truncated = walkModules(&root, 0, func(m *metaModuleNode) {
+			if wantModule {
+				objects, functions, submodules := len(m.DataObjects), len(m.Functions), len(m.Modules)
+				items = append(items, CatalogItem{
+					Kind: kindModule, Name: m.Name, Description: m.Description,
+					DataObjects: &objects, Functions: &functions, Submodules: &submodules,
+				})
+			}
+			if wantObjects {
+				for _, o := range m.DataObjects {
+					items = append(items, CatalogItem{
+						Kind: kindDataObject, Name: o.Name, Type: o.Type, Module: o.Module,
+						DataSource: o.DataSource, Description: o.Description,
+					})
+				}
+			}
+			if wantFunctions {
+				for _, f := range m.Functions {
+					items = append(items, CatalogItem{
+						Kind: kindFunction, Name: f.Name, Type: f.Type, Module: f.Module,
+						DataSource: f.DataSource, Description: f.Description,
+					})
+				}
+			}
+		})
+	}
+
+	slices.SortFunc(items, func(a, b CatalogItem) int {
+		if c := strings.Compare(a.Module, b.Module); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	return items, truncated, nil
+}
+
+func (s *Server) dataSourceItems(ctx context.Context) ([]CatalogItem, error) {
+	{
 		var sources []metaDataSourceNode
 		err := s.queryScan(ctx, `{ _dataSources {
 			name engine description readOnly asModule isExtension modules
 		} }`, nil, "_dataSources", &sources)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		items := make([]CatalogItem, 0, len(sources))
 		for _, ds := range sources {
@@ -197,56 +277,8 @@ func (s *Server) catalogItems(ctx context.Context, kind, module string) ([]Catal
 				IsExtension: ds.IsExtension, Modules: ds.Modules,
 			})
 		}
-		slices.SortFunc(items, func(a, b CatalogItem) int { return strings.Compare(a.Name, b.Name) })
-		return items, false, nil
+		return items, nil
 	}
-
-	payload := modulePayload
-	switch kind {
-	case kindDataObject:
-		payload = dataObjectPayload
-	case kindFunction:
-		payload = functionPayload
-	}
-	var root metaModuleNode
-	err := s.queryScan(ctx, moduleWalkQuery(payload), map[string]any{"module": module}, "_module", &root)
-	if err != nil {
-		return nil, false, err
-	}
-
-	var items []CatalogItem
-	truncated := walkModules(&root, 0, func(m *metaModuleNode) {
-		switch kind {
-		case kindModule:
-			objects, functions, submodules := len(m.DataObjects), len(m.Functions), len(m.Modules)
-			items = append(items, CatalogItem{
-				Kind: kindModule, Name: m.Name, Description: m.Description,
-				DataObjects: &objects, Functions: &functions, Submodules: &submodules,
-			})
-		case kindDataObject:
-			for _, o := range m.DataObjects {
-				items = append(items, CatalogItem{
-					Kind: kindDataObject, Name: o.Name, Type: o.Type, Module: o.Module,
-					DataSource: o.DataSource, Description: o.Description,
-				})
-			}
-		case kindFunction:
-			for _, f := range m.Functions {
-				items = append(items, CatalogItem{
-					Kind: kindFunction, Name: f.Name, Type: f.Type, Module: f.Module,
-					DataSource: f.DataSource, Description: f.Description,
-				})
-			}
-		}
-	})
-
-	slices.SortFunc(items, func(a, b CatalogItem) int {
-		if c := strings.Compare(a.Module, b.Module); c != 0 {
-			return c
-		}
-		return strings.Compare(a.Name, b.Name)
-	})
-	return items, truncated, nil
 }
 
 // paginate applies the uniform envelope. Items is never nil, so a client sees

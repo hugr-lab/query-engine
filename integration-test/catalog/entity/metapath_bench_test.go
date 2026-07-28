@@ -4,6 +4,7 @@ package entity_test
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	hugr "github.com/hugr-lab/query-engine"
@@ -103,4 +104,60 @@ func BenchmarkMetaPath(b *testing.B) {
 			}
 		})
 	}
+}
+
+// BenchmarkCatalogTools measures the MCP tools themselves, on the entity
+// storage. catalog-search is the expensive one and the only one whose cost is
+// not obvious: it embeds the query, scans the index, and then spends round
+// trips re-resolving candidates in the caller's context to filter them.
+//
+// The vector arm needs a live embedder (EMBEDDER_URL + EMBEDDER_VECTOR_SIZE)
+// and skips without one; the lexical arm always runs, so the two can be
+// compared on the same corpus:
+//
+//	set -a && source .local/.env && set +a
+//	CGO_CFLAGS="-O1 -g" go test -tags=duckdb_arrow -run=NONE \
+//	    -bench=BenchmarkCatalogTools ./integration-test/catalog/entity/
+func BenchmarkCatalogTools(b *testing.B) {
+	run := func(b *testing.B, h http.Handler, tool string, args map[string]any) {
+		mcpCall(b, h, tool, args) // warm
+		b.ResetTimer()
+		for b.Loop() {
+			mcpCall(b, h, tool, args)
+		}
+	}
+
+	b.Run("lexical", func(b *testing.B) {
+		h := mcpHandler(b, 0)
+		b.Run("list_modules", func(b *testing.B) {
+			run(b, h, "catalog-list", map[string]any{"kind": "module"})
+		})
+		b.Run("list_data_objects", func(b *testing.B) {
+			run(b, h, "catalog-list", map[string]any{"kind": "data_object", "limit": 200})
+		})
+		b.Run("describe_object", func(b *testing.B) {
+			run(b, h, "catalog-describe", map[string]any{
+				"kind": "data_object", "names": []string{"core_data_sources"},
+			})
+		})
+		b.Run("search", func(b *testing.B) {
+			run(b, h, "catalog-search", map[string]any{"query": "data sources", "limit": 10})
+		})
+	})
+
+	b.Run("vector", func(b *testing.B) {
+		url, size := liveEmbedder(b)
+		h := mcpHandlerWithEmbedder(b, size, url)
+		b.Run("search", func(b *testing.B) {
+			run(b, h, "catalog-search", map[string]any{
+				"query": "where are the attached databases described", "limit": 10,
+			})
+		})
+		b.Run("search_fields_only", func(b *testing.B) {
+			run(b, h, "catalog-search", map[string]any{
+				"query": "connection string to reach the database",
+				"kinds": []string{"field"}, "limit": 10,
+			})
+		})
+	})
 }
