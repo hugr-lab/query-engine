@@ -185,6 +185,51 @@ func ViewArgsArgument(info *base.ObjectInfo, pos *ast.Position) *ast.ArgumentDef
 	}
 }
 
+// ViewArgsFromDef reads a target's parameterized-view args off its DEFINITION
+// (@args) instead of the object registry, and returns nil when it is not a
+// parameterized view.
+//
+// The registry is only safe once every object is registered: TableRule runs
+// BEFORE ViewRule, so a @join declared on a table whose target is a view in the
+// same source is processed while that view is still unregistered — GetObject
+// would answer "no args" and silently drop them. The definition carries the
+// directive from the source, so it is right at any point in the phase.
+//
+// Requiredness follows the SAME rule as the root query (ViewRule): an explicit
+// @args(required: true), OR any NonNull member of the args input. ViewRule
+// propagates the computed value back onto the directive, but a caller that
+// runs before it must derive it itself — reading only the raw argument would
+// make a required view optional on exactly this path.
+func ViewArgsFromDef(ctx base.CompilationContext, def *ast.Definition) *base.ObjectInfo {
+	if def == nil {
+		return nil
+	}
+	argsDir := def.Directives.ForName(base.ViewArgsDirectiveName)
+	if argsDir == nil {
+		return nil
+	}
+	name := base.DirectiveArgString(argsDir, base.ArgName)
+	if name == "" {
+		return nil
+	}
+	required := base.DirectiveArgString(argsDir, base.ArgRequired) == "true"
+	if !required {
+		if inputDef := lookupObjectDef(ctx, name); inputDef != nil {
+			for _, f := range inputDef.Fields {
+				if f.Type.NonNull {
+					required = true
+					break
+				}
+			}
+		}
+	}
+	return &base.ObjectInfo{
+		Name:          def.Name,
+		InputArgsName: name,
+		RequiredArgs:  required,
+	}
+}
+
 // PrependViewArgs puts the target's view args in front of an argument list.
 // A no-op for a target that is not a parameterized view.
 func PrependViewArgs(info *base.ObjectInfo, args ast.ArgumentDefinitionList, pos *ast.Position) ast.ArgumentDefinitionList {

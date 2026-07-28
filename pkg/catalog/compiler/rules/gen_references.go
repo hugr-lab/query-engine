@@ -446,8 +446,15 @@ func addReferenceToFilterInput(ctx base.CompilationContext, objectName, fieldNam
 // for a reference on the parent object.
 func addReferenceAggregationFields(ctx base.CompilationContext, parentObject, refFieldName, targetObject, targetFilterName string, opts base.Options, pos *ast.Position) {
 	// The twins run the same view as the field they mirror, so they need the
-	// same parameters.
+	// same parameters. The registry answers once every object is registered;
+	// a caller inside TableRule (a @join onto a view of the same source) runs
+	// before ViewRule, so fall back to the target's own @args directive.
 	targetInfo := ctx.GetObject(targetObject)
+	if targetInfo == nil || targetInfo.InputArgsName == "" {
+		if fromDef := ViewArgsFromDef(ctx, lookupObjectDef(ctx, targetObject)); fromDef != nil {
+			targetInfo = fromDef
+		}
+	}
 	aggTypeName := "_" + targetObject + "_aggregation"
 	bucketAggTypeName := "_" + targetObject + "_aggregation_bucket"
 

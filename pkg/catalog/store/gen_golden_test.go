@@ -378,6 +378,50 @@ func TestGenGoldenTFCJ(t *testing.T) {
 	})
 }
 
+// genJoinViewSchema exercises a @join whose TARGET is a parameterized view,
+// declared inside its own source (the internal-extend path, not the
+// cross-source extension one). Everything that reaches the view has to carry
+// its args — the join field itself and its aggregation twins alike — and a
+// NonNull member of the args input makes them required all the way down.
+const genJoinViewSchema = `
+type regions @module(name: "geo") @table(name: "regions") {
+  id: Int! @pk
+  name: String!
+  stats: [region_stats] @join(references_name: "region_stats", source_fields: ["id"], references_fields: ["region_id"])
+}
+
+type region_stats @module(name: "geo")
+  @view(name: "region_stats", sql: "SELECT 1 AS region_id, 2 AS total")
+  @args(name: "region_stats_args") {
+  region_id: Int @pk
+  total: Int
+}
+
+input region_stats_args {
+  since: Timestamp!
+}
+`
+
+// TestGenGoldenJoinView pins the args profile of a @join onto a parameterized
+// view: the field takes the view's args (NonNull here — the input has a NonNull
+// member) on top of the standard subquery arguments, and so do the
+// {name}_aggregation / {name}_bucket_aggregation twins.
+func TestGenGoldenJoinView(t *testing.T) {
+	store, ctx := storeFor(t, genJoinViewSchema)
+	ref := goldenRef(t, "test", genJoinViewSchema)
+
+	assertGenParity(t, ctx, store, ref, "joinview", []string{
+		"regions",
+		"region_stats",
+		"region_stats_args",
+		"regions_filter",
+		"region_stats_filter",
+		"_regions_aggregation",
+		"_region_stats_aggregation",
+		"_module_geo_query",
+	})
+}
+
 // fixtureSource describes one source of a multi-source golden fixture.
 type fixtureSource struct {
 	name        string

@@ -894,16 +894,25 @@ func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definitio
 		bucketAggName := "_" + targetName + "_aggregation_bucket"
 		subAggName := AggTypeNameAtDepth(targetName, 1)
 
+		// A join whose TARGET is a parameterized view carries the view's args
+		// like every other path to it — the field is the only place they can
+		// be passed. Read off the target definition, not the registry: this
+		// runs inside TableRule, before ViewRule has registered the view.
+		targetViewArgs := ViewArgsFromDef(ctx, lookupObjectDef(ctx, targetName))
+
 		if isJoin {
 			// @join fields: add subquery args to the field itself
 			if len(f.Arguments) == 0 {
-				f.Arguments = SubQueryArgs(targetFilterName, pos)
+				f.Arguments = SubQueryArgsWithViewArgs(targetViewArgs, targetFilterName, pos)
 			}
 
 			// Add {name}_aggregation and {name}_bucket_aggregation on base object (with subQueryArgs)
 			addReferenceAggregationFields(ctx, def.Name, f.Name, targetName, targetFilterName, opts, pos)
 
-			// Add direct agg + sub-agg fields on aggregation type (with aggRefArgs/aggSubRefArgs)
+			// Add direct agg + sub-agg fields on aggregation type (with
+			// aggRefArgs/aggSubRefArgs, plus the target's view args — these
+			// members run the same view as the join field).
+			targetInfo := targetViewArgs
 			ctx.AddExtension(&ast.Definition{
 				Kind:     ast.Object,
 				Name:     aggTypeName,
@@ -912,7 +921,7 @@ func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definitio
 					{
 						Name:      f.Name,
 						Type:      ast.NamedType(targetAggName, pos),
-						Arguments: AggRefArgs(targetFilterName, pos),
+						Arguments: PrependViewArgs(targetInfo, AggRefArgs(targetFilterName, pos), pos),
 						Directives: ast.DirectiveList{
 							fieldAggregationDirective(f.Name, pos),
 						},
@@ -921,7 +930,7 @@ func addVirtualFieldAggregations(ctx base.CompilationContext, def *ast.Definitio
 					{
 						Name:      f.Name + "_aggregation",
 						Type:      ast.NamedType(subAggName, pos),
-						Arguments: AggSubRefArgs(targetFilterName, pos),
+						Arguments: PrependViewArgs(targetInfo, AggSubRefArgs(targetFilterName, pos), pos),
 						Directives: ast.DirectiveList{
 							fieldAggregationDirective(f.Name, pos),
 						},

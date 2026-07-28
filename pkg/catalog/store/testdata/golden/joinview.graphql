@@ -1,0 +1,507 @@
+# Golden snapshot of the generated schema — authored by the schema
+# compiler, regenerate with UPDATE_GOLDEN=1. One section per definition
+# the entity store must reproduce; see gen_golden_test.go.
+
+# === regions
+type regions @catalog(engine: "duckdb", name: "test") @data_input(name: "regions_mut_data") @data_input(name: "regions_mut_input_data") @filter_input(name: "regions_filter") @module(name: "geo") @mutation(data_input: "", name: "delete_regions", type: DELETE) @mutation(data_input: "regions_mut_data", name: "update_regions", type: UPDATE) @mutation(data_input: "regions_mut_input_data", name: "insert_regions", type: INSERT) @query(name: "regions", type: SELECT) @query(name: "regions_aggregation", type: AGGREGATE) @query(name: "regions_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "regions_by_pk", type: SELECT_ONE) @table(name: "regions") {
+  _join(fields: [String!]!): _join
+  id: Int! @pk
+  name: String!
+  stats(
+    """
+    Arguments for the view
+    """
+    args: region_stats_args!
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: region_stats_filter
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [region_stats] @catalog(engine: "duckdb", name: "test") @join(references_fields: ["region_id"], references_name: "region_stats", source_fields: ["id"])
+  """
+  The aggregation for stats
+  """
+  stats_aggregation(
+    """
+    Arguments for the view
+    """
+    args: region_stats_args!
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: region_stats_filter
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _region_stats_aggregation @aggregation_query(is_bucket: false, name: "stats") @catalog(engine: "duckdb", name: "test")
+  """
+  The bucket aggregation for stats
+  """
+  stats_bucket_aggregation(
+    """
+    Arguments for the view
+    """
+    args: region_stats_args!
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: region_stats_filter
+
+    """
+    Apply inner join to reference record
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_region_stats_aggregation_bucket] @aggregation_query(is_bucket: true, name: "stats") @catalog(engine: "duckdb", name: "test")
+}
+
+# === region_stats
+type region_stats @args(name: "region_stats_args", required: true) @catalog(engine: "duckdb", name: "test") @filter_input(name: "region_stats_filter") @module(name: "geo") @query(name: "region_stats", type: SELECT) @query(name: "region_stats_aggregation", type: AGGREGATE) @query(name: "region_stats_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "region_stats_by_pk", type: SELECT_ONE) @view(name: "region_stats", sql: "SELECT 1 AS region_id, 2 AS total") {
+  _join(fields: [String!]!): _join
+  region_id: Int @pk
+  total: Int
+}
+
+# === region_stats_args
+input region_stats_args @catalog(engine: "duckdb", name: "test") {
+  since: Timestamp!
+}
+
+# === regions_filter
+"""
+Filter for regions objects
+"""
+input regions_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "regions") {
+  _and: [regions_filter]
+  _not: regions_filter
+  _or: [regions_filter]
+  id: IntFilter @pk
+  name: StringFilter
+}
+
+# === region_stats_filter
+"""
+Filter for region_stats objects
+"""
+input region_stats_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "region_stats") {
+  _and: [region_stats_filter]
+  _not: region_stats_filter
+  _or: [region_stats_filter]
+  region_id: IntFilter @pk
+  total: IntFilter
+}
+
+# === _regions_aggregation
+type _regions_aggregation @aggregation(is_bucket: false, level: 1, name: "regions") @catalog(engine: "duckdb", name: "test") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  id: IntAggregation @field_aggregation(name: "id")
+  name: StringAggregation @field_aggregation(name: "name")
+  stats(
+    """
+    Arguments for the view
+    """
+    args: region_stats_args!
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: region_stats_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _region_stats_aggregation @field_aggregation(name: "stats")
+  stats_aggregation(
+    """
+    Arguments for the view
+    """
+    args: region_stats_args!
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: region_stats_filter
+
+    """
+    Apply inner join to the result set
+    """
+    inner: Boolean = false
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Limit the number of returned nested objects
+    """
+    nested_limit: Int
+
+    """
+    Skip the first n nested objects
+    """
+    nested_offset: Int
+
+    """
+    Sort options for the nested result set
+    """
+    nested_order_by: [OrderByField]
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _region_stats_aggregation_sub_aggregation @field_aggregation(name: "stats")
+}
+
+# === _region_stats_aggregation
+type _region_stats_aggregation @aggregation(is_bucket: false, level: 1, name: "region_stats") @catalog(engine: "duckdb", name: "test") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  region_id: IntAggregation @field_aggregation(name: "region_id")
+  total: IntAggregation @field_aggregation(name: "total")
+}
+
+# === _module_geo_query
+type _module_geo_query @module_catalog(name: "test") @module_root(name: "geo", type: QUERY) {
+  region_stats(
+    """
+    Arguments for the view
+    """
+    args: region_stats_args!
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: region_stats_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [region_stats] @catalog(engine: "duckdb", name: "test") @query(name: "region_stats", type: SELECT)
+  """
+  The aggregation for region_stats
+  """
+  region_stats_aggregation(
+    """
+    Arguments for the view
+    """
+    args: region_stats_args!
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: region_stats_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _region_stats_aggregation @aggregation_query(is_bucket: false, name: "region_stats") @catalog(engine: "duckdb", name: "test")
+  """
+  The aggregation for region_stats
+  """
+  region_stats_bucket_aggregation(
+    """
+    Arguments for the view
+    """
+    args: region_stats_args!
+
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: region_stats_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_region_stats_aggregation_bucket] @aggregation_query(is_bucket: true, name: "region_stats") @catalog(engine: "duckdb", name: "test")
+  region_stats_by_pk(
+    """
+    Arguments for the view
+    """
+    args: region_stats_args!
+  region_id: Int!): region_stats @catalog(engine: "duckdb", name: "test") @query(name: "region_stats", type: SELECT_ONE)
+  regions(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: regions_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [regions] @catalog(engine: "duckdb", name: "test") @query(name: "regions", type: SELECT)
+  """
+  The aggregation for regions
+  """
+  regions_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: regions_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _regions_aggregation @aggregation_query(is_bucket: false, name: "regions") @catalog(engine: "duckdb", name: "test")
+  """
+  The aggregation for regions
+  """
+  regions_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: regions_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_regions_aggregation_bucket] @aggregation_query(is_bucket: true, name: "regions") @catalog(engine: "duckdb", name: "test")
+  regions_by_pk(id: Int!): regions @catalog(engine: "duckdb", name: "test") @query(name: "regions", type: SELECT_ONE)
+}
