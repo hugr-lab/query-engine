@@ -520,7 +520,14 @@ func (m *providerLogicalModel) Relations(ctx context.Context, object string) ite
 			return
 		}
 		ownerSource := sdl.CatalogName(def)
-		ownRefs := map[string]struct{}{}
+		// Keyed by the navigation FIELD the own declaration materializes, not
+		// by the relation name: a relation name is unique per DECLARING object,
+		// which is not the same thing as unique here. A self-reference declares
+		// one relation and carries both its legs (parent / children), and two
+		// different objects referencing this one through a like-named column
+		// produce the same default relation name. Keying by name dropped the
+		// back leg in both cases.
+		ownFields := map[string]struct{}{}
 		var rels []*RelationInfo
 
 		for _, d := range def.Directives.ForNames(base.ReferencesDirectiveName) {
@@ -528,7 +535,11 @@ func (m *providerLogicalModel) Relations(ctx context.Context, object string) ite
 			if ref == nil {
 				continue
 			}
-			ownRefs[ref.Name] = struct{}{}
+			ownField := ref.Query
+			if ownField == "" {
+				ownField = ref.ReferencesName
+			}
+			ownFields[ownField] = struct{}{}
 			rel := &RelationInfo{
 				Name:            ref.Name,
 				Direction:       RelationForward,
@@ -559,8 +570,9 @@ func (m *providerLogicalModel) Relations(ctx context.Context, object string) ite
 			switch {
 			case sdl.IsReferencesSubquery(f):
 				name := base.FieldDefDirectiveArgString(f, base.FieldReferencesQueryDirectiveName, base.ArgName)
-				if _, ok := ownRefs[name]; ok {
-					// Materializes an own declaration emitted above.
+				if _, ok := ownFields[f.Name]; ok {
+					// This field IS an own declaration's navigation field,
+					// already emitted above as the forward leg.
 					continue
 				}
 				// BACK projection: the declaring object is the field's element type.

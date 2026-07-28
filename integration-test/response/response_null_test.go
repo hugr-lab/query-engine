@@ -1,12 +1,13 @@
 //go:build duckdb_arrow
 
-package hugr
+package response_test
 
 import (
 	"context"
 	"errors"
 	"testing"
 
+	hugr "github.com/hugr-lab/query-engine"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -28,7 +29,7 @@ func TestNullFieldReachesTheResponse(t *testing.T) {
 			name = "parallel"
 		}
 		t.Run(name, func(t *testing.T) {
-			service, err := New(Config{
+			service, err := hugr.New(hugr.Config{
 				DB:            db.Config{Path: ""},
 				CoreDB:        coredb.New(coredb.Config{}),
 				Auth:          &auth.Config{},

@@ -53,8 +53,12 @@ var joinFieldsRule = fieldRule{
 			if typ.NamedType != "" {
 				continue
 			}
+			targetView, err := g.viewArgsOf(ctx, target)
+			if err != nil {
+				return err
+			}
 			twinArgs := func() ast.ArgumentDefinitionList {
-				return rules.SubQueryArgs(target+filterSuffix, reconPos)
+				return rules.SubQueryArgsWithViewArgs(targetView, target+filterSuffix, reconPos)
 			}
 			if f.Properties.Join != nil {
 				_, ok, err := g.joinMachineryTarget(ctx, f)
@@ -65,7 +69,7 @@ var joinFieldsRule = fieldRule{
 					continue // cross-source (or absent) target → bare field
 				}
 				if fd := def.Fields.ForName(f.Name); fd != nil && len(fd.Arguments) == 0 {
-					fd.Arguments = rules.SubQueryArgs(target+filterSuffix, reconPos)
+					fd.Arguments = rules.SubQueryArgsWithViewArgs(targetView, target+filterSuffix, reconPos)
 				}
 			} else {
 				if exists, err := g.dataObjectExists(ctx, target); err != nil {
@@ -103,12 +107,18 @@ var navFieldsRule = fieldRule{
 				return err
 			}
 			for _, leg := range legs {
+				// A forward ref to a parameterized view needs the view's args
+				// just as a list ref does — the target is what needs them.
+				fwdView, err := g.viewArgsOf(ctx, leg.Destination)
+				if err != nil {
+					return err
+				}
 				def.Fields = append(def.Fields, &ast.FieldDefinition{
 					Name: leg.SourceField,
 					Type: ast.NamedType(leg.Destination, reconPos),
-					Arguments: ast.ArgumentDefinitionList{
+					Arguments: rules.PrependViewArgs(fwdView, ast.ArgumentDefinitionList{
 						{Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", reconPos), Position: reconPos},
-					},
+					}, reconPos),
 					Directives: ast.DirectiveList{
 						navQueryDirective(leg.Destination, leg.Name, false, ""),
 						catalogDirective(leg.DataSource, t.srcs[leg.DataSource].Engine),
@@ -123,6 +133,13 @@ var navFieldsRule = fieldRule{
 		}
 		for _, leg := range legs {
 			backName := orDefault(leg.DestinationField, leg.Source)
+			// The back field's target is the DECLARING object. When that is a
+			// parameterized view, its args belong on this field — there is no
+			// root query in the path to carry them.
+			backArgs, err := g.viewArgsOf(ctx, leg.Source)
+			if err != nil {
+				return err
+			}
 			if leg.m2mJunction {
 				cos, err := g.relationsBySource(ctx, leg.Source)
 				if err != nil {
@@ -132,39 +149,61 @@ var navFieldsRule = fieldRule{
 					if co.Name == leg.Name {
 						continue
 					}
+					coView, err := g.viewArgsOf(ctx, co.Destination)
+					if err != nil {
+						return err
+					}
 					def.Fields = append(def.Fields, navListField(
-						backName, co.Destination,
+						backName, co.Destination, coView,
 						navQueryDirective(co.Destination, leg.Name, true, leg.Source),
 						t.srcs, leg.DataSource))
 					def.Fields = append(def.Fields,
 						relationAggTwinFields(backName, co.Destination,
-							subQueryArgsFactory(co.Destination), t.srcs, leg.DataSource)...)
+							subQueryArgsFactory(co.Destination, coView), t.srcs, leg.DataSource)...)
 				}
 				continue
 			}
 			def.Fields = append(def.Fields, navListField(
-				backName, leg.Source,
+				backName, leg.Source, backArgs,
 				navQueryDirective(leg.Source, leg.Name, false, ""),
 				t.srcs, leg.DataSource))
 			def.Fields = append(def.Fields,
 				relationAggTwinFields(backName, leg.Source,
-					subQueryArgsFactory(leg.Source), t.srcs, leg.DataSource)...)
+					subQueryArgsFactory(leg.Source, backArgs), t.srcs, leg.DataSource)...)
 		}
 		return nil
 	},
 }
 
-func subQueryArgsFactory(target string) func() ast.ArgumentDefinitionList {
+func subQueryArgsFactory(target string, viewArgs *base.ObjectInfo) func() ast.ArgumentDefinitionList {
 	return func() ast.ArgumentDefinitionList {
-		return rules.SubQueryArgs(target+filterSuffix, reconPos)
+		return rules.SubQueryArgsWithViewArgs(viewArgs, target+filterSuffix, reconPos)
 	}
 }
 
-func navListField(name, target string, refDir *ast.Directive, srcs map[string]activeSource, dataSource string) *ast.FieldDefinition {
+// viewArgsOf returns the object's parameterized-view args input, or nil when it
+// is not a parameterized view. Mirrors base.ObjectInfo's InputArgsName /
+// RequiredArgs, which is what the compiler's rules read.
+func (g *genContext) viewArgsOf(ctx context.Context, name string) (*base.ObjectInfo, error) {
+	row, err := g.readDataObject(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil || row.Properties == nil || row.Properties.ArgsTypeName == "" {
+		return nil, nil
+	}
+	return &base.ObjectInfo{
+		Name:          name,
+		InputArgsName: row.Properties.ArgsTypeName,
+		RequiredArgs:  row.Properties.RequiredArgs,
+	}, nil
+}
+
+func navListField(name, target string, viewArgs *base.ObjectInfo, refDir *ast.Directive, srcs map[string]activeSource, dataSource string) *ast.FieldDefinition {
 	return &ast.FieldDefinition{
 		Name:      name,
 		Type:      ast.ListType(ast.NamedType(target, reconPos), reconPos),
-		Arguments: rules.SubQueryArgs(target+filterSuffix, reconPos),
+		Arguments: rules.SubQueryArgsWithViewArgs(viewArgs, target+filterSuffix, reconPos),
 		Directives: ast.DirectiveList{
 			refDir,
 			catalogDirective(dataSource, srcs[dataSource].Engine),

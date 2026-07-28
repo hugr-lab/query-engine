@@ -247,6 +247,16 @@ func introspectTables(ctx context.Context, pool *db.Pool, prefix string, filter 
 }
 
 // SchemaVersion returns the current schema version from DuckLake metadata.
+//
+// It reads ducklake_snapshots(), DuckLake's own accessor, and NOT the
+// ducklake_schema_versions metadata table. That table misses a DROP TABLE: in
+// the DDL lifecycle it stayed at 5 while the snapshot log had already recorded
+// the drop as version 6. This number is what a reload's version gate compares,
+// so a version that misses a DDL leaves the dropped table in the served
+// schema — which is exactly what it did.
+//
+// Data-only snapshots (inserts, flushes) carry the schema version UNCHANGED,
+// so this stays a schema signal and an insert still costs no recompile.
 func SchemaVersion(ctx context.Context, pool *db.Pool, prefix string) (int, error) {
 	conn, err := pool.Conn(ctx)
 	if err != nil {
@@ -254,8 +264,8 @@ func SchemaVersion(ctx context.Context, pool *db.Pool, prefix string) (int, erro
 	}
 	defer conn.Close()
 
-	metaCatalog := metaCatalogIdent(prefix)
-	query := fmt.Sprintf("SELECT COALESCE(MAX(schema_version), 0) FROM %s.ducklake_schema_versions", metaCatalog)
+	query := fmt.Sprintf("SELECT COALESCE(MAX(schema_version), 0) FROM ducklake_snapshots('%s')",
+		strings.ReplaceAll(prefix, "'", "''"))
 
 	var version int
 	err = conn.QueryRow(ctx, query).Scan(&version)

@@ -224,8 +224,14 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 			continue
 		}
 		targetFilter := target + filterSuffix
-		directArgs := rules.AggRefArgs(targetFilter, reconPos)
-		subArgs := rules.AggSubRefArgs(targetFilter, reconPos)
+		// A twin over a parameterized view runs that view, so it takes the
+		// view's args exactly as the field it mirrors does.
+		targetView, err := g.viewArgsOf(ctx, target)
+		if err != nil {
+			return nil, err
+		}
+		directArgs := rules.PrependViewArgs(targetView, rules.AggRefArgs(targetFilter, reconPos), reconPos)
+		subArgs := rules.PrependViewArgs(targetView, rules.AggSubRefArgs(targetFilter, reconPos), reconPos)
 		if j.TableFunctionCallJoin != nil {
 			directArgs = emitArgumentDefs(f.Args)
 			subArgs = emitArgumentDefs(f.Args)
@@ -360,6 +366,10 @@ func appendRelationAggFields(ctx context.Context, g *genContext, row *dataObject
 			continue
 		}
 		targetFilter := r.DataObject + filterSuffix
+		targetView, err := g.viewArgsOf(ctx, r.DataObject)
+		if err != nil {
+			return err
+		}
 		subMarker := r.FieldName
 		if depth > 0 {
 			subMarker = r.FieldName + "_aggregation"
@@ -368,14 +378,14 @@ func appendRelationAggFields(ctx context.Context, g *genContext, row *dataObject
 			&ast.FieldDefinition{
 				Name:       r.FieldName,
 				Type:       ast.NamedType(rules.AggTypeNameAtDepth(r.DataObject, depth), reconPos),
-				Arguments:  rules.AggRefArgs(targetFilter, reconPos),
+				Arguments:  rules.PrependViewArgs(targetView, rules.AggRefArgs(targetFilter, reconPos), reconPos),
 				Directives: ast.DirectiveList{fieldAggregationMarker(r.FieldName)},
 				Position:   reconPos,
 			},
 			&ast.FieldDefinition{
 				Name:       r.FieldName + "_aggregation",
 				Type:       ast.NamedType(rules.AggTypeNameAtDepth(r.DataObject, depth+1), reconPos),
-				Arguments:  rules.AggSubRefArgs(targetFilter, reconPos),
+				Arguments:  rules.PrependViewArgs(targetView, rules.AggSubRefArgs(targetFilter, reconPos), reconPos),
 				Directives: ast.DirectiveList{fieldAggregationMarker(subMarker)},
 				Position:   reconPos,
 			},

@@ -193,6 +193,13 @@ func resolveExtensionTarget(ctx context.Context, defs base.DefinitionsSource, na
 // extending source does not back the object's module either (no closure row) —
 // so unloading it drops only its added fields. Ordinal is local to the
 // extension (the read side orders base fields before extension fields).
+//
+// An extension may also declare an object-level @references — an edge between
+// two OTHER sources' objects, which is a thing only an extension can express
+// and which has no field of its own to hang on (the body is a `_stub`). It is
+// attributed to the extending source like the fields are, so unloading the
+// extension takes the edge with it, and a reload of either endpoint leaves it
+// alone.
 func collectExtensionFields(ctx context.Context, defs base.DefinitionsSource, d *desired, ext *ast.Definition, typeName, dataSource string) {
 	ordinal := 0
 	for _, f := range ext.Fields {
@@ -216,6 +223,7 @@ func collectExtensionFields(ctx context.Context, defs base.DefinitionsSource, d 
 		ordinal++
 		collectFieldReferences(ctx, defs, d, typeName, owner, f)
 	}
+	collectObjectReferences(d, typeName, dataSource, ext)
 }
 
 // collectObjectReferences stores each object-level @references as a plain fk

@@ -192,12 +192,15 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 		var forwardArgs ast.ArgumentDefinitionList
 		if isM2MRef {
 			forwardType = ast.ListType(ast.NamedType(refName, pos), pos)
-			forwardArgs = SubQueryArgs(targetFilterName, pos)
+			forwardArgs = SubQueryArgsWithViewArgs(targetInfo, targetFilterName, pos)
 		} else {
 			forwardType = &ast.Type{NamedType: refName}
-			forwardArgs = ast.ArgumentDefinitionList{
+			// A single forward ref to a parameterized view still has to carry
+			// the view's args — it is the target that needs parameterizing,
+			// regardless of the field's cardinality.
+			forwardArgs = PrependViewArgs(targetInfo, ast.ArgumentDefinitionList{
 				{Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", pos), Position: pos},
-			}
+			}, pos)
 		}
 
 		forwardExt := &ast.Definition{
@@ -243,9 +246,12 @@ func (r *ReferencesRule) Process(ctx base.CompilationContext, def *ast.Definitio
 				Position: pos,
 				Fields: ast.FieldList{
 					{
-						Name:      refQuery,
-						Type:      ast.ListType(ast.NamedType(def.Name, pos), pos),
-						Arguments: SubQueryArgs(sourceFilterName, pos),
+						Name: refQuery,
+						Type: ast.ListType(ast.NamedType(def.Name, pos), pos),
+						// The back field's target is the DECLARING object, so a
+						// parameterized view referencing a table lands its args
+						// here — the only place they can be passed.
+						Arguments: SubQueryArgsWithViewArgs(info, sourceFilterName, pos),
 						Directives: ast.DirectiveList{
 							backRefQueryDir,
 							optsCatalogDirective(opts),
@@ -337,7 +343,7 @@ func addM2MReferenceSide(ctx base.CompilationContext, m2mDef *ast.Definition, si
 			{
 				Name:      fieldName,
 				Type:      ast.ListType(ast.NamedType(targetObj, pos), pos),
-				Arguments: SubQueryArgs(targetFilterName, pos),
+				Arguments: SubQueryArgsWithViewArgs(ctx.GetObject(targetObj), targetFilterName, pos),
 				Directives: ast.DirectiveList{
 					refQueryDir,
 					optsCatalogDirective(opts),
@@ -439,6 +445,9 @@ func addReferenceToFilterInput(ctx base.CompilationContext, objectName, fieldNam
 // addReferenceAggregationFields adds aggregation and bucket_aggregation fields
 // for a reference on the parent object.
 func addReferenceAggregationFields(ctx base.CompilationContext, parentObject, refFieldName, targetObject, targetFilterName string, opts base.Options, pos *ast.Position) {
+	// The twins run the same view as the field they mirror, so they need the
+	// same parameters.
+	targetInfo := ctx.GetObject(targetObject)
 	aggTypeName := "_" + targetObject + "_aggregation"
 	bucketAggTypeName := "_" + targetObject + "_aggregation_bucket"
 
@@ -452,7 +461,7 @@ func addReferenceAggregationFields(ctx base.CompilationContext, parentObject, re
 				Name:        refFieldName + "_aggregation",
 				Description: "The aggregation for " + refFieldName,
 				Type:        ast.NamedType(aggTypeName, pos),
-				Arguments:   SubQueryArgs(targetFilterName, pos),
+				Arguments:   SubQueryArgsWithViewArgs(targetInfo, targetFilterName, pos),
 				Directives: ast.DirectiveList{
 					{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
 						{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "false", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -466,7 +475,7 @@ func addReferenceAggregationFields(ctx base.CompilationContext, parentObject, re
 				Name:        refFieldName + "_bucket_aggregation",
 				Description: "The bucket aggregation for " + refFieldName,
 				Type:        ast.ListType(ast.NamedType(bucketAggTypeName, pos), pos),
-				Arguments:   SubQueryArgs(targetFilterName, pos),
+				Arguments:   SubQueryArgsWithViewArgs(targetInfo, targetFilterName, pos),
 				Directives: ast.DirectiveList{
 					{Name: base.FieldAggregationQueryDirectiveName, Arguments: ast.ArgumentList{
 						{Name: base.ArgIsBucket, Value: &ast.Value{Raw: "true", Kind: ast.BooleanValue, Position: pos}, Position: pos},
@@ -645,6 +654,8 @@ func addReferenceToAggregationType(ctx base.CompilationContext, parentObject, re
 // depth >= maxAggDepth = stop recursion
 func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName, targetObject, targetFilterName string, isList bool, opts base.Options, pos *ast.Position, depth int) {
 	parentAggName := AggTypeNameAtDepth(parentObject, depth)
+	// A sub-aggregation reaches the same view and needs the same parameters.
+	targetInfo := ctx.GetObject(targetObject)
 
 	// At depth > 0, skip single reference fields (only list refs are added to sub-aggs)
 	if depth > 0 && !isList {
@@ -665,7 +676,7 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 		fields = append(fields, &ast.FieldDefinition{
 			Name:      refFieldName,
 			Type:      ast.NamedType(targetAggName, pos),
-			Arguments: AggRefArgs(targetFilterName, pos),
+			Arguments: PrependViewArgs(targetInfo, AggRefArgs(targetFilterName, pos), pos),
 			Directives: ast.DirectiveList{
 				fieldAggregationDirective(refFieldName, pos),
 			},
@@ -687,7 +698,7 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 		fields = append(fields, &ast.FieldDefinition{
 			Name:      refFieldName + "_aggregation",
 			Type:      ast.NamedType(targetSubAggName, pos),
-			Arguments: AggSubRefArgs(targetFilterName, pos),
+			Arguments: PrependViewArgs(targetInfo, AggSubRefArgs(targetFilterName, pos), pos),
 			Directives: ast.DirectiveList{
 				fieldAggregationDirective(aggFieldDirectiveName, pos),
 			},
@@ -699,9 +710,9 @@ func addRefToAggAtDepth(ctx base.CompilationContext, parentObject, refFieldName,
 		fields = append(fields, &ast.FieldDefinition{
 			Name: refFieldName,
 			Type: ast.NamedType(targetAggName, pos),
-			Arguments: ast.ArgumentDefinitionList{
+			Arguments: PrependViewArgs(targetInfo, ast.ArgumentDefinitionList{
 				{Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", pos), Position: pos},
-			},
+			}, pos),
 			Directives: ast.DirectiveList{
 				fieldAggregationDirective(refFieldName, pos),
 			},

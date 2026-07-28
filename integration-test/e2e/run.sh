@@ -189,9 +189,13 @@ run_multistep_test() {
       return 0
     fi
 
+    # Deep-sorted like every other comparison in this script (the cluster
+    # multi-step runner already does it; this one was missed). Introspection
+    # field order is not a contract — the compiled provider and the entity
+    # storage both emit a valid order, and they differ.
     local actual_norm expected_norm
-    actual_norm=$(echo "$actual" | jq -S . 2>/dev/null) || actual_norm="$actual"
-    expected_norm=$(jq -S . "$expected_file" 2>/dev/null) || expected_norm=$(cat "$expected_file")
+    actual_norm=$(echo "$actual" | jq -S "$JQ_DEEP_SORT" 2>/dev/null) || actual_norm="$actual"
+    expected_norm=$(jq -S "$JQ_DEEP_SORT" "$expected_file" 2>/dev/null) || expected_norm=$(cat "$expected_file")
 
     if [ "$actual_norm" != "$expected_norm" ]; then
       echo "  FAIL: $test_name (step $step_num)"

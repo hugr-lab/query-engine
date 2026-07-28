@@ -16,6 +16,15 @@
           "dataObject": {
             "name": "pg_store_categories"
           },
+          "direction": "BACK",
+          "fieldName": "children",
+          "kind": "FK",
+          "name": "pg_store_categories_parent_id"
+        },
+        {
+          "dataObject": {
+            "name": "pg_store_categories"
+          },
           "direction": "FORWARD",
           "fieldName": "parent",
           "kind": "FK",
@@ -55,6 +64,54 @@
           "name": "pg_store_categories_category_id",
           "sourceKeys": [
             "category_id"
+          ],
+          "through": null
+        },
+        {
+          "dataObject": {
+            "name": "pg_store_products_in_price_range"
+          },
+          "destinationKeys": [
+            "id"
+          ],
+          "direction": "BACK",
+          "fieldName": "in_price_range",
+          "kind": "FK",
+          "name": "pg_store_products_id",
+          "sourceKeys": [
+            "id"
+          ],
+          "through": null
+        },
+        {
+          "dataObject": {
+            "name": "pg_store_product_details"
+          },
+          "destinationKeys": [
+            "id"
+          ],
+          "direction": "BACK",
+          "fieldName": "details",
+          "kind": "FK",
+          "name": "pg_store_products_product_id",
+          "sourceKeys": [
+            "product_id"
+          ],
+          "through": null
+        },
+        {
+          "dataObject": {
+            "name": "pg_store_price_ranges"
+          },
+          "destinationKeys": [
+            "id"
+          ],
+          "direction": "BACK",
+          "fieldName": "price_ranges",
+          "kind": "FK",
+          "name": "pg_store_products_product_id",
+          "sourceKeys": [
+            "product_id"
           ],
           "through": null
         },
