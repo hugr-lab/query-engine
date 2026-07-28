@@ -296,27 +296,6 @@ testdata/NN_test_name/
 | 45 | extension_prefix | Extension prefix handling |
 | 46 | extension_cross_source | Cross-source extension fields |
 
-**Incremental Compilation (47–68)**:
-
-| # | Name | Covers |
-|---|------|--------|
-| 47–51 | incremental_basic_* | Basic incremental add/drop/replace |
-| 52 | incremental_prefix_references | Prefix + references |
-| 53–55 | incremental_misc | Various incremental scenarios |
-| 56 | incremental_field_add | Field add |
-| 57 | incremental_field_drop | Field drop |
-| 58 | incremental_ref_field_add | Reference field add |
-| 59 | incremental_ref_field_drop | Reference field drop |
-| 60 | incremental_field_prefix | Field with prefix |
-| 61 | incremental_directive_change | Directive change |
-| 62 | incremental_ref_field_prefix | Reference field with prefix |
-| 63 | incremental_misc | Miscellaneous |
-| 64 | incremental_function_add | Function add |
-| 65 | incremental_function_drop | Function drop |
-| 66 | incremental_function_module | Function with module |
-| 67 | incremental_function_as_module | Function as_module |
-| 68 | incremental_as_module_comprehensive | Comprehensive as_module (multi-step) |
-
 ---
 
 ## Compare Package

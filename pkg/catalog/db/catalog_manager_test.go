@@ -403,10 +403,7 @@ func TestExistsCatalog(t *testing.T) {
 	assert.False(t, p.ExistsCatalog("nonexistent"), "should not exist for unknown catalog")
 }
 
-// ─── AC-3: Incremental reload uses Changes() (T022) ─────────────────────────
-// Note: This test validates full reload path since creating a proper
-// IncrementalCatalog mock requires more infrastructure. The incremental
-// path is validated via memoryCatalog tests in pkg/catalog/.
+// ─── AC-3: Reload recompiles the source in full (T022) ──────────────────────
 
 func TestReloadCatalog(t *testing.T) {
 	p, ctx := newTestProviderWithCompiler(t)

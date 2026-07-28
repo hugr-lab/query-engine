@@ -230,9 +230,8 @@ func (p *Provider) ExistsCatalog(name string) bool {
 	return rec != nil
 }
 
-// ReloadCatalog reloads a catalog by name. If the source supports incremental
-// changes (IncrementalCatalog), only the delta is compiled and applied.
-// Otherwise falls back to full recompilation (drop + recompile).
+// ReloadCatalog reloads a catalog by name: refresh the source, and if its
+// composite version moved, drop and recompile it from scratch.
 func (p *Provider) ReloadCatalog(ctx context.Context, name string) error {
 	if p.isReadonly {
 		return ErrReadOnly
@@ -272,47 +271,7 @@ func (p *Provider) ReloadCatalog(ctx context.Context, name string) error {
 		return nil
 	}
 
-	// Try incremental compilation if supported.
-	if ic, ok := source.(sources.IncrementalCatalog); ok && rec != nil {
-		if err := p.reloadIncremental(ctx, name, rec.Version, ic); err != nil {
-			slog.Warn("incremental reload failed, falling back to full recompilation",
-				"catalog", name, "error", err)
-		} else {
-			return nil
-		}
-	}
-
-	// Full recompilation fallback.
 	return p.reloadFull(ctx, name, source)
-}
-
-// reloadIncremental attempts an incremental reload using IncrementalCatalog.Changes().
-func (p *Provider) reloadIncremental(ctx context.Context, name, fromVersion string, ic sources.IncrementalCatalog) error {
-	changes, newVersion, err := ic.Changes(ctx, fromVersion)
-	if err != nil {
-		return fmt.Errorf("get changes: %w", err)
-	}
-
-	compiled, err := p.compiler.CompileChanges(ctx, p, ic, changes, ic.CompileOptions())
-	if err != nil {
-		return fmt.Errorf("compile changes: %w", err)
-	}
-
-	if err := p.Update(ctx, compiled); err != nil {
-		return fmt.Errorf("apply changes: %w", err)
-	}
-
-	compositeVersion := catalogVersionWithOptions(newVersion, ic.CompileOptions())
-	if err := p.SetCatalogVersion(ctx, name, compositeVersion); err != nil {
-		return fmt.Errorf("set version: %w", err)
-	}
-
-	slog.Info("catalog reloaded incrementally", "catalog", name, "version", compositeVersion)
-
-	if _, err := p.IncrementSchemaVersion(ctx); err != nil {
-		slog.Error("failed to increment schema version", "catalog", name, "error", err)
-	}
-	return nil
 }
 
 // reloadFull drops existing schema objects and recompiles from scratch.

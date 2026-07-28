@@ -15,16 +15,14 @@ type Provider base.Provider
 type Catalog = sources.Catalog
 type ReloadableCatalog = sources.ReloadableCatalog
 type ExtensionCatalog = sources.ExtensionCatalog
-type IncrementalCatalog = sources.IncrementalCatalog
 
 type CatalogManager interface {
 	// Load/Unload catalogs (for dynamic schema updates)
 	AddCatalog(ctx context.Context, name string, catalog Catalog) error
 	RemoveCatalog(ctx context.Context, name string) error
 	ExistsCatalog(name string) bool
-	// ReloadCatalog reloads a catalog. If the source supports incremental
-	// changes (IncrementalCatalog), only the delta is compiled and applied.
-	// Otherwise falls back to full recompilation.
+	// ReloadCatalog re-reads the source and recompiles it in full. The
+	// storage's version gate decides whether anything is actually rewritten.
 	ReloadCatalog(ctx context.Context, name string) error
 	// SuspendCatalog removes a catalog from the active schema without deleting
 	// the registration. Used when a hugr-app becomes unreachable.

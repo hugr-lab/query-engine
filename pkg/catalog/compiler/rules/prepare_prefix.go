@@ -24,9 +24,7 @@ func (r *PrefixPreparer) ProcessAll(ctx base.CompilationContext) error {
 // PrefixAndRegister applies prefix renaming to source definitions and registers
 // ObjectInfo for data objects. The sourceNames map controls which type references
 // get prefixed — it must include ALL names from the catalog namespace (not just
-// the definitions being processed). This is the core logic shared between
-// PrefixPreparer (full compilation) and the incremental compiler (which passes
-// sourceNames that include the full baseCatalog namespace).
+// the definitions being processed).
 func PrefixAndRegister(ctx base.CompilationContext, sourceNames map[string]bool) error {
 	opts := ctx.CompileOptions()
 

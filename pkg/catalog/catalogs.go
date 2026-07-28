@@ -116,9 +116,8 @@ func (c *memoryCatalog) ExistsCatalog(name string) bool {
 	return ok
 }
 
-// ReloadCatalog reloads a catalog by name. If the source supports incremental
-// changes (IncrementalCatalog), only the delta is compiled and applied.
-// Otherwise falls back to full recompilation (drop + recompile).
+// ReloadCatalog reloads a catalog by name: refresh the source, and if its
+// version moved, drop and recompile it from scratch.
 func (c *memoryCatalog) ReloadCatalog(ctx context.Context, name string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -148,46 +147,8 @@ func (c *memoryCatalog) ReloadCatalog(ctx context.Context, name string) error {
 		return nil
 	}
 
-	// Try incremental compilation if supported.
-	if ic, ok := reg.source.(IncrementalCatalog); ok {
-		if err := c.reloadIncremental(ctx, name, &reg, ic); err != nil {
-			slog.Warn("incremental reload failed, falling back to full recompilation",
-				"catalog", name, "error", err)
-		} else {
-			return nil
-		}
-	}
-
-	// Full recompilation fallback: drop existing catalog, recompile from scratch.
+	// Drop the existing catalog and recompile from scratch.
 	return c.reloadFull(ctx, name, &reg)
-}
-
-// reloadIncremental attempts an incremental reload using IncrementalCatalog.Changes().
-// On success, updates the registered catalog entry with the new version.
-func (c *memoryCatalog) reloadIncremental(ctx context.Context, name string, reg *registeredCatalog, ic IncrementalCatalog) error {
-	p, ok := c.provider.(base.MutableProvider)
-	if !ok {
-		return errors.New("provider does not support mutable operations")
-	}
-
-	changes, newVersion, err := ic.Changes(ctx, reg.version)
-	if err != nil {
-		return fmt.Errorf("get changes: %w", err)
-	}
-
-	compiled, err := c.compiler.CompileChanges(ctx, p, reg.source, changes, reg.source.CompileOptions())
-	if err != nil {
-		return fmt.Errorf("compile changes: %w", err)
-	}
-
-	if err := p.Update(ctx, compiled); err != nil {
-		return fmt.Errorf("apply changes: %w", err)
-	}
-
-	reg.version = newVersion
-	c.catalogs[name] = *reg
-	slog.Info("catalog reloaded incrementally", "catalog", name, "version", newVersion)
-	return nil
 }
 
 // reloadFull drops the existing catalog from the provider and recompiles from scratch.
