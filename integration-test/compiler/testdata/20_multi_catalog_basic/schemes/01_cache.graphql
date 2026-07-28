@@ -1,5 +1,0 @@
-type CacheEntry @table(name: "cache_entries") {
-  key: String! @pk
-  value: JSON
-  expires_at: Timestamp
-}

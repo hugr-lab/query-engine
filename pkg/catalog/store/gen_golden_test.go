@@ -13,9 +13,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
 	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
-	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -26,14 +24,17 @@ import (
 	"github.com/vektah/gqlparser/v2/formatter"
 )
 
-// The golden frame for the generation layer (Ш4): the SAME fixture goes
-// through (a) the partial compiler → collect → store → ForName and (b) the
-// FULL compiler (GENERATE included) → static provider. Every name in
-// genParityNames must produce identical definitions on both sides; each Ш4.x
-// sub-step moves names from genPendingNames into genParityNames.
+// The golden frame for the generation layer: a fixture goes through
+// collect → store → ForName, and every name in genParityNames must come back
+// identical to its frozen snapshot in testdata/golden.
+//
+// The snapshots were AUTHORED BY THE COMPILER, whose GENERATE / ASSEMBLE rules
+// design-036 then deleted — this file is what is left of that oracle. It is
+// exactly as strong as it was for existing behaviour (the text is unchanged and
+// reviewed in the diff) and weaker for new behaviour, where a regenerated
+// section is written by the same code it checks.
 
-// genParityNames — generated names the store already serves at full parity
-// with the compiled reference.
+// genParityNames — generated names covered by the harness snapshot.
 var genParityNames = []string{
 	// Static prelude smoke: the same binary layer feeds both sides, proving
 	// the compare pipe end to end.
@@ -98,51 +99,17 @@ var genParityNames = []string{
 	"_module_sales_reports_query",
 }
 
-// genPendingNames — names the reference generates that the store must learn
-// to serve, keyed by the sub-step that delivers them.
-var genPendingNames = map[string][]string{}
-
-// goldenRef compiles a fixture with the FULL rule set into a fresh static
-// provider — the reference the generation layer converges to, name by name.
-func goldenRef(t *testing.T, name, schema string) *static.Provider {
-	t.Helper()
-	ctx := context.Background()
-	target, err := static.New()
-	require.NoError(t, err)
-	e := &engines.DuckDB{}
-	src, err := sources.NewStringSource(name, e, compiler.Options{
-		Name:         name,
-		EngineType:   string(e.Type()),
-		Capabilities: e.Capabilities(),
-	}, schema)
-	require.NoError(t, err)
-	compiled, err := compiler.New(rules.RegisterAll()...).Compile(ctx, target, src, src.CompileOptions())
-	require.NoError(t, err)
-	require.NoError(t, target.Update(ctx, compiled))
-	return target
-}
-
 func TestGenGoldenHarness(t *testing.T) {
 	store, ctx := writtenStore(t)
-	ref := goldenRef(t, "test", collectTestSchema)
 
-	// The reference side really generates the artifacts the sub-steps target —
-	// a pending name disappearing here means the fixture (or the expected
-	// name) drifted, not that the work is done.
-	for step, names := range genPendingNames {
-		for _, name := range names {
-			assert.NotNil(t, ref.ForName(ctx, name), "reference must generate %s (%s)", name, step)
-		}
-	}
+	assertGenParity(t, ctx, store, "harness", genParityNames)
 
-	assertGenParity(t, ctx, store, ref, "harness", genParityNames)
-
-	// Negative parity: names the compiler does NOT generate must stay absent
-	// on the store side too (views take no mutation inputs; no subscriptions
-	// or reports-module mutations in the fixture).
+	// Negative parity: names that must stay ABSENT — a view takes no mutation
+	// inputs, and the fixture has no subscriptions and no reports-module
+	// mutations. A snapshot cannot say "this does not exist", so the absences
+	// are asserted by name.
 	for _, name := range []string{"sales_by_country_mut_input_data", "sales_by_country_mut_data",
 		"_module_sales_subscription", "_module_sales_reports_mutation"} {
-		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
 		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
 	}
 
@@ -228,9 +195,8 @@ type ProductVariant {
 // nest Object members, and the passthrough types round-trip.
 func TestGenGoldenStructs(t *testing.T) {
 	store, ctx := storeFor(t, genStructSchema)
-	ref := goldenRef(t, "test", genStructSchema)
 
-	assertGenParity(t, ctx, store, ref, "structs", []string{
+	assertGenParity(t, ctx, store, "structs", []string{
 		// Residual passthrough types (stored SDL vs compiler passthrough).
 		"ProductSpecs",
 		"BoxSize",
@@ -267,7 +233,6 @@ func TestGenGoldenStructs(t *testing.T) {
 		"_ProductSpecs_aggregation_bucket",
 		"_ProductSpecs_aggregation_sub_aggregation_sub_aggregation",
 	} {
-		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
 		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
 	}
 }
@@ -299,9 +264,8 @@ extend type Subscription {
 // data + summary).
 func TestGenGoldenVector(t *testing.T) {
 	store, ctx := storeFor(t, genVectorSchema)
-	ref := goldenRef(t, "test", genVectorSchema)
 
-	assertGenParity(t, ctx, store, ref, "vector", []string{
+	assertGenParity(t, ctx, store, "vector", []string{
 		"docs",
 		"notes",
 		"docs_filter",
@@ -346,9 +310,8 @@ type readings @module(name: "bi") @hypertable @table(name: "readings") {
 // aggregation twins.
 func TestGenGoldenCube(t *testing.T) {
 	store, ctx := storeFor(t, genCubeSchema)
-	ref := goldenRef(t, "test", genCubeSchema)
 
-	assertGenParity(t, ctx, store, ref, "cube", []string{
+	assertGenParity(t, ctx, store, "cube", []string{
 		"sales_cube",
 		"readings",
 		"sales_cube_filter",
@@ -379,9 +342,8 @@ type users @module(name: "crm") @table(name: "users")
 // def-level markers.
 func TestGenGoldenUnique(t *testing.T) {
 	store, ctx := storeFor(t, genUniqueSchema)
-	ref := goldenRef(t, "test", genUniqueSchema)
 
-	assertGenParity(t, ctx, store, ref, "unique", []string{
+	assertGenParity(t, ctx, store, "unique", []string{
 		"users",
 		"users_filter",
 		"_module_crm_query",
@@ -413,9 +375,8 @@ extend type airports {
 // object and the aggregation type carry the declared arguments.
 func TestGenGoldenTFCJ(t *testing.T) {
 	store, ctx := storeFor(t, genTFCJSchema)
-	ref := goldenRef(t, "test", genTFCJSchema)
 
-	assertGenParity(t, ctx, store, ref, "tfcj", []string{
+	assertGenParity(t, ctx, store, "tfcj", []string{
 		"airports",
 		"airports_filter",
 		"_airports_aggregation",
@@ -456,9 +417,8 @@ input region_stats_args {
 // {name}_aggregation / {name}_bucket_aggregation twins.
 func TestGenGoldenJoinView(t *testing.T) {
 	store, ctx := storeFor(t, genJoinViewSchema)
-	ref := goldenRef(t, "test", genJoinViewSchema)
 
-	assertGenParity(t, ctx, store, ref, "joinview", []string{
+	assertGenParity(t, ctx, store, "joinview", []string{
 		"regions",
 		"region_stats",
 		"region_stats_args",
@@ -546,28 +506,6 @@ func storeForSources(t *testing.T, fixtures []fixtureSource) (*Store, context.Co
 
 // definitionsOnly hides a source's Extensions from the seed provider.
 type definitionsOnly struct{ base.DefinitionsSource }
-
-// goldenRefSources compiles the same fixtures with the FULL rule set,
-// sequentially into one static provider (multi-catalog reference).
-func goldenRefSources(t *testing.T, fixtures []fixtureSource) *static.Provider {
-	t.Helper()
-	ctx := context.Background()
-	target, err := static.New()
-	require.NoError(t, err)
-	for i, fs := range fixtures {
-		e := fixtureEngine(fs.engineType)
-		src, err := sources.NewStringSource(fs.name, e, fixtureOpts(fs, e), fs.schema)
-		require.NoError(t, err)
-		var p base.Provider
-		if i > 0 {
-			p = target
-		}
-		compiled, err := compiler.New(rules.RegisterAll()...).Compile(ctx, p, src, src.CompileOptions())
-		require.NoError(t, err)
-		require.NoError(t, target.Update(ctx, compiled))
-	}
-	return target
-}
 
 // genMultiFixtures covers the deferred source-option axes: a prefixed
 // AsModule source, a read-only source, plain sources and a cross-source
@@ -661,9 +599,8 @@ type shop_overview
 // mutation suppression for the read-only source, extension field attribution.
 func TestGenGoldenMultiSource(t *testing.T) {
 	store, ctx := storeForSources(t, genMultiFixtures)
-	ref := goldenRefSources(t, genMultiFixtures)
 
-	assertGenParity(t, ctx, store, ref, "multi", []string{
+	assertGenParity(t, ctx, store, "multi", []string{
 		// Prefixed objects: @original_name, markers with ORIGINAL names,
 		// prefixed nav/derived names, the extension field on shop_items.
 		"shop_items",
@@ -711,7 +648,6 @@ func TestGenGoldenMultiSource(t *testing.T) {
 		"logs_mut_data",
 		"_module_ro_mod_mutation",
 	} {
-		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
 		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
 	}
 
@@ -793,18 +729,25 @@ func writeGoldenSections(t *testing.T, fixture string, names []string, sdl map[s
 // identical to the frozen snapshot (member order is not part of the contract —
 // definitions are normalized before comparison). The comparison is against the
 // store's PRE-FINALISE generation (forNameRaw): the store enriches descriptions
-// on synthetic query members beyond the retiring compiler, and that store-only
-// enrichment is verified separately (descriptions_test.go), not by the
-// base-generation oracle.
-func assertGenParity(t *testing.T, ctx context.Context, s *Store, ref *static.Provider, fixture string, names []string) {
+// on synthetic query members beyond what the compiler produced, and that
+// store-only enrichment is verified separately (descriptions_test.go), not by
+// the base-generation oracle.
+//
+// UPDATE_GOLDEN now rewrites the snapshot from the STORE, which is the whole
+// difference the rules' deletion makes: the text is no longer authored by an
+// independent implementation. For existing behaviour that costs nothing — the
+// frozen text is the same contract it was. For NEW behaviour it means a wrong
+// implementation writes a wrong golden, so a regenerated section has to be READ
+// in the diff, not waved through.
+func assertGenParity(t *testing.T, ctx context.Context, s *Store, fixture string, names []string) {
 	t.Helper()
 
 	golden := map[string]string{}
 	if os.Getenv("UPDATE_GOLDEN") != "" {
 		for _, name := range names {
-			want := ref.ForName(ctx, name)
-			require.NotNil(t, want, "reference must contain %s", name)
-			golden[name] = goldenSDL(want)
+			def := s.forNameRaw(ctx, name)
+			require.NotNil(t, def, "store must serve %s", name)
+			golden[name] = goldenSDL(def)
 		}
 		writeGoldenSections(t, fixture, names, golden)
 	} else {
@@ -817,11 +760,6 @@ func assertGenParity(t *testing.T, ctx context.Context, s *Store, ref *static.Pr
 		want, ok := golden[name]
 		if !assert.True(t, ok, "golden %q has no section for %s (UPDATE_GOLDEN=1 to add)", fixture, name) {
 			continue
-		}
-		// The snapshot was authored by the compiler — while the full rule set
-		// is still compiled in, prove the frozen text has not drifted from it.
-		if def := ref.ForName(ctx, name); assert.NotNil(t, def, "reference must contain %s", name) {
-			assert.Equal(t, want, goldenSDL(def), "snapshot drifted from the compiler for %s", name)
 		}
 		got := s.forNameRaw(ctx, name)
 		if !assert.NotNil(t, got, "store must serve %s", name) {

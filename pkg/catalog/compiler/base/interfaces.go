@@ -47,17 +47,11 @@ type Provider interface {
 	Types(ctx context.Context) iter.Seq2[string, *ast.Definition]
 }
 
-// MutableProvider is a mutable container for compiled schema definitions.
-// It carries the compiler write path (per-source Update, DropCatalog) — the
-// description-annotation surface is split out into the annotator interfaces
-// (LogicalAnnotator / GraphQLAnnotator) so a provider can curate descriptions
-// without owning full compilation semantics.
-type MutableProvider interface {
-	Provider
-
-	DropCatalog(ctx context.Context, name string, cascade bool) error
-	Update(ctx context.Context, changes DefinitionsSource) error
-}
+// MutableProvider — the compiler write path (per-source Update + DropCatalog)
+// — is gone with design-036: applying a compiled DDL feed to a schema container
+// was what the GENERATE / ASSEMBLE pipeline produced, and the catalog storage
+// persists a physical model instead. Curating descriptions was never part of it
+// and lives on in LogicalAnnotator / GraphQLAnnotator below.
 
 // LogicalAnnotator curates human descriptions over the LOGICAL model — the
 // source-level entities the CoreDB entity_* views expose: modules, data

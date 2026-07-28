@@ -9,11 +9,18 @@ import (
 
 // indexedOutput accumulates compilation output definitions and extensions
 // with O(1) lookup by name.
+//
+// After design-036 deleted the GENERATE / ASSEMBLE rules, NOTHING writes to
+// defs any more: the pipeline prepares the source's own definitions in place
+// and the catalog storage reads them from the source. What the output still
+// carries is extensions (cross-source `extend type`, module roots) and the
+// dependency set. Reshaping the type around that is the package move's job,
+// not this step's.
 type indexedOutput struct {
-	defs      []*ast.Definition
-	defIndex  map[string]int // name → index in defs
-	exts      []*ast.Definition
-	extIndex  map[string]int // target type name → index in exts (for merging)
+	defs         []*ast.Definition
+	defIndex     map[string]int // name → index in defs
+	exts         []*ast.Definition
+	extIndex     map[string]int // target type name → index in exts (for merging)
 	dirDefs      []*ast.DirectiveDefinition
 	dirIndex     map[string]int
 	dependencies []string
@@ -28,25 +35,6 @@ func newIndexedOutput(cap int) *indexedOutput {
 		dirDefs:  make([]*ast.DirectiveDefinition, 0),
 		dirIndex: make(map[string]int),
 	}
-}
-
-// AddDefinition adds a new definition to the output.
-func (o *indexedOutput) AddDefinition(def *ast.Definition) {
-	if _, exists := o.defIndex[def.Name]; exists {
-		return // skip duplicates
-	}
-	o.defIndex[def.Name] = len(o.defs)
-	o.defs = append(o.defs, def)
-}
-
-// AddDefinitionReplaceOrCreate adds a definition, replacing any existing one with the same name.
-func (o *indexedOutput) AddDefinitionReplaceOrCreate(def *ast.Definition) {
-	if idx, exists := o.defIndex[def.Name]; exists {
-		o.defs[idx] = def
-		return
-	}
-	o.defIndex[def.Name] = len(o.defs)
-	o.defs = append(o.defs, def)
 }
 
 // AddExtension adds an extension, merging fields into an existing extension

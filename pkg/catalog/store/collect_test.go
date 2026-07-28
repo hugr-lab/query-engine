@@ -13,6 +13,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // partialSource runs the partial compiler over a schema and returns the source
@@ -38,10 +39,13 @@ func partialExtensionSource(t *testing.T, name, schema string, seeds ...base.Def
 func partialSourceOpts(t *testing.T, name, schema string, isExtension bool, seeds ...base.DefinitionsSource) base.ExtensionsSource {
 	t.Helper()
 	ctx := context.Background()
-	target, err := static.New()
+	prelude, err := static.New()
 	require.NoError(t, err)
+	target := seedProvider{Provider: prelude, seeded: map[string]*ast.Definition{}}
 	for _, seed := range seeds {
-		require.NoError(t, target.Update(ctx, seed))
+		for def := range seed.Definitions(ctx) {
+			target.seeded[def.Name] = def
+		}
 	}
 	e := &engines.DuckDB{}
 	src, err := sources.NewStringSource(name, e, compiler.Options{
@@ -54,6 +58,26 @@ func partialSourceOpts(t *testing.T, name, schema string, isExtension bool, seed
 	_, err = compiler.New(partialRules()...).Compile(ctx, target, src, src.CompileOptions())
 	require.NoError(t, err)
 	return src
+}
+
+// seedProvider serves the system prelude plus a set of already-compiled
+// definitions, which is the whole of what a compile target owes a test here:
+// prior sources' types must RESOLVE so a cross-source extend validates.
+//
+// It replaces static.Provider.Update. Applying a compiled DDL feed to a static
+// schema was the FULL pipeline's apply step; design-036 deleted the pipeline,
+// and a seed that only needs lookups has no business carrying 500 lines of
+// changeset validation with it.
+type seedProvider struct {
+	*static.Provider
+	seeded map[string]*ast.Definition
+}
+
+func (p seedProvider) ForName(ctx context.Context, name string) *ast.Definition {
+	if def, ok := p.seeded[name]; ok {
+		return def
+	}
+	return p.Provider.ForName(ctx, name)
 }
 
 const collectTestSchema = `

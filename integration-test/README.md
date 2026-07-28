@@ -1,17 +1,20 @@
 # Integration Tests
 
-Integration tests for the query engine, covering schema compilation, the catalog storage, CoreDB schema management, and end-to-end query execution.
+Integration tests for the query engine, covering the catalog storage, CoreDB schema management, and end-to-end query execution.
 
 ```
 integration-test/
 ├── catalog/entity/ # Entity catalog storage: engine boot, lifecycle, MCP, benches
 ├── cluster/        # Cluster mode integration tests (management + worker nodes)
-├── compiler/       # Schema compiler golden tests & integration tests
-├── compare/        # Schema comparison utilities (used by compiler tests)
 ├── coredb/         # CoreDB schema init & migration tests (DuckDB + PostgreSQL)
 ├── e2e/            # Docker-based end-to-end query tests
 └── mcp/            # MCP endpoint integration tests
 ```
+
+> The `compiler/` golden suite and the `compare/` utilities are gone with the
+> GENERATE / ASSEMBLE rules they exercised (design-036). The generated schema is
+> now produced on read by the catalog storage, and its oracle is the frozen
+> snapshot set in `pkg/catalog/store/testdata/golden/`.
 
 ---
 
@@ -86,146 +89,6 @@ PostgreSQL on port **5434** (separate from DB Provider tests on 5435).
 |----------|---------|---------|
 | `COREDB_TEST_PG_DSN` | PostgreSQL connection string | — (tests skip if unset) |
 | `HUGR_MIGRATIONS_PATH` | Path to hugr migrations directory | Auto-resolved from sibling `hugr/migrations` repo |
-
----
-
-## Compiler Tests
-
-**Location**: `compiler/`
-
-Golden test framework that compiles GraphQL schema definitions and compares the output against expected (golden) files. Tests cover single-catalog, multi-catalog, extension, and error scenarios.
-
-### Running
-
-```bash
-# Run all compiler tests
-CGO_CFLAGS="-O1 -g" go test -tags=duckdb_arrow ./integration-test/compiler/ -v
-
-# Update golden files after intentional changes
-UPDATE_GOLDEN=1 CGO_CFLAGS="-O1 -g" go test -tags=duckdb_arrow ./integration-test/compiler/ -v
-```
-
-### Test Files
-
-| File | Purpose |
-|------|---------|
-| `golden_test.go` | Golden test framework — loads `config.json` + schema files, compiles, compares against `expected/schema.graphql` |
-| `integration_test.go` | Integration tests — multi-catalog lifecycle, cross-catalog references, extensions, engine capabilities |
-| `comptest_test.go` | Compiler parity tests — compares old vs new compiler output |
-| `cross_compiler_test.go` | AST comparison utilities for compiler parity checks |
-
-### Test Case Structure
-
-Each test case is a directory under `testdata/`:
-
-```
-testdata/NN_test_name/
-├── config.json                 # Test configuration
-├── schemes/
-│   └── 01_schema.graphql       # Input schema(s)
-└── expected/
-    └── schema.graphql          # Golden output
-```
-
-**config.json** fields:
-
-```json
-{
-  "catalogs": [
-    {
-      "file": "01_schema.graphql",
-      "name": "catalog_name",
-      "engine": "duckdb|postgres",
-      "as_module": false,
-      "read_only": false,
-      "is_extension": false,
-      "prefix": "",
-      "capabilities": "duckdb|postgres|duckdb_cross_catalog|"
-    }
-  ],
-  "expected_error": "",
-  "skip_types": []
-}
-```
-
-### Test Cases (68 total)
-
-**Single-Catalog (01–17)**:
-
-| # | Name | Covers |
-|---|------|--------|
-| 01 | basic_table | `@table` directive |
-| 02 | table_with_default | `@default` directive |
-| 03 | table_with_unique | `@unique` constraint |
-| 04 | table_references | `@references` relationships |
-| 05 | table_m2m | Many-to-many (`is_m2m: true`) |
-| 06 | view_simple | `@view` directive |
-| 07 | view_parameterized | Views with `@args` |
-| 08 | function | `@function` directive |
-| 09 | module_nested | Nested `@module` paths |
-| 10 | as_module | `as_module` flag |
-| 11 | read_only | `read_only` flag |
-| 12 | table_with_join | `@table_function_call_join` |
-| 13 | cube | `@cube` OLAP directive |
-| 14 | hypertable | `@hypertable` (TimescaleDB) |
-| 15 | view_with_function_call | `@function_call` in views |
-| 16 | vector | `@vector` directive |
-| 17 | vector_embeddings | Vector embeddings |
-
-**Multi-Catalog (20–29)**:
-
-| # | Name | Covers |
-|---|------|--------|
-| 20 | multi_catalog_basic | Two independent catalogs |
-| 21 | multi_catalog_overlapping_modules | Shared module namespaces |
-| 22 | multi_catalog_cross_ref | Cross-catalog references with capabilities |
-| 23 | multi_catalog_with_extension | Catalogs + extension |
-| 24 | multi_catalog_modules_mixed | Mixed `as_module` and regular |
-| 25 | complex_airport | 3-catalog complex scenario |
-| 26 | extension_cross_catalog_bridge | Extension bridging catalogs |
-| 27 | same_schema_different_prefixes | Same schema with different prefixes |
-| 28 | function_with_modules | Functions with module organization |
-| 29 | function_with_modules_as_module | Functions compiled as module |
-
-**Error Cases (30–37)** — expect compilation to fail:
-
-| # | Name | Expected Error |
-|---|------|----------------|
-| 30 | error_missing_pk | `@pk` |
-| 31 | error_extension_with_table | `data objects` |
-| 32 | error_extension_with_function | `functions` |
-| 33 | error_cross_catalog_no_capability | `cross-catalog` |
-| 34 | error_invalid_reference_target | `not found` |
-| 35 | error_reference_field_mismatch | `fields` |
-| 36 | error_redefine_system_type | `system type` |
-| 37 | error_cube_without_table | `@cube` |
-
-**Extensions (38–46)**:
-
-| # | Name | Covers |
-|---|------|--------|
-| 38 | extension_basic | Basic extension fields |
-| 39 | extension_with_prefix | Extension with prefix |
-| 40 | table_struct_aggregation | Struct fields in aggregation types |
-| 41 | extension_join | `@join` in extensions |
-| 42 | extension_function_call | `@function_call` in extensions |
-| 43 | extension_table_function_call_join | `@table_function_call_join` in extensions |
-| 44 | extension_references | `@references` in extensions |
-| 45 | extension_prefix | Extension prefix handling |
-| 46 | extension_cross_source | Cross-source extension fields |
-
----
-
-## Compare Package
-
-**Location**: `compare/`
-
-Utilities for structural comparison of two GraphQL schemas. Used by compiler parity tests.
-
-Key functions:
-- `Compare()` — structural comparison of two schemas
-- `SkipSystemTypes()`, `IgnoreDescriptions()`, `IgnoreDirectiveArgs()`, `SkipTypes()` — comparison options
-- `KnownIssues()` — track expected differences between compilers
 
 ---
 

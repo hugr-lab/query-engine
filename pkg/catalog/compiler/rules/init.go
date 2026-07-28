@@ -2,8 +2,15 @@ package rules
 
 import "github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
 
-// RegisterAll returns all built-in rules in correct phase order.
-// Call compiler.RegisterRules(rules.RegisterAll()...) to wire them up.
+// RegisterAll returns the built-in rules in phase order.
+//
+// What is left after design-036 is the WRITE-side pipeline: validate a
+// source's SDL, merge its own extensions, tag the catalog, apply the prefix,
+// then check the two source-facing declarations that reach beyond a single
+// field — @join and @function_call. The output is the PHYSICAL model the
+// catalog storage persists; the served GraphQL surface is generated on read
+// from `catalog.*`, which is why the GENERATE / ASSEMBLE phases have no rules
+// at all and the compiler skips them.
 func RegisterAll() []base.Rule {
 	return []base.Rule{
 		// VALIDATE phase
@@ -17,31 +24,9 @@ func RegisterAll() []base.Rule {
 		&CatalogTagger{},
 		&PrefixPreparer{},
 
-		// GENERATE phase
-		&PassthroughRule{}, // must be first — adds structural types not handled by other rules
-		&TableRule{},
-		&ViewRule{},
-		&CubeHypertableRule{},
-		&UniqueRule{},
-		&AggregationRule{},               // generates _X_aggregation/_X_aggregation_bucket types + @query directives
-		&ExtensionFieldAggregationRule{}, // generates agg/filter for extension fields — must run after AggregationRule
-		&ReferencesRule{},
-		&JoinSpatialRule{},
-		&H3Rule{},
-		&FunctionRule{},
-		&ExtraFieldRule{},
-		&VectorSearchRule{},
-		&EmbeddingsRule{},
-
-		// ASSEMBLE phase
-		&ModuleAssembler{},
-		&RootTypeAssembler{},
-
-		// FINALIZE phase
-		&ReadOnlyFinalizer{},
+		// FINALIZE phase — the source-facing validators. They run last so the
+		// definitions they walk are already prefixed and extension-merged.
 		&JoinValidator{},
 		&FunctionCallValidator{},
-		&ArgumentTypeValidator{},
-		&PostValidator{},
 	}
 }

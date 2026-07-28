@@ -20,10 +20,10 @@ type CompilationContext interface {
 	ScalarLookup(name string) types.ScalarType
 	IsScalar(name string) bool
 
-	// Output writing
-	AddDefinition(def *ast.Definition)
+	// Output writing. Only extensions are written now: the pipeline no longer
+	// GENERATES definitions — it validates and prepares the source's own, in
+	// place, for the catalog storage to persist.
 	AddExtension(ext *ast.Definition)
-	AddDefinitionReplaceOrCreate(def *ast.Definition)
 
 	// PromoteToSource adds a definition to the source-level pool.
 	// Definitions added here are dispatched to DefinitionRules in subsequent phases,
@@ -37,7 +37,6 @@ type CompilationContext interface {
 
 	// Type lookup: checks compilation output first, then target schema
 	LookupType(name string) *ast.Definition
-	LookupDirective(name string) *ast.DirectiveDefinition
 
 	// LookupExtension returns the accumulated extension for a given type name,
 	// or nil if no extensions have been added for that type.
@@ -47,25 +46,10 @@ type CompilationContext interface {
 	RegisterObject(name string, info *ObjectInfo)
 	GetObject(name string) *ObjectInfo
 
-	// Field collectors for ASSEMBLE phase
-	RegisterQueryFields(objectName string, fields []*ast.FieldDefinition)
-	RegisterMutationFields(objectName string, fields []*ast.FieldDefinition)
-	RegisterSubscriptionFields(objectName string, fields []*ast.FieldDefinition)
-	RegisterFunctionFields(fields []*ast.FieldDefinition)
-	RegisterFunctionMutationFields(fields []*ast.FieldDefinition)
-
-	// Field collector getters for ASSEMBLE phase
-	QueryFields() map[string][]*ast.FieldDefinition
-	MutationFields() map[string][]*ast.FieldDefinition
-	SubscriptionFields() map[string][]*ast.FieldDefinition
-	FunctionFields() []*ast.FieldDefinition
-	FunctionMutationFields() []*ast.FieldDefinition
-
 	// Object iteration
 	Objects() iter.Seq2[string, *ObjectInfo]
 
 	// Output iteration (for FINALIZE rules)
-	OutputDefinitions() iter.Seq[*ast.Definition]
 	OutputExtensions() iter.Seq[*ast.Definition]
 
 	// Dependency registration (extension compilation)

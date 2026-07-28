@@ -9,10 +9,10 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// partialRules is the write-side compiler: VALIDATE + PREPARE (prefix,
-// validate, extension merge) plus the two source-facing FINALIZE validators —
-// the GENERATE and ASSEMBLE phases register nothing and the compiler skips an
-// empty phase, so the output is the PHYSICAL base model the store persists.
+// partialRules is the write-side compiler. Since design-036 deleted the
+// GENERATE / ASSEMBLE rules there is only ONE rule set left, so this is the
+// whole of it — the name survives as the store's word for "compile to the
+// PHYSICAL model I persist", which is now what compiling means.
 //
 // The @join / @function_call validators run LAST, after the definitions are
 // prefixed and merged, and before collect: compileAndWrite returns on a
@@ -20,19 +20,7 @@ import (
 // resolve cross-source targets through the Store itself, passed as the
 // compilation provider (manager.go) — the same on-demand reconstruction the
 // served schema uses.
-func partialRules() []base.Rule {
-	return []base.Rule{
-		&rules.ExtensionValidator{},
-		&rules.DependencyCollector{},
-		&rules.SourceValidator{},
-		&rules.DefinitionValidator{},
-		&rules.InternalExtensionMerger{},
-		&rules.CatalogTagger{},
-		&rules.PrefixPreparer{},
-		&rules.JoinValidator{},
-		&rules.FunctionCallValidator{},
-	}
-}
+func partialRules() []base.Rule { return rules.RegisterAll() }
 
 // asExtensionsSource adapts a catalog source for collect, which walks both
 // Definitions() and Extensions(). Sources that carry extensions (module roots,

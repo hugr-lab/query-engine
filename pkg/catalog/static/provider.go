@@ -120,8 +120,12 @@ func (p *Provider) Schema() *ast.Schema {
 	return p.schema
 }
 
-// MutableProvider implementation
-var _ base.MutableProvider = (*Provider)(nil)
+// The write surface below — description setters and the DropCatalog family —
+// is what is left of the mutable static schema. Nothing in the engine reaches
+// it any more: the served schema comes from the catalog storage, and this
+// Provider is the read-only system prelude the storage layers on top of. It is
+// kept, and tested, as a self-contained capability rather than deleted in the
+// same breath as the pipeline that used to drive it.
 
 func (p *Provider) SetDefinitionDescription(_ context.Context, name, desc, _ string) error {
 	def := p.schema.Types[name]

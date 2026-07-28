@@ -26,13 +26,6 @@ type compilationContext struct {
 
 	// Promoted definitions — added by PREPARE rules, dispatched in subsequent phases.
 	promoted []*ast.Definition
-
-	// Field collectors for ASSEMBLE phase
-	queryFields         map[string][]*ast.FieldDefinition
-	mutationFields      map[string][]*ast.FieldDefinition
-	subscriptionFields  map[string][]*ast.FieldDefinition
-	functionFields      []*ast.FieldDefinition
-	functionMutFields   []*ast.FieldDefinition
 }
 
 func newCompilationContext(
@@ -43,15 +36,12 @@ func newCompilationContext(
 	output *indexedOutput,
 ) *compilationContext {
 	return &compilationContext{
-		ctx:            ctx,
-		source:         source,
-		schema:         schema,
-		opts:           opts,
-		output:         output,
-		objects:        make(map[string]*base.ObjectInfo),
-		queryFields:        make(map[string][]*ast.FieldDefinition),
-		mutationFields:     make(map[string][]*ast.FieldDefinition),
-		subscriptionFields: make(map[string][]*ast.FieldDefinition),
+		ctx:     ctx,
+		source:  source,
+		schema:  schema,
+		opts:    opts,
+		output:  output,
+		objects: make(map[string]*base.ObjectInfo),
 	}
 }
 
@@ -79,21 +69,16 @@ func (c *compilationContext) IsScalar(name string) bool {
 	return types.IsScalar(name)
 }
 
-func (c *compilationContext) AddDefinition(def *ast.Definition) {
-	c.output.AddDefinition(def)
-}
-
 func (c *compilationContext) AddExtension(ext *ast.Definition) {
 	if c.opts.IsExtension && c.opts.Name != "" {
 		for _, f := range ext.Fields {
 			f.Directives = append(f.Directives, dependencyDirective(c.opts.Name, f.Position))
 		}
 	}
-	// Strip definition-level @dependency directives from extensions before
-	// passing to Provider.Update(). These directives are compilation metadata
-	// (what the extension source depends on), NOT what the target type depends on.
-	// If propagated to the target type, DropCatalog would incorrectly drop the
-	// target definition when a dependency catalog is reloaded.
+	// Strip definition-level @dependency directives from extensions. They are
+	// compilation metadata — what the EXTENSION SOURCE depends on — not what the
+	// target type depends on, and a consumer that reads them off the target
+	// would drop it whenever a dependency source is reloaded.
 	ext = stripExtensionDependencyDirectives(ext)
 	c.output.AddExtension(ext)
 }
@@ -128,10 +113,6 @@ func dependencyDirective(name string, pos *ast.Position) *ast.Directive {
 	}
 }
 
-func (c *compilationContext) AddDefinitionReplaceOrCreate(def *ast.Definition) {
-	c.output.AddDefinitionReplaceOrCreate(def)
-}
-
 func (c *compilationContext) PromoteToSource(def *ast.Definition) {
 	c.promoted = append(c.promoted, def)
 }
@@ -155,62 +136,12 @@ func (c *compilationContext) LookupExtension(name string) *ast.Definition {
 	return c.output.LookupExtension(name)
 }
 
-func (c *compilationContext) LookupDirective(name string) *ast.DirectiveDefinition {
-	if dir := c.output.LookupDirective(name); dir != nil {
-		return dir
-	}
-	if c.schema != nil {
-		return c.schema.DirectiveForName(c.ctx, name)
-	}
-	return nil
-}
-
 func (c *compilationContext) RegisterObject(name string, info *base.ObjectInfo) {
 	c.objects[name] = info
 }
 
 func (c *compilationContext) GetObject(name string) *base.ObjectInfo {
 	return c.objects[name]
-}
-
-func (c *compilationContext) RegisterQueryFields(objectName string, fields []*ast.FieldDefinition) {
-	c.queryFields[objectName] = append(c.queryFields[objectName], fields...)
-}
-
-func (c *compilationContext) RegisterMutationFields(objectName string, fields []*ast.FieldDefinition) {
-	c.mutationFields[objectName] = append(c.mutationFields[objectName], fields...)
-}
-
-func (c *compilationContext) RegisterSubscriptionFields(objectName string, fields []*ast.FieldDefinition) {
-	c.subscriptionFields[objectName] = append(c.subscriptionFields[objectName], fields...)
-}
-
-func (c *compilationContext) RegisterFunctionFields(fields []*ast.FieldDefinition) {
-	c.functionFields = append(c.functionFields, fields...)
-}
-
-func (c *compilationContext) RegisterFunctionMutationFields(fields []*ast.FieldDefinition) {
-	c.functionMutFields = append(c.functionMutFields, fields...)
-}
-
-func (c *compilationContext) QueryFields() map[string][]*ast.FieldDefinition {
-	return c.queryFields
-}
-
-func (c *compilationContext) MutationFields() map[string][]*ast.FieldDefinition {
-	return c.mutationFields
-}
-
-func (c *compilationContext) SubscriptionFields() map[string][]*ast.FieldDefinition {
-	return c.subscriptionFields
-}
-
-func (c *compilationContext) FunctionFields() []*ast.FieldDefinition {
-	return c.functionFields
-}
-
-func (c *compilationContext) FunctionMutationFields() []*ast.FieldDefinition {
-	return c.functionMutFields
 }
 
 func (c *compilationContext) RegisterDependency(name string) {
@@ -225,10 +156,6 @@ func (c *compilationContext) Objects() iter.Seq2[string, *base.ObjectInfo] {
 			}
 		}
 	}
-}
-
-func (c *compilationContext) OutputDefinitions() iter.Seq[*ast.Definition] {
-	return c.output.Definitions()
 }
 
 func (c *compilationContext) OutputExtensions() iter.Seq[*ast.Definition] {

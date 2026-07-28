@@ -1,4 +1,0 @@
-type Airport @table(name: "airports") {
-  iata_code: String! @pk
-  name: String!
-}
