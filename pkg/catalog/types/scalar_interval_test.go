@@ -61,8 +61,8 @@ func TestParseSQLInterval_NonISOStillWorks(t *testing.T) {
 		in   string
 		want time.Duration
 	}{
-		{"1h30m", time.Hour + 30*time.Minute},       // Go format
-		{"10 minutes", 10 * time.Minute},            // SQL format
+		{"1h30m", time.Hour + 30*time.Minute}, // Go format
+		{"10 minutes", 10 * time.Minute},      // SQL format
 		{"1 hour 30 seconds", time.Hour + 30*time.Second},
 		{"5", 5 * time.Second}, // bare number
 	}

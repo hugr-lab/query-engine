@@ -1,8 +1,8 @@
 package rules
 
 import (
-	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/catalog/validator"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 )
 
 // DefaultRules returns the full set of GraphQL spec validation rules.

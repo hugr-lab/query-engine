@@ -174,12 +174,12 @@ func (s *timestampScalar) ToStructFieldSQL(sql string) string {
 //
 // Composition:
 //   - Body:   strftime(col::TIMESTAMP, '%Y-%m-%dT%H:%M:%S.%f') +
-//             rtrim('0') + rtrim('.') — one strftime call, session-TZ
-//             wall clock.
+//     rtrim('0') + rtrim('.') — one strftime call, session-TZ
+//     wall clock.
 //   - Offset: timezone_hour(col) + timezone_minute(col) (both INT) via
-//             printf('%+03d:%02d', h, abs(m)). Avoids strftime('%z')
-//             which emits "+HH" for whole-hour offsets and "+HHMM"
-//             otherwise, breaking naïve substr colon injection.
+//     printf('%+03d:%02d', h, abs(m)). Avoids strftime('%z')
+//     which emits "+HH" for whole-hour offsets and "+HHMM"
+//     otherwise, breaking naïve substr colon injection.
 //   - Z:      when hour and minute are both zero.
 func timestampTZSQL(sql string) string {
 	return fmt.Sprintf(

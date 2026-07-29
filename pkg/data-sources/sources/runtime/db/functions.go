@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/duckdb/duckdb-go/v2"
-	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
+	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/types"
 )

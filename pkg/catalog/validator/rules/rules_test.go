@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/hugr-lab/query-engine/pkg/catalog/validator"
 	"github.com/hugr-lab/query-engine/pkg/catalog/validator/rules"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"

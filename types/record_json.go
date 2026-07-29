@@ -482,4 +482,3 @@ func joinGeomPath(prefix, name string) string {
 	}
 	return prefix + "." + name
 }
-

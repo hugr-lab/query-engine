@@ -32,11 +32,11 @@ func New(ds types.DataSource, attached bool) (*Source, error) {
 	}, nil
 }
 
-func (s *Source) Name() string             { return s.ds.Name }
+func (s *Source) Name() string                 { return s.ds.Name }
 func (s *Source) Definition() types.DataSource { return s.ds }
-func (s *Source) Engine() engines.Engine   { return s.engine }
-func (s *Source) IsAttached() bool         { return s.isAttached }
-func (s *Source) ReadOnly() bool           { return false }
+func (s *Source) Engine() engines.Engine       { return s.engine }
+func (s *Source) IsAttached() bool             { return s.isAttached }
+func (s *Source) ReadOnly() bool               { return false }
 
 func (s *Source) Attach(ctx context.Context, _ *db.Pool) error {
 	if s.isAttached {
@@ -201,7 +201,7 @@ type channelRecordReader struct {
 	once    sync.Once
 }
 
-func (r *channelRecordReader) Retain()              { r.refs++ }
+func (r *channelRecordReader) Retain()               { r.refs++ }
 func (r *channelRecordReader) Schema() *arrow.Schema { return r.schema }
 func (r *channelRecordReader) Err() error            { return r.err }
 
@@ -238,10 +238,10 @@ func (r *channelRecordReader) Next() bool {
 }
 
 func (r *channelRecordReader) Record() arrow.RecordBatch      { return r.current }
-func (r *channelRecordReader) RecordBatch() arrow.RecordBatch  { return r.current }
+func (r *channelRecordReader) RecordBatch() arrow.RecordBatch { return r.current }
 
 var (
-	_ sources.Source           = (*Source)(nil)
-	_ sources.StoreSource      = (*Source)(nil)
+	_ sources.Source            = (*Source)(nil)
+	_ sources.StoreSource       = (*Source)(nil)
 	_ sources.PubSubStoreSource = (*Source)(nil)
 )

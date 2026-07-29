@@ -46,9 +46,9 @@ func FunctionModule(def *ast.FieldDefinition) string {
 }
 
 const (
-	moduleQuerySuffix            = "_query"
-	moduleMutationSuffix         = "_mutation"
-	moduleFunctionSuffix         = "_function"
+	moduleQuerySuffix    = "_query"
+	moduleMutationSuffix = "_mutation"
+	moduleFunctionSuffix = "_function"
 	// NOTE: must match the module assembler's inline naming
 	// (compiler/rules/assemble_modules.go): mutation-function module types are
 	// "_module_<m>_mut_function", subscription module types are

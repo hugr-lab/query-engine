@@ -14,9 +14,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	"github.com/hugr-lab/query-engine/types"
-	"github.com/coder/websocket"
 )
 
 // --- Options ---
@@ -62,8 +62,8 @@ type ipcSubMsg struct {
 
 // SubscriptionConn is a single WebSocket connection multiplexing subscriptions.
 type SubscriptionConn struct {
-	conn *websocket.Conn
-	mu   sync.Mutex // protects conn writes
+	conn   *websocket.Conn
+	mu     sync.Mutex // protects conn writes
 	subs   map[string]*activeSub
 	subsMu sync.Mutex
 	ctx    context.Context
@@ -362,8 +362,8 @@ func (p *batchPipe) Close() {
 		}
 	}
 }
-func (p *batchPipe) Retain()  {}
-func (p *batchPipe) Release() { p.Close() }
+func (p *batchPipe) Retain()    {}
+func (p *batchPipe) Release()   { p.Close() }
 func (p *batchPipe) Err() error { return nil }
 
 func (p *batchPipe) Schema() *arrow.Schema {
@@ -390,7 +390,7 @@ func (p *batchPipe) Next() bool {
 	}
 }
 
-func (p *batchPipe) Record() arrow.RecordBatch     { return p.current }
+func (p *batchPipe) Record() arrow.RecordBatch      { return p.current }
 func (p *batchPipe) RecordBatch() arrow.RecordBatch { return p.current }
 
 var _ array.RecordReader = (*batchPipe)(nil)
@@ -428,7 +428,7 @@ func (p *subscriptionPool) removeStale() {
 	p.conns = alive
 }
 
-func (p *subscriptionPool) add(sc *SubscriptionConn)  { p.conns = append(p.conns, sc) }
+func (p *subscriptionPool) add(sc *SubscriptionConn) { p.conns = append(p.conns, sc) }
 func (p *subscriptionPool) closeAll() {
 	for _, sc := range p.conns {
 		sc.Close()

@@ -22,10 +22,10 @@ import (
 // (209/0/0) where the same query is served to both consumers.
 func TestScanParity_ObjectAndTable(t *testing.T) {
 	type Row struct {
-		ID    int32        `json:"id"`
-		Name  string       `json:"name"`
-		Geom  orb.Geometry `json:"geom"`
-		TS    time.Time    `json:"ts"`
+		ID   int32        `json:"id"`
+		Name string       `json:"name"`
+		Geom orb.Geometry `json:"geom"`
+		TS   time.Time    `json:"ts"`
 	}
 
 	// Case 1: object path — *JsonValue leaf.

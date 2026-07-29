@@ -87,7 +87,7 @@ func buildResponsesRequest(config openAIConfig, messages []sources.LLMMessage, o
 	}
 
 	reqBody := map[string]any{
-		"model":            config.Model,
+		"model":             config.Model,
 		"max_output_tokens": maxTokens,
 	}
 

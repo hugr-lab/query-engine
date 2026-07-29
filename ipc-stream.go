@@ -39,7 +39,7 @@ type StreamMessage struct {
 	Variables      map[string]interface{} `json:"variables,omitempty"`
 	Error          string                 `json:"error,omitempty"`
 	SubscriptionID string                 `json:"subscription_id,omitempty"` // For subscribe/unsubscribe
-	Path           string                 `json:"path,omitempty"`           // Data object path for subscription events
+	Path           string                 `json:"path,omitempty"`            // Data object path for subscription events
 	// Identity override fields (optional, requires secret key auth on connection)
 	UserId   string `json:"user_id,omitempty"`
 	UserName string `json:"user_name,omitempty"`

@@ -339,22 +339,34 @@ func TestScalarFunc_AllTypes(t *testing.T) {
 		buildFn func(mem memory.Allocator) arrow.Array
 	}{
 		{"bool", Boolean, true, func(mem memory.Allocator) arrow.Array {
-			b := array.NewBooleanBuilder(mem); b.Append(true); return b.NewArray()
+			b := array.NewBooleanBuilder(mem)
+			b.Append(true)
+			return b.NewArray()
 		}},
 		{"int32", Int32, int32(42), func(mem memory.Allocator) arrow.Array {
-			b := array.NewInt32Builder(mem); b.Append(42); return b.NewArray()
+			b := array.NewInt32Builder(mem)
+			b.Append(42)
+			return b.NewArray()
 		}},
 		{"int64", Int64, int64(100), func(mem memory.Allocator) arrow.Array {
-			b := array.NewInt64Builder(mem); b.Append(100); return b.NewArray()
+			b := array.NewInt64Builder(mem)
+			b.Append(100)
+			return b.NewArray()
 		}},
 		{"float64", Float64, 3.14, func(mem memory.Allocator) arrow.Array {
-			b := array.NewFloat64Builder(mem); b.Append(3.14); return b.NewArray()
+			b := array.NewFloat64Builder(mem)
+			b.Append(3.14)
+			return b.NewArray()
 		}},
 		{"string", String, "hello", func(mem memory.Allocator) arrow.Array {
-			b := array.NewStringBuilder(mem); b.Append("hello"); return b.NewArray()
+			b := array.NewStringBuilder(mem)
+			b.Append("hello")
+			return b.NewArray()
 		}},
 		{"uint64", Uint64, uint64(999), func(mem memory.Allocator) arrow.Array {
-			b := array.NewUint64Builder(mem); b.Append(999); return b.NewArray()
+			b := array.NewUint64Builder(mem)
+			b.Append(999)
+			return b.NewArray()
 		}},
 	}
 

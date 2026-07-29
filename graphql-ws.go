@@ -29,7 +29,7 @@ const (
 )
 
 var gqlwsAcceptOptions = &websocket.AcceptOptions{
-	Subprotocols:    []string{"graphql-transport-ws"},
+	Subprotocols:       []string{"graphql-transport-ws"},
 	InsecureSkipVerify: true,
 }
 

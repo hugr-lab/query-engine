@@ -24,9 +24,9 @@ const (
 )
 
 const (
-	MetadataSchemaQuery     = base.MetadataSchemaQuery
-	MetadataTypeQuery       = base.MetadataTypeQuery
-	MetadataTypeNameQuery   = base.MetadataTypeNameQuery
+	MetadataSchemaQuery      = base.MetadataSchemaQuery
+	MetadataTypeQuery        = base.MetadataTypeQuery
+	MetadataTypeNameQuery    = base.MetadataTypeNameQuery
 	MetadataCatalogQuery     = base.MetadataCatalogQuery
 	MetadataModuleQuery      = base.MetadataModuleQuery
 	MetadataDataObjectQuery  = base.MetadataDataObjectQuery
@@ -441,7 +441,7 @@ func (m *Mutation) ReferencesMutation(name string) *Mutation {
 	if rt == nil {
 		return nil
 	}
-	moduleObject := m.defs.ForName(m.ctx,ModuleTypeName(ObjectModule(rt), ModuleMutation))
+	moduleObject := m.defs.ForName(m.ctx, ModuleTypeName(ObjectModule(rt), ModuleMutation))
 	if moduleObject == nil {
 		return nil
 	}

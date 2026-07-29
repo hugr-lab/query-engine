@@ -315,9 +315,9 @@ func (r *metadataReader) Next() bool {
 }
 
 func (r *metadataReader) Record() arrow.RecordBatch      { return r.current }
-func (r *metadataReader) RecordBatch() arrow.RecordBatch  { return r.current }
-func (r *metadataReader) Err() error                      { return r.reader.Err() }
-func (r *metadataReader) Retain()                         { r.reader.Retain() }
+func (r *metadataReader) RecordBatch() arrow.RecordBatch { return r.current }
+func (r *metadataReader) Err() error                     { return r.reader.Err() }
+func (r *metadataReader) Retain()                        { r.reader.Retain() }
 func (r *metadataReader) Release() {
 	r.once.Do(func() {
 		if r.current != nil {

@@ -58,8 +58,8 @@ Flags:`)
 	}
 
 	var result struct {
-		Success bool `json:"success"`
-		AffectedRows int    `json:"affected_rows"`
+		Success      bool `json:"success"`
+		AffectedRows int  `json:"affected_rows"`
 	}
 	if err := res.ScanData("function.core._schema_reindex", &result); err != nil {
 		return fmt.Errorf("scan result: %w", err)
