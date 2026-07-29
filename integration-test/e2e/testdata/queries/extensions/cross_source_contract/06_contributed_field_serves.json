@@ -1,0 +1,24 @@
+{
+  "data": {
+    "local_db": {
+      "items": [
+        {
+          "contract_probe": [
+            {
+              "id": 1
+            }
+          ],
+          "id": 1
+        },
+        {
+          "contract_probe": [
+            {
+              "id": 2
+            }
+          ],
+          "id": 2
+        }
+      ]
+    }
+  }
+}

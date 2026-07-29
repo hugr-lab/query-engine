@@ -1,0 +1,15 @@
+# Unload BEFORE deleting: deleting the row does not detach the source, and a
+# still-attached database is visible to every later test that enumerates them.
+# catalog_sources also outlives its data source, so it goes explicitly — the
+# next registration points at the same directory under its own name.
+mutation {
+  function {
+    core {
+      unload_data_source(name: "cross_plain") { success }
+    }
+  }
+  core {
+    delete_data_sources(filter: { name: { eq: "cross_plain" } }) { success }
+    delete_catalog_sources(filter: { name: { eq: "cross_contract_plain" } }) { success }
+  }
+}

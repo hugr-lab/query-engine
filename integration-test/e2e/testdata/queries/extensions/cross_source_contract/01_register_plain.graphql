@@ -1,0 +1,18 @@
+# The registration is only a row — nothing is compiled until the load, which is
+# why it is a step of its own: a mutation cannot both insert a source and load it.
+#
+# An HTTP source, because the point is the SDL and nothing else: it attaches
+# without touching a file, so the load reaches the compile step cleanly on every
+# engine variant (a DuckDB file would still be locked from the previous run).
+mutation {
+  core {
+    insert_data_sources(data: {
+      name: "cross_plain"
+      prefix: "cross_plain"
+      type: "http"
+      path: "http://http-service:17000"
+      as_module: false
+      catalogs: [{ name: "cross_contract_plain", type: "localFS", path: "/workspace/schemas/cross_contract" }]
+    }) { name }
+  }
+}

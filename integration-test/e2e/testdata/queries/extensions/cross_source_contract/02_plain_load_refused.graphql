@@ -1,0 +1,10 @@
+# A regular source describes only its own data. Reaching into another source's
+# type through `extend type` is the same act as an @join to a foreign target,
+# and is refused with the same reasoning.
+mutation {
+  function {
+    core {
+      load_data_source(name: "cross_plain") { success message }
+    }
+  }
+}

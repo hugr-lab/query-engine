@@ -38,14 +38,55 @@ func (r *JoinValidator) ProcessAll(ctx base.CompilationContext) error {
 		if def == nil {
 			continue
 		}
-		for _, f := range def.Fields {
-			joinDir := f.Directives.ForName(base.JoinDirectiveName)
-			if joinDir == nil {
+		if err := validateJoinFields(ctx, def, def.Fields, false); err != nil {
+			return err
+		}
+	}
+
+	// The fields an EXTENSION source contributes to another source's objects
+	// live in the output extensions, not in ctx.Objects() — which holds only a
+	// source's own data objects. They were validated nowhere, and they are
+	// exactly where the cross-source joins are: the contract sends every
+	// cross-source artifact to an extension source, so this is the path that
+	// carries them.
+	for ext := range ctx.OutputExtensions() {
+		target := inFlightType(ctx, ext.Name)
+		if target == nil {
+			// The object being extended is not resolvable — its source is not
+			// loaded yet. The dependency gate handles that (the source is
+			// stored suspended and retried); it is not this rule's error to
+			// raise.
+			continue
+		}
+		if err := validateJoinFields(ctx, target, ext.Fields, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateJoinFields checks every @join among fields, declared on def.
+//
+// tolerateMissingTarget applies to the extension path: a @join whose TARGET
+// does not resolve is skipped rather than refused, because "not resolvable" and
+// "belongs to a source that is not active yet" are the same answer through the
+// Provider, and the second is a legitimate ordering state that the dependency
+// gate suspends and retries. Everything else about the field is still checked
+// the moment the target does resolve.
+func validateJoinFields(ctx base.CompilationContext, def *ast.Definition, fields ast.FieldList, tolerateMissingTarget bool) error {
+	for _, f := range fields {
+		joinDir := f.Directives.ForName(base.JoinDirectiveName)
+		if joinDir == nil {
+			continue
+		}
+		if tolerateMissingTarget {
+			refName := base.DirectiveArgString(joinDir, base.ArgReferencesName)
+			if inFlightType(ctx, refName) == nil {
 				continue
 			}
-			if err := validateJoinField(ctx, def, f, joinDir); err != nil {
-				return err
-			}
+		}
+		if err := validateJoinField(ctx, def, f, joinDir); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -119,10 +160,10 @@ func validateJoinField(ctx base.CompilationContext, def *ast.Definition, field *
 				"@join on %s.%s: references field %q not found in %s",
 				def.Name, field.Name, rfn, refName)
 		}
-		if !equalTypesIgnoreNull(sf.Type, rf.Type) {
+		if !joinKeyCompatible(sf.Type, rf.Type) {
 			return gqlerror.ErrorPosf(field.Position,
-				"@join on %s.%s: field %q and references field %q must have the same type",
-				def.Name, field.Name, sfn, rfn)
+				"@join on %s.%s: key %q is %s and references field %q is %s — join keys must be the same type (Int and BigInt are interchangeable)",
+				def.Name, field.Name, sfn, sf.Type.String(), rfn, rf.Type.String())
 		}
 	}
 
@@ -283,4 +324,32 @@ func equalTypesIgnoreNull(a, b *ast.Type) bool {
 		return false
 	}
 	return equalTypesIgnoreNull(a.Elem, b.Elem)
+}
+
+// joinKeyCompatible is equalTypesIgnoreNull widened by ONE rule: Int and BigInt
+// join each other.
+//
+// A join key is compared, not assigned, and every engine compares integers of
+// different widths without complaint. Requiring the exact type name is a
+// sensible default within one source, where a modeller controls both sides; it
+// is the wrong test ACROSS sources, where the width comes from the backend —
+// PostgreSQL's int4 arrives as Int and DuckDB's BIGINT as BigInt, so joining
+// two id columns that hold the same numbers is refused for naming a different
+// scalar. That is not a hypothetical: it is what the e2e bridge does.
+//
+// Deliberately only integers. Float↔Int would silently change what "equal"
+// means, and the rest of the scalar set has no pair whose values are
+// interchangeable.
+func joinKeyCompatible(a, b *ast.Type) bool {
+	if equalTypesIgnoreNull(a, b) {
+		return true
+	}
+	if a == nil || b == nil || a.Elem != nil || b.Elem != nil {
+		return false
+	}
+	return isIntegerScalar(a.NamedType) && isIntegerScalar(b.NamedType)
+}
+
+func isIntegerScalar(name string) bool {
+	return name == "Int" || name == "BigInt"
 }

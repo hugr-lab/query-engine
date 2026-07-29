@@ -1,0 +1,12 @@
+{
+  "data": {
+    "function": {
+      "core": {
+        "load_data_source": {
+          "message": "compile catalog \"cross_plain\": catalog schema is invalid: schema.graphql:8:13: [VALIDATE/ExtensionValidator] extend type local_db_items: it belongs to data source \"local_db\" \u2014 a regular source describes only its own data, and cross-source extensions belong to an extension source",
+          "success": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "data": {
+    "core": {
+      "insert_data_sources": {
+        "name": "cross_ext"
+      }
+    }
+  }
+}
