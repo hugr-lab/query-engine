@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"os"
-	"path/filepath"
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -17,8 +16,26 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 )
 
-// allSchemaTables lists all 11 _schema_* tables.
-var allSchemaTables = []string{
+// catalogTables lists the catalog entity-namespace tables — the CoreDB schema
+// storage since design-034, and the only one since design-036 dropped the
+// eleven _schema_* tables the compiled-schema provider used.
+var catalogTables = []string{
+	"data_source_meta",
+	"modules",
+	"module_data_sources",
+	"data_objects",
+	"fields",
+	"relations",
+	"functions",
+	"types",
+	"annotations",
+	"data_source_dependencies",
+}
+
+// legacySchemaTables must NOT be created by the init schema any more. A fresh
+// CoreDB that grows them again means the DDL was resurrected; an upgraded one
+// is the 0.0.20 migration's business, not this test's.
+var legacySchemaTables = []string{
 	"_schema_catalogs",
 	"_schema_catalog_dependencies",
 	"_schema_types",
@@ -32,26 +49,11 @@ var allSchemaTables = []string{
 	"_schema_data_object_queries",
 }
 
-// vectorTables lists tables that have a vec column.
+// vectorTables lists tables that have a vec column. The annotations overlay is
+// the only one left: the legacy tables carried their own vectors, and semantic
+// search now ranks over the annotations.
 var vectorTables = []string{
-	"_schema_catalogs",
-	"_schema_types",
-	"_schema_fields",
-	"_schema_modules",
-}
-
-func migrationFilePath(t *testing.T) string {
-	t.Helper()
-	if p := os.Getenv("HUGR_MIGRATIONS_PATH"); p != "" {
-		return filepath.Join(p, "0.0.9", "1-add-schema-tables.sql")
-	}
-	// fallback: sibling repo relative to test package dir (go test cwd = package dir)
-	root := filepath.Join("..", "..", "..", "hugr", "migrations")
-	p := filepath.Join(root, "0.0.9", "1-add-schema-tables.sql")
-	if _, err := os.Stat(p); err != nil {
-		t.Skipf("migration file not found at %s (set HUGR_MIGRATIONS_PATH)", p)
-	}
-	return p
+	"annotations",
 }
 
 // ─── DuckDB tests ───────────────────────────────────────────────────────────
@@ -81,20 +83,38 @@ func TestDuckDB_InitSchema(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, coredb.Version, version)
 
-	// check all 11 _schema_* tables exist and are queryable
-	for _, table := range allSchemaTables {
+	// the catalog namespace exists and is queryable
+	for _, table := range catalogTables {
+		var exists bool
+		err = conn.QueryRow(ctx,
+			"SELECT EXISTS(FROM duckdb_tables() WHERE schema_name = 'catalog' AND table_name = $1);", table,
+		).Scan(&exists)
+		require.NoError(t, err, "table %s", table)
+		assert.True(t, exists, "catalog.%s should exist", table)
+
+		var count int
+		err = conn.QueryRow(ctx, `SELECT count(*) FROM catalog."`+table+`";`).Scan(&count)
+		require.NoError(t, err, "count %s", table)
+		assert.Equal(t, 0, count, "catalog.%s should be empty", table)
+	}
+
+	// ...and the compiled-schema tables do not come back
+	for _, table := range legacySchemaTables {
 		var exists bool
 		err = conn.QueryRow(ctx,
 			"SELECT EXISTS(FROM duckdb_tables() WHERE table_name = $1);", table,
 		).Scan(&exists)
 		require.NoError(t, err, "table %s", table)
-		assert.True(t, exists, "table %s should exist", table)
-
-		var count int
-		err = conn.QueryRow(ctx, `SELECT count(*) FROM "`+table+`";`).Scan(&count)
-		require.NoError(t, err, "count %s", table)
-		assert.Equal(t, 0, count, "table %s should be empty", table)
+		assert.False(t, exists, "%s must not be created any more", table)
 	}
+
+	// _schema_settings is NOT one of them: it carries the schema_version counter.
+	var settings bool
+	err = conn.QueryRow(ctx,
+		"SELECT EXISTS(FROM duckdb_tables() WHERE table_name = '_schema_settings');",
+	).Scan(&settings)
+	require.NoError(t, err)
+	assert.True(t, settings, "_schema_settings stays")
 }
 
 func TestDuckDB_VectorColumns(t *testing.T) {
@@ -120,7 +140,7 @@ func TestDuckDB_VectorColumns(t *testing.T) {
 		var colType string
 		err = conn.QueryRow(ctx,
 			`SELECT data_type FROM duckdb_columns()
-			 WHERE table_name = $1 AND column_name = 'vec';`, table,
+			 WHERE schema_name = 'catalog' AND table_name = $1 AND column_name = 'vec';`, table,
 		).Scan(&colType)
 		require.NoError(t, err, "vec type on %s", table)
 		assert.Equal(t, "FLOAT[768]", colType, "vec column on %s", table)
@@ -150,111 +170,19 @@ func TestDuckDB_AttachedMode(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	for _, table := range allSchemaTables {
+	for _, table := range catalogTables {
 		var exists bool
 		err = conn.QueryRow(ctx,
-			"SELECT EXISTS(FROM duckdb_tables() WHERE database_name = 'core' AND table_name = $1);", table,
+			"SELECT EXISTS(FROM duckdb_tables() WHERE database_name = 'core' AND schema_name = 'catalog' AND table_name = $1);", table,
 		).Scan(&exists)
-		require.NoError(t, err, "core.%s", table)
-		assert.True(t, exists, "core.%s should exist", table)
+		require.NoError(t, err, "core.catalog.%s", table)
+		assert.True(t, exists, "core.catalog.%s should exist", table)
 	}
 
 	var version string
 	err = conn.QueryRow(ctx, `SELECT "version" FROM core."version" LIMIT 1;`).Scan(&version)
 	require.NoError(t, err)
 	assert.Equal(t, coredb.Version, version)
-}
-
-func TestDuckDB_Migration(t *testing.T) {
-	pool, err := db.NewPool("")
-	require.NoError(t, err)
-	defer pool.Close()
-
-	ctx := context.Background()
-
-	// create full DB then drop _schema_* tables to simulate 0.0.8
-	sqlStr, err := db.ParseSQLScriptTemplate(db.SDBDuckDB, coredb.InitSchema, coredb.SchemaTemplateParams{
-		VectorSize: coredb.DefaultVectorSize,
-	})
-	require.NoError(t, err)
-
-	_, err = pool.Exec(ctx, sqlStr)
-	require.NoError(t, err)
-
-	conn, err := pool.Conn(ctx)
-	require.NoError(t, err)
-	defer conn.Close()
-
-	for i := len(allSchemaTables) - 1; i >= 0; i-- {
-		_, err = conn.Exec(ctx, `DROP TABLE IF EXISTS "`+allSchemaTables[i]+`";`)
-		require.NoError(t, err)
-	}
-	_, err = conn.Exec(ctx, `UPDATE "version" SET "version" = '0.0.8';`)
-	require.NoError(t, err)
-
-	// apply migration
-	migrationSQL, err := os.ReadFile(migrationFilePath(t))
-	require.NoError(t, err, "migration file not found")
-
-	parsed, err := db.ParseSQLScriptTemplate(db.SDBDuckDB, string(migrationSQL), coredb.SchemaTemplateParams{
-		VectorSize: coredb.DefaultVectorSize,
-	})
-	require.NoError(t, err)
-
-	_, err = conn.Exec(ctx, parsed)
-	require.NoError(t, err)
-
-	// verify tables
-	for _, table := range allSchemaTables {
-		var exists bool
-		err = conn.QueryRow(ctx,
-			"SELECT EXISTS(FROM duckdb_tables() WHERE table_name = $1);", table,
-		).Scan(&exists)
-		require.NoError(t, err, "table %s", table)
-		assert.True(t, exists, "table %s should exist after migration", table)
-	}
-
-	// verify vec columns
-	for _, table := range vectorTables {
-		var exists bool
-		err = conn.QueryRow(ctx,
-			`SELECT EXISTS(FROM duckdb_columns() WHERE table_name = $1 AND column_name = 'vec');`, table,
-		).Scan(&exists)
-		require.NoError(t, err, "vec on %s", table)
-		assert.True(t, exists, "vec column on %s after migration", table)
-	}
-}
-
-func TestDuckDB_MigrationIdempotent(t *testing.T) {
-	pool, err := db.NewPool("")
-	require.NoError(t, err)
-	defer pool.Close()
-
-	ctx := context.Background()
-
-	// apply full init schema (already has _schema_* tables)
-	sqlStr, err := db.ParseSQLScriptTemplate(db.SDBDuckDB, coredb.InitSchema, coredb.SchemaTemplateParams{
-		VectorSize: coredb.DefaultVectorSize,
-	})
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, sqlStr)
-	require.NoError(t, err)
-
-	// apply migration on top — should be idempotent
-	migrationSQL, err := os.ReadFile(migrationFilePath(t))
-	require.NoError(t, err)
-
-	parsed, err := db.ParseSQLScriptTemplate(db.SDBDuckDB, string(migrationSQL), coredb.SchemaTemplateParams{
-		VectorSize: coredb.DefaultVectorSize,
-	})
-	require.NoError(t, err)
-
-	conn, err := pool.Conn(ctx)
-	require.NoError(t, err)
-	defer conn.Close()
-
-	_, err = conn.Exec(ctx, parsed)
-	require.NoError(t, err, "migration should be idempotent")
 }
 
 // ─── PostgreSQL tests ───────────────────────────────────────────────────────
@@ -329,35 +257,53 @@ func TestPostgres_InitSchema(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, coredb.Version, version)
 
-	// check all _schema_* tables exist
-	for _, table := range allSchemaTables {
+	// the catalog namespace exists
+	for _, table := range catalogTables {
+		var exists bool
+		err = conn.QueryRow(
+			`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = 'catalog');`,
+			table,
+		).Scan(&exists)
+		require.NoError(t, err, "table %s", table)
+		assert.True(t, exists, "catalog.%s should exist", table)
+	}
+
+	// ...and the compiled-schema tables do not come back
+	for _, table := range legacySchemaTables {
 		var exists bool
 		err = conn.QueryRow(
 			`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = 'public');`,
 			table,
 		).Scan(&exists)
 		require.NoError(t, err, "table %s", table)
-		assert.True(t, exists, "table %s should exist", table)
+		assert.False(t, exists, "%s must not be created any more", table)
 	}
 
 	// check tables are queryable
-	for _, table := range allSchemaTables {
+	for _, table := range catalogTables {
 		var count int
-		err = conn.QueryRow(`SELECT count(*) FROM "` + table + `";`).Scan(&count)
+		err = conn.QueryRow(`SELECT count(*) FROM catalog."` + table + `";`).Scan(&count)
 		require.NoError(t, err, "count %s", table)
-		assert.Equal(t, 0, count, "table %s should be empty", table)
+		assert.Equal(t, 0, count, "catalog.%s should be empty", table)
 	}
 
-	// check JSONB columns on tables that have directives
-	jsonbTables := []string{"_schema_types", "_schema_fields", "_schema_arguments", "_schema_enum_values"}
-	for _, table := range jsonbTables {
+	// the property bags are JSONB on PostgreSQL — the write path sends them as
+	// plain JSON text and relies on the assignment cast.
+	jsonbColumns := []struct{ table, column string }{
+		{"data_objects", "properties"},
+		{"fields", "properties"},
+		{"functions", "properties"},
+		{"relations", "properties"},
+		{"data_source_meta", "capabilities"},
+	}
+	for _, c := range jsonbColumns {
 		var dataType string
 		err = conn.QueryRow(
 			`SELECT data_type FROM information_schema.columns
-			 WHERE table_name = $1 AND column_name = 'directives';`, table,
+			 WHERE table_schema = 'catalog' AND table_name = $1 AND column_name = $2;`, c.table, c.column,
 		).Scan(&dataType)
-		require.NoError(t, err, "directives type on %s", table)
-		assert.Equal(t, "jsonb", dataType, "directives on %s should be JSONB", table)
+		require.NoError(t, err, "%s.%s", c.table, c.column)
+		assert.Equal(t, "jsonb", dataType, "catalog.%s.%s should be JSONB", c.table, c.column)
 	}
 
 	cleanPG(t, conn)
@@ -399,111 +345,6 @@ func TestPostgres_VectorColumns(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "vector", udtName, "vec UDT on %s should be vector", table)
 	}
-
-	cleanPG(t, conn)
-}
-
-func TestPostgres_Migration(t *testing.T) {
-	conn := openPG(t)
-	defer conn.Close()
-
-	cleanPG(t, conn)
-
-	_, err := conn.Exec("CREATE EXTENSION IF NOT EXISTS vector;")
-	require.NoError(t, err)
-
-	// create full DB then drop _schema_* tables to simulate 0.0.8
-	sqlStr, err := db.ParseSQLScriptTemplate(db.SDBPostgres, coredb.InitSchema, coredb.SchemaTemplateParams{
-		VectorSize: coredb.DefaultVectorSize,
-	})
-	require.NoError(t, err)
-	_, err = conn.Exec(sqlStr)
-	require.NoError(t, err)
-
-	// drop _schema_* tables
-	for i := len(allSchemaTables) - 1; i >= 0; i-- {
-		_, err = conn.Exec(`DROP TABLE IF EXISTS "` + allSchemaTables[i] + `" CASCADE;`)
-		require.NoError(t, err)
-	}
-	_, err = conn.Exec(`UPDATE "version" SET "version" = '0.0.8';`)
-	require.NoError(t, err)
-
-	// verify tables are gone
-	for _, table := range allSchemaTables {
-		var exists bool
-		err = conn.QueryRow(
-			`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = 'public');`,
-			table,
-		).Scan(&exists)
-		require.NoError(t, err)
-		assert.False(t, exists, "table %s should not exist before migration", table)
-	}
-
-	// apply migration
-	migrationSQL, err := os.ReadFile(migrationFilePath(t))
-	require.NoError(t, err)
-
-	parsed, err := db.ParseSQLScriptTemplate(db.SDBPostgres, string(migrationSQL), coredb.SchemaTemplateParams{
-		VectorSize: coredb.DefaultVectorSize,
-	})
-	require.NoError(t, err)
-
-	_, err = conn.Exec(parsed)
-	require.NoError(t, err)
-
-	// verify all tables now exist
-	for _, table := range allSchemaTables {
-		var exists bool
-		err = conn.QueryRow(
-			`SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = 'public');`,
-			table,
-		).Scan(&exists)
-		require.NoError(t, err, "table %s", table)
-		assert.True(t, exists, "table %s should exist after migration", table)
-	}
-
-	// verify vec columns
-	for _, table := range vectorTables {
-		var exists bool
-		err = conn.QueryRow(
-			`SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = 'vec');`,
-			table,
-		).Scan(&exists)
-		require.NoError(t, err, "vec on %s", table)
-		assert.True(t, exists, "vec column on %s after migration", table)
-	}
-
-	cleanPG(t, conn)
-}
-
-func TestPostgres_MigrationIdempotent(t *testing.T) {
-	conn := openPG(t)
-	defer conn.Close()
-
-	cleanPG(t, conn)
-
-	_, err := conn.Exec("CREATE EXTENSION IF NOT EXISTS vector;")
-	require.NoError(t, err)
-
-	// apply full init schema
-	sqlStr, err := db.ParseSQLScriptTemplate(db.SDBPostgres, coredb.InitSchema, coredb.SchemaTemplateParams{
-		VectorSize: coredb.DefaultVectorSize,
-	})
-	require.NoError(t, err)
-	_, err = conn.Exec(sqlStr)
-	require.NoError(t, err)
-
-	// apply migration on top — should be idempotent
-	migrationSQL, err := os.ReadFile(migrationFilePath(t))
-	require.NoError(t, err)
-
-	parsed, err := db.ParseSQLScriptTemplate(db.SDBPostgres, string(migrationSQL), coredb.SchemaTemplateParams{
-		VectorSize: coredb.DefaultVectorSize,
-	})
-	require.NoError(t, err)
-
-	_, err = conn.Exec(parsed)
-	require.NoError(t, err, "migration should be idempotent on PostgreSQL")
 
 	cleanPG(t, conn)
 }

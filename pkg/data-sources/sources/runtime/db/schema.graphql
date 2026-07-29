@@ -30,14 +30,14 @@ extend type MutationFunction {
     @function(name: "hugr_coredb_import_descriptions")
 
   """
-  Drop and recreate all indexes on _schema_* tables.
+  Drop and recreate all indexes on the catalog.* tables (PostgreSQL CoreDB only).
   Use to repair corrupted indexes without data loss.
   """
   recreate_indexes: OperationResult
     @function(name: "hugr_coredb_recreate_indexes")
 
   """
-  Delete all content from _schema_* tables and reset schema_version.
+  Delete all content from the catalog.* tables and reset schema_version. The registry — data sources, roles, permissions — is untouched.
   Forces full recompilation of all catalogs on next startup.
   """
   reset_schema: OperationResult

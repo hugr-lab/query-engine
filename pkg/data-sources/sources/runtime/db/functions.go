@@ -64,10 +64,17 @@ func (s *Source) exportDatabase(ctx context.Context, path string) error {
 	}
 	defer s.db.Exec(ctx, "DETACH _coredb_export") //nolint:errcheck
 
-	// Table-by-table export ensures consistent schema (main) regardless of CoreDB type (DuckDB vs PostgreSQL)
+	// The export file mirrors the CoreDB's own layout, catalog namespace
+	// included, so import can address both sides by the same qualified name
+	// whatever the CoreDB is (DuckDB file or attached PostgreSQL).
+	if _, err := s.db.Exec(ctx, "CREATE SCHEMA IF NOT EXISTS _coredb_export.catalog"); err != nil {
+		return fmt.Errorf("export catalog namespace: %w", err)
+	}
+
 	for _, table := range coreDBTables {
-		if _, err := s.db.Exec(ctx, fmt.Sprintf("CREATE TABLE _coredb_export.\"%s\" AS SELECT * FROM core.\"%s\"", table, table)); err != nil {
-			return fmt.Errorf("export table %s: %w", table, err)
+		if _, err := s.db.Exec(ctx, fmt.Sprintf("CREATE TABLE %s AS SELECT * FROM %s",
+			table.in("_coredb_export"), table.in("core"))); err != nil {
+			return fmt.Errorf("export table %s: %w", table.name, err)
 		}
 	}
 	return nil
@@ -132,11 +139,12 @@ func (s *Source) importDatabase(ctx context.Context, path string) error {
 
 	// Clear + insert each table
 	for _, table := range coreDBTables {
-		if _, err := s.db.Exec(ctx, fmt.Sprintf("DELETE FROM core.\"%s\"", table)); err != nil {
-			return fmt.Errorf("clear table %s: %w", table, err)
+		if _, err := s.db.Exec(ctx, fmt.Sprintf("DELETE FROM %s", table.in("core"))); err != nil {
+			return fmt.Errorf("clear table %s: %w", table.name, err)
 		}
-		if _, err := s.db.Exec(ctx, fmt.Sprintf("INSERT INTO core.\"%s\" SELECT * FROM %s.\"%s\"", table, attachAlias, table)); err != nil {
-			return fmt.Errorf("import table %s: %w", table, err)
+		if _, err := s.db.Exec(ctx, fmt.Sprintf("INSERT INTO %s SELECT * FROM %s",
+			table.in("core"), table.in(attachAlias))); err != nil {
+			return fmt.Errorf("import table %s: %w", table.name, err)
 		}
 	}
 	return nil
@@ -200,39 +208,26 @@ func (s *Source) importDescriptions(ctx context.Context, args importDescArgs) (s
 		return "", err
 	}
 
-	vecCol := ""
+	// Curation lives in ONE place since design-034: the annotations overlay,
+	// keyed by entity. What used to be five UPDATEs across the compiled-schema
+	// tables — each with its own key shape — is one upsert.
+	vecCol, vecVal := "", ""
 	if args.includeEmbeddings && !args.recomputeEmbeddings {
-		vecCol = ", vec = src.vec"
-	}
-
-	// Update descriptions for each table
-	updates := []struct {
-		table string
-		where string
-		extra string // additional SET columns beyond description/long_description/is_summarized
-	}{
-		{"_schema_catalogs", "core._schema_catalogs.name = src.name", vecCol},
-		{"_schema_types", "core._schema_types.name = src.name", vecCol},
-		{"_schema_fields", "core._schema_fields.type_name = src.type_name AND core._schema_fields.name = src.name", vecCol},
-		{"_schema_arguments", "core._schema_arguments.type_name = src.type_name AND core._schema_arguments.field_name = src.field_name AND core._schema_arguments.name = src.name", ""},
-		{"_schema_modules", "core._schema_modules.name = src.name", vecCol},
+		vecCol, vecVal = ", vec", ", src.vec"
 	}
 
 	var warnings []string
-	for _, u := range updates {
-		setCols := "description = src.description, long_description = src.long_description, is_summarized = src.is_summarized"
-		if u.table == "_schema_arguments" {
-			setCols = "description = src.description"
-		}
-		if u.extra != "" {
-			setCols += u.extra
-		}
-
-		sql := fmt.Sprintf("UPDATE core.%s SET %s FROM %s.%s src WHERE %s",
-			u.table, setCols, attachAlias, u.table, u.where)
-		if _, err := s.db.Exec(ctx, sql); err != nil {
-			warnings = append(warnings, fmt.Sprintf("%s: %v", u.table, err))
-		}
+	sql := fmt.Sprintf(`INSERT INTO %s (entity_kind, entity_key, parent, description, long_description%s)
+		SELECT src.entity_kind, src.entity_key, src.parent, src.description, src.long_description%s
+		FROM %s src
+		WHERE src.description IS NOT NULL AND src.description <> ''
+		ON CONFLICT (entity_kind, entity_key) DO UPDATE SET
+			description = EXCLUDED.description,
+			long_description = EXCLUDED.long_description%s`,
+		annotationsTable.in("core"), vecCol, vecVal, annotationsTable.in(attachAlias),
+		map[bool]string{true: ", vec = EXCLUDED.vec", false: ""}[vecCol != ""])
+	if _, err := s.db.Exec(ctx, sql); err != nil {
+		warnings = append(warnings, fmt.Sprintf("annotations: %v", err))
 	}
 
 	msg := "Descriptions imported"
@@ -266,34 +261,28 @@ func (s *Source) registerRecreateIndexes(ctx context.Context) error {
 }
 
 func (s *Source) recreateIndexes(ctx context.Context) error {
-	isPG := s.isPostgresCoreDB(ctx)
+	// The catalog tables are indexed on PostgreSQL only — on DuckDB the ART
+	// indexes cost more than they save at this size, which is why
+	// hugr_catalog.sql declares them under {{ if isPostgres }} as well. On a
+	// DuckDB CoreDB this is a no-op rather than an error: the caller asked for
+	// the indexes to match the schema, and they do.
+	if !s.isPostgresCoreDB(ctx) {
+		return nil
+	}
 
-	// Common indexes (both DuckDB and PostgreSQL)
 	for _, idx := range commonIndexes {
-		if isPG {
-			// PostgreSQL: execute DDL via postgres_execute
-			ddl := fmt.Sprintf("DROP INDEX IF EXISTS %s; CREATE INDEX IF NOT EXISTS %s ON %s (%s)",
-				idx.name, idx.name, idx.table, idx.cols)
-			if _, err := s.db.Exec(ctx, fmt.Sprintf("CALL postgres_execute('core', '%s')", escapeSQLString(ddl))); err != nil {
-				return fmt.Errorf("pg create index %s: %w", idx.name, err)
-			}
-		} else {
-			// DuckDB: direct DDL with core. prefix
-			s.db.Exec(ctx, fmt.Sprintf("DROP INDEX IF EXISTS core.%s", idx.name)) //nolint:errcheck
-			if _, err := s.db.Exec(ctx, fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON core.%s (%s)", idx.name, idx.table, idx.cols)); err != nil {
-				return fmt.Errorf("create index %s: %w", idx.name, err)
-			}
+		ddl := fmt.Sprintf("DROP INDEX IF EXISTS %s; CREATE INDEX IF NOT EXISTS %s ON %s (%s)",
+			idx.name, idx.name, idx.table, idx.cols)
+		if _, err := s.db.Exec(ctx, fmt.Sprintf("CALL postgres_execute('core', '%s')", escapeSQLString(ddl))); err != nil {
+			return fmt.Errorf("pg create index %s: %w", idx.name, err)
 		}
 	}
 
-	// PostgreSQL-specific: HNSW vector indexes (only if PG CoreDB)
-	if isPG {
-		for _, idx := range pgVectorIndexes {
-			ddl := fmt.Sprintf("DROP INDEX IF EXISTS %s; CREATE INDEX IF NOT EXISTS %s ON %s USING hnsw (vec vector_cosine_ops)",
-				idx.name, idx.name, idx.table)
-			// Ignore errors — vec column may not exist if embeddings not configured
-			s.db.Exec(ctx, fmt.Sprintf("CALL postgres_execute('core', '%s')", escapeSQLString(ddl))) //nolint:errcheck
-		}
+	for _, idx := range pgVectorIndexes {
+		ddl := fmt.Sprintf("DROP INDEX IF EXISTS %s; CREATE INDEX IF NOT EXISTS %s ON %s USING hnsw (vec vector_cosine_ops)",
+			idx.name, idx.name, idx.table)
+		// Ignore errors — vec column may not exist if embeddings not configured
+		s.db.Exec(ctx, fmt.Sprintf("CALL postgres_execute('core', '%s')", escapeSQLString(ddl))) //nolint:errcheck
 	}
 
 	return nil
@@ -328,8 +317,8 @@ func (s *Source) registerResetSchema(ctx context.Context) error {
 
 func (s *Source) resetSchema(ctx context.Context) error {
 	for _, table := range schemaTables {
-		if _, err := s.db.Exec(ctx, fmt.Sprintf("DELETE FROM core.%s", table)); err != nil {
-			return fmt.Errorf("clear %s: %w", table, err)
+		if _, err := s.db.Exec(ctx, fmt.Sprintf("DELETE FROM %s", table.in("core"))); err != nil {
+			return fmt.Errorf("clear %s: %w", table.name, err)
 		}
 	}
 	// Reset schema_version
