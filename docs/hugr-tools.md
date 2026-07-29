@@ -1,4 +1,17 @@
-# hugr-tools
+# hugr-tools (deprecated)
+
+> **Deprecated — moving to the hub, not developed here any more.**
+>
+> Every command below still reads the compiled-schema views
+> (`core.catalog.types`, `core.catalog.modules`, `core.catalog.module_intro`)
+> and calls the `_schema_*` mutation functions. CoreDB 0.0.20 removed all of
+> them, so the binary builds but the commands fail at run time against a
+> current engine. It is kept in the tree for reference until the hub picks it
+> up.
+>
+> Engine-side replacements: `core.catalog.annotate_*` for curation,
+> `core.catalog.reindex_embeddings` for embeddings, the `core.entity_*` views
+> and the MCP `catalog-*` tools for reading the catalog.
 
 CLI utilities for managing Hugr schema metadata.
 

@@ -21,9 +21,13 @@ CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow -o hugr ./cmd/dev-server
 ./hugr -install
 ```
 
-## hugr-tools CLI
+## hugr-tools CLI (deprecated)
 
 A companion CLI for schema management and AI-powered summarization.
+
+**Deprecated — moving to the hub.** Its commands read the compiled-schema views
+that CoreDB 0.0.20 removed, so they fail against a current engine; see
+[docs/hugr-tools.md](../../docs/hugr-tools.md).
 
 ```bash
 CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow -o hugr-tools ./cmd/hugr-tools

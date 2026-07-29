@@ -23,15 +23,15 @@ See the [Hugr documentation](https://hugr-lab.github.io) for more details.
 
 ```
 cmd/dev-server/       Dev server with env-based configuration
-cmd/hugr-tools/       CLI utilities (summarize, reindex, schema-info)
-pkg/catalog/          Schema catalog: compiler, static/db providers
+cmd/hugr-tools/       CLI utilities (summarize, reindex, schema-info) — DEPRECATED, moving to the hub
+pkg/catalog/          Schema catalog: base model, ingest (write), store (read-time generation)
 pkg/cluster/          Cluster mode (management/worker nodes, heartbeat, secret sync)
 pkg/data-sources/     Runtime data source management
 pkg/planner/          Query planner and SQL generation
 pkg/cache/            Two-level caching (L1 + L2)
 pkg/auth/             Authentication middleware
 pkg/mcp/              MCP server integration
-integration-test/     Integration & E2E tests (compiler, DB provider, cluster, MCP, E2E)
+integration-test/     Integration & E2E tests (catalog, cluster, MCP, E2E)
 docs/                 Internal documentation
 ```
 
@@ -43,7 +43,7 @@ docs/                 Internal documentation
 # Dev server
 CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow -o hugr ./cmd/dev-server
 
-# CLI tools (summarize, reindex, schema-info)
+# CLI tools (summarize, reindex, schema-info) — deprecated, see docs/hugr-tools.md
 CGO_CFLAGS="-O1 -g" go build -tags=duckdb_arrow -o hugr-tools ./cmd/hugr-tools
 ```
 
@@ -68,7 +68,10 @@ CORE_DB_PATH=./core.db MCP_ENABLED=true \
   ./hugr
 ```
 
-### Summarize schema with AI
+### Summarize schema with AI (deprecated)
+
+`hugr-tools` is deprecated and is moving to the hub; its commands no longer work
+against CoreDB 0.0.20 — see [docs/hugr-tools.md](docs/hugr-tools.md).
 
 ```bash
 # Generate descriptions for all schema entities using an LLM
@@ -87,8 +90,8 @@ See [docs/configuration.md](docs/configuration.md) for the full reference.
 |----------|-------------|
 | [docs/known-issues.md](docs/known-issues.md) | Known issues and workarounds |
 | [docs/configuration.md](docs/configuration.md) | Dev server configuration reference |
-| [docs/hugr-tools.md](docs/hugr-tools.md) | CLI utilities (summarize, reindex, schema-info) |
-| [docs/compiler/01-overview.md](docs/compiler/01-overview.md) | Compiler architecture |
+| [docs/hugr-tools.md](docs/hugr-tools.md) | CLI utilities (summarize, reindex, schema-info) — **deprecated** |
+| [docs/compiler/01-overview.md](docs/compiler/01-overview.md) | Schema architecture (write pipeline, read-time generation) |
 | [docs/compiler/02-ddl-operations.md](docs/compiler/02-ddl-operations.md) | DDL operations |
 | [docs/compiler/03-directives.md](docs/compiler/03-directives.md) | Directive reference |
 | [docs/compiler/04-tables-views.md](docs/compiler/04-tables-views.md) | Tables and views |

@@ -1,3 +1,13 @@
+// Command hugr-tools is DEPRECATED and is moving to the hub; it is no longer
+// developed here.
+//
+// It has not been ported to the catalog storage introduced in CoreDB 0.0.20:
+// every command still reads the compiled-schema views (core.catalog.types,
+// core.catalog.modules, core.catalog.module_intro) and calls the _schema_*
+// mutation functions, none of which exist any more. The code compiles, but the
+// commands fail at run time against a current engine. The engine-side
+// replacements are the core.catalog.annotate_* functions, the core.entity_*
+// views and the MCP catalog-* tools.
 package main
 
 import (
@@ -5,6 +15,16 @@ import (
 	"os"
 	"time"
 )
+
+// deprecationNotice is printed before every command: the binary still builds
+// and ships, so a user has no other way to learn that it is retired.
+const deprecationNotice = `hugr-tools is DEPRECATED and is moving to the hub.
+
+It has not been ported to the catalog storage of CoreDB 0.0.20 — it reads the
+compiled-schema views and _schema_* functions that version removed, so the
+commands below fail against a current engine. Use core.catalog.annotate_*, the
+core.entity_* views or the MCP catalog-* tools instead.
+`
 
 // Global flags shared by all subcommands.
 type globalFlags struct {
@@ -15,6 +35,8 @@ type globalFlags struct {
 }
 
 func main() {
+	fmt.Fprintln(os.Stderr, deprecationNotice)
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)
@@ -49,11 +71,11 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Fprintln(os.Stderr, `hugr-tools — Hugr schema management utilities
+	fmt.Fprintln(os.Stderr, `hugr-tools — Hugr schema management utilities (DEPRECATED)
 
 Usage: hugr-tools <command> [flags]
 
-Commands:
+Commands (all currently broken against CoreDB 0.0.20):
   summarize    AI-powered schema summarization using LLM
   reindex      Recompute vector embeddings for schema entities
   schema-info  Display human-readable schema overview
