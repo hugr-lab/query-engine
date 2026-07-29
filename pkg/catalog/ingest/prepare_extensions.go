@@ -1,7 +1,7 @@
 package ingest
 
 import (
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -11,17 +11,19 @@ var _ base.BatchRule = (*InternalExtensionMerger)(nil)
 // during the PREPARE phase. This handles "extend type Foo { ... }" within
 // the same catalog where Foo is also defined.
 //
-// Merge rules (matching old compiler behavior from pkg/compiler/validate.go):
+// Merge rules:
 //   - Stub fields (_stub, _placeholder) from extensions are skipped
 //   - New fields are appended to the definition
 //   - If a field already exists: its type, arguments, position, and default value
 //     are replaced; directives are appended; description is updated if non-empty
 //   - Directives, enum values, and interfaces from the extension are appended
 //
-// When the extension targets a type NOT in the source but present in the provider
-// (target schema), e.g. "extend type Function { ... }", the extension is promoted
-// to a source-level definition via ctx.PromoteToSource so that GENERATE-phase
-// DefinitionRules (like FunctionRule) can process it.
+// When the extension targets a type NOT in the source but present in the
+// provider (target schema), e.g. "extend type Function { ... }", it is promoted
+// to a source-level definition via ctx.PromoteToSource. Promotion once fed the
+// GENERATE rules; today the promoted set is what carries a source's FUNCTIONS
+// through the pipeline — PrefixPreparer renames their return types and
+// FunctionCallValidator reads them as the in-flight half of its registry.
 type InternalExtensionMerger struct{}
 
 func (r *InternalExtensionMerger) Name() string      { return "InternalExtensionMerger" }

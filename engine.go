@@ -14,7 +14,7 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/cache"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	catalogstore "github.com/hugr-lab/query-engine/pkg/catalog/store"
 	"github.com/hugr-lab/query-engine/pkg/cluster"
 	datasources "github.com/hugr-lab/query-engine/pkg/data-sources"

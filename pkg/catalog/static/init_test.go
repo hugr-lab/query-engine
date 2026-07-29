@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	_ "github.com/hugr-lab/query-engine/pkg/catalog/types"
 )
 

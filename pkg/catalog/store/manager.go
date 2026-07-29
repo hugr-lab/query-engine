@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/ingest"
 	catsrc "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 )

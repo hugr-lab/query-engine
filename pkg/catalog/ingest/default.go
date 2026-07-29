@@ -1,6 +1,6 @@
 package ingest
 
-import "github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+import "github.com/hugr-lab/query-engine/pkg/catalog/base"
 
 // Default returns the built-in rules in phase order — the whole pipeline.
 //
