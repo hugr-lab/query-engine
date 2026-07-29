@@ -742,6 +742,8 @@ func (e Postgres) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sq
 		return e.ExtractJSONStruct(sql, s), params, nil
 	case base.TimestampTypeName, base.DateTimeTypeName:
 		return e.TimestampTransform(sql, field, args), params, nil
+	case base.DateTypeName:
+		return commonDateTransform(e, sql, field, args), params, nil
 	case base.VectorTypeName:
 		return e.VectorTransform(ctx, qe, sql, field, args, params)
 	}

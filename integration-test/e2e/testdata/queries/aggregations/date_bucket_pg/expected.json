@@ -1,0 +1,32 @@
+{
+  "data": {
+    "pg_store": {
+      "products_bucket_aggregation": [
+        {
+          "aggregations": {
+            "_rows_count": 2
+          },
+          "key": {
+            "release_date": "2025-03-01"
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 2
+          },
+          "key": {
+            "release_date": "2025-04-01"
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 1
+          },
+          "key": {
+            "release_date": "2025-05-01"
+          }
+        }
+      ]
+    }
+  }
+}

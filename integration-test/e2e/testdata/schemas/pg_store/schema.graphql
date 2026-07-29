@@ -7,6 +7,7 @@ type products @table(name: "products") {
     tags: JSON
     created_at: Timestamp @default(value: "now()")
     updated_at: Timestamp
+    release_date: Date
     description: String
     category_id: Int @field_references(
         field: "id"

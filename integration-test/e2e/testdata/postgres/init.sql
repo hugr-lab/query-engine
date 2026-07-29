@@ -41,15 +41,17 @@ CREATE TABLE products (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ,
     description TEXT,
-    category_id INTEGER REFERENCES categories(id)
+    category_id INTEGER REFERENCES categories(id),
+    -- A DATE (not a timestamp): the bucket argument takes a different engine path
+    release_date DATE
 );
 
-INSERT INTO products (id, name, price, quantity, is_active, tags, description, category_id) VALUES
-    (1, 'Laptop Pro', 1299.99, 10, true, '{"color": "silver", "weight": 1.5}', 'High-performance laptop', 2),
-    (2, 'Wireless Mouse', 29.99, 50, true, '{"color": "black"}', 'Ergonomic wireless mouse', 3),
-    (3, 'USB-C Hub', 49.99, 30, true, NULL, 'Multi-port USB-C hub', 3),
-    (4, 'Old Keyboard', 19.99, 0, false, '{"color": "white"}', 'Discontinued keyboard', 3),
-    (5, 'Gaming Desktop', 2499.99, 5, true, '{"color": "black", "rgb": true}', 'High-end gaming desktop', 2);
+INSERT INTO products (id, name, price, quantity, is_active, tags, description, category_id, release_date) VALUES
+    (1, 'Laptop Pro', 1299.99, 10, true, '{"color": "silver", "weight": 1.5}', 'High-performance laptop', 2, '2025-03-15'),
+    (2, 'Wireless Mouse', 29.99, 50, true, '{"color": "black"}', 'Ergonomic wireless mouse', 3, '2025-03-16'),
+    (3, 'USB-C Hub', 49.99, 30, true, NULL, 'Multi-port USB-C hub', 3, '2025-04-01'),
+    (4, 'Old Keyboard', 19.99, 0, false, '{"color": "white"}', 'Discontinued keyboard', 3, '2025-04-10'),
+    (5, 'Gaming Desktop', 2499.99, 5, true, '{"color": "black", "rgb": true}', 'High-end gaming desktop', 2, '2025-05-01');
 
 SELECT setval('products_id_seq', 5);
 
