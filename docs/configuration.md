@@ -48,8 +48,11 @@ The embedder URL format: `http://host:port/path?model=<model>&api_key=<key>&time
 MCP tool logging is controlled by the `DEBUG` flag. When `DEBUG=true`, MCP tool
 invocations are logged to stdout; otherwise tool logging is suppressed.
 
-Use `hugr-tools summarize` to generate LLM-powered descriptions for schema entities,
-and `hugr-tools reindex` to recompute embeddings. See [hugr-tools.md](hugr-tools.md).
+Descriptions are curated through the `core.catalog.annotate_*` mutation
+functions; the embedding vector is recomputed on every write, and
+`core.catalog.reindex_embeddings` re-embeds everything after an embedder model
+change. (The `hugr-tools summarize` / `reindex` commands that used to do this
+are [deprecated](hugr-tools.md) and no longer work against CoreDB 0.0.20.)
 
 ## DuckDB
 
@@ -200,8 +203,7 @@ MCP_ENABLED=true
 EMBEDDER_URL=http://localhost:8080/embed?model=text-embedding-3-small&api_key=sk-...
 # EMBEDDER_VECTOR_SIZE=768  # default, change if your model uses different dimensions
 
-# hugr-tools summarization (run separately)
-# hugr-tools summarize --api-key sk-... --provider openai --model gpt-4o-mini
+# Schema summarization runs separately (hugr-tools is deprecated — see docs/hugr-tools.md)
 
 # Authentication
 ALLOWED_ANONYMOUS=false
