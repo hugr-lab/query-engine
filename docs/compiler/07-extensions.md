@@ -33,7 +33,7 @@ deps := depCatalog.Dependencies() // e.g., ["base_catalog"]
 
 Dependencies are collected by:
 - `DependencyCollector` rule (PhaseValidate) — collects `@dependency` directives from source types
-- Automatic tracking via cross-type references in `CompilationContext.RegisterDependency()`
+- Automatic tracking via cross-type references (`DependencyCollector`, recorded on the source)
 
 ## Module System
 
@@ -105,14 +105,14 @@ When multiple catalogs contribute types to the same module name:
 3. Both catalogs' data fields are added as extensions to the shared module type with their respective `@catalog`
 4. Wiring fields follow the same pattern — first catalog creates the field with `@module_catalog`, subsequent catalogs merge their `@module_catalog` directive onto the existing field
 
-### Module Cleanup on DropCatalog
+### Shared modules when a source is removed
 
-When a catalog is dropped, `@module_catalog` directives are handled in DropCatalog step 4:
+A module belongs to every source that contributes to it, and the storage
+records that directly (one row per module × source). Removing a source deletes
+its rows; the module survives while another source still has one.
 
-1. Remove `@module_catalog(name: "dropped")` from all types and fields
-2. If a `@module_root` type has no remaining `@module_catalog` → delete the type
-3. If a wiring field has no remaining `@module_catalog` → delete the field
-4. Orphan cleanup catches any remaining dangling references
+`@module_catalog` is emitted on the served module roots so a client can see
+which sources feed a module. It is not what the removal consults.
 
 Example with shared module `crm` (catalogs `pg_crm` + `support`):
 
@@ -182,47 +182,31 @@ extend type Query {
 ### Adding a Catalog
 
 ```
-1. Compile SDL with catalog options (Name, EngineType, AsModule, etc.)
-2. Provider.Update(ctx, compiled)
-   — adds data types with @catalog(name: "catalog")
-   — creates or extends module types with @module_catalog(name: "catalog")
+1. Ingest the SDL with the source's options (Name, EngineType, AsModule, ...)
+2. The storage writes the physical model: data objects tagged
+   @catalog(name: "source"), their fields, relations, functions, and the
+   modules they belong to
+3. The module roots - and their @module_catalog attribution - are synthesized
+   on READ from the modules a source contributes to
    — creates or merges module wiring fields with @module_catalog(name: "catalog")
 ```
 
 ### Adding an Extension
 
 ```
-1. Compile extension SDL with IsExtension=true
-2. Provider.Update(ctx, compiled) — adds extension types and field extensions
-3. Extension fields carry @dependency(name: "ext_name")
+1. Ingest the extension SDL with IsExtension=true
+2. The storage writes its own objects plus the fields it contributes to OTHER
+   sources' objects, attributed to the source the DATA comes from
+3. Extension fields carry @dependency(name: "ext_name"), which gates them: the
+   field is served only while every declared dependency is active
 ```
 
 ### Removing a Catalog
 
 ```
-1. Provider.DropCatalog(ctx, "catalog_name", cascade=true)
-   — Step 1-3: removes @catalog-tagged types and fields
-   — Step 3: cascade removes @dependency-tagged extension types/fields
-   — Step 4: removes @module_catalog(name: "catalog_name") from shared module types/fields
-     • module types with no remaining @module_catalog are deleted
-     • wiring fields with no remaining @module_catalog are deleted
-   — Step 5: orphan cleanup removes dangling type references
-2. Schema remains valid for remaining catalogs
-```
-
-### Removing an Extension
-
-```
-1. Provider.DropCatalog(ctx, "ext_name", cascade=true)
-2. Types with @catalog(name: "ext_name") removed
-3. Fields with @dependency(name: "ext_name") removed (cascade)
-```
-
-### Reloading a Catalog
-
-```
-1. Provider.DropCatalog(ctx, "catalog_name", cascade=true)
-   — removes all catalog artifacts while preserving shared modules used by other catalogs
-2. Recompile with updated SDL
-3. Provider.Update(ctx, compiled) — re-adds all types, re-registers @module_catalog
+1. RemoveCatalog(ctx, "source_name") deletes the source's rows; sources that
+   DEPEND on it are suspended rather than dropped, so their curation survives
+2. Modules shared with other sources stay - a module exists while any source
+   contributes to it
+3. Reactivation is the Add path again: an unchanged version just clears the flag
 ```

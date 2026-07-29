@@ -1,6 +1,6 @@
 # Tables & Views
 
-## Table Compilation (`TableRule`)
+## Tables (`@table`)
 
 A type with `@table(name: "...")` triggers the full table compilation pipeline:
 
@@ -16,7 +16,7 @@ For a source type `Widget`:
 | `_Widget_aggregation` | OBJECT | Aggregation type with `_rows_count` + per-field aggregations |
 | `_Widget_aggregation_bucket` | OBJECT | Bucket aggregation with `key` + `aggregations` |
 
-All generated types carry `@catalog(name, engine)` for clean DropCatalog removal.
+All generated types carry `@catalog(name, engine)`, which attributes them to their source.
 
 ### Generated Query Fields
 
@@ -115,13 +115,13 @@ aggregation and bucket-aggregation fields on the **base object's** aggregation t
 - `<field>_aggregation: _Target_aggregation` with `@field_aggregation`
 - `<field>_bucket_aggregation: _Target_aggregation_bucket` with `@field_aggregation`
 
-## View Compilation (`ViewRule`)
+## Views (`@view`)
 
 Views follow the same generation pattern as tables with key differences:
 
 - **No mutation fields** — views are read-only
 - **@args support** — parameterized views via `@args(name: "InputTypeName")`
-- View input types get `@catalog` directive for clean DropCatalog support
+- View input types get the `@catalog` directive, attributing them to their source
 - `required` is auto-computed from NonNull fields in the args input type
 
 ### Parameterized View Example

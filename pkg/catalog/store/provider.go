@@ -17,10 +17,9 @@ import (
 // relationships, and the whole-schema enumeration used by introspection.
 var _ base.Provider = (*Store)(nil)
 
-// Description returns the schema-level description. The entity store keeps no
-// root schema description — sources describe themselves through their modules
-// and data objects — so this is empty (the db provider is likewise empty when
-// no schema description was stored).
+// Description returns the schema-level description. The storage keeps no root
+// schema description — sources describe themselves through their modules and
+// data objects — so this is empty.
 func (s *Store) Description(_ context.Context) string { return "" }
 
 // QueryType / MutationType / SubscriptionType synthesize the top-level roots

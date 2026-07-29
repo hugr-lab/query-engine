@@ -1,6 +1,6 @@
 # Functions
 
-## Function Compilation (`FunctionRule`)
+## Functions (`@function`)
 
 Types with `@function(name, type)` are compiled as function types. Functions generate query or mutation fields depending on their type.
 

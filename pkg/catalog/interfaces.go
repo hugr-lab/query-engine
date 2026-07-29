@@ -44,10 +44,11 @@ type CatalogManager interface {
 // rewritten at all, so reloading an unchanged source costs a flag flip instead
 // of a full recompile (and, with an embedder, a full re-embedding).
 //
-// The compiled-schema provider is deliberately NOT one: its write path applies
-// an incremental diff and its same-version path only clears the suspended
-// flag, so a definition the source dropped would survive a soft reload. It
-// must keep being dropped before it is re-added.
+// The catalog storage answers true: writeSource replaces a source's rows
+// wholesale inside one transaction, so an entity the source stopped declaring
+// cannot survive an add. A manager that cannot promise that must keep being
+// dropped before it is re-added — which is why this is an optional interface
+// and not an assumption.
 type ReplacingCatalogManager interface {
 	ReplacesCatalogOnAdd() bool
 }

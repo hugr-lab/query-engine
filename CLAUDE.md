@@ -54,9 +54,32 @@ tests/
 Go 1.26: Follow standard conventions
 
 <!-- MANUAL ADDITIONS START -->
+
+## Catalog architecture (design-036, supersedes the "compiler" model)
+
+A data source's schema is stored as a LOGICAL model and the served GraphQL
+surface is generated from it ON READ. There is no compiled schema in a table.
+
+| package | role |
+|---|---|
+| `pkg/catalog/base` | the model everything speaks: `Options`, `Provider`, `Rule`, `ObjectInfo`, directive accessors, the embedded system SDL |
+| `pkg/catalog/ingest` | the WRITE pipeline: validate a source's SDL, merge its own extensions, tag `@catalog`, apply the prefix, check `@join` / `@function_call`. `ingest.Default()` is the whole rule set |
+| `pkg/catalog/store` | the storage: `collect` → `catalog.*` rows; `gen_*.go` generates filters, mutation inputs, aggregations, navigation fields and module roots on read |
+| `pkg/catalog/static` | READ-ONLY system prelude (scalars, introspection, `@system`) compiled into the binary |
+
+There is no `pkg/catalog/compiler`. VALIDATE and PREPARE mutate the source's
+definitions IN PLACE — the storage walks the source afterwards, not the
+pipeline's output, which carries only the extensions and the dependency set.
+
+**CoreDB is at `0.0.20`** and `checkDBVersion` compares for equality, so an
+existing database must be migrated (`hugr migrate`, migrations live in the
+sibling `hugr` repo). The eleven `_schema_*` tables are gone; `_schema_settings`
+is NOT one of them — it holds the `schema_version` counter.
+
 <!-- MANUAL ADDITIONS END -->
 
 ## Recent Changes
+- 001-entity-catalog-default: the entity catalog storage became the only storage. Deleted incremental compilation, `pkg/catalog/db`, the storage selector, the GENERATE/ASSEMBLE rules and `static.Provider`'s write surface; moved the write pipeline to `pkg/catalog/ingest` and `compiler/base` to `catalog/base`; CoreDB 0.0.20.
 - 001-catalog-introspection: Added Go 1.26 (`iter.Seq`, range-over-func), build tag `duckdb_arrow`, CGo via + `vektah/gqlparser/v2` (GraphQL AST — only dependency this feature
 - 001-unified-scan: Added Go 1.26 (CGo via `duckdb-go/v2`, `duckdb_arrow` build tag — applies to engine/planner code; pure-Go constraint for `types/` and `client/` sub-modules). + stdlib (`encoding/json`, `reflect`, `sync`), `github.com/apache/arrow-go/v18`, `github.com/paulmach/orb` (+ `orb/geojson`, `orb/encoding/wkb`, `orb/encoding/wkt`), `github.com/duckdb/duckdb-go/v2` (CGo — engine layer only), `github.com/vektah/gqlparser/v2` (already present, used for AST walk in geometry-info extraction).
 - 001-openai-responses-fc-args: Added Go 1.26 (via `duckdb_arrow` build tag; same as rest of `pkg/data-sources/sources/llm/`) + standard library only for the fix (`encoding/json`, `bufio`, `strings`, `io`); test paths use `github.com/stretchr/testify/require`, `assert`, and the existing subscription harness in `integration-test/models`.
