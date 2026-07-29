@@ -17,25 +17,22 @@ import (
 	"github.com/hugr-lab/query-engine/pkg/db"
 )
 
-// The engine on the ENTITY catalog storage (design 034): the schema of every
-// source lives in the catalog.* tables as a logical model and the GraphQL
-// schema is generated from it on the fly. These tests boot a real engine in
-// that mode and check that the catalog works at all — runtime sources compile
+// The engine on the entity catalog storage (design 034), which is the storage:
+// the schema of every source lives in the catalog.* tables as a logical model
+// and the GraphQL schema is generated from it on the fly. These tests boot a
+// real engine and check that the catalog works at all — runtime sources compile
 // and store, their queries run, a user source loads and is queryable, and the
 // catalog's own state is visible through the entity views.
 //
 // MCP runs here too (mcp_search_test.go): the catalog-* tools read the logical
-// model through the meta-query family, which is storage-agnostic, and rank over
-// the entity views' own index. The legacy discovery-* tools, which read the
-// compiled-schema views, are the half that entity mode cannot serve.
+// model through the meta-query family and rank over the entity views' own index.
 
-func setupEngine(t *testing.T, storage hugr.CatalogStorage) (*hugr.Service, context.Context) {
+func setupEngine(t *testing.T) (*hugr.Service, context.Context) {
 	t.Helper()
 	ctx := context.Background()
 	service, err := hugr.New(hugr.Config{
-		DB:             db.Config{Path: ""},
-		CoreDB:         coredb.New(coredb.Config{}),
-		CatalogStorage: storage,
+		DB:     db.Config{Path: ""},
+		CoreDB: coredb.New(coredb.Config{}),
 		Auth: &auth.Config{
 			Providers: []auth.AuthProvider{
 				auth.NewAnonymous(auth.AnonymousConfig{Allowed: true, Role: "admin"}),
@@ -78,7 +75,7 @@ func scanQuery(t *testing.T, s *hugr.Service, ctx context.Context, q string, var
 // storage, every runtime source's schema is compiled and stored, and the
 // generated schema answers a real query over one of them.
 func TestEntityStorageBoots(t *testing.T) {
-	s, ctx := setupEngine(t, hugr.CatalogStorageEntity)
+	s, ctx := setupEngine(t)
 
 	// A runtime source's own data — CoreDB's data_sources table.
 	var sources []struct {
@@ -116,7 +113,7 @@ func TestEntityStorageBoots(t *testing.T) {
 // and the read path (generate → plan → execute) end to end on the entity
 // storage.
 func TestEntityStorageDataSource(t *testing.T) {
-	s, ctx := setupEngine(t, hugr.CatalogStorageEntity)
+	s, ctx := setupEngine(t)
 	full := auth.ContextWithFullAccess(ctx)
 
 	dir := t.TempDir()
@@ -180,7 +177,7 @@ type items @view(name: "items", sql: "SELECT 1 AS id, 'first' AS name UNION ALL 
 // storage: a logical curation lands and shows through the entity views and the
 // generated schema.
 func TestEntityStorageCuration(t *testing.T) {
-	s, ctx := setupEngine(t, hugr.CatalogStorageEntity)
+	s, ctx := setupEngine(t)
 
 	res, err := s.Query(ctx, `mutation { function { core { catalog {
 		annotate_data_object(name: "core_data_sources", description: "Registered data sources", long_description: "")
@@ -239,7 +236,7 @@ func TestEntityStorageCuration(t *testing.T) {
 // _dataObject / _module / _function — and longDescription, which exists only
 // as curation, had no surface at all.
 func TestEntityStorageCurationReachesIntrospection(t *testing.T) {
-	s, ctx := setupEngine(t, hugr.CatalogStorageEntity)
+	s, ctx := setupEngine(t)
 
 	mustQuery(t, s, ctx, `mutation { function { core { catalog {
 		obj: annotate_data_object(name: "core_data_sources",
@@ -290,24 +287,25 @@ func TestEntityStorageCurationReachesIntrospection(t *testing.T) {
 	assert.Equal(t, "Reloads when already loaded.", probe.Function.LongDescription)
 }
 
-// TestCompiledStorageKeepsLegacyViews is the other half of the mode switch:
-// the default storage still exposes the compiled-schema views (and not the
-// entity ones), so nothing changes for the current deployment.
-func TestCompiledStorageKeepsLegacyViews(t *testing.T) {
-	s, ctx := setupEngine(t, "")
+// TestCatalogModuleServesEntityViewsOnly replaces the test that asserted the
+// opposite while the compiled-schema storage was the default. There is no
+// storage to select any more, so what it guards is the CoreDB catalog module:
+// it must expose the entity views and not regrow the _schema_* ones.
+func TestCatalogModuleServesEntityViewsOnly(t *testing.T) {
+	s, ctx := setupEngine(t)
 
-	var types_ []struct {
+	var objects []struct {
 		Name string `json:"name"`
 	}
-	query(t, s, ctx, `query { core { catalog { types(filter: {name: {eq: "core_data_sources"}}) { name } } } }`,
-		"core.catalog.types", &types_)
-	assert.NotEmpty(t, types_, "compiled-schema views are served in the default mode")
+	query(t, s, ctx, `query { core { entity_data_objects(filter: {name: {eq: "core_data_sources"}}) { name } } }`,
+		"core.entity_data_objects", &objects)
+	assert.NotEmpty(t, objects, "entity views are served")
 
-	// The entity views are not part of this mode's schema (a validation error
-	// surfaces either from Query itself or on the response).
-	res, err := s.Query(ctx, `query { core { entity_data_objects { name } } }`, nil)
+	// The compiled-schema views went with the storage that filled them (a
+	// validation error surfaces either from Query itself or on the response).
+	res, err := s.Query(ctx, `query { core { catalog { types { name } } } }`, nil)
 	if err == nil {
-		assert.Error(t, res.Err(), "entity views are not exposed by the compiled-schema storage")
+		assert.Error(t, res.Err(), "compiled-schema views are no longer part of the schema")
 		res.Close()
 	}
 }

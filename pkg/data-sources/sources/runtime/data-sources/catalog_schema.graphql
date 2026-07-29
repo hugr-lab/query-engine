@@ -2,9 +2,8 @@
 # catalog views the CoreDB source contributes to the same module).
 #
 # These are the stable GraphQL names; the DuckDB UDFs behind them keep their
-# internal `_schema_*` names. The `_schema_*` FIELDS in the core module
-# (schema.graphql) are the same functions under their old names, kept until the
-# compiled-schema catalog provider is removed.
+# internal `_schema_*` names, and the `_schema_*` FIELDS in the core module
+# (schema.graphql) are the same functions under those older names.
 #
 # Curation has TWO surfaces (design 034):
 #   * the LOGICAL model — modules, data sources, data objects and their fields,
@@ -15,10 +14,6 @@
 #     field or argument that has no logical entity to key on.
 #
 # An empty description clears the curation: the generated text shows again.
-#
-# The functions marked "entity catalog storage only" have no equivalent in the
-# compiled-schema provider and report that through their OperationResult when
-# the engine runs on it.
 
 extend type MutationFunction {
   "Curate a module description."
@@ -39,7 +34,7 @@ extend type MutationFunction {
     @module(name: "core.catalog")
     @function(name: "_schema_update_catalog_desc")
 
-  "Curate a data object (table / view / cube) description. Entity catalog storage only."
+  "Curate a data object (table / view / cube) description."
   annotate_data_object(
     name: String!
     description: String!
@@ -50,7 +45,7 @@ extend type MutationFunction {
 
   """
     Curate a data object field description, including a relation navigation
-    field. Entity catalog storage only.
+    field.
   """
   annotate_field(
     type_name: String!
@@ -63,7 +58,7 @@ extend type MutationFunction {
 
   """
     Curate a source-declared type description (a struct or input type that is
-    not a data object). Entity catalog storage only.
+    not a data object).
   """
   annotate_type(
     name: String!
@@ -78,7 +73,7 @@ extend type MutationFunction {
     kind selects the root namespace the curated operation lives in — "function",
     "mutation" or "subscription", exactly the value core.catalog.entity_functions
     and _catalog report; the same name in another namespace keeps its own
-    description. Entity catalog storage only.
+    description.
   """
   annotate_function(
     module: String!
@@ -109,7 +104,7 @@ extend type MutationFunction {
     @module(name: "core.catalog")
     @function(name: "_schema_update_field_desc")
 
-  "Curate a GENERATED field argument description. Entity catalog storage only."
+  "Curate a GENERATED field argument description."
   annotate_gql_argument(
     type_name: String!
     field_name: String!

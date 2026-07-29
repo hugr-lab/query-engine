@@ -62,7 +62,7 @@ type Order @table(name: "orders") {
 }
 ```
 
-Converted to an object-level `@references` directive during ReferencesRule processing. Also copies the `@field_references` directive to the corresponding filter field.
+Normalized into an object-level `@references` relation when the source is ingested. Also copies the `@field_references` directive to the corresponding filter field.
 
 ## Many-to-Many (M2M)
 
@@ -144,4 +144,4 @@ Sub-aggregation types:
 - Include `_rows_count` with `BigIntAggregation` (or `BigIntSubAggregation` at max depth)
 - Include scalar fields mapped to `SubAggregation` variants
 - Include extra fields (measurement, part) from the base aggregation's extensions
-- Carry `@catalog` directive for clean DropCatalog removal
+- Carry the `@catalog` directive, attributing them to their source

@@ -173,8 +173,8 @@ func geometryConvertFunc(extName string, fieldMeta arrow.Metadata, dstType refle
 //   - orb.Geometry interface              → direct assignment.
 //   - concrete orb subtype (orb.Point…)   → type-check the decoded value.
 //   - geojson.Geometry                    → wrap via geojson.NewGeometry so
-//                                            the same struct definition works
-//                                            for ScanTable and ScanObject.
+//     the same struct definition works
+//     for ScanTable and ScanObject.
 func assignGeometry(geom orb.Geometry, dstType reflect.Type, dst reflect.Value) error {
 	if dstType == orbGeometryType {
 		dst.Set(reflect.ValueOf(geom))

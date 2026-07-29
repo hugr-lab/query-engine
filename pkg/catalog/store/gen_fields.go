@@ -3,8 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -58,7 +57,7 @@ var joinFieldsRule = fieldRule{
 				return err
 			}
 			twinArgs := func() ast.ArgumentDefinitionList {
-				return rules.SubQueryArgsWithViewArgs(targetView, target+filterSuffix, reconPos)
+				return SubQueryArgsWithViewArgs(targetView, target+filterSuffix, reconPos)
 			}
 			if f.Properties.Join != nil {
 				_, ok, err := g.joinMachineryTarget(ctx, f)
@@ -69,7 +68,7 @@ var joinFieldsRule = fieldRule{
 					continue // cross-source (or absent) target → bare field
 				}
 				if fd := def.Fields.ForName(f.Name); fd != nil && len(fd.Arguments) == 0 {
-					fd.Arguments = rules.SubQueryArgsWithViewArgs(targetView, target+filterSuffix, reconPos)
+					fd.Arguments = SubQueryArgsWithViewArgs(targetView, target+filterSuffix, reconPos)
 				}
 			} else {
 				if exists, err := g.dataObjectExists(ctx, target); err != nil {
@@ -116,7 +115,7 @@ var navFieldsRule = fieldRule{
 				def.Fields = append(def.Fields, &ast.FieldDefinition{
 					Name: leg.SourceField,
 					Type: ast.NamedType(leg.Destination, reconPos),
-					Arguments: rules.PrependViewArgs(fwdView, ast.ArgumentDefinitionList{
+					Arguments: PrependViewArgs(fwdView, ast.ArgumentDefinitionList{
 						{Name: "inner", Description: base.DescInnerJoinRef, Type: ast.NamedType("Boolean", reconPos), Position: reconPos},
 					}, reconPos),
 					Directives: ast.DirectiveList{
@@ -177,7 +176,7 @@ var navFieldsRule = fieldRule{
 
 func subQueryArgsFactory(target string, viewArgs *base.ObjectInfo) func() ast.ArgumentDefinitionList {
 	return func() ast.ArgumentDefinitionList {
-		return rules.SubQueryArgsWithViewArgs(viewArgs, target+filterSuffix, reconPos)
+		return SubQueryArgsWithViewArgs(viewArgs, target+filterSuffix, reconPos)
 	}
 }
 
@@ -203,7 +202,7 @@ func navListField(name, target string, viewArgs *base.ObjectInfo, refDir *ast.Di
 	return &ast.FieldDefinition{
 		Name:      name,
 		Type:      ast.ListType(ast.NamedType(target, reconPos), reconPos),
-		Arguments: rules.SubQueryArgsWithViewArgs(viewArgs, target+filterSuffix, reconPos),
+		Arguments: SubQueryArgsWithViewArgs(viewArgs, target+filterSuffix, reconPos),
 		Directives: ast.DirectiveList{
 			refDir,
 			catalogDirective(dataSource, srcs[dataSource].Engine),

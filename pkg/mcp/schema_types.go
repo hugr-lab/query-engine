@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

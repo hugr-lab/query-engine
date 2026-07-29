@@ -6,8 +6,7 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -230,8 +229,8 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 		if err != nil {
 			return nil, err
 		}
-		directArgs := rules.PrependViewArgs(targetView, rules.AggRefArgs(targetFilter, reconPos), reconPos)
-		subArgs := rules.PrependViewArgs(targetView, rules.AggSubRefArgs(targetFilter, reconPos), reconPos)
+		directArgs := PrependViewArgs(targetView, AggRefArgs(targetFilter, reconPos), reconPos)
+		subArgs := PrependViewArgs(targetView, AggSubRefArgs(targetFilter, reconPos), reconPos)
 		if j.TableFunctionCallJoin != nil {
 			directArgs = emitArgumentDefs(f.Args)
 			subArgs = emitArgumentDefs(f.Args)
@@ -253,7 +252,7 @@ func buildObjectAggregation(ctx context.Context, g *genContext, row *dataObject,
 			},
 			&ast.FieldDefinition{
 				Name:       f.Name + "_aggregation",
-				Type:       ast.NamedType(rules.AggTypeNameAtDepth(target, 1), reconPos),
+				Type:       ast.NamedType(AggTypeNameAtDepth(target, 1), reconPos),
 				Arguments:  subArgs,
 				Directives: memberDirs(),
 				Position:   reconPos,
@@ -377,15 +376,15 @@ func appendRelationAggFields(ctx context.Context, g *genContext, row *dataObject
 		def.Fields = append(def.Fields,
 			&ast.FieldDefinition{
 				Name:       r.FieldName,
-				Type:       ast.NamedType(rules.AggTypeNameAtDepth(r.DataObject, depth), reconPos),
-				Arguments:  rules.PrependViewArgs(targetView, rules.AggRefArgs(targetFilter, reconPos), reconPos),
+				Type:       ast.NamedType(AggTypeNameAtDepth(r.DataObject, depth), reconPos),
+				Arguments:  PrependViewArgs(targetView, AggRefArgs(targetFilter, reconPos), reconPos),
 				Directives: ast.DirectiveList{fieldAggregationMarker(r.FieldName)},
 				Position:   reconPos,
 			},
 			&ast.FieldDefinition{
 				Name:       r.FieldName + "_aggregation",
-				Type:       ast.NamedType(rules.AggTypeNameAtDepth(r.DataObject, depth+1), reconPos),
-				Arguments:  rules.PrependViewArgs(targetView, rules.AggSubRefArgs(targetFilter, reconPos), reconPos),
+				Type:       ast.NamedType(AggTypeNameAtDepth(r.DataObject, depth+1), reconPos),
+				Arguments:  PrependViewArgs(targetView, AggSubRefArgs(targetFilter, reconPos), reconPos),
 				Directives: ast.DirectiveList{fieldAggregationMarker(subMarker)},
 				Position:   reconPos,
 			},
@@ -485,7 +484,7 @@ func buildObjectSubAggregation(ctx context.Context, g *genContext, row *dataObje
 		Name:     name,
 		Position: reconPos,
 		Directives: ast.DirectiveList{
-			aggregationMarker(rules.AggTypeNameAtDepth(row.Name, depth-1), false, level),
+			aggregationMarker(AggTypeNameAtDepth(row.Name, depth-1), false, level),
 			catalogDirective(row.DataSource, srcs[row.DataSource].Engine),
 		},
 	}

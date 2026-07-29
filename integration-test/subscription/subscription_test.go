@@ -106,9 +106,9 @@ func TestGraphQLWS_QueryStreaming(t *testing.T) {
 	conn := connectGraphQLWS(t)
 	defer conn.CloseNow()
 
-	// Subscribe to a query — use catalog.types which always has data
+	// Subscribe to a query — use entity_types, which always has data
 	payload, _ := json.Marshal(map[string]any{
-		"query": `subscription { query { core { catalog { types(limit: 3) { name kind } } } } }`,
+		"query": `subscription { query { core { entity_types(limit: 3) { name kind } } } }`,
 	})
 	wdata, _ := json.Marshal(gqlwsMsg{ID: "1", Type: "subscribe", Payload: payload})
 	err := conn.Write(context.Background(), websocket.MessageText, wdata)
@@ -162,9 +162,9 @@ func TestGraphQLWS_PeriodicPolling(t *testing.T) {
 	conn := connectGraphQLWS(t)
 	defer conn.CloseNow()
 
-	// Subscribe with interval=1s, count=2 — use catalog.types which always has data
+	// Subscribe with interval=1s, count=2 — use entity_types, which always has data
 	payload, _ := json.Marshal(map[string]any{
-		"query": `subscription { query(interval: "1s", count: 2) { core { catalog { types(limit: 3) { name } } } } }`,
+		"query": `subscription { query(interval: "1s", count: 2) { core { entity_types(limit: 3) { name } } } }`,
 	})
 	wdata, _ := json.Marshal(gqlwsMsg{ID: "poll", Type: "subscribe", Payload: payload})
 	err := conn.Write(context.Background(), websocket.MessageText, wdata)
@@ -212,7 +212,7 @@ func TestGraphQLWS_MultiPathQuery(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{
 		"query": `subscription { query {
 			core {
-				catalog { types(limit: 2) { name kind } }
+				entity_types(limit: 2) { name kind }
 				data_sources { name type }
 			}
 		} }`,
@@ -236,8 +236,8 @@ func TestGraphQLWS_MultiPathQuery(t *testing.T) {
 			data, _ := p["data"].(map[string]any)
 			if data != nil {
 				if core, ok := data["core"].(map[string]any); ok {
-					if _, ok := core["catalog"]; ok {
-						paths["catalog"]++
+					if _, ok := core["entity_types"]; ok {
+						paths["entity_types"]++
 					}
 					if _, ok := core["data_sources"]; ok {
 						paths["data_sources"]++
@@ -250,9 +250,9 @@ func TestGraphQLWS_MultiPathQuery(t *testing.T) {
 		}
 	}
 
-	assert.Greater(t, paths["catalog"], 0, "should have catalog rows")
+	assert.Greater(t, paths["entity_types"], 0, "should have catalog rows")
 	// data_sources may be empty in test DB but path should still be attempted
-	t.Logf("multi-path: catalog=%d rows, data_sources=%d rows", paths["catalog"], paths["data_sources"])
+	t.Logf("multi-path: entity_types=%d rows, data_sources=%d rows", paths["entity_types"], paths["data_sources"])
 }
 
 func TestGraphQLWS_Cancel(t *testing.T) {
@@ -261,7 +261,7 @@ func TestGraphQLWS_Cancel(t *testing.T) {
 
 	// Subscribe to periodic — first tick executes immediately, then waits interval
 	payload, _ := json.Marshal(map[string]any{
-		"query": `subscription { query(interval: "60s") { core { catalog { types(limit: 1) { name } } } } }`,
+		"query": `subscription { query(interval: "60s") { core { entity_types(limit: 1) { name } } } }`,
 	})
 	wdata, _ := json.Marshal(gqlwsMsg{ID: "cancel-test", Type: "subscribe", Payload: payload})
 	err := conn.Write(context.Background(), websocket.MessageText, wdata)
@@ -358,11 +358,11 @@ func TestIPC_Subscribe(t *testing.T) {
 	conn := connectIPC(t)
 	defer conn.CloseNow()
 
-	// Send subscribe — use catalog.types which always has data
+	// Send subscribe — use entity_types, which always has data
 	wdata, _ := json.Marshal(ipcMsg{
 		Type:           "subscribe",
 		SubscriptionID: "s1",
-		Query:          `subscription { query { core { catalog { types(limit: 3) { name kind } } } } }`,
+		Query:          `subscription { query { core { entity_types(limit: 3) { name kind } } } }`,
 	})
 	err := conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
@@ -419,11 +419,11 @@ func TestIPC_Unsubscribe(t *testing.T) {
 	conn := connectIPC(t)
 	defer conn.CloseNow()
 
-	// Subscribe to periodic with data (catalog.types always has data)
+	// Subscribe to periodic with data (entity_types always has data)
 	wdata, _ := json.Marshal(ipcMsg{
 		Type:           "subscribe",
 		SubscriptionID: "s-cancel",
-		Query:          `subscription { query(interval: "30s") { core { catalog { types(limit: 1) { name } } } } }`,
+		Query:          `subscription { query(interval: "30s") { core { entity_types(limit: 1) { name } } } }`,
 	})
 	err := conn.Write(context.Background(), websocket.MessageText, wdata)
 	require.NoError(t, err)
@@ -575,7 +575,7 @@ func TestGoClient_Subscribe(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	sub, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 3) { name kind } } } } }`, nil)
+	sub, err := c.Subscribe(ctx, `subscription { query { core { entity_types(limit: 3) { name kind } } } }`, nil)
 	require.NoError(t, err)
 	require.NotNil(t, sub)
 	defer sub.Cancel()
@@ -603,7 +603,7 @@ func TestGoClient_SubscribePeriodic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	sub, err := c.Subscribe(ctx, `subscription { query(interval: "1s", count: 2) { core { catalog { types(limit: 2) { name } } } } }`, nil)
+	sub, err := c.Subscribe(ctx, `subscription { query(interval: "1s", count: 2) { core { entity_types(limit: 2) { name } } } }`, nil)
 	require.NoError(t, err)
 	defer sub.Cancel()
 
@@ -629,9 +629,9 @@ func TestGoClient_MultipleSubscriptions(t *testing.T) {
 
 	ctx := context.Background()
 
-	sub1, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 2) { name } } } } }`, nil)
+	sub1, err := c.Subscribe(ctx, `subscription { query { core { entity_types(limit: 2) { name } } } }`, nil)
 	require.NoError(t, err)
-	sub2, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 3) { name } } } } }`, nil)
+	sub2, err := c.Subscribe(ctx, `subscription { query { core { entity_types(limit: 3) { name } } } }`, nil)
 	require.NoError(t, err)
 
 	// Drain both in parallel
@@ -654,7 +654,7 @@ func TestGoClient_ReuseAfterComplete(t *testing.T) {
 	ctx := context.Background()
 
 	// First subscription — completes
-	sub1, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 1) { name } } } } }`, nil)
+	sub1, err := c.Subscribe(ctx, `subscription { query { core { entity_types(limit: 1) { name } } } }`, nil)
 	require.NoError(t, err)
 	var rows1 int
 	for event := range sub1.Events {
@@ -666,7 +666,7 @@ func TestGoClient_ReuseAfterComplete(t *testing.T) {
 	assert.Greater(t, rows1, 0)
 
 	// Second subscription — reuses same pool connection
-	sub2, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 2) { name } } } } }`, nil)
+	sub2, err := c.Subscribe(ctx, `subscription { query { core { entity_types(limit: 2) { name } } } }`, nil)
 	require.NoError(t, err)
 	var rows2 int
 	for event := range sub2.Events {
@@ -687,9 +687,9 @@ func TestGoClient_DedicatedConn(t *testing.T) {
 	require.NoError(t, err)
 	defer conn.Close()
 
-	sub1, err := conn.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 2) { name } } } } }`, nil)
+	sub1, err := conn.Subscribe(ctx, `subscription { query { core { entity_types(limit: 2) { name } } } }`, nil)
 	require.NoError(t, err)
-	sub2, err := conn.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 3) { name } } } } }`, nil)
+	sub2, err := conn.Subscribe(ctx, `subscription { query { core { entity_types(limit: 3) { name } } } }`, nil)
 	require.NoError(t, err)
 
 	// Drain both in parallel — sequential drain deadlocks on shared connection
@@ -714,11 +714,11 @@ func TestGoClient_Pool(t *testing.T) {
 
 	ctx := context.Background()
 
-	sub1, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 1) { name } } } } }`, nil)
+	sub1, err := c.Subscribe(ctx, `subscription { query { core { entity_types(limit: 1) { name } } } }`, nil)
 	require.NoError(t, err)
-	sub2, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 2) { name } } } } }`, nil)
+	sub2, err := c.Subscribe(ctx, `subscription { query { core { entity_types(limit: 2) { name } } } }`, nil)
 	require.NoError(t, err)
-	sub3, err := c.Subscribe(ctx, `subscription { query { core { catalog { types(limit: 3) { name } } } } }`, nil)
+	sub3, err := c.Subscribe(ctx, `subscription { query { core { entity_types(limit: 3) { name } } } }`, nil)
 	require.NoError(t, err)
 
 	var r1, r2, r3 int
@@ -773,10 +773,10 @@ func TestGoClient_TwoSubscriptionsSameData(t *testing.T) {
 	ctx := context.Background()
 
 	query := `subscription { query(interval: "500ms", count: 10) {
-		core { catalog {
-			types(limit: 100, order_by: [{field: "name", direction: ASC}]) { name kind }
-			fields(limit: 100, order_by: [{field: "name", direction: ASC}]) { name field_type }
-		} }
+		core {
+			entity_types(limit: 100, order_by: [{field: "name", direction: ASC}]) { name kind }
+			entity_fields(limit: 100, order_by: [{field: "name", direction: ASC}]) { name field_type }
+		}
 	} }`
 
 	// Two subscriptions on the same connection with the same query

@@ -8,7 +8,7 @@ import (
 
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
@@ -98,7 +98,7 @@ func (s *Service) Attach(ctx context.Context, pool *db.Pool) error {
 }
 
 func (s *Service) Catalog(ctx context.Context) (cs.Catalog, error) {
-	opts := compiler.Options{
+	opts := base.Options{
 		Name:         s.Name(),
 		Prefix:       "core_cache",
 		AsModule:     s.AsModule(),

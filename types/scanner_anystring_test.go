@@ -91,7 +91,7 @@ func TestScanData_StringColumnIntoAny(t *testing.T) {
 	}{
 		{"plain_ascii", "hello", "hello"},
 		{"plain_cyrillic", "Гатчина", "Гатчина"},
-		{"text_leading_brace", "{not json}", "{not json}"},   // looks-like-JSON sniff true, decode fails → raw string
+		{"text_leading_brace", "{not json}", "{not json}"},    // looks-like-JSON sniff true, decode fails → raw string
 		{"text_leading_letter_t", "true story", "true story"}, // sniff true (t), decode fails → raw string
 		{"json_object", `{"a":1}`, map[string]any{"a": float64(1)}},
 		{"json_array", `[1,2]`, []any{float64(1), float64(2)}},

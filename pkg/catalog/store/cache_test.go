@@ -152,11 +152,16 @@ type b_obj @module(name: "app") @table(name: "b_obj")
 }
 
 // TestCacheJoinTargetClosure pins the cross-source @join semantics the
-// multi-source golden established: a base source's @join to a FOREIGN object
-// serves a BARE declared field (no subquery args, no aggregation twins) —
-// and stays bare through the target source's whole lifecycle; the target
+// multi-source golden established: an extension source's @join to a FOREIGN
+// object serves a BARE declared field (no subquery args, no aggregation twins)
+// — and stays bare through the target source's whole lifecycle; the target
 // lookup still records provenance, so the definition re-resolves cleanly on
 // every flip instead of serving stale machinery.
+//
+// The join lives in an EXTENSION source, the only place the contract allows a
+// cross-source artifact — the same shape genMultiFixtures pins (audit_events →
+// ro's logs). A cross-source @join declared inline in a plain source is refused
+// on the write path (JoinValidator rule 2b).
 func TestCacheJoinTargetClosure(t *testing.T) {
 	const schemaB = `
 type b_stats @module(name: "app") @table(name: "b_stats") {
@@ -166,12 +171,17 @@ type b_stats @module(name: "app") @table(name: "b_stats") {
 	const schemaA = `
 type a_orders @module(name: "app") @table(name: "a_orders") {
   id: Int! @pk
+}
+`
+	const schemaExt = `
+extend type a_orders {
   stats: [b_stats] @join(references_name: "b_stats", source_fields: ["id"], references_fields: ["order_id"])
 }
 `
-	// A compiles against B's definitions, but only A is WRITTEN — the target
-	// source does not exist in the store yet.
+	// The extension compiles against BOTH sources' definitions, but the target
+	// source B is not WRITTEN yet — it does not exist in the store.
 	srcB := partialSource(t, "b", schemaB)
+	srcA := partialSource(t, "test", schemaA)
 	ctx := context.Background()
 	pool, err := db.NewPool("")
 	require.NoError(t, err)
@@ -179,28 +189,46 @@ type a_orders @module(name: "app") @table(name: "a_orders") {
 	require.NoError(t, coredb.New(coredb.Config{VectorSize: 8}).Attach(ctx, pool))
 	store, err := New(ctx, pool, Config{VecSize: 8}, nil)
 	require.NoError(t, err)
-	srcA := partialSource(t, "test", schemaA, definitionsOnly{srcB})
-	dA := collect(ctx, srcA, "test")
-	_, err = store.writeSource(ctx, dA, SourceState{Name: "test", Version: "v1", Engine: "duckdb", Loaded: true})
+	_, err = store.writeSource(ctx, collect(ctx, srcA, "test"),
+		SourceState{Name: "test", Version: "v1", Engine: "duckdb", Loaded: true})
+	require.NoError(t, err)
+	srcExt := partialExtensionSource(t, "ext", schemaExt, definitionsOnly{srcA}, definitionsOnly{srcB})
+	_, err = store.writeSource(ctx, collect(ctx, srcExt, "ext"),
+		SourceState{Name: "ext", Version: "v1", Engine: "duckdb", IsExtension: true, Loaded: true})
 	require.NoError(t, err)
 
+	// Bare: the field is declared and served, but with no subquery machinery —
+	// the target is not resolvable, so there is nothing to build it from.
 	assertBare := func(when string) {
 		def := store.ForName(ctx, "a_orders")
 		require.NotNilf(t, def, "a_orders served (%s)", when)
 		fd := def.Fields.ForName("stats")
 		require.NotNilf(t, fd, "declared join field present (%s)", when)
-		assert.Emptyf(t, fd.Arguments, "cross-source join field stays bare (%s)", when)
-		assert.Nilf(t, def.Fields.ForName("stats_aggregation"), "no twins for a cross-source target (%s)", when)
+		assert.Emptyf(t, fd.Arguments, "join field stays bare (%s)", when)
+		assert.Nilf(t, def.Fields.ForName("stats_aggregation"), "no twins without a target (%s)", when)
+	}
+	// Wired: the target resolves, so the field carries the full subquery
+	// surface and its aggregation twin — compiled parity (golden multi.graphql,
+	// audit_events.logs).
+	assertWired := func(when string) {
+		def := store.ForName(ctx, "a_orders")
+		require.NotNilf(t, def, "a_orders served (%s)", when)
+		fd := def.Fields.ForName("stats")
+		require.NotNilf(t, fd, "declared join field present (%s)", when)
+		assert.NotEmptyf(t, fd.Arguments, "join field carries subquery args (%s)", when)
+		assert.NotNilf(t, def.Fields.ForName("stats_aggregation"), "aggregation twin generated (%s)", when)
 	}
 
 	assertBare("target absent")
 
-	// Register the target source — the field stays bare (compiled parity).
+	// Register the target source — the field gains its machinery.
 	dB := collect(ctx, srcB, "b")
 	_, err = store.writeSource(ctx, dB, SourceState{Name: "b", Version: "v1", Engine: "duckdb", Loaded: true})
 	require.NoError(t, err)
-	assertBare("target active")
+	assertWired("target active")
 
+	// ...and loses it again when the target goes away: the cached definition
+	// is invalidated by the flip, not served stale.
 	require.NoError(t, store.setFlags(ctx, "b", true, true, false))
 	assertBare("target disabled")
 }

@@ -216,11 +216,11 @@ func (p *recordPipe) Close() {
 // SetErr records a producer-side error, readable via Err() after Next returns false.
 func (p *recordPipe) SetErr(err error) { p.err = err }
 
-func (p *recordPipe) Schema() *arrow.Schema           { return p.schema }
-func (p *recordPipe) Record() arrow.RecordBatch        { return p.current }
-func (p *recordPipe) RecordBatch() arrow.RecordBatch   { return p.current }
-func (p *recordPipe) Err() error                       { return p.err }
-func (p *recordPipe) Retain()                          {}
+func (p *recordPipe) Schema() *arrow.Schema          { return p.schema }
+func (p *recordPipe) Record() arrow.RecordBatch      { return p.current }
+func (p *recordPipe) RecordBatch() arrow.RecordBatch { return p.current }
+func (p *recordPipe) Err() error                     { return p.err }
+func (p *recordPipe) Retain()                        {}
 
 // Release is the consumer's "done reading" signal. It MUST NOT close
 // p.ch — the producer goroutine in startStream is the sole closer via

@@ -408,13 +408,13 @@ func filterRequiredDirective() *ast.Directive {
 type SchemaOption func(*schemaDef)
 
 type referenceDef struct {
-	referencesName string
-	sourceFields   []string
+	referencesName   string
+	sourceFields     []string
 	referencesFields []string
-	query          string
-	referencesQuery string
-	isM2M          bool
-	m2mName        string
+	query            string
+	referencesQuery  string
+	isM2M            bool
+	m2mName          string
 }
 
 type fieldReferenceDef struct {
@@ -426,14 +426,14 @@ type fieldReferenceDef struct {
 }
 
 type schemaDef struct {
-	rawSDL           string           // user-provided SDL (skips auto-generation)
-	description      string           // object description
+	rawSDL            string            // user-provided SDL (skips auto-generation)
+	description       string            // object description
 	fieldDescriptions map[string]string // field name -> description
-	pkFields         []string         // explicit PK field names
-	m2m              bool             // @table(is_m2m: true)
-	references       []referenceDef
-	fieldReferences  []fieldReferenceDef
-	filterRequired   []string         // field names that need @filter_required
+	pkFields          []string          // explicit PK field names
+	m2m               bool              // @table(is_m2m: true)
+	references        []referenceDef
+	fieldReferences   []fieldReferenceDef
+	filterRequired    []string // field names that need @filter_required
 }
 
 // WithDescription sets the description for the table/view/function type.

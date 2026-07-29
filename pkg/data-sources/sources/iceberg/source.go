@@ -63,7 +63,7 @@ func (s *Source) prefix() string {
 //  1. REST Catalog (HTTPS):
 //     iceberg://endpoint/warehouse?client_id=...&client_secret=...&oauth2_server_uri=...
 //
-//  1b. REST Catalog (HTTP, for local/dev):
+//     1b. REST Catalog (HTTP, for local/dev):
 //     iceberg+http://endpoint/warehouse?params
 //
 //  2. AWS Glue:

@@ -69,9 +69,11 @@ type mockTable struct {
 	schema  *arrow.Schema
 }
 
-func (t *mockTable) Name() string                        { return t.name }
-func (t *mockTable) Comment() string                     { return t.comment }
-func (t *mockTable) ArrowSchema(cols []string) *arrow.Schema { return catalog.ProjectSchema(t.schema, cols) }
+func (t *mockTable) Name() string    { return t.name }
+func (t *mockTable) Comment() string { return t.comment }
+func (t *mockTable) ArrowSchema(cols []string) *arrow.Schema {
+	return catalog.ProjectSchema(t.schema, cols)
+}
 func (t *mockTable) Scan(_ context.Context, _ *catalog.ScanOptions) (array.RecordReader, error) {
 	return nil, nil
 }
@@ -270,7 +272,7 @@ type mockTableRef struct {
 	schema  *arrow.Schema
 }
 
-func (r *mockTableRef) Name() string              { return r.name }
+func (r *mockTableRef) Name() string               { return r.name }
 func (r *mockTableRef) Comment() string            { return r.comment }
 func (r *mockTableRef) ArrowSchema() *arrow.Schema { return r.schema }
 func (r *mockTableRef) FunctionCalls(_ context.Context, _ *catalog.FunctionCallRequest) ([]catalog.FunctionCall, error) {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	duckdb "github.com/duckdb/duckdb-go/v2"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
@@ -45,7 +45,7 @@ func (s *Source) Attach(ctx context.Context, pool *db.Pool) error {
 
 func (s *Source) Catalog(_ context.Context) (cs.Catalog, error) {
 	e := engines.NewDuckDB()
-	opts := compiler.Options{
+	opts := base.Options{
 		Name:         s.Name(),
 		Prefix:       "core_store",
 		ReadOnly:     s.IsReadonly(),

@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/ingest"
 	catsrc "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 )
 
@@ -214,9 +214,11 @@ func (s *Store) IsSuspended(name string) bool {
 // are order-independent, visibility is not) and reactivateSuspended restores
 // it once the dependencies arrive.
 func (s *Store) compileAndWrite(ctx context.Context, name string, cat catsrc.Catalog, state *SourceState) error {
-	compiled, err := compiler.New(partialRules()...).Compile(ctx, s, cat, cat.CompileOptions())
+	compiled, err := ingest.New(ingest.Default()...).Compile(ctx, s, cat, cat.CompileOptions())
 	if err != nil {
-		return fmt.Errorf("compile catalog %q: %w", name, err)
+		// Tagged so the boot path can tell a bad declaration from an
+		// unreachable source and suspend instead of dropping the rows.
+		return fmt.Errorf("compile catalog %q: %w: %w", name, catalog.ErrSchemaInvalid, err)
 	}
 	if dc, ok := compiled.(base.DependentCompiledCatalog); ok {
 		state.Dependencies = dc.Dependencies()

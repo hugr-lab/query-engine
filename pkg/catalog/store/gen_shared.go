@@ -3,8 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -14,7 +13,7 @@ import (
 // non-M2M data objects (all sources) and instantiates the corresponding
 // member trio; nil when no member qualifies, so the static stub (when any)
 // stays authoritative. Argument profiles and the vector-search decorator are
-// reused from compiler/rules.
+// reused from compiler/ingest.
 
 // sharedObjectEntry is the store-side joinObjectEntry.
 type sharedObjectEntry struct {
@@ -110,8 +109,8 @@ func buildJoinShared(ctx context.Context, g *genContext) (*ast.Definition, error
 	}
 	for _, obj := range objs {
 		args := func() ast.ArgumentDefinitionList {
-			a := rules.JoinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, reconPos)
-			return append(a, rules.VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
+			a := JoinObjectQueryArgsWithViewArgs(obj.info, obj.filterName, reconPos)
+			return append(a, VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
 		}
 		def.Fields = append(def.Fields, sharedMemberTrio(obj, args, srcs)...)
 	}
@@ -130,8 +129,8 @@ func buildJoinAggShared(ctx context.Context, g *genContext) (*ast.Definition, er
 		Directives: ast.DirectiveList{aggregationMarker("_join", false, 1)},
 	}
 	for _, obj := range objs {
-		args := rules.JoinObjectAggArgsWithViewArgs(obj.info, obj.filterName, reconPos)
-		args = append(args, rules.VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
+		args := JoinObjectAggArgsWithViewArgs(obj.info, obj.filterName, reconPos)
+		args = append(args, VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
 		def.Fields = append(def.Fields, sharedAggMember(obj, args, srcs))
 	}
 	return def, nil
@@ -174,8 +173,8 @@ func buildSpatialAggShared(ctx context.Context, g *genContext) (*ast.Definition,
 		Directives: ast.DirectiveList{aggregationMarker("_spatial", false, 1)},
 	}
 	for _, obj := range objs {
-		args := rules.SpatialObjectAggArgs(obj.filterName, reconPos)
-		args = append(args, rules.VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
+		args := SpatialObjectAggArgs(obj.filterName, reconPos)
+		args = append(args, VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
 		def.Fields = append(def.Fields, sharedAggMember(obj, args, srcs))
 	}
 	return def, nil
@@ -219,8 +218,8 @@ func spatialOnly(objs []*sharedObjectEntry) []*sharedObjectEntry {
 
 func spatialMemberArgs(obj *sharedObjectEntry) func() ast.ArgumentDefinitionList {
 	return func() ast.ArgumentDefinitionList {
-		a := rules.SpatialObjectQueryArgs(obj.filterName, reconPos)
-		return append(a, rules.VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
+		a := SpatialObjectQueryArgs(obj.filterName, reconPos)
+		return append(a, VectorSearchArgs(obj.hasVector, obj.hasEmbeddings, reconPos)...)
 	}
 }
 

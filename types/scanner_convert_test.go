@@ -38,15 +38,15 @@ func TestConvert_Primitives(t *testing.T) {
 	defer tbl.Release()
 
 	type row struct {
-		B    bool    `json:"b"`
-		I8   int8    `json:"i8"`
-		I32  int32   `json:"i32"`
-		I64  int64   `json:"i64"`
-		U64  uint64  `json:"u64"`
-		F32  float32 `json:"f32"`
-		F64  float64 `json:"f64"`
-		S    string  `json:"s"`
-		Bin  []byte  `json:"bin"`
+		B   bool    `json:"b"`
+		I8  int8    `json:"i8"`
+		I32 int32   `json:"i32"`
+		I64 int64   `json:"i64"`
+		U64 uint64  `json:"u64"`
+		F32 float32 `json:"f32"`
+		F64 float64 `json:"f64"`
+		S   string  `json:"s"`
+		Bin []byte  `json:"bin"`
 	}
 
 	rows, err := tbl.Rows()
@@ -541,13 +541,13 @@ func TestConvert_EmbeddedStruct(t *testing.T) {
 		Label string `json:"label"`
 	}
 	type ListItem struct {
-		Base          // embedded inside a list-element struct
-		Value int32  `json:"value"`
+		Base        // embedded inside a list-element struct
+		Value int32 `json:"value"`
 	}
 	type Row struct {
-		Base                    // top-level embedded
-		Name   string    `json:"name"`
-		Nested Nested    `json:"nested"`
+		Base              // top-level embedded
+		Name   string     `json:"name"`
+		Nested Nested     `json:"nested"`
 		Xs     []ListItem `json:"xs"`
 	}
 

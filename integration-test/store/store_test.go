@@ -151,7 +151,9 @@ func TestStore_Del(t *testing.T) {
 		del(store: "redis", key: "test:todel") { success }
 	} } } }`, nil)
 	defer res.Close()
-	var delResult struct{ Success bool `json:"success"` }
+	var delResult struct {
+		Success bool `json:"success"`
+	}
 	err := res.ScanData("function.core.store.del", &delResult)
 	require.NoError(t, err)
 	assert.True(t, delResult.Success)
@@ -209,7 +211,9 @@ func TestStore_Expire(t *testing.T) {
 		expire(store: "redis", key: "test:expirable", ttl: 300) { success }
 	} } } }`, nil)
 	defer res.Close()
-	var result struct{ Success bool `json:"success"` }
+	var result struct {
+		Success bool `json:"success"`
+	}
 	err := res.ScanData("function.core.store.expire", &result)
 	require.NoError(t, err)
 	assert.True(t, result.Success)

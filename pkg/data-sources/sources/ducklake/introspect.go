@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -89,22 +89,6 @@ type DuckLakeView struct {
 	SchemaName string
 	ViewName   string
 	Columns    []DuckLakeColumn
-}
-
-// IntrospectSchema queries DuckLake metadata tables and returns table/column definitions.
-// The prefix is the DuckDB catalog name (from ATTACH AS prefix).
-func IntrospectSchema(ctx context.Context, pool *db.Pool, prefix string) ([]DuckLakeTable, error) {
-	return IntrospectSchemaFiltered(ctx, pool, prefix, nil)
-}
-
-// IntrospectSchemaFiltered queries DuckLake metadata tables and returns table/column definitions,
-// optionally filtering by schema/table name regexps.
-func IntrospectSchemaFiltered(ctx context.Context, pool *db.Pool, prefix string, filter *IntrospectFilter) ([]DuckLakeTable, error) {
-	result, err := IntrospectAll(ctx, pool, prefix, filter)
-	if err != nil {
-		return nil, err
-	}
-	return result.Tables, nil
 }
 
 // IntrospectAll queries DuckLake metadata tables and returns both tables and views.
@@ -513,223 +497,6 @@ func duckDBTypeToGraphQL(duckType string) *ast.Type {
 	}
 }
 
-// SchemaChanges describes tables that changed between two schema versions.
-type SchemaChanges struct {
-	// Added contains tables that were created after fromSnapshot.
-	Added []DuckLakeTable
-	// Dropped contains tables (name only) that were dropped after fromSnapshot.
-	Dropped []DuckLakeTable
-	// Modified contains tables whose columns changed after fromSnapshot.
-	// Each entry has the full current column set for the table.
-	Modified []DuckLakeTable
-}
-
-// IntrospectChanges queries DuckLake metadata for schema changes between
-// fromSnapshot and the current state. Only touches tables/columns with
-// begin_snapshot > fromSnapshot or end_snapshot > fromSnapshot.
-// This is O(changed) instead of O(all) compared to full IntrospectSchema + DiffSchemas.
-func IntrospectChanges(ctx context.Context, pool *db.Pool, prefix string, fromSnapshot int) (*SchemaChanges, error) {
-	conn, err := pool.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("ducklake: get connection failed: %w", err)
-	}
-	defer conn.Close()
-
-	metaCatalog := metaCatalogIdent(prefix)
-	changes := &SchemaChanges{}
-
-	// 1. Find table IDs that were touched since fromSnapshot:
-	//    - table created:  begin_snapshot > fromSnapshot AND end_snapshot IS NULL
-	//    - table dropped:  end_snapshot > fromSnapshot AND end_snapshot IS NOT NULL
-	//    - table modified: column begin_snapshot > fromSnapshot OR column end_snapshot > fromSnapshot
-	//      (but table itself still active: t.end_snapshot IS NULL)
-
-	// Dropped tables (active before, dropped after fromSnapshot)
-	droppedQuery := fmt.Sprintf(`
-		SELECT s.schema_name, t.table_name
-		FROM %[1]s.ducklake_table t
-		JOIN %[1]s.ducklake_schema s ON t.schema_id = s.schema_id
-		WHERE t.end_snapshot IS NOT NULL
-			AND t.end_snapshot > %[2]d
-			AND t.begin_snapshot <= %[2]d
-	`, metaCatalog, fromSnapshot)
-
-	droppedRows, err := conn.Query(ctx, droppedQuery)
-	if err != nil {
-		return nil, fmt.Errorf("ducklake: query dropped tables: %w", err)
-	}
-	defer droppedRows.Close()
-	for droppedRows.Next() {
-		var schema, table string
-		if err := droppedRows.Scan(&schema, &table); err != nil {
-			return nil, fmt.Errorf("ducklake: scan dropped table: %w", err)
-		}
-		changes.Dropped = append(changes.Dropped, DuckLakeTable{SchemaName: schema, TableName: table})
-	}
-	if err := droppedRows.Err(); err != nil {
-		return nil, fmt.Errorf("ducklake: dropped tables rows error: %w", err)
-	}
-
-	// Added tables (created after fromSnapshot, still active)
-	addedQuery := fmt.Sprintf(`
-		SELECT s.schema_name, t.table_name, t.table_id
-		FROM %[1]s.ducklake_table t
-		JOIN %[1]s.ducklake_schema s ON t.schema_id = s.schema_id
-			AND s.end_snapshot IS NULL
-		WHERE t.end_snapshot IS NULL
-			AND t.begin_snapshot > %[2]d
-	`, metaCatalog, fromSnapshot)
-
-	addedRows, err := conn.Query(ctx, addedQuery)
-	if err != nil {
-		return nil, fmt.Errorf("ducklake: query added tables: %w", err)
-	}
-	defer addedRows.Close()
-
-	var addedTableIDs []int
-	type addedInfo struct {
-		schema, table string
-	}
-	addedMap := make(map[int]addedInfo)
-
-	for addedRows.Next() {
-		var schema, table string
-		var tableID int
-		if err := addedRows.Scan(&schema, &table, &tableID); err != nil {
-			return nil, fmt.Errorf("ducklake: scan added table: %w", err)
-		}
-		addedTableIDs = append(addedTableIDs, tableID)
-		addedMap[tableID] = addedInfo{schema, table}
-	}
-	if err := addedRows.Err(); err != nil {
-		return nil, fmt.Errorf("ducklake: added tables rows error: %w", err)
-	}
-
-	// Modified tables: existing tables (begin_snapshot <= fromSnapshot, end_snapshot IS NULL)
-	// that have column changes after fromSnapshot
-	modifiedQuery := fmt.Sprintf(`
-		SELECT DISTINCT t.table_id, s.schema_name, t.table_name
-		FROM %[1]s.ducklake_table t
-		JOIN %[1]s.ducklake_schema s ON t.schema_id = s.schema_id
-			AND s.end_snapshot IS NULL
-		JOIN %[1]s.ducklake_column c ON c.table_id = t.table_id
-		WHERE t.end_snapshot IS NULL
-			AND t.begin_snapshot <= %[2]d
-			AND (c.begin_snapshot > %[2]d OR (c.end_snapshot IS NOT NULL AND c.end_snapshot > %[2]d))
-	`, metaCatalog, fromSnapshot)
-
-	modifiedRows, err := conn.Query(ctx, modifiedQuery)
-	if err != nil {
-		return nil, fmt.Errorf("ducklake: query modified tables: %w", err)
-	}
-	defer modifiedRows.Close()
-
-	var modifiedTableIDs []int
-	modifiedMap := make(map[int]addedInfo)
-
-	for modifiedRows.Next() {
-		var tableID int
-		var schema, table string
-		if err := modifiedRows.Scan(&tableID, &schema, &table); err != nil {
-			return nil, fmt.Errorf("ducklake: scan modified table: %w", err)
-		}
-		modifiedTableIDs = append(modifiedTableIDs, tableID)
-		modifiedMap[tableID] = addedInfo{schema, table}
-	}
-	if err := modifiedRows.Err(); err != nil {
-		return nil, fmt.Errorf("ducklake: modified tables rows error: %w", err)
-	}
-
-	// Fetch current columns for added + modified tables
-	allIDs := append(addedTableIDs, modifiedTableIDs...)
-	if len(allIDs) > 0 {
-		idList := intListSQL(allIDs)
-		colQuery := fmt.Sprintf(`
-			SELECT c.table_id, c.column_name, c.column_type, c.nulls_allowed
-			FROM %s.ducklake_column c
-			WHERE c.table_id IN (%s)
-				AND c.end_snapshot IS NULL
-			ORDER BY c.table_id, c.column_id
-		`, metaCatalog, idList)
-
-		colRows, err := conn.Query(ctx, colQuery)
-		if err != nil {
-			return nil, fmt.Errorf("ducklake: query columns for changed tables: %w", err)
-		}
-		defer colRows.Close()
-
-		tableColumns := make(map[int][]DuckLakeColumn)
-		for colRows.Next() {
-			var tableID int
-			var colName, colType string
-			var isNullable bool
-			if err := colRows.Scan(&tableID, &colName, &colType, &isNullable); err != nil {
-				return nil, fmt.Errorf("ducklake: scan column: %w", err)
-			}
-			tableColumns[tableID] = append(tableColumns[tableID], DuckLakeColumn{
-				Name:       colName,
-				Type:       colType,
-				IsNullable: isNullable,
-			})
-		}
-		if err := colRows.Err(); err != nil {
-			return nil, fmt.Errorf("ducklake: columns rows error: %w", err)
-		}
-
-		// Try to get PK info for changed tables
-		pkQuery := fmt.Sprintf(`
-			SELECT tc.table_id, tc.column_names
-			FROM %s.ducklake_table_constraint tc
-			WHERE tc.table_id IN (%s)
-				AND tc.end_snapshot IS NULL
-				AND tc.constraint_type = 'PRIMARY KEY'
-		`, metaCatalog, idList)
-
-		pkRows, err := conn.Query(ctx, pkQuery)
-		if err == nil {
-			defer pkRows.Close()
-			for pkRows.Next() {
-				var tableID int
-				var columnNames []string
-				if err := pkRows.Scan(&tableID, &columnNames); err != nil {
-					break
-				}
-				pkCols := make(map[string]bool, len(columnNames))
-				for _, cn := range columnNames {
-					pkCols[cn] = true
-				}
-				for i := range tableColumns[tableID] {
-					if pkCols[tableColumns[tableID][i].Name] {
-						tableColumns[tableID][i].IsPK = true
-					}
-				}
-			}
-		}
-
-		// Build added tables
-		for _, id := range addedTableIDs {
-			info := addedMap[id]
-			changes.Added = append(changes.Added, DuckLakeTable{
-				SchemaName: info.schema,
-				TableName:  info.table,
-				Columns:    tableColumns[id],
-			})
-		}
-
-		// Build modified tables
-		for _, id := range modifiedTableIDs {
-			info := modifiedMap[id]
-			changes.Modified = append(changes.Modified, DuckLakeTable{
-				SchemaName: info.schema,
-				TableName:  info.table,
-				Columns:    tableColumns[id],
-			})
-		}
-	}
-
-	return changes, nil
-}
-
 // introspectViews queries DuckLake metadata for view definitions and resolves their columns
 // via DuckDB's DESCRIBE mechanism.
 func introspectViews(ctx context.Context, pool *db.Pool, prefix string, filter *IntrospectFilter) ([]DuckLakeView, error) {
@@ -832,17 +599,6 @@ func describeViewColumns(ctx context.Context, conn *db.Connection, prefix, schem
 	return cols, rows.Err()
 }
 
-func intListSQL(ids []int) string {
-	var sb strings.Builder
-	for i, id := range ids {
-		if i > 0 {
-			sb.WriteByte(',')
-		}
-		fmt.Fprintf(&sb, "%d", id)
-	}
-	return sb.String()
-}
-
 // ContentHash computes a stable hash of the introspected schema for version tracking.
 func ContentHash(tables []DuckLakeTable) string {
 	return ContentHashFull(tables, nil)
@@ -941,4 +697,3 @@ func dataObjectName(schema, name string) string {
 	}
 	return engines.Ident(schema) + "." + engines.Ident(name)
 }
-

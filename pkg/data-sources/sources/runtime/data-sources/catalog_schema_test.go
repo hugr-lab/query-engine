@@ -6,9 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/ingest"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,7 +17,13 @@ import (
 // curation surface to the core.catalog module — the same module the CoreDB
 // source contributes its catalog views to. The names here are the stable
 // GraphQL surface; the `_schema_*` fields in the core module are the same UDFs
-// under their legacy names and stay until the compiled-schema provider goes.
+// under their legacy names.
+//
+// The module ROOT type (_module_core_catalog_mutation_function) is no longer a
+// compilation artifact — design-036 deleted the ASSEMBLE rules and the catalog
+// storage synthesizes those roots on READ. So the assignment is read where it
+// is actually declared: @module on each field of `extend type MutationFunction`,
+// which is what the storage records and reconstructs the root from.
 func TestCatalogSchemaModule(t *testing.T) {
 	ctx := context.Background()
 	cat, err := New(nil).Catalog(ctx)
@@ -26,17 +31,21 @@ func TestCatalogSchemaModule(t *testing.T) {
 	target, err := static.New()
 	require.NoError(t, err)
 
-	out, err := compiler.New(compiler.GlobalRules()...).Compile(ctx, target, cat, cat.CompileOptions())
+	_, err = ingest.New(ingest.Default()...).Compile(ctx, target, cat, cat.CompileOptions())
 	require.NoError(t, err)
 
-	root := sdl.ModuleTypeName("core.catalog", base.ModuleMutationFunction)
+	es, ok := cat.(base.ExtensionsSource)
+	require.True(t, ok, "the runtime source carries extensions")
+
 	var fields []string
-	for def := range out.Extensions(ctx) {
-		if def.Name != root {
+	for def := range es.Extensions(ctx) {
+		if def.Name != base.FunctionMutationTypeName {
 			continue
 		}
 		for _, f := range def.Fields {
-			fields = append(fields, f.Name)
+			if base.DirectiveArgString(f.Directives.ForName(base.ModuleDirectiveName), base.ArgName) == "core.catalog" {
+				fields = append(fields, f.Name)
+			}
 		}
 	}
 	assert.Equal(t, []string{

@@ -1,7 +1,0 @@
-"""A new gadget type added incrementally"""
-type Gadget @table(name: "gadgets") {
-  id: Int! @pk
-  label: String!
-  weight: Float
-  created_at: Timestamp
-}

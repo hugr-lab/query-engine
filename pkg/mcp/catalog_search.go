@@ -26,10 +26,10 @@ import (
 // access policy. Search cannot surface something catalog-describe would then
 // refuse to show, because it is the same resolver answering both.
 //
-// Without vectors — no embedder, or the compiled catalog storage, whose views
-// carry no index — it degrades to lexical matching over the SAME structural
-// enumeration catalog-list uses, which runs in the caller's context and needs
-// no filtering at all. Ranking quality drops; the ladder still works.
+// Without vectors — no embedder configured — it degrades to lexical matching
+// over the SAME structural enumeration catalog-list uses, which runs in the
+// caller's context and needs no filtering at all. Ranking quality drops; the
+// ladder still works.
 
 const (
 	kindField = "field"

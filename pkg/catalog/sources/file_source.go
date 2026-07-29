@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -21,14 +21,14 @@ var _ Catalog = (*FileSource)(nil)
 
 type FileSource struct {
 	dirPath  string
-	opts     compiler.Options
+	opts     base.Options
 	desc     string
 	provider *static.DocProvider
 	engine   engines.Engine
 	version  string
 }
 
-func NewFileSource(dirPath string, engine engines.Engine, opts compiler.Options) *FileSource {
+func NewFileSource(dirPath string, engine engines.Engine, opts base.Options) *FileSource {
 	return &FileSource{dirPath: dirPath, opts: opts, engine: engine}
 }
 
@@ -113,10 +113,10 @@ func (s *FileSource) DefinitionExtensions(ctx context.Context, name string) iter
 	return s.provider.DefinitionExtensions(ctx, name)
 }
 
-func (s *FileSource) Name() string                      { return s.opts.Name }
-func (s *FileSource) Description() string               { return s.desc }
-func (s *FileSource) CompileOptions() compiler.Options   { return s.opts }
-func (s *FileSource) Engine() engines.Engine             { return s.engine }
+func (s *FileSource) Name() string                 { return s.opts.Name }
+func (s *FileSource) Description() string          { return s.desc }
+func (s *FileSource) CompileOptions() base.Options { return s.opts }
+func (s *FileSource) Engine() engines.Engine       { return s.engine }
 
 func (s *FileSource) Version(_ context.Context) (string, error) {
 	return s.version, nil

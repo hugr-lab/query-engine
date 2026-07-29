@@ -1,0 +1,401 @@
+# Golden snapshot of the generated schema — authored by the schema
+# compiler, regenerate with UPDATE_GOLDEN=1. One section per definition
+# the entity store must reproduce; see gen_golden_test.go.
+
+# === sales_cube
+type sales_cube @catalog(engine: "duckdb", name: "test") @cube @data_input(name: "sales_cube_mut_data") @data_input(name: "sales_cube_mut_input_data") @filter_input(name: "sales_cube_filter") @module(name: "bi") @mutation(data_input: "", name: "delete_sales_cube", type: DELETE) @mutation(data_input: "sales_cube_mut_data", name: "update_sales_cube", type: UPDATE) @mutation(data_input: "sales_cube_mut_input_data", name: "insert_sales_cube", type: INSERT) @query(name: "sales_cube", type: SELECT) @query(name: "sales_cube_aggregation", type: AGGREGATE) @query(name: "sales_cube_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "sales_cube_by_pk", type: SELECT_ONE) @table(name: "sales_cube") {
+  _join(fields: [String!]!): _join
+  id: Int! @pk
+  quantity(
+    """
+    Aggregation function for measurement field
+    """
+    measurement_func: IntMeasurementAggregation
+  ): Int @measurement
+  region: String!
+  revenue(
+    """
+    Aggregation function for measurement field
+    """
+    measurement_func: FloatMeasurementAggregation
+  ): Float @measurement
+}
+
+# === readings
+type readings @catalog(engine: "duckdb", name: "test") @data_input(name: "readings_mut_data") @data_input(name: "readings_mut_input_data") @filter_input(name: "readings_filter") @hypertable @module(name: "bi") @mutation(data_input: "", name: "delete_readings", type: DELETE) @mutation(data_input: "readings_mut_data", name: "update_readings", type: UPDATE) @mutation(data_input: "readings_mut_input_data", name: "insert_readings", type: INSERT) @query(name: "readings", type: SELECT) @query(name: "readings_aggregation", type: AGGREGATE) @query(name: "readings_bucket_aggregation", type: AGGREGATE_BUCKET) @query(name: "readings_by_pk", type: SELECT_ONE) @table(name: "readings") {
+  _join(fields: [String!]!): _join
+  """
+  Extract part of Timestamp field recorded_at
+  """
+  _recorded_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigInt @extra_field(base_field: "recorded_at", base_type: Timestamp, name: "Extract") @sql(exp: "[recorded_at]")
+  id: Int! @pk
+  recorded_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+
+    """
+    Extracts the specified part of the timestamp
+    """
+    gapfill: Boolean
+  ): Timestamp @timescale_key
+  temperature: Float
+}
+
+# === sales_cube_filter
+"""
+Filter for sales_cube objects
+"""
+input sales_cube_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "sales_cube") {
+  _and: [sales_cube_filter]
+  _not: sales_cube_filter
+  _or: [sales_cube_filter]
+  id: IntFilter @pk
+  quantity: IntFilter @measurement
+  region: StringFilter
+  revenue: FloatFilter @measurement
+}
+
+# === readings_filter
+"""
+Filter for readings objects
+"""
+input readings_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "readings") {
+  _and: [readings_filter]
+  _not: readings_filter
+  _or: [readings_filter]
+  id: IntFilter @pk
+  recorded_at: TimestampFilter @timescale_key
+  temperature: FloatFilter
+}
+
+# === _sales_cube_aggregation
+type _sales_cube_aggregation @aggregation(is_bucket: false, level: 1, name: "sales_cube") @catalog(engine: "duckdb", name: "test") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  id: IntAggregation @field_aggregation(name: "id")
+  quantity(
+    """
+    Aggregation function for measurement field
+    """
+    measurement_func: IntMeasurementAggregation
+  ): IntAggregation @field_aggregation(name: "quantity")
+  region: StringAggregation @field_aggregation(name: "region")
+  revenue(
+    """
+    Aggregation function for measurement field
+    """
+    measurement_func: FloatMeasurementAggregation
+  ): FloatAggregation @field_aggregation(name: "revenue")
+}
+
+# === _sales_cube_aggregation_bucket
+"""
+Bucket aggregation for sales_cube
+"""
+type _sales_cube_aggregation_bucket @aggregation(is_bucket: true, level: 1, name: "sales_cube") @catalog(engine: "duckdb", name: "test") {
+  """
+  The aggregations of the bucket
+  """
+  aggregations(
+    """
+    Filter
+    """
+    filter: sales_cube_filter
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _sales_cube_aggregation
+  """
+  The key of the bucket
+  """
+  key: sales_cube
+}
+
+# === _sales_cube_aggregation_sub_aggregation
+type _sales_cube_aggregation_sub_aggregation @aggregation(is_bucket: false, level: 2, name: "_sales_cube_aggregation") @catalog(engine: "duckdb", name: "test") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  quantity(
+    """
+    Aggregation function for measurement field
+    """
+    measurement_func: IntMeasurementAggregation
+  ): IntSubAggregation @field_aggregation(name: "quantity")
+  region: StringSubAggregation @field_aggregation(name: "region")
+  revenue(
+    """
+    Aggregation function for measurement field
+    """
+    measurement_func: FloatMeasurementAggregation
+  ): FloatSubAggregation @field_aggregation(name: "revenue")
+}
+
+# === _readings_aggregation
+type _readings_aggregation @aggregation(is_bucket: false, level: 1, name: "readings") @catalog(engine: "duckdb", name: "test") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _recorded_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntAggregation @field_aggregation(name: "_recorded_at_part")
+  _rows_count: BigInt
+  id: IntAggregation @field_aggregation(name: "id")
+  recorded_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+
+    """
+    Extracts the specified part of the timestamp
+    """
+    gapfill: Boolean
+  ): TimestampAggregation @field_aggregation(name: "recorded_at")
+  temperature: FloatAggregation @field_aggregation(name: "temperature")
+}
+
+# === _readings_aggregation_sub_aggregation
+type _readings_aggregation_sub_aggregation @aggregation(is_bucket: false, level: 2, name: "_readings_aggregation") @catalog(engine: "duckdb", name: "test") {
+  _recorded_at_part(
+    """
+    Extracts the specified part of the timestamp
+    """
+    extract: TimeExtract!
+
+    """
+    Divides the extracted value
+    """
+    extract_divide: Int
+  ): BigIntSubAggregation @field_aggregation(name: "_recorded_at_part")
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  id: IntSubAggregation @field_aggregation(name: "id")
+  recorded_at(
+    """
+    Truncate to the specified part of the timestamp. Possible values: 'year', 'month', 'day', 'hour', 'minute', 'second'.
+    """
+    bucket: TimeBucket
+
+    """
+    Truncate the specified part of the timestamp
+    """
+    bucket_interval: Interval
+
+    """
+    Extracts the specified part of the timestamp
+    """
+    gapfill: Boolean
+  ): TimestampSubAggregation @field_aggregation(name: "recorded_at")
+  temperature: FloatSubAggregation @field_aggregation(name: "temperature")
+}
+
+# === sales_cube_mut_input_data
+input sales_cube_mut_input_data @catalog(engine: "duckdb", name: "test") @data_input(name: "sales_cube") {
+  id: Int
+  quantity: Int
+  region: String
+  revenue: Float
+}
+
+# === _module_bi_query
+type _module_bi_query @module_catalog(name: "test") @module_root(name: "bi", type: QUERY) {
+  readings(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: readings_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [readings] @catalog(engine: "duckdb", name: "test") @query(name: "readings", type: SELECT)
+  """
+  The aggregation for readings
+  """
+  readings_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: readings_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _readings_aggregation @aggregation_query(is_bucket: false, name: "readings") @catalog(engine: "duckdb", name: "test")
+  """
+  The aggregation for readings
+  """
+  readings_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: readings_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_readings_aggregation_bucket] @aggregation_query(is_bucket: true, name: "readings") @catalog(engine: "duckdb", name: "test")
+  readings_by_pk(id: Int!): readings @catalog(engine: "duckdb", name: "test") @query(name: "readings", type: SELECT_ONE)
+  sales_cube(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: sales_cube_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [sales_cube] @catalog(engine: "duckdb", name: "test") @query(name: "sales_cube", type: SELECT)
+  """
+  The aggregation for sales_cube
+  """
+  sales_cube_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: sales_cube_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _sales_cube_aggregation @aggregation_query(is_bucket: false, name: "sales_cube") @catalog(engine: "duckdb", name: "test")
+  """
+  The aggregation for sales_cube
+  """
+  sales_cube_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: sales_cube_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_sales_cube_aggregation_bucket] @aggregation_query(is_bucket: true, name: "sales_cube") @catalog(engine: "duckdb", name: "test")
+  sales_cube_by_pk(id: Int!): sales_cube @catalog(engine: "duckdb", name: "test") @query(name: "sales_cube", type: SELECT_ONE)
+}

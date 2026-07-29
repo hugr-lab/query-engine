@@ -1,4 +1,0 @@
-type BadCube @cube {
-  id: Int! @pk
-  value: Float @measurement
-}

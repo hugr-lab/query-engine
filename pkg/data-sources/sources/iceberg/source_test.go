@@ -6,10 +6,10 @@ import (
 
 func TestParsePath(t *testing.T) {
 	tests := []struct {
-		name     string
-		raw      string
-		wantErr  bool
-		check    func(t *testing.T, p *icebergParams)
+		name    string
+		raw     string
+		wantErr bool
+		check   func(t *testing.T, p *icebergParams)
 	}{
 		{
 			name: "REST catalog with credentials",

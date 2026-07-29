@@ -167,7 +167,7 @@ type StoreSource interface {
 // SubscriptionResult is returned by SubscriptionSource.Subscribe.
 type SubscriptionResult struct {
 	Reader array.RecordReader // Yields records incrementally; schema included.
-	Cancel func()            // Stops the subscription.
+	Cancel func()             // Stops the subscription.
 }
 
 // SubscriptionSource is implemented by data sources that handle native subscriptions.

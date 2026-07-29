@@ -5,15 +5,16 @@ package store
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/rules"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/ingest"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
-	"github.com/hugr-lab/query-engine/pkg/catalog/static"
+	"github.com/hugr-lab/query-engine/pkg/catalog/types"
 	coredb "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime/core-db"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -23,14 +24,17 @@ import (
 	"github.com/vektah/gqlparser/v2/formatter"
 )
 
-// The golden frame for the generation layer (Ш4): the SAME fixture goes
-// through (a) the partial compiler → collect → store → ForName and (b) the
-// FULL compiler (GENERATE included) → static provider. Every name in
-// genParityNames must produce identical definitions on both sides; each Ш4.x
-// sub-step moves names from genPendingNames into genParityNames.
+// The golden frame for the generation layer: a fixture goes through
+// collect → store → ForName, and every name in genParityNames must come back
+// identical to its frozen snapshot in testdata/golden.
+//
+// The snapshots were AUTHORED BY THE COMPILER, whose GENERATE / ASSEMBLE rules
+// design-036 then deleted — this file is what is left of that oracle. It is
+// exactly as strong as it was for existing behaviour (the text is unchanged and
+// reviewed in the diff) and weaker for new behaviour, where a regenerated
+// section is written by the same code it checks.
 
-// genParityNames — generated names the store already serves at full parity
-// with the compiled reference.
+// genParityNames — generated names covered by the harness snapshot.
 var genParityNames = []string{
 	// Static prelude smoke: the same binary layer feeds both sides, proving
 	// the compare pipe end to end.
@@ -95,52 +99,65 @@ var genParityNames = []string{
 	"_module_sales_reports_query",
 }
 
-// genPendingNames — names the reference generates that the store must learn
-// to serve, keyed by the sub-step that delivers them.
-var genPendingNames = map[string][]string{}
-
-// goldenRef compiles a fixture with the FULL rule set into a fresh static
-// provider — the reference the generation layer converges to, name by name.
-func goldenRef(t *testing.T, name, schema string) *static.Provider {
-	t.Helper()
-	ctx := context.Background()
-	target, err := static.New()
-	require.NoError(t, err)
-	e := &engines.DuckDB{}
-	src, err := sources.NewStringSource(name, e, compiler.Options{
-		Name:         name,
-		EngineType:   string(e.Type()),
-		Capabilities: e.Capabilities(),
-	}, schema)
-	require.NoError(t, err)
-	compiled, err := compiler.New(rules.RegisterAll()...).Compile(ctx, target, src, src.CompileOptions())
-	require.NoError(t, err)
-	require.NoError(t, target.Update(ctx, compiled))
-	return target
-}
-
 func TestGenGoldenHarness(t *testing.T) {
 	store, ctx := writtenStore(t)
-	ref := goldenRef(t, "test", collectTestSchema)
 
-	// The reference side really generates the artifacts the sub-steps target —
-	// a pending name disappearing here means the fixture (or the expected
-	// name) drifted, not that the work is done.
-	for step, names := range genPendingNames {
-		for _, name := range names {
-			assert.NotNil(t, ref.ForName(ctx, name), "reference must generate %s (%s)", name, step)
-		}
-	}
+	assertGenParity(t, ctx, store, "harness", genParityNames)
 
-	assertGenParity(t, ctx, store, ref, genParityNames)
-
-	// Negative parity: names the compiler does NOT generate must stay absent
-	// on the store side too (views take no mutation inputs; no subscriptions
-	// or reports-module mutations in the fixture).
+	// Negative parity: names that must stay ABSENT — a view takes no mutation
+	// inputs, and the fixture has no subscriptions and no reports-module
+	// mutations. A snapshot cannot say "this does not exist", so the absences
+	// are asserted by name.
 	for _, name := range []string{"sales_by_country_mut_input_data", "sales_by_country_mut_data",
 		"_module_sales_subscription", "_module_sales_reports_mutation"} {
-		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
 		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
+	}
+
+	assertInputTypesSound(t, ctx, store)
+}
+
+// assertInputTypesSound is the invariant ArgumentTypeValidator enforced over
+// compiled output, restated where the schema is now produced: every field
+// argument and every input-object field must name an INPUT type — a scalar, an
+// enum or an input object. An object type leaking into either position is
+// illegal GraphQL and surfaces far from its cause, as "Introspection must
+// provide input type for arguments".
+//
+// The rule could only see one source's compilation; this walks the WHOLE served
+// schema — the reachability closure from its roots — so it also covers what the
+// store assembles across sources.
+func assertInputTypesSound(t *testing.T, ctx context.Context, s *Store) {
+	t.Helper()
+	sound := func(name string) bool {
+		if types.IsScalar(name) {
+			return true
+		}
+		switch name {
+		case "String", "Int", "Float", "Boolean", "ID":
+			return true
+		}
+		def := s.ForName(ctx, name)
+		if def == nil {
+			// Unresolvable from here — absence is another assertion's subject.
+			return true
+		}
+		switch def.Kind {
+		case ast.Scalar, ast.Enum, ast.InputObject:
+			return true
+		}
+		return false
+	}
+	for def := range s.Definitions(ctx) {
+		for _, f := range def.Fields {
+			for _, arg := range f.Arguments {
+				assert.Truef(t, sound(arg.Type.Name()),
+					"%s.%s argument %q: %s is not an input type", def.Name, f.Name, arg.Name, arg.Type.Name())
+			}
+			if def.Kind == ast.InputObject {
+				assert.Truef(t, sound(f.Type.Name()),
+					"input %s.%s: %s is not an input type", def.Name, f.Name, f.Type.Name())
+			}
+		}
 	}
 }
 
@@ -178,9 +195,8 @@ type ProductVariant {
 // nest Object members, and the passthrough types round-trip.
 func TestGenGoldenStructs(t *testing.T) {
 	store, ctx := storeFor(t, genStructSchema)
-	ref := goldenRef(t, "test", genStructSchema)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, "structs", []string{
 		// Residual passthrough types (stored SDL vs compiler passthrough).
 		"ProductSpecs",
 		"BoxSize",
@@ -217,7 +233,6 @@ func TestGenGoldenStructs(t *testing.T) {
 		"_ProductSpecs_aggregation_bucket",
 		"_ProductSpecs_aggregation_sub_aggregation_sub_aggregation",
 	} {
-		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
 		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
 	}
 }
@@ -249,9 +264,8 @@ extend type Subscription {
 // data + summary).
 func TestGenGoldenVector(t *testing.T) {
 	store, ctx := storeFor(t, genVectorSchema)
-	ref := goldenRef(t, "test", genVectorSchema)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, "vector", []string{
 		"docs",
 		"notes",
 		"docs_filter",
@@ -296,9 +310,8 @@ type readings @module(name: "bi") @hypertable @table(name: "readings") {
 // aggregation twins.
 func TestGenGoldenCube(t *testing.T) {
 	store, ctx := storeFor(t, genCubeSchema)
-	ref := goldenRef(t, "test", genCubeSchema)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, "cube", []string{
 		"sales_cube",
 		"readings",
 		"sales_cube_filter",
@@ -329,9 +342,8 @@ type users @module(name: "crm") @table(name: "users")
 // def-level markers.
 func TestGenGoldenUnique(t *testing.T) {
 	store, ctx := storeFor(t, genUniqueSchema)
-	ref := goldenRef(t, "test", genUniqueSchema)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, "unique", []string{
 		"users",
 		"users_filter",
 		"_module_crm_query",
@@ -363,9 +375,8 @@ extend type airports {
 // object and the aggregation type carry the declared arguments.
 func TestGenGoldenTFCJ(t *testing.T) {
 	store, ctx := storeFor(t, genTFCJSchema)
-	ref := goldenRef(t, "test", genTFCJSchema)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, "tfcj", []string{
 		"airports",
 		"airports_filter",
 		"_airports_aggregation",
@@ -373,6 +384,49 @@ func TestGenGoldenTFCJ(t *testing.T) {
 		"airports_mut_input_data",
 		"_module_geo_query",
 		"_module_geo_function",
+	})
+}
+
+// genJoinViewSchema exercises a @join whose TARGET is a parameterized view,
+// declared inside its own source (the internal-extend path, not the
+// cross-source extension one). Everything that reaches the view has to carry
+// its args — the join field itself and its aggregation twins alike — and a
+// NonNull member of the args input makes them required all the way down.
+const genJoinViewSchema = `
+type regions @module(name: "geo") @table(name: "regions") {
+  id: Int! @pk
+  name: String!
+  stats: [region_stats] @join(references_name: "region_stats", source_fields: ["id"], references_fields: ["region_id"])
+}
+
+type region_stats @module(name: "geo")
+  @view(name: "region_stats", sql: "SELECT 1 AS region_id, 2 AS total")
+  @args(name: "region_stats_args") {
+  region_id: Int @pk
+  total: Int
+}
+
+input region_stats_args {
+  since: Timestamp!
+}
+`
+
+// TestGenGoldenJoinView pins the args profile of a @join onto a parameterized
+// view: the field takes the view's args (NonNull here — the input has a NonNull
+// member) on top of the standard subquery arguments, and so do the
+// {name}_aggregation / {name}_bucket_aggregation twins.
+func TestGenGoldenJoinView(t *testing.T) {
+	store, ctx := storeFor(t, genJoinViewSchema)
+
+	assertGenParity(t, ctx, store, "joinview", []string{
+		"regions",
+		"region_stats",
+		"region_stats_args",
+		"regions_filter",
+		"region_stats_filter",
+		"_regions_aggregation",
+		"_region_stats_aggregation",
+		"_module_geo_query",
 	})
 }
 
@@ -404,8 +458,8 @@ func fixtureEngine(engineType string) engines.Engine {
 	}
 }
 
-func fixtureOpts(fs fixtureSource, e engines.Engine) compiler.Options {
-	return compiler.Options{
+func fixtureOpts(fs fixtureSource, e engines.Engine) base.Options {
+	return base.Options{
 		Name:         fs.name,
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
@@ -429,18 +483,16 @@ func storeForSources(t *testing.T, fixtures []fixtureSource) (*Store, context.Co
 	store, err := New(ctx, pool, Config{VecSize: 8}, nil)
 	require.NoError(t, err)
 
-	target, err := static.New()
-	require.NoError(t, err)
 	for _, fs := range fixtures {
 		e := fixtureEngine(fs.engineType)
 		src, err := sources.NewStringSource(fs.name, e, fixtureOpts(fs, e), fs.schema)
 		require.NoError(t, err)
-		_, err = compiler.New(partialRules()...).Compile(ctx, target, src, src.CompileOptions())
+		// The STORE is the compile target, as in production (compileAndWrite):
+		// each later source resolves the earlier ones through the store's
+		// on-demand reconstruction — including the module function roots, which
+		// a static seed of raw definitions cannot produce.
+		_, err = ingest.New(ingest.Default()...).Compile(ctx, store, src, src.CompileOptions())
 		require.NoError(t, err)
-		// Seed ONLY the definitions: later sources need the prior types for
-		// their extends to validate; leftover extensions (e.g. unmerged
-		// same-source virtual-field extends) are collect's job, not the seed's.
-		require.NoError(t, target.Update(ctx, definitionsOnly{src}))
 		d := collect(ctx, src, fs.name)
 		_, err = store.writeSource(ctx, d, SourceState{
 			Name: fs.name, Version: "v1", Engine: string(e.Type()),
@@ -454,28 +506,6 @@ func storeForSources(t *testing.T, fixtures []fixtureSource) (*Store, context.Co
 
 // definitionsOnly hides a source's Extensions from the seed provider.
 type definitionsOnly struct{ base.DefinitionsSource }
-
-// goldenRefSources compiles the same fixtures with the FULL rule set,
-// sequentially into one static provider (multi-catalog reference).
-func goldenRefSources(t *testing.T, fixtures []fixtureSource) *static.Provider {
-	t.Helper()
-	ctx := context.Background()
-	target, err := static.New()
-	require.NoError(t, err)
-	for i, fs := range fixtures {
-		e := fixtureEngine(fs.engineType)
-		src, err := sources.NewStringSource(fs.name, e, fixtureOpts(fs, e), fs.schema)
-		require.NoError(t, err)
-		var p base.Provider
-		if i > 0 {
-			p = target
-		}
-		compiled, err := compiler.New(rules.RegisterAll()...).Compile(ctx, p, src, src.CompileOptions())
-		require.NoError(t, err)
-		require.NoError(t, target.Update(ctx, compiled))
-	}
-	return target
-}
 
 // genMultiFixtures covers the deferred source-option axes: a prefixed
 // AsModule source, a read-only source, plain sources and a cross-source
@@ -569,9 +599,8 @@ type shop_overview
 // mutation suppression for the read-only source, extension field attribution.
 func TestGenGoldenMultiSource(t *testing.T) {
 	store, ctx := storeForSources(t, genMultiFixtures)
-	ref := goldenRefSources(t, genMultiFixtures)
 
-	assertGenParity(t, ctx, store, ref, []string{
+	assertGenParity(t, ctx, store, "multi", []string{
 		// Prefixed objects: @original_name, markers with ORIGINAL names,
 		// prefixed nav/derived names, the extension field on shop_items.
 		"shop_items",
@@ -619,32 +648,124 @@ func TestGenGoldenMultiSource(t *testing.T) {
 		"logs_mut_data",
 		"_module_ro_mod_mutation",
 	} {
-		assert.Nil(t, ref.ForName(ctx, name), "reference must not generate %s", name)
 		assert.Nil(t, store.ForName(ctx, name), "store must not serve %s", name)
 	}
+
+	assertInputTypesSound(t, ctx, store)
+}
+
+// --- frozen snapshots --------------------------------------------------------
+//
+// The oracle for the generation layer used to be the compiler itself: the same
+// fixture compiled with the FULL rule set, compared definition by definition.
+// Design-036 retires that rule set, so the oracle is FROZEN into
+// testdata/golden — text AUTHORED BY THE COMPILER, regenerated with
+// UPDATE_GOLDEN=1. While the rule set is still here every assertion checks the
+// snapshot against BOTH sides, so a drifted snapshot fails instead of being
+// silently rewritten; once the rules go, the reference half drops out and the
+// frozen text carries the contract alone.
+
+const goldenDir = "testdata/golden"
+
+// goldenMark opens a named section inside a fixture snapshot.
+const goldenMark = "# === "
+
+func goldenPath(fixture string) string {
+	return filepath.Join(goldenDir, fixture+".graphql")
+}
+
+// readGoldenSections parses a fixture snapshot into name → normalized SDL.
+func readGoldenSections(t *testing.T, fixture string) map[string]string {
+	t.Helper()
+	raw, err := os.ReadFile(goldenPath(fixture))
+	if err != nil {
+		t.Fatalf("read golden %q: %v (UPDATE_GOLDEN=1 to create)", fixture, err)
+	}
+	out := map[string]string{}
+	name := ""
+	var body strings.Builder
+	flush := func() {
+		if name != "" {
+			out[name] = strings.TrimSpace(body.String()) + "\n"
+		}
+		body.Reset()
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if after, ok := strings.CutPrefix(line, goldenMark); ok {
+			flush()
+			name = strings.TrimSpace(after)
+			continue
+		}
+		body.WriteString(line)
+		body.WriteString("\n")
+	}
+	flush()
+	return out
+}
+
+// writeGoldenSections rewrites a fixture snapshot, sections in the given order.
+func writeGoldenSections(t *testing.T, fixture string, names []string, sdl map[string]string) {
+	t.Helper()
+	var buf strings.Builder
+	buf.WriteString("# Golden snapshot of the generated schema — authored by the schema\n")
+	buf.WriteString("# compiler, regenerate with UPDATE_GOLDEN=1. One section per definition\n")
+	buf.WriteString("# the entity store must reproduce; see gen_golden_test.go.\n")
+	for _, name := range names {
+		s, ok := sdl[name]
+		if !ok {
+			continue
+		}
+		buf.WriteString("\n")
+		buf.WriteString(goldenMark)
+		buf.WriteString(name)
+		buf.WriteString("\n")
+		buf.WriteString(s)
+	}
+	require.NoError(t, os.MkdirAll(goldenDir, 0o755))
+	require.NoError(t, os.WriteFile(goldenPath(fixture), []byte(buf.String()), 0o644))
 }
 
 // assertGenParity: each covered name must be served by the store structurally
-// identical to the fully-compiled reference (member order is not part of the
-// contract — definitions are normalized before comparison). The comparison is
-// against the store's PRE-FINALISE generation (forNameRaw): the store enriches
-// descriptions on synthetic query members beyond the retiring compiler, and
-// that store-only enrichment is verified separately (descriptions_test.go), not
-// by the base-generation oracle.
-func assertGenParity(t *testing.T, ctx context.Context, s *Store, ref *static.Provider, names []string) {
+// identical to the frozen snapshot (member order is not part of the contract —
+// definitions are normalized before comparison). The comparison is against the
+// store's PRE-FINALISE generation (forNameRaw): the store enriches descriptions
+// on synthetic query members beyond what the compiler produced, and that
+// store-only enrichment is verified separately (descriptions_test.go), not by
+// the base-generation oracle.
+//
+// UPDATE_GOLDEN now rewrites the snapshot from the STORE, which is the whole
+// difference the rules' deletion makes: the text is no longer authored by an
+// independent implementation. For existing behaviour that costs nothing — the
+// frozen text is the same contract it was. For NEW behaviour it means a wrong
+// implementation writes a wrong golden, so a regenerated section has to be READ
+// in the diff, not waved through.
+func assertGenParity(t *testing.T, ctx context.Context, s *Store, fixture string, names []string) {
 	t.Helper()
+
+	golden := map[string]string{}
+	if os.Getenv("UPDATE_GOLDEN") != "" {
+		for _, name := range names {
+			def := s.forNameRaw(ctx, name)
+			require.NotNil(t, def, "store must serve %s", name)
+			golden[name] = goldenSDL(def)
+		}
+		writeGoldenSections(t, fixture, names, golden)
+	} else {
+		golden = readGoldenSections(t, fixture)
+	}
+
 	for _, name := range names {
 		// Per-name asserts (no require): one missing name must not hide the
 		// diffs of the remaining ones.
-		want := ref.ForName(ctx, name)
-		if !assert.NotNil(t, want, "reference must contain %s", name) {
+		want, ok := golden[name]
+		if !assert.True(t, ok, "golden %q has no section for %s (UPDATE_GOLDEN=1 to add)", fixture, name) {
 			continue
 		}
 		got := s.forNameRaw(ctx, name)
 		if !assert.NotNil(t, got, "store must serve %s", name) {
 			continue
 		}
-		assert.Equal(t, goldenSDL(want), goldenSDL(got), "definition parity for %s", name)
+		assert.Equal(t, want, goldenSDL(got), "definition parity for %s", name)
 	}
 }
 

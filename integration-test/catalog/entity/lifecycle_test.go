@@ -35,9 +35,9 @@ import (
 // sourceStats is the observable state of one stored source.
 type sourceStats struct {
 	LoadedAt  time.Time `json:"loaded_at"`
-	Loaded    bool   `json:"loaded"`
-	Disabled  bool   `json:"disabled"`
-	Suspended bool   `json:"suspended"`
+	Loaded    bool      `json:"loaded"`
+	Disabled  bool      `json:"disabled"`
+	Suspended bool      `json:"suspended"`
 }
 
 func statsOf(t *testing.T, s *hugr.Service, ctx context.Context, name string) sourceStats {
@@ -84,7 +84,7 @@ func callFn(t *testing.T, s *hugr.Service, ctx context.Context, field, args stri
 // unload suspends, a load of an unchanged source repairs the flags, and the
 // rows are never touched.
 func TestUnloadReloadKeepsRows(t *testing.T) {
-	s, ctx := setupEngine(t, hugr.CatalogStorageEntity)
+	s, ctx := setupEngine(t)
 	full := auth.ContextWithFullAccess(ctx)
 	registerShop(t, s, full)
 
@@ -139,7 +139,7 @@ func TestUnloadReloadKeepsRows(t *testing.T) {
 // rewritten either — the engine's hard unload-then-load would otherwise drop
 // every row (and, with an embedder configured, re-embed the whole source).
 func TestReloadWhileLoadedKeepsRows(t *testing.T) {
-	s, ctx := setupEngine(t, hugr.CatalogStorageEntity)
+	s, ctx := setupEngine(t)
 	full := auth.ContextWithFullAccess(ctx)
 	registerShop(t, s, full)
 
@@ -167,7 +167,7 @@ func TestReloadWhileLoadedKeepsRows(t *testing.T) {
 // TestHardUnloadRemovesRows is the counterpart: an EXPLICIT hard unload is the
 // one operation that drops the stored schema.
 func TestHardUnloadRemovesRows(t *testing.T) {
-	s, ctx := setupEngine(t, hugr.CatalogStorageEntity)
+	s, ctx := setupEngine(t)
 	full := auth.ContextWithFullAccess(ctx)
 	registerShop(t, s, full)
 

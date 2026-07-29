@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/pkg/perm"
@@ -320,6 +320,16 @@ func selectDataObjectNode(ctx context.Context, defs base.DefinitionsSource, plan
 	atInfo, err := resolveAtInfo(query, vars)
 	if err != nil {
 		return nil, false, err
+	}
+	// The time-travel capability check lives HERE and not in an SDL rule: @at is
+	// declared `on OBJECT | FIELD`, so a client can pin any query field of any
+	// source, and the query-level case — the common one — never reached the SDL
+	// walk over object definitions. This is where both paths meet.
+	if atInfo != nil {
+		caps := e.Capabilities()
+		if caps == nil || !caps.General.SupportTimeTravel {
+			return nil, false, fmt.Errorf("@at on %s: data source %q does not support time travel", query.Name, info.Catalog)
+		}
 	}
 
 	fieldNodes := fieldsNodes(ctx, e, info, "_objects",

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	Version           = "0.0.19"
+	Version           = "0.0.20"
 	dbName            = "core"
 	DefaultVectorSize = 768
 )
@@ -75,18 +75,7 @@ type Source struct {
 	dbType   types.DataSourceType
 	s3Source bool
 	e        engines.Engine
-
-	// entityStorage selects which half of the catalog view schema is rendered
-	// (see schema_catalog_tmpl.graphql). Set by the engine from its catalog
-	// storage mode before the source's catalog is compiled.
-	entityStorage bool
 }
-
-// SetEntityStorage tells the source that the engine runs the ENTITY catalog
-// storage, so the catalog module exposes the entity views instead of the
-// legacy _schema_* ones. Must be called before Catalog(); the engine does it
-// during Init.
-func (s *Source) SetEntityStorage(v bool) { s.entityStorage = v }
 
 func New(c Config) *Source {
 	if strings.HasPrefix(c.Path, "postgres://") {
@@ -194,7 +183,7 @@ func (s *Source) registerS3Secret(ctx context.Context, db *db.Pool) error {
 }
 
 func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
-	opts := compiler.Options{
+	opts := base.Options{
 		Name:         s.Name(),
 		Prefix:       "core",
 		AsModule:     s.AsModule(),
@@ -207,12 +196,10 @@ func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
 		EmbeddingsEnabled bool
 		VectorSize        int
 		IsPostgres        bool
-		EntityStorage     bool
 	}{
 		EmbeddingsEnabled: s.c.VectorSize > 0,
 		VectorSize:        s.c.VectorSize,
 		IsPostgres:        s.dbType == sources.Postgres,
-		EntityStorage:     s.entityStorage,
 	}
 
 	tmpl, err := template.New("schema").Parse(schemaCatalogTmpl)

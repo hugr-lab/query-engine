@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"iter"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -26,12 +25,12 @@ var _ Catalog = (*MergedCatalog)(nil)
 // Definitions are merged from all sub-catalogs.
 type MergedCatalog struct {
 	catalogs []Catalog
-	opts     compiler.Options
+	opts     base.Options
 	desc     string
 	engine   engines.Engine
 }
 
-func NewMergedCatalog(engine engines.Engine, opts compiler.Options, desc string, catalogs ...Catalog) *MergedCatalog {
+func NewMergedCatalog(engine engines.Engine, opts base.Options, desc string, catalogs ...Catalog) *MergedCatalog {
 	return &MergedCatalog{catalogs: catalogs, opts: opts, desc: desc, engine: engine}
 }
 
@@ -116,10 +115,10 @@ func (mc *MergedCatalog) Reload(ctx context.Context) error {
 	return nil
 }
 
-func (mc *MergedCatalog) Name() string                      { return mc.opts.Name }
-func (mc *MergedCatalog) Description() string               { return mc.desc }
-func (mc *MergedCatalog) CompileOptions() compiler.Options   { return mc.opts }
-func (mc *MergedCatalog) Engine() engines.Engine             { return mc.engine }
+func (mc *MergedCatalog) Name() string                 { return mc.opts.Name }
+func (mc *MergedCatalog) Description() string          { return mc.desc }
+func (mc *MergedCatalog) CompileOptions() base.Options { return mc.opts }
+func (mc *MergedCatalog) Engine() engines.Engine       { return mc.engine }
 
 func (mc *MergedCatalog) Version(ctx context.Context) (string, error) {
 	h := sha256.New()

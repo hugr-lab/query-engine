@@ -1,5 +1,0 @@
-type Event @table(name: "events") @module(name: "analytics") {
-  id: BigInt! @pk
-  event_type: String!
-  created_at: Timestamp
-}

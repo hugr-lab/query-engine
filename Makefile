@@ -5,7 +5,7 @@ GO_TEST_FLAGS ?= -v -count=1
 export CGO_CFLAGS
 
 .PHONY: build test test-unit test-integration test-e2e \
-        test-compiler test-catalog-db test-coredb
+        test-catalog test-coredb
 
 # --- Build ---
 
@@ -23,13 +23,10 @@ test-unit:
 
 # --- Integration tests (all under integration-test/) ---
 
-test-integration: test-compiler test-catalog-db test-coredb
+test-integration: test-catalog test-coredb
 
-test-compiler:
-	go test -tags=$(GO_BUILD_TAGS) $(GO_TEST_FLAGS) ./integration-test/compiler/...
-
-test-catalog-db:
-	go test -tags=$(GO_BUILD_TAGS) $(GO_TEST_FLAGS) ./integration-test/catalog/db/...
+test-catalog:
+	go test -tags=$(GO_BUILD_TAGS) $(GO_TEST_FLAGS) ./integration-test/catalog/...
 
 test-coredb:
 	go test -tags=$(GO_BUILD_TAGS) $(GO_TEST_FLAGS) ./integration-test/coredb/...

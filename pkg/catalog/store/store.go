@@ -23,9 +23,8 @@ func logReadErr(op string, err error) {
 }
 
 // Embedder creates embedding vectors for annotation seeding at insert time.
-// Same method set as the engine's embedding source (pkg/catalog/db.Embedder) —
-// a concrete embedder satisfies both structurally. nil when embeddings are not
-// configured; the writer then persists entities without vectors.
+// The engine's embedding source satisfies it structurally. nil when embeddings
+// are not configured; the writer then persists entities without vectors.
 type Embedder interface {
 	CreateEmbedding(ctx context.Context, input string) (*sources.EmbeddingResult, error)
 	CreateEmbeddings(ctx context.Context, inputs []string) (*sources.EmbeddingsResult, error)

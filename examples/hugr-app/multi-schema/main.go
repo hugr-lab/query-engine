@@ -54,7 +54,7 @@ func (a *AnalyticsApp) Listner() (net.Listener, error) {
 	return net.Listen("tcp", "localhost:50052")
 }
 
-func (a *AnalyticsApp) Init(ctx context.Context) error    { return nil }
+func (a *AnalyticsApp) Init(ctx context.Context) error     { return nil }
 func (a *AnalyticsApp) Shutdown(ctx context.Context) error { return nil }
 
 func (a *AnalyticsApp) Catalog(ctx context.Context) (catalog.Catalog, error) {

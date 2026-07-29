@@ -3,10 +3,13 @@
 package store
 
 import (
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,27 +17,37 @@ import (
 // The store satisfies the full read-only Provider contract.
 var _ base.Provider = (*Store)(nil)
 
+// reachableGolden is the frozen reachable surface of genMultiFixtures.
+const reachableGolden = "multi_reachable.txt"
+
 // TestProviderTypesParity is the drift guard for the schema enumeration: the
-// type set the store's Types() serves must equal the reference schema's
-// reachable type set, on the multi-source fixture (prefix + AsModule +
-// read-only + extension). Both sides are measured by the SAME reachability walk
-// from the SAME seeds (roots + shared + system prelude), so the comparison is
-// apples-to-apples: the reference is a flat store of every generated type
-// including orphans no query can reach, but reachability excludes those on both
-// sides. A mismatch means the two schemas expose a different reachable surface
-// — a real generation divergence, not an enumeration artifact.
+// reachable type set the store serves on the multi-source fixture (prefix +
+// AsModule + read-only + extension) must equal the frozen list.
+//
+// The list is not an arbitrary snapshot of the store. Until design-036 deleted
+// the GENERATE rules this test compared the store against the COMPILED
+// reference, walking both from the same seeds, and it passed — so the set
+// frozen here is the reference's reachable surface, captured at the last commit
+// where both implementations existed. What it guards is unchanged: a type that
+// silently appears in, or disappears from, what a query can reach.
 func TestProviderTypesParity(t *testing.T) {
 	store, ctx := storeForSources(t, genMultiFixtures)
-	ref := goldenRefSources(t, genMultiFixtures)
 
-	seeds := store.schemaSeeds(ctx)
-	got := toSet(reachableTypeNames(ctx, store, seeds))
-	want := toSet(reachableTypeNames(ctx, ref, seeds))
+	got := reachableTypeNames(ctx, store, store.schemaSeeds(ctx))
+	sort.Strings(got)
 
-	assert.Equal(t, missingFrom(want, got), []string(nil),
-		"reachable in the reference but not served by the store")
-	assert.Equal(t, missingFrom(got, want), []string(nil),
-		"served by the store but not reachable in the reference")
+	path := filepath.Join(goldenDir, reachableGolden)
+	if os.Getenv("UPDATE_GOLDEN") != "" {
+		require.NoError(t, os.WriteFile(path, []byte(strings.Join(got, "\n")+"\n"), 0o644))
+	}
+	raw, err := os.ReadFile(path)
+	require.NoErrorf(t, err, "read %s (UPDATE_GOLDEN=1 to create)", path)
+	want := strings.Split(strings.TrimSpace(string(raw)), "\n")
+
+	assert.Equal(t, missingFrom(toSet(want), toSet(got)), []string(nil),
+		"in the frozen surface but no longer served by the store")
+	assert.Equal(t, missingFrom(toSet(got), toSet(want)), []string(nil),
+		"served by the store but not in the frozen surface")
 }
 
 func toSet(names []string) map[string]struct{} {

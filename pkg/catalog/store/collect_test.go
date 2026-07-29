@@ -6,13 +6,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/ingest"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/engines"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 )
 
 // partialSource runs the partial compiler over a schema and returns the source
@@ -23,22 +24,60 @@ import (
 // definitions merged into the compile target so cross-source extends resolve.
 func partialSource(t *testing.T, name, schema string, seeds ...base.DefinitionsSource) base.ExtensionsSource {
 	t.Helper()
+	return partialSourceOpts(t, name, schema, false, seeds...)
+}
+
+// partialExtensionSource is partialSource for an EXTENSION source. A source
+// that reaches into ANOTHER source — a @join or @function_call whose target
+// belongs to a different catalog — must be one; that is the contract
+// JoinValidator / FunctionCallValidator pin on the write path.
+func partialExtensionSource(t *testing.T, name, schema string, seeds ...base.DefinitionsSource) base.ExtensionsSource {
+	t.Helper()
+	return partialSourceOpts(t, name, schema, true, seeds...)
+}
+
+func partialSourceOpts(t *testing.T, name, schema string, isExtension bool, seeds ...base.DefinitionsSource) base.ExtensionsSource {
+	t.Helper()
 	ctx := context.Background()
-	target, err := static.New()
+	prelude, err := static.New()
 	require.NoError(t, err)
+	target := seedProvider{Provider: prelude, seeded: map[string]*ast.Definition{}}
 	for _, seed := range seeds {
-		require.NoError(t, target.Update(ctx, seed))
+		for def := range seed.Definitions(ctx) {
+			target.seeded[def.Name] = def
+		}
 	}
 	e := &engines.DuckDB{}
-	src, err := sources.NewStringSource(name, e, compiler.Options{
+	src, err := sources.NewStringSource(name, e, base.Options{
 		Name:         name,
 		EngineType:   string(e.Type()),
 		Capabilities: e.Capabilities(),
+		IsExtension:  isExtension,
 	}, schema)
 	require.NoError(t, err)
-	_, err = compiler.New(partialRules()...).Compile(ctx, target, src, src.CompileOptions())
+	_, err = ingest.New(ingest.Default()...).Compile(ctx, target, src, src.CompileOptions())
 	require.NoError(t, err)
 	return src
+}
+
+// seedProvider serves the system prelude plus a set of already-compiled
+// definitions, which is the whole of what a compile target owes a test here:
+// prior sources' types must RESOLVE so a cross-source extend validates.
+//
+// It replaces static.Provider.Update. Applying a compiled DDL feed to a static
+// schema was the FULL pipeline's apply step; design-036 deleted the pipeline,
+// and a seed that only needs lookups has no business carrying 500 lines of
+// changeset validation with it.
+type seedProvider struct {
+	*static.Provider
+	seeded map[string]*ast.Definition
+}
+
+func (p seedProvider) ForName(ctx context.Context, name string) *ast.Definition {
+	if def, ok := p.seeded[name]; ok {
+		return def
+	}
+	return p.Provider.ForName(ctx, name)
 }
 
 const collectTestSchema = `
@@ -242,11 +281,11 @@ func TestCollectPrefixedOriginalName(t *testing.T) {
 	target, err := static.New()
 	require.NoError(t, err)
 	e := &engines.DuckDB{}
-	src, err := sources.NewStringSource("shop", e, compiler.Options{
+	src, err := sources.NewStringSource("shop", e, base.Options{
 		Name: "shop", Prefix: "shop", EngineType: string(e.Type()), Capabilities: e.Capabilities(),
 	}, `type products @module(name: "shop") @table(name: "products") { id: Int! @pk }`)
 	require.NoError(t, err)
-	_, err = compiler.New(partialRules()...).Compile(ctx, target, src, src.CompileOptions())
+	_, err = ingest.New(ingest.Default()...).Compile(ctx, target, src, src.CompileOptions())
 	require.NoError(t, err)
 
 	d := collect(ctx, src, "shop")

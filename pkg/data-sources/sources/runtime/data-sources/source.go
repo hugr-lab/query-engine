@@ -4,7 +4,7 @@ import (
 	"context"
 	_ "embed"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -65,7 +65,7 @@ func (s *Source) Attach(ctx context.Context, db *db.Pool) error {
 
 func (s *Source) Catalog(ctx context.Context) (sources.Catalog, error) {
 	e := engines.NewDuckDB()
-	opts := compiler.Options{
+	opts := base.Options{
 		Name:         s.Name(),
 		ReadOnly:     s.IsReadonly(),
 		EngineType:   string(e.Type()),

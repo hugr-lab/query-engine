@@ -11,7 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/catalog"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources"
 	"github.com/hugr-lab/query-engine/types"
@@ -315,9 +315,9 @@ func (r *metadataReader) Next() bool {
 }
 
 func (r *metadataReader) Record() arrow.RecordBatch      { return r.current }
-func (r *metadataReader) RecordBatch() arrow.RecordBatch  { return r.current }
-func (r *metadataReader) Err() error                      { return r.reader.Err() }
-func (r *metadataReader) Retain()                         { r.reader.Retain() }
+func (r *metadataReader) RecordBatch() arrow.RecordBatch { return r.current }
+func (r *metadataReader) Err() error                     { return r.reader.Err() }
+func (r *metadataReader) Retain()                        { r.reader.Retain() }
 func (r *metadataReader) Release() {
 	r.once.Do(func() {
 		if r.current != nil {

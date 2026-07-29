@@ -1,0 +1,150 @@
+# Golden snapshot of the generated schema — authored by the schema
+# compiler, regenerate with UPDATE_GOLDEN=1. One section per definition
+# the entity store must reproduce; see gen_golden_test.go.
+
+# === airports
+type airports @catalog(engine: "duckdb", name: "test") @data_input(name: "airports_mut_data") @data_input(name: "airports_mut_input_data") @filter_input(name: "airports_filter") @module(name: "geo") @mutation(data_input: "", name: "delete_airports", type: DELETE) @mutation(data_input: "airports_mut_data", name: "update_airports", type: UPDATE) @mutation(data_input: "airports_mut_input_data", name: "insert_airports", type: INSERT) @query(name: "airports", type: SELECT) @query(name: "airports_by_pk", type: SELECT_ONE) @query(name: "find_nearby_aggregation", type: AGGREGATE) @query(name: "find_nearby_bucket_aggregation", type: AGGREGATE_BUCKET) @table(name: "airports") {
+  _join(fields: [String!]!): _join
+  iata: String! @pk
+  name: String!
+  nearby(radius: Float): [airports] @catalog(engine: "duckdb", name: "test") @table_function_call_join(args: {iata:"iata"}, module: "geo", references_name: "find_nearby")
+  """
+  The aggregation for nearby
+  """
+  nearby_aggregation(radius: Float): _airports_aggregation @aggregation_query(is_bucket: false, name: "nearby") @catalog(engine: "duckdb", name: "test")
+  """
+  The bucket aggregation for nearby
+  """
+  nearby_bucket_aggregation(radius: Float): [_airports_aggregation_bucket] @aggregation_query(is_bucket: true, name: "nearby") @catalog(engine: "duckdb", name: "test")
+}
+
+# === airports_filter
+"""
+Filter for airports objects
+"""
+input airports_filter @catalog(engine: "duckdb", name: "test") @filter_input(name: "airports") {
+  _and: [airports_filter]
+  _not: airports_filter
+  _or: [airports_filter]
+  iata: StringFilter @pk
+  name: StringFilter
+}
+
+# === _airports_aggregation
+type _airports_aggregation @aggregation(is_bucket: false, level: 1, name: "airports") @catalog(engine: "duckdb", name: "test") {
+  _join(fields: [String!]!): _join_aggregation @field_aggregation(name: "_join")
+  _rows_count: BigInt
+  iata: StringAggregation @field_aggregation(name: "iata")
+  name: StringAggregation @field_aggregation(name: "name")
+  nearby(radius: Float): _airports_aggregation @field_aggregation(name: "nearby")
+  nearby_aggregation(radius: Float): _airports_aggregation_sub_aggregation @field_aggregation(name: "nearby")
+}
+
+# === _airports_aggregation_sub_aggregation
+type _airports_aggregation_sub_aggregation @aggregation(is_bucket: false, level: 2, name: "_airports_aggregation") @catalog(engine: "duckdb", name: "test") {
+  _rows_count: BigIntAggregation @field_aggregation(name: "aggregation_field")
+  iata: StringSubAggregation @field_aggregation(name: "iata")
+  name: StringSubAggregation @field_aggregation(name: "name")
+}
+
+# === airports_mut_input_data
+input airports_mut_input_data @catalog(engine: "duckdb", name: "test") @data_input(name: "airports") {
+  iata: String
+  name: String
+}
+
+# === _module_geo_query
+type _module_geo_query @module_catalog(name: "test") @module_root(name: "geo", type: QUERY) {
+  airports(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: airports_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [airports] @catalog(engine: "duckdb", name: "test") @query(name: "airports", type: SELECT)
+  """
+  The aggregation for airports
+  """
+  airports_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: airports_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): _airports_aggregation @aggregation_query(is_bucket: false, name: "airports") @catalog(engine: "duckdb", name: "test")
+  """
+  The aggregation for airports
+  """
+  airports_bucket_aggregation(
+    """
+    Distinct on the given fields
+    """
+    distinct_on: [String]
+
+    """
+    Filter
+    """
+    filter: airports_filter
+
+    """
+    Limit the number of returned objects
+    """
+    limit: Int = 2000
+
+    """
+    Skip the first n objects
+    """
+    offset: Int = 0
+
+    """
+    Sort options for the result set
+    """
+    order_by: [OrderByField]
+  ): [_airports_aggregation_bucket] @aggregation_query(is_bucket: true, name: "airports") @catalog(engine: "duckdb", name: "test")
+  airports_by_pk(iata: String!): airports @catalog(engine: "duckdb", name: "test") @query(name: "airports", type: SELECT_ONE)
+}
+
+# === _module_geo_function
+type _module_geo_function @module_catalog(name: "test") @module_root(name: "geo", type: FUNCTION) {
+  find_nearby(iata: String!, radius: Float): [airports] @catalog(engine: "duckdb", name: "test") @function(name: "find_nearby") @module(name: "geo")
+  find_nearby_aggregation(iata: String!, radius: Float): _airports_aggregation @aggregation_query(is_bucket: false, name: "find_nearby") @catalog(engine: "duckdb", name: "test")
+  find_nearby_bucket_aggregation(iata: String!, radius: Float): [_airports_aggregation_bucket] @aggregation_query(is_bucket: true, name: "find_nearby") @catalog(engine: "duckdb", name: "test")
+}

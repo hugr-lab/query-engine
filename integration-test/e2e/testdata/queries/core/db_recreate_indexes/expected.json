@@ -4,7 +4,7 @@
       "core": {
         "db": {
           "recreate_indexes": {
-            "message": "Indexes recreated",
+            "message": "No indexes to recreate — the catalog tables are indexed on PostgreSQL only",
             "success": true
           }
         }

@@ -53,8 +53,8 @@ type objectPlan struct {
 	// geometry-aware handling; false types use the stdlib fast path.
 	needsCustomDecode bool
 	kind              planKind
-	fields            []planField  // populated when kind == pkStruct
-	elem              *objectPlan  // populated for pkSlice / pkArray / pkMap / pkPointer
+	fields            []planField // populated when kind == pkStruct
+	elem              *objectPlan // populated for pkSlice / pkArray / pkMap / pkPointer
 }
 
 type planKind uint8

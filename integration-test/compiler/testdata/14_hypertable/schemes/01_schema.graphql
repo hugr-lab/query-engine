@@ -1,7 +1,0 @@
-type SensorReading @hypertable @table(name: "sensor_readings") {
-  id: Int! @pk
-  sensor_name: String!
-  recorded_at: Timestamp @timescale_key
-  temperature: Float
-  humidity: Float
-}

@@ -1,6 +1,0 @@
-type Document @table(name: "documents") {
-  id: Int! @pk
-  title: String!
-  content: String
-  embedding: Vector @dim(len: 768)
-}

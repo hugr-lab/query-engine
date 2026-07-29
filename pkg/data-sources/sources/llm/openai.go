@@ -191,8 +191,8 @@ func (s *OpenAISource) CreateChatCompletion(ctx context.Context, messages []sour
 
 	// Build request body
 	reqBody := map[string]any{
-		"model":      strings.Trim(s.config.Model, "\""),
-		"messages":   convertMessagesOpenAI(messages),
+		"model":                 strings.Trim(s.config.Model, "\""),
+		"messages":              convertMessagesOpenAI(messages),
 		"max_completion_tokens": maxTokens,
 	}
 	if opts.Temperature > 0 {
@@ -398,10 +398,10 @@ func (s *OpenAISource) CreateChatCompletionStream(ctx context.Context, messages 
 	}
 
 	reqBody := map[string]any{
-		"model":      strings.Trim(s.config.Model, "\""), // some providers (e.g. Ollama) require unquoted model names
-		"messages":   convertMessagesOpenAI(messages),
+		"model":                 strings.Trim(s.config.Model, "\""), // some providers (e.g. Ollama) require unquoted model names
+		"messages":              convertMessagesOpenAI(messages),
 		"max_completion_tokens": maxTokens,
-		"stream":     true,
+		"stream":                true,
 		// Ask the OpenAI-compatible endpoint to send token usage on the
 		// final SSE chunk. Without this, the streaming response carries
 		// no `usage` block (LM Studio, vLLM, llama.cpp and the official

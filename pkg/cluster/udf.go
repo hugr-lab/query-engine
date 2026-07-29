@@ -8,8 +8,8 @@ import (
 	"github.com/duckdb/duckdb-go/v2"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/db"
 	dsruntime "github.com/hugr-lab/query-engine/pkg/data-sources/sources/runtime"
+	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/types"
 )
 

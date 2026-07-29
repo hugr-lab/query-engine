@@ -1,40 +1,73 @@
 package db
 
-// coreDBTables lists all CoreDB tables eligible for export/import.
-// Excludes _cluster_nodes (node-local, not portable).
-var coreDBTables = []string{
-	"version",
-	"data_sources",
-	"data_source_catalogs",
-	"catalog_sources",
-	"roles",
-	"permissions",
-	"api_keys",
-	"_schema_catalogs",
-	"_schema_catalog_dependencies",
-	"_schema_types",
-	"_schema_fields",
-	"_schema_arguments",
-	"_schema_enum_values",
-	"_schema_directives",
-	"_schema_modules",
-	"_schema_module_type_catalogs",
-	"_schema_data_objects",
-	"_schema_data_object_queries",
-	"_schema_settings",
+import "fmt"
+
+// coreDBTable names one table of the CoreDB, with the schema it lives in —
+// "" for the default one, "catalog" for the entity namespace. The distinction
+// matters because export/import addresses the same table through two databases
+// (the attached CoreDB and the export file) and both must be qualified the
+// same way.
+type coreDBTable struct {
+	schema string
+	name   string
 }
 
-// schemaTables lists only _schema_* tables for reset operations.
-var schemaTables = []string{
-	"_schema_data_object_queries",
-	"_schema_data_objects",
-	"_schema_module_type_catalogs",
-	"_schema_modules",
-	"_schema_catalog_dependencies",
-	"_schema_enum_values",
-	"_schema_arguments",
-	"_schema_fields",
-	"_schema_types",
-	"_schema_directives",
-	"_schema_catalogs",
+// in returns the table qualified for a given attached database alias.
+func (t coreDBTable) in(alias string) string {
+	if t.schema == "" {
+		return fmt.Sprintf("%s.%q", alias, t.name)
+	}
+	return fmt.Sprintf("%s.%s.%q", alias, t.schema, t.name)
 }
+
+// coreDBTables lists all CoreDB tables eligible for export/import. Excludes
+// _cluster_nodes (node-local, not portable).
+//
+// Import is guarded by validateVersion, which refuses a file whose version is
+// not the current one — so an export taken before the catalog namespace existed
+// is rejected before anything is deleted, rather than failing halfway through.
+//
+// The eleven _schema_* tables were dropped in design-036 and the catalog
+// namespace replaced them. _schema_settings stays: despite the name it is not
+// compiled-schema data but the schema_version counter.
+var coreDBTables = []coreDBTable{
+	{"", "version"},
+	{"", "data_sources"},
+	{"", "data_source_catalogs"},
+	{"", "catalog_sources"},
+	{"", "roles"},
+	{"", "permissions"},
+	{"", "api_keys"},
+	{"", "_schema_settings"},
+	{"catalog", "data_source_meta"},
+	{"catalog", "data_source_dependencies"},
+	{"catalog", "modules"},
+	{"catalog", "module_data_sources"},
+	{"catalog", "data_objects"},
+	{"catalog", "fields"},
+	{"catalog", "relations"},
+	{"catalog", "functions"},
+	{"catalog", "types"},
+	{"catalog", "annotations"},
+}
+
+// schemaTables lists the catalog namespace only — what a schema reset clears,
+// leaving the registry (data sources, roles, permissions) alone. The order is
+// dependency-first for readability; the catalog schema declares no foreign keys
+// (DuckDB compatibility), so nothing depends on it.
+var schemaTables = []coreDBTable{
+	{"catalog", "annotations"},
+	{"catalog", "relations"},
+	{"catalog", "fields"},
+	{"catalog", "functions"},
+	{"catalog", "types"},
+	{"catalog", "data_objects"},
+	{"catalog", "module_data_sources"},
+	{"catalog", "modules"},
+	{"catalog", "data_source_dependencies"},
+	{"catalog", "data_source_meta"},
+}
+
+// annotationsTable is the curation overlay — the one table description
+// import/export touches.
+var annotationsTable = coreDBTable{"catalog", "annotations"}

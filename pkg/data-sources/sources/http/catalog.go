@@ -11,8 +11,7 @@ import (
 	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
@@ -33,7 +32,7 @@ func (s *Source) CatalogSource(ctx context.Context, db *db.Pool) (cs.Catalog, er
 		return nil, err
 	}
 	s.provider = static.NewDocumentProvider(doc)
-	s.catalogOpts = compiler.Options{
+	s.catalogOpts = base.Options{
 		Name:       s.ds.Name,
 		EngineType: string(s.engine.Type()),
 	}
@@ -83,8 +82,8 @@ func (s *Source) DefinitionExtensions(ctx context.Context, name string) iter.Seq
 	return s.provider.DefinitionExtensions(ctx, name)
 }
 
-func (s *Source) Description() string              { return s.ds.Description }
-func (s *Source) CompileOptions() compiler.Options { return s.catalogOpts }
+func (s *Source) Description() string          { return s.ds.Description }
+func (s *Source) CompileOptions() base.Options { return s.catalogOpts }
 
 func (s *Source) Version(_ context.Context) (string, error) {
 	return s.version, nil

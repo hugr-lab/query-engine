@@ -15,26 +15,18 @@ import (
 )
 
 // The meta path is what every catalog-* MCP tool reads, so its cost is the
-// cost of the whole structural half — and it differs sharply between the two
-// catalog storages. Run:
+// cost of the whole structural half. Run:
 //
 //	CGO_CFLAGS="-O1 -g" go test -tags=duckdb_arrow -run=NONE \
 //	    -bench=BenchmarkMetaPath ./integration-test/catalog/entity/
 //
-// This exists because the numbers move: the compiled provider resolves a
-// definition per root field (a DB round trip each), while the store answers a
-// module listing with one grouped query, and both sides keep changing. A
-// throwaway probe would have to be rewritten every time the question comes up.
+// This exists because the numbers move and the shapes differ sharply: the store
+// answers a module listing with one grouped query, while a point lookup
+// (DescribeObject) costs it SQL where a map would be free. Read the rows
+// separately — enumeration and lookup are not the same workload.
 //
-// The "db" arm goes away with pkg/catalog/db itself when the entity storage
-// becomes the default — delete it there, together with the storage loop, and
-// leave the queries.
-//
-// The two storages are not ordered: the store wins by an order of magnitude on
-// ENUMERATION, which is what it was built for and what the MCP catalog tools
-// lean on, and loses badly on a single point lookup (DescribeObject), where the
-// compiled provider answers from an in-memory map instead of SQL. Read the
-// numbers per row, not as a verdict.
+// It used to run both catalog storages side by side; the compiled arm went away
+// with pkg/catalog/db.
 
 var metaPathQueries = []struct {
 	name  string
@@ -55,12 +47,11 @@ var metaPathQueries = []struct {
 	} }`},
 }
 
-func benchStorage(b *testing.B, storage hugr.CatalogStorage) (*hugr.Service, context.Context) {
+func benchStorage(b *testing.B) (*hugr.Service, context.Context) {
 	b.Helper()
 	service, err := hugr.New(hugr.Config{
-		DB:             db.Config{Path: ""},
-		CoreDB:         coredb.New(coredb.Config{}),
-		CatalogStorage: storage,
+		DB:     db.Config{Path: ""},
+		CoreDB: coredb.New(coredb.Config{}),
 		Auth: &auth.Config{
 			Providers: []auth.AuthProvider{
 				auth.NewAnonymous(auth.AnonymousConfig{Allowed: true, Role: "admin"}),
@@ -75,32 +66,26 @@ func benchStorage(b *testing.B, storage hugr.CatalogStorage) (*hugr.Service, con
 }
 
 func BenchmarkMetaPath(b *testing.B) {
-	for _, storage := range []hugr.CatalogStorage{
-		hugr.CatalogStorageCompiled, hugr.CatalogStorageEntity,
-	} {
-		b.Run(string(storage), func(b *testing.B) {
-			s, ctx := benchStorage(b, storage)
-			for _, q := range metaPathQueries {
-				b.Run(q.name, func(b *testing.B) {
-					// Warm the caches — the interesting number is the steady
-					// state, not the first resolve.
-					res, err := s.Query(ctx, q.query, nil)
-					require.NoError(b, err)
-					require.NoError(b, res.Err())
-					res.Close()
+	s, ctx := benchStorage(b)
+	for _, q := range metaPathQueries {
+		b.Run(q.name, func(b *testing.B) {
+			// Warm the caches — the interesting number is the steady state,
+			// not the first resolve.
+			res, err := s.Query(ctx, q.query, nil)
+			require.NoError(b, err)
+			require.NoError(b, res.Err())
+			res.Close()
 
-					b.ResetTimer()
-					for b.Loop() {
-						res, err := s.Query(ctx, q.query, nil)
-						if err != nil {
-							b.Fatal(err)
-						}
-						if err := res.Err(); err != nil {
-							b.Fatal(err)
-						}
-						res.Close()
-					}
-				})
+			b.ResetTimer()
+			for b.Loop() {
+				res, err := s.Query(ctx, q.query, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if err := res.Err(); err != nil {
+					b.Fatal(err)
+				}
+				res.Close()
 			}
 		})
 	}

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -17,10 +17,9 @@ import (
 // relationships, and the whole-schema enumeration used by introspection.
 var _ base.Provider = (*Store)(nil)
 
-// Description returns the schema-level description. The entity store keeps no
-// root schema description — sources describe themselves through their modules
-// and data objects — so this is empty (the db provider is likewise empty when
-// no schema description was stored).
+// Description returns the schema-level description. The storage keeps no root
+// schema description — sources describe themselves through their modules and
+// data objects — so this is empty.
 func (s *Store) Description(_ context.Context) string { return "" }
 
 // QueryType / MutationType / SubscriptionType synthesize the top-level roots
@@ -109,10 +108,9 @@ func (s *Store) Types(ctx context.Context) iter.Seq2[string, *ast.Definition] {
 }
 
 // Definitions enumerates every compiled definition the schema serves, by name.
-// The db provider lists a stored table; the entity store synthesizes derived
-// types on demand, so there is no table to list — the set is the reachability
-// closure of the schema from its roots (schemaTypeNames), each name resolved
-// through ForName.
+// The store synthesizes derived types on demand, so there is no table to list —
+// the set is the reachability closure of the schema from its roots
+// (schemaTypeNames), each name resolved through ForName.
 func (s *Store) Definitions(ctx context.Context) iter.Seq[*ast.Definition] {
 	return func(yield func(*ast.Definition) bool) {
 		for _, name := range s.schemaTypeNames(ctx) {

@@ -3,7 +3,7 @@ package engines
 import (
 	"context"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -27,7 +27,7 @@ func NewIceberg() *Iceberg {
 
 func (e *Iceberg) Type() Type { return TypeIceberg }
 
-func (e *Iceberg) Capabilities() *compiler.EngineCapabilities {
+func (e *Iceberg) Capabilities() *base.EngineCapabilities {
 	dbCaps := e.duckdb.Capabilities()
 	caps := *dbCaps // defensive copy
 	caps.General.SupportTimeTravel = true

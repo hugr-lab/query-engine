@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"iter"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/catalog/static"
 	"github.com/hugr-lab/query-engine/pkg/data-sources/sources/ducklake"
@@ -37,7 +37,7 @@ func (s *Source) CatalogSource(ctx context.Context, pool *db.Pool) (cs.Catalog, 
 	doc := ducklake.GenerateSchemaDocument(tables)
 	version := ducklake.ContentHash(tables)
 
-	opts := compiler.Options{
+	opts := base.Options{
 		Name:         s.ds.Name,
 		ReadOnly:     s.ds.ReadOnly,
 		Prefix:       s.ds.Prefix,
@@ -66,7 +66,7 @@ func (s *Source) CatalogSource(ctx context.Context, pool *db.Pool) (cs.Catalog, 
 type icebergCatalog struct {
 	name     string
 	desc     string
-	opts     compiler.Options
+	opts     base.Options
 	engine   engines.Engine
 	provider *static.DocProvider
 	version  string
@@ -76,10 +76,10 @@ type icebergCatalog struct {
 	source *Source
 }
 
-func (c *icebergCatalog) Name() string                     { return c.name }
-func (c *icebergCatalog) Description() string              { return c.desc }
-func (c *icebergCatalog) CompileOptions() compiler.Options  { return c.opts }
-func (c *icebergCatalog) Engine() engines.Engine            { return c.engine }
+func (c *icebergCatalog) Name() string                 { return c.name }
+func (c *icebergCatalog) Description() string          { return c.desc }
+func (c *icebergCatalog) CompileOptions() base.Options { return c.opts }
+func (c *icebergCatalog) Engine() engines.Engine       { return c.engine }
 
 func (c *icebergCatalog) Version(ctx context.Context) (string, error) {
 	// Re-introspect and compute content hash to detect schema changes

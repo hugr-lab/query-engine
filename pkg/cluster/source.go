@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/auth"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	cs "github.com/hugr-lab/query-engine/pkg/catalog/sources"
 	"github.com/hugr-lab/query-engine/pkg/db"
 	"github.com/hugr-lab/query-engine/pkg/engines"
@@ -20,9 +20,9 @@ var schema string
 
 // CatalogProvider is the slice of the catalog storage the cluster needs: the
 // change counter workers poll, the cache invalidation they apply when it moves
-// and the set of catalogs they reconcile their attached sources against. Both
-// catalog storages (the compiled-schema provider and the entity store)
-// implement it, so the cluster source is independent of which one runs.
+// and the set of catalogs they reconcile their attached sources against. It
+// stays an interface rather than *catalogstore.Store so the cluster source can
+// be tested without a CoreDB, and so this package does not import the storage.
 type CatalogProvider interface {
 	// GetSchemaVersion returns the cluster-wide schema change counter.
 	GetSchemaVersion(ctx context.Context) (int64, error)
@@ -126,7 +126,7 @@ func (s *Source) Close() error {
 
 func (s *Source) Catalog(ctx context.Context) (cs.Catalog, error) {
 	e := engines.NewDuckDB()
-	opts := compiler.Options{
+	opts := base.Options{
 		Name:         s.Name(),
 		Prefix:       "core_cluster",
 		ReadOnly:     s.IsReadonly(),

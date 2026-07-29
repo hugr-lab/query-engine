@@ -179,8 +179,8 @@ func TestCheckObjectField_Precedence(t *testing.T) {
 		wantVisible   bool
 	}{
 		{"users", "name", true, true},
-		{"users", "email", true, false},  // (*, email) hidden but not disabled
-		{"users", "ssn", false, true},    // exact disabled
+		{"users", "email", true, false}, // (*, email) hidden but not disabled
+		{"users", "ssn", false, true},   // exact disabled
 		{"Mutation", "insert_users", false, true},
 		{"Mutation", "update_users", true, true}, // exact allow beats (Mutation, *)
 	}

@@ -8,8 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/types"
@@ -60,23 +59,23 @@ func (e *DuckDB) Type() Type {
 	return TypeDuckDB
 }
 
-func (e *DuckDB) Capabilities() *compiler.EngineCapabilities {
-	return &compiler.EngineCapabilities{
-		General: compiler.EngineGeneralCapabilities{
+func (e *DuckDB) Capabilities() *base.EngineCapabilities {
+	return &base.EngineCapabilities{
+		General: base.EngineGeneralCapabilities{
 			SupportDefaultSequences: true,
 			UnsupportedTypes:        []string{"IntRange", "BigIntRange", "TimestampRange"},
 		},
-		Insert: compiler.EngineInsertCapabilities{
+		Insert: base.EngineInsertCapabilities{
 			Insert:           true,
 			Returning:        true,
 			InsertReferences: true,
 		},
-		Update: compiler.EngineUpdateCapabilities{
+		Update: base.EngineUpdateCapabilities{
 			Update:           true,
 			UpdatePKColumns:  true,
 			UpdateWithoutPKs: true,
 		},
-		Delete: compiler.EngineDeleteCapabilities{
+		Delete: base.EngineDeleteCapabilities{
 			Delete:           true,
 			DeleteWithoutPKs: true,
 		},
@@ -256,7 +255,7 @@ func (e DuckDB) PackFieldsToObject(prefix string, field *ast.Field) string {
 			fields = append(fields, Ident(f.Field.Alias)+": "+transformed)
 			continue
 		}
-		/*if f.Field.Definition.Type.NamedType == compiler.GeometryTypeName {
+		/*if f.Field.Definition.Type.NamedType == base.GeometryTypeName {
 			fields = append(fields, Ident(f.Field.Alias)+":ST_AsGeoJSON("+prefix+Ident(f.Field.Alias)+")")
 			continue
 		}*/

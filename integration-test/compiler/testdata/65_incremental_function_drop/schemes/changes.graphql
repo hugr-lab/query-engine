@@ -1,4 +1,0 @@
-# Drop the find_nearby function
-extend type Function {
-  find_nearby: Boolean @drop
-}

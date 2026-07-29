@@ -72,8 +72,9 @@ type CatalogItem struct {
 	Functions   *int `json:"functions,omitempty"    jsonschema_description:"Number of callables directly in this module"`
 	Submodules  *int `json:"submodules,omitempty"`
 
-	// Data source only.
-	ReadOnly    *bool    `json:"read_only,omitempty"    jsonschema_description:"null means the catalog storage does not record it — NOT that mutations are available"`
+	// Data source only. Pointers so that false is reported for a data source
+	// and the field is absent for every other kind.
+	ReadOnly    *bool    `json:"read_only,omitempty"    jsonschema_description:"Mutations are not generated for this source"`
 	AsModule    *bool    `json:"as_module,omitempty"`
 	IsExtension *bool    `json:"is_extension,omitempty"`
 	Modules     []string `json:"modules,omitempty"      jsonschema_description:"Modules this source places members in"`
@@ -109,9 +110,9 @@ type metaDataSourceNode struct {
 	Name        string   `json:"name"`
 	Engine      string   `json:"engine"`
 	Description string   `json:"description"`
-	ReadOnly    *bool    `json:"readOnly"`
-	AsModule    *bool    `json:"asModule"`
-	IsExtension *bool    `json:"isExtension"`
+	ReadOnly    bool     `json:"readOnly"`
+	AsModule    bool     `json:"asModule"`
+	IsExtension bool     `json:"isExtension"`
 	Modules     []string `json:"modules"`
 }
 
@@ -276,8 +277,8 @@ func (s *Server) dataSourceItems(ctx context.Context) ([]CatalogItem, error) {
 		for _, ds := range sources {
 			items = append(items, CatalogItem{
 				Kind: kindDataSource, Name: ds.Name, Type: ds.Engine,
-				Description: ds.Description, ReadOnly: ds.ReadOnly, AsModule: ds.AsModule,
-				IsExtension: ds.IsExtension, Modules: ds.Modules,
+				Description: ds.Description, ReadOnly: &ds.ReadOnly, AsModule: &ds.AsModule,
+				IsExtension: &ds.IsExtension, Modules: ds.Modules,
 			})
 		}
 		return items, nil

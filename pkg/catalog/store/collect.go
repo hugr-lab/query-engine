@@ -5,7 +5,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
@@ -441,7 +441,7 @@ func skipField(f *ast.FieldDefinition) bool {
 
 // isSourceDefinedType reports whether a definition is a residual source base
 // type (structural object / input / enum / interface / union) — the content of
-// catalog.types. Replicated from catalog.isSourceDefinedType (unexported).
+// catalog.types.
 func isSourceDefinedType(def *ast.Definition) bool {
 	if sdl.IsSystemType(def) || sdl.IsDataObject(def) || sdl.ModuleRootInfo(def) != nil {
 		return false

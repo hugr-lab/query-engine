@@ -20,10 +20,11 @@ import (
 // names). These tests boot a real engine on an in-memory CoreDB and drive the
 // surface end to end: SDL declaration → module root → registered UDF.
 //
-// The engine still runs the COMPILED-SCHEMA catalog provider, which stores no
-// logical model — the logical-kind functions are registered there as refusals
-// so the surface is complete in both modes and reports the reason instead of
-// failing with an unknown-function error.
+// Both halves of the surface work: the generated-surface functions
+// (annotate_gql_*) and the logical-model ones (annotate_data_object,
+// annotate_function). The latter used to be registered as refusals, because the
+// compiled-schema storage kept no logical model to annotate; that storage is
+// gone and they now write.
 
 func setupEngine(t *testing.T) (*hugr.Service, context.Context) {
 	t.Helper()
@@ -61,8 +62,8 @@ func call(t *testing.T, s *hugr.Service, ctx context.Context, field, args string
 	return out.Success, out.Message
 }
 
-// TestCurationSurfaceReachable pins the GraphQL wiring: the generated-surface
-// curation works on the compiled-schema provider and lands in the schema store.
+// TestCurationSurfaceReachable pins the GraphQL wiring of the generated-surface
+// curation: SDL declaration → module root → registered UDF.
 func TestCurationSurfaceReachable(t *testing.T) {
 	s, ctx := setupEngine(t)
 
@@ -79,20 +80,20 @@ func TestCurationSurfaceReachable(t *testing.T) {
 	assert.True(t, ok, msg)
 }
 
-// TestLogicalCurationRefused pins the other half: the logical-model functions
-// are declared and callable, and report that they need the entity storage.
-func TestLogicalCurationRefused(t *testing.T) {
+// TestLogicalCurationApplied pins the other half. It used to assert a refusal;
+// the entity storage has a logical model, so these annotate for real. That they
+// reach introspection is TestEntityStorageCuration's job — here it is the
+// wiring that matters.
+func TestLogicalCurationApplied(t *testing.T) {
 	s, ctx := setupEngine(t)
 
 	ok, msg := call(t, s, ctx, "annotate_data_object",
 		`name: "embedder_settings", description: "x", long_description: ""`)
-	assert.False(t, ok)
-	assert.Contains(t, msg, "entity catalog storage")
+	assert.True(t, ok, msg)
 
 	ok, msg = call(t, s, ctx, "annotate_function",
 		`module: "core", name: "checkpoint", description: "x", long_description: ""`)
-	assert.False(t, ok)
-	assert.Contains(t, msg, "entity catalog storage")
+	assert.True(t, ok, msg)
 }
 
 // TestMaintenanceSurface pins the maintenance functions' wiring — an unknown
@@ -100,8 +101,11 @@ func TestLogicalCurationRefused(t *testing.T) {
 func TestMaintenanceSurface(t *testing.T) {
 	s, ctx := setupEngine(t)
 
+	// The compiled-schema provider swallowed an unknown name as a no-op, so a
+	// typo looked like it worked; the store says so.
 	ok, msg := call(t, s, ctx, "reset_data_source_version", `name: "nope"`)
-	assert.True(t, ok, msg) // the compiled-schema provider treats it as a no-op
+	assert.False(t, ok)
+	assert.Contains(t, msg, "not found")
 
 	ok, msg = call(t, s, ctx, "reindex_embeddings", `name: "", batch_size: 10`)
 	assert.False(t, ok, "no embedder configured")

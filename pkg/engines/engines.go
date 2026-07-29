@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler"
-	"github.com/hugr-lab/query-engine/pkg/catalog/compiler/base"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	ctypes "github.com/hugr-lab/query-engine/pkg/catalog/types"
 	"github.com/hugr-lab/query-engine/types"
@@ -28,7 +27,7 @@ const (
 
 type Engine interface {
 	Type() Type
-	Capabilities() *compiler.EngineCapabilities
+	Capabilities() *base.EngineCapabilities
 	SQLValue(any) (string, error)
 	FunctionCall(name string, positional []any, named map[string]any) (string, error)
 	RepackObject(sqlName string, field *ast.Field) string

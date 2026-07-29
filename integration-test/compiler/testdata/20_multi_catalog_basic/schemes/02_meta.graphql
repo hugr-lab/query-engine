@@ -1,5 +1,0 @@
-type DataSourceInfo @table(name: "data_source_info") {
-  name: String! @pk
-  type: String!
-  is_active: Boolean @default(value: true)
-}

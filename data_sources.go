@@ -128,10 +128,12 @@ func (s *Service) attachRuntimeSourceReadonly(ctx context.Context, src sources.R
 	return nil
 }
 
-// loadDataSources queries all enabled data sources and loads them.
+// loadDataSources queries all enabled data sources and loads them. It returns
+// one entry per source with its load error (nil on success) — the caller acts
+// on WHY a source failed, not just that it did.
 // Catalog ops (AddCatalog/RemoveCatalog) are controlled by the
 // skipCatalogOps flag on the datasources.Service.
-func (s *Service) loadDataSources(ctx context.Context) (map[string]bool, error) {
+func (s *Service) loadDataSources(ctx context.Context) (map[string]error, error) {
 	ctx = auth.ContextWithFullAccess(ctx)
 	res, err := s.Query(ctx, `
 		query{
@@ -169,14 +171,14 @@ func (s *Service) loadDataSources(ctx context.Context) (map[string]bool, error) 
 		}
 		return data[i].Name < data[j].Name
 	})
-	loaded := map[string]bool{}
+	loaded := map[string]error{}
 	for _, ds := range data {
 		if err := s.LoadDataSource(ctx, ds.Name); err != nil {
 			slog.Error("failed to load datasource", "name", ds.Name, "error", err)
-			loaded[ds.Name] = false
+			loaded[ds.Name] = err
 			continue
 		}
-		loaded[ds.Name] = true
+		loaded[ds.Name] = nil
 		slog.Info("loaded datasource", "name", ds.Name)
 	}
 
