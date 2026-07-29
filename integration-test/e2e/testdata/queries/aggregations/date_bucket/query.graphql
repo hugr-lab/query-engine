@@ -1,0 +1,15 @@
+{
+  local_db {
+    events_bucket_aggregation(order_by: [{ field: "key.event_date", direction: ASC }]) {
+      key {
+        event_date(bucket: month)
+      }
+      aggregations {
+        _rows_count
+        value {
+          sum
+        }
+      }
+    }
+  }
+}

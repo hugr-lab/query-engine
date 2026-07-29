@@ -125,6 +125,7 @@ const (
 	JSONTypeName                      = "JSON"
 	TimestampTypeName                 = "Timestamp"
 	DateTimeTypeName                  = "DateTime"
+	DateTypeName                      = "Date"
 	H3CellTypeName                    = "H3Cell"
 	GeometryTypeName                  = "Geometry"
 	GeometryAggregationTypeName       = "GeometryAggregation"

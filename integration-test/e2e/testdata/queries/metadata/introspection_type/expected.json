@@ -204,6 +204,20 @@
             "kind": "OBJECT",
             "name": "_join"
           }
+        },
+        {
+          "name": "_release_date_part",
+          "type": {
+            "kind": "SCALAR",
+            "name": "BigInt"
+          }
+        },
+        {
+          "name": "release_date",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Date"
+          }
         }
       ],
       "kind": "OBJECT",

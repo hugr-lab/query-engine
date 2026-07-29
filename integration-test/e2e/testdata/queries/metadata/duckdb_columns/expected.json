@@ -36,6 +36,10 @@
             "name": "quantity"
           },
           {
+            "data_type": "DATE",
+            "name": "release_date"
+          },
+          {
             "data_type": "VARCHAR",
             "name": "tags"
           },

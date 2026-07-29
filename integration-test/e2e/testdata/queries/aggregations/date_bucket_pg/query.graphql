@@ -1,0 +1,12 @@
+{
+  pg_store {
+    products_bucket_aggregation(order_by: [{ field: "key.release_date", direction: ASC }]) {
+      key {
+        release_date(bucket: month)
+      }
+      aggregations {
+        _rows_count
+      }
+    }
+  }
+}

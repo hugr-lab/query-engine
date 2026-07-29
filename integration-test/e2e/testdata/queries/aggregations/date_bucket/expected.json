@@ -1,0 +1,41 @@
+{
+  "data": {
+    "local_db": {
+      "events_bucket_aggregation": [
+        {
+          "aggregations": {
+            "_rows_count": 2,
+            "value": {
+              "sum": 150.5
+            }
+          },
+          "key": {
+            "event_date": "2025-03-01"
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 2,
+            "value": {
+              "sum": 200
+            }
+          },
+          "key": {
+            "event_date": "2025-04-01"
+          }
+        },
+        {
+          "aggregations": {
+            "_rows_count": 1,
+            "value": {
+              "sum": 25
+            }
+          },
+          "key": {
+            "event_date": "2025-05-01"
+          }
+        }
+      ]
+    }
+  }
+}
