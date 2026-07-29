@@ -21,6 +21,11 @@ import (
 //   - new shared system type       → sharedTypeRules
 //   - new module-root contribution → rootRules
 //
+// Comments in this package that name gen_table.go / gen_references.go /
+// compiler rules refer to the RETIRED compiler's rules, not to live files —
+// they record where a generated shape came from, which is worth keeping since
+// the shape is a compatibility contract.
+//
 // The registries read ONLY store models through genContext, never SQL. That was
 // once meant to allow moving this file next to the compiler's GENERATE rules;
 // design-036 deleted those instead, so generation lives here for good — the

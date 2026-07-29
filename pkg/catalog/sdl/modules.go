@@ -49,10 +49,11 @@ const (
 	moduleQuerySuffix    = "_query"
 	moduleMutationSuffix = "_mutation"
 	moduleFunctionSuffix = "_function"
-	// NOTE: must match the module assembler's inline naming
-	// (compiler/rules/assemble_modules.go): mutation-function module types are
-	// "_module_<m>_mut_function", subscription module types are
-	// "_module_<m>_subscription".
+	// These two do NOT follow the "_<kind>" pattern of the other three, and the
+	// difference is load-bearing: the names were minted by the retired module
+	// assembler and are what every stored schema and every frozen golden
+	// contains. The storage synthesizes module roots from these constants, so
+	// changing one renames types in a served schema.
 	moduleMutationFunctionSuffix = "_mut_function"
 	moduleSubscriptionSuffix     = "_subscription"
 )

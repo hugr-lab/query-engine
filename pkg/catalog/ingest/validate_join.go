@@ -160,21 +160,19 @@ func validateJoinField(ctx base.CompilationContext, def *ast.Definition, field *
 	return nil
 }
 
-// inFlightType resolves a type the way a validator on the WRITE path needs it:
-// the source's own definitions first, then the compilation output and the
-// target provider.
+// inFlightType resolves a type the way a validator needs it: the SOURCE's own
+// definitions first, then LookupType (output, then the target provider).
 //
-// The source half is the only in-flight half the partial pipeline has. It
-// writes nothing to the output, and the provider still serves the PREVIOUS
-// version of the very source being reloaded — so resolving the provider first
-// would validate a renamed column against the stored definition and reject a
-// load that is in fact correct.
+// The source is the only in-flight half there is. The pipeline writes no
+// definitions to the output — it prepares the source's in place — and the
+// provider is the catalog storage, which still serves the PREVIOUS version of
+// the very source being reloaded. Resolving the provider first would validate a
+// renamed column against the stored definition and reject a load that is in
+// fact correct.
 //
-// On the full pipeline this is not a behaviour change: GENERATE adds each
-// source definition to the output BY POINTER (gen_table.go:34, gen_view.go),
-// so both halves are the same object for everything the source declares, and
-// generated-only types — filter inputs, aggregations, module roots — are absent
-// from the source and fall through to LookupType exactly as before.
+// LookupType still matters for everything the source does NOT declare: another
+// source's objects, reached across the seam, which the storage reconstructs on
+// demand.
 func inFlightType(ctx base.CompilationContext, name string) *ast.Definition {
 	if def := ctx.Source().ForName(ctx.Context(), name); def != nil {
 		return def

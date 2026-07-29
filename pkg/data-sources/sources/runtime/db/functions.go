@@ -210,36 +210,33 @@ func (s *Source) importDescriptions(ctx context.Context, args importDescArgs) (s
 
 	// Curation lives in ONE place since design-034: the annotations overlay,
 	// keyed by entity. What used to be five UPDATEs across the compiled-schema
-	// tables — each with its own key shape — is one upsert.
-	vecCol, vecVal := "", ""
+	// tables — each with its own key shape — is one upsert. That also makes a
+	// failure total rather than partial, so it is an error and not a warning:
+	// with five statements "one table failed" left the others imported; here
+	// nothing was.
+	vecCols, vecVals, vecSet := "", "", ""
 	if args.includeEmbeddings && !args.recomputeEmbeddings {
-		vecCol, vecVal = ", vec", ", src.vec"
+		vecCols, vecVals, vecSet = ", vec", ", src.vec", ", vec = EXCLUDED.vec"
 	}
 
-	var warnings []string
+	// A curation may be long-description-only — the short text is what the
+	// generated schema already shows, so a curator can leave it alone.
 	sql := fmt.Sprintf(`INSERT INTO %s (entity_kind, entity_key, parent, description, long_description%s)
 		SELECT src.entity_kind, src.entity_key, src.parent, src.description, src.long_description%s
 		FROM %s src
-		WHERE src.description IS NOT NULL AND src.description <> ''
+		WHERE COALESCE(src.description, '') <> '' OR COALESCE(src.long_description, '') <> ''
 		ON CONFLICT (entity_kind, entity_key) DO UPDATE SET
 			description = EXCLUDED.description,
 			long_description = EXCLUDED.long_description%s`,
-		annotationsTable.in("core"), vecCol, vecVal, annotationsTable.in(attachAlias),
-		map[bool]string{true: ", vec = EXCLUDED.vec", false: ""}[vecCol != ""])
+		annotationsTable.in("core"), vecCols, vecVals, annotationsTable.in(attachAlias), vecSet)
 	if _, err := s.db.Exec(ctx, sql); err != nil {
-		warnings = append(warnings, fmt.Sprintf("annotations: %v", err))
+		return "", fmt.Errorf("import annotations: %w", err)
 	}
 
 	msg := "Descriptions imported"
-	if len(warnings) > 0 {
-		msg += " (warnings: " + strings.Join(warnings, "; ") + ")"
-	}
-
-	// Recompute embeddings if requested
 	if args.recomputeEmbeddings {
 		msg += " — recomputing embeddings not yet supported via UDF (use Provider.ReindexEmbeddings)"
 	}
-
 	return msg, nil
 }
 
@@ -249,10 +246,16 @@ func (s *Source) registerRecreateIndexes(ctx context.Context) error {
 	return s.db.RegisterScalarFunction(ctx, &db.ScalarFunctionNoArgs[*types.OperationResult]{
 		Name: "hugr_coredb_recreate_indexes",
 		Execute: func(ctx context.Context) (*types.OperationResult, error) {
-			if err := s.recreateIndexes(ctx); err != nil {
+			n, err := s.recreateIndexes(ctx)
+			if err != nil {
 				return types.ErrResult(err), nil
 			}
-			return types.Result("Indexes recreated", 1, 0), nil
+			if n == 0 {
+				return types.Result("No indexes to recreate — the catalog tables are indexed on PostgreSQL only", 0, 0), nil
+			}
+			// The count goes in the row count, not the message: an index added
+			// to the set should not change what an operator reads.
+			return types.Result("Indexes recreated", n, 0), nil
 		},
 		ConvertOutput: opResultOutput,
 		OutputType:    db.DuckDBOperationResult(),
@@ -260,32 +263,36 @@ func (s *Source) registerRecreateIndexes(ctx context.Context) error {
 	})
 }
 
-func (s *Source) recreateIndexes(ctx context.Context) error {
+func (s *Source) recreateIndexes(ctx context.Context) (int, error) {
 	// The catalog tables are indexed on PostgreSQL only — on DuckDB the ART
 	// indexes cost more than they save at this size, which is why
 	// hugr_catalog.sql declares them under {{ if isPostgres }} as well. On a
 	// DuckDB CoreDB this is a no-op rather than an error: the caller asked for
 	// the indexes to match the schema, and they do.
 	if !s.isPostgresCoreDB(ctx) {
-		return nil
+		return 0, nil
 	}
 
+	n := 0
 	for _, idx := range commonIndexes {
 		ddl := fmt.Sprintf("DROP INDEX IF EXISTS %s; CREATE INDEX IF NOT EXISTS %s ON %s (%s)",
 			idx.name, idx.name, idx.table, idx.cols)
 		if _, err := s.db.Exec(ctx, fmt.Sprintf("CALL postgres_execute('core', '%s')", escapeSQLString(ddl))); err != nil {
-			return fmt.Errorf("pg create index %s: %w", idx.name, err)
+			return n, fmt.Errorf("pg create index %s: %w", idx.name, err)
 		}
+		n++
 	}
 
 	for _, idx := range pgVectorIndexes {
 		ddl := fmt.Sprintf("DROP INDEX IF EXISTS %s; CREATE INDEX IF NOT EXISTS %s ON %s USING hnsw (vec vector_cosine_ops)",
 			idx.name, idx.name, idx.table)
-		// Ignore errors — vec column may not exist if embeddings not configured
-		s.db.Exec(ctx, fmt.Sprintf("CALL postgres_execute('core', '%s')", escapeSQLString(ddl))) //nolint:errcheck
+		// Ignore errors — the vec column may not exist if embeddings are not configured
+		if _, err := s.db.Exec(ctx, fmt.Sprintf("CALL postgres_execute('core', '%s')", escapeSQLString(ddl))); err == nil {
+			n++
+		}
 	}
 
-	return nil
+	return n, nil
 }
 
 func (s *Source) isPostgresCoreDB(ctx context.Context) bool {

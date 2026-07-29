@@ -20,9 +20,12 @@ func (t coreDBTable) in(alias string) string {
 	return fmt.Sprintf("%s.%s.%q", alias, t.schema, t.name)
 }
 
-// coreDBTables lists all CoreDB tables eligible for export/import, in an order
-// safe to insert sequentially. Excludes _cluster_nodes (node-local, not
-// portable).
+// coreDBTables lists all CoreDB tables eligible for export/import. Excludes
+// _cluster_nodes (node-local, not portable).
+//
+// Import is guarded by validateVersion, which refuses a file whose version is
+// not the current one — so an export taken before the catalog namespace existed
+// is rejected before anything is deleted, rather than failing halfway through.
 //
 // The eleven _schema_* tables were dropped in design-036 and the catalog
 // namespace replaced them. _schema_settings stays: despite the name it is not
@@ -49,8 +52,9 @@ var coreDBTables = []coreDBTable{
 }
 
 // schemaTables lists the catalog namespace only — what a schema reset clears,
-// leaving the registry (data sources, roles, permissions) alone. Ordered so a
-// sequential DELETE never trips a foreign key.
+// leaving the registry (data sources, roles, permissions) alone. The order is
+// dependency-first for readability; the catalog schema declares no foreign keys
+// (DuckDB compatibility), so nothing depends on it.
 var schemaTables = []coreDBTable{
 	{"catalog", "annotations"},
 	{"catalog", "relations"},
