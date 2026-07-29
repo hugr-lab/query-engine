@@ -309,7 +309,7 @@ func TestCollectExtensionFields(t *testing.T) {
   note: String
 }`
 	srcA := partialSource(t, "A", baseSchema)
-	srcB := partialSource(t, "B", extSchema, srcA) // B compiled with A's customers seeded
+	srcB := partialExtensionSource(t, "B", extSchema, srcA) // B extends A's customers
 
 	dA := collect(ctx, srcA, "A")
 	require.Contains(t, dA.dataObjects, "customers")

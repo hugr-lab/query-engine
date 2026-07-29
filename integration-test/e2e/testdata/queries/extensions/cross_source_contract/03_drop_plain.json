@@ -1,0 +1,19 @@
+{
+  "data": {
+    "core": {
+      "delete_catalog_sources": {
+        "success": true
+      },
+      "delete_data_sources": {
+        "success": true
+      }
+    },
+    "function": {
+      "core": {
+        "unload_data_source": {
+          "success": true
+        }
+      }
+    }
+  }
+}

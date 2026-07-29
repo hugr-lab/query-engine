@@ -151,17 +151,25 @@ type b_obj @module(name: "app") @table(name: "b_obj")
 	assert.Nil(t, dropped.Fields.ForName("b_items"), "back navigation dropped with B")
 }
 
-// TestCacheJoinTargetClosure pins the cross-source @join semantics the
-// multi-source golden established: an extension source's @join to a FOREIGN
-// object serves a BARE declared field (no subquery args, no aggregation twins)
-// — and stays bare through the target source's whole lifecycle; the target
-// lookup still records provenance, so the definition re-resolves cleanly on
-// every flip instead of serving stale machinery.
+// TestCacheJoinTargetClosure pins the cross-source @join lifecycle: a field an
+// EXTENSION source contributes to one source's object, joining to ANOTHER
+// source's object, is served exactly while the source its DATA comes from is
+// active — and the definition cache re-resolves on every flip instead of
+// serving a stale shape.
 //
-// The join lives in an EXTENSION source, the only place the contract allows a
-// cross-source artifact — the same shape genMultiFixtures pins (audit_events →
-// ro's logs). A cross-source @join declared inline in a plain source is refused
-// on the write path (JoinValidator rule 2b).
+// The join lives in an extension source, the only place the contract allows a
+// cross-source artifact; the same shape genMultiFixtures pins (audit_events →
+// ro's logs). A cross-source @join declared inline in a plain source, or a
+// plain source extending another source's type at all, is refused on the write
+// path.
+//
+// The field used to be served BARE when the target was missing — declared, but
+// with no subquery machinery. That was an artifact of the write path not
+// recording who the field belongs to: JoinValidator did not walk extension
+// fields, so nothing propagated the target's @catalog and the row was
+// attributed to the extension. The read side computed the right owner anyway,
+// which is why the flag-play contract already said "hidden with its data
+// source" while this test said "bare". Both sides agree now.
 func TestCacheJoinTargetClosure(t *testing.T) {
 	const schemaB = `
 type b_stats @module(name: "app") @table(name: "b_stats") {
@@ -197,19 +205,14 @@ extend type a_orders {
 		SourceState{Name: "ext", Version: "v1", Engine: "duckdb", IsExtension: true, Loaded: true})
 	require.NoError(t, err)
 
-	// Bare: the field is declared and served, but with no subquery machinery —
-	// the target is not resolvable, so there is nothing to build it from.
-	assertBare := func(when string) {
+	// The base object is always served — only the contributed field follows the
+	// target's source.
+	assertHidden := func(when string) {
 		def := store.ForName(ctx, "a_orders")
 		require.NotNilf(t, def, "a_orders served (%s)", when)
-		fd := def.Fields.ForName("stats")
-		require.NotNilf(t, fd, "declared join field present (%s)", when)
-		assert.Emptyf(t, fd.Arguments, "join field stays bare (%s)", when)
-		assert.Nilf(t, def.Fields.ForName("stats_aggregation"), "no twins without a target (%s)", when)
+		assert.Nilf(t, def.Fields.ForName("stats"), "join field hidden with its data source (%s)", when)
+		assert.Nilf(t, def.Fields.ForName("stats_aggregation"), "no twin either (%s)", when)
 	}
-	// Wired: the target resolves, so the field carries the full subquery
-	// surface and its aggregation twin — compiled parity (golden multi.graphql,
-	// audit_events.logs).
 	assertWired := func(when string) {
 		def := store.ForName(ctx, "a_orders")
 		require.NotNilf(t, def, "a_orders served (%s)", when)
@@ -219,18 +222,18 @@ extend type a_orders {
 		assert.NotNilf(t, def.Fields.ForName("stats_aggregation"), "aggregation twin generated (%s)", when)
 	}
 
-	assertBare("target absent")
+	assertHidden("target absent")
 
-	// Register the target source — the field gains its machinery.
+	// Register the target source — the field appears, fully wired.
 	dB := collect(ctx, srcB, "b")
 	_, err = store.writeSource(ctx, dB, SourceState{Name: "b", Version: "v1", Engine: "duckdb", Loaded: true})
 	require.NoError(t, err)
 	assertWired("target active")
 
-	// ...and loses it again when the target goes away: the cached definition
-	// is invalidated by the flip, not served stale.
+	// ...and goes again when the target does: the cached definition is
+	// invalidated by the flip, not served stale.
 	require.NoError(t, store.setFlags(ctx, "b", true, true, false))
-	assertBare("target disabled")
+	assertHidden("target disabled")
 }
 
 // TestMultiSourceFlagPlay drives the 5-source golden fixture set through

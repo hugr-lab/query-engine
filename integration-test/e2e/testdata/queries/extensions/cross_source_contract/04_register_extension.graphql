@@ -1,0 +1,13 @@
+# The SAME schema directory, registered as an extension source.
+mutation {
+  core {
+    insert_data_sources(data: {
+      name: "cross_ext"
+      prefix: "cross_ext"
+      type: "extension"
+      path: ""
+      as_module: false
+      catalogs: [{ name: "cross_contract_ext", type: "localFS", path: "/workspace/schemas/cross_contract" }]
+    }) { name }
+  }
+}

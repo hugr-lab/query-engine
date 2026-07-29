@@ -150,7 +150,7 @@ func TestWriteExtensionComposition(t *testing.T) {
 }`
 	const extSchema = `extend type customers { note: String }`
 	srcA := partialSource(t, "A", baseSchema)
-	srcB := partialSource(t, "B", extSchema, srcA)
+	srcB := partialExtensionSource(t, "B", extSchema, srcA)
 
 	dA := collect(ctx, srcA, "A")
 	dB := collect(ctx, srcB, "B")

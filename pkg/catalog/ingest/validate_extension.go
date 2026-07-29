@@ -22,7 +22,7 @@ func (r *ExtensionValidator) Phase() base.Phase { return base.PhaseValidate }
 
 func (r *ExtensionValidator) ProcessAll(ctx base.CompilationContext) error {
 	if !ctx.CompileOptions().IsExtension {
-		return nil
+		return validateNoCrossSourceExtends(ctx)
 	}
 
 	for def := range ctx.Source().Definitions(ctx.Context()) {
@@ -38,6 +38,63 @@ func (r *ExtensionValidator) ProcessAll(ctx base.CompilationContext) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// validateNoCrossSourceExtends enforces, for a source that is NOT an extension,
+// the contract the whole catalog rests on: a regular source describes ONLY its
+// own data.
+//
+// `extend type X` where X belongs to another source is how a source reaches
+// across the seam — it is the same act as an `@join` or `@function_call` to a
+// foreign target, which JoinValidator and FunctionCallValidator already refuse
+// outside an extension source (rules 2b / 1b). Reached through an `extend type`
+// it was refused nowhere: InternalExtensionMerger asks only whether the target
+// resolves in the provider, never who is asking. So a plain source could
+// contribute fields to another source's objects, which then outlive their
+// declarer in ways nothing accounts for — the storage attributes them to the
+// source the DATA comes from, and the dependency gating that makes extensions
+// safe is only wired for extension sources.
+//
+// The module ROOTS are not cross-source: every source declares its functions
+// and subscriptions by extending them, and they are engine-owned, not another
+// source's property.
+func validateNoCrossSourceExtends(ctx base.CompilationContext) error {
+	extSrc, ok := ctx.Source().(base.ExtensionsSource)
+	if !ok {
+		return nil
+	}
+	for ext := range extSrc.Extensions(ctx.Context()) {
+		switch ext.Name {
+		case base.QueryBaseName, base.MutationBaseName, base.SubscriptionBaseName,
+			base.FunctionTypeName, base.FunctionMutationTypeName:
+			continue
+		}
+		if base.ModuleRootInfo(ext) != nil {
+			continue
+		}
+		// The source's own type: `extend type Foo` next to `type Foo` is a
+		// same-source merge, which PREPARE does in place.
+		if ctx.Source().ForName(ctx.Context(), ext.Name) != nil {
+			continue
+		}
+		// Anything else is either another source's type or a type that does not
+		// exist. Both are refused here: the first breaks the contract, and the
+		// second is a typo that would otherwise vanish without a trace —
+		// InternalExtensionMerger skips an unresolvable target silently.
+		owner := "another data source"
+		if def := ctx.LookupType(ext.Name); def != nil {
+			if c := base.DefinitionCatalog(def); c != "" {
+				owner = "data source " + c
+			}
+		} else {
+			owner = "no known type"
+		}
+		return gqlerror.ErrorPosf(ext.Position,
+			"extend type %s: %s — a regular source describes only its own data; "+
+				"cross-source extensions belong to an extension source (IsExtension)",
+			ext.Name, owner)
 	}
 	return nil
 }

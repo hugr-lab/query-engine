@@ -1,0 +1,15 @@
+# One SDL, two verdicts — the point of the cross-source contract.
+#
+# It contributes a field to local_db's object. Registered as a PLAIN source it is
+# refused: a regular source describes only its own data, and reaching into
+# another source's type through `extend type` is the same act as an @join to a
+# foreign target, which has always been refused on the object path. Registered as
+# an EXTENSION source the identical file loads and serves.
+extend type local_db_items
+  @dependency(name: "local_db") {
+  contract_probe: [local_db_events] @join(
+    references_name: "local_db_events"
+    source_fields: ["id"]
+    references_fields: ["id"]
+  )
+}

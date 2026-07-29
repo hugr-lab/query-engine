@@ -1,0 +1,9 @@
+# The contributed field is in the schema and returns the joined rows.
+{
+  local_db {
+    items(order_by: [{ field: "id", direction: ASC }], limit: 2) {
+      id
+      contract_probe { id }
+    }
+  }
+}
