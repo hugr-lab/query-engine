@@ -353,3 +353,73 @@ type shipments @table(name: "shipments") {
 	assert.Equal(t, []string{"vendor_id"},
 		d.relations[pkKey("shipments", "parts_vendor_ref")].DestinationKeys)
 }
+
+// compileErr runs the pipeline over a schema and returns the error, if any —
+// the negative counterpart of partialSource, which requires success.
+func compileErr(t *testing.T, name, schema string, isExtension bool, seeds ...base.DefinitionsSource) error {
+	t.Helper()
+	ctx := context.Background()
+	prelude, err := static.New()
+	require.NoError(t, err)
+	target := seedProvider{Provider: prelude, seeded: map[string]*ast.Definition{}}
+	for _, seed := range seeds {
+		for def := range seed.Definitions(ctx) {
+			target.seeded[def.Name] = def
+		}
+	}
+	e := &engines.DuckDB{}
+	src, err := sources.NewStringSource(name, e, base.Options{
+		Name:         name,
+		EngineType:   string(e.Type()),
+		Capabilities: e.Capabilities(),
+		IsExtension:  isExtension,
+	}, schema)
+	require.NoError(t, err)
+	_, err = ingest.New(ingest.Default()...).Compile(ctx, target, src, src.CompileOptions())
+	return err
+}
+
+// TestCrossSourceExtendContract pins the rule that a REGULAR source describes
+// only its own data. Reaching into another source's type through `extend type`
+// was accepted by nobody's decision — the merger only asked whether the target
+// resolved — while the same reach through @join or @function_call had always
+// been refused.
+func TestCrossSourceExtendContract(t *testing.T) {
+	const baseSchema = `type customers @module(name: "sales") @table(name: "customers") {
+  id: Int! @pk
+  name: String!
+}`
+	srcA := partialSource(t, "A", baseSchema)
+
+	t.Run("plain source may not extend another source's type", func(t *testing.T) {
+		err := compileErr(t, "B", `extend type customers { note: String }`, false, definitionsOnly{srcA})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `belongs to data source "A"`)
+	})
+
+	t.Run("an extension source may", func(t *testing.T) {
+		assert.NoError(t, compileErr(t, "B", `extend type customers { note: String }`, true, definitionsOnly{srcA}))
+	})
+
+	t.Run("a typo is refused rather than silently dropped", func(t *testing.T) {
+		err := compileErr(t, "B", `extend type custmoers { note: String }`, false, definitionsOnly{srcA})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no such type")
+	})
+
+	t.Run("system types cannot be extended", func(t *testing.T) {
+		err := compileErr(t, "B", `extend type _join { note: String }`, false, definitionsOnly{srcA})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "system types cannot be extended")
+	})
+
+	t.Run("a source may extend its OWN type", func(t *testing.T) {
+		assert.NoError(t, compileErr(t, "B", baseSchema+"\nextend type customers { note: String }", false))
+	})
+
+	t.Run("module roots stay open to every source", func(t *testing.T) {
+		assert.NoError(t, compileErr(t, "B", `extend type Function {
+  b_fn(id: Int!): String @function(name: "b_fn")
+}`, false))
+	})
+}

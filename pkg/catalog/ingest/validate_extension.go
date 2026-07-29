@@ -79,22 +79,25 @@ func validateNoCrossSourceExtends(ctx base.CompilationContext) error {
 		if ctx.Source().ForName(ctx.Context(), ext.Name) != nil {
 			continue
 		}
-		// Anything else is either another source's type or a type that does not
-		// exist. Both are refused here: the first breaks the contract, and the
-		// second is a typo that would otherwise vanish without a trace —
-		// InternalExtensionMerger skips an unresolvable target silently.
-		owner := "another data source"
-		if def := ctx.LookupType(ext.Name); def != nil {
-			if c := base.DefinitionCatalog(def); c != "" {
-				owner = "data source " + c
-			}
-		} else {
-			owner = "no known type"
+		// Three ways to get here, and they want different advice.
+		target := ctx.LookupType(ext.Name)
+		switch {
+		case target == nil:
+			// A typo. It used to vanish without a trace: InternalExtensionMerger
+			// skips an unresolvable target silently, so the fields were simply
+			// never contributed and nothing said why.
+			return gqlerror.ErrorPosf(ext.Position,
+				"extend type %s: no such type", ext.Name)
+		case base.DefinitionCatalog(target) == "":
+			// A system type — the engine's, not a data source's.
+			return gqlerror.ErrorPosf(ext.Position,
+				"extend type %s: system types cannot be extended", ext.Name)
+		default:
+			return gqlerror.ErrorPosf(ext.Position,
+				"extend type %s: it belongs to data source %q — a regular source describes "+
+					"only its own data, and cross-source extensions belong to an extension source",
+				ext.Name, base.DefinitionCatalog(target))
 		}
-		return gqlerror.ErrorPosf(ext.Position,
-			"extend type %s: %s — a regular source describes only its own data; "+
-				"cross-source extensions belong to an extension source (IsExtension)",
-			ext.Name, owner)
 	}
 	return nil
 }
