@@ -421,7 +421,7 @@ func (e DuckDB) ApplyFieldTransforms(ctx context.Context, qe types.Querier, sql 
 	case base.TimestampTypeName, base.DateTimeTypeName:
 		return e.TimestampTransform(sql, field, args), params, nil
 	case base.DateTypeName:
-		return e.dateTransform(sql, field, args), params, nil
+		return commonDateTransform(e, sql, field, args), params, nil
 	case base.VectorTypeName:
 		return e.VectorTransform(ctx, qe, sql, field, args, params)
 	}
@@ -566,17 +566,6 @@ func (e DuckDB) TimestampTransform(sql string, field *ast.Field, args sdl.FieldQ
 		return sql
 	}
 	return "NULL"
-}
-
-// dateTransform applies the arguments of a Date field. Date declares only
-// `bucket`, and date_trunc widens DATE to TIMESTAMP, so the truncated value is
-// cast back: the column has to keep the type the GraphQL field promises, or the
-// key of a bucket aggregation comes back as a timestamp.
-func (e DuckDB) dateTransform(sql string, field *ast.Field, args sdl.FieldQueryArguments) string {
-	if args.ForName("bucket") == nil {
-		return sql
-	}
-	return fmt.Sprintf("CAST(%s AS DATE)", e.TimestampTransform(sql, field, args))
 }
 
 func (e DuckDB) ExtractNestedTypedValue(sql, path, t string) string {
