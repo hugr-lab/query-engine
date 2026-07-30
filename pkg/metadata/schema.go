@@ -63,6 +63,12 @@ func processSchemaQuery(ctx context.Context, provider catalog.Provider, field *a
 		"types": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			var res []map[string]any
 			for _, t := range provider.Types(ctx) {
+				// hugr's meta types are reachable only from a meta-field, and
+				// those are not listed either. GraphQL's own introspection
+				// types are NOT filtered — the spec puts them in this list.
+				if base.IsHugrMetaType(t) {
+					continue
+				}
 				data, err := typeResolver(ctx, provider, ast.NamedType(t.Name, &ast.Position{}), field.SelectionSet, maxDepth)
 				if err != nil {
 					return nil, err
@@ -307,7 +313,11 @@ func typeResolver(ctx context.Context, provider catalog.Provider, typeDef *ast.T
 	}, "__Type")
 }
 
-func fieldResolver(ctx context.Context, provider catalog.Provider, def *ast.FieldDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
+// fieldResolver serves one __Field. The OWNER is needed by hugr_type: the same
+// field definition means different things depending on what carries it, and
+// "a stored column" is only a sensible answer for a member of a data object.
+// A nil owner simply leaves those cases unclassified.
+func fieldResolver(ctx context.Context, provider catalog.Provider, owner *ast.Definition, def *ast.FieldDefinition, ss ast.SelectionSet, maxDepth int) (map[string]any, error) {
 	di := sdl.FieldDeprecatedInfo(def)
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
 		"__typename": typeNameResolver,
@@ -347,54 +357,7 @@ func fieldResolver(ctx context.Context, provider catalog.Provider, def *ast.Fiel
 			return di.Reason, nil
 		},
 		"hugr_type": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
-			// @subscription → subscription field
-			if def.Directives.ForName(base.SubscriptionDirectiveName) != nil {
-				return base.HugrTypeFieldSubscription, nil
-			}
-			td := provider.ForName(ctx, def.Type.Name())
-			if td == nil {
-				return "", nil
-			}
-			if mi := sdl.ModuleRootInfo(td); mi != nil && def.Type.NamedType != "" {
-				return base.HugrTypeFieldSubmodule, nil
-			}
-			switch {
-			case sdl.IsAggregateQueryDefinition(def):
-				return base.HugrTypeFieldAgg, nil
-			case sdl.IsSelectOneQueryDefinition(def):
-				return base.HugrTypeFieldSelectOne, nil
-			case sdl.IsSelectQueryDefinition(def):
-				return base.HugrTypeFieldSelect, nil
-			case sdl.IsBucketAggregateQueryDefinition(def):
-				return base.HugrTypeFieldBucketAgg, nil
-			case sdl.IsFunctionCall(def):
-				return base.HugrTypeFieldFunction, nil
-			case sdl.IsFunction(def):
-				return base.HugrTypeFieldFunction, nil
-			case sdl.IsJoinSubqueryDefinition(def):
-				return base.HugrTypeFieldSelect, nil
-			case sdl.IsReferencesSubquery(def):
-				return base.HugrTypeFieldSelect, nil
-			case sdl.IsInsertQueryDefinition(def):
-				return base.HugrTypeFieldMutationInsert, nil
-			case sdl.IsUpdateQueryDefinition(def):
-				return base.HugrTypeFieldMutationUpdate, nil
-			case sdl.IsDeleteQueryDefinition(def):
-				return base.HugrTypeFieldMutationDelete, nil
-			}
-			if def.Name == base.QueryTimeJoinsFieldName && td.Name == base.QueryBaseName {
-				return base.HugrTypeFieldJoin, nil
-			}
-			if def.Name == base.QueryTimeSpatialFieldName && td.Name == base.QueryBaseName {
-				return base.HugrTypeFieldSpatial, nil
-			}
-			if def.Name == sdl.JQTransformQueryName && td.Name == base.QueryBaseName {
-				return base.HugrTypeFieldJQ, nil
-			}
-			if def.Name == base.H3QueryFieldName && td.Name == base.H3QueryTypeName {
-				return base.HugrTypeFieldH3Agg, nil
-			}
-			return "", nil
+			return hugrFieldType(ctx, provider, owner, def)
 		},
 		"catalog": func(ctx context.Context, field *ast.Field, onType string) (any, error) {
 			// @subscription fields have @catalog
@@ -498,6 +461,85 @@ func inputValueResolver(ctx context.Context, provider catalog.Provider, def *ast
 	}, "__InputValue")
 }
 
+// hugrFieldType answers what a field IS in hugr's model — the vocabulary
+// behind __Field.hugr_type and _SearchHit.hugrType. Both surfaces call it, so
+// the same field cannot come back as one thing from introspection and another
+// from search.
+//
+// The three data-object cases at the end were blank until now: hugr_type
+// answered "" for every stored column, every @sql expression and every
+// @extra_field companion — which is most of what a data object is made of, and
+// the reason a consumer that needed the answer ended up guessing it from the
+// GraphQL type string.
+//
+// The owner is what makes them answerable: the same definition on a module
+// root or an input type means something else entirely, so "column" is only
+// claimed for a member of a data object.
+func hugrFieldType(ctx context.Context, provider catalog.Provider, owner *ast.Definition, def *ast.FieldDefinition) (any, error) {
+	// @subscription → subscription field
+	if def.Directives.ForName(base.SubscriptionDirectiveName) != nil {
+		return base.HugrTypeFieldSubscription, nil
+	}
+	td := provider.ForName(ctx, def.Type.Name())
+	if td == nil {
+		return "", nil
+	}
+	if mi := sdl.ModuleRootInfo(td); mi != nil && def.Type.NamedType != "" {
+		return base.HugrTypeFieldSubmodule, nil
+	}
+	switch {
+	// A compiler-generated companion of a base field (_<f>_part for a
+	// Timestamp, _<f>_measurement for a Geometry). Checked before @sql: a
+	// companion carries both, and being a companion is the more specific fact.
+	case sdl.IsExtraField(def):
+		return base.HugrTypeFieldExtraField, nil
+	case sdl.IsAggregateQueryDefinition(def):
+		return base.HugrTypeFieldAgg, nil
+	case sdl.IsSelectOneQueryDefinition(def):
+		return base.HugrTypeFieldSelectOne, nil
+	case sdl.IsSelectQueryDefinition(def):
+		return base.HugrTypeFieldSelect, nil
+	case sdl.IsBucketAggregateQueryDefinition(def):
+		return base.HugrTypeFieldBucketAgg, nil
+	case sdl.IsFunctionCall(def):
+		return base.HugrTypeFieldFunction, nil
+	case sdl.IsFunction(def):
+		return base.HugrTypeFieldFunction, nil
+	case sdl.IsJoinSubqueryDefinition(def):
+		return base.HugrTypeFieldSelect, nil
+	case sdl.IsReferencesSubquery(def):
+		return base.HugrTypeFieldSelect, nil
+	case sdl.IsInsertQueryDefinition(def):
+		return base.HugrTypeFieldMutationInsert, nil
+	case sdl.IsUpdateQueryDefinition(def):
+		return base.HugrTypeFieldMutationUpdate, nil
+	case sdl.IsDeleteQueryDefinition(def):
+		return base.HugrTypeFieldMutationDelete, nil
+	}
+	if def.Name == base.QueryTimeJoinsFieldName {
+		return base.HugrTypeFieldJoin, nil
+	}
+	if def.Name == base.QueryTimeSpatialFieldName {
+		return base.HugrTypeFieldSpatial, nil
+	}
+	if def.Name == sdl.JQTransformQueryName && td.Name == base.QueryBaseName {
+		return base.HugrTypeFieldJQ, nil
+	}
+	if def.Name == base.H3QueryFieldName && td.Name == base.H3QueryTypeName {
+		return base.HugrTypeFieldH3Agg, nil
+	}
+	if owner != nil && sdl.IsDataObject(owner) {
+		// A value the source computes rather than stores. NOT called "extra":
+		// in hugr an EXTRA field is the generated companion above, and the
+		// docs and skills already use the word that way.
+		if def.Directives.ForName(base.FieldSqlDirectiveName) != nil {
+			return base.HugrTypeFieldCalculated, nil
+		}
+		return base.HugrTypeFieldColumn, nil
+	}
+	return "", nil
+}
+
 // objectFieldsResolver resolves the permission-filtered field list of an
 // object/interface definition — shared by __Type.fields and
 // _DataObject.fields so both introspection surfaces apply identical rules.
@@ -511,6 +553,15 @@ func objectFieldsResolver(ctx context.Context, provider catalog.Provider, def *a
 		if strings.HasPrefix(f.Name, "__") {
 			continue
 		}
+		// Meta-fields are not members of the type. GraphQL keeps __schema and
+		// __type out of Query.fields for the same reason, and hugr's
+		// logical-model family is the same kind of thing: resolved on the
+		// metadata path, never planned, not part of the served schema. They
+		// stay callable, and __type(name:) still resolves their result types,
+		// so a client can probe for the capability.
+		if base.IsMetaQueryField(def, f.Name) {
+			continue
+		}
 		// Show _stub only when it's the sole field; hide it when real fields exist
 		if isPlaceholderField(f.Name) && len(def.Fields) > 1 {
 			continue
@@ -522,7 +573,7 @@ func objectFieldsResolver(ctx context.Context, provider catalog.Provider, def *a
 		if !introspectionFieldVisible(ctx, provider, def, f) {
 			continue
 		}
-		data, err := fieldResolver(ctx, provider, f, field.SelectionSet, maxDepth-1)
+		data, err := fieldResolver(ctx, provider, def, f, field.SelectionSet, maxDepth-1)
 		if err != nil {
 			return nil, err
 		}
@@ -535,7 +586,7 @@ func objectFieldsResolver(ctx context.Context, provider catalog.Provider, def *a
 			Name: base.PlaceholderFieldName,
 			Type: ast.NamedType("Boolean", &ast.Position{}),
 		}
-		data, err := fieldResolver(ctx, provider, placeholder, field.SelectionSet, maxDepth-1)
+		data, err := fieldResolver(ctx, provider, def, placeholder, field.SelectionSet, maxDepth-1)
 		if err != nil {
 			return nil, err
 		}

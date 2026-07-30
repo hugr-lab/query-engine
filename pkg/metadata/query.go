@@ -7,6 +7,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
+	qetypes "github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -15,7 +16,19 @@ var (
 	ErrInvalidTypeQuery     = errors.New("invalid type query")
 )
 
-func ProcessQuery(ctx context.Context, provider catalog.Provider, query sdl.QueryRequest, maxDepth int, vars map[string]any) (any, error) {
+// Querier is the engine seam the search resolver needs: _search ranks over the
+// catalog's own entity views, which is a GraphQL query the engine executes for
+// itself. Narrower than types.Querier on purpose — this package has no
+// business loading data sources, and a one-method seam is trivial to fake in a
+// test.
+type Querier interface {
+	Query(ctx context.Context, query string, vars map[string]any) (*qetypes.Response, error)
+}
+
+// ProcessQuery resolves one meta query. The querier is nil for every path
+// except _search (and may legitimately be nil there too — a caller that has no
+// engine to re-enter gets a clear error rather than a panic).
+func ProcessQuery(ctx context.Context, provider catalog.Provider, query sdl.QueryRequest, maxDepth int, vars map[string]any, querier Querier) (any, error) {
 	if query.QueryType != sdl.QueryTypeMeta {
 		return nil, ErrInvalidMetaDataQuery
 	}
@@ -78,6 +91,12 @@ func ProcessQuery(ctx context.Context, provider catalog.Provider, query sdl.Quer
 		res, err := processTypesQuery(ctx, provider, query.Field, maxDepth, vars)
 		if err != nil {
 			slog.Error("metadata _types query failed", "error", err)
+		}
+		return res, err
+	case sdl.MetadataSearchQuery:
+		res, err := processSearchQuery(ctx, provider, querier, query.Field, maxDepth, vars)
+		if err != nil {
+			slog.Error("metadata _search query failed", "error", err)
 		}
 		return res, err
 	}

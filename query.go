@@ -202,7 +202,7 @@ func (s *Service) processQuerySequential(ctx context.Context,
 				}
 			}
 		case base.QueryTypeMeta:
-			res, err = metadata.ProcessQuery(ctx, provider, query, s.config.MaxDepth, vars)
+			res, err = metadata.ProcessQuery(ctx, provider, query, s.config.MaxDepth, vars, s)
 		case base.QueryTypeQuery, base.QueryTypeFunction, base.QueryTypeH3Aggregation:
 			res, ext, err = s.processDataQuery(ctx, provider, query, vars)
 		case base.QueryTypeMutation, base.QueryTypeFunctionMutation:
@@ -268,7 +268,7 @@ func (s *Service) processQueryParallel(
 			eg.Go(func() (err error) {
 				defer recoverPanic(&err)
 				defer wg.Done()
-				res, err := metadata.ProcessQuery(ctx, provider, query, s.config.MaxDepth, vars)
+				res, err := metadata.ProcessQuery(ctx, provider, query, s.config.MaxDepth, vars, s)
 				if err != nil {
 					return err
 				}

@@ -148,7 +148,7 @@ func TestProcessQuery(t *testing.T) {
 	rqt, _ := sdl.QueryRequestInfo(op.Definition.SelectionSet)
 
 	for _, r := range rqt {
-		data, err := ProcessQuery(t.Context(), ss.Provider(), r, 10, nil)
+		data, err := ProcessQuery(t.Context(), ss.Provider(), r, 10, nil, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

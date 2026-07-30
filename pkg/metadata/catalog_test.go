@@ -71,7 +71,7 @@ func runMetaQueryDepth(t *testing.T, ss *catalog.Service, query string, maxDepth
 	}
 	res := map[string]any{}
 	for _, r := range op.Queries {
-		data, err := ProcessQuery(t.Context(), ss.Provider(), r, maxDepth, op.Variables)
+		data, err := ProcessQuery(t.Context(), ss.Provider(), r, maxDepth, op.Variables, nil)
 		if err != nil {
 			t.Fatalf("ProcessQuery(%s): %v", r.Name, err)
 		}
@@ -728,7 +728,7 @@ func runMetaQueryPerm(t *testing.T, ss *catalog.Service, perms *perm.RolePermiss
 	ctx := perm.CtxWithPerm(t.Context(), perms)
 	res := map[string]any{}
 	for _, r := range op.Queries {
-		data, err := ProcessQuery(ctx, ss.Provider(), r, 20, op.Variables)
+		data, err := ProcessQuery(ctx, ss.Provider(), r, 20, op.Variables, nil)
 		if err != nil {
 			t.Fatalf("ProcessQuery(%s): %v", r.Name, err)
 		}
@@ -982,16 +982,32 @@ func TestCatalogQuery_SelfIntrospection(t *testing.T) {
 		}
 	}
 
-	// The root meta queries are ordinary (single-underscore) system fields of
-	// Query — they MUST appear in standard introspection so GraphiQL/codegen
-	// can autocomplete and validate them (SC-006).
+	// The root meta queries are META-FIELDS, and a meta-field is not a member
+	// of the type: GraphQL keeps __schema and __type out of Query.fields for
+	// the same reason. They stay CALLABLE — hiding is not denying — and their
+	// result types stay resolvable by name, so a client can still probe for
+	// the capability.
+	//
+	// This REVERSES design-034 SC-006, which required them in the listing so
+	// GraphiQL and codegen could autocomplete them. The trade was made
+	// deliberately: the family is engine introspection, not part of the served
+	// schema, and the clients that use it (MCP, the hugr-kernel explorer, the
+	// docs) know the names out of band — the same deal __schema has always had.
 	q := runMetaQuery(t, ss, `{ __type(name: "Query") { fields { name } } }`)
 	queryFields := namesOf(t, asMap(t, q["__type"])["fields"])
-	for _, want := range []string{"_catalog", "_module", "_dataObject", "_function",
-		"_dataSource", "_dataSources"} {
-		if !slices.Contains(queryFields, want) {
-			t.Errorf("Query introspection fields missing %q", want)
+	for _, hidden := range []string{"_catalog", "_module", "_dataObject", "_function",
+		"_dataSource", "_dataSources", "_types", "_search"} {
+		if slices.Contains(queryFields, hidden) {
+			t.Errorf("meta-field %q must not be listed in Query.fields", hidden)
 		}
+	}
+	// Hidden, not absent: the field still resolves, and so does its result type.
+	if res := runMetaQuery(t, ss, `{ _catalog { name } }`); asMap(t, res["_catalog"]) == nil {
+		t.Error("_catalog must stay callable while hidden from the listing")
+	}
+	probe := runMetaQuery(t, ss, `{ __type(name: "_Module") { name } }`)
+	if asMap(t, probe["__type"])["name"] != "_Module" {
+		t.Error("__type(name:) must still resolve a meta type, so clients can probe for the capability")
 	}
 }
 

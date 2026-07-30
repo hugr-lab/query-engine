@@ -20,6 +20,18 @@ const (
 type HugrTypeField string
 
 const (
+	// Members of a DATA OBJECT. These three were the blank spots: hugr_type
+	// answered "" for every stored column, every @sql expression and every
+	// @extra_field companion, which is most of what a data object is made of.
+	//
+	// "calculated" is deliberately not called "extra": in hugr an EXTRA field
+	// is the compiler-generated companion of a base field (_<f>_part for a
+	// Timestamp, _<f>_measurement for a Geometry), and overloading the word
+	// for "computed by SQL" would collide with the term the docs and the
+	// skills already use.
+	HugrTypeFieldColumn     HugrTypeField = "column"
+	HugrTypeFieldCalculated HugrTypeField = "calculated"
+
 	HugrTypeFieldSubmodule      HugrTypeField = "submodule"
 	HugrTypeFieldSelectOne      HugrTypeField = "select_one"
 	HugrTypeFieldSelect         HugrTypeField = "select"

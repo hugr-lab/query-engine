@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/types"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -357,14 +356,11 @@ func (s *Server) queryScanLookup(ctx context.Context, gql string, vars map[strin
 	return true, nil
 }
 
-// queryScanAdmin executes a catalog query with full access (no permission
-// filtering). Used by the search path to READ THE INDEX: the catalog views are
-// ordinary data objects, and a role may well be denied them while still being
-// entitled to use MCP. Nothing it returns reaches the client without passing
-// filterHits, which re-asks the engine in the caller's own context.
-func (s *Server) queryScanAdmin(ctx context.Context, gql string, vars map[string]any, path string, target any) error {
-	return s.queryScan(auth.ContextWithFullAccess(ctx), gql, vars, path, target)
-}
+// NOTE: there is deliberately no privileged read helper here any more. Ranking
+// used to need one — the annotation index lives in views a caller may hold no
+// rights on — and the engine's _search meta query owns that elevation now,
+// next to the filter that makes it safe. If a tool ever seems to need full
+// access again, that is a sign the capability belongs in the engine.
 
 func toolResultJSON(v any) *mcp.CallToolResult {
 	b, err := json.MarshalIndent(v, "", "  ")

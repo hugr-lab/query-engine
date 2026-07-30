@@ -34,6 +34,7 @@ const (
 	MetadataTypesQuery       = base.MetadataTypesQuery
 	MetadataDataSourceQuery  = base.MetadataDataSourceQuery
 	MetadataDataSourcesQuery = base.MetadataDataSourcesQuery
+	MetadataSearchQuery      = base.MetadataSearchQuery
 	JQTransformQueryName     = base.JQTransformQueryName
 )
 
@@ -54,16 +55,13 @@ func QueryRequestInfo(ss ast.SelectionSet) ([]QueryRequest, QueryType) {
 		if !ok {
 			continue
 		}
-		if field.Name == MetadataSchemaQuery ||
-			field.Name == MetadataTypeQuery ||
-			field.Name == MetadataTypeNameQuery ||
-			field.Name == MetadataCatalogQuery ||
-			field.Name == MetadataModuleQuery ||
-			field.Name == MetadataDataObjectQuery ||
-			field.Name == MetadataFunctionQuery ||
-			field.Name == MetadataTypesQuery ||
-			field.Name == MetadataDataSourceQuery ||
-			field.Name == MetadataDataSourcesQuery {
+		// Meta-fields go to the metadata path, never to the planner. The set
+		// is the same one the permission rule reads (base.MetaQueryFields),
+		// so registering a meta query is one edit rather than one per
+		// consumer. __schema / __type / __typename are not in it — they are
+		// recognised by GraphQL's own "__" prefix, since hugr never declares
+		// them.
+		if base.IsMetaSelection(field.ObjectDefinition, field) {
 			resolvers = append(resolvers, QueryRequest{
 				Name:      field.Alias,
 				Field:     field,

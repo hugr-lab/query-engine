@@ -2812,6 +2812,60 @@ type Query @system {
   """
   _module(name: String!): _Module @system
   """
+  Logical-model search: rank modules, data sources, data objects, functions
+  and fields by relevance to a natural-language query. Semantic when the
+  deployment has a vector index, lexical otherwise — see
+  _SearchResult.lexical. Results are filtered to what the caller may see, by
+  the same rules as _catalog.
+  
+  This searches the MODEL, never the data.
+  """
+  _search(
+    """
+    Include fields marked @exclude_mcp. That directive is a client policy
+    for AI tooling, not an access rule, so it is opt-out rather than
+    enforced: MCP passes false, everything else wants the default.
+    """
+    includeMcpExcluded: Boolean = true
+
+    """
+    Restrict to these kinds; null or empty means all of them.
+    """
+    kinds: [_SearchKind!]
+
+    """
+    Page size, 1..200.
+    """
+    limit: Int = 50
+
+    """
+    Drop hits scoring below this (0..1).
+    """
+    minScore: Float
+
+    """
+    Restrict to this module's SUBTREE; "" (the default) is the root module
+    and therefore the whole tree. Data sources are not module-scoped — a
+    source contributes to several — so DATA_SOURCE hits ignore this.
+    """
+    module: String
+
+    """
+    Restrict FIELD hits to one data object; ignored by the other kinds.
+    """
+    object: String
+
+    """
+    Hits to skip.
+    """
+    offset: Int = 0
+
+    """
+    Natural-language description of what you are looking for.
+    """
+    query: String!
+  ): _SearchResult @system
+  """
   Logical-model introspection: GraphQL type definitions of the logical
   model. SOURCE (default) lists the residual base types defined by data
   sources — structural objects, inputs, enums — excluding data objects,
