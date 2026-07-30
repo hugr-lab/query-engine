@@ -233,13 +233,17 @@ func rankLexically(ctx context.Context, q Querier, req searchRequest, limit int)
 			continue
 		}
 		ordered = append(ordered, kind)
-		var terms []string
+		// Deliberately not named `terms`: the query words of that name are
+		// what lexicalScore is called with below, and shadowing them here
+		// would put SQL fragments into the scorer the first time this loop
+		// grows a closure.
+		var match []string
 		for _, col := range view.nameCols {
 			for _, p := range patterns {
-				terms = append(terms, fmt.Sprintf("{%s: {ilike: %s}}", col, p))
+				match = append(match, fmt.Sprintf("{%s: {ilike: %s}}", col, p))
 			}
 		}
-		filter := fmt.Sprintf("{_or: [%s]", strings.Join(terms, ", "))
+		filter := fmt.Sprintf("{_or: [%s]", strings.Join(match, ", "))
 		if kind == searchKindField && objectFilterApplies(req) {
 			filter += ", type_name: {eq: $obj}"
 		}

@@ -107,11 +107,21 @@ func processSearchQuery(ctx context.Context, provider catalog.Provider, querier 
 	if err != nil {
 		return nil, err
 	}
+	// minScore narrows the CANDIDATES, before anything is verified.
+	//
+	// The page comes out the same either way — candidates are score-ordered,
+	// so the leading survivors are the qualifying ones — but two things do
+	// not. Verifying a candidate costs a definition reconstruction, and there
+	// is no reason to spend one on a hit the caller has already excluded. And
+	// filteredOut would otherwise count denials among sub-threshold
+	// candidates, reporting "there is data here you may not see" about rows
+	// the caller's own bar removed — the narrowing-is-not-filtering rule the
+	// verdicts exist to keep.
+	if req.minScore > 0 {
+		candidates = slices.DeleteFunc(candidates, func(c candidate) bool { return c.score < req.minScore })
+	}
 
 	kept, filtered, exhausted := filterCandidates(ctx, lm, provider, candidates, req, need)
-	if req.minScore > 0 {
-		kept = slices.DeleteFunc(kept, func(h hit) bool { return h.score < req.minScore })
-	}
 
 	start := min(req.offset, len(kept))
 	end := min(start+req.limit, len(kept))
@@ -225,10 +235,10 @@ const (
 	verdictKept verdict = iota
 	// verdictDenied — the caller may not see it.
 	verdictDenied
-	// verdictNarrowed — the caller's OWN scoping (module, object, fieldKinds)
-	// removed it. Counted separately: reporting narrowing as filtering would
-	// read as "there is data here you may not see", the opposite of what
-	// happened.
+	// verdictNarrowed — the caller's OWN scoping (module, object,
+	// includeMcpExcluded) removed it. Counted separately: reporting narrowing
+	// as filtering would read as "there is data here you may not see", the
+	// opposite of what happened.
 	verdictNarrowed
 )
 
@@ -326,10 +336,11 @@ func verifyCandidate(ctx context.Context, lm catalog.LogicalModel, provider cata
 	return h, verdictDenied
 }
 
-// verifyField resolves a field hit through its OWNER: the owner decides
-// visibility (a hidden object hides its fields), the owner's definition
-// carries the type, and the owner's relations say whether the field is a path
-// to somewhere else.
+// verifyField resolves a field hit through its OWNER, which is what decides
+// visibility: a hidden object hides its fields, and a field hidden in its own
+// right is absent from the object the caller sees. What the field IS came off
+// the index row already (fieldRole) — the owner is consulted for permissions,
+// not for classification.
 //
 // This is also where a field hit finally gets a MODULE. The index has none —
 // a field belongs to whatever module owns its data object — so the module
