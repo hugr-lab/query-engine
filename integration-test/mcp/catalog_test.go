@@ -5,6 +5,7 @@ package mcp_test
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -484,7 +485,15 @@ func catalogSearch(t *testing.T, h http.Handler, args map[string]any) searchPage
 // TestCatalogSearch_LexicalFallback — with no embedder configured there is no
 // vector index, and the tool must still answer rather than fail. It says so in
 // the payload, so an agent knows to prefer exact terms.
+//
+// The harness picks EMBEDDER_URL up from the environment (mcp_test.go), so
+// this test asserts the fallback only when there is one to fall back from —
+// otherwise a developer with an embedder configured sees it fail for being
+// right.
 func TestCatalogSearch_LexicalFallback(t *testing.T) {
+	if os.Getenv("EMBEDDER_URL") != "" {
+		t.Skip("EMBEDDER_URL is set: ranking is semantic, and the fallback is what this test is about")
+	}
 	h := handler(t)
 	mcpInit(t, h)
 

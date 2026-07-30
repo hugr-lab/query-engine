@@ -372,7 +372,7 @@ func Test_fieldResolver(t *testing.T) {
 		"deprecationReason": nil,
 	}
 
-	result, err := fieldResolver(t.Context(), static.NewWithSchema(schema), fieldDef, selectionSet, 10)
+	result, err := fieldResolver(t.Context(), static.NewWithSchema(schema), nil, fieldDef, selectionSet, 10)
 	if err != nil {
 		t.Fatalf("fieldResolver() error = %v", err)
 	}
@@ -462,7 +462,7 @@ func Test_fieldResolver_withDeprecation(t *testing.T) {
 		"deprecationReason": "Deprecated for testing",
 	}
 
-	result, err := fieldResolver(t.Context(), static.NewWithSchema(schema), fieldDef, selectionSet, 10)
+	result, err := fieldResolver(t.Context(), static.NewWithSchema(schema), nil, fieldDef, selectionSet, 10)
 	if err != nil {
 		t.Fatalf("fieldResolver() error = %v", err)
 	}

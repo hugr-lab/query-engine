@@ -43,6 +43,7 @@ const (
 	MetadataTypesQuery       = "_types"
 	MetadataDataSourceQuery  = "_dataSource"
 	MetadataDataSourcesQuery = "_dataSources"
+	MetadataSearchQuery      = "_search"
 
 	JQTransformQueryName = "jq"
 )

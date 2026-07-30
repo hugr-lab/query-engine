@@ -18,6 +18,13 @@ extend type __Field {
 	hugr_type: String
 	catalog: String
 	mcp_exclude: Boolean
+	"""
+	What the field IS, for a data object: column — a stored value;
+	relation — a path to another data object; extra — derived from something
+	else (an @extra_field companion, a @sql expression, a function call, an
+	aggregation twin). Null on types that are not data objects.
+	"""
+	field_kind: String
 }
 
 enum ModuleObjectType @system {
@@ -113,6 +120,42 @@ type Query @system {
 	engine-defined types (scalars, introspection and hugr system SDL).
 	"""
 	_types(scope: _TypeScope = SOURCE): [__Type!] @system
+
+	"""
+	Logical-model search: rank modules, data sources, data objects, functions
+	and fields by relevance to a natural-language query. Semantic when the
+	deployment has a vector index, lexical otherwise — see
+	_SearchResult.lexical. Results are filtered to what the caller may see, by
+	the same rules as _catalog.
+
+	This searches the MODEL, never the data.
+	"""
+	_search(
+		"Natural-language description of what you are looking for."
+		query: String!
+		"Restrict to these kinds; null or empty means all of them."
+		kinds: [_SearchKind!]
+		"""
+		Restrict to this module's SUBTREE; "" (the default) is the root module
+		and therefore the whole tree. Data sources are not module-scoped — a
+		source contributes to several — so DATA_SOURCE hits ignore this.
+		"""
+		module: String
+		"Restrict FIELD hits to one data object; ignored by the other kinds."
+		object: String
+		"Page size, 1..200."
+		limit: Int = 50
+		"Hits to skip."
+		offset: Int = 0
+		"Drop hits scoring below this (0..1)."
+		minScore: Float
+		"""
+		Include fields marked @exclude_mcp. That directive is a client policy
+		for AI tooling, not an access rule, so it is opt-out rather than
+		enforced: MCP passes false, everything else wants the default.
+		"""
+		includeMcpExcluded: Boolean = true
+	): _SearchResult @system
 }
 
 type Mutation @system {
@@ -549,4 +592,91 @@ type _Function @system {
 	isTable: Boolean!
 	"""The owning data source."""
 	dataSourceName: String
+}
+# --- logical-model search (_search) ---
+
+"""
+What kind of logical entity a search hit is.
+"""
+enum _SearchKind @system {
+	MODULE
+	DATA_SOURCE
+	DATA_OBJECT
+	FUNCTION
+	FIELD
+}
+
+"""
+A ranked search result page.
+
+It carries NO total: the permission filter runs AFTER ranking, so an honest
+total would mean scanning the whole index on every query. filteredOut reports
+what the filter removed from the candidates actually examined — enough to tell
+"nothing matches" from "nothing you may see matches".
+"""
+type _SearchResult @system {
+	items: [_SearchHit!]!
+	limit: Int!
+	offset: Int!
+	"""More hits exist past this page, or candidates were left unverified."""
+	hasMore: Boolean!
+	"""Candidates dropped because the caller may not see them."""
+	filteredOut: Int!
+	"""
+	True when ranking fell back to substring matching because the vector index
+	was unusable: results are cruder, so prefer exact terms.
+	"""
+	lexical: Boolean!
+	"""Why the vector index was unusable; null when it was used."""
+	lexicalReason: String
+}
+
+"""
+One ranked hit. The scalar fields identify it; the object fields resolve it
+through the ordinary _catalog resolvers, so a client pays for detail only by
+selecting it.
+"""
+type _SearchHit @system {
+	kind: _SearchKind!
+	"""
+	Module: dotted path ("" is the root). Data source: source name. Data
+	object: GraphQL type name. Function: field name in its module. Field:
+	field name on its data object.
+	"""
+	name: String!
+	"""Owning module's dotted name; "" for the root. Empty for DATA_SOURCE."""
+	moduleName: String!
+	"""Owning data source; null for MODULE hits."""
+	dataSourceName: String
+	description: String
+	"""0..1, higher is better. Lexical scores are coarse."""
+	score: Float!
+
+	"""FIELD hits only: the data object this field belongs to."""
+	objectName: String
+	"""FIELD hits only: the field's GraphQL type, SDL spelling ("String!", "[Int]")."""
+	type: String
+	"""
+	FIELD hits only: what the field IS in hugr's model — the same vocabulary
+	__Field.hugr_type answers in. What the INDEX can hold is column (a stored
+	value), calculated (@sql), function (@function_call or a table-function
+	join) and select (a declared @join, which is a path — refObjectName says
+	where to). Relation navigation fields and @extra_field companions are
+	generated when the GraphQL type is built, so they are never in the index
+	and never a hit.
+	"""
+	hugrType: String
+	"""FIELD hits only: for a @join, the data object it navigates to."""
+	refObjectName: String
+
+	"""The module itself, for a MODULE hit; null otherwise."""
+	module: _Module
+	"""The data object, for a DATA_OBJECT hit; null otherwise."""
+	dataObject: _DataObject
+	"""The function, for a FUNCTION hit; null otherwise."""
+	function: _Function
+	"""The data source, for a DATA_SOURCE hit; null otherwise."""
+	dataSource: _DataSource
+	"""The field definition, for a FIELD hit; null otherwise."""
+	field: __Field
 }

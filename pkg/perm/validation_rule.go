@@ -2,6 +2,7 @@ package perm
 
 import (
 	"github.com/hugr-lab/query-engine/pkg/auth"
+	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/validator"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -18,6 +19,23 @@ func (r *PermissionFieldRule) EnterField(ctx *validator.WalkContext, parentDef *
 	}
 	checker := PermissionsFromCtx(ctx.Context)
 	if checker == nil || parentDef == nil {
+		return nil
+	}
+	// The meta surface is not role-governed: a meta-field is what __schema and
+	// __typename are, and no one writes a permission rule for those. Without
+	// this, a deployment that locks down with a wildcard row and grants back
+	// explicitly loses logical-model introspection AND standard __schema
+	// introspection, because matchRank matches ("*","*") against every field
+	// the walker visits. What the metadata resolvers RETURN is still filtered
+	// per role — only the entry point is exempt. The set is a Go slice in
+	// base, not an SDL marker, so no source can write itself into it.
+	//
+	// A disabled ROLE is still refused: the marker takes a surface out of the
+	// rules, not out of authentication.
+	if base.InMetaSurface(parentDef, field) {
+		if checker.Disabled {
+			return gqlerror.List{gqlerror.WrapIfUnwrapped(auth.ErrForbidden)}
+		}
 		return nil
 	}
 	_, ok := checker.Enabled(parentDef.Name, field.Name)

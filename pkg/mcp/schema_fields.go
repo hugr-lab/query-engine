@@ -62,11 +62,15 @@ type EnumValue struct {
 // --- scan targets ---
 
 type metaFieldNode struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	McpExclude  bool             `json:"mcp_exclude"`
-	Type        *gqlTypeRef      `json:"type"`
-	Args        []metaInputValue `json:"args"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	McpExclude  bool   `json:"mcp_exclude"`
+	// HugrType is what the field IS in hugr's model, served by the ENGINE
+	// (__Field.hugr_type). It cannot be derived here: the answer lives in the
+	// field's directives, which a client reading through GraphQL never sees.
+	HugrType string           `json:"hugr_type"`
+	Type     *gqlTypeRef      `json:"type"`
+	Args     []metaInputValue `json:"args"`
 }
 
 type metaTypeFieldsNode struct {
@@ -109,7 +113,7 @@ func (s *Server) catalogObjectFields(ctx context.Context, req mcp.CallToolReques
 	var node metaObjectFieldsNode
 	found, err := s.queryScanLookup(ctx, `query($n: String!) { obj: _dataObject(name: $n) {
 		name primaryKey
-		fields { name description mcp_exclude `+typeRefSelection+` args { name } }
+		fields { name description mcp_exclude hugr_type `+typeRefSelection+` args { name } }
 		relations { fieldName dataObject { name } }
 	} }`, map[string]any{"n": object}, "obj", &node)
 	if err != nil {
@@ -142,7 +146,7 @@ func (s *Server) catalogObjectFields(ctx context.Context, req mcp.CallToolReques
 			item.Description = f.Description
 		}
 		item.RefObject = refByField[f.Name]
-		item.FieldKind = classifyFieldKind(item.Type, len(f.Args), item.RefObject != "")
+		item.FieldKind = mcpFieldKind(f.HugrType, item.RefObject)
 		items = append(items, item)
 	}
 
@@ -152,26 +156,33 @@ func (s *Server) catalogObjectFields(ctx context.Context, req mcp.CallToolReques
 	return toolResultJSON(paginate(items, limit, offset, false)), nil
 }
 
-// orderFieldsByRelevance reorders a list the caller can ALREADY see. The
-// ranking read is privileged — the index lives in the catalog views — but it
-// can leak nothing here: it only supplies an order over names that the
-// caller's own visible field list already contains. Anything the index knows
-// about and the caller may not see simply has no row to move.
+// orderFieldsByRelevance reorders a list the caller can ALREADY see: it only
+// supplies an order over names the caller's own visible field list contains,
+// so anything the index knows about and the caller may not see has no row to
+// move.
+//
+// It used to read the index directly, with full access, for exactly the reason
+// catalog-search did — and it was the second privileged read in this package.
+// _search does the ranking now, in the caller's own context, which makes the
+// elevation unnecessary rather than merely justified.
 func (s *Server) orderFieldsByRelevance(ctx context.Context, object, query string, items []TypeField) {
-	var rows []vectorRow
-	err := s.queryScanAdmin(ctx, `query($q: String!, $obj: String!) { core {
-		entity_fields(filter: {type_name: {eq: $obj}},
-			order_by: [{field: "_distance_to_query", direction: ASC}], limit: 500) {
-			name _distance_to_query(query: $q)
+	var page struct {
+		Items []struct {
+			Name string `json:"name"`
+		} `json:"items"`
+	}
+	err := s.queryScan(ctx, `query($q: String!, $obj: String!) {
+		_search(query: $q, kinds: [FIELD], object: $obj, limit: 200, includeMcpExcluded: false) {
+			items { name }
 		}
-	} }`, map[string]any{"q": query, "obj": object}, "core.entity_fields", &rows)
-	if err != nil || len(rows) == 0 {
-		// No index (no embedder, or the compiled storage): keep the schema
-		// order rather than pretending to rank.
+	}`, map[string]any{"q": query, "obj": object}, "_search", &page)
+	if err != nil || len(page.Items) == 0 {
+		// No ranking available (no embedder and nothing matched lexically):
+		// keep the schema order rather than pretending to rank.
 		return
 	}
-	rank := make(map[string]int, len(rows))
-	for i, r := range rows {
+	rank := make(map[string]int, len(page.Items))
+	for i, r := range page.Items {
 		rank[r.Name] = i
 	}
 	unranked := len(rank)

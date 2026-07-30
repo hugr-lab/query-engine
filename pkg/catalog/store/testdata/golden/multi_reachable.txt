@@ -107,6 +107,9 @@ _QueryType
 _Relation
 _RelationDirection
 _RelationKind
+_SearchHit
+_SearchKind
+_SearchResult
 _TypeScope
 __Directive
 __DirectiveLocation

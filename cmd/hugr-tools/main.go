@@ -35,7 +35,7 @@ type globalFlags struct {
 }
 
 func main() {
-	fmt.Fprintln(os.Stderr, deprecationNotice)
+	fmt.Fprint(os.Stderr, deprecationNotice)
 
 	if len(os.Args) < 2 {
 		printUsage()
