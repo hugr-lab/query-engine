@@ -89,9 +89,14 @@ type SearchResultPage struct {
 // searchQuery is the whole ranking pipeline, as one call in the CALLER's
 // context. includeMcpExcluded: false is how @exclude_mcp keeps being honoured
 // without the engine adopting an AI-tooling policy as an access rule.
+// match: MEANING is pinned, not defaulted. An agent describes the data it
+// wants in its own words — that is a question for the semantic track — and the
+// engine's default is BOTH, which serves a human who may be typing an
+// identifier. Naming it here keeps this tool's behaviour where it was when the
+// engine's default changes.
 const searchQuery = `query($q: String!, $kinds: [_SearchKind!],
 	$module: String, $limit: Int!, $offset: Int!, $minScore: Float) {
-	_search(query: $q, kinds: $kinds, module: $module,
+	_search(query: $q, kinds: $kinds, module: $module, match: MEANING,
 		limit: $limit, offset: $offset, minScore: $minScore, includeMcpExcluded: false) {
 		limit offset hasMore filteredOut lexical lexicalReason
 		items {

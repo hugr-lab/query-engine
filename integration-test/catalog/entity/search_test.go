@@ -27,7 +27,7 @@ import (
 // searchRoot is the shape every test here selects: enough to identify a hit
 // without pulling the drill-down.
 const searchRoot = `lexical lexicalReason hasMore filteredOut limit offset
-	items { kind name moduleName dataSourceName score objectName type hugrType refObjectName }`
+	items { kind matchedOn name moduleName dataSourceName score objectName type hugrType refObjectName }`
 
 type searchHit struct {
 	Kind          string  `json:"kind"`
@@ -36,6 +36,7 @@ type searchHit struct {
 	DataSource    string  `json:"dataSourceName"`
 	Score         float64 `json:"score"`
 	ObjectName    string  `json:"objectName"`
+	MatchedOn     string  `json:"matchedOn"`
 	GQLType       string  `json:"type"`
 	HugrType      string  `json:"hugrType"`
 	RefObjectName string  `json:"refObjectName"`
@@ -353,4 +354,73 @@ func TestSearchVectorRanking(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "semantic search should reach the data-source catalog, got %v", names)
+}
+
+// TestSearchByName is the track the vector index cannot serve: embeddings are
+// made from DESCRIPTIONS, so an identifier never enters them, and on a
+// deployment WITH an embedder a caller who typed a name used to get whatever
+// was described in similar words instead of the thing they named.
+//
+// The underscore is the point of the fixture, not decoration. hugr names are
+// underscore-separated identifiers, and the ilike prefilter has no ESCAPE
+// clause — escaping "_" as "\_" matched literally and returned nothing, which
+// is invisible to any test whose query happens to be one plain word.
+func TestSearchByName(t *testing.T) {
+	svc, _ := mcpService(t, 0, "")
+	ctx := adminCtx(t)
+
+	exact := runSearch(t, ctx, svc, `query: "core_api_keys", kinds: [DATA_OBJECT], match: NAME, limit: 10`)
+	require.NotEmpty(t, exact.Items, "an exact name must find its object")
+	assert.Equal(t, "core_api_keys", exact.Items[0].Name)
+	assert.Equal(t, "NAME", exact.Items[0].MatchedOn)
+	assert.Equal(t, 1.0, exact.Items[0].Score, "an exact name is the top of the name scale")
+	assert.False(t, exact.Lexical, "substring matching is the POINT of this track, not a fallback")
+
+	partial := runSearch(t, ctx, svc, `query: "api_keys", kinds: [DATA_OBJECT], match: NAME, limit: 10`)
+	assert.Contains(t, hitNamesOf(partial), "core_api_keys", "a fragment of the name must still find it")
+
+	// A name track ranks names. A word that appears only in descriptions is
+	// not a name match, however well it would do semantically.
+	none := runSearch(t, ctx, svc,
+		`query: "who can log in and with what key", kinds: [DATA_OBJECT], match: NAME, limit: 10`)
+	assert.Empty(t, none.Items, "prose is not an identifier")
+}
+
+// TestSearchBothPutsNamesFirst — the two tracks rank on scales that do not
+// compare (an exact identifier against an embedding distance), so BOTH
+// concatenates them rather than merge-sorting. Blending is what buried an
+// object under its own fields.
+func TestSearchBothPutsNamesFirst(t *testing.T) {
+	svc, _ := mcpService(t, 0, "")
+	page := runSearch(t, adminCtx(t), svc, `query: "core_api_keys", match: BOTH, limit: 20`)
+
+	require.NotEmpty(t, page.Items)
+	first := page.Items[0]
+	assert.Equal(t, "NAME", first.MatchedOn, "a name match leads")
+	assert.Equal(t, "core_api_keys", first.Name)
+
+	// Once a name hit covers an entity, the meaning track must not repeat it.
+	seen := map[string]int{}
+	for _, h := range page.Items {
+		seen[h.Kind+"/"+h.ObjectName+"/"+h.Name]++
+	}
+	for key, n := range seen {
+		assert.Equal(t, 1, n, "duplicate across tracks: %s", key)
+	}
+
+	// And every hit says which track found it.
+	for _, h := range page.Items {
+		assert.Contains(t, []string{"NAME", "MEANING"}, h.MatchedOn, "hit %s", h.Name)
+	}
+}
+
+// TestSearchMeaningExcludesTheNameTrack — MCP pins match: MEANING, so the
+// track has to stay pure: no name hits leaking in, whatever the query.
+func TestSearchMeaningExcludesTheNameTrack(t *testing.T) {
+	svc, _ := mcpService(t, 0, "")
+	page := runSearch(t, adminCtx(t), svc, `query: "core_api_keys", match: MEANING, limit: 20`)
+	require.NotEmpty(t, page.Items)
+	for _, h := range page.Items {
+		assert.Equal(t, "MEANING", h.MatchedOn, "hit %s", h.Name)
+	}
 }

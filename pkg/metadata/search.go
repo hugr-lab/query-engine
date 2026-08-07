@@ -27,6 +27,16 @@ import (
 // window; without one, a role that may see little would get an empty page out
 // of a full index.
 
+// The two ways to match, and the reason they are selected rather than
+// blended: a name is an identifier and a description is prose, they rank on
+// scales that do not compare, and mixing them buries an exact name hit under
+// whatever happened to be described in similar words.
+const (
+	matchName    = "NAME"
+	matchMeaning = "MEANING"
+	matchBoth    = "BOTH"
+)
+
 const (
 	searchKindModule     = "module"
 	searchKindDataSource = "data_source"
@@ -70,6 +80,7 @@ type searchRequest struct {
 	kinds              []string
 	module             string
 	object             string
+	match              string
 	limit              int
 	offset             int
 	minScore           float64
@@ -148,6 +159,7 @@ func parseSearchArgs(field *ast.Field, vars map[string]any) (searchRequest, erro
 		kinds:              searchKinds,
 		limit:              searchDefaultLimit,
 		includeMcpExcluded: true,
+		match:              matchBoth,
 	}
 	args := field.ArgumentMap(vars)
 
@@ -171,6 +183,15 @@ func parseSearchArgs(field *ast.Field, vars map[string]any) (searchRequest, erro
 	}
 	if v, ok := args["object"].(string); ok {
 		req.object = v
+	}
+	if v, ok := args["match"].(string); ok && v != "" {
+		switch v {
+		case matchName, matchMeaning, matchBoth:
+			req.match = v
+		default:
+			return req, fmt.Errorf("_search: unknown match %q — valid: %s, %s, %s",
+				v, matchName, matchMeaning, matchBoth)
+		}
 	}
 	if v, ok := intArg(args["limit"]); ok {
 		req.limit = v
@@ -432,6 +453,7 @@ func searchHitResolver(ctx context.Context, lm catalog.LogicalModel, provider ca
 	return processSelectionSet(ctx, ss, map[string]fieldResolverFunc{
 		"__typename":     typeNameResolver,
 		"kind":           value(searchKindGQL[h.kind]),
+		"matchedOn":      value(h.matchedOn),
 		"name":           value(h.name),
 		"moduleName":     value(h.module),
 		"dataSourceName": nullableText(h.dataSource),
