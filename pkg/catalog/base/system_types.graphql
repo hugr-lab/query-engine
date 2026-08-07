@@ -143,6 +143,22 @@ type Query @system {
 		module: String
 		"Restrict FIELD hits to one data object; ignored by the other kinds."
 		object: String
+		"""
+		WHAT to match on. Searching by NAME and searching by MEANING are
+		different questions and rank on scales that do not compare, which is
+		why they are selected rather than blended:
+
+		NAME — substring matching over the entity's name. Always available,
+		needs no embedder, and is the only way to find an identifier: a name
+		never enters the vector index, which embeds DESCRIPTIONS.
+
+		MEANING — semantic ranking over descriptions, degrading to substring
+		matching when the deployment has no vector index (see lexical).
+
+		BOTH (the default) — name matches first, then meaning, deduplicated.
+		Each hit says which one found it.
+		"""
+		match: _SearchMatch = BOTH
 		"Page size, 1..200."
 		limit: Int = 50
 		"Hits to skip."
@@ -596,6 +612,19 @@ type _Function @system {
 # --- logical-model search (_search) ---
 
 """
+What a search matches on. See the `match` argument of `_search`.
+
+NAME and MEANING rank on scales that do not compare — an exact identifier
+against an embedding distance — which is why a search selects one or asks for
+BOTH and gets them concatenated, name matches first, rather than blended.
+"""
+enum _SearchMatch @system {
+	NAME
+	MEANING
+	BOTH
+}
+
+"""
 What kind of logical entity a search hit is.
 """
 enum _SearchKind @system {
@@ -623,8 +652,10 @@ type _SearchResult @system {
 	"""Candidates dropped because the caller may not see them."""
 	filteredOut: Int!
 	"""
-	True when ranking fell back to substring matching because the vector index
-	was unusable: results are cruder, so prefer exact terms.
+	True when the MEANING track fell back to substring matching because the
+	vector index was unusable: those results are cruder, so prefer exact terms.
+	Always false for match: NAME, where substring matching is the point rather
+	than a fallback.
 	"""
 	lexical: Boolean!
 	"""Why the vector index was unusable; null when it was used."""
@@ -638,6 +669,11 @@ selecting it.
 """
 type _SearchHit @system {
 	kind: _SearchKind!
+	"""
+	Which track found this hit — NAME or MEANING, never BOTH. Scores are
+	comparable within a track and not across them.
+	"""
+	matchedOn: _SearchMatch!
 	"""
 	Module: dotted path ("" is the root). Data source: source name. Data
 	object: GraphQL type name. Function: field name in its module. Field:
