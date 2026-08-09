@@ -465,6 +465,11 @@ type searchPage struct {
 	HasMore  bool `json:"has_more"`
 	Filtered int  `json:"filtered_out"`
 	Lexical  bool `json:"lexical"`
+	// LexicalReason is why the vector index was unusable. A silent fallback is
+	// indistinguishable from a broken ranking query, which is what makes this
+	// field the only way to tell "no embedder here" from "the ranking query no
+	// longer matches the catalog views".
+	LexicalReason string `json:"lexical_reason"`
 }
 
 func catalogSearch(t *testing.T, h http.Handler, args map[string]any) searchPage {
