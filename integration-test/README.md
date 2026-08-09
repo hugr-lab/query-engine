@@ -22,7 +22,7 @@ integration-test/
 
 **Location**: `catalog/entity/`
 
-Boots a real `hugr.Service` on the entity catalog storage (design 034) — the schema of every source lives in the `catalog.*` tables as a logical model and the GraphQL schema is generated from it on the fly. These cover the storage end to end rather than a provider in isolation: runtime sources compile and store, a user source loads and is queryable, the catalog's own state is visible through the `entity_*` views, curation reaches introspection, and the MCP `catalog-*` tools read and rank over it (including under a restricted role).
+Boots a real `hugr.Service` on the entity catalog storage (design 034) — the schema of every source lives in the `catalog.*` tables as a logical model and the GraphQL schema is generated from it on the fly. These cover the storage end to end rather than a provider in isolation: runtime sources compile and store, a user source loads and is queryable, the catalog's own state is visible through the `core.catalog.*` views, curation reaches introspection, and the MCP `catalog-*` tools read and rank over it (including under a restricted role).
 
 ### Running
 

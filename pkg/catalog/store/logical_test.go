@@ -158,7 +158,7 @@ type gauges @module(name: "ops") @table(name: "gauges") {
 	assert.Equal(t, []string{"sales", "sales.reports"}, main.Modules)
 
 	// Curation is the point of the logical model: a curated description must
-	// reach introspection, not just the entity_data_sources view.
+	// reach introspection, not just the active_sources view.
 	require.NoError(t, store.SetDataSourceDescription(ctx, "ro", "Operational gauges", "Long form."))
 	curated := store.DataSource(ctx, "ro")
 	require.NotNil(t, curated)
@@ -172,7 +172,7 @@ type gauges @module(name: "ops") @table(name: "gauges") {
 // TestLogicalCurationOverlay pins that the LOGICAL-MODEL surface serves the
 // curated text, not the stored row. The overlay used to be applied only in
 // ForName, so _catalog / _module / _dataObject / _function answered with raw
-// descriptions while the entity_* views answered with curated ones — the same
+// descriptions while the catalog views answered with curated ones — the same
 // deployment describing itself two different ways depending on the door.
 // Long descriptions exist ONLY as curation and had no surface at all.
 func TestLogicalCurationOverlay(t *testing.T) {

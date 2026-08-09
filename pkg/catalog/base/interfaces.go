@@ -54,7 +54,7 @@ type Provider interface {
 // and lives on in LogicalAnnotator / GraphQLAnnotator below.
 
 // LogicalAnnotator curates human descriptions over the LOGICAL model — the
-// source-level entities the CoreDB entity_* views expose: modules, data
+// source-level entities the CoreDB core.catalog.* views expose: modules, data
 // objects, residual source-defined types, object fields (including relation
 // navigation fields), functions and data sources. The keys mirror exactly how
 // those views select their overlay from catalog.annotations, so a curation

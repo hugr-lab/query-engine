@@ -228,11 +228,11 @@ For a multi-path query subscription with 2 paths and 10 ticks, the client receiv
 Client → subscribe s1 (query streaming, 2 paths)
 Client → subscribe s2 (LLM streaming)
 
-Server → binary frame (s1, path=core.entity_types)
+Server → binary frame (s1, path=core.catalog.types)
 Server → binary frame (s2, LLM event)
-Server → binary frame (s1, path=core.entity_fields)
+Server → binary frame (s1, path=core.catalog.fields)
 Server → part_complete s1 (tick 1 done for both paths)
-Server → binary frame (s1, path=core.entity_types)  (tick 2)
+Server → binary frame (s1, path=core.catalog.types)  (tick 2)
 Server → binary frame (s2, LLM event)
 Server → subscription_complete s2
 Server → part_complete s1 (tick 2 done)

@@ -689,7 +689,7 @@ func (g *genContext) dataSourceInfo(ctx context.Context, row *dataSourceRow) (*c
 }
 
 // readDataSources reads the active sources with the data_source curation
-// overlay applied — the same coalesce the entity_data_sources view does, so
+// overlay applied — the same coalesce the core.catalog.active_sources view does, so
 // introspection and the view never disagree. name == "" reads all.
 func (g *genContext) readDataSources(ctx context.Context, name string) ([]*dataSourceRow, error) {
 	where := `WHERE m.loaded AND NOT m.disabled AND NOT m.suspended`

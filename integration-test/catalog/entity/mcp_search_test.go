@@ -248,7 +248,7 @@ func TestMCPSearchVectorFieldHits(t *testing.T) {
 	require.Empty(t, payload["lexical_reason"])
 
 	items, _ := payload["items"].([]any)
-	require.NotEmpty(t, items, "no field hits — the entity_fields index is not being ranked")
+	require.NotEmpty(t, items, "no field hits — the fields index is not being ranked")
 
 	for _, raw := range items {
 		hit := raw.(map[string]any)
@@ -284,7 +284,7 @@ func TestMCPSearchVectorFieldHits(t *testing.T) {
 }
 
 // TestMCPSearchFieldHitsHonourModuleScope — a field carries no module of its
-// own (entity_fields has no such column); it belongs to whatever module owns
+// own (fields has no such column); it belongs to whatever module owns
 // its data object. Scoping the search by module used to be applied to the raw
 // ranked hit, where that field is still empty, so ANY module argument erased
 // every field hit — silently, and exactly in the deployments big enough to

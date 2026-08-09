@@ -243,7 +243,7 @@ func (s *Store) upsertVectors(ctx context.Context, what string, rows []seedRow, 
 // still present to resolve the keys (ctx carries the transaction). Modules are
 // shared across sources and are not swept here (a truly orphaned module seed is
 // harmless — the module row is gone, so it never surfaces through
-// entity_modules).
+// core.catalog.modules).
 func (s *Store) sweepAnnotationSeeds(ctx context.Context, dataSource string) error {
 	conn, err := s.pool.Conn(ctx)
 	if err != nil {

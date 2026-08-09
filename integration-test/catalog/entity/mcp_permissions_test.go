@@ -115,12 +115,12 @@ func TestMCPSearchWithoutCatalogViewAccess(t *testing.T) {
 	denied := []perm.Permission{
 		// The other shape a rule takes: a row filter would not deny the read,
 		// it would quietly shrink the index to nothing.
-		{Object: "data-object:query", Field: "core_entity_fields",
+		{Object: "data-object:query", Field: "core_fields",
 			Filter: map[string]any{"name": map[string]any{"eq": "___no_such_field___"}}},
 	}
 	for _, view := range []string{
-		"core_entity_modules", "core_entity_data_objects",
-		"core_entity_functions", "core_entity_data_sources",
+		"core_modules", "core_data_objects",
+		"core_functions", "core_active_sources",
 	} {
 		denied = append(denied, perm.Permission{Object: "data-object:query", Field: view, Disabled: true})
 	}

@@ -349,7 +349,7 @@ func probeCatalogStatements(t *testing.T, pool *db.Pool) {
 
 	// E7: the FUNCTION overlay join — the annotation kind is a COLUMN here, not
 	// a literal: a function's kind is part of its annotation identity, so the
-	// curation correlates on functions.kind (the entity_functions view and the
+	// curation correlates on functions.kind (the functions view and the
 	// reindex enumeration share this shape). The uncurated kind falls through.
 	exec(`INSERT INTO core.catalog.annotations (entity_kind, entity_key, description) VALUES
 		('function', 'probe.fn', 'the query fn'),

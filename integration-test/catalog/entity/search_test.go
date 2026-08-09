@@ -19,7 +19,7 @@ import (
 //
 // Two properties are worth testing here rather than in a unit test, because
 // both only exist end to end: the ranking read really runs against the
-// core.entity_* views (a column that does not exist there produces a silent
+// core.catalog.* views (a column that does not exist there produces a silent
 // lexical fallback, which is indistinguishable from "no embedder configured"
 // unless you read lexicalReason), and the permission filter really is the same
 // predicate _dataObject uses.
@@ -157,7 +157,7 @@ func TestSearchLexicalAnswers(t *testing.T) {
 
 // TestSearchLexicalReachesFields is the capability MCP's fallback never had:
 // a structural walk has no field enumeration that is not per object, so field
-// hits used to vanish whenever the embedder did. entity_fields is one table.
+// hits used to vanish whenever the embedder did. fields is one table.
 func TestSearchLexicalReachesFields(t *testing.T) {
 	svc, _ := mcpService(t, 0, "")
 	page := runSearch(t, adminCtx(t), svc, `query: "description", kinds: [FIELD], limit: 50`)

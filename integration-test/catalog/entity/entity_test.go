@@ -88,8 +88,8 @@ func TestEntityStorageBoots(t *testing.T) {
 	var stored []struct {
 		Name string `json:"name"`
 	}
-	query(t, s, ctx, `query { core { entity_data_sources { name } } }`,
-		"core.entity_data_sources", &stored)
+	query(t, s, ctx, `query { core { catalog { active_sources { name } } } }`,
+		"core.catalog.active_sources", &stored)
 	names := map[string]bool{}
 	for _, r := range stored {
 		names[r.Name] = true
@@ -103,8 +103,8 @@ func TestEntityStorageBoots(t *testing.T) {
 		Name   string `json:"name"`
 		Module string `json:"module"`
 	}
-	query(t, s, ctx, `query { core { entity_data_objects(filter: {data_source: {eq: "core"}}, order_by: [{field: "name"}]) { name module } } }`,
-		"core.entity_data_objects", &objects)
+	query(t, s, ctx, `query { core { catalog { data_objects(filter: {data_source: {eq: "core"}}, order_by: [{field: "name"}]) { name module } } } }`,
+		"core.catalog.data_objects", &objects)
 	assert.NotEmpty(t, objects, "CoreDB's own objects are stored")
 }
 
@@ -144,8 +144,8 @@ func TestEntityStorageDataSource(t *testing.T) {
 		Name     string `json:"name"`
 		Original string `json:"original_name"`
 	}
-	query(t, s, ctx, `query { core { entity_data_objects(filter: {data_source: {eq: "shop"}}) { name original_name } } }`,
-		"core.entity_data_objects", &objects)
+	query(t, s, ctx, `query { core { catalog { data_objects(filter: {data_source: {eq: "shop"}}) { name original_name } } } }`,
+		"core.catalog.data_objects", &objects)
 	require.Len(t, objects, 1)
 	assert.Equal(t, "shop_items", objects[0].Name, "stored under its prefixed name")
 
@@ -197,8 +197,8 @@ func TestEntityStorageCuration(t *testing.T) {
 		Name string `json:"name"`
 		Desc string `json:"description"`
 	}
-	query(t, s, ctx, `query { core { entity_data_objects(filter: {name: {eq: "core_data_sources"}}) { name description } } }`,
-		"core.entity_data_objects", &objects)
+	query(t, s, ctx, `query { core { catalog { data_objects(filter: {name: {eq: "core_data_sources"}}) { name description } } } }`,
+		"core.catalog.data_objects", &objects)
 	require.Len(t, objects, 1)
 	assert.Equal(t, "Registered data sources", objects[0].Desc, "curation overrides the stored description")
 
@@ -221,8 +221,8 @@ func TestEntityStorageCuration(t *testing.T) {
 		Kind string `json:"kind"`
 		Desc string `json:"description"`
 	}
-	query(t, s, ctx, `query { core { entity_functions(filter: {name: {eq: "load_data_source"}}) { kind description } } }`,
-		"core.entity_functions", &fns)
+	query(t, s, ctx, `query { core { catalog { functions(filter: {name: {eq: "load_data_source"}}) { kind description } } } }`,
+		"core.catalog.functions", &fns)
 	require.Len(t, fns, 1)
 	assert.Equal(t, "mutation", fns[0].Kind)
 	assert.Equal(t, "Load a registered data source", fns[0].Desc,
@@ -291,19 +291,21 @@ func TestEntityStorageCurationReachesIntrospection(t *testing.T) {
 // opposite while the compiled-schema storage was the default. There is no
 // storage to select any more, so what it guards is the CoreDB catalog module:
 // it must expose the entity views and not regrow the _schema_* ones.
-func TestCatalogModuleServesEntityViewsOnly(t *testing.T) {
+func TestCatalogModuleServesLogicalViewsOnly(t *testing.T) {
 	s, ctx := setupEngine(t)
 
 	var objects []struct {
 		Name string `json:"name"`
 	}
-	query(t, s, ctx, `query { core { entity_data_objects(filter: {name: {eq: "core_data_sources"}}) { name } } }`,
-		"core.entity_data_objects", &objects)
+	query(t, s, ctx, `query { core { catalog { data_objects(filter: {name: {eq: "core_data_sources"}}) { name } } } }`,
+		"core.catalog.data_objects", &objects)
 	assert.NotEmpty(t, objects, "entity views are served")
 
-	// The compiled-schema views went with the storage that filled them (a
-	// validation error surfaces either from Query itself or on the response).
-	res, err := s.Query(ctx, `query { core { catalog { types { name } } } }`, nil)
+	// The compiled-schema views went with the storage that filled them. The
+	// probe deliberately names one whose name was NOT reused: this module now
+	// serves modules / types / fields / data_objects again, but over the
+	// LOGICAL model, so those names prove nothing about the old storage.
+	res, err := s.Query(ctx, `query { core { catalog { module_intro { name } } } }`, nil)
 	if err == nil {
 		assert.Error(t, res.Err(), "compiled-schema views are no longer part of the schema")
 		res.Close()

@@ -14,10 +14,10 @@ import (
 // AFTER the default descriptions: a row in catalog.annotations overrides the
 // generated description of the reconstructed definition. Two layers stack in
 // order (logical first, GraphQL second, each overriding the previous), keyed
-// EXACTLY the way the CoreDB entity_* views select their overlay so a single
+// EXACTLY the way the CoreDB core.catalog.* views select their overlay so a single
 // annotations table drives both the reconstructed schema and MCP vector search.
 //
-//	LOGICAL (the source-level model the entity_* views expose):
+//	LOGICAL (the source-level model the core.catalog.* views expose):
 //	  module        entity_key = module name                        (no ForName surface)
 //	  data_object   entity_key = compiled object type name          → def.Description
 //	  type          entity_key = residual source type name          → def.Description
@@ -38,7 +38,7 @@ import (
 // writers (annotate.go).
 
 const (
-	// Logical kinds (mirror the entity_* view annotation joins).
+	// Logical kinds (mirror the catalog view annotation joins).
 	kindModule     = "module"
 	kindDataObject = "data_object"
 	kindType       = "type"
@@ -53,7 +53,7 @@ const (
 	// it does in the catalog.functions primary key, and it does so with the very
 	// value that table stores: the overlay join needs no mapping
 	// (a.entity_kind = f.kind) and a client curating a function passes back the
-	// kind it read from entity_functions / _catalog.
+	// kind it read from core.catalog.functions / _catalog.
 	kindFunction         = "function"     // query function — also the pre-kind value
 	kindMutationFunction = "mutation"     // mutation function
 	kindSubscription     = "subscription" // subscription
@@ -69,7 +69,7 @@ const (
 // from the data object that uses it, so it is never a search target
 // (design-035 vector index scope — the same decision seedableField and the
 // reindex enumeration implement). Its CURATION is unaffected: the description
-// overlay lives in the text columns and entity_types still coalesces it; only
+// overlay lives in the text columns and core.catalog.types still coalesces it; only
 // the embedder call, and the vector nothing would read, are skipped.
 func indexedKind(kind string) bool {
 	return kind != kindType
