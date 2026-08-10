@@ -2839,7 +2839,26 @@ type Query @system {
     limit: Int = 50
 
     """
-    Drop hits scoring below this (0..1).
+    WHAT to match on. Searching by NAME and searching by MEANING are
+    different questions and rank on scales that do not compare, which is
+    why they are selected rather than blended:
+    
+    NAME — substring matching over the entity's name. Always available,
+    needs no embedder, and is the only way to find an identifier: a name
+    never enters the vector index, which embeds DESCRIPTIONS.
+    
+    MEANING — semantic ranking over descriptions, degrading to substring
+    matching when the deployment has no vector index (see lexical).
+    
+    BOTH (the default) — name matches first, then meaning, deduplicated.
+    Each hit says which one found it.
+    """
+    match: _SearchMatch = BOTH
+
+    """
+    Drop MEANING hits scoring below this (0..1). Name-track hits rank on a
+    scale of their own and are never thresholded: a bar tuned for semantic
+    similarity must not silently delete the identifier the caller typed.
     """
     minScore: Float
 
