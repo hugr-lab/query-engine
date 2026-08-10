@@ -2856,7 +2856,9 @@ type Query @system {
     match: _SearchMatch = BOTH
 
     """
-    Drop hits scoring below this (0..1).
+    Drop MEANING hits scoring below this (0..1). Name-track hits rank on a
+    scale of their own and are never thresholded: a bar tuned for semantic
+    similarity must not silently delete the identifier the caller typed.
     """
     minScore: Float
 

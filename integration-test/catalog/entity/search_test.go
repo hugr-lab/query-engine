@@ -71,6 +71,36 @@ func hitNamesOf(page searchPage) []string {
 	return out
 }
 
+// assertTracksOrdered is the ordering contract of a page. Scores are ordered
+// WITHIN a track and never across: the two scales do not compare, which is
+// why BOTH concatenates the name block before the meaning block instead of
+// merge-sorting. A page from a single-track search degenerates to the plain
+// "ordered by score" assertion.
+func assertTracksOrdered(t testing.TB, page searchPage) {
+	t.Helper()
+	meaningStarted := false
+	last := map[string]float64{"NAME": 2, "MEANING": 2}
+	for _, h := range page.Items {
+		require.Contains(t, last, h.MatchedOn, "hit %s carries an unknown track", h.Name)
+		if h.MatchedOn == "MEANING" {
+			meaningStarted = true
+		} else {
+			assert.False(t, meaningStarted, "a NAME hit after the MEANING block: %s", h.Name)
+		}
+		assert.LessOrEqual(t, h.Score, last[h.MatchedOn],
+			"scores ordered within the %s track (hit %s)", h.MatchedOn, h.Name)
+		last[h.MatchedOn] = h.Score
+	}
+}
+
+// hitIdentity is the cross-track identity of a hit, mirroring candidateKey in
+// the engine: a function is (module, name) — same-named functions in
+// different modules are different functions — and a field's identity is its
+// owning object.
+func hitIdentity(h searchHit) string {
+	return h.Kind + "/" + h.ModuleName + "/" + h.ObjectName + "/" + h.Name
+}
+
 // adminCtx is what the endpoint middleware installs for an admin caller.
 func adminCtx(t testing.TB) context.Context {
 	t.Helper()
@@ -117,10 +147,10 @@ func TestSearchLexicalAnswers(t *testing.T) {
 	require.NotEmpty(t, page.Items, "lexical search answers on the entity storage")
 	assert.Contains(t, hitNamesOf(page), "core_data_sources")
 
-	var last float64 = 2
+	// The default match is BOTH, so the page is two blocks; global score
+	// ordering is deliberately NOT an invariant here.
+	assertTracksOrdered(t, page)
 	for _, h := range page.Items {
-		assert.LessOrEqual(t, h.Score, last, "hits come back ordered by score")
-		last = h.Score
 		assert.NotEmpty(t, h.Kind)
 	}
 }
@@ -333,11 +363,7 @@ func TestSearchVectorRanking(t *testing.T) {
 	require.False(t, page.Lexical)
 	require.NotEmpty(t, page.Items)
 
-	var last float64 = 2
-	for _, h := range page.Items {
-		assert.LessOrEqual(t, h.Score, last, "hits come back ordered by score")
-		last = h.Score
-	}
+	assertTracksOrdered(t, page)
 
 	// The query shares no substring with the answer — that is the point. A
 	// lexical ranker scores 0 for "where are the attached databases described"
@@ -379,11 +405,36 @@ func TestSearchByName(t *testing.T) {
 	partial := runSearch(t, ctx, svc, `query: "api_keys", kinds: [DATA_OBJECT], match: NAME, limit: 10`)
 	assert.Contains(t, hitNamesOf(partial), "core_api_keys", "a fragment of the name must still find it")
 
+	// Multi-word: every term must land in the NAME. The prefilter demands the
+	// same (AND of terms), so a two-word query cannot fill its window with
+	// rows matching one word and then score them all to zero.
+	multi := runSearch(t, ctx, svc, `query: "api keys", kinds: [DATA_OBJECT], match: NAME, limit: 10`)
+	assert.Contains(t, hitNamesOf(multi), "core_api_keys", "every term matches the name, so the name track must find it")
+
 	// A name track ranks names. A word that appears only in descriptions is
 	// not a name match, however well it would do semantically.
 	none := runSearch(t, ctx, svc,
 		`query: "who can log in and with what key", kinds: [DATA_OBJECT], match: NAME, limit: 10`)
 	assert.Empty(t, none.Items, "prose is not an identifier")
+}
+
+// TestSearchBothMinScoreKeepsNames — minScore reads on the MEANING scale and
+// binds only that track. A caller who tuned a semantic similarity bar AND
+// typed an identifier fragment must not have the bar delete the very object
+// they named: 0.9 comfortably kills every lexical meaning hit here, and the
+// name hit must survive it.
+func TestSearchBothMinScoreKeepsNames(t *testing.T) {
+	svc, _ := mcpService(t, 0, "")
+	page := runSearch(t, adminCtx(t), svc,
+		`query: "api_keys", kinds: [DATA_OBJECT], match: BOTH, minScore: 0.9, limit: 10`)
+
+	require.Contains(t, hitNamesOf(page), "core_api_keys",
+		"a meaning-scale bar must not delete a name-track hit")
+	for _, h := range page.Items {
+		if h.MatchedOn == "MEANING" {
+			assert.GreaterOrEqual(t, h.Score, 0.9, "the bar still binds the meaning track: %s", h.Name)
+		}
+	}
 }
 
 // TestSearchBothPutsNamesFirst — the two tracks rank on scales that do not
@@ -402,16 +453,14 @@ func TestSearchBothPutsNamesFirst(t *testing.T) {
 	// Once a name hit covers an entity, the meaning track must not repeat it.
 	seen := map[string]int{}
 	for _, h := range page.Items {
-		seen[h.Kind+"/"+h.ObjectName+"/"+h.Name]++
+		seen[hitIdentity(h)]++
 	}
 	for key, n := range seen {
 		assert.Equal(t, 1, n, "duplicate across tracks: %s", key)
 	}
 
-	// And every hit says which track found it.
-	for _, h := range page.Items {
-		assert.Contains(t, []string{"NAME", "MEANING"}, h.MatchedOn, "hit %s", h.Name)
-	}
+	// And every hit says which track found it, blocks in order.
+	assertTracksOrdered(t, page)
 }
 
 // TestSearchMeaningExcludesTheNameTrack — MCP pins match: MEANING, so the
@@ -419,6 +468,51 @@ func TestSearchBothPutsNamesFirst(t *testing.T) {
 func TestSearchMeaningExcludesTheNameTrack(t *testing.T) {
 	svc, _ := mcpService(t, 0, "")
 	page := runSearch(t, adminCtx(t), svc, `query: "core_api_keys", match: MEANING, limit: 20`)
+	require.NotEmpty(t, page.Items)
+	for _, h := range page.Items {
+		assert.Equal(t, "MEANING", h.MatchedOn, "hit %s", h.Name)
+	}
+}
+
+// TestSearchBothWithEmbedder is TestSearchBothPutsNamesFirst against the REAL
+// meaning track. Without an embedder both tracks are substring-driven over
+// the same rows, so "names lead" and "no duplicates" hold trivially there;
+// only a vector ranking can produce a semantic hit that would outrank or
+// collide with a name hit, which is exactly what these assertions pin.
+func TestSearchBothWithEmbedder(t *testing.T) {
+	url, size := liveEmbedder(t)
+	svc, _ := mcpService(t, size, url)
+	page := runSearch(t, adminCtx(t), svc, `query: "core_api_keys", match: BOTH, limit: 20`)
+
+	require.False(t, page.Lexical, "the meaning track must be the vector index, not the fallback")
+	require.NotEmpty(t, page.Items)
+	first := page.Items[0]
+	assert.Equal(t, "NAME", first.MatchedOn, "a name match leads, however strong the semantic ranking")
+	assert.Equal(t, "core_api_keys", first.Name)
+
+	var meaningHits int
+	seen := map[string]int{}
+	for _, h := range page.Items {
+		seen[hitIdentity(h)]++
+		if h.MatchedOn == "MEANING" {
+			meaningHits++
+		}
+	}
+	assert.Positive(t, meaningHits, "the vector track fills the rest of the page")
+	for key, n := range seen {
+		assert.Equal(t, 1, n, "duplicate across tracks: %s", key)
+	}
+	assertTracksOrdered(t, page)
+}
+
+// TestSearchMeaningWithEmbedderExcludesNames — the purity of the MEANING
+// track, checked against the vector ranking MCP actually runs on.
+func TestSearchMeaningWithEmbedderExcludesNames(t *testing.T) {
+	url, size := liveEmbedder(t)
+	svc, _ := mcpService(t, size, url)
+	page := runSearch(t, adminCtx(t), svc, `query: "core_api_keys", match: MEANING, limit: 20`)
+
+	require.False(t, page.Lexical)
 	require.NotEmpty(t, page.Items)
 	for _, h := range page.Items {
 		assert.Equal(t, "MEANING", h.MatchedOn, "hit %s", h.Name)

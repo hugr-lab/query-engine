@@ -171,8 +171,12 @@ func (s *Server) orderFieldsByRelevance(ctx context.Context, object, query strin
 			Name string `json:"name"`
 		} `json:"items"`
 	}
+	// match: MEANING is pinned for the same reason catalog-search pins it: a
+	// relevance query is the caller's own words about the data, a question for
+	// the semantic track, and the engine's default (BOTH) would silently put
+	// substring name hits ahead of the semantic order this tool promises.
 	err := s.queryScan(ctx, `query($q: String!, $obj: String!) {
-		_search(query: $q, kinds: [FIELD], object: $obj, limit: 200, includeMcpExcluded: false) {
+		_search(query: $q, kinds: [FIELD], object: $obj, match: MEANING, limit: 200, includeMcpExcluded: false) {
 			items { name }
 		}
 	}`, map[string]any{"q": query, "obj": object}, "_search", &page)

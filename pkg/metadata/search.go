@@ -120,16 +120,23 @@ func processSearchQuery(ctx context.Context, provider catalog.Provider, querier 
 	}
 	// minScore narrows the CANDIDATES, before anything is verified.
 	//
-	// The page comes out the same either way — candidates are score-ordered,
-	// so the leading survivors are the qualifying ones — but two things do
-	// not. Verifying a candidate costs a definition reconstruction, and there
-	// is no reason to spend one on a hit the caller has already excluded. And
-	// filteredOut would otherwise count denials among sub-threshold
-	// candidates, reporting "there is data here you may not see" about rows
-	// the caller's own bar removed — the narrowing-is-not-filtering rule the
-	// verdicts exist to keep.
+	// The page comes out the same either way — candidates are score-ordered
+	// within their track, so the leading survivors are the qualifying ones —
+	// but two things do not. Verifying a candidate costs a definition
+	// reconstruction, and there is no reason to spend one on a hit the caller
+	// has already excluded. And filteredOut would otherwise count denials
+	// among sub-threshold candidates, reporting "there is data here you may
+	// not see" about rows the caller's own bar removed — the
+	// narrowing-is-not-filtering rule the verdicts exist to keep.
+	//
+	// The bar reads on the MEANING scale and binds ONLY that track. The two
+	// tracks rank on scales that do not compare — the reason BOTH concatenates
+	// instead of merge-sorting — so a threshold a caller tuned for semantic
+	// similarity must not silently delete the identifier they typed.
 	if req.minScore > 0 {
-		candidates = slices.DeleteFunc(candidates, func(c candidate) bool { return c.score < req.minScore })
+		candidates = slices.DeleteFunc(candidates, func(c candidate) bool {
+			return c.matchedOn == matchMeaning && c.score < req.minScore
+		})
 	}
 
 	kept, filtered, exhausted := filterCandidates(ctx, lm, provider, candidates, req, need)

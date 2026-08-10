@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/hugr-lab/query-engine/pkg/auth"
 	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 )
@@ -156,29 +158,43 @@ func rankCandidates(ctx context.Context, q Querier, req searchRequest, limit int
 	if q == nil {
 		return nil, "", errNoQuerier
 	}
-
-	var out []candidate
-	if req.match == matchName || req.match == matchBoth {
+	switch req.match {
+	case matchName:
 		named, err := rankByName(ctx, q, req, limit)
-		if err != nil {
-			return nil, "", err
-		}
-		out = append(out, named...)
-	}
-	if req.match == matchName {
-		return out, "", nil
+		return named, "", err
+	case matchMeaning:
+		return rankByMeaning(ctx, q, req, limit)
 	}
 
-	meaning, reason, err := rankByMeaning(ctx, q, req, limit)
-	if err != nil {
+	// BOTH. The tracks are independent reads of the same index, so they run
+	// concurrently: serially, the default search — the human-facing path —
+	// would pay the embedder round trip ON TOP of the name query instead of
+	// alongside it.
+	var (
+		named, meaning []candidate
+		reason         string
+	)
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		var err error
+		named, err = rankByName(gctx, q, req, limit)
+		return err
+	})
+	g.Go(func() error {
+		var err error
+		meaning, reason, err = rankByMeaning(gctx, q, req, limit)
+		return err
+	})
+	if err := g.Wait(); err != nil {
 		return nil, "", err
 	}
-	if req.match == matchMeaning {
-		return meaning, reason, nil
-	}
 
-	// BOTH: a name hit already covers its entity, so the meaning track only
-	// contributes what the name track did not find.
+	// A name hit already covers its entity, so the meaning track only
+	// contributes what the name track did not find. Keeping the NAME
+	// representative is safe against the caller's minScore because that bar
+	// binds only the meaning track (see search.go): dropping the meaning
+	// duplicate can never delete the entity from the page.
+	out := named
 	seen := make(map[string]struct{}, len(out))
 	for _, c := range out {
 		seen[candidateKey(c)] = struct{}{}
@@ -189,11 +205,22 @@ func rankCandidates(ctx context.Context, q Querier, req searchRequest, limit int
 		}
 		out = append(out, c)
 	}
+	// limit caps the verification work per REQUEST (searchMaxCandidates), not
+	// per track; two tracks do not get to double it.
+	if len(out) > limit {
+		out = out[:limit]
+	}
 	return out, reason, nil
 }
 
+// candidateKey is the identity a hit answers to across tracks. A function is
+// (module, name) everywhere else in this package — same-named functions in
+// different modules are DIFFERENT functions, and a stock deployment has them
+// (`checkpoint` lives in core and in core.ducklake). Field candidates carry no
+// module at ranking time; both tracks read the same index rows, so both agree
+// on "" and their identity is the owning object.
 func candidateKey(c candidate) string {
-	return c.kind + "\x1f" + c.object + "\x1f" + c.name
+	return c.kind + "\x1f" + c.module + "\x1f" + c.object + "\x1f" + c.name
 }
 
 // rankByMeaning is the semantic track, degrading to substring matching over
@@ -240,102 +267,32 @@ func rankByVector(ctx context.Context, q Querier, req searchRequest, limit int) 
 	if err := scanAdmin(ctx, q, gql, vars, "core", &batch); err != nil {
 		return nil, err
 	}
-	hits := collectCandidates(ordered, batch, func(row entityRow) float64 {
+	return collectCandidates(ordered, batch, matchMeaning, func(row entityRow) float64 {
 		// Distance 0 is identical; a score is the other way round so a client
 		// can reason about "higher is better" without knowing the metric.
 		if row.Distance < 0 {
 			return 0
 		}
 		return 1 - row.Distance
-	})
-	for i := range hits {
-		hits[i].matchedOn = matchMeaning
-	}
-	return hits, nil
+	}), nil
 }
 
-// rankLexically is the no-embedder path. SQL only NARROWS — any term appearing
-// in a name or a description makes a row a candidate — and the actual scoring
-// happens in Go, where a multi-word query narrows instead of widening.
+// rankLexically is the no-embedder path of the MEANING track. SQL only
+// NARROWS — see rankBySubstring — and the actual scoring happens in Go, where
+// a multi-word query narrows instead of widening.
 //
 // Doing the narrowing in the view rather than by walking the module tree is
 // what lets this path reach FIELDS. A structural walk has no enumeration of
 // fields that is not per object, which is why MCP's fallback dropped field
 // hits entirely; entity_fields is one table.
 func rankLexically(ctx context.Context, q Querier, req searchRequest, limit int) ([]candidate, error) {
-	terms := strings.Fields(strings.ToLower(req.query))
-	if len(terms) == 0 {
-		return nil, nil
-	}
-	vars := map[string]any{"limit": limit}
-	patterns := make([]string, len(terms))
-	for i, term := range terms {
-		name := fmt.Sprintf("t%d", i)
-		vars[name] = likePattern(term)
-		patterns[i] = "$" + name
-	}
-	sig := make([]string, 0, len(patterns)+2)
-	sig = append(sig, "$limit: Int!")
-	for _, p := range patterns {
-		sig = append(sig, p+": String!")
-	}
-
-	var body strings.Builder
-	ordered := make([]string, 0, len(req.kinds))
-	for _, kind := range req.kinds {
-		view, ok := entityViews[kind]
-		if !ok {
-			continue
-		}
-		ordered = append(ordered, kind)
-		// Deliberately not named `terms`: the query words of that name are
-		// what lexicalScore is called with below, and shadowing them here
-		// would put SQL fragments into the scorer the first time this loop
-		// grows a closure.
-		var match []string
-		for _, col := range view.nameCols {
-			for _, p := range patterns {
-				match = append(match, fmt.Sprintf("{%s: {ilike: %s}}", col, p))
-			}
-		}
-		filter := fmt.Sprintf("{_or: [%s]", strings.Join(match, ", "))
-		if kind == searchKindField && objectFilterApplies(req) {
-			filter += ", type_name: {eq: $obj}"
-		}
-		filter += "}"
-		fmt.Fprintf(&body, "%s: %s(filter: %s, limit: $limit) { %s }\n",
-			kind, view.alias, filter, strings.Join(view.selection, " "))
-	}
-	if len(ordered) == 0 {
-		return nil, nil
-	}
-	if objectFilterApplies(req) {
-		vars["obj"] = req.object
-		sig = append(sig, "$obj: String!")
-	}
-
-	batch := map[string][]entityRow{}
-	gql := "query(" + strings.Join(sig, ", ") + ") { core {\n" + body.String() + "} }"
-	if err := scanAdmin(ctx, q, gql, vars, "core", &batch); err != nil {
-		return nil, err
-	}
-	hits := collectCandidates(ordered, batch, func(row entityRow) float64 {
-		return lexicalScore(terms, row.Name, row.Desc)
+	return rankBySubstring(ctx, q, req, limit, substringTrack{
+		matchedOn:     matchMeaning,
+		prefilterCols: func(view entityView) []string { return view.nameCols },
+		score: func(terms []string, row entityRow) float64 {
+			return lexicalScore(terms, row.Name, row.Desc)
+		},
 	})
-	for i := range hits {
-		hits[i].matchedOn = matchMeaning
-	}
-	// The prefilter accepts ANY term; the score demands all of them.
-	kept := hits[:0]
-	for _, h := range hits {
-		if h.score > 0 {
-			kept = append(kept, h)
-		}
-	}
-	if len(kept) > limit {
-		kept = kept[:limit]
-	}
-	return kept, nil
 }
 
 // rankByName matches the entity's NAME and nothing else.
@@ -348,6 +305,48 @@ func rankLexically(ctx context.Context, q Querier, req searchRequest, limit int)
 // SQL narrows with ilike per term; the ordering is decided in Go, where an
 // exact name outranks a prefix and a prefix outranks a substring.
 func rankByName(ctx context.Context, q Querier, req searchRequest, limit int) ([]candidate, error) {
+	return rankBySubstring(ctx, q, req, limit, substringTrack{
+		matchedOn:     matchName,
+		prefilterCols: func(view entityView) []string { return []string{"name"} },
+		score: func(terms []string, row entityRow) float64 {
+			return nameScore(terms, row.Name)
+		},
+	})
+}
+
+// substringTrack is what distinguishes the two substring pipelines: which
+// columns the SQL prefilter searches, how a fetched row is scored, and which
+// track the hits answer for. Everything else — term splitting, the tiered
+// prefilter, scanning, zero-pruning, truncation — is shared in
+// rankBySubstring, so a prefilter fix lands on both tracks or neither. (The
+// ESCAPE bug lived as long as it did because the two copies could diverge
+// silently.)
+type substringTrack struct {
+	matchedOn     string
+	prefilterCols func(view entityView) []string
+	score         func(terms []string, row entityRow) float64
+}
+
+// prefilterTier is one aliased sub-query of the substring prefilter, and the
+// tiers are what makes a BOUNDED window safe. The views cannot rank a
+// substring match, so a single wide ilike window on a large catalog fills
+// with whatever arrives first and may not contain the very row the caller
+// named. Narrow matches therefore arrive through windows of their own: an
+// exact name cannot be crowded out of a window only exact names enter,
+// however many weaker substring rows the wide tier over-fetches.
+type prefilterTier struct {
+	suffix string
+	cond   func(view entityView) string
+}
+
+// rankBySubstring is the substring prefilter both tracks share: SQL narrows,
+// Go scores. Every term must match SOME prefilter column — the same demand
+// the scorer makes — so the window is not spent on rows the scorer will throw
+// away. (An any-term prefilter let rows matching one word of a two-word query
+// fill the whole window and then score 0, turning a full catalog into an
+// empty page.) order_by name keeps each window deterministic across
+// identical requests.
+func rankBySubstring(ctx context.Context, q Querier, req searchRequest, limit int, track substringTrack) ([]candidate, error) {
 	terms := strings.Fields(strings.ToLower(req.query))
 	if len(terms) == 0 {
 		return nil, nil
@@ -359,11 +358,43 @@ func rankByName(ctx context.Context, q Querier, req searchRequest, limit int) ([
 		vars[name] = likePattern(term)
 		patterns[i] = "$" + name
 	}
-	sig := make([]string, 0, len(patterns)+2)
+	sig := make([]string, 0, len(patterns)+4)
 	sig = append(sig, "$limit: Int!")
 	for _, p := range patterns {
 		sig = append(sig, p+": String!")
 	}
+
+	var tiers []prefilterTier
+	// A single-term query can be a whole identifier, and those get their own
+	// windows: the term with no wildcards around it is the exact name (modulo
+	// "_" matching any character — see likePattern), term% the prefixes. A
+	// multi-term query cannot have every term as a prefix, so for those the
+	// extra tiers would fetch nothing the wide one does not.
+	if len(terms) == 1 {
+		vars["tx"] = terms[0]
+		vars["tp"] = terms[0] + "%"
+		sig = append(sig, "$tx: String!", "$tp: String!")
+		tiers = append(tiers,
+			prefilterTier{"x", func(entityView) string { return "{name: {ilike: $tx}}" }},
+			prefilterTier{"p", func(entityView) string { return "{name: {ilike: $tp}}" }},
+		)
+	}
+	tiers = append(tiers, prefilterTier{"s", func(view entityView) string {
+		cols := track.prefilterCols(view)
+		perTerm := make([]string, len(patterns))
+		for i, p := range patterns {
+			if len(cols) == 1 {
+				perTerm[i] = fmt.Sprintf("{%s: {ilike: %s}}", cols[0], p)
+				continue
+			}
+			match := make([]string, len(cols))
+			for j, col := range cols {
+				match[j] = fmt.Sprintf("{%s: {ilike: %s}}", col, p)
+			}
+			perTerm[i] = "{_or: [" + strings.Join(match, ", ") + "]}"
+		}
+		return "{_and: [" + strings.Join(perTerm, ", ") + "]}"
+	}})
 
 	var body strings.Builder
 	ordered := make([]string, 0, len(req.kinds))
@@ -373,17 +404,14 @@ func rankByName(ctx context.Context, q Querier, req searchRequest, limit int) ([
 			continue
 		}
 		ordered = append(ordered, kind)
-		match := make([]string, 0, len(patterns))
-		for _, p := range patterns {
-			match = append(match, fmt.Sprintf("{name: {ilike: %s}}", p))
+		for _, tier := range tiers {
+			cond := tier.cond(view)
+			if kind == searchKindField && objectFilterApplies(req) {
+				cond = "{_and: [" + cond + ", {type_name: {eq: $obj}}]}"
+			}
+			fmt.Fprintf(&body, "%s_%s: %s(filter: %s, order_by: [{field: \"name\", direction: ASC}], limit: $limit) { %s }\n",
+				kind, tier.suffix, view.alias, cond, strings.Join(view.selection, " "))
 		}
-		filter := fmt.Sprintf("{_or: [%s]", strings.Join(match, ", "))
-		if kind == searchKindField && objectFilterApplies(req) {
-			filter += ", type_name: {eq: $obj}"
-		}
-		filter += "}"
-		fmt.Fprintf(&body, "%s: %s(filter: %s, limit: $limit) { %s }\n",
-			kind, view.alias, filter, strings.Join(view.selection, " "))
 	}
 	if len(ordered) == 0 {
 		return nil, nil
@@ -398,13 +426,29 @@ func rankByName(ctx context.Context, q Querier, req searchRequest, limit int) ([
 	if err := scanAdmin(ctx, q, gql, vars, "core", &batch); err != nil {
 		return nil, err
 	}
-	hits := collectCandidates(ordered, batch, func(row entityRow) float64 {
-		return nameScore(terms, row.Name)
-	})
-	for i := range hits {
-		hits[i].matchedOn = matchName
+
+	// Merge the tiers back into one window per kind; a row can arrive through
+	// several of them.
+	merged := make(map[string][]entityRow, len(ordered))
+	for _, kind := range ordered {
+		seen := map[string]struct{}{}
+		for _, tier := range tiers {
+			for _, row := range batch[kind+"_"+tier.suffix] {
+				id := row.TypeName + "\x1f" + row.Module + "\x1f" + row.Name
+				if _, dup := seen[id]; dup {
+					continue
+				}
+				seen[id] = struct{}{}
+				merged[kind] = append(merged[kind], row)
+			}
+		}
 	}
-	// The prefilter accepts ANY term; the score demands all of them.
+
+	hits := collectCandidates(ordered, merged, track.matchedOn, func(row entityRow) float64 {
+		return track.score(terms, row)
+	})
+	// The prefilter accepts wildcard over-matches; the score demands the real
+	// thing.
 	kept := hits[:0]
 	for _, h := range hits {
 		if h.score > 0 {
@@ -461,15 +505,19 @@ func objectFilterApplies(req searchRequest) bool {
 	return false
 }
 
-// collectCandidates flattens the per-kind batch into one list ordered by score.
-func collectCandidates(ordered []string, batch map[string][]entityRow, score func(entityRow) float64) []candidate {
+// collectCandidates flattens the per-kind batch into one list ordered by
+// score, every candidate stamped with the track that found it. The stamp is a
+// parameter rather than a caller-side loop so a ranking path CANNOT forget
+// it: matchedOn serves a non-null enum, and a forgotten stamp would put ""
+// into the response.
+func collectCandidates(ordered []string, batch map[string][]entityRow, matchedOn string, score func(entityRow) float64) []candidate {
 	var hits []candidate
 	for _, kind := range ordered {
 		for _, row := range batch[kind] {
 			c := candidate{
 				kind: kind, name: row.Name, module: row.Module,
 				dataSource: row.DataSource, description: row.Desc,
-				score: score(row),
+				score: score(row), matchedOn: matchedOn,
 			}
 			if kind == searchKindField {
 				c.object = row.TypeName
@@ -518,7 +566,10 @@ func lexicalScore(terms []string, name, description string) float64 {
 // Leaving the wildcards in is safe because SQL only NARROWS here: "_" matching
 // any single character and "%" matching anything can over-fetch, never
 // under-fetch, and the Go scorer that follows does the real matching with
-// plain substring tests.
+// plain substring tests. What keeps the over-fetch from CROWDING the window —
+// a1b-style rows arriving for a_b until the true row no longer fits — is the
+// tier structure in rankBySubstring: exact and prefix matches come through
+// windows of their own.
 func likePattern(term string) string {
 	return "%" + term + "%"
 }
