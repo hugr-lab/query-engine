@@ -158,7 +158,7 @@ func (r reindexRow) text() string {
 
 // reindexQueries builds the per-kind enumeration statements for a scope. Each
 // LEFT JOINs the curation onto the entity rows (the overlay read shape the
-// entity_* views use) and projects the reindexRow columns, with the constant
+// catalog views use) and projects the reindexRow columns, with the constant
 // parts as literals so a single scanner serves all of them.
 func reindexQueries(dataSource string) []string {
 	// join correlates the curation by the kind's entity_key expression. Both

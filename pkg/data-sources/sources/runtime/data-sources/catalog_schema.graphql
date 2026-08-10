@@ -71,7 +71,7 @@ extend type MutationFunction {
   """
     Curate a function description (module is the function's module, '' for none).
     kind selects the root namespace the curated operation lives in — "function",
-    "mutation" or "subscription", exactly the value core.catalog.entity_functions
+    "mutation" or "subscription", exactly the value core.catalog.functions
     and _catalog report; the same name in another namespace keeps its own
     description.
   """

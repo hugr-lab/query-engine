@@ -6,7 +6,7 @@
 // core.catalog.modules, core.catalog.module_intro) and calls the _schema_*
 // mutation functions, none of which exist any more. The code compiles, but the
 // commands fail at run time against a current engine. The engine-side
-// replacements are the core.catalog.annotate_* functions, the core.entity_*
+// replacements are the core.catalog.annotate_* functions, the core.catalog.*
 // views and the MCP catalog-* tools.
 package main
 
@@ -23,7 +23,7 @@ const deprecationNotice = `hugr-tools is DEPRECATED and is moving to the hub.
 It has not been ported to the catalog storage of CoreDB 0.0.20 — it reads the
 compiled-schema views and _schema_* functions that version removed, so the
 commands below fail against a current engine. Use core.catalog.annotate_*, the
-core.entity_* views or the MCP catalog-* tools instead.
+core.catalog.* views or the MCP catalog-* tools instead.
 `
 
 // Global flags shared by all subcommands.

@@ -11,7 +11,7 @@ import (
 )
 
 // The store implements both curation surfaces. LogicalAnnotator writes the
-// source-level entity kinds the entity_* views read; GraphQLAnnotator writes
+// source-level entity kinds the core.catalog.* views read; GraphQLAnnotator writes
 // the generated-surface kinds. Every write upserts one catalog.annotations row
 // by (entity_kind, entity_key) — text plus, when an embedder is configured, the
 // text's embedding vector so MCP vector search is current — and then evicts the
@@ -30,7 +30,7 @@ var errReadonly = errors.New("catalog store: read-only, cannot annotate")
 // --- LogicalAnnotator ---
 
 // SetModuleDescription curates a module (no ForName surface — module
-// descriptions reach clients through the logical model / entity_modules view).
+// descriptions reach clients through the logical model / core.catalog.modules view).
 func (s *Store) SetModuleDescription(ctx context.Context, module, desc, longDesc string) error {
 	return s.curate(ctx, kindModule, module, "", desc, longDesc, nil)
 }
@@ -69,7 +69,7 @@ func (s *Store) SetFunctionDescription(ctx context.Context, module, name, kind, 
 }
 
 // SetDataSourceDescription curates a data source (no ForName surface — data
-// source descriptions reach clients through the entity_data_sources view).
+// source descriptions reach clients through the core.catalog.active_sources view).
 func (s *Store) SetDataSourceDescription(ctx context.Context, name, desc, longDesc string) error {
 	return s.curate(ctx, kindDataSource, name, "", desc, longDesc, nil)
 }

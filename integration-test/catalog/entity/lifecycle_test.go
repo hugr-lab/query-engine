@@ -43,8 +43,8 @@ type sourceStats struct {
 func statsOf(t *testing.T, s *hugr.Service, ctx context.Context, name string) sourceStats {
 	t.Helper()
 	var out []sourceStats
-	query(t, s, ctx, `query { core { entity_catalogs(filter: {name: {eq: "`+name+`"}})
-		{ loaded_at loaded disabled suspended } } }`, "core.entity_catalogs", &out)
+	query(t, s, ctx, `query { core { catalog { stored_catalogs(filter: {name: {eq: "`+name+`"}})
+		{ loaded_at loaded disabled suspended } } } }`, "core.catalog.stored_catalogs", &out)
 	require.Len(t, out, 1, "source %q has a metadata row", name)
 	return out[0]
 }
@@ -56,13 +56,13 @@ func storedRows(t *testing.T, s *hugr.Service, ctx context.Context, name string)
 	var objs []struct {
 		Name string `json:"name"`
 	}
-	query(t, s, ctx, `query { core { entity_data_objects(filter: {data_source: {eq: "`+name+`"}}) { name } } }`,
-		"core.entity_data_objects", &objs)
+	query(t, s, ctx, `query { core { catalog { data_objects(filter: {data_source: {eq: "`+name+`"}}) { name } } } }`,
+		"core.catalog.data_objects", &objs)
 	var flds []struct {
 		Name string `json:"name"`
 	}
-	query(t, s, ctx, `query { core { entity_fields(filter: {data_source: {eq: "`+name+`"}}) { name } } }`,
-		"core.entity_fields", &flds)
+	query(t, s, ctx, `query { core { catalog { fields(filter: {data_source: {eq: "`+name+`"}}) { name } } } }`,
+		"core.catalog.fields", &flds)
 	return len(objs), len(flds)
 }
 
@@ -100,7 +100,7 @@ func TestUnloadReloadKeepsRows(t *testing.T) {
 	after := statsOf(t, s, ctx, "shop")
 	assert.True(t, after.Suspended, "a soft unload suspends")
 	assert.Equal(t, before.LoadedAt, after.LoadedAt, "no rewrite: loaded_at untouched")
-	// The entity_* views are activity-gated, so a suspended source's entities
+	// The catalog views are activity-gated, so a suspended source's entities
 	// are correctly invisible through them — the rows themselves are still
 	// stored, which the resumed counts below confirm together with loaded_at.
 	gotObjects, gotFields := storedRows(t, s, ctx, "shop")
@@ -175,8 +175,8 @@ func TestHardUnloadRemovesRows(t *testing.T) {
 	require.True(t, ok, msg)
 
 	var meta []sourceStats
-	query(t, s, ctx, `query { core { entity_catalogs(filter: {name: {eq: "shop"}})
-		{ loaded_at loaded disabled suspended } } }`, "core.entity_catalogs", &meta)
+	query(t, s, ctx, `query { core { catalog { stored_catalogs(filter: {name: {eq: "shop"}})
+		{ loaded_at loaded disabled suspended } } } }`, "core.catalog.stored_catalogs", &meta)
 	assert.Empty(t, meta, "a hard unload removes the metadata row")
 	objects, fields := storedRows(t, s, ctx, "shop")
 	assert.Zero(t, objects, "and the entity rows")

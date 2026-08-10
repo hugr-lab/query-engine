@@ -1,6 +1,6 @@
 # core.catalog Schema Views
-# Mounted as module core.catalog — types accessed as core.catalog.entity_types,
-# core.catalog.entity_data_objects, etc.
+# Mounted as module core.catalog — types accessed as core.catalog.types,
+# core.catalog.data_objects, etc.
 # Conditional: @embeddings directives included only when EmbeddingsEnabled=true
 #
 # These views read the catalog.* tables the catalog storage writes — the
@@ -25,14 +25,14 @@
 # the module-activity gate via [catalog.module_data_sources].
 #
 # Effective descriptions COALESCE the annotations overlay (curation wins over
-# source SDL); properties are TYPED structural fields (entity_*_properties
+# source SDL); properties are TYPED structural fields (*_properties
 # below) cast from the stored bags per the requested selection set — raw SQL
 # is never stored at all (the writer controls the write side).
 
 # --- Typed property structures (the Properties Catalog as GraphQL types) ---
 
 "Typed properties of a data object (Properties Catalog)"
-type entity_data_object_properties {
+type data_object_properties {
   "Physical name in the source"
   name: String
   "View definition SQL (@view)"
@@ -46,27 +46,27 @@ type entity_data_object_properties {
   is_cube: Boolean
   is_m2m: Boolean
   is_hypertable: Boolean
-  embeddings: entity_embeddings_config
+  embeddings: embeddings_config
   "Args input type of a parameterized view"
   args_type_name: String
   required_args: Boolean
-  unique: [entity_unique_constraint]
+  unique: [unique_constraint]
   "Cross-source view dependencies (@dependency)"
   dependencies: [String]
-  cache: entity_cache_settings
-  at: entity_at_pin
+  cache: cache_settings
+  at: at_pin
 }
 
 "Typed properties of a data-object field (Properties Catalog)"
-type entity_field_properties {
+type field_properties {
   "Physical column (@field_source)"
   source: String
   "Computed field marker (@sql)"
   computed: Boolean
   "Computed field SQL expression (@sql)"
   sql: String
-  default: entity_default_value
-  geometry: entity_geometry_info
+  default: default_value
+  geometry: geometry_info
   "Geometry / vector dimension (@dim(len:))"
   dim: Int
   measurement: Boolean
@@ -76,23 +76,23 @@ type entity_field_properties {
   exclude_filter: [String]
   filter_required: Boolean
   exclude_mcp: Boolean
-  cache: entity_cache_settings
+  cache: cache_settings
   "Declared @join field binding"
-  join: entity_join_binding
-  function_call: entity_function_call_binding
-  table_function_call_join: entity_function_call_binding
+  join: join_binding
+  function_call: function_call_binding
+  table_function_call_join: function_call_binding
 }
 
 "Typed properties of a function (Properties Catalog)"
-type entity_function_properties {
-  function: entity_function_binding
-  cache: entity_cache_settings
+type function_properties {
+  function: function_binding
+  cache: cache_settings
   "Geometry return metadata (@geometry_info)"
-  geometry: entity_geometry_info
+  geometry: geometry_info
 }
 
 "One ordered argument of a function"
-type entity_function_argument {
+type function_argument {
   name: String
   type: String
   description: String
@@ -103,31 +103,31 @@ type entity_function_argument {
   deprecation_reason: String
 }
 
-type entity_embeddings_config {
+type embeddings_config {
   model: String
   vector: String
   distance: String
 }
 
-type entity_unique_constraint {
+type unique_constraint {
   fields: [String]
   query_suffix: String
   skip_query: Boolean
 }
 
-type entity_cache_settings {
+type cache_settings {
   ttl: String
   key: String
   tags: [String]
 }
 
-type entity_at_pin {
+type at_pin {
   "Snapshot / version id (@at(version:)) — 64-bit (Iceberg snapshot ids)"
   version: BigInt
   timestamp: String
 }
 
-type entity_default_value {
+type default_value {
   value: JSON
   sequence: String
   "Insert-time SQL expression (@default(insert_exp:))"
@@ -136,12 +136,12 @@ type entity_default_value {
   update_exp: String
 }
 
-type entity_geometry_info {
+type geometry_info {
   type: String
   srid: Int
 }
 
-type entity_join_binding {
+type join_binding {
   references_name: String
   source_fields: [String]
   references_fields: [String]
@@ -149,8 +149,8 @@ type entity_join_binding {
   sql: String
 }
 
-type entity_function_call_binding {
-  function: entity_function_binding_ref
+type function_call_binding {
+  function: function_binding_ref
   "Field-to-argument mapping"
   args: JSON
   source_fields: [String]
@@ -159,13 +159,13 @@ type entity_function_call_binding {
   sql: String
 }
 
-type entity_function_binding_ref {
+type function_binding_ref {
   module: String
   name: String
 }
 
 "Bound source function (@function)"
-type entity_function_binding {
+type function_binding {
   name: String
   "Function body SQL (@function(sql:))"
   sql: String
@@ -174,11 +174,11 @@ type entity_function_binding {
   json_cast: Boolean
 }
 
-# --- Entity views ----------------------------------------------------------
+# --- Catalog views ---------------------------------------------------------
 
 "Logical-model modules with at least one active data source"
-type entity_modules
-  @view(name: "entity_modules", sql: """
+type modules
+  @view(name: "modules", sql: """
     SELECT m.name, m.parent,
       COALESCE(a.description, m.description) AS description,
       a.long_description,
@@ -190,11 +190,12 @@ type entity_modules
       JOIN [catalog.data_source_meta] ms ON ms.data_source = md.data_source
       WHERE md.module = m.name AND ms.loaded AND NOT ms.disabled AND NOT ms.suspended)
   """)
+  @module(name: "catalog")
   {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   name: String! @pk
   parent: String @field_references(
-    name: "entity_modules_parent"
-    references_name: "entity_modules"
+    name: "modules_parent"
+    references_name: "modules"
     field: "name"
     query: "parent_module"
     description: "The parent module"
@@ -207,8 +208,8 @@ type entity_modules
 }
 
 "Module → contributing data sources (closure over submodules, active sources only)"
-type entity_module_data_sources
-  @view(name: "entity_module_data_sources", sql: """
+type module_data_sources
+  @view(name: "module_data_sources", sql: """
     SELECT md.module, md.data_source,
       md.has_data_objects, md.has_tables, md.has_functions,
       md.has_mut_functions, md.has_subscriptions
@@ -216,10 +217,11 @@ type entity_module_data_sources
       JOIN [catalog.data_source_meta] ms
         ON ms.data_source = md.data_source AND ms.loaded AND NOT ms.disabled AND NOT ms.suspended
   """)
+  @module(name: "catalog")
   {
   module: String! @pk @field_references(
-    name: "entity_module_data_sources_module"
-    references_name: "entity_modules"
+    name: "module_data_sources_module"
+    references_name: "modules"
     field: "name"
     query: "module_info"
     description: "The module"
@@ -235,8 +237,8 @@ type entity_module_data_sources
 }
 
 "Logical-model data objects (active data sources only)"
-type entity_data_objects
-  @view(name: "entity_data_objects", sql: """
+type data_objects
+  @view(name: "data_objects", sql: """
     SELECT o.name, o.original_name, o.data_source, o.module, o.kind,
       o.properties,
       COALESCE(a.description, o.description) AS description,
@@ -248,6 +250,7 @@ type entity_data_objects
       LEFT JOIN [catalog.annotations] a
         ON a.entity_kind = 'data_object' AND a.entity_key = o.name
   """)
+  @module(name: "catalog")
   {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   "Compiled (prefixed) GraphQL type name"
   name: String! @pk
@@ -256,15 +259,15 @@ type entity_data_objects
   data_source: String!
   module: String!
   kind: String!
-  properties: entity_data_object_properties
+  properties: data_object_properties
   description: String
   long_description: String
   vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
 
 "Logical-model data object fields incl. declared join/function-call fields"
-type entity_fields
-  @view(name: "entity_fields", sql: """
+type fields
+  @view(name: "fields", sql: """
     SELECT f.type_name, f.name, f.field_type,
       f.properties, f.args,
       f.data_source, f.dependency_data_source, f.is_pk, f.ordinal,
@@ -278,10 +281,11 @@ type entity_fields
       LEFT JOIN [catalog.annotations] a
         ON a.entity_kind = 'field' AND a.entity_key = f.type_name || '.' || f.name
   """)
+  @module(name: "catalog")
   {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   type_name: String! @pk @field_references(
-    name: "entity_fields_object"
-    references_name: "entity_data_objects"
+    name: "fields_object"
+    references_name: "data_objects"
     field: "name"
     query: "data_object"
     description: "The owning data object"
@@ -290,7 +294,7 @@ type entity_fields
   )
   name: String! @pk
   field_type: String!
-  properties: entity_field_properties
+  properties: field_properties
   "Declared SDL arguments of the field (@table_function_call_join call parameters)"
   args: JSON
   data_source: String!
@@ -305,8 +309,8 @@ type entity_fields
 }
 
 "Logical-model relations: ONE row per @references edge (fk | m2m)"
-type entity_relations
-  @view(name: "entity_relations", sql: """
+type relations
+  @view(name: "relations", sql: """
     SELECT r.source, r.name, r.kind, r.destination, r.m2m_object,
       r.source_keys, r.destination_keys, r.field_declared, r.data_source,
       r.source_field,
@@ -320,7 +324,8 @@ type entity_relations
         ON asrc.entity_kind = 'field' AND asrc.entity_key = r.source || '.' || r.source_field
       LEFT JOIN [catalog.annotations] adst
         ON adst.entity_kind = 'field' AND adst.entity_key = r.destination || '.' || r.destination_field
-  """) {
+  """)
+  @module(name: "catalog") {
   source: String! @pk
   name: String! @pk
   kind: String!
@@ -337,9 +342,9 @@ type entity_relations
   destination_field_description: String
 }
 
-"Logical-model functions, mutations and subscriptions (entity storage)"
-type entity_functions
-  @view(name: "entity_functions", sql: """
+"Logical-model functions, mutations and subscriptions"
+type functions
+  @view(name: "functions", sql: """
     SELECT f.module, f.name, f.kind, f.data_source, f.returns, f.is_table,
       f.args,
       f.properties,
@@ -354,6 +359,7 @@ type entity_functions
         ON a.entity_kind = f.kind
         AND a.entity_key = CASE WHEN f.module = '' THEN f.name ELSE f.module || '.' || f.name END
   """)
+  @module(name: "catalog")
   {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   module: String! @pk
   name: String! @pk
@@ -362,8 +368,8 @@ type entity_functions
   data_source: String!
   returns: String!
   is_table: Boolean!
-  args: [entity_function_argument]
-  properties: entity_function_properties
+  args: [function_argument]
+  properties: function_properties
   "@deprecated(reason:) — null means active"
   deprecation_reason: String
   description: String
@@ -376,9 +382,9 @@ type entity_functions
 # semantic search target (design-035 vector index scope). Curation is
 # unaffected — the description overlay below is the one every entity view
 # applies, and catalog.annotations still stores the curated text.
-"Logical-model residual source-defined types as raw SDL (entity storage)"
-type entity_types
-  @view(name: "entity_types", sql: """
+"Logical-model residual source-defined types as raw SDL"
+type types
+  @view(name: "types", sql: """
     SELECT t.name, t.kind, t.data_source, t.module, t.definition,
       COALESCE(a.description, t.description) AS description,
       a.long_description
@@ -387,7 +393,8 @@ type entity_types
         ON m.data_source = t.data_source AND m.loaded AND NOT m.disabled AND NOT m.suspended
       LEFT JOIN [catalog.annotations] a
         ON a.entity_kind = 'type' AND a.entity_key = t.name
-  """) {
+  """)
+  @module(name: "catalog") {
   name: String! @pk
   kind: String!
   data_source: String!
@@ -399,13 +406,13 @@ type entity_types
 
 """
   Stored catalog state — EVERY source that has a stored schema, including the
-  suspended and disabled ones (entity_data_sources shows only the active half).
+  suspended and disabled ones (active_sources shows only the active half).
   Rows are what a source costs; the three flags are what it shows. loaded_at is
   stamped only by a real write, so an unchanged value across an unload/load
   cycle is the proof that nothing was rewritten.
 """
-type entity_catalogs
-  @view(name: "entity_catalogs", sql: """
+type stored_catalogs
+  @view(name: "stored_catalogs", sql: """
     SELECT m.data_source AS name, m.version, m.engine,
       COALESCE(ds.type, m.engine) AS type,
       COALESCE(NULLIF(m.prefix, ''), ds.prefix) AS prefix,
@@ -417,7 +424,8 @@ type entity_catalogs
       LEFT JOIN [data_sources] ds ON ds.name = m.data_source
       LEFT JOIN [catalog.annotations] a
         ON a.entity_kind = 'data_source' AND a.entity_key = m.data_source
-  """) {
+  """)
+  @module(name: "catalog") {
   "The data source name (@catalog name)"
   name: String! @pk
   "Stored content version — the gate a load compares against"
@@ -440,27 +448,28 @@ type entity_catalogs
   long_description: String
 }
 
-"Declared @dependency edges between stored catalogs (entity storage)"
-type entity_catalog_dependencies
-  @view(name: "entity_catalog_dependencies", sql: """
+"Declared @dependency edges between stored catalogs"
+type catalog_dependencies
+  @view(name: "catalog_dependencies", sql: """
     SELECT d.data_source AS catalog, d.depends_on
     FROM [catalog.data_source_dependencies] d
   """)
+  @module(name: "catalog")
   @references(
-    name: "entity_catalog_dep_catalog"
+    name: "catalog_dep_catalog"
     source_fields: ["catalog"]
     references_fields: ["name"]
-    references_name: "entity_catalogs"
+    references_name: "stored_catalogs"
     query: "catalog_info"
     description: "The dependent catalog"
     references_query: "dependencies"
     references_description: "Catalogs this catalog depends on"
   )
   @references(
-    name: "entity_catalog_dep_depends_on"
+    name: "catalog_dep_depends_on"
     source_fields: ["depends_on"]
     references_fields: ["name"]
-    references_name: "entity_catalogs"
+    references_name: "stored_catalogs"
     query: "depends_on_info"
     description: "The dependency catalog"
     references_query: "dependents"
@@ -471,8 +480,8 @@ type entity_catalog_dependencies
 }
 
 "Logical-model data sources (active runtime state; config joined when present)"
-type entity_data_sources
-  @view(name: "entity_data_sources", sql: """
+type active_sources
+  @view(name: "active_sources", sql: """
     SELECT m.data_source AS name, m.engine,
       COALESCE(ds.type, m.engine) AS type,
       COALESCE(NULLIF(m.prefix, ''), ds.prefix) AS prefix,
@@ -488,6 +497,7 @@ type entity_data_sources
         ON a.entity_kind = 'data_source' AND a.entity_key = m.data_source
     WHERE m.loaded AND NOT m.disabled AND NOT m.suspended
   """)
+  @module(name: "catalog")
   {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   "The data source name (@catalog name)"
   name: String! @pk
@@ -505,13 +515,14 @@ type entity_data_sources
   vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
 
-"Curation overlay incl. orphans and vec-only seed rows (entity storage)"
-type entity_annotations
-  @view(name: "entity_annotations", sql: """
+"Curation overlay incl. orphans and vec-only seed rows"
+type annotations
+  @view(name: "annotations", sql: """
     SELECT a.entity_kind, a.entity_key, a.parent,
       a.description, a.long_description, a.vec, a.updated_at, a.updated_by
     FROM [catalog.annotations] a
   """)
+  @module(name: "catalog")
   {{ if .EmbeddingsEnabled }}@embeddings(model: "_system_embedder", vector: "vec", distance: Cosine){{ end }} {
   entity_kind: String! @pk
   entity_key: String! @pk

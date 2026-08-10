@@ -17,7 +17,7 @@ import (
 // Ranking is the half of _search that reads the INDEX, and it is the only half
 // that reads privileged.
 //
-// The index lives in the core.entity_* views, which carry no row-level
+// The index lives in the core.catalog.* views, which carry no row-level
 // permission filtering by design (they are an administrative surface — see the
 // access note in runtime/core-db/schema_catalog_tmpl.graphql). A role may hold
 // no rights on them at all; operators routinely hide the catalog from end-user
@@ -36,7 +36,7 @@ import (
 
 // candidate is one unverified ranking result: an identity plus a score. It
 // carries only what the INDEX knows — a field's module, for instance, is not
-// in entity_fields (a field belongs to whatever module owns its object) and is
+// in core.catalog.fields (a field belongs to whatever module owns its object) and is
 // filled in later, from the owner.
 type candidate struct {
 	kind        string
@@ -60,23 +60,24 @@ type candidate struct {
 	refObject string
 }
 
-// entityView describes one kind's ranking query against the entity views.
+// entityView describes one kind's ranking query against the catalog views
+// (core.catalog.*), which are the SQL half of the logical model.
 type entityView struct {
-	alias     string   // the view's field name under `core`
+	alias     string   // the view's field name under `core.catalog`
 	selection []string // columns to read besides the ranking expression
 	// nameCols are the text columns the lexical prefilter searches.
 	nameCols []string
 }
 
 var entityViews = map[string]entityView{
-	searchKindModule:     {"entity_modules", []string{"name", "description"}, []string{"name", "description"}},
-	searchKindDataSource: {"entity_data_sources", []string{"name", "description"}, []string{"name", "description"}},
-	searchKindDataObject: {"entity_data_objects", []string{"name", "module", "data_source", "description"}, []string{"name", "description"}},
-	searchKindFunction:   {"entity_functions", []string{"name", "module", "data_source", "description"}, []string{"name", "description"}},
+	searchKindModule:     {"modules", []string{"name", "description"}, []string{"name", "description"}},
+	searchKindDataSource: {"active_sources", []string{"name", "description"}, []string{"name", "description"}},
+	searchKindDataObject: {"data_objects", []string{"name", "module", "data_source", "description"}, []string{"name", "description"}},
+	searchKindFunction:   {"functions", []string{"name", "module", "data_source", "description"}, []string{"name", "description"}},
 	// Fields read their stored PROPERTIES too: those say what the field is
 	// (see fieldRole), so a hit needs neither the rebuilt definition nor a
 	// relations query to be classified.
-	searchKindField: {"entity_fields",
+	searchKindField: {"fields",
 		[]string{"type_name", "name", "field_type", "data_source", "description", fieldPropsSelection},
 		[]string{"name", "description"}},
 }
@@ -263,8 +264,7 @@ func rankByVector(ctx context.Context, q Querier, req searchRequest, limit int) 
 	}
 
 	batch := map[string][]entityRow{}
-	gql := "query(" + sig + ") { core {\n" + body.String() + "} }"
-	if err := scanAdmin(ctx, q, gql, vars, "core", &batch); err != nil {
+	if err := scanCatalogBatch(ctx, q, sig, body.String(), vars, &batch); err != nil {
 		return nil, err
 	}
 	return collectCandidates(ordered, batch, matchMeaning, func(row entityRow) float64 {
@@ -284,7 +284,7 @@ func rankByVector(ctx context.Context, q Querier, req searchRequest, limit int) 
 // Doing the narrowing in the view rather than by walking the module tree is
 // what lets this path reach FIELDS. A structural walk has no enumeration of
 // fields that is not per object, which is why MCP's fallback dropped field
-// hits entirely; entity_fields is one table.
+// hits entirely; core.catalog.fields is one table.
 func rankLexically(ctx context.Context, q Querier, req searchRequest, limit int) ([]candidate, error) {
 	return rankBySubstring(ctx, q, req, limit, substringTrack{
 		matchedOn:     matchMeaning,
@@ -422,8 +422,7 @@ func rankBySubstring(ctx context.Context, q Querier, req searchRequest, limit in
 	}
 
 	batch := map[string][]entityRow{}
-	gql := "query(" + strings.Join(sig, ", ") + ") { core {\n" + body.String() + "} }"
-	if err := scanAdmin(ctx, q, gql, vars, "core", &batch); err != nil {
+	if err := scanCatalogBatch(ctx, q, strings.Join(sig, ", "), body.String(), vars, &batch); err != nil {
 		return nil, err
 	}
 
@@ -572,6 +571,16 @@ func lexicalScore(terms []string, name, description string) float64 {
 // windows of their own.
 func likePattern(term string) string {
 	return "%" + term + "%"
+}
+
+// scanCatalogBatch is the ONE place the views' address lives: the GraphQL
+// wrapper and the scan path move together or not at all. The previous move of
+// these views had to chase the mount through every literal, and a missed one
+// degrades into the lexical fallback that is indistinguishable from a missing
+// embedder.
+func scanCatalogBatch(ctx context.Context, q Querier, sig, body string, vars map[string]any, target any) error {
+	gql := "query(" + sig + ") { core { catalog {\n" + body + "} } }"
+	return scanAdmin(ctx, q, gql, vars, "core.catalog", target)
 }
 
 // scanAdmin runs a catalog query with FULL ACCESS and scans it. This is the

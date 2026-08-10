@@ -10,7 +10,7 @@
 > up.
 >
 > Engine-side replacements: `core.catalog.annotate_*` for curation,
-> `core.catalog.reindex_embeddings` for embeddings, the `core.entity_*` views
+> `core.catalog.reindex_embeddings` for embeddings, the `core.catalog.*` views
 > and the MCP `catalog-*` tools for reading the catalog.
 
 CLI utilities for managing Hugr schema metadata.
