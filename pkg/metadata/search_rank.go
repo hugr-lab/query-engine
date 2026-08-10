@@ -63,7 +63,7 @@ type candidate struct {
 // entityView describes one kind's ranking query against the catalog views
 // (core.catalog.*), which are the SQL half of the logical model.
 type entityView struct {
-	alias     string   // the view's field name under `core`
+	alias     string   // the view's field name under `core.catalog`
 	selection []string // columns to read besides the ranking expression
 	// nameCols are the text columns the lexical prefilter searches.
 	nameCols []string
@@ -264,8 +264,7 @@ func rankByVector(ctx context.Context, q Querier, req searchRequest, limit int) 
 	}
 
 	batch := map[string][]entityRow{}
-	gql := "query(" + sig + ") { core { catalog {\n" + body.String() + "} } }"
-	if err := scanAdmin(ctx, q, gql, vars, "core.catalog", &batch); err != nil {
+	if err := scanCatalogBatch(ctx, q, sig, body.String(), vars, &batch); err != nil {
 		return nil, err
 	}
 	return collectCandidates(ordered, batch, matchMeaning, func(row entityRow) float64 {
@@ -423,8 +422,7 @@ func rankBySubstring(ctx context.Context, q Querier, req searchRequest, limit in
 	}
 
 	batch := map[string][]entityRow{}
-	gql := "query(" + strings.Join(sig, ", ") + ") { core { catalog {\n" + body.String() + "} } }"
-	if err := scanAdmin(ctx, q, gql, vars, "core.catalog", &batch); err != nil {
+	if err := scanCatalogBatch(ctx, q, strings.Join(sig, ", "), body.String(), vars, &batch); err != nil {
 		return nil, err
 	}
 
@@ -573,6 +571,16 @@ func lexicalScore(terms []string, name, description string) float64 {
 // windows of their own.
 func likePattern(term string) string {
 	return "%" + term + "%"
+}
+
+// scanCatalogBatch is the ONE place the views' address lives: the GraphQL
+// wrapper and the scan path move together or not at all. The previous move of
+// these views had to chase the mount through every literal, and a missed one
+// degrades into the lexical fallback that is indistinguishable from a missing
+// embedder.
+func scanCatalogBatch(ctx context.Context, q Querier, sig, body string, vars map[string]any, target any) error {
+	gql := "query(" + sig + ") { core { catalog {\n" + body + "} } }"
+	return scanAdmin(ctx, q, gql, vars, "core.catalog", target)
 }
 
 // scanAdmin runs a catalog query with FULL ACCESS and scans it. This is the

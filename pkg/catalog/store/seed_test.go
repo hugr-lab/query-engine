@@ -93,8 +93,8 @@ func TestSeedVectorsAndSweep(t *testing.T) {
 
 	// The curated object survives; module seeds stay as tolerated orphans —
 	// modules are shared and not source-attributable, and a vec-only orphan is
-	// invisible through modules (the module row is gone) and is revived
-	// by the seed upsert if the module is recreated.
+	// invisible through core.catalog.modules (the module row is gone) and is
+	// revived by the seed upsert if the module is recreated.
 	assert.Equal(t, []string{"data_object|orders", "module|sales", "module|sales.reports"},
 		rows(t, pool, `SELECT entity_kind, entity_key FROM core.catalog.annotations
 			ORDER BY entity_kind, entity_key`),

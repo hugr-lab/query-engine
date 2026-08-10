@@ -174,7 +174,7 @@ type function_binding {
   json_cast: Boolean
 }
 
-# --- Entity views ----------------------------------------------------------
+# --- Catalog views ---------------------------------------------------------
 
 "Logical-model modules with at least one active data source"
 type modules
@@ -342,7 +342,7 @@ type relations
   destination_field_description: String
 }
 
-"Logical-model functions, mutations and subscriptions (entity storage)"
+"Logical-model functions, mutations and subscriptions"
 type functions
   @view(name: "functions", sql: """
     SELECT f.module, f.name, f.kind, f.data_source, f.returns, f.is_table,
@@ -382,7 +382,7 @@ type functions
 # semantic search target (design-035 vector index scope). Curation is
 # unaffected — the description overlay below is the one every entity view
 # applies, and catalog.annotations still stores the curated text.
-"Logical-model residual source-defined types as raw SDL (entity storage)"
+"Logical-model residual source-defined types as raw SDL"
 type types
   @view(name: "types", sql: """
     SELECT t.name, t.kind, t.data_source, t.module, t.definition,
@@ -448,7 +448,7 @@ type stored_catalogs
   long_description: String
 }
 
-"Declared @dependency edges between stored catalogs (entity storage)"
+"Declared @dependency edges between stored catalogs"
 type catalog_dependencies
   @view(name: "catalog_dependencies", sql: """
     SELECT d.data_source AS catalog, d.depends_on
@@ -515,7 +515,7 @@ type active_sources
   vec: Vector {{ if .EmbeddingsEnabled }} @dim(len: {{ .VectorSize }}){{ end }}
 }
 
-"Curation overlay incl. orphans and vec-only seed rows (entity storage)"
+"Curation overlay incl. orphans and vec-only seed rows"
 type annotations
   @view(name: "annotations", sql: """
     SELECT a.entity_kind, a.entity_key, a.parent,

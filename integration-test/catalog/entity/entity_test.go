@@ -287,10 +287,10 @@ func TestEntityStorageCurationReachesIntrospection(t *testing.T) {
 	assert.Equal(t, "Reloads when already loaded.", probe.Function.LongDescription)
 }
 
-// TestCatalogModuleServesEntityViewsOnly replaces the test that asserted the
+// TestCatalogModuleServesLogicalViewsOnly replaces the test that asserted the
 // opposite while the compiled-schema storage was the default. There is no
 // storage to select any more, so what it guards is the CoreDB catalog module:
-// it must expose the entity views and not regrow the _schema_* ones.
+// it must expose the catalog views and not regrow the _schema_* ones.
 func TestCatalogModuleServesLogicalViewsOnly(t *testing.T) {
 	s, ctx := setupEngine(t)
 
@@ -299,7 +299,7 @@ func TestCatalogModuleServesLogicalViewsOnly(t *testing.T) {
 	}
 	query(t, s, ctx, `query { core { catalog { data_objects(filter: {name: {eq: "core_data_sources"}}) { name } } } }`,
 		"core.catalog.data_objects", &objects)
-	assert.NotEmpty(t, objects, "entity views are served")
+	assert.NotEmpty(t, objects, "catalog views are served")
 
 	// The compiled-schema views went with the storage that filled them. The
 	// probe deliberately names one whose name was NOT reused: this module now

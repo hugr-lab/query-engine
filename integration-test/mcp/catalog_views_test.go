@@ -76,12 +76,17 @@ func TestCatalogSearchRankingReachesTheViews(t *testing.T) {
 	mcpInit(t, h)
 
 	page := catalogSearch(t, h, map[string]any{"query": "data sources"})
-	for _, broken := range []string{
-		"Cannot query field", "Unknown argument", "Unknown type",
-		"couldn't find field resolver",
-	} {
-		assert.NotContainsf(t, page.LexicalReason, broken,
-			"the ranking query no longer matches the catalog views: %s", page.LexicalReason)
+	// Allowlist, not denylist: an empty reason means the vector path ranked,
+	// and the ONLY acceptable fallback reason is the missing embedder model.
+	// Anything else — a validation error, a Binder error from a view whose SQL
+	// lost a column, a missing relation — is the ranking read failing against
+	// the catalog views, whatever layer it failed at. (The same guard lives in
+	// TestSearchRankingQueryMatchesCatalogViews on the engine side; keep them
+	// in step.)
+	if page.LexicalReason != "" {
+		assert.Contains(t, page.LexicalReason, "_system_embedder",
+			"the ranking read fails against the catalog views for a reason other than the missing embedder: %s",
+			page.LexicalReason)
 	}
 	require.NotEmpty(t, page.Items, "search must answer whichever path ranked")
 }

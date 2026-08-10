@@ -118,22 +118,22 @@ func roleCtx(t testing.TB, p *perm.RolePermissions) context.Context {
 	return perm.CtxWithPerm(ctx, p)
 }
 
-// TestSearchRankingQueryMatchesEntityViews is the guard against a ranking
-// query that silently never runs. With a vector size configured the entity
-// views carry the index columns, so the vector query must at least VALIDATE:
-// if it still falls back, the reason must be the missing embedder and never a
-// schema mismatch.
-func TestSearchRankingQueryMatchesEntityViews(t *testing.T) {
+// TestSearchRankingQueryMatchesCatalogViews is the guard against a ranking
+// query that silently never runs. With a vector size configured the catalog
+// views carry the index columns and the ranking read must reach them: the
+// ONLY acceptable fallback reason is the missing embedder model. Pinning the
+// one good reason instead of a list of bad ones is what lets this catch a
+// break at ANY layer — validation, a view whose SQL lost a column, a missing
+// relation. (The same guard lives in TestCatalogSearchRankingReachesTheViews
+// on the MCP side; keep them in step.)
+func TestSearchRankingQueryMatchesCatalogViews(t *testing.T) {
 	svc, _ := mcpService(t, 8, "")
 	page := runSearch(t, adminCtx(t), svc, `query: "data sources", limit: 20`)
 
-	for _, bad := range []string{"Cannot query field", "Unknown argument", "Unknown type", "couldn't find field resolver"} {
-		assert.NotContains(t, page.LexicalReason, bad,
-			"the ranking query does not match the entity views: %s", page.LexicalReason)
-	}
-	if page.LexicalReason != "" {
-		t.Logf("fell back to lexical, as expected without an embedder: %s", page.LexicalReason)
-	}
+	require.NotEmpty(t, page.LexicalReason, "no embedder is configured here, so the vector path must fall back")
+	assert.Contains(t, page.LexicalReason, "_system_embedder",
+		"the ranking read fails against the catalog views for a reason other than the missing embedder: %s",
+		page.LexicalReason)
 }
 
 // TestSearchLexicalAnswers — without an embedder the lexical path must still
@@ -157,7 +157,8 @@ func TestSearchLexicalAnswers(t *testing.T) {
 
 // TestSearchLexicalReachesFields is the capability MCP's fallback never had:
 // a structural walk has no field enumeration that is not per object, so field
-// hits used to vanish whenever the embedder did. fields is one table.
+// hits used to vanish whenever the embedder did. core.catalog.fields is one
+// table.
 func TestSearchLexicalReachesFields(t *testing.T) {
 	svc, _ := mcpService(t, 0, "")
 	page := runSearch(t, adminCtx(t), svc, `query: "description", kinds: [FIELD], limit: 50`)
