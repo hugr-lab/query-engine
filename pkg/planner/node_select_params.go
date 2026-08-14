@@ -462,11 +462,23 @@ func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Objec
 			if err != nil {
 				return nil, err
 			}
+			if node == nil {
+				// The child object was empty — nothing to negate, so the
+				// combinator drops with it, same as a null-valued condition.
+				continue
+			}
 			nodes = append(nodes, &QueryPlanNode{
 				Name:  fn,
 				Nodes: QueryPlanNodes{node},
 				CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-					return "NOT (" + children.FirstResult().Result + ")", params, nil
+					inner := children.FirstResult().Result
+					if inner == "" {
+						// Every condition inside was null-dropped. NOT over
+						// nothing is nothing — not NOT(TRUE): a cleared
+						// control must widen the result, never empty it.
+						return "", params, nil
+					}
+					return "NOT (" + inner + ")", params, nil
 				},
 			})
 		case fn == "_and" || fn == "_or":
@@ -476,9 +488,17 @@ func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Objec
 			}
 			var andNodes QueryPlanNodes
 			for _, v := range children {
-				node, err := whereNode(ctx, defs, info, v.(map[string]any), prefix, byAlias, selectDeleted)
+				m, ok := v.(map[string]any)
+				if !ok {
+					// A null member is a dropped condition, like a null value.
+					continue
+				}
+				node, err := whereNode(ctx, defs, info, m, prefix, byAlias, selectDeleted)
 				if err != nil {
 					return nil, err
+				}
+				if node == nil {
+					continue
 				}
 				andNodes = append(andNodes, node)
 			}
@@ -491,6 +511,12 @@ func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Objec
 				CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 					var ff []string
 					for _, and := range children {
+						// A member whose conditions were all null-dropped
+						// contributes nothing — wrapping it would compile
+						// `(() AND ())`, which no SQL parser accepts.
+						if and.Result == "" {
+							continue
+						}
 						ff = append(ff, "("+and.Result+")")
 					}
 					if fn == "_and" {
@@ -526,6 +552,12 @@ func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Objec
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 			var ff []string
 			for _, field := range children {
+				// A null-dropped condition (or a combinator whose members
+				// all dropped) yields an empty result; every consumer
+				// already treats an empty WHERE as "no WHERE".
+				if field.Result == "" {
+					continue
+				}
 				ff = append(ff, "("+field.Result+")")
 			}
 			if info.SoftDelete && !selectDeleted {

@@ -151,6 +151,12 @@ func JSONTypeHintWithOk(typeName string) (string, bool) {
 
 // ParseValue dispatches value parsing to the scalar type's ValueParser interface.
 func ParseValue(typeName string, v any) (any, error) {
+	if v == nil {
+		// Stay an UNTYPED nil: a parser returning a typed nil pointer would
+		// wrap into a non-nil interface and slip past every `v == nil`
+		// check up the stack.
+		return nil, nil
+	}
 	s := Lookup(typeName)
 	if s == nil {
 		return v, nil
@@ -163,6 +169,14 @@ func ParseValue(typeName string, v any) (any, error) {
 
 // ParseArray dispatches array parsing to the scalar type's ArrayParser interface.
 func ParseArray(typeName string, v any) (any, error) {
+	if v == nil {
+		// A null list must stay an UNTYPED nil. The generic parsers return
+		// ([]T)(nil), which a non-nil interface then smuggles past every
+		// `v == nil` check up the stack — and a null `in:` variable compiled
+		// into `IN (unnest(ARRAY[]))` (zero rows) instead of dropping the
+		// condition, breaking the "null removes the filter" contract.
+		return nil, nil
+	}
 	s := Lookup(typeName)
 	if s == nil {
 		return nil, fmt.Errorf("unsupported array type [%s]", typeName)
