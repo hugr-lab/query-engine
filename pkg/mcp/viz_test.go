@@ -367,6 +367,7 @@ func TestVizKpiResultTravelsInline(t *testing.T) {
 		Rows:  []map[string]any{},
 		Kpis: []VizKPI{
 			{Label: "Revenue", Value: 100.0, Unit: "$", DeltaPct: ptr(3.25)},
+			{Label: "Rows", Value: 15635261.0},
 			{Label: "Status", Value: "OK", Subtitle: "all groups"},
 		},
 		Source: &VizSource{Type: "query", Query: "query{...}"},
@@ -377,12 +378,13 @@ func TestVizKpiResultTravelsInline(t *testing.T) {
 	require.True(t, ok)
 	assert.False(t, out.RowsSampled)
 	assert.False(t, out.Fetch)
-	assert.Len(t, out.Kpis, 2)
+	assert.Len(t, out.Kpis, 3)
 
 	text := vizFallbackText(env)
 	assert.Contains(t, text, "## Health")
 	assert.Contains(t, text, "| metric | value | change |")
 	assert.Contains(t, text, "| Revenue | 100 $ | +3.25% |")
+	assert.Contains(t, text, "| Rows | 15635261 |", "no scientific notation in a human-facing table")
 	assert.Contains(t, text, "| Status | OK |  | all groups |")
 	assert.NotContains(t, text, "0 rows", "a panel does not talk about rows")
 }

@@ -1,14 +1,15 @@
 package mcp
 
-// MCP Apps visualization tools (design/038, spike).
+// MCP Apps visualization tools (design/038).
 //
-// viz-chart and viz-table are model-facing tools whose results a host with the
-// MCP Apps extension renders in the ui://hugr/viz iframe; hosts without it fall
-// back to the markdown/text content. viz-data is the app-only fetch channel:
-// the iframe re-runs the view's own query, unchanged, to pull the rows that
-// were sampled out of the conversation. All filtering in the view is
-// client-side. The view HTML is self-contained (ECharts inlined at embed time)
-// because the MCP Apps CSP denies all external fetches by default.
+// viz-chart, viz-table and viz-kpi are model-facing tools whose results a
+// host with the MCP Apps extension renders in the ui://hugr/viz-* iframes;
+// hosts without it fall back to the markdown/text content. viz-data is the
+// app-only fetch channel: the iframe re-runs the view's own query, unchanged,
+// to pull the rows that were sampled out of the conversation. All filtering
+// in the view is client-side. The view HTML is self-contained (ECharts
+// inlined at embed time) because the MCP Apps CSP denies all external fetches
+// by default.
 
 import (
 	"context"
@@ -936,7 +937,10 @@ func vizFallbackText(env *VizEnvelope) string {
 			case c.DeltaPct != nil:
 				change = fmt.Sprintf("%+.2f%%", *c.DeltaPct)
 			case c.Delta != nil:
-				change = fmt.Sprintf("%+g", *c.Delta)
+				change = strconv.FormatFloat(*c.Delta, 'f', -1, 64)
+				if *c.Delta >= 0 {
+					change = "+" + change
+				}
 			}
 			val := mdCell(c.Value)
 			if c.Unit != "" {
@@ -1027,7 +1031,15 @@ func mdCell(v any) string {
 	if v == nil {
 		return ""
 	}
-	s := fmt.Sprintf("%v", v)
+	var s string
+	switch f := v.(type) {
+	case float64:
+		// %v prints large floats in scientific notation — 1.5635261e+07 in a
+		// fallback table meant for humans.
+		s = strconv.FormatFloat(f, 'f', -1, 64)
+	default:
+		s = fmt.Sprintf("%v", v)
+	}
 	s = strings.ReplaceAll(s, "|", "\\|")
 	s = strings.ReplaceAll(s, "\n", " ")
 	return s
