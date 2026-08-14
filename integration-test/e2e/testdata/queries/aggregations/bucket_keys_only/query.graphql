@@ -1,0 +1,16 @@
+# A bucket aggregation selecting ONLY key{} — "the distinct values", the
+# shape every dictionary/options query takes. Used to compile an empty
+# source (`FROM ()`), because union branches were built per aggregations
+# field and there were none.
+{
+  pg_store {
+    products_bucket_aggregation(
+      order_by: [{ field: "key.category_id", direction: ASC }]
+      limit: 5
+    ) {
+      key {
+        category_id
+      }
+    }
+  }
+}
