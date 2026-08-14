@@ -74,6 +74,10 @@ type Config struct {
 	SchemaCacheTTL        time.Duration // LRU cache TTL (0 = default 10m)
 
 	MCPEnabled bool // Enable MCP endpoint on /mcp
+	// MCPQueryTTL caches the result of a visualization query for this long, so
+	// the rendered view's own fetch of the same rows is a cache read rather
+	// than a second execution. 0 = off unless a tool call asks for it.
+	MCPQueryTTL time.Duration
 
 	CoreDB    *coredb.Source
 	Auth      *auth.Config
@@ -422,7 +426,7 @@ func (s *Service) endpoints() {
 	}
 
 	if s.config.MCPEnabled {
-		mcpSrv := mcpserver.New(s, nil, s.config.Debug)
+		mcpSrv := mcpserver.New(s, nil, mcpserver.Config{Debug: s.config.Debug, QueryTTL: s.config.MCPQueryTTL})
 		s.router.Handle("/mcp", mw(mcpSrv.Handler()))
 	}
 }

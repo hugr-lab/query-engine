@@ -1,0 +1,175 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>MCP Apps mock host — hugr viz spike</title>
+<style>
+  body { font: 14px/1.4 -apple-system, sans-serif; margin: 0; padding: 16px; background: #eef2f5; }
+  h2 { margin: 0 0 10px; font-size: 15px; }
+  .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+  button { padding: 5px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+  #frameWrap { background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; }
+  #frameWrap.fullscreen { position: fixed; inset: 10px; z-index: 10; }
+  iframe { width: 100%; border: 0; display: block; height: 460px; }
+  #frameWrap.fullscreen iframe { height: 100%; }
+  #log { margin-top: 10px; height: 190px; overflow: auto; background: #0f1a20; color: #b7c7d1;
+    font: 11px/1.35 ui-monospace, Menlo, monospace; padding: 8px; border-radius: 8px; white-space: pre-wrap; }
+  .err { color: #ff8a8a; }
+</style>
+</head>
+<body>
+<h2>Mock MCP Apps host → <code>ui://hugr/viz</code> @ localhost:15005</h2>
+<div class="bar">
+  <button id="b-chart">load viz-chart (variable filter)</button>
+  <button id="b-table">load viz-table (local filters)</button>
+  <button id="b-pie">load pie</button>
+  <button id="b-theme">toggle theme</button>
+  <button id="b-mode">toggle displayMode</button>
+  <span id="state"></span>
+</div>
+<div id="frameWrap"><iframe id="view" sandbox="allow-scripts"></iframe></div>
+<div id="log"></div>
+
+<script>
+const MCP = "http://localhost:15005/mcp";
+const view = document.getElementById("view");
+const logEl = document.getElementById("log");
+let theme = "light", displayMode = "inline", rpcId = 1000, initialized = false;
+
+function log(s, cls) {
+  const d = document.createElement("div");
+  if (cls) d.className = cls;
+  d.textContent = s.length > 400 ? s.slice(0, 400) + "…" : s;
+  logEl.appendChild(d);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function toView(m) { view.contentWindow.postMessage(m, "*"); }
+
+async function mcp(method, params) {
+  const r = await fetch(MCP, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: rpcId++, method, params }),
+  });
+  const txt = await r.text();
+  const line = txt.split("\n").find((l) => l.startsWith("data: ")) || txt;
+  const msg = JSON.parse(line.replace(/^data: /, ""));
+  if (msg.error) throw new Error(msg.error.message);
+  return msg.result;
+}
+
+function hostContext() {
+  return {
+    theme, displayMode,
+    availableDisplayModes: ["inline", "fullscreen"],
+    styles: { variables: theme === "dark"
+      ? { "--color-background-primary": "#161b22", "--color-text-primary": "#e6edf3", "--color-border-primary": "#30363d" }
+      : { "--color-background-primary": "#ffffff", "--color-text-primary": "#111827", "--color-border-primary": "#d0d7de" } },
+    containerDimensions: { maxHeight: 600 },
+    locale: "en-US", platform: "desktop",
+  };
+}
+
+/* host side of the bridge */
+window.addEventListener("message", async (ev) => {
+  if (ev.source !== view.contentWindow) return;
+  const m = ev.data;
+  if (!m || m.jsonrpc !== "2.0") return;
+  log("view→ " + JSON.stringify(m));
+
+  if (m.method === "ui/initialize") {
+    initialized = false;
+    toView({ jsonrpc: "2.0", id: m.id, result: {
+      protocolVersion: "2026-01-26",
+      hostCapabilities: { serverTools: { listChanged: false }, serverResources: {}, openLinks: {}, logging: {} },
+      hostInfo: { name: "mock-host", version: "0.1.0" },
+      hostContext: hostContext(),
+    }});
+    return;
+  }
+  if (m.method === "ui/notifications/initialized") { initialized = true; log("** handshake complete **"); return; }
+  if (m.method === "ui/notifications/size-changed") { view.style.height = (m.params.height + 8) + "px"; return; }
+  if (m.method === "ui/update-model-context") { toView({ jsonrpc: "2.0", id: m.id, result: {} }); return; }
+  if (m.method === "ui/request-display-mode") {
+    displayMode = m.params.mode;
+    document.getElementById("frameWrap").classList.toggle("fullscreen", displayMode === "fullscreen");
+    toView({ jsonrpc: "2.0", id: m.id, result: { mode: displayMode } });
+    toView({ jsonrpc: "2.0", method: "ui/notifications/host-context-changed", params: { displayMode } });
+    document.getElementById("state").textContent = `${displayMode} · ${theme}`;
+    return;
+  }
+  if (m.method === "tools/call") {
+    try {
+      const res = await mcp("tools/call", m.params);
+      toView({ jsonrpc: "2.0", id: m.id, result: res });
+    } catch (e) {
+      log("tools/call failed: " + e.message, "err");
+      toView({ jsonrpc: "2.0", id: m.id, error: { code: -32000, message: e.message } });
+    }
+    return;
+  }
+  if (m.id !== undefined) toView({ jsonrpc: "2.0", id: m.id, error: { code: -32601, message: "not implemented: " + m.method } });
+});
+
+/* load the view resource, then run a tool and push the result in */
+async function load(toolName, args) {
+  logEl.textContent = "";
+  initialized = false;
+  const res = await mcp("resources/read", { uri: "ui://hugr/viz" });
+  const html = res.contents[0].text;
+  log(`resource: ${html.length} chars, mime=${res.contents[0].mimeType}`);
+  view.srcdoc = html;
+  await new Promise((r) => { view.onload = r; });
+  for (let i = 0; i < 100 && !initialized; i++) await new Promise((r) => setTimeout(r, 50));
+  if (!initialized) { log("view never completed the handshake", "err"); return; }
+
+  toView({ jsonrpc: "2.0", method: "ui/notifications/tool-input", params: { arguments: args } });
+  const result = await mcp("tools/call", { name: toolName, arguments: args });
+  log(`${toolName} → ${result.isError ? "ERROR" : "ok"} ${(result.content?.[0]?.text || "").slice(0, 120)}`);
+  toView({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: {
+    content: result.content, structuredContent: result.structuredContent, _meta: result._meta,
+  }});
+}
+
+const AGG = "query($src: String) { core { catalog { data_objects_bucket_aggregation(filter: {data_source: {eq: $src}}) { key { module } aggregations { _rows_count } } } } }";
+const AGG_JQ = '.data.core.catalog.data_objects_bucket_aggregation | map({module: .key.module, objects: .aggregations._rows_count})';
+
+document.getElementById("b-chart").onclick = () => load("viz-chart", {
+  title: "Data objects per module",
+  query: AGG, jq_transform: AGG_JQ,
+  chart: { type: "bar", x: "module", y: ["objects"] },
+  filters: [{ name: "src", label: "Data source", control: "select", target: "variable",
+    options: { query: "{ core { catalog { active_sources { name } } } }", jq: ".data.core.catalog.active_sources | map(.name)" } }],
+});
+
+document.getElementById("b-table").onclick = () => load("viz-table", {
+  title: "Catalog data objects",
+  query: "{ core { catalog { data_objects(limit: 200) { name module kind data_source } } } }",
+  columns: [{ field: "name" }, { field: "module" }, { field: "kind" }, { field: "data_source" }],
+  filters: [
+    { name: "module", label: "Module", control: "select", target: "local",
+      options: { query: "{ core { catalog { modules { name } } } }", jq: ".data.core.catalog.modules | map(.name)" } },
+    { name: "name", label: "Name contains", control: "search", target: "local" },
+  ],
+});
+
+document.getElementById("b-pie").onclick = () => load("viz-chart", {
+  title: "Field count by module (pie)",
+  query: AGG, jq_transform: AGG_JQ,
+  chart: { type: "pie", x: "module", y: ["objects"] },
+});
+
+document.getElementById("b-theme").onclick = () => {
+  theme = theme === "dark" ? "light" : "dark";
+  document.getElementById("state").textContent = `${displayMode} · ${theme}`;
+  toView({ jsonrpc: "2.0", method: "ui/notifications/host-context-changed", params: hostContext() });
+};
+document.getElementById("b-mode").onclick = () => {
+  displayMode = displayMode === "fullscreen" ? "inline" : "fullscreen";
+  document.getElementById("frameWrap").classList.toggle("fullscreen", displayMode === "fullscreen");
+  document.getElementById("state").textContent = `${displayMode} · ${theme}`;
+  toView({ jsonrpc: "2.0", method: "ui/notifications/host-context-changed", params: { displayMode } });
+};
+</script>
+</body>
+</html>

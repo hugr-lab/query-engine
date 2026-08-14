@@ -57,6 +57,12 @@ const testSchemaData = `
 		field_func_call_fields: [Int] @function_call(references_name: "func_scalar_array", args: {arg1: "field2", arg2: "field2"})
 		func_table_object(arg2:Int): [test_object] @function_call(references_name: "func_table_object", args: {arg1: "field2"})
 	}
+
+	type sd_object @table(name: "sd_object", soft_delete: true, soft_delete_cond: "deleted_at IS NULL", soft_delete_set: "deleted_at = now()") {
+		field1: String @pk
+		field2: Int
+		deleted_at: Timestamp
+	}
 `
 
 // Type names collide with testSchemaData on purpose — the prefix disambiguates

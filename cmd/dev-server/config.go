@@ -27,6 +27,7 @@ type Config struct {
 	SchemaCacheMaxEntries int
 	SchemaCacheTTL        time.Duration
 	MCPEnabled            bool
+	MCPQueryTTL           time.Duration
 
 	DB db.Config
 
@@ -61,6 +62,7 @@ func initEnvs() {
 	viper.SetDefault("SCHEMA_CACHE_MAX_ENTRIES", 0)
 	viper.SetDefault("SCHEMA_CACHE_TTL", "0s")
 	viper.SetDefault("MCP_ENABLED", false)
+	viper.SetDefault("MCP_QUERY_TTL", "0s")
 	viper.SetDefault("CLUSTER_ENABLED", false)
 	viper.SetDefault("CLUSTER_ROLE", "")
 	viper.SetDefault("CLUSTER_NODE_NAME", "")
@@ -90,6 +92,7 @@ func loadConfig() Config {
 		SchemaCacheMaxEntries: viper.GetInt("SCHEMA_CACHE_MAX_ENTRIES"),
 		SchemaCacheTTL:        viper.GetDuration("SCHEMA_CACHE_TTL"),
 		MCPEnabled:            viper.GetBool("MCP_ENABLED"),
+		MCPQueryTTL:           viper.GetDuration("MCP_QUERY_TTL"),
 		DB: db.Config{
 			Path:         viper.GetString("DB_PATH"),
 			MaxOpenConns: viper.GetInt("DB_MAX_OPEN_CONNS"),

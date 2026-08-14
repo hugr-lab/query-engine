@@ -66,6 +66,7 @@ See [docs/configuration.md](../../docs/configuration.md) for the full reference.
 ### MCP & Embeddings
 
 - MCP_ENABLED - flag to enable MCP endpoint at `/mcp` (protected by auth middleware), default: false
+- MCP_QUERY_TTL - how long a visualization query result stays cached, so the rendered view's own fetch of the same rows is a cache read instead of a second execution (e.g. `1m`), default: 0s (off)
 - EMBEDDER_URL - URL for the system embedder service (with query params: model, api_key, api_key_header, timeout), default: "" (disabled)
 - EMBEDDER_VECTOR_SIZE - dimension of embedding vectors stored in CoreDB, default: 768
 

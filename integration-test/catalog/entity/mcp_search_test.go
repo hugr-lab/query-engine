@@ -60,7 +60,7 @@ func mcpService(t testing.TB, vectorSize int, embedderURL string) (*hugr.Service
 	require.NoError(t, err)
 	t.Cleanup(func() { service.Close() })
 	require.NoError(t, service.Init(context.Background()))
-	return service, mcpserver.New(service, nil, false).Handler()
+	return service, mcpserver.New(service, nil, mcpserver.Config{}).Handler()
 }
 
 // liveEmbedder returns the configured embedder, or skips: the vector path

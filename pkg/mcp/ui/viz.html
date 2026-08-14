@@ -1,0 +1,1256 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hugr viz</title>
+<style>
+  /* Host-provided theme variables (MCP Apps standardized keys) with our own
+     fallbacks — hosts may pass all, some, or none of them. */
+  /* The host hands colours over as light-dark(light, dark), which resolves
+     against color-scheme — not against our data-theme attribute. Without this
+     pair every host colour silently resolved to its LIGHT half, so a dark
+     Claude rendered a white widget. It also makes native controls and
+     scrollbars follow the theme. */
+  :root { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+
+  :root {
+    --hugr-primary: #1c7d78;
+    --hugr-navy: #0a3145;
+    --bg: var(--color-background-primary, #ffffff);
+    --bg2: var(--color-background-secondary, #f8fafc);
+    --fg: var(--color-text-primary, #1c2b33);
+    --muted: var(--color-text-secondary, #64748b);
+    --border: var(--color-border-primary, #e2e8f0);
+    --danger: var(--color-text-danger, #c94f4f);
+    --radius: var(--border-radius-md, 8px);
+    --font: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  }
+  [data-theme="dark"] {
+    --bg: var(--color-background-primary, #0f1a20);
+    --bg2: var(--color-background-secondary, #16242c);
+    --fg: var(--color-text-primary, #e2e8f0);
+    --muted: var(--color-text-secondary, #8aa0ae);
+    --border: var(--color-border-primary, #24343e);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); }
+  #app { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+
+  header { display: flex; align-items: center; gap: 8px; }
+  header h1 { font-size: 15px; font-weight: 600; margin: 0; color: var(--hugr-primary);
+    flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { font-size: 11px; color: var(--muted); background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--border-radius-full, 10px); padding: 1px 8px; white-space: nowrap; }
+  button { background: var(--bg2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: var(--border-radius-sm, 6px); padding: 3px 9px; cursor: pointer; font: inherit; font-size: 13px; }
+  button:hover { border-color: var(--hugr-primary); }
+  button[hidden] { display: none; }
+
+  /* inline: filters on one scrollable row; fullscreen: wrapped grid */
+  #filters { display: flex; gap: 10px; padding: 8px 10px; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: var(--radius); overflow-x: auto; }
+  #filters:empty { display: none; }
+  body[data-mode="fullscreen"] #filters, body[data-mode="pip"] #filters { flex-wrap: wrap; overflow-x: visible; }
+  .filter { display: flex; flex-direction: column; gap: 3px; min-width: 130px; flex: 0 0 auto; }
+  .filter label { font-size: 11px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .filter select, .filter input { background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+    border-radius: var(--border-radius-sm, 6px); padding: 3px 7px; font: inherit; font-size: 13px; max-width: 240px; }
+  .filter input[type=checkbox] { width: 16px; height: 16px; }
+  .filter .srv { margin-left: 5px; font-weight: 500; text-transform: none; opacity: .75;
+    border: 1px solid var(--border); border-radius: 8px; padding: 0 5px; }
+  .range { display: flex; align-items: center; gap: 4px; }
+  .range input { width: 96px; }
+
+  /* option picker: a button that opens a searchable checkbox list */
+  .pick { position: relative; }
+  .pick > button { width: 100%; text-align: left; display: flex; gap: 6px; align-items: center;
+    max-width: 240px; min-width: 130px; }
+  .pick > button .caret { margin-left: auto; opacity: .6; }
+  .pick > button .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 240px; max-width: 340px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-md, 0 6px 24px rgba(0,0,0,.18)); padding: 6px; }
+  .menu[hidden] { display: none; }
+  .menu .search { width: 100%; margin-bottom: 6px; }
+  .menu .list { max-height: 220px; overflow: auto; }
+  .menu .opt { display: flex; gap: 7px; align-items: flex-start; padding: 4px 6px; cursor: pointer;
+    border-radius: var(--border-radius-sm, 6px); }
+  .menu .opt:hover { background: var(--bg2); }
+  .menu .opt input { margin-top: 2px; flex: 0 0 auto; }
+  .menu .opt .txt { min-width: 0; }
+  .menu .opt .lbl { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu .opt .desc { display: block; font-size: 11px; color: var(--muted); }
+  /* a popover anchor that is NOT a filter control, so none of the stretched
+     widths above apply to it */
+  .pop { position: relative; display: inline-flex; }
+  .pop[hidden] { display: none; }
+  .pop .menu { right: 0; left: auto; min-width: 210px; }
+  .pop .menu .opt .lbl { font-weight: 500; }
+  /* Drawn rather than typed: an emoji or an arrow glyph renders at a
+     different size, weight and baseline on every platform. */
+  .icon { width: 15px; height: 15px; display: block; }
+  header button, footer button { display: inline-flex; align-items: center;
+    justify-content: center; padding: 4px 7px; line-height: 1; }
+  .menu .foot { display: flex; gap: 6px; justify-content: space-between; align-items: center;
+    border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; font-size: 12px; color: var(--muted); }
+
+  /* chart toolbar: everything here re-reads the rows we already have */
+  #cbar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  #cbar[hidden] { display: none; }
+  #cbar .grp { display: flex; flex-direction: column; gap: 3px; }
+  #cbar label { font-size: 11px; font-weight: 600; }
+  #cbar select { background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+    border-radius: var(--border-radius-sm, 6px); padding: 3px 7px; font: inherit; font-size: 13px; }
+  #cbar .toggles { display: flex; gap: 10px; align-items: center; padding-bottom: 3px; }
+  #cbar .toggles label { display: flex; gap: 4px; align-items: center; font-weight: 500; cursor: pointer; }
+
+  #chart { width: 100%; height: 300px; }
+  body[data-mode="fullscreen"] #chart, body[data-mode="pip"] #chart { height: 55vh; }
+  #chart[hidden], #tblwrap[hidden] { display: none; }
+
+  #tblwrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); max-height: 40vh; }
+  #csv-instead { background: none; border: none; padding: 0; font: inherit; color: var(--hugr-primary); text-decoration: underline; cursor: pointer; }
+
+  /* KPI cards: wrapped, centred rows. Inline caps at about three rows and
+     scrolls vertically past that; expanded modes wrap freely. */
+  #kpis { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; max-height: 420px; overflow-y: auto; }
+  #kpis[hidden] { display: none; }
+  body[data-mode="fullscreen"] #kpis, body[data-mode="pip"] #kpis { max-height: none; overflow-y: visible; }
+  .kpi { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 10px 14px; min-width: 150px; flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
+  .kpi .lab { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .kpi .val { font-size: 22px; font-weight: 700; white-space: nowrap; }
+  .kpi .val .unit { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+  .kpi .dlt { font-size: 12px; font-weight: 600; }
+  .kpi .dlt.good { color: #2e9e6b; }
+  .kpi .dlt.bad { color: var(--danger); }
+  .kpi .dlt.flat { color: var(--muted); }
+  .kpi .sub { font-size: 11px; color: var(--muted); }
+  .kpi svg.spark { width: 100%; height: 26px; display: block; }
+  body[data-mode="fullscreen"] #tblwrap, body[data-mode="pip"] #tblwrap { max-height: none; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--bg2); cursor: pointer; user-select: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  footer { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  #status { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #error { display: none; color: var(--danger); background: var(--bg2); border: 1px solid var(--danger);
+    border-radius: var(--radius); padding: 9px; white-space: pre-wrap; }
+  #debug { display: none; font: 11px/1.4 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;
+    /* Fixed, not vh: the host sizes the iframe FROM our reported height, so a
+       viewport-relative cap here feeds back into itself — the panel logs the
+       size-changed it caused, grows, reports again, and the loop only stops
+       at the vh fixpoint, leaving the widget too tall. */
+    max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+</style>
+<!--__ECHARTS__-->
+</head>
+<body data-mode="inline">
+<div id="app">
+  <header>
+    <h1 id="title">hugr viz</h1>
+    <span class="badge" id="b-rows"></span>
+    <div class="pop" id="dl"><button id="btn-dl" title="export what is shown"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v7.5"/><path d="M4.75 6.75 8 10l3.25-3.25"/><path d="M2.5 12.5h11"/></svg></button><div class="menu" id="dl-menu" hidden></div></div>
+    <button id="btn-mode" hidden title="toggle display mode"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2.5H2.5V6"/><path d="M10 2.5h3.5V6"/><path d="M13.5 10v3.5H10"/><path d="M2.5 10v3.5H6"/></svg></button>
+  </header>
+  <div id="error"></div>
+  <div id="filters"></div>
+  <div id="cbar" hidden></div>
+  <div id="kpis" hidden></div>
+  <div id="chart" hidden></div>
+  <div id="tblwrap" hidden><table id="tbl"></table></div>
+  <footer>
+    <span id="status">connecting…</span>
+    <span class="badge" id="b-mode"></span>
+    <button id="btn-debug" title="bridge log"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5.5" width="6" height="8" rx="3"/><path d="M6 4.2 5 3M10 4.2 11 3M5 8H2.5M11 8h2.5M5.2 11.5 3 12.5M10.8 11.5 13 12.5"/></svg></button>
+  </footer>
+  <pre id="debug"></pre>
+</div>
+<script>
+"use strict";
+/* ============ MCP Apps bridge — spec 2026-01-26, hand-written (no SDK) ============
+   Wire format is bare JSON-RPC 2.0 in postMessage payloads, targetOrigin "*",
+   sender validated by event.source — same as @modelcontextprotocol/ext-apps. */
+const PROTOCOL_VERSION = "2026-01-26";
+let nextId = 1;
+const pending = new Map();
+const dbgLog = [];
+
+function dbg(dir, msg) {
+  let line = dir + " " + (typeof msg === "string" ? msg : JSON.stringify(msg));
+  if (line.length > 800) line = line.slice(0, 800) + "…";
+  dbgLog.push(line);
+  if (dbgLog.length > 300) dbgLog.shift();
+  console.log("[hugr-viz]", dir, msg);
+  const el = document.getElementById("debug");
+  if (el && el.style.display === "block") { el.textContent = dbgLog.join("\n"); el.scrollTop = el.scrollHeight; }
+}
+
+function post(msg) { dbg("→", msg); window.parent.postMessage(msg, "*"); }
+function request(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    post({ jsonrpc: "2.0", id, method, params: params || {} });
+  });
+}
+function notify(method, params) { post({ jsonrpc: "2.0", method, params: params || {} }); }
+function respond(id, result) { post({ jsonrpc: "2.0", id, result }); }
+
+// postMessage has no delivery guarantee and a rejected request may never be
+// answered, so a bare await here would hang the view forever with no symptom.
+function withTimeout(p, ms, what) {
+  return Promise.race([p, new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(what + " within " + ms + "ms")), ms))]);
+}
+
+window.addEventListener("message", (ev) => {
+  if (ev.source !== window.parent) return;      // ignore anything not from the host
+  const m = ev.data;
+  if (!m || m.jsonrpc !== "2.0") return;
+  dbg("←", m);
+  if (m.method === undefined && m.id !== undefined) {   // response to our request
+    const p = pending.get(m.id);
+    if (!p) return;
+    pending.delete(m.id);
+    if (m.error) p.reject(new Error(m.error.message || JSON.stringify(m.error)));
+    else p.resolve(m.result);
+    return;
+  }
+  if (!m.method) return;
+  switch (m.method) {
+    case "ui/notifications/tool-input": onToolInput(m.params || {}); break;
+    case "ui/notifications/tool-input-partial": break;   // streaming args: not used
+    case "ui/notifications/tool-result": onToolResult(m.params || {}); break;
+    case "ui/notifications/host-context-changed": onHostContext(m.params || {}); break;
+    case "ui/notifications/tool-cancelled": setStatus("tool call cancelled"); break;
+    case "ui/resource-teardown": if (m.id !== undefined) respond(m.id, {}); break;
+    default:
+      if (m.id !== undefined) post({ jsonrpc: "2.0", id: m.id, error: { code: -32601, message: "method not found: " + m.method } });
+  }
+});
+
+/* ============================== state ============================== */
+const host = { theme: "light", displayMode: "inline", availableDisplayModes: [], caps: {} };
+let viz = null;         // envelope from the tool result
+let allRows = [];       // rows as delivered by the server (variable filters applied there)
+let filterState = {};   // filter name -> current value
+let chartObj = null;
+let sortCol = null, sortDir = 1;
+let loading = false;
+
+const PALETTE = ["#1c7d78", "#0a3145", "#e8a838", "#7f9c9a", "#c94f4f", "#5b8dbf", "#8a6fae", "#4caf7d"];
+// Past this many (filtered) rows the chart's companion table stops listing
+// and offers a CSV instead — thousands of <tr> under a chart is DOM weight
+// with nothing to show for it. Applies to charts only.
+const CHART_TABLE_CAP = 2000;
+const canCallTools = () => !!host.caps.serverTools;
+// pip (ChatGPT's floating window) is a mode the user actively works in:
+// for data loading and row limits it behaves like fullscreen, not inline.
+const expanded = () => host.displayMode !== "inline";
+// updateModelContext is a draft-spec capability: absent means "unrestricted"
+// on the 2026-01-26 host, so only an explicit false-y presence check is wrong.
+const canPushContext = () => !("updateModelContext" in host.caps) || !!host.caps.updateModelContext;
+
+/* ========================== host context =========================== */
+function onHostContext(ctx) {
+  if (ctx.theme) host.theme = ctx.theme;
+  if (ctx.displayMode) host.displayMode = ctx.displayMode;
+  if (ctx.availableDisplayModes) host.availableDisplayModes = ctx.availableDisplayModes;
+  if (ctx.styles && ctx.styles.variables) {
+    for (const [k, v] of Object.entries(ctx.styles.variables)) {
+      if (v) document.documentElement.style.setProperty(k, v);
+    }
+  }
+  if (ctx.styles && ctx.styles.css && ctx.styles.css.fonts) {
+    let el = document.getElementById("host-fonts");
+    if (!el) { el = document.createElement("style"); el.id = "host-fonts"; document.head.appendChild(el); }
+    el.textContent = ctx.styles.css.fonts;
+  }
+  document.documentElement.dataset.theme = host.theme === "dark" ? "dark" : "light";
+  document.body.dataset.mode = host.displayMode;
+  const other = host.displayMode === "fullscreen" ? "inline" : "fullscreen";
+  document.getElementById("btn-mode").hidden = !host.availableDisplayModes.includes(other);
+  render();
+  maybeLoadRows();
+}
+
+/* ========================= tool lifecycle ========================== */
+function onToolInput(p) {
+  const args = p.arguments || {};
+  if (args.title) document.getElementById("title").textContent = args.title;
+  setStatus(args.query ? "running query…" : "preparing data…");
+}
+
+function onToolResult(p) {
+  const sc = p.structuredContent;
+  if (!sc || !Array.isArray(sc.rows)) {
+    showError((p.content || []).map((c) => c.text || "").join("\n") || "tool result carried no structuredContent.rows");
+    return;
+  }
+  viz = sc;
+  allRows = sc.rows;
+  // KPI cards flatten into rows so the CSV/JSON export machinery just works;
+  // nothing else in the rows pipeline runs for a panel.
+  if (viz.kind === "kpi") {
+    allRows = (viz.kpis || []).map((c) => ({ label: c.label, value: c.value, unit: c.unit ?? "",
+      delta: c.delta ?? "", delta_pct: c.delta_pct ?? "", subtitle: c.subtitle ?? "" }));
+  }
+  rowsLoaded = false;
+  chartOpts = sc.chart ? Object.assign({ horizontal: false }, sc.chart) : null;
+  filterState = {};
+  for (const f of viz.filters || []) {          // model-set value wins over the default
+    const v = f.value !== undefined && f.value !== null ? f.value : f.default;
+    if (v !== undefined && v !== null && v !== "") filterState[f.name] = v;
+  }
+  sortCol = null;
+  document.getElementById("title").textContent = viz.title || "hugr viz";
+  showError(null);
+  render();
+  pushModelContext();
+
+  // A large result carries a sample on purpose: the rows belong to the view,
+  // not to the conversation.
+  maybeLoadRows();
+}
+
+let chartOpts = null;   // live overrides on top of viz.chart
+let rowsLoaded = false;
+async function maybeLoadRows() {
+  if (!viz || !viz.fetch || rowsLoaded || loading) return;
+  // A chart cannot be drawn from a sample — every point has to be there — so
+  // it loads at once. A table shows about fifteen rows inline, which the
+  // sample already covers, so it waits until there is room for the rest.
+  if (viz.kind !== "chart" && !expanded()) return;
+  if (!canCallTools()) {
+    showError(`this host does not proxy tool calls, so the view cannot load the rest — showing the first ${allRows.length} of ${viz.row_count} rows`);
+    return;
+  }
+  loading = true;
+  setStatus(`loading ${viz.row_count} rows…`);
+  render();
+  await refreshFromServer();
+  rowsLoaded = true;
+  loading = false;
+  render();
+  pushModelContext();
+}
+
+/* ============================= filters ============================= */
+function localRows() {
+  let rows = allRows;
+  for (const f of (viz && viz.filters) || []) {
+    const v = filterState[f.name];
+    if (v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length)) continue;
+    const field = f.field || f.name;
+    const kind = controlKind(f);
+    rows = rows.filter((r) => {
+      const rv = r[field];
+      switch (kind) {
+        case "multiselect": return v.map(String).includes(String(rv));
+        case "search": return String(rv ?? "").toLowerCase().includes(String(v).toLowerCase());
+        case "toggle": return !!rv === !!v;
+        case "number": return Number(rv) === Number(v);
+        case "numrange": case "daterange": {
+          const lo = v.from, hi = v.to;
+          if (lo !== undefined && lo !== null && lo !== "" && rv < lo) return false;
+          if (hi !== undefined && hi !== null && hi !== "" && rv > hi) return false;
+          return true;
+        }
+        default: return String(rv) === String(v);
+      }
+    });
+  }
+  return rows;
+}
+
+async function onFilterChange(f, value) {
+  const empty = value === undefined || value === null || value === "" || (Array.isArray(value) && !value.length);
+  if (empty) delete filterState[f.name]; else filterState[f.name] = value;
+  render();
+  pushModelContext();
+}
+
+/* The refresh button re-runs the SAME query through the app-only viz-data
+   tool. Controls never change the query — narrowing what is fetched is the
+   model's job, by rewriting the query and calling the tool again. */
+async function refreshFromServer() {
+  if (!viz || !viz.source || viz.source.type !== "query") return;
+  if (!canCallTools()) { showError("this host does not proxy tool calls, so query filters cannot refresh"); return; }
+  const vars = Object.assign({}, viz.source.variables || {});
+  setStatus("refreshing…");
+  try {
+    const res = await request("tools/call", { name: "viz-data", arguments: {
+      query: viz.source.query, variables: vars,
+      jq_transform: viz.source.jq_transform || "",
+      // Nothing about caching travels: the server applies the deployment's
+      // setting and derives the key from the query itself, so this fetch of
+      // the query the tool just ran is a cache read rather than a second
+      // execution.
+    }});
+    if (res.isError) {
+      showError((res.content || []).map((c) => c.text || "").join("\n") || "viz-data reported an error");
+      return;
+    }
+    const sc = res.structuredContent || {};
+    allRows = Array.isArray(sc.rows) ? sc.rows : [];
+    viz.row_count = allRows.length;
+    viz.truncated = !!sc.truncated;
+    showError(null);
+  } catch (e) {
+    showError("viz-data call failed: " + e.message);
+  }
+}
+
+function renderFilters() {
+  const wrap = document.getElementById("filters");
+  wrap.textContent = "";
+  for (const f of (viz && viz.filters) || []) {
+    const box = document.createElement("div");
+    box.className = "filter";
+    const lab = document.createElement("label");
+    lab.textContent = f.label || f.name;
+    lab.title = "filters the rows already delivered";
+    box.appendChild(lab);
+    box.appendChild(controlFor(f));
+    wrap.appendChild(box);
+  }
+}
+
+function controlFor(f) {
+  const cur = filterState[f.name];
+  const kind = controlKind(f);
+  let el;
+  switch (kind) {
+    case "multiselect":
+      return pickerFor(f, true);
+    case "numrange":
+      return rangeFor(f, "number");
+    case "daterange":
+      return rangeFor(f, "date");
+    case "date":
+      el = document.createElement("input");
+      el.type = "date";
+      if (cur !== undefined) el.value = cur;
+      el.onchange = () => onFilterChange(f, el.value);
+      break;
+    case "toggle":
+      el = document.createElement("input");
+      el.type = "checkbox";
+      el.checked = !!cur;
+      el.onchange = () => onFilterChange(f, el.checked);
+      break;
+    case "number":
+      el = document.createElement("input");
+      el.type = "number";
+      if (cur !== undefined) el.value = cur;
+      el.onchange = () => onFilterChange(f, el.value === "" ? null : Number(el.value));
+      break;
+    case "search":
+      el = document.createElement("input");
+      el.type = "search";
+      el.placeholder = "search…";
+      if (cur !== undefined) el.value = cur;
+      el.oninput = debounce(() => onFilterChange(f, el.value), 250);
+      break;
+    default:
+      return pickerFor(f, false);
+  }
+  return el;
+}
+
+/* Options come from the rows the control filters — the only population whose
+   values and counts can agree with what the user is looking at. Deriving them
+   from a separate server query gave dropdowns full of values absent from the
+   table, and counts that matched nothing on screen. */
+function optionList(f) {
+  const field = f.field || f.name;
+  const counts = new Map();
+  for (const r of allRows) {
+    const v = r[field];
+    if (v === null || v === undefined || v === "") continue;
+    const k = String(v);
+    const e = counts.get(k);
+    if (e) e.n++; else counts.set(k, { value: v, label: k, n: 1 });
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.n - a.n || a.label.localeCompare(b.label))
+    .map((o) => ({ value: o.value, label: o.label, description: `${o.n} rows` }));
+}
+
+/* And the control itself follows the values actually present, so a filter can
+   be declared as nothing more than a field name. */
+function controlKind(f) {
+  if (f.control) return f.control;
+  const field = f.field || f.name;
+  let seen = 0, numeric = 0, bool = 0;
+  const distinct = new Set();
+  for (const r of allRows) {
+    const v = r[field];
+    if (v === null || v === undefined || v === "") continue;
+    seen++;
+    if (typeof v === "number") numeric++;
+    else if (typeof v === "boolean") bool++;
+    distinct.add(String(v));
+    if (distinct.size > 60) break;
+  }
+  if (!seen) return "search";
+  if (bool === seen) return "toggle";
+  if (numeric === seen) return "numrange";
+  return distinct.size > 60 ? "search" : "multiselect";
+}
+
+/* A searchable checkbox list, because a native <select multiple> needs
+   cmd-click to add a value and shows no room for the row counts the server
+   sends back with each option. */
+function pickerFor(f, multi) {
+  const opts = optionList(f);
+  const box = document.createElement("div");
+  box.className = "pick";
+  const btn = document.createElement("button");
+  const val = document.createElement("span");
+  val.className = "val";
+  const caret = document.createElement("span");
+  caret.className = "caret";
+  caret.textContent = "▾";
+  btn.append(val, caret);
+  const menu = document.createElement("div");
+  menu.className = "menu";
+  menu.hidden = true;
+  box.append(btn, menu);
+
+  const selected = () => {
+    const cur = filterState[f.name];
+    if (multi) return new Set((Array.isArray(cur) ? cur : []).map(String));
+    return new Set(cur === undefined || cur === null || cur === "" ? [] : [String(cur)]);
+  };
+  const paint = () => {
+    const sel = selected();
+    if (!sel.size) { val.textContent = "— all —"; val.style.color = "var(--muted)"; return; }
+    val.style.color = "";
+    if (sel.size === 1) {
+      const one = opts.find((o) => sel.has(String(o.value)));
+      val.textContent = one ? one.label : [...sel][0];
+    } else {
+      val.textContent = `${sel.size} selected`;
+    }
+  };
+
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "search";
+  search.placeholder = "search…";
+  const list = document.createElement("div");
+  list.className = "list";
+  const foot = document.createElement("div");
+  foot.className = "foot";
+  const count = document.createElement("span");
+  const clear = document.createElement("button");
+  clear.textContent = "clear";
+  clear.onclick = () => { onFilterChange(f, multi ? [] : ""); };
+  foot.append(count, clear);
+  menu.append(search, list, foot);
+
+  const renderList = () => {
+    const q = search.value.trim().toLowerCase();
+    const sel = selected();
+    const shown = q ? opts.filter((o) => o.label.toLowerCase().includes(q)) : opts;
+    list.textContent = "";
+    for (const o of shown.slice(0, 500)) {
+      const row = document.createElement("label");
+      row.className = "opt";
+      const cb = document.createElement("input");
+      cb.type = multi ? "checkbox" : "radio";
+      cb.checked = sel.has(String(o.value));
+      cb.onchange = () => {
+        if (!multi) { onFilterChange(f, o.value); menu.hidden = true; return; }
+        const next = new Set(sel);
+        if (cb.checked) next.add(String(o.value)); else next.delete(String(o.value));
+        onFilterChange(f, opts.filter((x) => next.has(String(x.value))).map((x) => x.value));
+      };
+      const txt = document.createElement("span");
+      txt.className = "txt";
+      const lbl = document.createElement("span");
+      lbl.className = "lbl";
+      lbl.textContent = o.label;
+      txt.appendChild(lbl);
+      if (o.description) {
+        const d = document.createElement("span");
+        d.className = "desc";
+        d.textContent = o.description;
+        txt.appendChild(d);
+      }
+      row.append(cb, txt);
+      list.appendChild(row);
+    }
+    count.textContent = shown.length < opts.length
+      ? `${shown.length} of ${opts.length}` : `${opts.length} values`;
+  };
+  search.oninput = renderList;
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    const opening = menu.hidden;
+    closeMenus();
+    menu.hidden = !opening;
+    if (opening) { renderList(); search.focus(); reportSize(); }
+  };
+  menu.onclick = (e) => e.stopPropagation();
+  paint();
+  return box;
+}
+function closeMenus() {
+  document.querySelectorAll(".menu").forEach((m) => { m.hidden = true; });
+}
+document.addEventListener("click", closeMenus);
+
+/* from/to pair for numeric and date ranges — one control, two operators */
+function rangeFor(f, type) {
+  const cur = filterState[f.name] || {};
+  const box = document.createElement("div");
+  box.className = "range";
+  const mk = (key, ph) => {
+    const el = document.createElement("input");
+    el.type = type;
+    el.placeholder = ph;
+    if (cur[key] !== undefined && cur[key] !== null) el.value = cur[key];
+    el.onchange = () => {
+      const next = Object.assign({}, filterState[f.name]);
+      const v = el.value === "" ? undefined : (type === "number" ? Number(el.value) : el.value);
+      if (v === undefined) delete next[key]; else next[key] = v;
+      onFilterChange(f, Object.keys(next).length ? next : null);
+    };
+    return el;
+  };
+  const dash = document.createElement("span");
+  dash.textContent = "—";
+  box.append(mk("from", "from"), dash, mk("to", "to"));
+  return box;
+}
+function debounce(fn, ms) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+/* ============================== chart ============================== */
+function distinct(rows, key) {
+  const seen = new Set(), out = [];
+  for (const r of rows) { const s = String(r[key]); if (!seen.has(s)) { seen.add(s); out.push(r[key]); } }
+  return out;
+}
+
+function buildOption(chart, rows) {
+  const dark = host.theme === "dark";
+  const axis = dark ? "#8aa0ae" : "#64748b";
+  const split = dark ? "#24343e" : "#e2e8f0";
+  const base = {
+    color: PALETTE,
+    backgroundColor: "transparent",
+    animationDuration: 300,
+    textStyle: { color: getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || (dark ? "#e2e8f0" : "#1c2b33") },
+    tooltip: { trigger: chart.type === "pie" || chart.type === "scatter" ? "item" : "axis" },
+    legend: { top: 0, type: "scroll", textStyle: { color: axis } },
+    grid: { left: 8, right: 12, top: 30, bottom: 4, containLabel: true },
+  };
+  const y0 = (chart.y || [])[0];
+
+  if (chart.type === "pie") {
+    return Object.assign(base, {
+      series: [{ type: "pie", radius: ["38%", "70%"], label: { color: base.textStyle.color },
+        data: rows.map((r) => ({ name: String(r[chart.x]), value: r[y0] })) }],
+    });
+  }
+  if (chart.type === "scatter") {
+    const series = chart.series
+      ? distinct(rows, chart.series).map((g) => ({ name: String(g), type: "scatter",
+          data: rows.filter((r) => r[chart.series] === g).map((r) => [r[chart.x], r[y0]]) }))
+      : (chart.y || []).map((y) => ({ name: y, type: "scatter", data: rows.map((r) => [r[chart.x], r[y]]) }));
+    return Object.assign(base, {
+      xAxis: { type: "value", name: chart.x, axisLabel: { color: axis }, splitLine: { lineStyle: { color: split } } },
+      yAxis: { type: "value", axisLabel: { color: axis }, splitLine: { lineStyle: { color: split } } },
+      series,
+    });
+  }
+
+  // line | area | bar over categories
+  const et = chart.type === "area" ? "line" : chart.type;
+  const cats = distinct(rows, chart.x).map(String);
+  const mk = (name, byX) => ({ name, type: et, data: cats.map((c) => byX.get(c) ?? null),
+    stack: chart.stacked ? "total" : undefined, areaStyle: chart.type === "area" ? {} : undefined,
+    smooth: chart.type !== "bar" });
+  const series = chart.series
+    ? distinct(rows, chart.series).map((g) =>                       // long form
+        mk(String(g), new Map(rows.filter((r) => r[chart.series] === g).map((r) => [String(r[chart.x]), r[y0]]))))
+    : (chart.y || []).map((y) =>                                    // wide form
+        mk(y, new Map(rows.map((r) => [String(r[chart.x]), r[y]]))));
+  const category = { type: "category", data: cats, axisLabel: { color: axis, hideOverlap: true } };
+  const value = { type: "value", axisLabel: { color: axis }, splitLine: { lineStyle: { color: split } } };
+  // A horizontal bar is the same chart with the axes exchanged.
+  return Object.assign(base, chart.horizontal && chart.type === "bar"
+    ? { xAxis: value, yAxis: Object.assign({ inverse: true }, category), series }
+    : { xAxis: category, yAxis: value, series });
+}
+
+const CHART_TYPES = ["bar", "line", "area", "pie", "scatter"];
+
+function rowFields(rows) {
+  const seen = new Set();
+  for (const r of rows.slice(0, 50)) for (const k of Object.keys(r)) seen.add(k);
+  return [...seen];
+}
+function numericFields(rows) {
+  return rowFields(rows).filter((f) => rows.some((r) => typeof r[f] === "number"));
+}
+
+/* Everything on this bar is a re-read of the rows already in the view: no
+   round trip, and the model is told about the change so it knows what the
+   user ended up looking at. */
+function renderChartBar(rows) {
+  const bar = document.getElementById("cbar");
+  const show = !!(viz && viz.kind === "chart" && chartOpts);
+  bar.hidden = !show;
+  if (!show) return;
+  bar.textContent = "";
+
+  const fields = rowFields(rows);
+  const nums = numericFields(rows);
+  const set = (patch) => {
+    Object.assign(chartOpts, patch);
+    render();
+    pushModelContext();
+  };
+  const pick = (label, value, options, onPick) => {
+    const g = document.createElement("div");
+    g.className = "grp";
+    const l = document.createElement("label");
+    l.textContent = label;
+    const sel = document.createElement("select");
+    for (const o of options) {
+      const el = document.createElement("option");
+      el.value = o;
+      el.textContent = o || "—";
+      el.selected = String(o) === String(value ?? "");
+      sel.appendChild(el);
+    }
+    sel.onchange = () => onPick(sel.value);
+    g.append(l, sel);
+    bar.appendChild(g);
+  };
+  const flag = (label, value, onFlip) => {
+    const l = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!value;
+    cb.onchange = () => onFlip(cb.checked);
+    l.append(cb, document.createTextNode(label));
+    return l;
+  };
+
+  pick("Chart", chartOpts.type, CHART_TYPES, (v) => set({ type: v }));
+  pick("Category", chartOpts.x, fields, (v) => set({ x: v }));
+  pick("Value", (chartOpts.y || [])[0], nums, (v) => set({ y: [v] }));
+  pick("Series", chartOpts.series || "", ["", ...fields], (v) => set({ series: v }));
+
+  const toggles = document.createElement("div");
+  toggles.className = "toggles";
+  if (chartOpts.type === "bar") {
+    toggles.appendChild(flag("horizontal", chartOpts.horizontal, (v) => set({ horizontal: v })));
+    toggles.appendChild(flag("stacked", chartOpts.stacked, (v) => set({ stacked: v })));
+  } else if (chartOpts.type === "area" || chartOpts.type === "line") {
+    toggles.appendChild(flag("stacked", chartOpts.stacked, (v) => set({ stacked: v })));
+  }
+  // Swapping is the one thing a mapping cannot express, and the reason to
+  // have the bar at all: the same rows read the other way round.
+  if (chartOpts.series) {
+    const swap = document.createElement("button");
+    swap.textContent = "⇄ swap";
+    swap.title = "read the category as the series and back";
+    swap.onclick = () => set({ x: chartOpts.series, series: chartOpts.x });
+    toggles.appendChild(swap);
+  }
+  if (toggles.childNodes.length) bar.appendChild(toggles);
+}
+
+function renderChart(rows) {
+  const el = document.getElementById("chart");
+  const show = !!(viz && viz.kind === "chart" && (chartOpts || viz.chart));
+  el.hidden = !show;
+  if (!show) { if (chartObj) { chartObj.dispose(); chartObj = null; } return; }
+  if (chartObj) chartObj.dispose();          // re-init so a theme switch takes effect
+  // SVG renderer on purpose: the rendered chart IS its own export — the <svg>
+  // node serializes to a vector file as plain text, no canvas/base64 dance.
+  chartObj = echarts.init(el, host.theme === "dark" ? "dark" : null, { renderer: "svg" });
+  chartObj.setOption(buildOption(chartOpts || viz.chart, rows), true);
+}
+function resizeChart() { if (chartObj) chartObj.resize(); }
+
+/* =============================== kpi =============================== */
+function renderKpis() {
+  const wrap = document.getElementById("kpis");
+  const show = !!(viz && viz.kind === "kpi");
+  wrap.hidden = !show;
+  if (!show) return;
+  wrap.textContent = "";
+  for (const c of viz.kpis || []) {
+    const card = document.createElement("div");
+    card.className = "kpi";
+    const lab = document.createElement("div");
+    lab.className = "lab";
+    lab.textContent = c.label;
+    const val = document.createElement("div");
+    val.className = "val";
+    val.textContent = typeof c.value === "number"
+      ? fmtNum(c.value) + (c.format === "percent" ? "%" : "")
+      : String(c.value);
+    if (c.unit) {
+      const u = document.createElement("span");
+      u.className = "unit";
+      u.textContent = c.unit;
+      val.appendChild(u);
+    }
+    card.append(lab, val);
+    const d = c.delta_pct ?? c.delta;
+    if (d !== undefined && d !== null) {
+      const dl = document.createElement("div");
+      const sign = d > 0 ? 1 : d < 0 ? -1 : 0;
+      const dir = c.direction || "up_good";
+      dl.className = "dlt " + (sign === 0 || dir === "neutral" ? "flat"
+        : (sign > 0) === (dir === "up_good") ? "good" : "bad");
+      const arrow = sign > 0 ? "▲" : sign < 0 ? "▼" : "•";
+      dl.textContent = arrow + " " + (c.delta_pct !== undefined && c.delta_pct !== null
+        ? fmtNum(Math.abs(c.delta_pct)) + "%" : fmtNum(Math.abs(c.delta)));
+      card.appendChild(dl);
+    }
+    if (Array.isArray(c.trend) && c.trend.length > 1) card.appendChild(sparkline(c.trend));
+    if (c.subtitle) {
+      const s = document.createElement("div");
+      s.className = "sub";
+      s.textContent = c.subtitle;
+      card.appendChild(s);
+    }
+    wrap.appendChild(card);
+  }
+}
+
+// A hand-drawn polyline: a sparkline is not worth a charting library.
+function sparkline(vals) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("class", "spark");
+  svg.setAttribute("viewBox", "0 0 100 26");
+  svg.setAttribute("preserveAspectRatio", "none");
+  const min = Math.min(...vals), max = Math.max(...vals), span = max - min || 1;
+  const pts = vals.map((v, i) =>
+    `${(i / (vals.length - 1)) * 100},${25 - ((v - min) / span) * 23 - 1}`).join(" ");
+  const line = document.createElementNS(ns, "polyline");
+  line.setAttribute("points", pts);
+  line.setAttribute("fill", "none");
+  line.setAttribute("stroke", "var(--hugr-primary)");
+  line.setAttribute("stroke-width", "1.5");
+  line.setAttribute("vector-effect", "non-scaling-stroke");
+  svg.appendChild(line);
+  return svg;
+}
+
+/* ============================== table ============================== */
+function renderTable(rows) {
+  const wrap = document.getElementById("tblwrap");
+  // a chart view also shows its rows, but only when there is room for them
+  const show = !!viz && (viz.kind === "table" || (viz.kind === "chart" && expanded()));
+  wrap.hidden = !show;
+  if (!show) return;
+
+  // Under a chart the listing is a courtesy, not the point: past a couple
+  // thousand rows it is a useless sliver of the whole, so offer the file
+  // instead. A filter that narrows the set below the cap brings the table
+  // back. viz-table stays listed — a page that big was asked for with an
+  // explicit limit.
+  if (viz.kind === "chart" && rows.length > CHART_TABLE_CAP) {
+    const tbl = document.getElementById("tbl");
+    tbl.textContent = "";
+    const td = tbl.createTBody().insertRow().insertCell();
+    td.style.color = "var(--muted)";
+    td.append(`${fmtNum(rows.length)} rows — too many to list, `);
+    const btn = document.createElement("button");
+    btn.id = "csv-instead";
+    btn.textContent = "save as CSV";
+    btn.onclick = () => { showError(null); deliver(exportName("csv"), "text/csv", toCSV(rows)); };
+    td.appendChild(btn);
+    return;
+  }
+
+  // Headers come from the delivered rows when the filtered set is empty, so a
+  // filter that matches nothing leaves a labelled empty table rather than a
+  // blank rectangle.
+  const sample = rows[0] || allRows[0];
+  const cols = (viz.columns || []).length
+    ? viz.columns
+    : sample ? Object.keys(sample).map((f) => ({ field: f, label: f })) : [];
+  let view = rows;
+  if (sortCol) {
+    view = [...rows].sort((a, b) => {
+      const x = a[sortCol], y = b[sortCol];
+      if (typeof x === "number" && typeof y === "number") return (x - y) * sortDir;
+      return String(x ?? "").localeCompare(String(y ?? "")) * sortDir;
+    });
+  }
+  const limit = expanded() ? 500 : 15;
+  const shown = view.slice(0, limit);
+
+  const tbl = document.getElementById("tbl");
+  tbl.textContent = "";
+  const hr = tbl.createTHead().insertRow();
+  for (const c of cols) {
+    const th = document.createElement("th");
+    th.textContent = (c.label || c.field) + (sortCol === c.field ? (sortDir > 0 ? " ↑" : " ↓") : "");
+    if (c.align === "right" || c.format === "number") th.className = "num";
+    th.onclick = () => { sortDir = sortCol === c.field ? -sortDir : 1; sortCol = c.field; render(); };
+    hr.appendChild(th);
+  }
+  const tb = tbl.createTBody();
+  for (const r of shown) {
+    const tr = tb.insertRow();
+    for (const c of cols) {
+      const td = tr.insertCell();
+      const v = r[c.field];
+      if (typeof v === "number") { td.className = "num"; td.textContent = fmtNum(v); }
+      else td.textContent = v === null || v === undefined ? "" : String(v);
+    }
+  }
+  if (!view.length) noteRow(tb, cols.length, "no rows match the current filters");
+  else if (view.length > limit) {
+    noteRow(tb, cols.length, `… ${view.length - limit} more rows` +
+      (host.displayMode === "inline" ? " — open fullscreen to see more" : ""));
+  }
+}
+function noteRow(tbody, span, text) {
+  const td = tbody.insertRow().insertCell();
+  td.colSpan = span || 1;
+  td.style.color = "var(--muted)";
+  td.textContent = text;
+}
+function fmtNum(v) {
+  return Number.isInteger(v) ? v.toLocaleString("en-US") : v.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+/* ============================= export ==============================
+   A sandboxed iframe has no allow-downloads, so a Blob link is useless here
+   and everything has to go out through the host. Three routes, best first,
+   picked from what the host actually advertises. What leaves is what the user
+   is LOOKING AT — the filtered rows in their column order — not the raw
+   delivery. */
+const canSaveFile = () => !!host.caps.downloadFile;   // ui/download-file: draft spec
+// ChatGPT offers no ui/download-file but bridges its own window.openai
+// extension into the iframe — feature-detected only, per OpenAI's own
+// guidance (standard first, extensions when the standard has no answer).
+const canUploadFile = () => !!(window.openai && typeof window.openai.uploadFile === "function");
+
+function exportColumns(rows) {
+  if (viz && (viz.columns || []).length) return viz.columns.map((c) => c.field);
+  return rows.length ? Object.keys(rows[0]) : [];
+}
+function csvCell(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function toCSV(rows) {
+  const cols = exportColumns(rows);
+  return [cols.join(","), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(","))].join("\n");
+}
+function exportName(ext) {
+  const base = ((viz && viz.title) || "hugr-viz").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").toLowerCase();
+  return (base || "hugr-viz") + "." + ext;
+}
+
+// The chart is rendered by the SVG renderer, so the chart IS its own vector
+// export: serialize the node, paint the theme background in (the widget sits
+// transparent over the host's).
+function exportSVG() {
+  const svg = document.querySelector("#chart svg");
+  if (!svg) throw new Error("nothing rendered to export");
+  const node = svg.cloneNode(true);
+  if (!node.getAttribute("xmlns")) node.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  node.style.background = getComputedStyle(document.body).backgroundColor;
+  return node.outerHTML;
+}
+
+// PNG = the same SVG rasterized on an offscreen canvas at 2x. Same-origin
+// blob URL, no foreignObject in ECharts output — the canvas stays clean and
+// toDataURL is allowed under the Apps CSP (no network involved).
+function svgToPng(svgText) {
+  return new Promise((resolve, reject) => {
+    const el = document.getElementById("chart");
+    const w = el.clientWidth || 700, h = el.clientHeight || 300;
+    const url = URL.createObjectURL(new Blob([svgText], { type: "image/svg+xml" }));
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = w * 2; c.height = h * 2;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      const durl = c.toDataURL("image/png");
+      resolve(durl.slice(durl.indexOf(",") + 1));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("svg rasterization failed")); };
+    img.src = url;
+  });
+}
+
+// Text formats (CSV, JSON, SVG) ride every route including the clipboard;
+// the PNG rides as base64 in `blob` and needs a real file route.
+async function deliver(name, mime, text, blob) {
+  if (canSaveFile()) {
+    const resource = { uri: "file:///" + name, mimeType: mime };
+    if (blob) resource.blob = blob; else resource.text = text;
+    await request("ui/download-file", { contents: [{ type: "resource", resource }] });
+    setStatus("saved " + name);
+    return;
+  }
+  dbg("export routes", {
+    downloadFile: canSaveFile(),
+    openai: window.openai ? Object.keys(window.openai).filter((k) => typeof window.openai[k] === "function") : null,
+    clipboard: !!(navigator.clipboard && navigator.clipboard.writeText),
+  });
+  if (canUploadFile()) {
+    try {
+      const part = blob ? Uint8Array.from(atob(blob), (c) => c.charCodeAt(0)) : text;
+      const { fileId } = await window.openai.uploadFile(new File([part], name, { type: mime }), { library: true });
+      setStatus("saved " + name + " to your ChatGPT file library");
+      // Best-effort browser download on top: openExternal opens only vetted
+      // links and may refuse — the library copy already exists either way.
+      try {
+        const { downloadUrl } = await window.openai.getFileDownloadUrl({ fileId });
+        window.openai.openExternal({ href: downloadUrl, redirectUrl: false });
+      } catch (e) { dbg("dl-url!", e.message); }
+      return;
+    } catch (e) { dbg("upload!", e.message); }   // fall through: clipboard next
+  }
+  if (blob) {                       // an image cannot go to the clipboard as text
+    showError("this host cannot save files, so the chart image cannot be exported here");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("copied " + name + " to the clipboard");
+  } catch (e) {
+    // A third route — posting the rows into the chat — was dropped: it spends
+    // the conversation's tokens on data nobody reads there and still leaves
+    // the user without a file.
+    dbg("clip!", e.message);
+    showError("this host offers no way to export — it neither saves files nor grants clipboard access"
+      + (window.openai ? "" : " (no window.openai bridge either)"));
+  }
+}
+
+function renderExportMenu() {
+  const menu = document.getElementById("dl-menu");
+  const rows = localRows();
+  const how = canSaveFile() ? "download" : canUploadFile() ? "save to library" : "copy";
+  const items = [];
+  if (chartObj) {
+    items.push({ label: "PNG", note: canSaveFile() || canUploadFile() ? "chart image" : "needs host download support", run: async () => {
+      try {
+        deliver(exportName("png"), "image/png", null, await svgToPng(exportSVG()));
+      } catch (e) { showError("png export failed: " + e.message); }
+    }});
+    items.push({ label: "SVG", note: "chart image · vector", run: () => deliver(exportName("svg"), "image/svg+xml", exportSVG()) });
+  }
+  items.push(
+    { label: "CSV", note: `${rows.length} rows · ${how}`, run: () => deliver(exportName("csv"), "text/csv", toCSV(rows)) },
+    { label: "JSON", note: `${rows.length} rows · ${how}`, run: () => deliver(exportName("json"), "application/json", JSON.stringify(rows, null, 2)) },
+  );
+  menu.textContent = "";
+  for (const it of items) {
+    const row = document.createElement("div");
+    row.className = "opt";
+    const txt = document.createElement("span");
+    txt.className = "txt";
+    const lbl = document.createElement("span");
+    lbl.className = "lbl";
+    lbl.textContent = it.label;
+    const d = document.createElement("span");
+    d.className = "desc";
+    d.textContent = it.note;
+    txt.append(lbl, d);
+    row.appendChild(txt);
+    row.onclick = () => { menu.hidden = true; showError(null); it.run(); };
+    menu.appendChild(row);
+  }
+}
+document.getElementById("btn-dl").onclick = (e) => {
+  e.stopPropagation();
+  const menu = document.getElementById("dl-menu");
+  const opening = menu.hidden;
+  closeMenus();
+  menu.hidden = !opening;
+  if (opening) { renderExportMenu(); reportSize(); }
+};
+document.getElementById("dl-menu").onclick = (e) => e.stopPropagation();
+
+/* ============================== frame ============================== */
+function render() {
+  if (!viz) return;
+  const rows = localRows();
+  renderFilters();
+  renderChartBar(rows);
+  renderKpis();
+  renderChart(rows);
+  renderTable(rows);
+  const total = viz.row_count ?? allRows.length;
+  document.getElementById("b-rows").textContent = viz.kind === "kpi"
+    ? `${(viz.kpis || []).length} KPIs`
+    : (rows.length === total ? `${total} rows` : `${rows.length} of ${total} rows`) +
+      (viz.truncated ? " · truncated" : "");
+  document.getElementById("b-mode").textContent = `${host.displayMode} · ${host.theme}`;
+  document.getElementById("dl").hidden = !rows.length;
+  if (viz.fetch && !rowsLoaded && !loading) {
+    setStatus(`showing the first ${allRows.length} of ${viz.row_count} rows` +
+      (viz.kind === "chart" ? "" : " — open fullscreen for all of them"));
+  } else {
+    setStatus(viz.source && viz.source.type === "query" ? "source: hugr query" : "source: inline data");
+  }
+  reportSize();
+  // Insurance against a mid-settle first measurement: forced re-reports after
+  // the browser has laid the wrapped rows out for real (a duplicate height
+  // must still go out — it is what releases the host's initial minimum).
+  setTimeout(() => reportSize(true), 60);
+  setTimeout(() => reportSize(true), 300);
+}
+function setStatus(t) { document.getElementById("status").textContent = t; }
+function showError(t) {
+  const el = document.getElementById("error");
+  el.style.display = t ? "block" : "none";
+  el.textContent = t || "";
+  if (t) { setStatus("error"); reportSize(); }
+}
+
+function fmtValue(v) {
+  if (Array.isArray(v)) return v.join(", ");
+  if (v && typeof v === "object") return [v.from ?? "", v.to ?? ""].join("…");
+  return String(v);
+}
+function activeFilterSummary() {
+  const parts = Object.entries(filterState).map(([k, v]) => `${k}=${fmtValue(v)}`);
+  return parts.length ? parts.join("; ") : "none";
+}
+
+/* The view's own state does not survive a reopened chat — persistence is
+   deferred in the Apps spec — but each update OVERWRITES the previous one, so
+   this slot always holds the CURRENT state for the model's next turn. Sent on
+   every change, including a server refresh, so "what am I looking at" and
+   "pin this" (re-call the tool with filters[].value) both work. */
+function pushModelContext() {
+  if (!canPushContext()) return;
+  if (viz && viz.kind === "kpi") {
+    // A panel has no user-changeable state worth narrating beyond its size.
+    request("ui/update-model-context", {
+      content: [{ type: "text", text: `Viz "${viz.title || ""}" renders ${(viz.kpis || []).length} KPI cards; mode: ${host.displayMode}.` }],
+      structuredContent: { title: viz.title || "", kind: "kpi", cards: (viz.kpis || []).length, display_mode: host.displayMode },
+    }).catch((e) => dbg("ctx!", e.message));
+    return;
+  }
+  const shown = localRows().length;
+  const state = {
+    title: (viz && viz.title) || "",
+    kind: (viz && viz.kind) || "",
+    filters: Object.entries(filterState).map(([name, value]) => {
+      const spec = ((viz && viz.filters) || []).find((f) => f.name === name) || {};
+      return { name, value, field: spec.field || name };
+    }),
+    rows_shown: shown,
+    rows_delivered: allRows.length,
+    truncated: !!(viz && viz.truncated),
+    display_mode: host.displayMode,
+  };
+  if (viz && viz.kind === "chart" && chartOpts) state.chart = chartOpts;
+  request("ui/update-model-context", {
+    content: [{ type: "text", text:
+      `Viz "${state.title}" now shows ${shown} of ${allRows.length} rows; filters: ${activeFilterSummary()}; mode: ${host.displayMode}. ` +
+      `To keep this state, call the same viz tool again with these values set as filters[].value.` }],
+    structuredContent: state,
+  }).catch((e) => dbg("ctx!", e.message));
+}
+
+/* size reporting: hosts size the iframe from this */
+let lastH = 0;
+function reportSize(force) {
+  const h = Math.ceil(document.getElementById("app").getBoundingClientRect().height);
+  // force matters: Claude Desktop holds a minimum height on the first render
+  // and releases it only on a FRESH size-changed — a suppressed duplicate
+  // leaves a dead strip under the widget.
+  if (h && (force || Math.abs(h - lastH) > 2)) {
+    lastH = h;
+    notify("ui/notifications/size-changed", { height: h, width: Math.ceil(document.body.scrollWidth) });
+  }
+}
+// Feature-detected: an unguarded call to a missing API here would throw at
+// parse time and take the handshake below down with it, leaving the host with
+// a silent, permanently blank view.
+if (typeof ResizeObserver === "function") {
+  new ResizeObserver(() => { resizeChart(); reportSize(); }).observe(document.getElementById("app"));
+}
+window.addEventListener("resize", () => { resizeChart(); reportSize(); });
+// The first report can catch the layout mid-settle (fonts swapping, the KPI
+// rows wrapping) and leave the host holding a stale, taller height — so
+// re-measure once things calm down.
+if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") {
+  document.fonts.ready.then(() => reportSize(true));
+}
+
+/* ============================= toolbar ============================= */
+document.getElementById("btn-mode").onclick = async () => {
+  const target = host.displayMode === "fullscreen" ? "inline" : "fullscreen";
+  try {
+    const res = await request("ui/request-display-mode", { mode: target });
+    if (res && res.mode) {
+      host.displayMode = res.mode;
+      document.body.dataset.mode = res.mode;
+      const other = res.mode === "fullscreen" ? "inline" : "fullscreen";
+      document.getElementById("btn-mode").hidden = !host.availableDisplayModes.includes(other);
+      render();
+      pushModelContext();
+      maybeLoadRows();
+    }
+  } catch (e) { showError("request-display-mode failed: " + e.message); }
+};
+document.getElementById("btn-debug").onclick = () => {
+  const el = document.getElementById("debug");
+  const open = el.style.display === "block";
+  el.style.display = open ? "none" : "block";
+  if (!open) { el.textContent = dbgLog.join("\n"); el.scrollTop = el.scrollHeight; }
+  reportSize();
+};
+
+/* ============================== init =============================== */
+(async function init() {
+  try {
+    // Exactly the three params McpUiInitializeRequest declares. The prose in
+    // the spec still shows an older shape (capabilities + clientInfo); hosts
+    // validate against the schema, and a rejected handshake is invisible —
+    // the host then refuses to send tool-result at all and the view just
+    // never appears.
+    const res = await withTimeout(request("ui/initialize", {
+      appInfo: { name: "hugr-viz", version: "0.1.0" },
+      appCapabilities: { availableDisplayModes: ["inline", "fullscreen", "pip"] },
+      protocolVersion: PROTOCOL_VERSION,
+    }), 5000, "the host did not answer ui/initialize");
+    host.caps = (res && res.hostCapabilities) || {};
+    dbg("host", { info: res && res.hostInfo, protocol: res && res.protocolVersion, caps: Object.keys(host.caps) });
+    if (res && res.hostContext) onHostContext(res.hostContext);
+    notify("ui/notifications/initialized");    // host sends nothing before this
+    setStatus("connected — waiting for data…");
+    reportSize();
+  } catch (e) {
+    showError("ui/initialize failed: " + e.message);
+  }
+})();
+</script>
+</body>
+</html>
