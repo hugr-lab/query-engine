@@ -23,10 +23,20 @@ var promptsFS embed.FS
 //go:embed instructions.md
 var instructions string
 
+// Config carries what the MCP surface needs beyond the querier.
+type Config struct {
+	Debug bool
+	// QueryTTL is how long a viz query's result stays cached, so the view's
+	// own fetch of the same rows is a cache read rather than a second
+	// execution. Zero leaves caching off unless a tool call asks for it.
+	QueryTTL time.Duration
+}
+
 // Server wraps the MCP server and its dependencies.
 type Server struct {
 	querier types.Querier
 	debug   bool
+	cfg     Config
 	mcp     *server.MCPServer
 	http    *server.StreamableHTTPServer
 }
@@ -34,7 +44,8 @@ type Server struct {
 // New creates a new MCP server backed by the given query engine. Everything —
 // including the permission filter on the search path — goes through the
 // querier, so MCP holds no copy of the engine's access policy.
-func New(querier types.Querier, mcpServer *server.MCPServer, debug bool) *Server {
+func New(querier types.Querier, mcpServer *server.MCPServer, cfg Config) *Server {
+	debug := cfg.Debug
 	if mcpServer == nil {
 		mcpServer = server.NewMCPServer(
 			"Hugr Schema Explorer",
@@ -46,7 +57,7 @@ func New(querier types.Querier, mcpServer *server.MCPServer, debug bool) *Server
 			server.WithToolHandlerMiddleware(toolLoggingMiddleware(debug)),
 		)
 	}
-	s := &Server{querier: querier, debug: debug}
+	s := &Server{querier: querier, debug: debug, cfg: cfg}
 
 	// Catalog tools — the logical model (design-035).
 	mcpServer.AddTool(mcp.NewTool("catalog-list",
@@ -65,6 +76,8 @@ Use catalog-search instead when you know WHAT you want but not what it is called
 		mcp.WithNumber("limit", mcp.Description("Page size (1-200)"), mcp.DefaultNumber(defaultPageLimit)),
 		mcp.WithNumber("offset", mcp.Description("Items to skip"), mcp.DefaultNumber(0)),
 		mcp.WithOutputSchema[Page[CatalogItem]](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.catalogList)
 
 	mcpServer.AddTool(mcp.NewTool("catalog-describe",
@@ -84,6 +97,8 @@ Names that do not exist, and names the caller may not see, both come back in not
 		mcp.WithNumber("relations_limit", mcp.Description("Relations per described object (1-200)"), mcp.DefaultNumber(defaultRelationsLimit)),
 		mcp.WithNumber("relations_offset", mcp.Description("Relations to skip, per described object"), mcp.DefaultNumber(0)),
 		mcp.WithOutputSchema[DescribeResult](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.catalogDescribe)
 
 	mcpServer.AddTool(mcp.NewTool("catalog-search",
@@ -103,6 +118,8 @@ Use catalog-list when you want the complete map instead of the relevant few.`),
 		mcp.WithNumber("offset", mcp.Description("Hits to skip"), mcp.DefaultNumber(0)),
 		mcp.WithNumber("min_score", mcp.Description("Drop hits below this score (0-1)"), mcp.DefaultNumber(0)),
 		mcp.WithOutputSchema[SearchResultPage](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.catalogSearch)
 
 	mcpServer.AddTool(mcp.NewTool("schema-describe_types",
@@ -116,6 +133,8 @@ Batched: pass every unknown name at once. Names that do not exist, and names you
 		mcp.WithArray("names", mcp.Required(), mcp.Description("Type names, copied verbatim"),
 			mcp.Items(map[string]any{"type": "string"})),
 		mcp.WithOutputSchema[TypeDescriptions](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.schemaDescribeTypes)
 
 	mcpServer.AddTool(mcp.NewTool("catalog-object_fields",
@@ -131,6 +150,8 @@ Fields marked @exclude_mcp by the operator are never listed.`),
 		mcp.WithNumber("limit", mcp.Description("Page size (1-200)"), mcp.DefaultNumber(defaultPageLimit)),
 		mcp.WithNumber("offset", mcp.Description("Fields to skip"), mcp.DefaultNumber(0)),
 		mcp.WithOutputSchema[Page[TypeField]](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.catalogObjectFields)
 
 	mcpServer.AddTool(mcp.NewTool("schema-type_fields",
@@ -143,6 +164,8 @@ Paginated and deterministic. Use schema-describe_types first if you do not yet k
 		mcp.WithNumber("limit", mcp.Description("Page size (1-200)"), mcp.DefaultNumber(defaultPageLimit)),
 		mcp.WithNumber("offset", mcp.Description("Members to skip"), mcp.DefaultNumber(0)),
 		mcp.WithOutputSchema[Page[TypeField]](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.schemaTypeFields)
 
 	mcpServer.AddTool(mcp.NewTool("schema-field_args",
@@ -152,6 +175,8 @@ Kept separate from the field lists on purpose: a field's own line is about ten t
 		mcp.WithArray("fields", mcp.Required(), mcp.Description("Field names, copied from a field listing"),
 			mcp.Items(map[string]any{"type": "string"})),
 		mcp.WithOutputSchema[FieldArgsResult](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.schemaFieldArgs)
 
 	mcpServer.AddTool(mcp.NewTool("schema-enum_values",
@@ -161,6 +186,8 @@ Common enums: OrderDirection (ASC, DESC), TimeExtract, TimeBucket, GeometryType.
 		mcp.WithNumber("limit", mcp.Description("Page size (1-200)"), mcp.DefaultNumber(defaultPageLimit)),
 		mcp.WithNumber("offset", mcp.Description("Values to skip"), mcp.DefaultNumber(0)),
 		mcp.WithOutputSchema[Page[EnumValue]](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.schemaEnumValues)
 
 	mcpServer.AddTool(mcp.NewTool("data-field_values",
@@ -172,6 +199,8 @@ This RUNS A QUERY over the data under your own permissions — it is not schema 
 		mcp.WithBoolean("calculate_stats", mcp.Description("Also compute min/max/avg where the type allows"), mcp.DefaultBool(false)),
 		mcp.WithObject("filter", mcp.Description("Scope the summary, same shape as the object's query filter")),
 		mcp.WithOutputSchema[FieldValues](),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.dataFieldValues)
 
 	mcpServer.AddTool(mcp.NewTool("data-inline_graphql_result",
@@ -188,6 +217,8 @@ Query rules:
 		mcp.WithObject("variables", mcp.Description("Query variables")),
 		mcp.WithString("jq_transform", mcp.Description("JQ expression to apply to result")),
 		mcp.WithNumber("max_result_size", mcp.Description("Max result bytes (100-10000). Increase if result is truncated."), mcp.DefaultNumber(1000)),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.inlineGraphQLResult)
 
 	mcpServer.AddTool(mcp.NewTool("data-execute_mutation",
@@ -213,7 +244,12 @@ Field names are <Object> with the catalog prefix. BEFORE calling: catalog-descri
 Validates field names, argument types, filter structure, and order_by paths.`),
 		mcp.WithString("query", mcp.Required(), mcp.Description("GraphQL query")),
 		mcp.WithObject("variables", mcp.Description("Query variables")),
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
 	), s.validateGraphQLQuery)
+
+	// Visualization tools + the MCP Apps view they render in (design-038).
+	s.addViz(mcpServer)
 
 	// Resources.
 	addResources(mcpServer)
@@ -446,7 +482,7 @@ func addPrompts(s *server.MCPServer) {
 		{
 			"dashboard",
 			"Use when the user asks to create a dashboard, overview, or visual report of a dataset. " +
-				"Generates a React component with KPIs, breakdowns, time trends, and rankings in Hugr brand style. " +
+				"Composes the viz-chart/viz-table views into a dashboard-style overview: KPI summary, time trends, breakdowns, rankings, drill-down. " +
 				"Examples: 'create a dashboard for patient data', 'build an overview of sales', 'visualize key metrics'.",
 			"prompts/dashboard.md",
 		},

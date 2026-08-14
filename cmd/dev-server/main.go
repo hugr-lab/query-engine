@@ -50,6 +50,7 @@ func main() {
 		SchemaCacheMaxEntries: conf.SchemaCacheMaxEntries,
 		SchemaCacheTTL:        conf.SchemaCacheTTL,
 		MCPEnabled:            conf.MCPEnabled,
+		MCPQueryTTL:           conf.MCPQueryTTL,
 		DB:                    conf.DB,
 		CoreDB:                coredb.New(conf.CoreDB),
 		Auth:                  auth,
