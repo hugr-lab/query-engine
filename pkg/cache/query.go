@@ -2,11 +2,13 @@ package cache
 
 import (
 	"bytes"
+	"context"
 	"time"
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/base"
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/catalog/types"
+	enginetypes "github.com/hugr-lab/query-engine/types"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 )
@@ -19,21 +21,32 @@ type Info struct {
 	Invalidate bool
 }
 
-func QueryInfo(field *ast.Field, vars map[string]any) Info {
+// QueryInfo decides whether this field's result is cached, and under what
+// key. Caching is asked for either by an @cache directive on the field or its
+// definition, or — for a caller that passes a query through verbatim and so
+// cannot add one — by a hint on the context. The directive wins where both are
+// present, @no_cache disables either, and a mutation is never cached.
+func QueryInfo(ctx context.Context, field *ast.Field, vars map[string]any) Info {
 	if field == nil {
 		return Info{}
 	}
 
-	// If query check if need cache
-	if field.Directives.ForName(base.CacheDirectiveName) == nil &&
-		field.Definition.Directives.ForName(base.CacheDirectiveName) == nil {
+	hasDirective := field.Directives.ForName(base.CacheDirectiveName) != nil ||
+		field.Definition.Directives.ForName(base.CacheDirectiveName) != nil
+	hint, hasHint := enginetypes.QueryCacheFromContext(ctx)
+	if !hasDirective && !hasHint {
 		return Info{}
 	}
 
-	info := cacheDirectiveInfo(field.Directives.ForName(base.CacheDirectiveName), vars)
-	info.Merge(
-		cacheDirectiveInfo(field.Definition.Directives.ForName(base.CacheDirectiveName), vars),
-	)
+	var info Info
+	if hasDirective {
+		info = cacheDirectiveInfo(field.Directives.ForName(base.CacheDirectiveName), vars)
+		info.Merge(
+			cacheDirectiveInfo(field.Definition.Directives.ForName(base.CacheDirectiveName), vars),
+		)
+	} else {
+		info = Info{Key: hint.Key, TTL: hint.TTL}
+	}
 	if info.Key == "" {
 		info.Key, _ = FieldKey(field, vars)
 	}

@@ -348,7 +348,7 @@ func (s *Service) processDataQuery(ctx context.Context, provider catalog.Provide
 		return plan.Execute(ctx, s.db)
 	}
 
-	ci := cache.QueryInfo(query.Field, vars)
+	ci := cache.QueryInfo(ctx, query.Field, vars)
 	if !ci.Use {
 		data, err = dataFunc()
 	}
@@ -474,7 +474,7 @@ func (s *Service) processJQTransformation(ctx context.Context, provider catalog.
 		return out, nil
 	}
 
-	ci := cache.QueryInfo(query.Field, vars)
+	ci := cache.QueryInfo(ctx, query.Field, vars)
 	var res any
 	if !ci.Use {
 		res, err = dataFunc()
