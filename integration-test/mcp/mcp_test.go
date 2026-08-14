@@ -175,15 +175,16 @@ func TestMCP_ToolsList(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	tools := result["tools"].([]any)
 
-	// The whole surface: 4 catalog + 4 schema + 4 data + 4 viz. The discovery-*
-	// family and schema-type_info are gone — they read the compiled-schema
-	// views, which the entity storage does not expose (design-035).
+	// The whole surface: 4 catalog + 4 schema + 4 data + 4 viz + 2 report.
+	// The discovery-* family and schema-type_info are gone — they read the
+	// compiled-schema views, which the entity storage does not expose
+	// (design-035).
 	//
-	// viz-data is listed here even though it is app-only: visibility lives in
-	// _meta.ui and it is the HOST that keeps such tools out of the model's
-	// sight. The server must still serve it, or a filter change in the open
-	// view would have nothing to call.
-	assert.Len(t, tools, 16, "expected 16 MCP tools")
+	// viz-data and report-data are listed here even though they are app-only:
+	// visibility lives in _meta.ui and it is the HOST that keeps such tools
+	// out of the model's sight. The server must still serve them, or a filter
+	// change in the open view would have nothing to call.
+	assert.Len(t, tools, 18, "expected 18 MCP tools")
 
 	// Verify tool names.
 	toolNames := make(map[string]bool)
@@ -208,6 +209,8 @@ func TestMCP_ToolsList(t *testing.T) {
 		"viz-table",
 		"viz-kpi",
 		"viz-data",
+		"viz-report",
+		"report-data",
 	}
 	for _, gone := range []string{
 		"discovery-search_modules", "discovery-search_data_sources",
@@ -231,15 +234,16 @@ func TestMCP_ResourcesList(t *testing.T) {
 	result := resp["result"].(map[string]any)
 	resources := result["resources"].([]any)
 
-	// Four markdown references plus the three MCP Apps view builds.
-	assert.Len(t, resources, 7, "expected 7 MCP resources")
+	// Four markdown references plus the three MCP Apps view builds and the
+	// report document.
+	assert.Len(t, resources, 8, "expected 8 MCP resources")
 
 	// A host decides whether to open a view from the LISTING alone, so the
 	// profile mime type and _meta.ui have to survive the wire here, not only
 	// on resources/read.
 	var view map[string]any
 	for _, r := range resources {
-		if rm := r.(map[string]any); rm["uri"] == "ui://hugr/viz-v2" {
+		if rm := r.(map[string]any); rm["uri"] == "ui://hugr/viz-v3" {
 			view = rm
 		}
 	}

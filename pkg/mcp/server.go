@@ -251,6 +251,9 @@ Validates field names, argument types, filter structure, and order_by paths.`),
 	// Visualization tools + the MCP Apps view they render in (design-038).
 	s.addViz(mcpServer)
 
+	// Report tools + the report document view (design-039).
+	s.addReports(mcpServer)
+
 	// Resources.
 	addResources(mcpServer)
 
@@ -482,8 +485,9 @@ func addPrompts(s *server.MCPServer) {
 		{
 			"dashboard",
 			"Use when the user asks to create a dashboard, overview, or visual report of a dataset. " +
-				"Composes the viz-chart/viz-table views into a dashboard-style overview: KPI summary, time trends, breakdowns, rankings, drill-down. " +
-				"Examples: 'create a dashboard for patient data', 'build an overview of sales', 'visualize key metrics'.",
+				"Composes the viz-chart/viz-table views into a dashboard-style overview: KPI summary, time trends, breakdowns, rankings, drill-down — " +
+				"or one printable multi-section document via viz-report. " +
+				"Examples: 'create a dashboard for patient data', 'build an overview of sales', 'make a quarterly report'.",
 			"prompts/dashboard.md",
 		},
 	}
