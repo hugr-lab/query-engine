@@ -22,23 +22,30 @@ func selectQueryParamsNodes(ctx context.Context, defs base.DefinitionsSource, e 
 	semantic := args.ForName(base.SemanticSearchArgumentName)
 	if info != nil {
 		selectDeleted := info.SoftDelete && query.Directives.ForName(base.WithDeletedDirectiveName) != nil
-		if filter == nil && !selectDeleted && info.SoftDelete {
+		var where *QueryPlanNode
+		if filter != nil {
+			filterVals, _ := filter.Value.(map[string]any)
+			where, err = whereNode(ctx, defs, info, filterVals, prefix, byAlias, selectDeleted)
+			if err != nil {
+				return nil, err
+			}
+		}
+		switch {
+		case where != nil:
+			// whereNode appends the soft-delete predicate to its own output.
+			nodes = append(nodes, where)
+		case info.SoftDelete && !selectDeleted:
+			// It returns nothing at all for a filter that is absent OR empty,
+			// so the predicate has to be added here for both. Hiding deleted
+			// rows is a property of the generated SQL, like the role rules —
+			// never something the caller's input can switch off. Only
+			// @with_deleted does that.
 			nodes = append(nodes, &QueryPlanNode{
 				Name: "where",
 				CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 					return info.SoftDeleteCondition(prefix), params, nil
 				},
 			})
-		}
-		if filter != nil {
-			filterVals := filter.Value.(map[string]any)
-			whereNode, err := whereNode(ctx, defs, info, filterVals, prefix, byAlias, selectDeleted)
-			if err != nil {
-				return nil, err
-			}
-			if whereNode != nil {
-				nodes = append(nodes, whereNode)
-			}
 		}
 	}
 	if limit != nil {
