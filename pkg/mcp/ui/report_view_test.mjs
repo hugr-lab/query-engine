@@ -49,7 +49,10 @@ const SPEC = {
     { name: "min_total", type: "Int" },
   ],
   controls: [
-    { label: "States", control: "multiselect", bind: "states" },
+    // The options depend on $date_from — a Period change re-resolves them.
+    { label: "States", control: "multiselect", bind: "states",
+      options_query: { query: "query($date_from: Date) { op { st(filter: {d: {gte: $date_from}}) { key { st } } } }",
+        jq: ".data.op.st | map(.key.st)" } },
     { label: "Period", control: "daterange", bind: { from: "date_from", to: "date_to" }, required: true },
     // No explicit kind — the type of the bound variable decides.
     { label: "Cutoff", bind: "cutoff" },
@@ -156,7 +159,7 @@ const DATA = {
     } else if (msg.method === "tools/call") {
       lastToolCall = msg.params;
       toView({ jsonrpc: "2.0", id: msg.id, result: { structuredContent: msg.params.arguments.options_only
-        ? { controls: [{ label: "States", options: [{ value: "TX" }] }, { label: "Period" }] }
+        ? { controls: [{ label: "States", options: [{ value: "TX" }] }, { label: "Period" }, { label: "Cutoff" }, { label: "Min total" }] }
         : { ...DATA, variables: msg.params.arguments.variables } } });
     } else if (msg.method === "ui/download-file") {
       lastDownload = msg;
@@ -229,6 +232,33 @@ const DATA = {
   check("named after the report", res?.uri === "file:///quarterly-review.html");
   check("marked as a snapshot", (res?.text || "").includes("data-snapshot"));
   snapshotHTML = res?.text || "";
+
+  console.log("\n[widget: a parent change re-resolves dependent options live]");
+  lastToolCall = null;
+  const sectionsBefore = $("#sections").innerHTML;
+  const fromInput = $$(".ctl .range input")[0];
+  fromInput.value = "2023-02-01";
+  fromInput.onchange();
+  await tick(600);   // past the 400ms debounce
+  check("options_only went out, debounced", lastToolCall?.name === "report-data"
+    && lastToolCall?.arguments?.options_only === true);
+  check("with the new parent value", lastToolCall?.arguments?.variables?.date_from === "2023-02-01");
+  check("sections untouched — options only", $("#sections").innerHTML === sectionsBefore);
+  const statesBox = $('#panel .ctl[data-ci="0"]');
+  check("dependent box rebuilt with fresh options", !!statesBox);
+  statesBox.querySelector(".pick > button").click();
+  await tick();
+  check("the new option list is offered", [...statesBox.querySelectorAll(".pick .opt span:last-child")]
+    .map((s) => s.textContent).join(",") === "TX");
+  check("a selection outside the new list is pruned", statesBox.querySelector(".pick .val")?.textContent === "— all —");
+
+  console.log("\n[widget: an unrelated change does not refetch options]");
+  lastToolCall = null;
+  const cutoffInput = $('#panel .ctl[data-ci="2"] input');
+  cutoffInput.value = "2023-06-01";
+  cutoffInput.onchange();
+  await tick(600);
+  check("no options call for a variable nothing depends on", lastToolCall === null);
 }
 
 /* ========================== snapshot life ==========================

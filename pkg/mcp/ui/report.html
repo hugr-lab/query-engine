@@ -557,29 +557,7 @@ function renderPanel() {
   if (!controls.length) { renderApplied(); return; }
   panel.appendChild(panelTitle());
 
-  for (const c of controls) {
-    const box = document.createElement("div");
-    box.className = "ctl";
-    const lab = document.createElement("label");
-    lab.textContent = c.label;
-    if (c.required) {
-      const r = document.createElement("span");
-      r.className = "req";
-      r.textContent = " *";
-      lab.appendChild(r);
-    }
-    box.appendChild(lab);
-    box.appendChild(controlEl(c));
-    const i = (spec.controls || []).indexOf(c);
-    const resolved = data && data.controls && data.controls[i];
-    if (resolved && resolved.error) {
-      const e = document.createElement("div");
-      e.className = "err";
-      e.textContent = "options failed: " + resolved.error;
-      box.appendChild(e);
-    }
-    panel.appendChild(box);
-  }
+  controls.forEach((c, i) => panel.appendChild(controlBox(c, i)));
 
   // Apply exists only where it can DO something; a snapshot shows the note
   // instead of a button that silently ignores the click — and its inputs go
@@ -601,6 +579,32 @@ function renderPanel() {
     panel.appendChild(note);
   }
   renderApplied();
+}
+
+// controlBox builds one control (label + input + options error) — the unit a
+// dependent-options refresh replaces without touching the rest of the panel.
+function controlBox(c, i) {
+  const box = document.createElement("div");
+  box.className = "ctl";
+  box.dataset.ci = i;
+  const lab = document.createElement("label");
+  lab.textContent = c.label;
+  if (c.required) {
+    const r = document.createElement("span");
+    r.className = "req";
+    r.textContent = " *";
+    lab.appendChild(r);
+  }
+  box.appendChild(lab);
+  box.appendChild(controlEl(c));
+  const resolved = data && data.controls && data.controls[i];
+  if (resolved && resolved.error) {
+    const e = document.createElement("div");
+    e.className = "err";
+    e.textContent = "options failed: " + resolved.error;
+    box.appendChild(e);
+  }
+  return box;
 }
 
 // The panel prepends its own heading — a bare row of inputs read as
@@ -660,6 +664,70 @@ function setFrom(c, path, raw) {
   let v = normalized(raw);
   if (v !== null && c.template && typeof v === "string") v = c.template.replaceAll("%{value}", v);
   pathSet(path, v);
+  scheduleOptionsRefresh(path);
+}
+
+/* ================= dependent option lists ==========================
+   A control whose options_query mentions another variable re-resolves LIVE
+   when that variable changes — through report-data's options_only mode,
+   debounced, replacing only the dependent controls' boxes (the panel the
+   user is interacting with stays put). Apply is still what re-runs the
+   sections. */
+const varRefRe = /\$([_A-Za-z][_0-9A-Za-z]*)/g;
+function controlDeps(c) {
+  if (!c.options_query) return [];
+  const names = new Set(((spec && spec.variables) || []).map((v) => v.name));
+  const text = (c.options_query.query || "") + " " + (c.options_query.jq || "");
+  const deps = new Set();
+  for (const m of text.matchAll(varRefRe)) if (names.has(m[1])) deps.add(m[1]);
+  return [...deps];
+}
+let optionsTimer = null;
+function scheduleOptionsRefresh(changedPath) {
+  if (!canCallTools()) return;
+  const changed = String(changedPath || "").split(".")[0];
+  const dependents = ((spec && spec.controls) || [])
+    .map((c, i) => (controlDeps(c).includes(changed) ? i : -1))
+    .filter((i) => i >= 0);
+  if (!dependents.length) return;
+  clearTimeout(optionsTimer);
+  optionsTimer = setTimeout(() => refreshDependentOptions(dependents), 400);
+}
+async function refreshDependentOptions(indexes) {
+  try {
+    const res = await request("tools/call", { name: "report-data", arguments: {
+      spec, variables: values, options_only: true,
+    }});
+    if (res.isError || !res.structuredContent) {
+      dbg("opt!", "options refresh failed");
+      return;
+    }
+    data.controls = res.structuredContent.controls || data.controls;
+    for (const i of indexes) {
+      const c = spec.controls[i];
+      pruneToOptions(c, ((data.controls || [])[i] || {}).options || []);
+      const old = document.querySelector('#panel .ctl[data-ci="' + i + '"]');
+      if (old) old.replaceWith(controlBox(c, i));
+    }
+    renderApplied();
+    dbg("i", "dependent options refreshed: " + indexes.join(","));
+  } catch (e) {
+    dbg("opt!", e.message);
+  }
+}
+// A parent change can invalidate the dependent's CURRENT value — the
+// selected city may not exist in the new state. Values outside the fresh
+// option list are dropped, never silently submitted.
+function pruneToOptions(c, opts) {
+  if (!c.bind || typeof c.bind === "object") return;
+  const legal = new Set(opts.map((o) => String(o.value)));
+  const cur = pathGet(c.bind);
+  if (Array.isArray(cur)) {
+    const kept = cur.filter((v) => legal.has(String(v)));
+    if (kept.length !== cur.length) pathSet(c.bind, kept.length ? kept : null);
+  } else if (cur !== null && cur !== undefined && !legal.has(String(cur))) {
+    pathSet(c.bind, null);
+  }
 }
 
 function controlEl(c) {
@@ -694,7 +762,7 @@ function controlEl(c) {
       el = document.createElement("input");
       el.type = "checkbox";
       el.checked = !!cur;
-      el.onchange = () => pathSet(path, el.checked);
+      el.onchange = () => setFrom(c, path, el.checked);
       return el;
     case "number":
       el = document.createElement("input");
@@ -829,6 +897,7 @@ document.addEventListener("click", closeMenus);
 /* ============================ refresh ============================== */
 async function refresh(optionsOnly) {
   if (!canCallTools() || applying) return;
+  clearTimeout(optionsTimer); // Apply re-resolves every option list anyway
   applying = true;
   renderPanel();
   setStatus(optionsOnly ? "refreshing options…" : "running the report…");

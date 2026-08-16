@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -173,6 +174,97 @@ func TestVizReportRefusesToRenderADirtyRun(t *testing.T) {
 	require.True(t, ok)
 	assert.Empty(t, data.Sections[0].Error)
 	assert.NotEmpty(t, data.Sections[1].Error)
+}
+
+// The widget's own refresh loop, server side: the spec the tool RETURNS is
+// what the panel echoes back into report-data when the user changes a parent
+// filter. The polymorphic bind (a name AND a {from, to} pair) must survive
+// that round trip, and options_only must re-resolve the dependent list
+// against the NEW value without running a single section.
+func TestReportDataEchoesTheSpecAndReResolvesOptions(t *testing.T) {
+	s := New(depStub{}, server.NewMCPServer("t", "0", server.WithToolCapabilities(true),
+		server.WithResourceCapabilities(false, true)), Config{})
+
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"spec": map[string]any{
+			"title": "T",
+			"variables": []any{
+				map[string]any{"name": "state", "type": "String"},
+				map[string]any{"name": "city", "type": "String"},
+				map[string]any{"name": "date_from", "type": "Date", "default": "2023-01-01"},
+				map[string]any{"name": "date_to", "type": "Date", "default": "2023-12-31"},
+			},
+			"controls": []any{
+				map[string]any{"label": "State", "control": "select", "bind": "state",
+					"options_query": map[string]any{
+						"query": "query { m { states_src { s } } }",
+						"jq":    ".data.m.states_src | map(.s)"}},
+				map[string]any{"label": "City", "control": "select", "bind": "city",
+					"options_query": map[string]any{
+						"query": "query($state: String) { m { cities(filter: {st: {eq: $state}}) { name } } }",
+						"jq":    ".data.m.cities | map(.name)"}},
+				map[string]any{"label": "Period", "control": "daterange",
+					"bind": map[string]any{"from": "date_from", "to": "date_to"}},
+			},
+			"sections": []any{
+				map[string]any{"kind": "table", "title": "Rows", "query": "{ m { obj(limit: 5) { a } } }"},
+			},
+		},
+		"variables": map[string]any{"state": "CA"},
+	}
+	res, err := s.vizReport(t.Context(), req)
+	require.NoError(t, err)
+	require.False(t, res.IsError, "%v", res.Content)
+	env := res.StructuredContent.(ReportEnvelope)
+	require.Len(t, env.Data.Controls, 3)
+	assert.Equal(t, []reports.Option{{Value: "LA"}}, env.Data.Controls[1].Options,
+		"the dependent list resolves against the initial value")
+
+	// Echo EXACTLY what the widget holds: the returned spec, through JSON.
+	raw, err := json.Marshal(env.Spec)
+	require.NoError(t, err)
+	var echoed map[string]any
+	require.NoError(t, json.Unmarshal(raw, &echoed))
+
+	req.Params.Arguments = map[string]any{
+		"spec":         echoed,
+		"variables":    map[string]any{"state": "NY"},
+		"options_only": true,
+	}
+	res, err = s.reportData(t.Context(), req)
+	require.NoError(t, err)
+	require.False(t, res.IsError, "the echoed spec must parse — the widget sends it verbatim: %v", res.Content)
+	data := res.StructuredContent.(reports.ReportData)
+	assert.Empty(t, data.Sections, "options_only must not run the sections")
+	assert.Equal(t, []reports.Option{{Value: "NYC"}}, data.Controls[1].Options,
+		"the dependent list follows the new parent value")
+	assert.Equal(t, []reports.Option{{Value: "CA"}, {Value: "NY"}}, data.Controls[0].Options)
+}
+
+// depStub serves an options hierarchy: states, and cities that depend on the
+// submitted $state.
+type depStub struct{ types.Querier }
+
+func (depStub) Query(_ context.Context, query string, vars map[string]any) (*types.Response, error) {
+	switch {
+	case strings.Contains(query, "states_src"):
+		return &types.Response{Data: map[string]any{"m": map[string]any{"states_src": []any{
+			map[string]any{"s": "CA"}, map[string]any{"s": "NY"},
+		}}}}, nil
+	case strings.Contains(query, "cities"):
+		byState := map[any]string{"CA": "LA", "NY": "NYC"}
+		var rows []any
+		if name, ok := byState[vars["state"]]; ok {
+			rows = []any{map[string]any{"name": name}}
+		} else {
+			rows = []any{map[string]any{"name": "LA"}, map[string]any{"name": "NYC"}}
+		}
+		return &types.Response{Data: map[string]any{"m": map[string]any{"cities": rows}}}, nil
+	}
+	return &types.Response{Data: map[string]any{"m": map[string]any{"obj": []any{
+		map[string]any{"a": 1.0},
+	}}}}, nil
 }
 
 // reportStub answers every query with two rows (queries mentioning "boom"
