@@ -13,6 +13,12 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
+// aggKeysOnlyAlias names the synthetic union branch of a bucket aggregation
+// that selects only key{} — distinct values, no measures. The branch exists
+// only when no aggregations fields were selected, so the name never has to
+// compete with user aliases; guards key off len(aggFields), not this value.
+const aggKeysOnlyAlias = "_keys_only"
+
 func aggregateRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
 	node, inGeneral, err := aggregateDataNode(ctx, provider, planner, false, query, vars)
 	if err != nil {
@@ -406,6 +412,53 @@ func aggregateDataNode(ctx context.Context, defs base.DefinitionsSource, planner
 			queryNodes[f.Alias] = node
 		}
 	}
+	// A bucket aggregation that selects ONLY key{} — "give me the distinct
+	// values", the shape every dictionary/options query takes — never enters
+	// the loop above (branches are built per aggregations field) and used to
+	// compile an empty source: `FROM ()`. Build the one branch it needs: the
+	// key columns over the query's own arguments, no measures.
+	if sdl.IsBucketAggregateQuery(query) && len(aggFields) == 0 {
+		baseQuery := &ast.Field{
+			Alias:            "_" + query.Alias + aggKeysOnlyAlias,
+			Name:             aggregated.Name,
+			Definition:       aggregated,
+			ObjectDefinition: query.ObjectDefinition,
+			Directives:       query.Directives,
+			SelectionSet:     groupByFields.AsSelectionSet(),
+		}
+		for _, name := range []string{"filter", "args", base.SemanticSearchArgumentName, base.SimilaritySearchArgumentName} {
+			if a := query.Arguments.ForName(name); a != nil {
+				baseQuery.Arguments = append(baseQuery.Arguments, a)
+			}
+		}
+		var (
+			node           *QueryPlanNode
+			queryInGeneral bool
+		)
+		switch {
+		case sdl.IsDataObject(def):
+			node, queryInGeneral, err = selectDataObjectNode(ctx, defs, planner, baseQuery, vars)
+		case sdl.IsFunctionCall(aggregated), sdl.IsFunction(aggregated):
+			node, err = functionCallNode(ctx, defs, planner, "", baseQuery, vars)
+		default:
+			return nil, false, errors.New("unsupported aggregated query")
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		_, ok := e.(engines.EngineAggregator)
+		if !queryInGeneral && (inGeneral || !ok || !isInCatalog) && isCaster {
+			queryInGeneral = true
+			node, err = castResultsNode(ctx, caster, node, false, false)
+			if err != nil {
+				return nil, false, err
+			}
+		}
+		if isInCatalog && queryInGeneral {
+			isInCatalog = false
+		}
+		queryNodes[aggKeysOnlyAlias] = node
+	}
 	aggregator, ok := e.(engines.EngineAggregator)
 	if !ok || !isInCatalog {
 		aggregator = defaultEngine
@@ -464,7 +517,11 @@ func aggregateDataNode(ctx context.Context, defs base.DefinitionsSource, planner
 			}
 		}
 		// 1.3.2. add aggregation fields for bucket aggregation (with sub query fields)
-		if sdl.IsBucketAggregateQuery(query) {
+		// The synthetic key-only branch exists ONLY when no aggregations were
+		// selected, so gate on that — comparing the map key against the
+		// sentinel would misfire on a user field legitimately aliased
+		// `_keys_only:` and skip building its column.
+		if sdl.IsBucketAggregateQuery(query) && len(aggFields) > 0 {
 			f := engines.SelectedFields(query.SelectionSet).ForAlias(alias)
 			if f == nil {
 				return nil, false, sdl.ErrorPosf(query.Position, "field %s not found in query", alias)

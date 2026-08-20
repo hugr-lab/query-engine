@@ -55,7 +55,9 @@ func TestVizPageIsSelfContained(t *testing.T) {
 	assert.NotContains(t, page, "https://cdn.", "no external fetches may survive in the page")
 	// One stray "</script>" inside the inlined library would close our tag
 	// early and truncate the page into a blank view.
-	assert.Equal(t, 2, strings.Count(page, "</script>"), "exactly the library tag and the app tag")
+	assert.Equal(t, 3, strings.Count(page, "</script>"), "exactly the library, core and app tags")
+	assert.Contains(t, page, "hugrVizCore", "the shared core must be inlined")
+	assert.NotContains(t, page, "<!--__VIZCORE__-->", "the core placeholder must be substituted")
 	assert.Contains(t, page, `"2026-01-26"`, "the handshake must name the Apps protocol revision")
 	assert.Greater(t, len(page), 500_000, "sanity: the library really is in there")
 }
@@ -69,8 +71,9 @@ func TestVizTablePageOmitsTheChartLibrary(t *testing.T) {
 	assert.NotContains(t, table, "<!--__ECHARTS__-->", "the placeholder must be substituted")
 	assert.Less(t, len(table), 60_000, "the table build must not carry the library")
 	assert.Less(t, len(table), len(chart)/10)
-	assert.Equal(t, 1, strings.Count(table, "</script>"), "only the app script")
+	assert.Equal(t, 2, strings.Count(table, "</script>"), "only the core and app scripts")
 	assert.Contains(t, table, "renderTable", "it is still the same view")
+	assert.Contains(t, table, "hugrVizCore", "the shared core rides along")
 	assert.NotContains(t, table, "Apache Software Foundation", "the library itself must be gone")
 	// The call site survives — it is simply never reached, because renderChart
 	// only runs for kind=chart. Pin that, or a future edit could reintroduce a
@@ -112,30 +115,6 @@ func TestVizResourceServesTheAppProfile(t *testing.T) {
 	require.Contains(t, text.Meta, "ui")
 }
 
-func TestVizCanonicalRowsUnwrapsAndExplains(t *testing.T) {
-	// The usual GraphQL shape needs no jq at all.
-	rows, err := vizCanonicalRows(mustJSON(t, `{"sales":{"orders":[{"month":"2026-01","total":10}]}}`))
-	require.NoError(t, err)
-	require.Len(t, rows, 1)
-	assert.Equal(t, "2026-01", rows[0]["month"])
-
-	// An object with two keys is NOT a wrapper — unwrapping it would guess.
-	_, err = vizCanonicalRows(mustJSON(t, `{"a":[],"b":[]}`))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "got object")
-
-	// Errors must name the offending field: the model's next call depends on
-	// knowing which value to flatten.
-	_, err = vizCanonicalRows(mustJSON(t, `[{"month":"2026-01","customer":{"name":"acme"}}]`))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), `field "customer"`)
-	assert.Contains(t, err.Error(), "nested object")
-
-	_, err = vizCanonicalRows(mustJSON(t, `[1,2,3]`))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "row 0 is a number")
-}
-
 func TestVizFallbackTextIsReadableWithoutTheApp(t *testing.T) {
 	env := VizEnvelope{
 		Kind:  "chart",
@@ -165,43 +144,6 @@ func TestVizFallbackTextCapsRows(t *testing.T) {
 	text := vizFallbackText(&env)
 	assert.Contains(t, text, "… 30 more rows in the structured result.")
 	assert.NotContains(t, text, "| 21 |")
-}
-
-// Volume is stated by the caller, never papered over here: hugr tables run to
-// hundreds of millions of rows, and a silently truncated chart is a wrong
-// chart. The guard fires only for a query that set no bound of its own.
-func TestVizQueryHasLimit(t *testing.T) {
-	for query, want := range map[string]bool{
-		`query { m { obj { a } } }`:                             false,
-		`query($limit: Int) { m { obj(limit: $limit) { a } } }`: true,
-		`query { m { obj(limit: 100) { a } } }`:                 true,
-		`query { m { obj_bucket_aggregation { key { a } } } }`:  false,
-	} {
-		assert.Equalf(t, want, vizQueryHasLimit(query), "limit detection for %s", query)
-	}
-}
-
-func TestVizQueryLimit(t *testing.T) {
-	cases := []struct {
-		query string
-		vars  map[string]any
-		want  int
-		known bool
-	}{
-		{`{ m { obj(limit: 500) { a } } }`, nil, 500, true},
-		{`{ m { obj(limit:2000, offset: 0) { a } } }`, nil, 2000, true},
-		{`query($limit: Int) { m { obj(limit: $limit) { a } } }`, map[string]any{"limit": float64(300)}, 300, true},
-		{`{ m { obj { a } } }`, nil, 0, false},
-		// The innermost bound is the one that shapes the rows we receive.
-		{`{ m { obj(limit: 100) { rel(limit: 5) { a } } } }`, nil, 5, true},
-	}
-	for _, c := range cases {
-		got, known := vizQueryLimit(c.query, c.vars)
-		assert.Equalf(t, c.known, known, "known for %s", c.query)
-		if c.known {
-			assert.Equalf(t, c.want, got, "limit for %s", c.query)
-		}
-	}
 }
 
 func TestVizFallbackTextFlagsAFullPage(t *testing.T) {
@@ -301,61 +243,6 @@ func jsonRoundTrip(t *testing.T, v any) any {
 	var out any
 	require.NoError(t, json.Unmarshal(b, &out))
 	return out
-}
-
-func mustJSON(t *testing.T, s string) any {
-	t.Helper()
-	var v any
-	require.NoError(t, json.Unmarshal([]byte(s), &v))
-	return v
-}
-
-// The KPI-card contract is validated with the same discipline as canonical
-// rows: precise errors naming the card and the field, because a vague error
-// costs the caller a whole round trip.
-func TestVizCanonicalKpis(t *testing.T) {
-	full := mustJSON(t, `[{"label":"Revenue","value":12.5,"unit":"$","format":"number",
-		"delta":1.2,"delta_pct":3.4,"direction":"up_good","trend":[1,2,3],"subtitle":"vs July"}]`)
-	kpis, err := vizCanonicalKpis(full)
-	require.NoError(t, err)
-	require.Len(t, kpis, 1)
-	assert.Equal(t, "Revenue", kpis[0].Label)
-	assert.Equal(t, 12.5, kpis[0].Value)
-	assert.Equal(t, []float64{1, 2, 3}, kpis[0].Trend)
-	assert.Equal(t, 3.4, *kpis[0].DeltaPct)
-
-	// The usual single-key GraphQL wrapping unwraps, same as rows.
-	wrapped := mustJSON(t, `{"data":{"m":[{"label":"a","value":1}]}}`)
-	kpis, err = vizCanonicalKpis(wrapped)
-	require.NoError(t, err)
-	assert.Len(t, kpis, 1)
-
-	for name, tc := range map[string]struct{ in, wantErr string }{
-		"not an array":  {`{"a":1,"b":2}`, "expected an array of KPI cards"},
-		"empty":         {`[]`, "at least one"},
-		"no label":      {`[{"value":1}]`, "label is required"},
-		"no value":      {`[{"label":"x"}]`, "value is required"},
-		"nested value":  {`[{"label":"x","value":{"a":1}}]`, "nested object"},
-		"typoed field":  {`[{"label":"x","value":1,"delta_percent":5}]`, `unknown field "delta_percent"`},
-		"bad direction": {`[{"label":"x","value":1,"direction":"up"}]`, "up_good|down_good|neutral"},
-		"bad trend":     {`[{"label":"x","value":1,"trend":[1,"a"]}]`, "trend[1]"},
-		"bad delta":     {`[{"label":"x","value":1,"delta":"big"}]`, "delta must be a number"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := vizCanonicalKpis(mustJSON(t, tc.in))
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tc.wantErr)
-		})
-	}
-
-	// The cap: a panel is a glance surface.
-	big := make([]any, vizKpiCap+1)
-	for i := range big {
-		big[i] = map[string]any{"label": "x", "value": float64(i)}
-	}
-	_, err = vizCanonicalKpis(any(big))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "at 32 at most")
 }
 
 // A KPI panel is always complete: no sampling, no fetch — even for a query

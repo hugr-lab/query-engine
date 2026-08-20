@@ -6,6 +6,12 @@ is stateless and complete in itself — there is no dashboard object to create
 or update, and no view can be changed after it renders. A different cut means
 calling the tool again.
 
+When the deliverable is **one document** — "a report", something to print or
+save as PDF, sections sharing one filter panel — call `viz-report` ONCE with
+a spec instead of the sequence below: it renders KPIs, charts, tables and
+narrative on a single page with server-side filters, Download (self-contained
+HTML) and Print.
+
 ## Approach
 
 1. **Understand the domain** — `catalog-list(kind: module)` for the map, `catalog-search` for what is relevant to the dashboard.

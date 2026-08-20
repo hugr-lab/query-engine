@@ -301,3 +301,29 @@ func TestAggregationTypeNames(t *testing.T) {
 		}
 	}
 }
+
+// A null argument must come out of the parse dispatchers as an UNTYPED nil.
+// The generic array parsers return ([]T)(nil), and an interface wrapping a
+// typed nil slips past every `v == nil` check up the stack — which is how a
+// null `in:` variable once compiled into `IN (unnest(ARRAY[]))` (zero rows)
+// instead of dropping the condition entirely.
+func TestParseDispatchersKeepNilUntyped(t *testing.T) {
+	for _, scalar := range []string{"String", "Int", "Float", "Boolean", "Date", "Timestamp"} {
+		v, err := ParseArray(scalar, nil)
+		if err != nil {
+			t.Errorf("ParseArray(%s, nil): %v", scalar, err)
+			continue
+		}
+		if v != nil {
+			t.Errorf("ParseArray(%s, nil) = %#v — a typed nil escaped the dispatcher", scalar, v)
+		}
+		v, err = ParseValue(scalar, nil)
+		if err != nil {
+			t.Errorf("ParseValue(%s, nil): %v", scalar, err)
+			continue
+		}
+		if v != nil {
+			t.Errorf("ParseValue(%s, nil) = %#v — a typed nil escaped the dispatcher", scalar, v)
+		}
+	}
+}

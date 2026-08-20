@@ -61,17 +61,37 @@ func permissionFilterNode(ctx context.Context, defs base.DefinitionsSource, info
 	if err != nil {
 		return nil, err
 	}
+	// A rule EXISTS past this point. If it compiles to nothing — a null auth
+	// claim null-dropping its condition, the exact mechanics user filters use
+	// to widen — RLS must fail CLOSED: the widening contract is a convenience
+	// for the caller's own filters, never for the operator's.
 	if node == nil {
-		return nil, nil
+		return permissionDeniedNode(query), nil
 	}
 	return &QueryPlanNode{
 		Name:  permissionFilterNodeName,
 		Query: query,
 		Nodes: QueryPlanNodes{node},
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-			return children.FirstResult().Result, params, nil
+			sql := children.FirstResult().Result
+			if sql == "" {
+				return "FALSE", params, nil
+			}
+			return sql, params, nil
 		},
 	}, nil
+}
+
+// permissionDeniedNode is the fail-closed RLS fragment: a rule that cannot be
+// evaluated grants nothing.
+func permissionDeniedNode(query *ast.Field) *QueryPlanNode {
+	return &QueryPlanNode{
+		Name:  permissionFilterNodeName,
+		Query: query,
+		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
+			return "FALSE", params, nil
+		},
+	}
 }
 
 func checkMutationData(ctx context.Context, defs base.DefinitionsSource, query *ast.Field, inputType *ast.Type, m *sdl.Mutation, data map[string]any) (map[string]any, error) {

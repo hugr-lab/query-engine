@@ -115,7 +115,7 @@ window.addEventListener("message", async (ev) => {
 async function load(toolName, args) {
   logEl.textContent = "";
   initialized = false;
-  const res = await mcp("resources/read", { uri: "ui://hugr/viz" });
+  const res = await mcp("resources/read", { uri: "ui://hugr/viz-v3" });
   const html = res.contents[0].text;
   log(`resource: ${html.length} chars, mime=${res.contents[0].mimeType}`);
   view.srcdoc = html;

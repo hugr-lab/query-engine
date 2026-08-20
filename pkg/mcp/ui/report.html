@@ -1,0 +1,1200 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hugr report</title>
+<style>
+  /* One document, two lives: an MCP Apps widget (theme follows the host) and
+     a standalone file (a document — light by default, print-ready). */
+  :root { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  :root {
+    --hugr-primary: #1c7d78;
+    --hugr-navy: #0a3145;
+    --bg: var(--color-background-primary, #ffffff);
+    --bg2: var(--color-background-secondary, #f8fafc);
+    --fg: var(--color-text-primary, #1c2b33);
+    --muted: var(--color-text-secondary, #64748b);
+    --border: var(--color-border-primary, #e2e8f0);
+    --danger: var(--color-text-danger, #c94f4f);
+    --radius: var(--border-radius-md, 8px);
+    --font: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  }
+  [data-theme="dark"] {
+    --bg: var(--color-background-primary, #0f1a20);
+    --bg2: var(--color-background-secondary, #16242c);
+    --fg: var(--color-text-primary, #e2e8f0);
+    --muted: var(--color-text-secondary, #8aa0ae);
+    --border: var(--color-border-primary, #24343e);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 var(--font); }
+  #app { display: flex; flex-direction: column; gap: 12px; padding: 14px; max-width: 1200px; margin: 0 auto; }
+
+  header { display: flex; align-items: flex-start; gap: 10px; border-bottom: 2px solid var(--hugr-primary); padding-bottom: 8px; }
+  #head-text { flex: 1 1 auto; min-width: 0; }
+  header h1 { font-size: 20px; font-weight: 700; margin: 0; color: var(--hugr-primary); }
+  #desc { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  #desc:empty { display: none; }
+  button { background: var(--bg2); color: var(--fg); border: 1px solid var(--border);
+    border-radius: var(--border-radius-sm, 6px); padding: 4px 10px; cursor: pointer; font: inherit; font-size: 13px; }
+  button:hover { border-color: var(--hugr-primary); }
+  button[hidden] { display: none; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--hugr-primary); border-color: var(--hugr-primary); color: #fff; }
+  .icon { width: 15px; height: 15px; display: block; }
+  header .actions { display: flex; gap: 6px; }
+  header .actions button { display: inline-flex; align-items: center; justify-content: center;
+    padding: 5px 7px; line-height: 1; }
+
+  #error { display: none; color: var(--danger); background: var(--bg2); border: 1px solid var(--danger);
+    border-radius: var(--radius); padding: 9px; white-space: pre-wrap; }
+
+  /* filter panel */
+  #panel { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; padding: 10px 12px;
+    background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); }
+  #panel[hidden] { display: none; }
+  .ctl { display: flex; flex-direction: column; gap: 3px; min-width: 140px; }
+  .ctl > label { font-size: 11px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .ctl > label .req { color: var(--danger); }
+  .ctl select, .ctl input { background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+    border-radius: var(--border-radius-sm, 6px); padding: 4px 7px; font: inherit; font-size: 13px; max-width: 240px; }
+  .ctl input[type=checkbox] { width: 16px; height: 16px; }
+  .ctl .range { display: flex; align-items: center; gap: 4px; }
+  .ctl .range input { width: 108px; }
+  .ctl .err { color: var(--danger); font-size: 11px; }
+  .panel-title { flex-basis: 100%; font-size: 11px; font-weight: 700; letter-spacing: .5px;
+    text-transform: uppercase; color: var(--muted); }
+  #panel-note { font-size: 12px; color: var(--muted); }
+
+  /* multiselect: a button opening a searchable checkbox list (the viz picker) */
+  .pick { position: relative; }
+  .pick > button { width: 100%; text-align: left; display: flex; gap: 6px; align-items: center;
+    max-width: 240px; min-width: 150px; background: var(--bg); }
+  .pick > button .caret { margin-left: auto; opacity: .6; }
+  .pick > button .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 240px; max-width: 340px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-md, 0 6px 24px rgba(0,0,0,.18)); padding: 6px; }
+  .menu[hidden] { display: none; }
+  .menu .search { width: 100%; margin-bottom: 6px; }
+  .menu .list { max-height: 220px; overflow: auto; }
+  .menu .opt { display: flex; gap: 7px; align-items: center; padding: 4px 6px; cursor: pointer;
+    border-radius: var(--border-radius-sm, 6px); font-size: 13px; }
+  .menu .opt:hover { background: var(--bg2); }
+  .menu .foot { display: flex; gap: 6px; justify-content: space-between; align-items: center;
+    border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; font-size: 12px; color: var(--muted); }
+
+  /* the applied-filters line: invisible on screen, the PDF must carry it */
+  #applied { display: none; font-size: 12px; color: var(--muted); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 7px 10px; }
+
+  /* the 12-column grid; below ~700px everything collapses to one column */
+  #sections { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; align-items: stretch; }
+  .sec { grid-column: span 12; background: var(--bg); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .sec.sec-text { border: none; padding: 6px 2px; }
+  @media (max-width: 700px) { .sec { grid-column: span 12 !important; } }
+  .sec h2 { font-size: 15px; font-weight: 600; margin: 0; color: var(--hugr-navy); }
+  [data-theme="dark"] .sec h2 { color: var(--fg); }
+  .sec .desc { font-size: 12px; color: var(--muted); margin: -4px 0 0; }
+  .sec .err { color: var(--danger); background: var(--bg2); border: 1px solid var(--danger);
+    border-radius: var(--radius); padding: 8px; font-size: 13px; white-space: pre-wrap; }
+  .sec .chart { width: 100%; height: 300px; }
+  .sec .tblwrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); max-height: 420px; }
+  .sec .note { font-size: 12px; color: var(--muted); }
+
+  /* KPI cards (classes shared with viz-core's kpiCard) */
+  .kpis { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .kpi { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 10px 14px; min-width: 150px; flex: 0 0 auto; display: flex; flex-direction: column; gap: 4px; }
+  .kpi .lab { font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .kpi .val { font-size: 22px; font-weight: 700; white-space: nowrap; }
+  .kpi .val .unit { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+  .kpi .dlt { font-size: 12px; font-weight: 600; }
+  .kpi .dlt.good { color: #2e9e6b; }
+  .kpi .dlt.bad { color: var(--danger); }
+  .kpi .dlt.flat { color: var(--muted); }
+  .kpi .sub { font-size: 11px; color: var(--muted); }
+  .kpi svg.spark { width: 100%; height: 26px; display: block; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--bg2); cursor: pointer; user-select: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* markdown (text sections) */
+  .md h2 { font-size: 16px; margin: 8px 0 4px; color: var(--hugr-navy); }
+  .md h3 { font-size: 14px; margin: 6px 0 3px; }
+  .md h4 { font-size: 13px; margin: 5px 0 2px; }
+  [data-theme="dark"] .md h2 { color: var(--fg); }
+  .md p { margin: 4px 0; }
+  .md ul { margin: 4px 0; padding-left: 22px; }
+  .md code { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px;
+    font: 12px var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); }
+  .md .tbl { overflow-x: auto; margin: 6px 0; }
+  .md table { font-size: 13px; }
+  .md th { position: static; cursor: default; user-select: text; background: var(--bg2); }
+
+  footer { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+  #status { flex: 1 1 auto; }
+  #debug { display: none; font: 11px/1.4 var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px;
+    /* Fixed, not vh: the host sizes the iframe FROM our reported height — a
+       viewport-relative cap would feed back into itself (the viz lesson). */
+    max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0; }
+
+  /* PDF is the browser's print engine over this block. ONE column on purpose:
+     browsers cannot fragment grid rows across pages — side-by-side sections
+     overlapped and charts got sliced at page boundaries. */
+  @media print {
+    #panel, header .actions, footer, #debug, #error { display: none !important; }
+    #applied { display: block; }
+    #app { max-width: none; padding: 0; }
+    #sections { display: block; }
+    /* page-break-* are the legacy aliases older WebKit/Firefox understand */
+    .sec { break-inside: avoid; page-break-inside: avoid; margin: 0 0 12px; }
+    .sec .tblwrap, .md .tbl { max-height: none; overflow: visible; }
+    /* on screen the cells stay on one line and the wrapper scrolls; paper
+       has no scrollbar, so wide tables must wrap instead of bleeding out */
+    th, td { white-space: normal; word-break: break-word; }
+    table { width: 100%; }
+    th { position: static; }
+    .sec.page-break { break-before: page; page-break-before: always; }
+    body { background: #fff; color: #1c2b33; }
+  }
+  /* The same one-column layout applied ON SCREEN while printing, so the
+     charts re-measure to the print width instead of keeping their two-column
+     screen size (which is what made the pie bleed over its neighbour). */
+  [data-printing] #sections { display: block; }
+  [data-printing] .sec { margin: 0 0 12px; }
+  [data-printing] #applied { display: block; }
+  /* Charts must measure the PAPER width, not the screen's: ~660px fits the
+     printable area of both A4 and Letter portrait. */
+  [data-printing] #app { width: 660px; max-width: 660px; }
+</style>
+<!--__ECHARTS__-->
+<!--__VIZCORE__-->
+</head>
+<body>
+<div id="app">
+  <header>
+    <div id="head-text"><h1 id="title">hugr report</h1><p id="desc"></p></div>
+    <div class="actions">
+      <button id="btn-mode" hidden title="toggle display mode"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2.5H2.5V6"/><path d="M10 2.5h3.5V6"/><path d="M13.5 10v3.5H10"/><path d="M2.5 10v3.5H6"/></svg></button>
+      <button id="btn-print" hidden title="print / save as PDF"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6V2.5h7V6"/><path d="M4.5 11.5h-2v-5.5h11v5.5h-2"/><rect x="4.5" y="9.5" width="7" height="4"/></svg></button>
+      <button id="btn-dl" hidden title="save the report as a self-contained HTML file"><svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v7.5"/><path d="M4.75 6.75 8 10l3.25-3.25"/><path d="M2.5 12.5h11"/></svg></button>
+    </div>
+  </header>
+  <div id="applied"></div>
+  <div id="error"></div>
+  <div id="panel" hidden></div>
+  <div id="sections"></div>
+  <footer>
+    <span id="status"></span>
+    <button id="btn-debug" title="bridge log"><svg class="icon" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="5.5" width="6" height="8" rx="3"/><path d="M6 4.2 5 3M10 4.2 11 3M5 8H2.5M11 8h2.5M5.2 11.5 3 12.5M10.8 11.5 13 12.5"/></svg></button>
+  </footer>
+  <pre id="debug"></pre>
+</div>
+<script type="application/json" id="report-payload">__REPORT_PAYLOAD__</script>
+<script>
+"use strict";
+/* ============ the same hand-written MCP Apps bridge as viz.html ============
+   (spec revision 2026-01-26). A report page may live OUTSIDE any host — as a
+   saved file or a served document — so the bridge is attempted, never
+   assumed: top-level window, or a handshake timeout, means standalone. */
+const PROTOCOL_VERSION = "2026-01-26";
+const core = window.hugrVizCore;
+let nextId = 1;
+const pending = new Map();
+const dbgLog = [];
+
+function dbg(dir, msg) {
+  let line = dir + " " + (typeof msg === "string" ? msg : JSON.stringify(msg));
+  if (line.length > 800) line = line.slice(0, 800) + "…";
+  dbgLog.push(line);
+  if (dbgLog.length > 300) dbgLog.shift();
+  console.log("[hugr-report]", dir, msg);
+  const el = document.getElementById("debug");
+  if (el && el.style.display === "block") { el.textContent = dbgLog.join("\n"); el.scrollTop = el.scrollHeight; }
+}
+// A silently blank widget is undebuggable in a host iframe: every uncaught
+// exception lands in the log AND on the page.
+window.addEventListener("error", (e) => {
+  dbg("js!", e.message + " @ " + (e.filename || "") + ":" + (e.lineno || 0));
+  showError("internal error: " + e.message);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  dbg("js!", "unhandled rejection: " + (e.reason && e.reason.message || e.reason));
+});
+
+function post(msg) { dbg("→", msg); window.parent.postMessage(msg, "*"); }
+function request(method, params) {
+  return new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    post({ jsonrpc: "2.0", id, method, params: params || {} });
+  });
+}
+function notify(method, params) { post({ jsonrpc: "2.0", method, params: params || {} }); }
+function respond(id, result) { post({ jsonrpc: "2.0", id, result }); }
+function withTimeout(p, ms, what) {
+  return Promise.race([p, new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(what + " within " + ms + "ms")), ms))]);
+}
+
+window.addEventListener("message", (ev) => {
+  if (ev.source !== window.parent) return;
+  const m = ev.data;
+  if (!m || m.jsonrpc !== "2.0") return;
+  dbg("←", m);
+  if (m.method === undefined && m.id !== undefined) {
+    const p = pending.get(m.id);
+    if (!p) return;
+    pending.delete(m.id);
+    if (m.error) p.reject(new Error(m.error.message || JSON.stringify(m.error)));
+    else p.resolve(m.result);
+    return;
+  }
+  if (!m.method) return;
+  switch (m.method) {
+    case "ui/notifications/tool-input": setStatus("running the report…"); break;
+    case "ui/notifications/tool-result": onToolResult(m.params || {}); break;
+    case "ui/notifications/host-context-changed": onHostContext(m.params || {}); break;
+    case "ui/notifications/tool-cancelled": setStatus("report cancelled"); break;
+    case "ui/resource-teardown": if (m.id !== undefined) respond(m.id, {}); break;
+    default:
+      if (m.id !== undefined) post({ jsonrpc: "2.0", id: m.id, error: { code: -32601, message: "method not found: " + m.method } });
+  }
+});
+
+/* ============================== state ============================== */
+const host = { theme: "light", displayMode: "inline", availableDisplayModes: [], caps: {}, connected: false };
+// A saved snapshot carries this attribute; the page then never offers what a
+// snapshot cannot do (Apply, Download, the bridge log).
+const IS_SNAPSHOT = document.documentElement.hasAttribute("data-snapshot");
+// The serialized theme is the widget's theme at download time — without this
+// seed a dark snapshot came back LIGHT from its first print and stayed so.
+host.theme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+let spec = null;    // report spec (sections, controls, variables)
+let data = null;    // ReportData (variables used, options, section results)
+let values = {};    // current panel values, by variable name
+let charts = [];    // live ECharts instances, one per chart section
+let applying = false;
+let sortStates = {}; // per-section table sort, survives re-renders
+
+const canCallTools = () => host.connected && !!host.caps.serverTools;
+const WIDTH_SPANS = { full: 12, two_thirds: 8, half: 6, third: 4, quarter: 3 };
+
+/* ========================== host context =========================== */
+function onHostContext(ctx) {
+  if (ctx.theme) host.theme = ctx.theme;
+  if (ctx.displayMode) host.displayMode = ctx.displayMode;
+  if (ctx.availableDisplayModes) host.availableDisplayModes = ctx.availableDisplayModes;
+  if (ctx.styles && ctx.styles.variables) {
+    for (const [k, v] of Object.entries(ctx.styles.variables)) {
+      if (v) document.documentElement.style.setProperty(k, v);
+    }
+  }
+  document.documentElement.dataset.theme = host.theme === "dark" ? "dark" : "light";
+  document.body.dataset.mode = host.displayMode;
+  const other = host.displayMode === "fullscreen" ? "inline" : "fullscreen";
+  document.getElementById("btn-mode").hidden = !host.availableDisplayModes.includes(other);
+  renderSections();
+  reportSize();
+}
+
+function onToolResult(p) {
+  const sc = p.structuredContent;
+  if (p.isError) {
+    // The server refused to render (spec/query errors are the model's to
+    // fix); show its message rather than waiting forever.
+    showError((p.content || []).map((c) => c.text || "").join("\n") || "the report call failed");
+    setStatus("the report call failed");
+    return;
+  }
+  if (!sc || !sc.spec || !sc.data) {
+    showError((p.content || []).map((c) => c.text || "").join("\n") || "tool result carried no report payload");
+    return;
+  }
+  setReport(sc.spec, sc.data);
+  // Large sections arrive sampled; pull the full set through the app channel
+  // (the section queries are cache reads by then — same TTL trick as viz).
+  if ((sc.data.sections || []).some((s) => s.rows_sampled)) refresh(false);
+}
+
+/* ============================ rendering ============================ */
+function setReport(s, d) {
+  spec = s;
+  data = d;
+  values = Object.assign({}, d.variables || {});
+  clearTimeout(optionsTimer); // pending refreshes belong to the OLD report
+  pendingOptionIdx = new Set();
+  optionsGen++;
+  sortStates = {};
+  document.getElementById("title").textContent = s.title || "hugr report";
+  document.getElementById("desc").textContent = s.description || "";
+  document.title = s.title || "hugr report";
+  showError(null);
+  renderPanel();
+  renderSections();
+  setStatus(sectionsSummary());
+  reportSize();
+  setTimeout(() => reportSize(true), 60);
+  setTimeout(() => reportSize(true), 300);
+}
+
+function sectionsSummary() {
+  if (!data) return "";
+  const errs = (data.sections || []).filter((s) => s.error).length;
+  return (spec.sections || []).length + " sections" + (errs ? ` · ${errs} failed` : "");
+}
+
+function renderSections() {
+  const wrap = document.getElementById("sections");
+  wrap.textContent = "";
+  for (const ch of charts) ch.dispose();
+  charts = [];
+  if (!spec) return;
+  const pending = [];
+  (spec.sections || []).forEach((sec, i) => {
+    const out = (data && data.sections && data.sections[i]) || {};
+    const el = document.createElement("section");
+    // Prefixed: a bare kind class would collide with the card class .kpi.
+    el.className = "sec sec-" + sec.kind + (sec.page_break === "before" ? " page-break" : "");
+    el.style.gridColumn = "span " + (sec.span || WIDTH_SPANS[sec.width] || 12);
+    if (sec.title) {
+      const h = document.createElement("h2");
+      h.textContent = sec.title;
+      el.appendChild(h);
+    }
+    if (sec.description) {
+      const d = document.createElement("p");
+      d.className = "desc";
+      d.textContent = sec.description;
+      el.appendChild(d);
+    }
+    if (out.error) {
+      const e = document.createElement("div");
+      e.className = "err";
+      e.textContent = out.error;
+      el.appendChild(e);
+      wrap.appendChild(el);
+      return;
+    }
+    switch (sec.kind) {
+      case "text": el.appendChild(renderMarkdown(sec.markdown || "")); break;
+      case "kpi": {
+        const k = document.createElement("div");
+        k.className = "kpis";
+        for (const c of out.kpis || []) k.appendChild(core.kpiCard(c));
+        el.appendChild(k);
+        break;
+      }
+      case "chart": {
+        const c = document.createElement("div");
+        c.className = "chart";
+        el.appendChild(c);
+        if (window.echarts && (out.rows || []).length) {
+          pending.push({ container: c, sec, out });
+          if (out.rows_sampled) el.appendChild(sampleNote(out));
+        } else if (!(out.rows || []).length) {
+          c.replaceWith(noteEl(out.rows_sampled ? "loading the full set…" : "no data"));
+        }
+        break;
+      }
+      case "table": {
+        const w = document.createElement("div");
+        w.className = "tblwrap";
+        const t = document.createElement("table");
+        w.appendChild(t);
+        el.appendChild(w);
+        const rows = out.rows || [];
+        const cols = (sec.columns || []).length
+          ? sec.columns
+          : rows.length ? Object.keys(rows[0]).map((f) => ({ field: f, label: f })) : [];
+        // The state must OUTLIVE the section element — renderSections builds
+        // a fresh one every time, so element-attached state made every sort
+        // click a no-op.
+        const state = sortStates[i] || (sortStates[i] = {});
+        core.fillTable(t, rows, cols, {
+          sortCol: state.col, sortDir: state.dir || 1,
+          onSort: (f) => { state.dir = state.col === f ? -(state.dir || 1) : 1; state.col = f; renderSections(); },
+          emptyText: "no rows",
+        });
+        if (out.truncated) el.appendChild(noteEl("cut at the hard cap"));
+        else if (out.at_limit) el.appendChild(noteEl("exactly the query's limit — likely one page of more"));
+        if (out.rows_sampled && rows.length) el.appendChild(sampleNote(out));
+        break;
+      }
+    }
+    wrap.appendChild(el);
+  });
+  // ECharts must initialise on ATTACHED, laid-out containers. Initialised
+  // while its section was still detached, it measured 0×0 and painted
+  // nothing until the next resize — blank charts after Apply, after a
+  // display-mode switch and in print re-renders.
+  const printing = !!document.documentElement.dataset.printing;
+  for (const p of pending) {
+    const inst = echarts.init(p.container, !printing && host.theme === "dark" ? "dark" : null, { renderer: "svg" });
+    inst.setOption(core.buildOption(p.sec.chart, p.out.rows, {
+      dark: !printing && host.theme === "dark",
+      still: printing,
+      textColor: getComputedStyle(document.documentElement).getPropertyValue("--fg").trim(),
+    }), true);
+    charts.push(inst);
+  }
+}
+
+function noteEl(text) {
+  const n = document.createElement("div");
+  n.className = "note";
+  n.textContent = text;
+  return n;
+}
+
+// A sampled section must SAY so — on a host that cannot proxy tool calls the
+// compensating fetch never happens, and 50 rows of 12000 silently read as
+// the whole answer (and get baked into the snapshot).
+function sampleNote(out) {
+  const n = (out.rows || []).length;
+  return noteEl(canCallTools()
+    ? "loading the full set…"
+    : "sample: first " + n + " of " + (out.row_count || n) + " rows — this host cannot load the rest");
+}
+
+/* Minimal markdown for narrative sections, built as DOM (escaped by
+   construction — user text never meets innerHTML): #/##/### headings, - / *
+   lists, paragraphs; inline `code`, **bold**, *italic* and http(s) links. */
+function renderMarkdown(md) {
+  const root = document.createElement("div");
+  root.className = "md";
+  let list = null;
+  const flushInline = (el, text) => {
+    const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+    let last = 0, m;
+    while ((m = re.exec(text))) {
+      if (m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+      if (m[1]) { const c = document.createElement("code"); c.textContent = m[1].slice(1, -1); el.appendChild(c); }
+      else if (m[2]) { const b = document.createElement("strong"); b.textContent = m[2].slice(2, -2); el.appendChild(b); }
+      else if (m[3]) { const i = document.createElement("em"); i.textContent = m[3].slice(1, -1); el.appendChild(i); }
+      else { const a = document.createElement("a"); a.textContent = m[4]; a.href = m[5]; a.target = "_blank"; a.rel = "noopener"; el.appendChild(a); }
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+  };
+  const isRow = (s) => /^\s*\|.*\|\s*$/.test(s || "");
+  const isSep = (s) => /^\s*\|(\s*:?-+:?\s*\|)+\s*$/.test(s || "");
+  const cells = (s) => s.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+  const lines = (md || "").split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trimEnd();
+    // GFM pipe table: a header row followed by |---|---|. Models narrate in
+    // tables constantly, so paragraphs full of pipes are not an option.
+    if (isRow(line) && isSep(lines[i + 1])) {
+      list = null;
+      const tbl = document.createElement("table");
+      const hr = tbl.createTHead().insertRow();
+      for (const c of cells(line)) {
+        const th = document.createElement("th");
+        flushInline(th, c);
+        hr.appendChild(th);
+      }
+      const tb = tbl.createTBody();
+      i++; // the separator
+      while (isRow(lines[i + 1])) {
+        i++;
+        const tr = tb.insertRow();
+        for (const c of cells(lines[i])) {
+          const td = tr.insertCell();
+          flushInline(td, c);
+        }
+      }
+      const wrap = document.createElement("div");
+      wrap.className = "tbl";
+      wrap.appendChild(tbl);
+      root.appendChild(wrap);
+      continue;
+    }
+    const h = /^(#{1,3})\s+(.*)$/.exec(line);
+    const li = /^[-*]\s+(.*)$/.exec(line);
+    if (li) {
+      if (!list) { list = document.createElement("ul"); root.appendChild(list); }
+      const item = document.createElement("li");
+      flushInline(item, li[1]);
+      list.appendChild(item);
+      continue;
+    }
+    list = null;
+    if (h) {
+      const el = document.createElement("h" + (h[1].length + 1));
+      flushInline(el, h[2]);
+      root.appendChild(el);
+    } else if (line.trim()) {
+      const p = document.createElement("p");
+      flushInline(p, line);
+      root.appendChild(p);
+    }
+  }
+  return root;
+}
+
+/* ========================== filter panel =========================== */
+/* An omitted control kind is inferred from the bound variable's declared
+   GraphQL type — the spec carries it, so a Date variable gets a date input,
+   not a search box. Dotted paths reach into input types the page cannot see;
+   they fall back to options/select/search. */
+function varTypeOf(path) {
+  const v = ((spec && spec.variables) || []).find((x) => x.name === String(path || "").split(".")[0]);
+  return v ? v.type : "";
+}
+function controlKind(c) {
+  if (c.control) return c.control;
+  if (c.bind && typeof c.bind === "object") {
+    return /^(Date|Timestamp)/.test(varTypeOf(c.bind.from)) ? "daterange" : "numrange";
+  }
+  const t = String(c.bind || "").includes(".") ? "" : varTypeOf(c.bind);
+  if (t.startsWith("[")) return "multiselect";
+  if (/^Boolean/.test(t)) return "toggle";
+  if (/^(Date|Timestamp)/.test(t)) return "date";
+  if (/^(Int|BigInt|Float)/.test(t)) return "number";
+  return (c.options || optionsFor(c)) ? "select" : "search";
+}
+function optionsFor(c) {
+  const i = (spec.controls || []).indexOf(c);
+  const resolved = data && data.controls && data.controls[i];
+  if (resolved && (resolved.options || []).length) return resolved.options;
+  if ((c.options || []).length) return c.options;
+  return null;
+}
+
+function renderPanel() {
+  const panel = document.getElementById("panel");
+  panel.textContent = "";
+  const controls = (spec && spec.controls) || [];
+  panel.hidden = !controls.length;
+  if (!controls.length) { renderApplied(); return; }
+  panel.appendChild(panelTitle());
+
+  controls.forEach((c, i) => panel.appendChild(controlBox(c, i)));
+
+  // Apply exists only where it can DO something; a snapshot shows the note
+  // instead of a button that silently ignores the click — and its inputs go
+  // inert too: an editable filter that never applies is a lie.
+  if (canCallTools()) {
+    const apply = document.createElement("button");
+    apply.id = "btn-apply";
+    apply.className = "primary";
+    apply.textContent = applying ? "Applying…" : "Apply";
+    apply.disabled = applying;
+    apply.onclick = () => refresh(false);
+    panel.appendChild(apply);
+  } else {
+    panel.querySelectorAll("input, select, .pick > button")
+      .forEach((el) => { el.disabled = true; });
+    const note = document.createElement("span");
+    note.id = "panel-note";
+    note.textContent = "a snapshot — changing filters needs the live report";
+    panel.appendChild(note);
+  }
+  renderApplied();
+}
+
+// controlBox builds one control (label + input + options error) — the unit a
+// dependent-options refresh replaces without touching the rest of the panel.
+function controlBox(c, i) {
+  const box = document.createElement("div");
+  box.className = "ctl";
+  box.dataset.ci = i;
+  const lab = document.createElement("label");
+  lab.textContent = c.label;
+  if (c.required) {
+    const r = document.createElement("span");
+    r.className = "req";
+    r.textContent = " *";
+    lab.appendChild(r);
+  }
+  box.appendChild(lab);
+  box.appendChild(controlEl(c));
+  const resolved = data && data.controls && data.controls[i];
+  if (resolved && resolved.error) {
+    const e = document.createElement("div");
+    e.className = "err";
+    e.textContent = "options failed: " + resolved.error;
+    box.appendChild(e);
+  }
+  return box;
+}
+
+// The panel prepends its own heading — a bare row of inputs read as
+// decoration, not as the report's server-side filters.
+function panelTitle() {
+  const t = document.createElement("div");
+  t.className = "panel-title";
+  t.textContent = "Filters";
+  return t;
+}
+
+// renderApplied fills the print-only line under the header: a PDF without
+// the filter values is a chart with no axes — nobody can tell what slice
+// they are looking at.
+function renderApplied() {
+  const el = document.getElementById("applied");
+  const controls = (spec && spec.controls) || [];
+  if (!controls.length) { el.textContent = ""; return; }
+  // The line labels the DATA on the page, so it reads the values the run
+  // actually used (data.variables) — never the live panel edits, which may
+  // not have been applied: a CA-filtered chart captioned "State: NY" is
+  // exactly the mislabeling this line exists to prevent.
+  const ran = (data && data.variables) || {};
+  const get = (path) => {
+    const segs = String(path || "").split(".");
+    let v = ran[segs[0]];
+    for (const s of segs.slice(1)) v = (v && typeof v === "object") ? v[s] : undefined;
+    return v;
+  };
+  const fmt = (v) => {
+    if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)) return "all";
+    if (Array.isArray(v)) return v.join(", ");
+    return String(v);
+  };
+  const parts = controls.map((c) => {
+    if (c.bind && typeof c.bind === "object") {
+      return c.label + ": " + fmt(get(c.bind.from)) + " — " + fmt(get(c.bind.to));
+    }
+    return c.label + ": " + fmt(get(c.bind));
+  });
+  el.textContent = "Filters · " + parts.join(" · ");
+}
+
+function bindTargets(c) { return (c.bind && typeof c.bind === "object") ? [c.bind.from, c.bind.to] : [c.bind]; }
+function pathGet(path) {
+  const segs = path.split(".");
+  let v = values[segs[0]];
+  for (const s of segs.slice(1)) v = (v && typeof v === "object") ? v[s] : undefined;
+  return v;
+}
+function pathSet(path, val) {
+  const segs = path.split(".");
+  if (segs.length === 1) { values[path] = val; return; }
+  const base = Object.assign({}, values[segs[0]]);
+  let node = base;
+  for (const s of segs.slice(1, -1)) node = node[s] = Object.assign({}, node[s]);
+  node[segs[segs.length - 1]] = val;
+  values[segs[0]] = base;
+}
+// "" and [] become null before anything leaves the panel: the engine drops a
+// null condition; an empty IN () would be a wrong query.
+function normalized(v) {
+  if (v === "" || v === undefined) return null;
+  if (Array.isArray(v) && !v.length) return null;
+  return v;
+}
+function setFrom(c, path, raw) {
+  // Raw values only: the SERVER wraps templated controls at bind time and
+  // echoes the raw value back, so the panel always displays what was typed.
+  pathSet(path, normalized(raw));
+  scheduleOptionsRefresh(path);
+}
+
+/* ================= dependent option lists ==========================
+   A control whose options_query mentions another variable re-resolves LIVE
+   when that variable changes — through report-data's options_only mode,
+   debounced, replacing only the dependent controls' boxes (the panel the
+   user is interacting with stays put). Apply is still what re-runs the
+   sections. */
+const varRefRe = /\$([_A-Za-z][_0-9A-Za-z]*)/g;
+function controlDeps(c) {
+  if (!c.options_query) return [];
+  const names = new Set(((spec && spec.variables) || []).map((v) => v.name));
+  const text = (c.options_query.query || "") + " " + (c.options_query.jq || "");
+  const deps = new Set();
+  for (const m of text.matchAll(varRefRe)) if (names.has(m[1])) deps.add(m[1]);
+  return [...deps];
+}
+let optionsTimer = null;
+let optionsGen = 0; // a bumped generation invalidates in-flight responses
+let pendingOptionIdx = new Set(); // merged across schedules within a debounce
+function scheduleOptionsRefresh(changedPath) {
+  if (!canCallTools()) return;
+  const changed = String(changedPath || "").split(".")[0];
+  const dependents = ((spec && spec.controls) || [])
+    .map((c, i) => (controlDeps(c).includes(changed) ? i : -1))
+    .filter((i) => i >= 0);
+  if (!dependents.length) return;
+  // MERGE into the pending set — a plain reset would let a second parent's
+  // change within the debounce window cancel the first parent's refresh.
+  dependents.forEach((i) => pendingOptionIdx.add(i));
+  clearTimeout(optionsTimer);
+  optionsTimer = setTimeout(() => {
+    const batch = [...pendingOptionIdx];
+    pendingOptionIdx = new Set();
+    refreshDependentOptions(batch);
+  }, 400);
+}
+async function refreshDependentOptions(indexes) {
+  // Never race a full Apply: bumping the generation here would drop ITS
+  // response; the rebuilt panel simply re-resolves on the next change.
+  if (applying) return;
+  const gen = ++optionsGen;
+  try {
+    const res = await request("tools/call", { name: "report-data", arguments: {
+      spec, variables: values, options_only: true,
+    }});
+    // A full refresh or a fresh tool-result may have landed while this was
+    // in flight — its options belong to values that no longer exist.
+    if (gen !== optionsGen || applying) {
+      dbg("i", "stale options response dropped");
+      return;
+    }
+    if (res.isError || !res.structuredContent) {
+      dbg("opt!", "options refresh failed");
+      return;
+    }
+    data.controls = res.structuredContent.controls || data.controls;
+    for (const i of indexes) {
+      const c = (spec.controls || [])[i];
+      if (!c) continue; // the spec changed under the request
+      const pruned = pruneToOptions(c, ((data.controls || [])[i] || {}).options || []);
+      const old = document.querySelector('#panel .ctl[data-ci="' + i + '"]');
+      if (old) old.replaceWith(controlBox(c, i));
+      // A pruned value is itself a change — Country→State→City chains
+      // cascade one debounced hop at a time (the DAG guarantees an end).
+      if (pruned) scheduleOptionsRefresh(typeof c.bind === "string" ? c.bind : "");
+    }
+    renderApplied();
+    dbg("i", "dependent options refreshed: " + indexes.join(","));
+  } catch (e) {
+    dbg("opt!", e.message);
+  }
+}
+// A parent change can invalidate the dependent's CURRENT value — the
+// selected city may not exist in the new state. Values outside the fresh
+// option list are dropped, never silently submitted. Reports whether it
+// changed anything.
+function pruneToOptions(c, opts) {
+  if (!c.bind || typeof c.bind === "object") return false;
+  const legal = new Set(opts.map((o) => String(o.value)));
+  const cur = pathGet(c.bind);
+  if (Array.isArray(cur)) {
+    const kept = cur.filter((v) => legal.has(String(v)));
+    if (kept.length !== cur.length) {
+      pathSet(c.bind, kept.length ? kept : null);
+      return true;
+    }
+  } else if (cur !== null && cur !== undefined && !legal.has(String(cur))) {
+    pathSet(c.bind, null);
+    return true;
+  }
+  return false;
+}
+
+function controlEl(c) {
+  const kind = controlKind(c);
+  const path = typeof c.bind === "string" ? c.bind : null;
+  const cur = path ? pathGet(path) : null;
+  const opts = optionsFor(c);
+  let el;
+  switch (kind) {
+    case "multiselect":
+      return multiPicker(c, path, opts || []);
+    case "numrange": case "daterange": {
+      el = document.createElement("div");
+      el.className = "range";
+      const type = kind === "numrange" ? "number" : "date";
+      const [pf, pt] = bindTargets(c);
+      const mk = (p, ph) => {
+        const inp = document.createElement("input");
+        inp.type = type;
+        inp.placeholder = ph;
+        const v = pathGet(p);
+        if (v !== null && v !== undefined) inp.value = v;
+        inp.onchange = () => setFrom(c, p, inp.value === "" ? null : (type === "number" ? Number(inp.value) : inp.value));
+        return inp;
+      };
+      const dash = document.createElement("span");
+      dash.textContent = "—";
+      el.append(mk(pf, "from"), dash, mk(pt, "to"));
+      return el;
+    }
+    case "toggle":
+      el = document.createElement("input");
+      el.type = "checkbox";
+      el.checked = !!cur;
+      el.onchange = () => setFrom(c, path, el.checked);
+      return el;
+    case "number":
+      el = document.createElement("input");
+      el.type = "number";
+      if (c.min !== undefined && c.min !== null) el.min = c.min;
+      if (c.max !== undefined && c.max !== null) el.max = c.max;
+      if (cur !== null && cur !== undefined) el.value = cur;
+      el.onchange = () => setFrom(c, path, el.value === "" ? null : Number(el.value));
+      return el;
+    case "date":
+      el = document.createElement("input");
+      el.type = "date";
+      if (cur !== null && cur !== undefined) el.value = cur;
+      el.onchange = () => setFrom(c, path, el.value);
+      return el;
+    case "select": {
+      el = document.createElement("select");
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "— all —";
+      el.appendChild(empty);
+      for (const o of opts || []) {
+        const op = document.createElement("option");
+        op.value = String(o.value);
+        op.textContent = o.label || String(o.value);
+        op.selected = cur !== null && cur !== undefined && String(cur) === String(o.value);
+        el.appendChild(op);
+      }
+      el.onchange = () => {
+        const o = (opts || []).find((x) => String(x.value) === el.value);
+        setFrom(c, path, el.value === "" ? null : (o ? o.value : el.value));
+      };
+      return el;
+    }
+    default: // search
+      el = document.createElement("input");
+      el.type = "search";
+      if (cur !== null && cur !== undefined) el.value = cur;
+      el.onchange = () => setFrom(c, path, el.value);
+      return el;
+  }
+}
+
+/* A searchable checkbox dropdown, same manners as the viz picker: an inline
+   checkbox column ate the panel's height and broke its rows. */
+function multiPicker(c, path, opts) {
+  const box = document.createElement("div");
+  box.className = "pick";
+  const btn = document.createElement("button");
+  const val = document.createElement("span");
+  val.className = "val";
+  const caret = document.createElement("span");
+  caret.className = "caret";
+  caret.textContent = "▾";
+  btn.append(val, caret);
+  const menu = document.createElement("div");
+  menu.className = "menu";
+  menu.hidden = true;
+  box.append(btn, menu);
+
+  const selected = () => new Set((Array.isArray(pathGet(path)) ? pathGet(path) : []).map(String));
+  const paint = () => {
+    const sel = selected();
+    if (!sel.size) { val.textContent = "— all —"; val.style.color = "var(--muted)"; return; }
+    val.style.color = "";
+    if (sel.size === 1) {
+      const one = opts.find((o) => sel.has(String(o.value)));
+      val.textContent = one ? (one.label || String(one.value)) : [...sel][0];
+    } else {
+      val.textContent = sel.size + " selected";
+    }
+  };
+
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "search";
+  search.placeholder = "search…";
+  const list = document.createElement("div");
+  list.className = "list";
+  const foot = document.createElement("div");
+  foot.className = "foot";
+  const count = document.createElement("span");
+  const clear = document.createElement("button");
+  clear.textContent = "clear";
+  clear.onclick = () => { setFrom(c, path, []); renderList(); paint(); renderApplied(); };
+  foot.append(count, clear);
+  menu.append(search, list, foot);
+
+  const renderList = () => {
+    const q = search.value.trim().toLowerCase();
+    const sel = selected();
+    const shown = q ? opts.filter((o) => (o.label || String(o.value)).toLowerCase().includes(q)) : opts;
+    list.textContent = "";
+    for (const o of shown.slice(0, 500)) {
+      const row = document.createElement("label");
+      row.className = "opt";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = sel.has(String(o.value));
+      cb.onchange = () => {
+        const now = selected();
+        if (cb.checked) now.add(String(o.value)); else now.delete(String(o.value));
+        setFrom(c, path, opts.filter((x) => now.has(String(x.value))).map((x) => x.value));
+        paint();
+        renderApplied();
+      };
+      const t = document.createElement("span");
+      t.textContent = o.label || String(o.value);
+      row.append(cb, t);
+      list.appendChild(row);
+    }
+    if (!opts.length) list.appendChild(noteEl("no options"));
+    count.textContent = shown.length < opts.length ? shown.length + " of " + opts.length : opts.length + " values";
+  };
+  search.oninput = renderList;
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    const opening = menu.hidden;
+    closeMenus();
+    menu.hidden = !opening;
+    if (opening) { renderList(); search.focus(); reportSize(); }
+  };
+  menu.onclick = (e) => e.stopPropagation();
+  paint();
+  return box;
+}
+function closeMenus() {
+  document.querySelectorAll(".menu").forEach((m) => { m.hidden = true; });
+}
+document.addEventListener("click", closeMenus);
+
+/* ============================ refresh ============================== */
+async function refresh(optionsOnly) {
+  if (!canCallTools() || applying) return;
+  clearTimeout(optionsTimer); // Apply re-resolves every option list anyway
+  pendingOptionIdx = new Set();
+  const gen = ++optionsGen;
+  applying = true;
+  renderPanel();
+  setStatus(optionsOnly ? "refreshing options…" : "running the report…");
+  // Edits made while the call is in flight must survive it: the echo is
+  // applied only when the panel stayed untouched.
+  const submitted = JSON.stringify(values);
+  try {
+    const res = await request("tools/call", { name: "report-data", arguments: {
+      spec, variables: values, options_only: !!optionsOnly,
+    }});
+    if (gen !== optionsGen) {
+      // A new tool-result replaced the report while this ran; its data
+      // would render the new spec against the old run's rows.
+      dbg("i", "stale report-data response dropped");
+      applying = false;
+      return;
+    }
+    if (res.isError) {
+      showError((res.content || []).map((c) => c.text || "").join("\n") || "report-data reported an error");
+    } else {
+      const sc = res.structuredContent || {};
+      if (optionsOnly) { data.controls = sc.controls || []; }
+      else {
+        data = sc;
+        if (JSON.stringify(values) === submitted) values = Object.assign({}, sc.variables || values);
+      }
+      showError(null);
+      setStatus(sectionsSummary());
+    }
+  } catch (e) {
+    showError("report-data call failed: " + e.message);
+  }
+  applying = false;
+  renderPanel();
+  if (!optionsOnly) renderSections();
+  reportSize();
+  setTimeout(() => reportSize(true), 60);
+}
+
+/* ============================ download =============================
+   The standalone file is THIS page serialized with the current data baked
+   into the payload island — everything (runtime, core, styles) is already
+   inline, so the copy opens offline with charts and sorting alive. */
+function standaloneHTML() {
+  const island = document.getElementById("report-payload");
+  const before = island.textContent;
+  island.textContent = JSON.stringify({ spec, data }).replace(/</g, "\\u003c");
+  const root = document.documentElement.cloneNode(true);
+  island.textContent = before;
+
+  // The snapshot mark: on reopen the script hides everything a static file
+  // cannot honour. But the honest state is ALSO baked into the markup —
+  // sandboxed previews render the serialized DOM without ever running the
+  // script, and they must not show a Download button or live-looking inputs.
+  root.setAttribute("data-snapshot", "1");
+  const q = (sel) => root.querySelector(sel);
+  q("#btn-dl").hidden = true;
+  q("#btn-debug").hidden = true;
+  q("#btn-mode").hidden = true;
+  q("#btn-print").hidden = false;
+  const apply = q("#btn-apply");
+  if (apply) apply.remove();
+  root.querySelectorAll("#panel input, #panel select, #panel .pick > button")
+    .forEach((el) => { el.disabled = true; });
+  const dbgEl = q("#debug");
+  dbgEl.textContent = "";
+  dbgEl.style.display = "none";
+  return "<!doctype html>\n" + root.outerHTML;
+}
+const canSaveFile = () => !!host.caps.downloadFile;
+const canUploadFile = () => !!(window.openai && typeof window.openai.uploadFile === "function");
+async function downloadReport() {
+  const name = core.exportName((spec && spec.title) || "hugr-report", "html");
+  const html = standaloneHTML();
+  if (canSaveFile()) {
+    await request("ui/download-file", { contents: [{ type: "resource",
+      resource: { uri: "file:///" + name, mimeType: "text/html", text: html } }] });
+    setStatus("saved " + name);
+    return;
+  }
+  if (canUploadFile()) {
+    try {
+      const { fileId } = await window.openai.uploadFile(new File([html], name, { type: "text/html" }), { library: true });
+      setStatus("saved " + name + " to your ChatGPT file library");
+      try {
+        const { downloadUrl } = await window.openai.getFileDownloadUrl({ fileId });
+        window.openai.openExternal({ href: downloadUrl, redirectUrl: false });
+      } catch (e) { /* library copy exists either way */ }
+      return;
+    } catch (e) { /* fall through */ }
+  }
+  showError("this host cannot save files — open the report fullscreen and print it instead");
+}
+document.getElementById("btn-dl").onclick = () => { showError(null); downloadReport(); };
+document.getElementById("btn-print").onclick = () => window.print();
+document.getElementById("btn-debug").onclick = () => {
+  const el = document.getElementById("debug");
+  const open = el.style.display === "block";
+  el.style.display = open ? "none" : "block";
+  if (!open) { el.textContent = dbgLog.join("\n"); el.scrollTop = el.scrollHeight; }
+  reportSize();
+};
+document.getElementById("btn-mode").onclick = async () => {
+  const target = host.displayMode === "fullscreen" ? "inline" : "fullscreen";
+  try {
+    const res = await request("ui/request-display-mode", { mode: target });
+    if (res && res.mode) {
+      host.displayMode = res.mode;
+      document.body.dataset.mode = res.mode;
+      const other = res.mode === "fullscreen" ? "inline" : "fullscreen";
+      document.getElementById("btn-mode").hidden = !host.availableDisplayModes.includes(other);
+      // The container widths just changed under every chart.
+      for (const ch of charts) ch.resize();
+      reportSize(true);
+      setTimeout(() => { for (const ch of charts) ch.resize(); reportSize(true); }, 120);
+    }
+  } catch (e) { showError("request-display-mode failed: " + e.message); }
+};
+
+// Print is a light-theme, ONE-COLUMN affair whatever the screen shows: the
+// [data-printing] layout is applied on screen first and the charts re-render
+// so they measure the print width, not their two-column screen size.
+// Reached through BOTH beforeprint and matchMedia("print") — Safari has been
+// known to snapshot before a beforeprint handler's relayout lands, and the
+// guards keep the doubled signal idempotent.
+function enterPrint() {
+  if (document.documentElement.dataset.printing) return;
+  document.documentElement.dataset.printing = "1";
+  document.documentElement.dataset.theme = "light";
+  renderApplied();
+  renderSections();
+}
+function leavePrint() {
+  if (!document.documentElement.dataset.printing) return;
+  delete document.documentElement.dataset.printing;
+  document.documentElement.dataset.theme = host.theme === "dark" ? "dark" : "light";
+  renderSections();
+}
+window.addEventListener("beforeprint", enterPrint);
+window.addEventListener("afterprint", leavePrint);
+if (window.matchMedia) {
+  const mq = window.matchMedia("print");
+  const onPrintMedia = (e) => { if (e.matches) enterPrint(); else leavePrint(); };
+  if (mq.addEventListener) mq.addEventListener("change", onPrintMedia);
+  else if (mq.addListener) mq.addListener(onPrintMedia);
+}
+
+/* ======================= status & size ============================= */
+function setStatus(t) { document.getElementById("status").textContent = t; }
+function showError(t) {
+  const el = document.getElementById("error");
+  el.style.display = t ? "block" : "none";
+  el.textContent = t || "";
+  if (t) reportSize();
+}
+let lastH = 0;
+function reportSize(force) {
+  if (!host.connected) return;
+  const h = Math.ceil(document.getElementById("app").getBoundingClientRect().height);
+  if (h && (force || Math.abs(h - lastH) > 2)) {
+    lastH = h;
+    notify("ui/notifications/size-changed", { height: h, width: Math.ceil(document.body.scrollWidth) });
+  }
+}
+if (typeof ResizeObserver === "function") {
+  new ResizeObserver(() => { for (const ch of charts) ch.resize(); reportSize(); }).observe(document.getElementById("app"));
+}
+window.addEventListener("resize", () => { for (const ch of charts) ch.resize(); reportSize(); });
+
+/* ============================== init =============================== */
+function standaloneChrome() {
+  // A document, not a widget: printing is the way out, the bridge-only
+  // actions go away. The bug button survives only outside snapshots (a
+  // served page is still worth debugging; a saved file is not).
+  document.getElementById("btn-print").hidden = false;
+  document.getElementById("btn-dl").hidden = true;
+  document.getElementById("btn-mode").hidden = true;
+  if (IS_SNAPSHOT) document.getElementById("btn-debug").hidden = true;
+}
+
+function widgetChrome() {
+  // A widget prints nothing sensible from inside its iframe — Download the
+  // snapshot and print THAT; the explicit set keeps the chrome deterministic
+  // whatever state the page went through before the bridge came up.
+  document.getElementById("btn-print").hidden = true;
+  document.getElementById("btn-dl").hidden = false;
+  document.getElementById("btn-debug").hidden = false;
+}
+
+(async function init() {
+  // A baked payload renders immediately — the saved file needs no host at all.
+  let baked = null;
+  try { baked = JSON.parse(document.getElementById("report-payload").textContent); } catch (e) { /* placeholder */ }
+  if (baked && baked.spec && baked.data) setReport(baked.spec, baked.data);
+
+  if (IS_SNAPSHOT || window.parent === window) {
+    standaloneChrome();
+    setStatus(sectionsSummary() || "no report payload");
+    return;
+  }
+  // Only the handshake itself sits in the try: a later exception must reach
+  // the global error hook and the page, not silently flip the chrome into
+  // its standalone shape over a LIVE bridge.
+  let res;
+  try {
+    res = await withTimeout(request("ui/initialize", {
+      appInfo: { name: "hugr-report", version: "0.1.0" },
+      appCapabilities: { availableDisplayModes: ["inline", "fullscreen", "pip"] },
+      protocolVersion: PROTOCOL_VERSION,
+    }), 5000, "the host did not answer ui/initialize");
+  } catch (e) {
+    // No host answered: a served/saved document. Everything already rendered.
+    standaloneChrome();
+    setStatus(sectionsSummary() || "no report payload");
+    return;
+  }
+  host.connected = true;
+  host.caps = (res && res.hostCapabilities) || {};
+  if (res && res.hostContext) onHostContext(res.hostContext);
+  notify("ui/notifications/initialized");
+  widgetChrome();
+  renderPanel();   // Apply becomes live once the bridge is up
+  setStatus(spec ? sectionsSummary() : "connected — waiting for the report…");
+  reportSize();
+  // A host does not deliver tool-result for a call that FAILED — the view
+  // would wait forever. Say so instead: the error lives in the
+  // conversation, next to the call that opened this frame.
+  setTimeout(() => {
+    if (!spec) {
+      setStatus("no report arrived — the tool call behind this view failed; its error is in the conversation");
+      dbg("i", "no tool-result within 20s");
+      reportSize(true);
+    }
+  }, 20000);
+})();
+</script>
+</body>
+</html>

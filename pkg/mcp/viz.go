@@ -13,52 +13,32 @@ package mcp
 
 import (
 	"context"
-	_ "embed"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/hugr-lab/query-engine/pkg/jq"
-	"github.com/hugr-lab/query-engine/types"
+	"github.com/hugr-lab/query-engine/pkg/mcp/ui"
+	"github.com/hugr-lab/query-engine/pkg/mcp/viz"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
-
-//go:embed ui/viz.html
-var vizHTML string
-
-//go:embed ui/echarts.min.js
-var echartsJS string
 
 const (
 	// vizViewVersion is part of the resource URIs to bust host-side template
 	// caches: ChatGPT caches the widget HTML by URI and keeps serving a stale
 	// build after the server changes. Bump it whenever the shipped view must
 	// replace one a host may have cached.
-	vizViewVersion      = "v2"
+	vizViewVersion      = "v3"
 	vizResourceURI      = "ui://hugr/viz-" + vizViewVersion
 	vizTableResourceURI = "ui://hugr/viz-table-" + vizViewVersion
 	vizKpiResourceURI   = "ui://hugr/viz-kpi-" + vizViewVersion
 
-	// vizKpiCap bounds a KPI panel: it is a glance surface, not a table. The
-	// whole panel always travels inline in structuredContent — no sampling,
-	// no refresh channel — and the cap is what keeps that honest.
-	vizKpiCap   = 32
 	vizMIMEType = "text/html;profile=mcp-app"
 
-	// Above the soft limit a browser table stops being usable and the payload
-	// stops being reasonable; the hard cap is what an iframe will never be
-	// asked to hold. Between them sits a window the caller opened deliberately
-	// with limit/offset, and that is their call to make.
-	vizRowSoftLimit = 2000
-	vizRowHardCap   = 10000
 	vizFallbackRows = 20
 
 	// A table's rows are for the view, not for the conversation: two thousand
@@ -71,43 +51,36 @@ const (
 	vizModelRows = 50
 )
 
-var (
-	vizChartTypes  = []string{"line", "bar", "area", "pie", "scatter"}
-	vizControls    = []string{"select", "multiselect", "search", "number", "numrange", "date", "daterange", "toggle"}
-	vizKpiDirs     = []string{"up_good", "down_good", "neutral"}
-	vizKpiFormats  = []string{"number", "percent"}
-	vizKpiCardKeys = []string{"label", "value", "unit", "format", "delta", "delta_pct", "direction", "trend", "subtitle"}
-)
+var vizControls = []string{"select", "multiselect", "search", "number", "numrange", "date", "daterange", "toggle"}
 
 // The view is served in two builds from one source. The chart build inlines
 // the library — the app iframe cannot reach any CDN under the default MCP Apps
 // CSP — and costs about a megabyte. The table build drops it: a table has
 // nothing to plot, and shipping a charting library to draw a grid would be a
-// megabyte per render for nothing.
+// megabyte per render for nothing. Both carry the shared core.
 var vizPage = sync.OnceValue(func() string {
-	return strings.Replace(vizHTML, "<!--__ECHARTS__-->", "<script>"+echartsJS+"</script>", 1)
+	return vizAssemble("<script>" + ui.EChartsJS + "</script>")
 })
 
 var vizTablePage = sync.OnceValue(func() string {
-	return strings.Replace(vizHTML, "<!--__ECHARTS__-->", "", 1)
+	return vizAssemble("")
 })
+
+func vizAssemble(echarts string) string {
+	page := strings.Replace(ui.VizHTML, "<!--__ECHARTS__-->", echarts, 1)
+	return strings.Replace(page, "<!--__VIZCORE__-->", "<script>"+ui.CoreJS+"</script>", 1)
+}
 
 // --- wire format ---
 
-type VizChartSpec struct {
-	Type    string   `json:"type" jsonschema_description:"line | bar | area | pie | scatter"`
-	X       string   `json:"x,omitempty" jsonschema_description:"Row field for the category/x value"`
-	Y       []string `json:"y,omitempty" jsonschema_description:"Row fields holding values; several = one series each (wide form)"`
-	Series  string   `json:"series,omitempty" jsonschema_description:"Row field whose distinct values become series (long form; uses y[0] as the value)"`
-	Stacked bool     `json:"stacked,omitempty" jsonschema_description:"Stack the series"`
-}
-
-type VizColumnSpec struct {
-	Field  string `json:"field" jsonschema_description:"Row field"`
-	Label  string `json:"label,omitempty" jsonschema_description:"Header label (default: field name)"`
-	Format string `json:"format,omitempty" jsonschema_description:"number to right-align and group digits"`
-	Align  string `json:"align,omitempty" jsonschema_description:"left | right"`
-}
+// The specs and the KPI card are shared with the report renderer and live in
+// pkg/mcp/viz; the aliases keep this package's wire surface (and its output
+// schemas) exactly where it was.
+type (
+	VizChartSpec  = viz.ChartSpec
+	VizColumnSpec = viz.ColumnSpec
+	VizKPI        = viz.KPI
+)
 
 type VizFilterSpec struct {
 	Name    string `json:"name" jsonschema_description:"Identifier of the control, unique within the view"`
@@ -116,20 +89,6 @@ type VizFilterSpec struct {
 	Field   string `json:"field,omitempty" jsonschema_description:"Row field the control matches against (default: name)"`
 	Default any    `json:"default,omitempty" jsonschema_description:"Initial value when the user has not touched the control"`
 	Value   any    `json:"value,omitempty" jsonschema_description:"Pre-applied value set from the conversation; applied to the first render too"`
-}
-
-// VizKPI is one card on a KPI panel. Label and value are the card; everything
-// else decorates it.
-type VizKPI struct {
-	Label     string    `json:"label" jsonschema_description:"Card caption"`
-	Value     any       `json:"value" jsonschema_description:"The headline value: a number, or a short string"`
-	Unit      string    `json:"unit,omitempty" jsonschema_description:"Rendered next to the value ($, %, ms, …)"`
-	Format    string    `json:"format,omitempty" jsonschema_description:"number | percent"`
-	Delta     *float64  `json:"delta,omitempty" jsonschema_description:"Absolute change vs the comparison period"`
-	DeltaPct  *float64  `json:"delta_pct,omitempty" jsonschema_description:"Change in percent vs the comparison period"`
-	Direction string    `json:"direction,omitempty" jsonschema_description:"up_good | down_good | neutral — colours the delta"`
-	Trend     []float64 `json:"trend,omitempty" jsonschema_description:"Values drawn as a sparkline under the number"`
-	Subtitle  string    `json:"subtitle,omitempty" jsonschema_description:"Small line under the value (e.g. \"vs July\")"`
 }
 
 type VizSource struct {
@@ -233,7 +192,7 @@ DATA VOLUME COSTS YOU NOTHING — above 50 rows the result carries a SAMPLE of t
 		mcp.WithString("title", mcp.Required(), mcp.Description("View title, shown in the header and the text fallback")),
 		mcp.WithObject("chart", mcp.Required(), mcp.Description("Chart mapping: type + field bindings"),
 			mcp.Properties(map[string]any{
-				"type":    map[string]any{"type": "string", "enum": vizChartTypes, "description": "Chart type"},
+				"type":    map[string]any{"type": "string", "enum": viz.ChartTypes, "description": "Chart type"},
 				"x":       map[string]any{"type": "string", "description": "Row field for the category/x value"},
 				"y":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Value fields (wide form: one series each; long form: y[0])"},
 				"series":  map[string]any{"type": "string", "description": "Field whose distinct values become series (long form)"},
@@ -304,10 +263,10 @@ The whole panel returns in structuredContent (at most 32 cards): nothing is samp
 				"label":     map[string]any{"type": "string"},
 				"value":     map[string]any{"description": "Number or short string"},
 				"unit":      map[string]any{"type": "string"},
-				"format":    map[string]any{"type": "string", "enum": vizKpiFormats},
+				"format":    map[string]any{"type": "string", "enum": viz.KPIFormats},
 				"delta":     map[string]any{"type": "number"},
 				"delta_pct": map[string]any{"type": "number"},
-				"direction": map[string]any{"type": "string", "enum": vizKpiDirs},
+				"direction": map[string]any{"type": "string", "enum": viz.KPIDirections},
 				"trend":     map[string]any{"type": "array", "items": map[string]any{"type": "number"}},
 				"subtitle":  map[string]any{"type": "string"},
 			}})),
@@ -364,8 +323,8 @@ func (s *Server) vizChart(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	if args.Chart == nil {
 		return toolResultError("chart is required"), nil
 	}
-	if !slices.Contains(vizChartTypes, args.Chart.Type) {
-		return toolResultError(fmt.Sprintf("chart.type %q is not one of %s", args.Chart.Type, strings.Join(vizChartTypes, "|"))), nil
+	if !slices.Contains(viz.ChartTypes, args.Chart.Type) {
+		return toolResultError(fmt.Sprintf("chart.type %q is not one of %s", args.Chart.Type, strings.Join(viz.ChartTypes, "|"))), nil
 	}
 	if args.Chart.X == "" {
 		return toolResultError("chart.x is required"), nil
@@ -405,7 +364,7 @@ func (s *Server) vizKpi(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 		err error
 	)
 	if args.Query != "" {
-		v, err = s.vizQueryValue(ctx, args.Query, args.Variables, args.JQTransform, s.cfg.QueryTTL)
+		v, err = viz.QueryValue(ctx, s.querier, args.Query, args.Variables, args.JQTransform, s.cfg.QueryTTL)
 	} else {
 		items := make([]any, len(args.Data))
 		copy(items, args.Data)
@@ -414,10 +373,10 @@ func (s *Server) vizKpi(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 	if err != nil {
 		return toolResultError(err.Error()), nil
 	}
-	kpis, err := vizCanonicalKpis(v)
+	kpis, err := viz.CanonicalKPIs(v)
 	if err != nil {
 		if args.Query != "" && args.JQTransform == "" {
-			err = fmt.Errorf("%w — with a query, jq_transform is required to assemble the cards (paths start with .data, e.g. .data.%s)", err, jqPathHint(args.Query))
+			err = fmt.Errorf("%w — with a query, jq_transform is required to assemble the cards (paths start with .data, e.g. .data.%s)", err, viz.JQPathHint(args.Query))
 		}
 		return toolResultError(err.Error()), nil
 	}
@@ -447,7 +406,7 @@ func (s *Server) vizData(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 	// Uncapped: this feeds an already-rendered view, and the query is either a
 	// chart's (no caps by design) or a table's (bounded by its own limit — an
 	// unbounded one never produced a view in the first place).
-	rows, truncated, err := s.vizQueryRows(ctx, args.Query, args.Variables, args.JQTransform, 0, s.cfg.QueryTTL)
+	rows, truncated, err := viz.QueryRows(ctx, s.querier, args.Query, args.Variables, args.JQTransform, 0, s.cfg.QueryTTL)
 	if err != nil {
 		return toolResultError(err.Error()), nil
 	}
@@ -493,7 +452,7 @@ func (s *Server) vizEnvelope(ctx context.Context, kind string, args *vizToolArgs
 	// runs uncapped: how many points make sense is the chart author's call.
 	cap := 0
 	if kind == "table" {
-		cap = vizRowHardCap
+		cap = viz.RowHardCap
 	}
 	var (
 		rows      []map[string]any
@@ -502,9 +461,9 @@ func (s *Server) vizEnvelope(ctx context.Context, kind string, args *vizToolArgs
 	)
 	if args.Query != "" {
 		vars := args.Variables
-		rows, truncated, err = s.vizQueryRows(ctx, args.Query, vars, args.JQTransform, cap, s.cfg.QueryTTL)
+		rows, truncated, err = viz.QueryRows(ctx, s.querier, args.Query, vars, args.JQTransform, cap, s.cfg.QueryTTL)
 	} else {
-		rows, err = vizCanonicalRows(args.Data)
+		rows, err = viz.CanonicalRows(args.Data)
 		if err == nil && cap > 0 && len(rows) > cap {
 			rows, truncated = rows[:cap], true
 		}
@@ -522,17 +481,17 @@ func (s *Server) vizEnvelope(ctx context.Context, kind string, args *vizToolArgs
 	// always honoured — the caller has by then been told how many rows there
 	// are, so asking for the first 2000 of 5432 is an informed decision, not a
 	// mistake to correct.
-	if kind == "table" && args.Query != "" && len(rows) >= vizRowSoftLimit && !vizQueryHasLimit(args.Query) {
+	if kind == "table" && args.Query != "" && len(rows) >= viz.RowSoftLimit && !viz.QueryHasLimit(args.Query) {
 		return toolResultError(fmt.Sprintf(
 			"the query returned %d rows and sets no bound of its own. Up to %d render fine; beyond that say what to show rather than shipping everything. %s",
-			len(rows), vizRowSoftLimit, vizPagingRecipe)), nil
+			len(rows), viz.RowSoftLimit, viz.PagingRecipe)), nil
 	}
 	// Below the render limit a full page is a window the caller chose on
 	// purpose ("show me 50 examples"), so it is flagged, not refused. A chart's
 	// limit is a top-N and needs no flag at all.
 	atLimit := false
 	if kind == "table" && args.Query != "" && len(rows) > 0 {
-		if limit, known := vizQueryLimit(args.Query, args.Variables); known && len(rows) == limit {
+		if limit, known := viz.QueryLimit(args.Query, args.Variables); known && len(rows) == limit {
 			atLimit = true
 		}
 	}
@@ -577,341 +536,6 @@ func vizResult(env *VizEnvelope) *mcp.CallToolResult {
 	}
 	return mcp.NewToolResultStructured(out, text)
 }
-
-// --- rows pipeline ---
-
-func firstNonNil(vs ...any) any {
-	for _, v := range vs {
-		if v != nil {
-			return v
-		}
-	}
-	return nil
-}
-
-// vizQueryRows runs a read-only GraphQL query, optionally shapes it with jq,
-// and canonicalizes the outcome into flat rows.
-func (s *Server) vizQueryRows(ctx context.Context, query string, vars map[string]any, jqTransform string, maxRows int, ttl time.Duration) ([]map[string]any, bool, error) {
-	v, err := s.vizQueryValue(ctx, query, vars, jqTransform, ttl)
-	if err != nil {
-		return nil, false, err
-	}
-	rows, err := vizCanonicalRows(v)
-	if err != nil {
-		return nil, false, err
-	}
-	if maxRows > 0 && len(rows) > maxRows {
-		return rows[:maxRows], true, nil
-	}
-	return rows, false, nil
-}
-
-// vizQueryValue is the shared query pipeline: read-only hint, cache hint, jq
-// fail-fast compile, execute, transform, and a JSON round-trip that
-// normalizes engine/gojq value types into plain maps. What the value MEANS —
-// rows or KPI cards — is the caller's canonicalizer's business.
-func (s *Server) vizQueryValue(ctx context.Context, query string, vars map[string]any, jqTransform string, ttl time.Duration) (any, error) {
-	ctx = types.ContextWithQueryHint(ctx, types.NoMutationHint())
-	if ttl > 0 {
-		// Caching is the deployment's call (MCP_QUERY_TTL), not the model's,
-		// so nothing about it appears in the tool surface. No key of our own
-		// either: the engine derives one from the query and its variables,
-		// which is exactly the identity we would have had to reconstruct —
-		// and cannot then disagree with what it runs.
-		ctx = types.ContextWithQueryHint(ctx, types.QueryCacheHint("", ttl))
-	}
-	if vars == nil {
-		vars = map[string]any{}
-	}
-
-	// Compile before executing — fail fast on a bad expression.
-	var transformer *jq.Transformer
-	if jqTransform != "" {
-		var err error
-		transformer, err = jq.NewTransformer(ctx, jqTransform, jq.WithVariables(vars), jq.WithQuerier(s.querier))
-		if err != nil {
-			return nil, fmt.Errorf("jq compile: %w", err)
-		}
-	}
-
-	res, err := s.querier.Query(ctx, query, vars)
-	if err != nil {
-		return nil, fmt.Errorf("query failed: %w", err)
-	}
-	if rerr := res.Err(); rerr != nil {
-		return nil, fmt.Errorf("query error: %w", rerr)
-	}
-	defer res.Close()
-
-	// The transform runs over the whole response envelope, exactly as in
-	// data-inline_graphql_result — hence the leading .data in every path.
-	var data any = res.Data
-	if transformer != nil {
-		data, err = transformer.Transform(ctx, res, nil)
-		if err != nil {
-			return nil, fmt.Errorf("jq transform: %w (the jq input is the full response envelope, so paths start with .data)", err)
-		}
-		if data == nil {
-			return nil, fmt.Errorf("jq transform produced null — the jq input is the full response envelope, so paths start with .data (e.g. .data.%s)", jqPathHint(query))
-		}
-	}
-
-	// JSON round-trip normalizes engine/gojq value types into plain maps.
-	b, err := json.Marshal(data)
-	if err != nil {
-		return nil, fmt.Errorf("marshal result: %w", err)
-	}
-	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
-		return nil, fmt.Errorf("normalize result: %w", err)
-	}
-
-	return v, nil
-}
-
-// vizCanonicalRows validates the canonical-rows contract: an array of flat
-// objects with scalar values. A single-key object chain (the usual
-// {"module":{"table":[...]}} GraphQL shape) is unwrapped first, so most
-// queries need no jq at all.
-func vizCanonicalRows(v any) ([]map[string]any, error) {
-	for {
-		m, ok := v.(map[string]any)
-		if !ok || len(m) != 1 {
-			break
-		}
-		for _, inner := range m {
-			v = inner
-		}
-	}
-	arr, ok := v.([]any)
-	if !ok {
-		return nil, fmt.Errorf("expected an array of row objects after unwrapping, got %s — use jq_transform to shape the result into [{...}, ...]", jsonKind(v))
-	}
-	rows := make([]map[string]any, 0, len(arr))
-	for i, item := range arr {
-		m, ok := item.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("row %d is a %s, not an object — use jq_transform to produce objects like {\"x\": ..., \"y\": ...}", i, jsonKind(item))
-		}
-		for k, fv := range m {
-			switch fv.(type) {
-			case nil, string, float64, bool, json.Number:
-			default:
-				// The fix differs by shape, and a wrong hint costs the caller
-				// a whole round trip: an object needs a field picked out of
-				// it, a list needs collapsing to one scalar.
-				hint := fmt.Sprintf("pick a scalar out of it, e.g. {%s: .%s.<field>}", k, k)
-				if _, isArr := fv.([]any); isArr {
-					hint = fmt.Sprintf("collapse it to one value, e.g. {%s: (.%s | length)} or {%s: ([.%s[].<field>] | join(\", \"))}", k, k, k, k)
-				}
-				return nil, fmt.Errorf("row %d field %q holds a nested %s — use jq_transform to %s, or drop the field", i, k, jsonKind(fv), hint)
-			}
-		}
-		rows = append(rows, m)
-	}
-	return rows, nil
-}
-
-// vizCanonicalKpis validates the canonical KPI-card contract: an array of
-// card objects, label+value required, trend the only array field. Unknown
-// keys are rejected by name — a typo like delta_percent must fail loudly with
-// the allowed list, not render a bare card.
-func vizCanonicalKpis(v any) ([]VizKPI, error) {
-	for {
-		m, ok := v.(map[string]any)
-		if !ok || len(m) != 1 {
-			break
-		}
-		for _, inner := range m {
-			v = inner
-		}
-	}
-	arr, ok := v.([]any)
-	if !ok {
-		return nil, fmt.Errorf("expected an array of KPI cards, got %s — shape the result into [{\"label\": ..., \"value\": ...}, ...] (with a query, jq_transform is where the cards are assembled)", jsonKind(v))
-	}
-	if len(arr) == 0 {
-		return nil, fmt.Errorf("no KPI cards — the panel needs at least one {label, value}")
-	}
-	if len(arr) > vizKpiCap {
-		return nil, fmt.Errorf("%d KPI cards — a panel reads at %d at most; aggregate further or split into panels", len(arr), vizKpiCap)
-	}
-
-	str := func(m map[string]any, key string, i int) (string, error) {
-		fv, ok := m[key]
-		if !ok || fv == nil {
-			return "", nil
-		}
-		s, ok := fv.(string)
-		if !ok {
-			return "", fmt.Errorf("card %d: %s must be a string, got %s", i, key, jsonKind(fv))
-		}
-		return s, nil
-	}
-	num := func(m map[string]any, key string, i int) (*float64, error) {
-		fv, ok := m[key]
-		if !ok || fv == nil {
-			return nil, nil
-		}
-		f, ok := fv.(float64)
-		if !ok {
-			return nil, fmt.Errorf("card %d: %s must be a number, got %s", i, key, jsonKind(fv))
-		}
-		return &f, nil
-	}
-
-	kpis := make([]VizKPI, 0, len(arr))
-	for i, item := range arr {
-		m, ok := item.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("card %d is a %s, not an object — cards look like {\"label\": ..., \"value\": ...}", i, jsonKind(item))
-		}
-		for k := range m {
-			if !slices.Contains(vizKpiCardKeys, k) {
-				return nil, fmt.Errorf("card %d has unknown field %q — allowed: %s", i, k, strings.Join(vizKpiCardKeys, ", "))
-			}
-		}
-		var c VizKPI
-		var err error
-		if c.Label, err = str(m, "label", i); err != nil {
-			return nil, err
-		}
-		if c.Label == "" {
-			return nil, fmt.Errorf("card %d: label is required", i)
-		}
-		switch val := m["value"].(type) {
-		case string, float64, bool, json.Number:
-			c.Value = val
-		case nil:
-			return nil, fmt.Errorf("card %d (%s): value is required", i, c.Label)
-		default:
-			return nil, fmt.Errorf("card %d (%s): value holds a nested %s — a card's value is one scalar", i, c.Label, jsonKind(val))
-		}
-		if c.Unit, err = str(m, "unit", i); err != nil {
-			return nil, err
-		}
-		if c.Format, err = str(m, "format", i); err != nil {
-			return nil, err
-		}
-		if c.Format != "" && !slices.Contains(vizKpiFormats, c.Format) {
-			return nil, fmt.Errorf("card %d (%s): format %q is not one of %s", i, c.Label, c.Format, strings.Join(vizKpiFormats, "|"))
-		}
-		if c.Delta, err = num(m, "delta", i); err != nil {
-			return nil, err
-		}
-		if c.DeltaPct, err = num(m, "delta_pct", i); err != nil {
-			return nil, err
-		}
-		if c.Direction, err = str(m, "direction", i); err != nil {
-			return nil, err
-		}
-		if c.Direction != "" && !slices.Contains(vizKpiDirs, c.Direction) {
-			return nil, fmt.Errorf("card %d (%s): direction %q is not one of %s", i, c.Label, c.Direction, strings.Join(vizKpiDirs, "|"))
-		}
-		if c.Subtitle, err = str(m, "subtitle", i); err != nil {
-			return nil, err
-		}
-		if tv, ok := m["trend"]; ok && tv != nil {
-			ta, ok := tv.([]any)
-			if !ok {
-				return nil, fmt.Errorf("card %d (%s): trend must be an array of numbers, got %s", i, c.Label, jsonKind(tv))
-			}
-			c.Trend = make([]float64, len(ta))
-			for j, t := range ta {
-				f, ok := t.(float64)
-				if !ok {
-					return nil, fmt.Errorf("card %d (%s): trend[%d] is a %s, not a number", i, c.Label, j, jsonKind(t))
-				}
-				c.Trend[j] = f
-			}
-		}
-		kpis = append(kpis, c)
-	}
-	return kpis, nil
-}
-
-// jqPathHint recovers the first two selection levels of the query so a failed
-// transform can show the caller the path it probably meant to write.
-func jqPathHint(query string) string {
-	fields := make([]string, 0, 2)
-	for _, chunk := range strings.Split(query, "{")[1:] {
-		f := strings.TrimSpace(chunk)
-		if i := strings.IndexAny(f, " \t\n({"); i >= 0 {
-			f = f[:i]
-		}
-		if f == "" || strings.HasPrefix(f, "$") {
-			continue
-		}
-		fields = append(fields, f)
-		if len(fields) == 2 {
-			break
-		}
-	}
-	if len(fields) == 0 {
-		return "<root field>"
-	}
-	return strings.Join(fields, ".")
-}
-
-func jsonKind(v any) string {
-	switch v.(type) {
-	case nil:
-		return "null"
-	case map[string]any:
-		return "object"
-	case []any:
-		return "array"
-	case string:
-		return "string"
-	case bool:
-		return "boolean"
-	default:
-		return "number"
-	}
-}
-
-// vizQueryHasLimit reports whether the caller bounded the query themselves,
-// either with a $limit variable or a literal limit: argument. It is a textual
-// check on purpose: the query belongs to the caller and is not re-parsed here.
-func vizQueryHasLimit(query string) bool {
-	return strings.Contains(query, "$limit") || strings.Contains(query, "limit:")
-}
-
-var vizLiteralLimit = regexp.MustCompile(`\blimit\s*:\s*(\d+)`)
-
-// vizQueryLimit recovers the row bound the caller set, from a literal
-// `limit: N` or from the value bound to a $limit variable. Knowing it is what
-// lets the result say "this page is exactly full, there is probably more"
-// instead of leaving the caller to guess from a suspiciously round number.
-func vizQueryLimit(query string, vars map[string]any) (int, bool) {
-	if v, ok := vars["limit"]; ok {
-		switch n := v.(type) {
-		case int:
-			return n, true
-		case int64:
-			return int(n), true
-		case float64:
-			return int(n), true
-		}
-	}
-	// The innermost limit is the one that bounds the rows we get back.
-	if m := vizLiteralLimit.FindAllStringSubmatch(query, -1); len(m) > 0 {
-		if n, err := strconv.Atoi(m[len(m)-1][1]); err == nil {
-			return n, true
-		}
-	}
-	return 0, false
-}
-
-// vizPagingRecipe is the one place that spells out how to bound a query, so
-// every refusal points the same way.
-const vizPagingRecipe = `Three ways, best first: (1) AGGREGATE — a chart wants ` +
-	`<object>_bucket_aggregation, not raw rows, and an aggregate is usually what the question ` +
-	`actually asked for; (2) NARROW — put a condition in the query's own filter argument, which ` +
-	`is also how "only for X" is answered; (3) PAGE — obj(limit: 500, offset: 0) with order_by ` +
-	`so the order is stable, then call again with offset: 500 for the next page, each call ` +
-	`rendering its own view. Any limit you set is honoured, including a deliberate "first N of ` +
-	`the count above" — just tell the user that is what they are looking at.`
 
 func sortedKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
@@ -963,7 +587,7 @@ func vizFallbackText(env *VizEnvelope) string {
 	}
 	b.WriteString(".\n\n")
 	if env.AtLimit {
-		fmt.Fprintf(&b, "⚠️ Exactly the query's own limit came back, so there are almost certainly more rows behind it — this view is one page, not the whole answer. %s\n\n", vizPagingRecipe)
+		fmt.Fprintf(&b, "⚠️ Exactly the query's own limit came back, so there are almost certainly more rows behind it — this view is one page, not the whole answer. %s\n\n", viz.PagingRecipe)
 	}
 
 	cols := vizFallbackColumns(env)

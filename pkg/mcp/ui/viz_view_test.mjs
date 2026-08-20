@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const SRC = fileURLToPath(new URL("./viz.html", import.meta.url));
+const CORE = fileURLToPath(new URL("./viz-core.js", import.meta.url));
 const html = readFileSync(SRC, "utf8").replace(
   "<!--__ECHARTS__-->",
   `<script>
@@ -18,6 +19,10 @@ const html = readFileSync(SRC, "utf8").replace(
        return inst;
      }};
    </script>`,
+).replace(
+  // The shared core rides exactly as the server inlines it.
+  "<!--__VIZCORE__-->",
+  "<script>" + readFileSync(CORE, "utf8") + "</script>",
 );
 
 // --- mock host -------------------------------------------------------------

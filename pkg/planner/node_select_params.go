@@ -462,11 +462,23 @@ func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Objec
 			if err != nil {
 				return nil, err
 			}
+			if node == nil {
+				// The child object was empty — nothing to negate, so the
+				// combinator drops with it, same as a null-valued condition.
+				continue
+			}
 			nodes = append(nodes, &QueryPlanNode{
 				Name:  fn,
 				Nodes: QueryPlanNodes{node},
 				CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-					return "NOT (" + children.FirstResult().Result + ")", params, nil
+					inner := children.FirstResult().Result
+					if inner == "" {
+						// Every condition inside was null-dropped. NOT over
+						// nothing is nothing — not NOT(TRUE): a cleared
+						// control must widen the result, never empty it.
+						return "", params, nil
+					}
+					return "NOT (" + inner + ")", params, nil
 				},
 			})
 		case fn == "_and" || fn == "_or":
@@ -476,9 +488,17 @@ func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Objec
 			}
 			var andNodes QueryPlanNodes
 			for _, v := range children {
-				node, err := whereNode(ctx, defs, info, v.(map[string]any), prefix, byAlias, selectDeleted)
+				m, ok := v.(map[string]any)
+				if !ok {
+					// A null member is a dropped condition, like a null value.
+					continue
+				}
+				node, err := whereNode(ctx, defs, info, m, prefix, byAlias, selectDeleted)
 				if err != nil {
 					return nil, err
+				}
+				if node == nil {
+					continue
 				}
 				andNodes = append(andNodes, node)
 			}
@@ -491,6 +511,12 @@ func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Objec
 				CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 					var ff []string
 					for _, and := range children {
+						// A member whose conditions were all null-dropped
+						// contributes nothing — wrapping it would compile
+						// `(() AND ())`, which no SQL parser accepts.
+						if and.Result == "" {
+							continue
+						}
 						ff = append(ff, "("+and.Result+")")
 					}
 					if fn == "_and" {
@@ -503,6 +529,11 @@ func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Objec
 			node, err := whereReferencesObjectNode(ctx, defs, info, "", prefix, fn, fv.(map[string]any), byAlias, selectDeleted)
 			if err != nil {
 				return nil, err
+			}
+			if node == nil {
+				// every condition inside the quantifier null-dropped — the
+				// whole predicate goes with them
+				continue
 			}
 			nodes = append(nodes, node)
 		default:
@@ -526,6 +557,12 @@ func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Objec
 		CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 			var ff []string
 			for _, field := range children {
+				// A null-dropped condition (or a combinator whose members
+				// all dropped) yields an empty result; every consumer
+				// already treats an empty WHERE as "no WHERE".
+				if field.Result == "" {
+					continue
+				}
 				ff = append(ff, "("+field.Result+")")
 			}
 			if info.SoftDelete && !selectDeleted {
@@ -534,6 +571,26 @@ func whereNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Objec
 			return strings.Join(ff, " AND "), params, nil
 		},
 	}, nil
+}
+
+// filterHasConditions reports whether a materialised filter value still
+// holds any condition once the null-drop contract removes the nil-valued
+// ones. An array — even an empty one — IS a condition: an explicit `in: []`
+// deliberately matches nothing, only null widens.
+func filterHasConditions(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return false
+	case map[string]any:
+		for _, fv := range t {
+			if filterHasConditions(fv) {
+				return true
+			}
+		}
+		return false
+	default:
+		return true
+	}
 }
 
 func whereReferencesObjectNode(ctx context.Context, defs base.DefinitionsSource, info *sdl.Object, op, prefix, name string, value map[string]any, byAlias, selectDeleted bool) (*QueryPlanNode, error) {
@@ -558,7 +615,12 @@ func whereReferencesObjectNode(ctx context.Context, defs base.DefinitionsSource,
 			if err != nil {
 				return nil, err
 			}
-			nodes = append(nodes, node)
+			if node != nil {
+				nodes = append(nodes, node)
+			}
+		}
+		if len(nodes) == 0 {
+			return nil, nil
 		}
 		return &QueryPlanNode{
 			Name:  name,
@@ -566,6 +628,9 @@ func whereReferencesObjectNode(ctx context.Context, defs base.DefinitionsSource,
 			CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
 				var sql []string
 				for _, n := range children {
+					if n.Result == "" {
+						continue
+					}
 					sql = append(sql, "("+n.Result+")")
 				}
 				return strings.Join(sql, " AND "), params, nil
@@ -574,6 +639,15 @@ func whereReferencesObjectNode(ctx context.Context, defs base.DefinitionsSource,
 	}
 	if op == "" {
 		op = "any_of"
+	}
+	// The null-drop contract holds for relation quantifiers as a WHOLE: when
+	// every condition inside collapsed, the quantifier itself is dropped —
+	// keeping the EXISTS scaffold would silently turn "orders with status X"
+	// into "any orders at all" (and all_of into an always-false pair). The
+	// values are already materialised here, so emptiness is decidable now,
+	// before the related object's soft-delete predicate could disguise it.
+	if !filterHasConditions(value) {
+		return nil, nil
 	}
 
 	var nodes QueryPlanNodes
@@ -644,12 +718,15 @@ func whereReferencesObjectNode(ctx context.Context, defs base.DefinitionsSource,
 				return "", nil, errors.New("where definition is required")
 			}
 			whereSQL := where.Result
-			if op == "all_of" && whereSQL != "" {
+			if whereSQL == "" {
+				// Belt to the build-time check above: a quantifier whose
+				// inner conditions vanished drops entirely.
+				return "", params, nil
+			}
+			if op == "all_of" {
 				whereSQL = "NOT(" + whereSQL + ")"
 			}
-			if whereSQL != "" {
-				whereSQL += " AND "
-			}
+			whereSQL += " AND "
 			// join
 			var addSQL string
 			if !refInfo.IsM2M {
@@ -742,6 +819,10 @@ func nestedFieldFilterSQLValue(ctx context.Context, e engines.Engine, defs base.
 		if field == nil {
 			return "", nil, fmt.Errorf("field %s not found in %s", fieldName, def.Name)
 		}
+		if fieldValue == nil {
+			// null drops the condition inside struct filters too.
+			continue
+		}
 		v, ok := fieldValue.(map[string]any)
 		if !ok {
 			return "", nil, fmt.Errorf("nested filter fields value must be an object")
@@ -764,9 +845,12 @@ func nestedFieldFilterSQLValue(ctx context.Context, e engines.Engine, defs base.
 		if err != nil {
 			return "", nil, err
 		}
+		if q == "" {
+			// Every leaf condition null-dropped — wrapping the emptiness
+			// would compile `WHERE (())`.
+			continue
+		}
 		nestedFilters = append(nestedFilters, "("+q+")")
-		continue
-
 	}
 	return strings.Join(nestedFilters, " AND "), params, nil
 }
