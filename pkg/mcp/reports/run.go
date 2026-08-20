@@ -98,9 +98,13 @@ func Run(ctx context.Context, q viz.Querier, spec *Spec, vars map[string]any, op
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// The echoed variables stay RAW — the panel shows what the user typed —
+	// while the queries and jq see the templated values.
+	queryVars := spec.applyTemplates(bound)
+
 	data := &ReportData{Variables: bound}
 	if len(spec.Controls) > 0 {
-		data.Controls = spec.resolveOptions(ctx, q, bound, opts.QueryTTL)
+		data.Controls = spec.resolveOptions(ctx, q, queryVars, opts.QueryTTL)
 	}
 	if opts.OptionsOnly {
 		return data, nil
@@ -116,7 +120,7 @@ func Run(ctx context.Context, q viz.Querier, spec *Spec, vars map[string]any, op
 			continue
 		}
 		g.Go(func() error {
-			runSection(ctx, q, sec, bound, opts.QueryTTL, out)
+			runSection(ctx, q, sec, queryVars, opts.QueryTTL, out)
 			return nil
 		})
 	}
@@ -165,10 +169,45 @@ func runSection(ctx context.Context, q viz.Querier, sec *Section, vars map[strin
 			return
 		}
 		out.Rows, out.RowCount, out.Truncated = rows, len(rows), truncated
-		if limit, known := viz.QueryLimit(sec.Query, vars); known && len(rows) == limit && len(rows) > 0 {
+		// The variable map is shared by every section, so a spec variable
+		// that happens to be named `limit` must not masquerade as THIS
+		// query's bound unless the query actually declares $limit.
+		lv := vars
+		if !strings.Contains(sec.Query, "$limit") {
+			lv = nil
+		}
+		if limit, known := viz.QueryLimit(sec.Query, lv); known && len(rows) == limit && len(rows) > 0 {
 			out.AtLimit = true
 		}
 	}
+}
+
+// applyTemplates wraps templated control values for the queries: the panel's
+// raw input ("acme") becomes the filter's argument ("%acme%"). Applies to
+// plain string variable binds — dotted paths land inside input objects the
+// schema owns.
+func (s *Spec) applyTemplates(bound map[string]any) map[string]any {
+	out := bound
+	cloned := false
+	for i := range s.Controls {
+		c := &s.Controls[i]
+		if c.Template == "" || c.Bind.IsRange() || strings.Contains(c.Bind.Target, ".") {
+			continue
+		}
+		v, ok := bound[c.Bind.Target].(string)
+		if !ok || v == "" {
+			continue
+		}
+		if !cloned {
+			out = make(map[string]any, len(bound))
+			for k, bv := range bound {
+				out[k] = bv
+			}
+			cloned = true
+		}
+		out[c.Bind.Target] = strings.ReplaceAll(c.Template, "{value}", v)
+	}
+	return out
 }
 
 // bindVariables merges the submitted values over the spec defaults and
@@ -215,20 +254,30 @@ func (s *Spec) bindVariables(in map[string]any) (map[string]any, error) {
 	return bound, nil
 }
 
-// normalizeEmpty maps "" and [] to null at the top level. The engine drops a
-// null-valued condition; an empty array would compile into IN ().
+// normalizeEmpty maps "" to null: a cleared text control means "no filter".
+// An empty ARRAY is deliberately left alone — the engine contract is that
+// `in: []` matches nothing while only null widens; a cleared multiselect
+// submits null from the panel itself.
 func normalizeEmpty(v any) any {
-	switch t := v.(type) {
-	case string:
-		if t == "" {
-			return nil
-		}
-	case []any:
-		if len(t) == 0 {
-			return nil
-		}
+	if s, ok := v.(string); ok && s == "" {
+		return nil
 	}
 	return v
+}
+
+// deepGet walks a dotted path into the bound values: the first segment is a
+// variable, the rest descend its (input-typed) value.
+func deepGet(bound map[string]any, path string) any {
+	segs := strings.Split(path, ".")
+	var cur any = bound[segs[0]]
+	for _, s := range segs[1:] {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur = m[s]
+	}
+	return cur
 }
 
 // controlFor names the control that fills the variable, for error messages.
@@ -248,20 +297,16 @@ func (s *Spec) controlFor(varName string) string {
 // lands inside an input object the schema owns.
 func (c *Control) checkValues(bound map[string]any) error {
 	value := func(path string) (any, bool) {
-		if strings.Contains(path, ".") {
-			return nil, false
-		}
-		v, ok := bound[path]
-		return v, ok && v != nil
+		v := deepGet(bound, path)
+		return v, v != nil
 	}
 	if c.Required {
 		// Required exists because null silently WIDENS: a dropped predicate
-		// means the section quietly computes over the whole table.
+		// means the section quietly computes over the whole table. Dotted
+		// paths are walked into the input value — a required control must
+		// hold whatever shape it binds.
 		for _, path := range c.Bind.Targets() {
-			if strings.Contains(path, ".") {
-				continue
-			}
-			if bound[path] == nil {
+			if deepGet(bound, path) == nil {
 				return fmt.Errorf("control %q is required — it needs a value", c.Label)
 			}
 		}
@@ -437,6 +482,11 @@ func canonicalOptions(v any) ([]Option, error) {
 			val, ok := t["value"]
 			if !ok || val == nil {
 				return nil, fmt.Errorf("option %d has no value", i)
+			}
+			switch val.(type) {
+			case string, float64, bool:
+			default:
+				return nil, fmt.Errorf("option %d: value must be a scalar (string, number or boolean) — the panel cannot select an object", i)
 			}
 			o := Option{Value: val}
 			if l, ok := t["label"]; ok && l != nil {

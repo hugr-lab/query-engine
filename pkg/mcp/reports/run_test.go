@@ -162,12 +162,41 @@ func TestBindVariables(t *testing.T) {
 		require.ErrorContains(t, err, "$region is not declared")
 	})
 
-	t.Run("empty string and empty array become null", func(t *testing.T) {
+	t.Run("empty string becomes null, empty array stays", func(t *testing.T) {
+		// The engine contract: only null widens; an explicit `in: []`
+		// deliberately matches nothing (a cleared multiselect submits null
+		// from the panel itself).
 		s := validSpec()
 		bound, err := s.bindVariables(map[string]any{"states": []any{}, "city": ""})
 		require.NoError(t, err)
-		assert.Nil(t, bound["states"])
+		assert.Equal(t, []any{}, bound["states"])
 		assert.Nil(t, bound["city"])
+	})
+
+	t.Run("required dotted bind is enforced", func(t *testing.T) {
+		s := validSpec()
+		s.Variables = append(s.Variables, Variable{Name: "flt", Type: "flt_input"})
+		s.Controls = append(s.Controls, Control{Label: "Range", Kind: "daterange", Required: true,
+			Bind: Bind{From: "flt.from", To: "flt.to"}})
+		_, err := s.bindVariables(map[string]any{"flt": map[string]any{"from": "2023-01-01"}})
+		require.ErrorContains(t, err, `control "Range" is required`)
+
+		bound, err := s.bindVariables(map[string]any{"flt": map[string]any{"from": "2023-01-01", "to": "2023-06-30"}})
+		require.NoError(t, err)
+		assert.NotNil(t, bound["flt"])
+	})
+
+	t.Run("template wraps query values, echo stays raw", func(t *testing.T) {
+		s := validSpec()
+		s.Variables = append(s.Variables, Variable{Name: "q", Type: "String"})
+		s.Controls = append(s.Controls, Control{Label: "Search", Kind: "search",
+			Bind: Bind{Target: "q"}, Template: "%{value}%"})
+		bound, err := s.bindVariables(map[string]any{"q": "acme"})
+		require.NoError(t, err)
+		qv := s.applyTemplates(bound)
+		assert.Equal(t, "%acme%", qv["q"], "the query side gets the wrapped value")
+		assert.Equal(t, "acme", bound["q"], "the echo keeps what the user typed")
+		assert.Nil(t, qv["states"], "untouched variables ride through unchanged")
 	})
 
 	t.Run("required control refuses a cleared value", func(t *testing.T) {
@@ -211,6 +240,17 @@ func TestBindVariables(t *testing.T) {
 	})
 }
 
+// A spec variable that happens to be called `limit` must not mask a section
+// query's own literal bound — the variable map is shared by every section.
+func TestRunAtLimitIgnoresForeignLimitVariable(t *testing.T) {
+	s := validSpec()
+	s.Variables = append(s.Variables, Variable{Name: "limit", Type: "Int", Default: float64(500)})
+	data, err := Run(t.Context(), &stubQuerier{}, s, nil, RunOptions{})
+	require.NoError(t, err)
+	assert.True(t, data.Sections[2].AtLimit,
+		"the table section is bounded by its own `limit: 50`, not by the spec's $limit")
+}
+
 func TestCanonicalOptions(t *testing.T) {
 	opts, err := canonicalOptions(map[string]any{"data": map[string]any{"m": []any{"a", 2.0, map[string]any{"value": "x", "label": "X"}}}})
 	require.NoError(t, err)
@@ -224,6 +264,9 @@ func TestCanonicalOptions(t *testing.T) {
 
 	_, err = canonicalOptions([]any{map[string]any{"value": 1.0, "weight": 2.0}})
 	require.ErrorContains(t, err, `unknown field "weight"`)
+
+	_, err = canonicalOptions([]any{map[string]any{"value": map[string]any{"id": 1.0}, "label": "Berlin"}})
+	require.ErrorContains(t, err, "must be a scalar")
 
 	big := make([]any, OptionsCap+1)
 	for i := range big {

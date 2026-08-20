@@ -204,7 +204,7 @@ func TestValidateControls(t *testing.T) {
 		"scalar range":   {func(s *Spec) { s.Controls[1].Bind = Bind{From: "date_from", To: "date_to"} }, "belongs to numrange/daterange"},
 		"unknown var":    {func(s *Spec) { s.Controls[1].Bind.Target = "region" }, `unknown variable "region"`},
 		"bad path":       {func(s *Spec) { s.Controls[1].Bind.Target = "city..x" }, "not a variable name or dotted path"},
-		"bad template":   {func(s *Spec) { s.Controls[1].Template = "%value%" }, "%{value}"},
+		"bad template":   {func(s *Spec) { s.Controls[1].Template = "%value%" }, "{value}"},
 		"min above max":  {func(s *Spec) { mn, mx := 10.0, 1.0; s.Controls[1].Min, s.Controls[1].Max = &mn, &mx }, "min is greater than max"},
 		"options + oq":   {func(s *Spec) { s.Controls[1].Options = []Option{{Value: "a"}} }, "mutually exclusive"},
 		"oq unknown var": {func(s *Spec) { s.Controls[1].OptionsQuery.Query = `query($region: String) { a { b } }` }, "$region which the spec does not define"},
@@ -309,4 +309,5 @@ func TestOptionJSON(t *testing.T) {
 	assert.ErrorContains(t, json.Unmarshal([]byte(`[1]`), &Option{}), "scalar")
 	assert.ErrorContains(t, json.Unmarshal([]byte(`{"label": "x"}`), &Option{}), "needs a value")
 	assert.ErrorContains(t, json.Unmarshal([]byte(`{"value": 1, "weight": 2}`), &Option{}), `unknown field "weight"`)
+	assert.ErrorContains(t, json.Unmarshal([]byte(`{"value": {"id": 1}, "label": "x"}`), &Option{}), "must be a scalar")
 }

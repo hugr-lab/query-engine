@@ -218,8 +218,11 @@ func validateControl(i int, c *Control, vars map[string]varInfo) ([]string, erro
 			return nil, fmt.Errorf("%s: bind %q targets unknown variable %q", name, path, strings.SplitN(path, ".", 2)[0])
 		}
 	}
-	if c.Template != "" && !strings.Contains(c.Template, "%{value}") {
-		return nil, fmt.Errorf("%s: template must contain %%{value} — it wraps the raw input", name)
+	// The placeholder is {value} — NOT %{value}: with the latter the leading
+	// per-cent of an ilike template ("%{value}%") is eaten by the
+	// placeholder itself and the wrap comes out one-sided ("acme%").
+	if c.Template != "" && !strings.Contains(c.Template, "{value}") {
+		return nil, fmt.Errorf("%s: template must contain {value} — it wraps the raw input (e.g. \"%%{value}%%\" for ilike)", name)
 	}
 	if c.Min != nil && c.Max != nil && *c.Min > *c.Max {
 		return nil, fmt.Errorf("%s: min is greater than max", name)

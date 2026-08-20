@@ -13,10 +13,10 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
-// aggKeysOnlyAlias marks the synthetic union branch of a bucket aggregation
-// that selects only key{} — distinct values, no measures. It must not
-// collide with a real aggregations field alias, and a leading underscore
-// keeps it out of the GraphQL name space.
+// aggKeysOnlyAlias names the synthetic union branch of a bucket aggregation
+// that selects only key{} — distinct values, no measures. The branch exists
+// only when no aggregations fields were selected, so the name never has to
+// compete with user aliases; guards key off len(aggFields), not this value.
 const aggKeysOnlyAlias = "_keys_only"
 
 func aggregateRootNode(ctx context.Context, provider catalog.Provider, planner Catalog, query *ast.Field, vars map[string]any) (*QueryPlanNode, error) {
@@ -517,8 +517,11 @@ func aggregateDataNode(ctx context.Context, defs base.DefinitionsSource, planner
 			}
 		}
 		// 1.3.2. add aggregation fields for bucket aggregation (with sub query fields)
-		// The synthetic key-only branch has no aggregations object to build.
-		if sdl.IsBucketAggregateQuery(query) && alias != aggKeysOnlyAlias {
+		// The synthetic key-only branch exists ONLY when no aggregations were
+		// selected, so gate on that — comparing the map key against the
+		// sentinel would misfire on a user field legitimately aliased
+		// `_keys_only:` and skip building its column.
+		if sdl.IsBucketAggregateQuery(query) && len(aggFields) > 0 {
 			f := engines.SelectedFields(query.SelectionSet).ForAlias(alias)
 			if f == nil {
 				return nil, false, sdl.ErrorPosf(query.Position, "field %s not found in query", alias)

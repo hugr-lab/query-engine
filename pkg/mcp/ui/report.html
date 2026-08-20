@@ -282,6 +282,7 @@ let data = null;    // ReportData (variables used, options, section results)
 let values = {};    // current panel values, by variable name
 let charts = [];    // live ECharts instances, one per chart section
 let applying = false;
+let sortStates = {}; // per-section table sort, survives re-renders
 
 const canCallTools = () => host.connected && !!host.caps.serverTools;
 const WIDTH_SPANS = { full: 12, two_thirds: 8, half: 6, third: 4, quarter: 3 };
@@ -329,7 +330,9 @@ function setReport(s, d) {
   data = d;
   values = Object.assign({}, d.variables || {});
   clearTimeout(optionsTimer); // pending refreshes belong to the OLD report
+  pendingOptionIdx = new Set();
   optionsGen++;
+  sortStates = {};
   document.getElementById("title").textContent = s.title || "hugr report";
   document.getElementById("desc").textContent = s.description || "";
   document.title = s.title || "hugr report";
@@ -395,6 +398,7 @@ function renderSections() {
         el.appendChild(c);
         if (window.echarts && (out.rows || []).length) {
           pending.push({ container: c, sec, out });
+          if (out.rows_sampled) el.appendChild(sampleNote(out));
         } else if (!(out.rows || []).length) {
           c.replaceWith(noteEl(out.rows_sampled ? "loading the full set…" : "no data"));
         }
@@ -410,7 +414,10 @@ function renderSections() {
         const cols = (sec.columns || []).length
           ? sec.columns
           : rows.length ? Object.keys(rows[0]).map((f) => ({ field: f, label: f })) : [];
-        const state = el._sort || (el._sort = {});
+        // The state must OUTLIVE the section element — renderSections builds
+        // a fresh one every time, so element-attached state made every sort
+        // click a no-op.
+        const state = sortStates[i] || (sortStates[i] = {});
         core.fillTable(t, rows, cols, {
           sortCol: state.col, sortDir: state.dir || 1,
           onSort: (f) => { state.dir = state.col === f ? -(state.dir || 1) : 1; state.col = f; renderSections(); },
@@ -418,6 +425,7 @@ function renderSections() {
         });
         if (out.truncated) el.appendChild(noteEl("cut at the hard cap"));
         else if (out.at_limit) el.appendChild(noteEl("exactly the query's limit — likely one page of more"));
+        if (out.rows_sampled && rows.length) el.appendChild(sampleNote(out));
         break;
       }
     }
@@ -444,6 +452,16 @@ function noteEl(text) {
   n.className = "note";
   n.textContent = text;
   return n;
+}
+
+// A sampled section must SAY so — on a host that cannot proxy tool calls the
+// compensating fetch never happens, and 50 rows of 12000 silently read as
+// the whole answer (and get baked into the snapshot).
+function sampleNote(out) {
+  const n = (out.rows || []).length;
+  return noteEl(canCallTools()
+    ? "loading the full set…"
+    : "sample: first " + n + " of " + (out.row_count || n) + " rows — this host cannot load the rest");
 }
 
 /* Minimal markdown for narrative sections, built as DOM (escaped by
@@ -625,6 +643,17 @@ function renderApplied() {
   const el = document.getElementById("applied");
   const controls = (spec && spec.controls) || [];
   if (!controls.length) { el.textContent = ""; return; }
+  // The line labels the DATA on the page, so it reads the values the run
+  // actually used (data.variables) — never the live panel edits, which may
+  // not have been applied: a CA-filtered chart captioned "State: NY" is
+  // exactly the mislabeling this line exists to prevent.
+  const ran = (data && data.variables) || {};
+  const get = (path) => {
+    const segs = String(path || "").split(".");
+    let v = ran[segs[0]];
+    for (const s of segs.slice(1)) v = (v && typeof v === "object") ? v[s] : undefined;
+    return v;
+  };
   const fmt = (v) => {
     if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)) return "all";
     if (Array.isArray(v)) return v.join(", ");
@@ -632,9 +661,9 @@ function renderApplied() {
   };
   const parts = controls.map((c) => {
     if (c.bind && typeof c.bind === "object") {
-      return c.label + ": " + fmt(pathGet(c.bind.from)) + " — " + fmt(pathGet(c.bind.to));
+      return c.label + ": " + fmt(get(c.bind.from)) + " — " + fmt(get(c.bind.to));
     }
-    return c.label + ": " + fmt(pathGet(c.bind));
+    return c.label + ": " + fmt(get(c.bind));
   });
   el.textContent = "Filters · " + parts.join(" · ");
 }
@@ -663,9 +692,9 @@ function normalized(v) {
   return v;
 }
 function setFrom(c, path, raw) {
-  let v = normalized(raw);
-  if (v !== null && c.template && typeof v === "string") v = c.template.replaceAll("%{value}", v);
-  pathSet(path, v);
+  // Raw values only: the SERVER wraps templated controls at bind time and
+  // echoes the raw value back, so the panel always displays what was typed.
+  pathSet(path, normalized(raw));
   scheduleOptionsRefresh(path);
 }
 
@@ -686,6 +715,7 @@ function controlDeps(c) {
 }
 let optionsTimer = null;
 let optionsGen = 0; // a bumped generation invalidates in-flight responses
+let pendingOptionIdx = new Set(); // merged across schedules within a debounce
 function scheduleOptionsRefresh(changedPath) {
   if (!canCallTools()) return;
   const changed = String(changedPath || "").split(".")[0];
@@ -693,10 +723,20 @@ function scheduleOptionsRefresh(changedPath) {
     .map((c, i) => (controlDeps(c).includes(changed) ? i : -1))
     .filter((i) => i >= 0);
   if (!dependents.length) return;
+  // MERGE into the pending set — a plain reset would let a second parent's
+  // change within the debounce window cancel the first parent's refresh.
+  dependents.forEach((i) => pendingOptionIdx.add(i));
   clearTimeout(optionsTimer);
-  optionsTimer = setTimeout(() => refreshDependentOptions(dependents), 400);
+  optionsTimer = setTimeout(() => {
+    const batch = [...pendingOptionIdx];
+    pendingOptionIdx = new Set();
+    refreshDependentOptions(batch);
+  }, 400);
 }
 async function refreshDependentOptions(indexes) {
+  // Never race a full Apply: bumping the generation here would drop ITS
+  // response; the rebuilt panel simply re-resolves on the next change.
+  if (applying) return;
   const gen = ++optionsGen;
   try {
     const res = await request("tools/call", { name: "report-data", arguments: {
@@ -716,9 +756,12 @@ async function refreshDependentOptions(indexes) {
     for (const i of indexes) {
       const c = (spec.controls || [])[i];
       if (!c) continue; // the spec changed under the request
-      pruneToOptions(c, ((data.controls || [])[i] || {}).options || []);
+      const pruned = pruneToOptions(c, ((data.controls || [])[i] || {}).options || []);
       const old = document.querySelector('#panel .ctl[data-ci="' + i + '"]');
       if (old) old.replaceWith(controlBox(c, i));
+      // A pruned value is itself a change — Country→State→City chains
+      // cascade one debounced hop at a time (the DAG guarantees an end).
+      if (pruned) scheduleOptionsRefresh(typeof c.bind === "string" ? c.bind : "");
     }
     renderApplied();
     dbg("i", "dependent options refreshed: " + indexes.join(","));
@@ -728,17 +771,23 @@ async function refreshDependentOptions(indexes) {
 }
 // A parent change can invalidate the dependent's CURRENT value — the
 // selected city may not exist in the new state. Values outside the fresh
-// option list are dropped, never silently submitted.
+// option list are dropped, never silently submitted. Reports whether it
+// changed anything.
 function pruneToOptions(c, opts) {
-  if (!c.bind || typeof c.bind === "object") return;
+  if (!c.bind || typeof c.bind === "object") return false;
   const legal = new Set(opts.map((o) => String(o.value)));
   const cur = pathGet(c.bind);
   if (Array.isArray(cur)) {
     const kept = cur.filter((v) => legal.has(String(v)));
-    if (kept.length !== cur.length) pathSet(c.bind, kept.length ? kept : null);
+    if (kept.length !== cur.length) {
+      pathSet(c.bind, kept.length ? kept : null);
+      return true;
+    }
   } else if (cur !== null && cur !== undefined && !legal.has(String(cur))) {
     pathSet(c.bind, null);
+    return true;
   }
+  return false;
 }
 
 function controlEl(c) {
@@ -811,7 +860,7 @@ function controlEl(c) {
     default: // search
       el = document.createElement("input");
       el.type = "search";
-      if (cur !== null && cur !== undefined && !c.template) el.value = cur;
+      if (cur !== null && cur !== undefined) el.value = cur;
       el.onchange = () => setFrom(c, path, el.value);
       return el;
   }
@@ -909,20 +958,34 @@ document.addEventListener("click", closeMenus);
 async function refresh(optionsOnly) {
   if (!canCallTools() || applying) return;
   clearTimeout(optionsTimer); // Apply re-resolves every option list anyway
-  optionsGen++;
+  pendingOptionIdx = new Set();
+  const gen = ++optionsGen;
   applying = true;
   renderPanel();
   setStatus(optionsOnly ? "refreshing options…" : "running the report…");
+  // Edits made while the call is in flight must survive it: the echo is
+  // applied only when the panel stayed untouched.
+  const submitted = JSON.stringify(values);
   try {
     const res = await request("tools/call", { name: "report-data", arguments: {
       spec, variables: values, options_only: !!optionsOnly,
     }});
+    if (gen !== optionsGen) {
+      // A new tool-result replaced the report while this ran; its data
+      // would render the new spec against the old run's rows.
+      dbg("i", "stale report-data response dropped");
+      applying = false;
+      return;
+    }
     if (res.isError) {
       showError((res.content || []).map((c) => c.text || "").join("\n") || "report-data reported an error");
     } else {
       const sc = res.structuredContent || {};
       if (optionsOnly) { data.controls = sc.controls || []; }
-      else { data = sc; values = Object.assign({}, sc.variables || values); }
+      else {
+        data = sc;
+        if (JSON.stringify(values) === submitted) values = Object.assign({}, sc.variables || values);
+      }
       showError(null);
       setStatus(sectionsSummary());
     }

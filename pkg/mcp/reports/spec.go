@@ -92,9 +92,10 @@ type Control struct {
 	Kind     string `json:"control,omitempty"`
 	Bind     Bind   `json:"bind"`
 	Required bool   `json:"required,omitempty"`
-	// Template wraps the raw input before it lands in the variable —
-	// "%{value}%" turns a search box into an ilike argument. Applied
-	// server-side at bind time; the panel mirrors it.
+	// Template wraps the raw input for the QUERIES — the placeholder is
+	// {value}, so "%{value}%" turns a search box into an ilike argument.
+	// Applied server-side at bind time; the echoed variables stay raw, so
+	// the panel always shows what the user typed.
 	Template string   `json:"template,omitempty"`
 	Min      *float64 `json:"min,omitempty"`
 	Max      *float64 `json:"max,omitempty"`
@@ -190,6 +191,11 @@ func (o *Option) UnmarshalJSON(data []byte) error {
 		}
 		if o.Value == nil {
 			return fmt.Errorf("option needs a value")
+		}
+		switch o.Value.(type) {
+		case string, float64, bool:
+		default:
+			return fmt.Errorf("option value must be a scalar (string, number or boolean)")
 		}
 		return nil
 	}

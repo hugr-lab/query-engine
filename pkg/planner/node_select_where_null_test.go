@@ -7,6 +7,7 @@ import (
 
 	"github.com/hugr-lab/query-engine/pkg/catalog/sdl"
 	"github.com/hugr-lab/query-engine/pkg/engines"
+	"github.com/hugr-lab/query-engine/pkg/perm"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -62,6 +63,25 @@ func TestNullDroppedConditionsSurviveCombinators(t *testing.T) {
 				map[string]any{"_or": []any{map[string]any{"field1": map[string]any{"eq": nil}}}},
 			},
 		}, false},
+		// The engine contract split: null WIDENS, an explicit empty array is
+		// a deliberate match-nothing.
+		{"in null drops", map[string]any{
+			"field2": map[string]any{"in": nil},
+		}, true},
+		{"in empty array is a condition", map[string]any{
+			"field2": map[string]any{"in": []any{}},
+		}, false},
+		// Struct (nested object) filters follow the same contract instead of
+		// compiling `WHERE (())`.
+		{"struct filter with dropped leaf", map[string]any{
+			"nested_field": map[string]any{"field2": map[string]any{"eq": nil}},
+		}, true},
+		{"struct field null", map[string]any{
+			"nested_field": nil,
+		}, true},
+		{"live struct leaf survives", map[string]any{
+			"nested_field": map[string]any{"field2": map[string]any{"eq": 1}},
+		}, false},
 	}
 
 	for _, tt := range tests {
@@ -97,6 +117,68 @@ func TestNullDroppedConditionsSurviveCombinators(t *testing.T) {
 				t.Fatalf("a dropped condition leaked into SQL: %q", sql)
 			}
 		})
+	}
+}
+
+// The widening contract is a convenience for the CALLER's own filters — an
+// RLS rule that cannot be evaluated (a null auth claim null-dropping its
+// condition) must fail CLOSED, not disappear.
+func TestPermissionFilterFailsClosedOnNullDrop(t *testing.T) {
+	base := context.Background()
+	info := sdl.DataObjectInfo(testSchemaService.ForName(base, "table_object"))
+	if info == nil {
+		t.Fatal("table_object not found in the test schema")
+	}
+	query := &ast.Field{
+		Name:             "table_object",
+		ObjectDefinition: &ast.Definition{Name: "Query"},
+	}
+	mk := func(filter map[string]any) *QueryPlanNode {
+		t.Helper()
+		ctx := perm.CtxWithPerm(base, &perm.RolePermissions{
+			Name:        "restricted",
+			Permissions: []perm.Permission{{Object: "Query", Field: "table_object", Filter: filter}},
+		})
+		node, err := permissionFilterNode(ctx, testSchemaService, info, query, "_objects", false, perm.OpQuery)
+		if err != nil {
+			t.Fatalf("permissionFilterNode: %v", err)
+		}
+		if node == nil {
+			t.Fatal("a role with a filter rule must produce an RLS node")
+		}
+		return node
+	}
+
+	// A live rule compiles into its condition.
+	sql := collectSQLDeep(t, mk(map[string]any{"field2": map[string]any{"eq": 1}}))
+	if !strings.Contains(sql, "field2") {
+		t.Fatalf("the rule's condition is missing: %q", sql)
+	}
+
+	// A rule whose only condition null-drops compiles into FALSE — never
+	// into nothing (fail-open) and never into empty SQL (syntax error).
+	sql = collectSQLDeep(t, mk(map[string]any{"field2": map[string]any{"in": nil}}))
+	if sql != "FALSE" {
+		t.Fatalf("a null-dropped RLS rule must fail closed, got %q", sql)
+	}
+}
+
+// filterHasConditions backs the quantifier drop: values decide at build time
+// whether any condition survives the null-drop contract.
+func TestFilterHasConditions(t *testing.T) {
+	for name, tc := range map[string]struct {
+		v    any
+		want bool
+	}{
+		"nil":                 {nil, false},
+		"scalar":              {1, true},
+		"empty array":         {[]any{}, true}, // in: [] deliberately matches nothing
+		"all-nil map":         {map[string]any{"a": nil, "b": map[string]any{"eq": nil}}, false},
+		"live leaf deep down": {map[string]any{"a": map[string]any{"b": map[string]any{"eq": 1}}}, true},
+	} {
+		if got := filterHasConditions(tc.v); got != tc.want {
+			t.Errorf("%s: filterHasConditions = %v, want %v", name, got, tc.want)
+		}
 	}
 }
 
