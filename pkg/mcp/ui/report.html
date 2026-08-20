@@ -328,6 +328,8 @@ function setReport(s, d) {
   spec = s;
   data = d;
   values = Object.assign({}, d.variables || {});
+  clearTimeout(optionsTimer); // pending refreshes belong to the OLD report
+  optionsGen++;
   document.getElementById("title").textContent = s.title || "hugr report";
   document.getElementById("desc").textContent = s.description || "";
   document.title = s.title || "hugr report";
@@ -683,6 +685,7 @@ function controlDeps(c) {
   return [...deps];
 }
 let optionsTimer = null;
+let optionsGen = 0; // a bumped generation invalidates in-flight responses
 function scheduleOptionsRefresh(changedPath) {
   if (!canCallTools()) return;
   const changed = String(changedPath || "").split(".")[0];
@@ -694,17 +697,25 @@ function scheduleOptionsRefresh(changedPath) {
   optionsTimer = setTimeout(() => refreshDependentOptions(dependents), 400);
 }
 async function refreshDependentOptions(indexes) {
+  const gen = ++optionsGen;
   try {
     const res = await request("tools/call", { name: "report-data", arguments: {
       spec, variables: values, options_only: true,
     }});
+    // A full refresh or a fresh tool-result may have landed while this was
+    // in flight — its options belong to values that no longer exist.
+    if (gen !== optionsGen || applying) {
+      dbg("i", "stale options response dropped");
+      return;
+    }
     if (res.isError || !res.structuredContent) {
       dbg("opt!", "options refresh failed");
       return;
     }
     data.controls = res.structuredContent.controls || data.controls;
     for (const i of indexes) {
-      const c = spec.controls[i];
+      const c = (spec.controls || [])[i];
+      if (!c) continue; // the spec changed under the request
       pruneToOptions(c, ((data.controls || [])[i] || {}).options || []);
       const old = document.querySelector('#panel .ctl[data-ci="' + i + '"]');
       if (old) old.replaceWith(controlBox(c, i));
@@ -898,6 +909,7 @@ document.addEventListener("click", closeMenus);
 async function refresh(optionsOnly) {
   if (!canCallTools() || applying) return;
   clearTimeout(optionsTimer); // Apply re-resolves every option list anyway
+  optionsGen++;
   applying = true;
   renderPanel();
   setStatus(optionsOnly ? "refreshing options…" : "running the report…");
