@@ -10,7 +10,7 @@ require (
 	github.com/hugr-lab/query-engine/types v0.3.44
 	github.com/paulmach/orb v0.13.0
 	github.com/vektah/gqlparser/v2 v2.5.33
-	google.golang.org/grpc v1.81.1
+	google.golang.org/grpc v1.82.1
 )
 
 require (
