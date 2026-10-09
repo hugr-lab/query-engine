@@ -51,29 +51,41 @@ func ReferencesInfo(def *ast.Directive) *References {
 }
 
 func FieldReferencesInfo(ctx context.Context, defs base.DefinitionsSource, def *ast.Definition, field *ast.FieldDefinition) *References {
-	fieldRefName := base.FieldDefDirectiveArgString(field, base.FieldReferencesQueryDirectiveName, base.ArgName)
+	if field == nil {
+		return nil
+	}
+	query := field.Directives.ForName(base.FieldReferencesQueryDirectiveName)
+	if query == nil {
+		return nil
+	}
+	fieldRefName := base.DirectiveArgString(query, base.ArgName)
+	target := base.DirectiveArgString(query, base.ArgReferencesName)
+	isM2M := base.DirectiveArgString(query, base.ArgIsM2M) == "true"
+	m2mName := base.DirectiveArgString(query, base.ArgM2MName)
+	// Names are not globally unique: an incoming FK and an unrelated M2M
+	// projection can have the same name. Match the navigation field and its
+	// target as well, including the junction for M2M relations.
 	for _, d := range def.Directives.ForNames(base.ReferencesDirectiveName) {
-		name := base.DirectiveArgString(d, base.ArgName)
-		if name == fieldRefName {
-			ref := ReferencesInfo(d)
-			ref.sourceName = def.Name
-			if ref.Query != field.Name && def.Name == ref.ReferencesName {
-				ref.isBackRef = true
-			}
-			return ref
+		ref := ReferencesInfo(d)
+		if ref.Name == fieldRefName && ref.ReferencesName == target &&
+			ref.Query == field.Name && ref.IsM2M == isM2M && (!isM2M || ref.M2MName == m2mName) {
+			return referencesInfo(d, def.Name, false)
 		}
 	}
-	refDef := defs.ForName(ctx, field.Type.Name())
+	// M2M navigation has an explicit projection on each endpoint. Only
+	// ordinary FKs are resolved backwards (including self-references).
+	if isM2M {
+		return nil
+	}
+	refDef := defs.ForName(ctx, target)
 	if refDef == nil {
 		return nil
 	}
 	for _, d := range refDef.Directives.ForNames(base.ReferencesDirectiveName) {
-		name := base.DirectiveArgString(d, base.ArgName)
-		if name == fieldRefName {
-			ref := ReferencesInfo(d)
-			ref.sourceName = refDef.Name
-			ref.isBackRef = true
-			return ref
+		ref := ReferencesInfo(d)
+		if ref.Name == fieldRefName && ref.ReferencesName == def.Name &&
+			ref.ReferencesQuery == field.Name && !ref.IsM2M {
+			return referencesInfo(d, refDef.Name, true)
 		}
 	}
 	return nil

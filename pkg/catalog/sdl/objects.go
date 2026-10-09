@@ -447,31 +447,7 @@ func (info *Object) Definition() *ast.Definition {
 }
 
 func (info *Object) ReferencesQueryInfo(ctx context.Context, defs base.DefinitionsSource, name string) *References {
-	field := info.FieldForName(name)
-	if field == nil {
-		return nil
-	}
-	refName := base.FieldDefDirectiveArgString(field.def, base.FieldReferencesQueryDirectiveName, base.ArgName)
-	def := info.def
-	for _, ref := range def.Directives.ForNames(base.ReferencesDirectiveName) {
-		if ri := ReferencesInfo(ref); ri.Name == refName {
-			if ri.Query != name && ri.ReferencesName == info.def.Name {
-				return referencesInfo(ref, def.Name, true)
-			}
-			return referencesInfo(ref, def.Name, false)
-		}
-	}
-	refObject := base.FieldDefDirectiveArgString(field.def, base.FieldReferencesQueryDirectiveName, base.ArgReferencesName)
-	def = defs.ForName(ctx, refObject)
-	if def == nil {
-		return nil
-	}
-	for _, ref := range def.Directives.ForNames(base.ReferencesDirectiveName) {
-		if ReferencesInfo(ref).Name == refName {
-			return referencesInfo(ref, def.Name, true)
-		}
-	}
-	return nil
+	return FieldReferencesInfo(ctx, defs, info.def, info.def.Fields.ForName(name))
 }
 
 func (info *Object) ReferencesQueryInfoByName(ctx context.Context, defs base.DefinitionsSource, name string) *References {
