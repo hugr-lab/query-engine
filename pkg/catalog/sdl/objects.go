@@ -450,10 +450,13 @@ func (info *Object) ReferencesQueryInfo(ctx context.Context, defs base.Definitio
 	return FieldReferencesInfo(ctx, defs, info.def, info.def.Fields.ForName(name))
 }
 
-func (info *Object) M2MReferencesQueryInfo(ctx context.Context, defs base.DefinitionsSource, name string) *References {
-	for _, ref := range info.def.Directives.ForNames(base.ReferencesDirectiveName) {
-		if ReferencesInfo(ref).Name != name {
-			return referencesInfo(ref, info.def.Name, false)
+// M2MReferencesQueryInfo returns the junction's leg to the far endpoint of the
+// m2m projection ref: not the leg ref came through (ref.Name), and pointing at
+// ref's target — a junction may carry more references than its two legs.
+func (info *Object) M2MReferencesQueryInfo(ctx context.Context, defs base.DefinitionsSource, ref *References) *References {
+	for _, d := range info.def.Directives.ForNames(base.ReferencesDirectiveName) {
+		if ri := ReferencesInfo(d); ri.Name != ref.Name && ri.ReferencesName == ref.ReferencesName {
+			return referencesInfo(d, info.def.Name, false)
 		}
 	}
 	return nil

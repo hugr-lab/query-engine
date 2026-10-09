@@ -1884,7 +1884,7 @@ func referencesFields(ctx context.Context, defs base.DefinitionsSource, query *a
 		if ri.IsM2M {
 			m2m := defs.ForName(ctx, ri.M2MName)
 			refObjectInfo := sdl.DataObjectInfo(m2m)
-			ri = refObjectInfo.M2MReferencesQueryInfo(ctx, defs, ri.Name)
+			ri = refObjectInfo.M2MReferencesQueryInfo(ctx, defs, ri)
 			if ri == nil {
 				return nil, errors.New("references query info not found")
 			}

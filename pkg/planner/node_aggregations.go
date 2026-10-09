@@ -3,6 +3,7 @@ package planner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -581,15 +582,22 @@ func aggregateDataNode(ctx context.Context, defs base.DefinitionsSource, planner
 				joinNodes.Add(&QueryPlanNode{
 					Name: "m2m",
 					CollectFunc: func(node *QueryPlanNode, children Results, params []any) (string, []any, error) {
-						m2m := node.TypeDefs().ForName(ctx, ri.M2MName)
-						m2mInfo := sdl.DataObjectInfo(m2m)
-						refInfo := m2mInfo.M2MReferencesQueryInfo(ctx, defs, ri.Name)
+						m2mInfo := sdl.DataObjectInfo(node.TypeDefs().ForName(ctx, ri.M2MName))
+						if m2mInfo == nil {
+							return "", nil, fmt.Errorf("m2m object %s not found", ri.M2MName)
+						}
+						refInfo := m2mInfo.M2MReferencesQueryInfo(ctx, defs, ri)
+						if refInfo == nil {
+							return "", nil, fmt.Errorf("m2m object %s has no references to %s", ri.M2MName, ri.ReferencesName)
+						}
 						jc, err := refInfo.JoinConditions(ctx, node.TypeDefs(), "_join_m2m", "_"+alias, true, false)
 						if err != nil {
 							return "", nil, err
 						}
+						// as fromDataObjectNode: only a query scanner running
+						// the whole statement in its own database drops the catalog
 						db := m2mInfo.Catalog
-						if isInCatalog {
+						if _, ok := e.(engines.EngineQueryScanner); ok && isInCatalog {
 							db = ""
 						}
 						return "INNER JOIN " + m2mInfo.SQL(ctx, engines.Ident(db)) + " AS _join_m2m ON " + jc, params, nil
@@ -601,7 +609,7 @@ func aggregateDataNode(ctx context.Context, defs base.DefinitionsSource, planner
 			if ri != nil && ri.IsM2M {
 				rAlias = "_join_m2m"
 			}
-			joinConditionNode := aggregationWhereJoinNode(ctx, defs, query, "_root_objects", rAlias)
+			joinConditionNode := aggregationWhereJoinNode(ctx, defs, query, ri, "_root_objects", rAlias)
 			joinNodes.Add(&QueryPlanNode{
 				Name:  "join",
 				Nodes: QueryPlanNodes{joinConditionNode},
@@ -908,7 +916,7 @@ func aggAggregationFieldNodes(ctx context.Context, e engines.EngineAggregator, d
 	return nodes, nil
 }
 
-func aggregationWhereJoinNode(ctx context.Context, defs base.DefinitionsSource, right *ast.Field, prefix, rAlias string) *QueryPlanNode {
+func aggregationWhereJoinNode(ctx context.Context, defs base.DefinitionsSource, right *ast.Field, ri *sdl.References, prefix, rAlias string) *QueryPlanNode {
 	aggregated := sdl.AggregatedQueryDef(right)
 	aggregatedQuery := &ast.Field{
 		Alias:            right.Alias,
@@ -950,14 +958,12 @@ func aggregationWhereJoinNode(ctx context.Context, defs base.DefinitionsSource, 
 				}
 				return sql, params, nil
 			case sdl.IsReferencesSubquery(aggregated):
-				info := sdl.DataObjectInfo(right.ObjectDefinition)
-				ri := info.ReferencesQueryInfo(ctx, defs, aggregated.Name)
 				if ri == nil {
 					return "", nil, errors.New("references query info not found")
 				}
 				if ri.IsM2M {
-					// rAlias is the junction: root keys → junction keys
-					jc, err := ri.ToM2MJoinConditions(ctx, defs, prefix, rAlias, false, false)
+					// rAlias is the raw junction table: root keys → its columns
+					jc, err := ri.ToM2MJoinConditions(ctx, defs, prefix, rAlias, false, true)
 					return jc, params, err
 				}
 				jc, err := ri.JoinConditions(ctx, defs, prefix, rAlias, false, false)
