@@ -103,6 +103,29 @@ func testReferenceNameCollisionSQL(t *testing.T, schema string) {
 			want:  "_join_m2m.incident_id = _incidents_sub_node.id",
 			m2m:   true,
 		},
+		{
+			name:  "reverse sensors filter",
+			query: `{ tf_road_objects(filter: {meteo_sensors: {any_of: {id: {eq: 1}}}}) { id } }`,
+			want:  "_objects.id = _where__objects_meteo_sensors.object_id",
+		},
+		{
+			name:  "reverse sensors aggregation",
+			query: `{ tf_road_objects { id meteo_sensors_aggregation { _rows_count } } }`,
+			want:  "_root_objects.id = _aggregation.object_id",
+		},
+		{
+			name:  "incident filter",
+			query: `{ tf_road_objects(filter: {incidents: {any_of: {id: {eq: 1}}}}) { id } }`,
+			want:  "_objects.id = _join__objects_incidents.object_id",
+			m2m:   true,
+		},
+		{
+			// the branch joins the junction and the root matches its keys
+			name:  "incident aggregation",
+			query: `{ tf_road_objects { id incidents_aggregation { _rows_count } } }`,
+			want:  "_join_m2m.incident_id = _aggregation.id INNER JOIN _objects AS _root_objects ON _root_objects.id = _join_m2m.object_id",
+			m2m:   true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			op, err := ss.ParseQuery(ctx, tt.query, nil, "")
@@ -115,6 +138,68 @@ func testReferenceNameCollisionSQL(t *testing.T, schema string) {
 				assert.Contains(t, plan.CompiledQuery, "emergency.incidents_road_objects")
 			} else {
 				assert.NotContains(t, plan.CompiledQuery, "emergency.incidents_road_objects")
+			}
+		})
+	}
+}
+
+// The junction is joined as a raw table: its keys are named by their
+// columns, it lives in the source's catalog unless the whole statement runs
+// in the source database, and a reference beyond its two legs is not a leg.
+const m2mAggregationSchema = `
+type products @table(name: "products") {
+  id: Int! @pk
+}
+type tags @table(name: "tags") {
+  id: Int! @pk
+}
+type users @table(name: "users") {
+  id: Int! @pk
+}
+type product_tags @table(name: "product_tags", is_m2m: true) {
+  created_by: Int @field_references(references_name: "users", field: "id", query: "author", references_query: "tagged")
+  product_id: Int! @pk @field_references(references_name: "products", field: "id", query: "product", references_query: "product_tags")
+  tag_id: Int! @pk @field_source(field: "tag_ref") @field_references(references_name: "tags", field: "id", query: "tag", references_query: "tagged_products")
+}
+`
+
+func TestM2MAggregationJunction(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		engine   engines.Engine
+		junction string
+	}{
+		{"postgres", &engines.Postgres{}, "INNER JOIN product_tags AS _join_m2m"},
+		{"duckdb", engines.NewDuckDB(), "INNER JOIN tf.product_tags AS _join_m2m"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := auth.ContextWithFullAccess(context.Background())
+			pool, err := db.NewPool("")
+			require.NoError(t, err)
+			t.Cleanup(func() { pool.Close() })
+			require.NoError(t, coredb.New(coredb.Config{VectorSize: 8}).Attach(ctx, pool))
+			provider, err := catalogstore.New(ctx, pool, catalogstore.Config{VecSize: 8}, nil)
+			require.NoError(t, err)
+			ss := catalog.NewService(provider)
+			src, err := sources.NewStringSource("tf", tt.engine, base.Options{
+				Name: "tf", Prefix: "tf", EngineType: string(tt.engine.Type()), Capabilities: tt.engine.Capabilities(),
+			}, m2mAggregationSchema)
+			require.NoError(t, err)
+			require.NoError(t, ss.AddCatalog(ctx, "tf", src))
+
+			for _, q := range []struct{ query, want string }{
+				{`{ tf_products { id product_tags_aggregation { _rows_count } } }`,
+					"_join_m2m.tag_ref = _aggregation.id INNER JOIN _objects AS _root_objects ON _root_objects.id = _join_m2m.product_id"},
+				{`{ tf_tags { id tagged_products_aggregation { _rows_count } } }`,
+					"_join_m2m.product_id = _aggregation.id INNER JOIN _objects AS _root_objects ON _root_objects.id = _join_m2m.tag_ref"},
+			} {
+				op, err := ss.ParseQuery(ctx, q.query, nil, "")
+				require.NoError(t, err)
+				plan, err := New(ss, nil).Plan(ctx, provider, op.Definition.SelectionSet[0].(*ast.Field), op.Variables)
+				require.NoError(t, err)
+				require.NoError(t, plan.Compile())
+				assert.Contains(t, plan.CompiledQuery, tt.junction+" ON "+q.want)
+				assert.NotContains(t, plan.CompiledQuery, "created_by")
 			}
 		})
 	}

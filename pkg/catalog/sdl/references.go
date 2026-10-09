@@ -153,7 +153,10 @@ func (info *References) FromM2MJoinConditions(ctx context.Context, defs base.Def
 		return "", ErrorPosf(base.CompiledPos(""), "object %s has unknown references object %s", info.M2MName, info.sourceName)
 	}
 	leftInfo := DataObjectInfo(leftObject)
-	refObjectInfo := leftInfo.M2MReferencesQueryInfo(ctx, defs, info.Name)
+	refObjectInfo := leftInfo.M2MReferencesQueryInfo(ctx, defs, info)
+	if refObjectInfo == nil {
+		return "", ErrorPosf(base.CompiledPos(""), "m2m object %s has no references to %s", info.M2MName, info.ReferencesName)
+	}
 	return refObjectInfo.JoinConditions(ctx, defs, m2mAlias, rightAlias, isDBLeft, isDBRight)
 }
 

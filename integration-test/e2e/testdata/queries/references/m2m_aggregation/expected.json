@@ -1,0 +1,138 @@
+{
+  "data": {
+    "pg_store": {
+      "products": [
+        {
+          "id": 1,
+          "product_tags_aggregation": {
+            "_rows_count": 2,
+            "name": {
+              "list": [
+                "new",
+                "popular"
+              ]
+            }
+          },
+          "product_tags_bucket_aggregation": [
+            {
+              "aggregations": {
+                "_rows_count": 1
+              },
+              "key": {
+                "name": "popular"
+              }
+            },
+            {
+              "aggregations": {
+                "_rows_count": 1
+              },
+              "key": {
+                "name": "new"
+              }
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "product_tags_aggregation": {
+            "_rows_count": 2,
+            "name": {
+              "list": [
+                "popular",
+                "sale"
+              ]
+            }
+          },
+          "product_tags_bucket_aggregation": [
+            {
+              "aggregations": {
+                "_rows_count": 1
+              },
+              "key": {
+                "name": "popular"
+              }
+            },
+            {
+              "aggregations": {
+                "_rows_count": 1
+              },
+              "key": {
+                "name": "sale"
+              }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "product_tags_aggregation": null,
+          "product_tags_bucket_aggregation": null
+        },
+        {
+          "id": 4,
+          "product_tags_aggregation": null,
+          "product_tags_bucket_aggregation": null
+        },
+        {
+          "id": 5,
+          "product_tags_aggregation": {
+            "_rows_count": 2,
+            "name": {
+              "list": [
+                "new",
+                "popular"
+              ]
+            }
+          },
+          "product_tags_bucket_aggregation": [
+            {
+              "aggregations": {
+                "_rows_count": 1
+              },
+              "key": {
+                "name": "popular"
+              }
+            },
+            {
+              "aggregations": {
+                "_rows_count": 1
+              },
+              "key": {
+                "name": "new"
+              }
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "product_tags_aggregation": null,
+          "product_tags_bucket_aggregation": null
+        },
+        {
+          "id": 7,
+          "product_tags_aggregation": null,
+          "product_tags_bucket_aggregation": null
+        }
+      ],
+      "tags": [
+        {
+          "id": 1,
+          "tagged_products_aggregation": {
+            "_rows_count": 1
+          }
+        },
+        {
+          "id": 2,
+          "tagged_products_aggregation": {
+            "_rows_count": 2
+          }
+        },
+        {
+          "id": 3,
+          "tagged_products_aggregation": {
+            "_rows_count": 3
+          }
+        }
+      ]
+    }
+  }
+}
