@@ -103,6 +103,29 @@ func testReferenceNameCollisionSQL(t *testing.T, schema string) {
 			want:  "_join_m2m.incident_id = _incidents_sub_node.id",
 			m2m:   true,
 		},
+		{
+			name:  "reverse sensors filter",
+			query: `{ tf_road_objects(filter: {meteo_sensors: {any_of: {id: {eq: 1}}}}) { id } }`,
+			want:  "_objects.id = _where__objects_meteo_sensors.object_id",
+		},
+		{
+			name:  "reverse sensors aggregation",
+			query: `{ tf_road_objects { id meteo_sensors_aggregation { _rows_count } } }`,
+			want:  "_root_objects.id = _aggregation.object_id",
+		},
+		{
+			name:  "incident filter",
+			query: `{ tf_road_objects(filter: {incidents: {any_of: {id: {eq: 1}}}}) { id } }`,
+			want:  "_objects.id = _join__objects_incidents.object_id",
+			m2m:   true,
+		},
+		{
+			// the branch joins the junction and the root matches its keys
+			name:  "incident aggregation",
+			query: `{ tf_road_objects { id incidents_aggregation { _rows_count } } }`,
+			want:  "_join_m2m.incident_id = _aggregation.id INNER JOIN _objects AS _root_objects ON _root_objects.id = _join_m2m.object_id",
+			m2m:   true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			op, err := ss.ParseQuery(ctx, tt.query, nil, "")

@@ -197,9 +197,16 @@ func aggregateDataNode(ctx context.Context, defs base.DefinitionsSource, planner
 	if err != nil {
 		return nil, false, err
 	}
+	// An M2M relation aggregates through its junction: the branch joins it
+	// (the "m2m" node below) and the root object is matched to the junction.
+	var ri *sdl.References
+	if sdl.IsReferencesSubquery(aggregated) {
+		if info := sdl.DataObjectInfo(query.ObjectDefinition); info != nil {
+			ri = info.ReferencesQueryInfo(ctx, defs, aggregated.Name)
+		}
+	}
 	var groupByFields fieldList
 	var groupByNodes QueryPlanNodes
-	var ri *sdl.References
 
 	groupByFieldsMap := map[string]map[string]string{}
 	for _, f := range keyFields {
@@ -948,24 +955,14 @@ func aggregationWhereJoinNode(ctx context.Context, defs base.DefinitionsSource, 
 				if ri == nil {
 					return "", nil, errors.New("references query info not found")
 				}
-
-				fields := ri.ReferencesFields()
 				if ri.IsM2M {
-					m2m := defs.ForName(ctx, ri.M2MName)
-					m2mInfo := sdl.DataObjectInfo(m2m)
-					ri = m2mInfo.ReferencesQueryInfoByName(ctx, defs, ri.Name)
-					if ri == nil {
-						return "", nil, errors.New("references query info not found")
-					}
-					fields = ri.ReferencesFields()
+					// rAlias is the junction: root keys → junction keys
+					jc, err := ri.ToM2MJoinConditions(ctx, defs, prefix, rAlias, false, false)
+					return jc, params, err
 				}
 				jc, err := ri.JoinConditions(ctx, defs, prefix, rAlias, false, false)
 				if err != nil {
 					return "", nil, err
-				}
-				// replace right fields in join conditions
-				for _, f := range fields {
-					jc = strings.ReplaceAll(jc, rAlias+"."+f, rAlias+"."+f)
 				}
 				return jc, params, nil
 			case sdl.IsTableFuncJoinSubquery(aggregatedQuery):
