@@ -159,6 +159,10 @@ func (s *DBInfo) contentHash() string {
 			sort.Slice(cols, func(i, j int) bool { return cols[i].Name < cols[j].Name })
 			for _, c := range cols {
 				fmt.Fprintf(h, "col:%s:%s:%v\n", c.Name, c.DataType, c.IsNullable)
+				// Rebuild stored catalogs whose numeric column names now change.
+				if name := columnIdentGraphQL(c.Name); name != identGraphQL(c.Name) {
+					fmt.Fprintf(h, "graphql_column:%s\n", name)
+				}
 			}
 			cons := make([]DBConstraintInfo, len(t.Constraints))
 			copy(cons, t.Constraints)
@@ -180,6 +184,10 @@ func (s *DBInfo) contentHash() string {
 			sort.Slice(cols, func(i, j int) bool { return cols[i].Name < cols[j].Name })
 			for _, c := range cols {
 				fmt.Fprintf(h, "col:%s:%s:%v\n", c.Name, c.DataType, c.IsNullable)
+				// Views need the same version change as tables.
+				if name := columnIdentGraphQL(c.Name); name != identGraphQL(c.Name) {
+					fmt.Fprintf(h, "graphql_column:%s\n", name)
+				}
 			}
 		}
 	}
@@ -362,15 +370,11 @@ func (t *DBTableInfo) Definition(defaultSchema string) (*ast.Definition, error) 
 		})
 	}
 
-	for _, col := range t.Columns {
-		colDef, err := col.Definition()
-		if err != nil {
-			return nil, err
-		}
-		if colDef != nil {
-			def.Fields = append(def.Fields, colDef)
-		}
+	fields, err := columnDefinitions(t.Columns, name)
+	if err != nil {
+		return nil, err
 	}
+	def.Fields = fields
 
 	if len(def.Fields) == 0 {
 		return nil, nil // No fields, no definition
@@ -382,7 +386,7 @@ func (t *DBTableInfo) Definition(defaultSchema string) (*ast.Definition, error) 
 			// add primary key directive to the field
 			var pkf ast.FieldList
 			for _, colName := range constraint.Columns {
-				fieldDef := def.Fields.ForName(identGraphQL(colName))
+				fieldDef := def.Fields.ForName(columnIdentGraphQL(colName))
 				if fieldDef == nil {
 					pkf = nil // Reset if any field is not found
 					continue  // Skip if the field is not found
@@ -405,8 +409,8 @@ func (t *DBTableInfo) Definition(defaultSchema string) (*ast.Definition, error) 
 			columns := make(ast.ChildValueList, len(constraint.Columns))
 			for i, col := range constraint.Columns {
 				columns[i] = &ast.ChildValue{
-					Name:     identGraphQL(col),
-					Value:    &ast.Value{Raw: identGraphQL(col), Kind: ast.StringValue, Position: base.CompiledPos("self-described-foreign-key")},
+					Name:     columnIdentGraphQL(col),
+					Value:    &ast.Value{Raw: columnIdentGraphQL(col), Kind: ast.StringValue, Position: base.CompiledPos("self-described-foreign-key")},
 					Position: base.CompiledPos("self-described-foreign-key"),
 				}
 			}
@@ -414,8 +418,8 @@ func (t *DBTableInfo) Definition(defaultSchema string) (*ast.Definition, error) 
 			references := make(ast.ChildValueList, len(constraint.ReferencesColumns))
 			for i, col := range constraint.ReferencesColumns {
 				references[i] = &ast.ChildValue{
-					Name:     identGraphQL(col),
-					Value:    &ast.Value{Raw: identGraphQL(constraint.ReferencesColumns[i]), Kind: ast.StringValue, Position: base.CompiledPos("self-described-foreign-key")},
+					Name:     columnIdentGraphQL(col),
+					Value:    &ast.Value{Raw: columnIdentGraphQL(constraint.ReferencesColumns[i]), Kind: ast.StringValue, Position: base.CompiledPos("self-described-foreign-key")},
 					Position: base.CompiledPos("self-described-foreign-key"),
 				}
 			}
@@ -528,20 +532,37 @@ func (v *DBViewInfo) Definition(defaultSchema string) (*ast.Definition, error) {
 			Position: base.CompiledPos("self-described-module"),
 		})
 	}
-	for _, col := range v.Columns {
-		colDef, err := col.Definition()
-		if err != nil {
-			return nil, err
-		}
-		if colDef != nil {
-			def.Fields = append(def.Fields, colDef)
-		}
+	fields, err := columnDefinitions(v.Columns, name)
+	if err != nil {
+		return nil, err
 	}
+	def.Fields = fields
 	if len(def.Fields) == 0 {
 		return nil, nil // No fields, no definition
 	}
 
 	return def, nil
+}
+
+// columnDefinitions rejects ambiguous names instead of publishing duplicate fields.
+func columnDefinitions(columns []DBColumnInfo, objectName string) (ast.FieldList, error) {
+	var fields ast.FieldList
+	originalNames := make(map[string]string, len(columns))
+	for _, col := range columns {
+		field, err := col.Definition()
+		if err != nil {
+			return nil, err
+		}
+		if field == nil {
+			continue
+		}
+		if original, exists := originalNames[field.Name]; exists {
+			return nil, fmt.Errorf("columns %q and %q in %s map to the same GraphQL field %q", original, col.Name, objectName, field.Name)
+		}
+		originalNames[field.Name] = col.Name
+		fields = append(fields, field)
+	}
+	return fields, nil
 }
 
 func (c *DBColumnInfo) Definition() (*ast.FieldDefinition, error) {
@@ -555,8 +576,8 @@ func (c *DBColumnInfo) Definition() (*ast.FieldDefinition, error) {
 		return nil, nil // If the type is not recognized, return nil
 	}
 
-	// check if the field name is qualified
-	name := identGraphQL(c.Name)
+	// Preserve the original SQL column name when its GraphQL name changes.
+	name := columnIdentGraphQL(c.Name)
 	if name != c.Name {
 		fieldDef.Name = name // Use the sanitized name
 		fieldDef.Directives = append(fieldDef.Directives, base.FieldSourceDirective(c.Name))
@@ -640,7 +661,16 @@ func graphQLType(name string) *ast.Type {
 	}
 }
 
-// identGraphQL makes valid graphql identifier
+// columnIdentGraphQL prefixes numeric-leading column names independently of the source.
+func columnIdentGraphQL(name string) string {
+	name = identGraphQL(name)
+	if len(name) > 0 && name[0] >= '0' && name[0] <= '9' {
+		return "column_" + name
+	}
+	return name
+}
+
+// identGraphQL replaces unsupported identifier characters.
 func identGraphQL(name string) string {
 	// Replace invalid characters with underscores
 	name = strings.Map(func(r rune) rune {
